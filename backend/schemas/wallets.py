@@ -21,21 +21,21 @@ class WalletBasicSchema(BaseModel):
             raise ValueError("Name field must have minimum length of 6")
         return value
 
-class ChainWalletSchema(BaseModel, WalletBasicSchema):
+class ChainWalletSchema(WalletBasicSchema):
     address: str = Field(
         ...,
         examples=["0x1234567890abcdef1234567890abcdef12345678"],
         description="Wallet address"
     )
-    chain: enum.Enum[ChainType] = Field(
+    chain: ChainType = Field(
         ...,
         examples=["ethereum"],
         description="Blockchain type (e.g., ethereum, solana)"
     )
 
 
-class ExchangeWalletSchema(BaseModel, WalletBasicSchema):
-    exchange: enum.Enum[ExchangeType] = Field(
+class ExchangeWalletSchema(WalletBasicSchema):
+    exchange: ExchangeType = Field(
         ...,
         examples=["binance"],
         description="Exchange type (e.g., binance, okx)"

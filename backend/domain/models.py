@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from enum import Enum
 
 from backend.domain.enums import ChainType, ExchangeType
 
@@ -12,11 +11,11 @@ class WalletBasic:
 @dataclass
 class ChainWallet(WalletBasic):
     address: str
-    chain: Enum[ChainType]
+    chain: ChainType
 
 @dataclass
 class ExchangeWallet(WalletBasic):
-    exchange: Enum[ExchangeType]
+    exchange: ExchangeType
     api_key: str
     api_secret: str
     api_passphrase: str | None = None
