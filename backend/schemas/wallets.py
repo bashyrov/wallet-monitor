@@ -1,5 +1,5 @@
 import enum
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.domain import ChainType, ExchangeType
 
@@ -32,6 +32,15 @@ class ChainWalletSchema(WalletBasicSchema):
         examples=["ethereum"],
         description="Blockchain type (e.g., ethereum, solana)"
     )
+
+    @model_validator(mode="after")
+    def validate_chain_address(self):
+        if self.address.startswith("0x") and self.chain in (ChainType.TRON, ChainType.SOLANA):
+            raise ValueError("Invalid Tron/Solana address (could not start with 0x)")
+        if not self.address.startswith("0x") and self.chain not in (ChainType.TRON, ChainType.SOLANA):
+            raise ValueError("Invalid EVM address (must start with 0x)")
+
+        return self
 
 
 class ExchangeWalletSchema(WalletBasicSchema):
