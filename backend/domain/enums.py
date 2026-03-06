@@ -23,7 +23,7 @@ class ChainType(str, Enum):
     POLYGON = "polygon"
     ARBITRUM = "arbitrum"
     OPTIMISM = "optimism"
-    BASE_RPC: str
+    BASE_RPC = "base"
     AVALANCHE = "avalanche"
     FANTOM = "fantom"
     SOLANA = "solana"
@@ -32,4 +32,5 @@ class ChainType(str, Enum):
     SCROLL = "scroll"
     MANTLE = "mantle"
     BLAST = "blast"
+    TRON = "tron"
 
