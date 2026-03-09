@@ -10,6 +10,7 @@ class ExchangeType(str, Enum):
     MEXC = "mexc"
     KUCOIN = "kucoin"
     BITGET = "bitget"
+    BACKPACK = "backpack"
 
     LIGHTER = "lighter"
     HYPERLIQUID = "hyperliquid"
@@ -23,7 +24,7 @@ class ChainType(str, Enum):
     POLYGON = "polygon"
     ARBITRUM = "arbitrum"
     OPTIMISM = "optimism"
-    BASE_RPC: str
+    BASE_RPC = "base"
     AVALANCHE = "avalanche"
     FANTOM = "fantom"
     SOLANA = "solana"
@@ -32,4 +33,13 @@ class ChainType(str, Enum):
     SCROLL = "scroll"
     MANTLE = "mantle"
     BLAST = "blast"
+    TRON = "tron"
 
+class PerpDexType(str, Enum):
+    LIGHTER = "lighter"
+    HYPERLIQUID = "hyperliquid"
+    ETHEREAL = "ethereal"
+    PARADEX = "paradex"
+    BACKPACK = "backpack"
+    EXTENDED = "extended"
+    NADO = "nado"

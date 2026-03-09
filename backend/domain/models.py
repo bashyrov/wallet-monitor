@@ -1,17 +1,34 @@
-from dataclasses import dataclass
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 
 from backend.domain.enums import ChainType, ExchangeType
 
-
 @dataclass
-class WalletBasic:
+class WalletBasic(ABC):
     name: str
     user: str
+    provider: object = field(init=False)
+
+    def __post_init__(self):
+        self.provider = self._resolve_provider()
+
+    @abstractmethod
+    def _resolve_provider(self) -> str:
+        pass
+
 
 @dataclass
 class ChainWallet(WalletBasic):
     address: str
     chain: ChainType
+
+    def _resolve_provider(self, ) -> str:
+        from backend.providers.chains import CHAIN_PROVIDERS
+        provider = CHAIN_PROVIDERS.get(self.chain)
+        if not provider:
+            raise ValueError(f"Unsupported exchange: {self.chain}")
+        return provider
+
 
 @dataclass
 class ExchangeWallet(WalletBasic):
@@ -19,3 +36,32 @@ class ExchangeWallet(WalletBasic):
     api_key: str
     api_secret: str
     api_passphrase: str | None = None
+
+    def _resolve_provider(self, ) -> str:
+        from backend.providers import EXCHANGE_PROVIDERS
+        provider = EXCHANGE_PROVIDERS.get(self.exchange)
+        if not provider:
+            raise ValueError(f"Unsupported exchange: {self.exchange}")
+        return provider
+
+
+@dataclass
+class PerpDexWallet(WalletBasic):
+    perp_dex: ExchangeType
+    address: str
+
+    def _resolve_provider(self, ) -> str:
+        from backend.providers import PERPDEX_PROVIDERS
+        provider = PERPDEX_PROVIDERS.get(self.perp_dex)
+        if not provider:
+            raise ValueError(f"Unsupported perp_dex: {self.perp_dex}")
+        return provider
+
+
+
+@dataclass
+class BalanceResult:
+    wallet: ChainWallet|ExchangeWallet|PerpDexWallet
+    provider: str
+    totals: dict | None = None
+    details: dict | None = None

@@ -4,3 +4,4 @@
 #     portfolio.py
 #     common.py
 
+from .wallets import ChainWalletSchema, ExchangeWalletSchema
