@@ -1,4 +1,6 @@
+from backend.providers.exchanges.backpack_provider import BackpackProvider
 from backend.providers.exchanges.binance_provider import BinanceProvider
+from backend.providers.exchanges.bitget_provider import BitgetProvider
 from backend.providers.exchanges.bybit_provider import BybitProvider
 from backend.providers.exchanges.gate_provider import GateProvider
 from backend.providers.exchanges.kucoin_provider import KucoinProvider
@@ -12,4 +14,6 @@ EXCHANGE_PROVIDERS = {
     "gate": GateProvider,
     "mexc": MexcProvider,
     "kucoin":KucoinProvider,
+    "bitget": BitgetProvider,
+    "backpack": BackpackProvider,
 }

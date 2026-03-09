@@ -6,6 +6,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+    BINANCE_BASE_URL: str = "https://api.binance.com"
+    OKX_BASE_URL: str = "https://www.okx.com"
+    GATE_BASE_URL: str = "https://api.gateio.ws"
+    MEXC_BASE_URL: str = "https://api.mexc.com"
+    KUCOIN_BASE_URL: str = "https://api.kucoin.com"
+    BYBIT_BASE_URL: str = "https://api.bybit.com"
+    BITGET_BASE_URL: str = "https://api.bitget.com"
+
     ETHEREUM_RPC: str
     BSC_RPC: str
     POLYGON_RPC: str

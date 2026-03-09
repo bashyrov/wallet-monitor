@@ -38,7 +38,7 @@ class ExchangeWallet(WalletBasic):
     api_passphrase: str | None = None
 
     def _resolve_provider(self, ) -> str:
-        from backend.providers.exchanges import EXCHANGE_PROVIDERS
+        from backend.providers import EXCHANGE_PROVIDERS
         provider = EXCHANGE_PROVIDERS.get(self.exchange)
         if not provider:
             raise ValueError(f"Unsupported exchange: {self.exchange}")
@@ -46,8 +46,22 @@ class ExchangeWallet(WalletBasic):
 
 
 @dataclass
+class PerpDexWallet(WalletBasic):
+    perp_dex: ExchangeType
+    address: str
+
+    def _resolve_provider(self, ) -> str:
+        from backend.providers import PERPDEX_PROVIDERS
+        provider = PERPDEX_PROVIDERS.get(self.perp_dex)
+        if not provider:
+            raise ValueError(f"Unsupported perp_dex: {self.perp_dex}")
+        return provider
+
+
+
+@dataclass
 class BalanceResult:
-    wallet: ChainWallet|ExchangeWallet
+    wallet: ChainWallet|ExchangeWallet|PerpDexWallet
     provider: str
     totals: dict | None = None
     details: dict | None = None

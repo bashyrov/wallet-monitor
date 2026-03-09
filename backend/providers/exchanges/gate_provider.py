@@ -7,7 +7,7 @@ from backend.domain.models import BalanceResult
 from backend.providers.base import BaseProvider
 from settings import settings
 
-from backend.providers.exchanges.utils import s, sha512_hex, hex_hmac_sha512
+from backend.providers.exchanges._signing import s, sha512_hex, hex_hmac_sha512
 
 
 class GateProvider(BaseProvider):

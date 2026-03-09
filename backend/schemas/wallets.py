@@ -2,6 +2,7 @@ import enum
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.domain import ChainType, ExchangeType
+from backend.domain.enums import PerpDexType
 
 
 class WalletBasicSchema(BaseModel):
@@ -63,4 +64,16 @@ class ExchangeWalletSchema(WalletBasicSchema):
         None,
         examples=["your_api_passphrase"],
         description="API passphrase for the exchange (if required)"
+    )
+
+class PerpDexWalletSchema(WalletBasicSchema):
+    perp_dex: PerpDexType = Field(
+        ...,
+        examples=["hyperliquid"],
+        description="Perpdex type (e.g., hyperliquid, extended)"
+    )
+    address: str = Field(
+        ...,
+        examples=["0x1234567890abcdef1234567890abcdef12345678"],
+        description="L1 wallet address"
     )
