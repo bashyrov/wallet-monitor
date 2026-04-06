@@ -326,6 +326,25 @@
       color: var(--text);
     }
 
+    /* ── WALLET SEARCH ── */
+    .wallet-search-wrap {
+      position: relative; display: flex; align-items: center;
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      flex-shrink: 0; gap: 6px;
+    }
+    .wallet-search-icon { color: var(--text3); flex-shrink: 0; }
+    .wallet-search-input {
+      flex: 1; background: none; border: none; outline: none;
+      color: var(--text); font-size: 13px; font-family: inherit;
+      caret-color: var(--green);
+    }
+    .wallet-search-input::placeholder { color: var(--text4); }
+    .wallet-search-clear {
+      background: none; border: none; cursor: pointer;
+      color: var(--text3); font-size: 12px; padding: 0 2px; line-height: 1;
+    }
+    .wallet-search-clear:hover { color: var(--text); }
+
     /* ── WALLET CONTROLS ── */
     .wallet-ctrl {
       display: flex; align-items: center; gap: 8px;
@@ -630,17 +649,27 @@
       border-radius: var(--radius-sm);
       padding: 10px 12px;
       transition: border-color 0.12s;
+      overflow: hidden;
+      min-width: 0;
     }
     .agg-cell:hover { border-color: var(--surface4); }
     .agg-cell-asset {
       font-size: 10px; font-weight: 600; letter-spacing: 0.8px;
       text-transform: uppercase; color: var(--text3); margin-bottom: 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .agg-cell-amount {
       font-family: var(--mono); font-size: 14px; font-weight: 500;
       color: var(--text); font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: block;
     }
     .agg-cell-amount.stable { color: var(--green); }
+    .agg-cell-sub {
+      font-family: var(--mono); font-size: 10px; font-weight: 400;
+      color: var(--text3); margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     .agg-sep {
       border: none; border-top: 1px solid var(--border);
       margin: 14px 0;
@@ -671,6 +700,10 @@
       display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
     }
     .result-wallet-name { font-size: 13px; font-weight: 500; flex: 1; }
+    .wallet-usd-total {
+      font-family: var(--mono); font-size: 12px; font-weight: 600;
+      color: var(--green); letter-spacing: 0.2px;
+    }
     .result-badge {
       font-size: 10px; font-weight: 600; letter-spacing: 0.6px;
       text-transform: uppercase;
@@ -703,14 +736,41 @@
       background: var(--surface2);
       border-radius: var(--radius-sm);
       padding: 8px 10px;
+      overflow: hidden;
+      min-width: 0;
     }
-    .r-asset { font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text3); margin-bottom: 2px; }
+    .r-asset {
+      font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase;
+      color: var(--text3); margin-bottom: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     .r-amt {
       font-family: var(--mono); font-size: 13px; font-weight: 500;
       color: var(--text); font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: block;
     }
     .r-amt.stable { color: var(--green); }
+    .r-usd {
+      font-family: var(--mono); font-size: 10px; font-weight: 400;
+      color: var(--text3); font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: block; margin-top: 1px;
+    }
     .no-balance { font-size: 11px; color: var(--text4); }
+
+    /* ── PnL ── */
+    .pnl-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      padding: 2px 7px; border-radius: var(--radius-pill);
+      letter-spacing: 0.2px;
+    }
+    .pnl-badge.up   { color: var(--green); background: rgba(26,255,171,0.08); border: 1px solid rgba(26,255,171,0.18); }
+    .pnl-badge.down { color: var(--red);   background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.18); }
+    .pnl-badge.flat { color: var(--text3); background: var(--surface2); border: 1px solid var(--border); }
+    .agg-pnl { margin-top: 6px; }
+    .card-pnl { margin-top: 8px; }
 
     /* ── MODALS ── */
     .modal-overlay {
@@ -1350,14 +1410,14 @@
       .has-tip::before, .has-tip::after { display: none; }
 
       .agg-total { font-size: 28px; }
-      .modal { max-height: 95vh; margin: 0; border-radius: 16px 16px 0 0; align-self: flex-end; }
-      .modal-overlay { align-items: flex-end; }
+      .modal { max-height: 90vh; margin: 0 12px; border-radius: 16px; align-self: center; width: 100%; }
+      .modal-overlay { align-items: center; }
       .wallet-row { padding: 10px 12px; }
       .wallet-name { font-size: 13px; }
 
       /* Confirm popup full-width on mobile */
-      .confirm-modal { border-radius: 16px 16px 0 0; }
-      .confirm-overlay { align-items: flex-end; }
+      .confirm-modal { border-radius: 16px; margin: 0 12px; }
+      .confirm-overlay { align-items: center; }
     }
 
     @media (max-width: 480px) {
@@ -1516,6 +1576,15 @@
           <div class="form-error" id="tag-err" style="margin-top:6px;"></div>
         </div>
       </div>
+    </div>
+    <div class="wallet-search-wrap">
+      <svg class="wallet-search-icon" width="13" height="13" viewBox="0 0 13 13" fill="none">
+        <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M9 9l2.5 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      <input class="wallet-search-input" id="wallet-search" type="text" placeholder="Search wallets…"
+        oninput="S.search=this.value.trim().toLowerCase();renderWallets()">
+      <button class="wallet-search-clear" id="wallet-search-clear" onclick="clearSearch()" style="display:none">✕</button>
     </div>
     <div class="wallet-ctrl">
       <label class="check-wrap">
@@ -1740,7 +1809,7 @@
     <div class="upgrade-top">
       <div class="upgrade-icon">🚀</div>
       <div class="upgrade-title">Wallet limit reached</div>
-      <div class="upgrade-sub">Free plan includes <b style="color:var(--text)">5 wallets</b>. Upgrade to Pro for unlimited wallets, balance history, and more.</div>
+      <div class="upgrade-sub">Free plan includes <b style="color:var(--text)">4 wallets</b>. Upgrade to Pro for unlimited wallets, balance history, and more.</div>
     </div>
     <div class="upgrade-body">
       <div class="upgrade-limit-bar">
@@ -1780,7 +1849,7 @@ Auth.requireAuth('/login.html');
 // ═══════════════════════════════════════════════════
 //  PLAN LIMITS
 // ═══════════════════════════════════════════════════
-const FREE_WALLET_LIMIT = 5;
+const FREE_WALLET_LIMIT = 4;
 
 // ═══════════════════════════════════════════════════
 //  STABLE COINS SET
@@ -1796,6 +1865,7 @@ const S = {
   options: { exchange_types: [], chain_types: [], perpdex_types: [] },
   selected: new Set(),
   tagFilter: null,
+  search: '',
   loadingBalance: false,
   results: null,
   tagDropOpen: null,
@@ -1911,8 +1981,24 @@ function renderProtoGrid(containerId, fieldName, options, onSelect) {
 function renderAll() { renderTagFilters(); renderWallets(); }
 
 function filtered() {
-  if (!S.tagFilter) return S.wallets;
-  return S.wallets.filter(w => w.tags.some(t => t.id === S.tagFilter));
+  let ws = S.wallets;
+  if (S.tagFilter) ws = ws.filter(w => w.tags.some(t => t.id === S.tagFilter));
+  if (S.search) {
+    const q = S.search;
+    ws = ws.filter(w =>
+      w.name.toLowerCase().includes(q) ||
+      w.type_value.toLowerCase().includes(q) ||
+      w.tags.some(t => t.name.toLowerCase().includes(q))
+    );
+  }
+  return ws;
+}
+
+function clearSearch() {
+  S.search = '';
+  const inp = document.getElementById('wallet-search');
+  if (inp) inp.value = '';
+  renderWallets();
 }
 
 function renderTagFilters() {
@@ -1956,8 +2042,14 @@ function renderWallets() {
 
   updateSelectionUI();
 
+  const clearBtn = document.getElementById('wallet-search-clear');
+  if (clearBtn) clearBtn.style.display = S.search ? '' : 'none';
+
   if (!ws.length) {
-    el.innerHTML = `<div class="empty"><span class="empty-icon">◈</span>${S.wallets.length ? 'No wallets match this tag' : 'No wallets yet.<br>Click <b>+ Add Wallet</b> to begin'}</div>`;
+    const msg = S.search
+      ? `No wallets match "<b>${esc(S.search)}</b>"`
+      : S.wallets.length ? 'No wallets match this tag' : 'No wallets yet.<br>Click <b>+ Add Wallet</b> to begin';
+    el.innerHTML = `<div class="empty"><span class="empty-icon">◈</span>${msg}</div>`;
     return;
   }
   el.innerHTML = ws.map((w, i) => walletRow(w, i)).join('');
@@ -2158,20 +2250,45 @@ function renderResults() {
 
   const { results, aggregated } = S.results;
   const fUSD = v => '$' + parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const fAmt = v => parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6});
+  const pnlBadge = (pnl, cls='') => {
+    if (!pnl || pnl.direction === 'flat') return '';
+    const arrow = pnl.direction === 'up' ? '↑' : '↓';
+    const absVal = '$' + Math.abs(parseFloat(pnl.abs)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const pctVal = Math.abs(parseFloat(pnl.pct)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + '%';
+    return `<div class="${cls}"><span class="pnl-badge ${pnl.direction}">${arrow}${absVal} (${pctVal})</span></div>`;
+  };
+  const fAmt = v => {
+    const n = parseFloat(v);
+    if (!isFinite(n)) return '0';
+    if (n >= 1e9)  return (n / 1e9).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + 'B';
+    if (n >= 1e6)  return (n / 1e6).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) + 'M';
+    if (n >= 1e3)  return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6});
+  };
   const isStable = k => STABLES.has(k.toUpperCase().replace('.','_'));
 
-  const stableTotal = parseFloat(aggregated.stable_total||0);
+  const usdTotal = parseFloat(aggregated.usd_total || aggregated.stable_total || 0);
+  const stableTotal = parseFloat(aggregated.stable_total || 0);
+  const hasUsdPrices = usdTotal > stableTotal + 0.01;
+
+  const allUsdValues = {};
+  results.forEach(r => { if (r.usd_values) Object.assign(allUsdValues, r.usd_values); });
+
   const stableItems = Object.entries(aggregated.stable).map(([k,v])=>
     `<div class="agg-cell">
       <div class="agg-cell-asset">${k}</div>
-      <div class="agg-cell-amount stable">${fUSD(v)}</div>
+      <div class="agg-cell-amount">${fAmt(v)}</div>
+      <div class="agg-cell-sub">${fUSD(v)}</div>
     </div>`).join('');
-  const otherItems = Object.entries(aggregated.other).map(([k,v])=>
-    `<div class="agg-cell">
+
+  const otherItems = Object.entries(aggregated.other).map(([k,v])=> {
+    const usdV = allUsdValues[k];
+    return `<div class="agg-cell">
       <div class="agg-cell-asset">${k}</div>
       <div class="agg-cell-amount">${fAmt(v)}</div>
-    </div>`).join('');
+      ${usdV ? `<div class="agg-cell-sub">${fUSD(usdV)}</div>` : ''}
+    </div>`;
+  }).join('');
 
   const cards = results.map((r, i) => {
     const typeClass = `t-${r.wallet_type}`;
@@ -2188,19 +2305,28 @@ function renderResults() {
     </div>`;
 
     const rows = Object.entries(r.totals);
+    const walletUsd = parseFloat(r.usd_total || 0);
     const rowsHtml = rows.length
-      ? `<div class="result-rows">${rows.map(([k,v])=>`<div class="result-row">
-          <div class="r-asset">${k}</div>
-          <div class="r-amt${isStable(k)?' stable':''}">${isStable(k)?fUSD(v):fAmt(v)}</div>
-        </div>`).join('')}</div>`
+      ? `<div class="result-rows">${rows.map(([k,v])=>{
+          const usdV = r.usd_values && r.usd_values[k];
+          const stable = isStable(k);
+          const usdDisplay = stable ? fUSD(v) : (usdV ? fUSD(usdV) : null);
+          return `<div class="result-row">
+            <div class="r-asset">${k}</div>
+            <div class="r-amt">${fAmt(v)}</div>
+            ${usdDisplay ? `<div class="r-usd">${usdDisplay}</div>` : ''}
+          </div>`;
+        }).join('')}</div>`
       : `<div class="no-balance" style="color:var(--text4);font-size:11px">No balance</div>`;
 
     return `<div class="result-card ${typeClass}" style="${delay}">
       <div class="result-card-head">
         <span class="result-wallet-name">${esc(r.wallet_name)}</span>
         <span class="result-badge">${esc(r.type_value)}</span>
+        ${walletUsd > 0 ? `<span class="wallet-usd-total">${fUSD(r.usd_total)}</span>` : ''}
       </div>
       ${rowsHtml}
+      ${pnlBadge(r.pnl, 'card-pnl')}
       <div class="tx-toggle" id="tx-toggle-${r.wallet_id}" onclick="toggleTxPanel(${r.wallet_id})">
         <span class="tx-icon">⟳</span>
         <span>Last transactions</span>
@@ -2224,15 +2350,16 @@ function renderResults() {
     <div class="agg-block">
       <div class="agg-label">Total Portfolio</div>
       <div class="agg-total" id="agg-num">$0.00</div>
-      <div class="agg-sub">${results.length} wallet${results.length!==1?'s':''} · stablecoins</div>
+      ${pnlBadge(aggregated.pnl, 'agg-pnl')}
+      <div class="agg-sub">${results.length} wallet${results.length!==1?'s':''} · ${hasUsdPrices ? 'all assets in USD' : 'stablecoins only'}</div>
       <div class="agg-grid">${stableItems}</div>
       ${otherItems ? `<hr class="agg-sep"><div class="agg-grid">${otherItems}</div>` : ''}
     </div>
     <div class="results-section-label">Individual</div>
     <div class="result-cards">${cards}</div>`;
 
-  // Animate counter
-  animateCounter(document.getElementById('agg-num'), 0, stableTotal);
+  // Animate counter — use usd_total if prices available, else stable only
+  animateCounter(document.getElementById('agg-num'), 0, usdTotal);
 }
 
 function animateCounter(el, from, to, duration = 900) {
@@ -2411,7 +2538,7 @@ document.addEventListener('DOMContentLoaded', () => {
 //  ADD WALLET MODAL
 // ═══════════════════════════════════════════════════
 function openAddWalletModal() {
-  if (S.wallets.length >= FREE_WALLET_LIMIT) { openUpgradePopup(); return; }
+  if (!Auth.isAdmin() && S.wallets.length >= FREE_WALLET_LIMIT) { openUpgradePopup(); return; }
   S.walletType = null;
   document.getElementById('modal-wallet').classList.remove('hidden');
   document.getElementById('wallet-form').reset();
@@ -2464,6 +2591,7 @@ const EVM_CHAINS = new Set(['ethereum','bsc','polygon','arbitrum','optimism','ba
 const RE = {
   evm:        /^0x[0-9a-fA-F]{40}$/i,
   tron:       /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
+  solana:     /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
   starknet:   /^0x[0-9a-fA-F]{1,64}$/i,
   api_key:    /^[a-zA-Z0-9\-_]{8,256}$/,
   api_secret: /^[a-zA-Z0-9+/=\-_]{8,256}$/,
@@ -2501,6 +2629,8 @@ function validateWalletForm(form) {
     if (!addr) { _fieldErr('chain_address', 'Address is required'); ok = false; }
     else if (chain === 'tron' && !RE.tron.test(addr)) {
       _fieldErr('chain_address', 'Tron address must start with T and be 34 Base58 characters'); ok = false;
+    } else if (chain === 'solana' && !RE.solana.test(addr)) {
+      _fieldErr('chain_address', 'Solana address must be a valid Base58 public key (32–44 chars)'); ok = false;
     } else if (EVM_CHAINS.has(chain) && !RE.evm.test(addr)) {
       _fieldErr('chain_address', 'EVM address must be 0x followed by 40 hex characters'); ok = false;
     }
@@ -2568,7 +2698,7 @@ async function submitAddWallet(e) {
       const detail = Array.isArray(parsed.detail)
         ? parsed.detail.map(d => d.msg).join(', ')
         : parsed.detail;
-      if (parsed.status === 402 || (detail && detail.toLowerCase && detail.toLowerCase().includes('limit'))) {
+      if (!Auth.isAdmin() && (parsed.status === 402 || (detail && detail.toLowerCase && detail.toLowerCase().includes('limit')))) {
         closeAddWalletModal();
         openUpgradePopup();
         btn.disabled = false;
@@ -2811,7 +2941,7 @@ async function toggleTxPanel(walletId) {
       inner.innerHTML = `<div class="tx-inner">${renderTxRows(data.transactions)}</div>`;
     }
   } catch(err) {
-    inner.innerHTML = `<div class="tx-error">⚠ ${esc(e.message)}</div>`;
+    inner.innerHTML = `<div class="tx-error">⚠ ${esc(err.message)}</div>`;
   } finally {
     _txLoading.delete(walletId);
   }
