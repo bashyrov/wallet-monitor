@@ -2,14 +2,46 @@
 import asyncio
 import logging
 from collections import defaultdict
+from datetime import datetime
 from decimal import Decimal
 
-from backend.db.models import Wallet
+from sqlalchemy.orm import Session
+
+from backend.db.models import Wallet, BalanceSnapshot
 from backend.domain.models import BalanceResult
 from backend.providers.utils import STABLE_COINS
-from backend.schemas.portfolio import WalletBalanceResult, AggregatedBalance, BalanceResponse
+from backend.schemas.portfolio import WalletBalanceResult, AggregatedBalance, BalanceResponse, PnL
+from backend.services.price_service import get_usd_value, STABLES as PRICE_STABLES
 
 logger = logging.getLogger("avalant.balance")
+
+
+def _compute_pnl(current: Decimal, previous: Decimal) -> PnL | None:
+    """Return PnL object or None if not enough data."""
+    if previous == 0 and current == 0:
+        return None
+    diff = current - previous
+    if diff == 0:
+        return PnL(prev=str(previous), abs="0.00", pct="0.00", direction="flat")
+    pct = (diff / previous * 100) if previous != 0 else Decimal("0")
+    sign = "+" if diff > 0 else ""
+    return PnL(
+        prev=f"{previous:.2f}",
+        abs=f"{sign}{diff:.2f}",
+        pct=f"{sign}{pct:.2f}",
+        direction="up" if diff > 0 else "down",
+    )
+
+
+def _stable_sum(totals: dict[str, str]) -> Decimal:
+    total = Decimal("0")
+    for asset, amt in totals.items():
+        if asset.upper().replace("_PERP", "") in STABLE_COINS:
+            try:
+                total += Decimal(str(amt))
+            except Exception:
+                pass
+    return total
 
 
 async def _fetch_single(db_wallet: Wallet) -> tuple[BalanceResult | None, str | None]:
@@ -93,7 +125,15 @@ async def _fetch_single(db_wallet: Wallet) -> tuple[BalanceResult | None, str | 
                     pass
 
 
-async def fetch_balances(db_wallets: list[Wallet]) -> BalanceResponse:
+async def fetch_balances(db_wallets: list[Wallet], db: Session) -> BalanceResponse:
+    # 1. Load previous snapshots before fetching
+    wallet_ids = [w.id for w in db_wallets]
+    prev_snapshots: dict[int, BalanceSnapshot] = {
+        s.wallet_id: s
+        for s in db.query(BalanceSnapshot).filter(BalanceSnapshot.wallet_id.in_(wallet_ids)).all()
+    }
+
+    # 2. Fetch current balances
     raw = await asyncio.gather(
         *[_fetch_single(w) for w in db_wallets],
         return_exceptions=True,
@@ -101,12 +141,20 @@ async def fetch_balances(db_wallets: list[Wallet]) -> BalanceResponse:
 
     results: list[WalletBalanceResult] = []
     aggregated_totals: dict[str, Decimal] = defaultdict(Decimal)
+    prev_agg_stable = Decimal("0")
+    curr_agg_stable = Decimal("0")
+
+    now = datetime.utcnow()
 
     for db_wallet, item in zip(db_wallets, raw):
         if isinstance(item, Exception):
             result, error = None, str(item)
         else:
             result, error = item
+
+        prev_snap = prev_snapshots.get(db_wallet.id)
+        prev_stable = Decimal(str(prev_snap.stable_total)) if prev_snap else Decimal("0")
+        prev_agg_stable += prev_stable if prev_snap else Decimal("0")
 
         if result is None:
             results.append(WalletBalanceResult(
@@ -115,23 +163,67 @@ async def fetch_balances(db_wallets: list[Wallet]) -> BalanceResponse:
                 wallet_type=db_wallet.wallet_type,
                 type_value=db_wallet.type_value,
                 totals={},
+                usd_values={},
+                usd_total="0",
                 details={},
                 error=error or "Unknown error",
+                pnl=None,
             ))
         else:
             totals = result.totals or {}
+            curr_stable = _stable_sum(totals)
+            curr_agg_stable += curr_stable
+
             for asset, amt in totals.items():
                 aggregated_totals[asset] += Decimal(str(amt))
+
+            # USD values per token
+            usd_values: dict[str, str] = {}
+            wallet_usd_total = Decimal("0")
+            for asset, amt in totals.items():
+                uv = get_usd_value(asset, amt)
+                if uv is not None:
+                    usd_values[asset] = f"{uv:.2f}"
+                    wallet_usd_total += Decimal(str(uv))
+
+            pnl = _compute_pnl(curr_stable, prev_stable) if prev_snap else None
+
             results.append(WalletBalanceResult(
                 wallet_id=db_wallet.id,
                 wallet_name=db_wallet.name,
                 wallet_type=db_wallet.wallet_type,
                 type_value=db_wallet.type_value,
                 totals=totals,
+                usd_values=usd_values,
+                usd_total=f"{wallet_usd_total:.2f}",
                 details=result.details or {},
                 error=None,
+                pnl=pnl,
             ))
 
+            # 3. Upsert snapshot
+            try:
+                if prev_snap:
+                    prev_snap.totals = totals
+                    prev_snap.stable_total = float(curr_stable)
+                    prev_snap.snapshot_at = now
+                else:
+                    db.add(BalanceSnapshot(
+                        wallet_id=db_wallet.id,
+                        user_id=db_wallet.user_id,
+                        totals=totals,
+                        stable_total=float(curr_stable),
+                        snapshot_at=now,
+                    ))
+            except Exception:
+                pass
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    # 4. Aggregate
     stable: dict[str, str] = {}
     other: dict[str, str] = {}
     for asset, amt in aggregated_totals.items():
@@ -143,11 +235,23 @@ async def fetch_balances(db_wallets: list[Wallet]) -> BalanceResponse:
 
     stable_total = str(sum(Decimal(v) for v in stable.values()) if stable else Decimal("0"))
 
+    # Grand USD total across all wallets
+    grand_usd = sum(
+        Decimal(r.usd_total) for r in results if not r.error
+    )
+
+    # Aggregate PnL — only if at least one wallet had a previous snapshot
+    agg_pnl = None
+    if any(db_wallet.id in prev_snapshots for db_wallet in db_wallets):
+        agg_pnl = _compute_pnl(curr_agg_stable, prev_agg_stable)
+
     return BalanceResponse(
         results=results,
         aggregated=AggregatedBalance(
             stable=stable,
             other=other,
             stable_total=stable_total,
+            usd_total=f"{grand_usd:.2f}",
+            pnl=agg_pnl,
         ),
     )

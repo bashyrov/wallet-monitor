@@ -25,12 +25,12 @@ async def check_balance(
         raise HTTPException(status_code=404, detail="No wallets found")
 
     try:
-        current_user.request_count = (current_user.request_count or 0) + 1
+        current_user.request_count = (current_user.request_count or 0) + len(wallets)
         db.commit()
     except Exception:
         db.rollback()
 
-    return await fetch_balances(wallets)
+    return await fetch_balances(wallets, db)
 
 
 @router.post("/transactions", response_model=TransactionResponse)

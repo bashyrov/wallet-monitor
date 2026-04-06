@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, JSON, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, JSON, Boolean, Float
 from sqlalchemy.orm import relationship
 
 from backend.db.base import Base
@@ -57,6 +57,18 @@ class WalletAddress(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     wallet = relationship("Wallet", back_populates="addresses")
+
+
+class BalanceSnapshot(Base):
+    """Last known balance per wallet — used for PnL calculation."""
+    __tablename__ = "balance_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="CASCADE"), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    totals = Column(JSON, nullable=False)         # {"USDT": "1234.56", "BTC": "0.5"}
+    stable_total = Column(Float, nullable=False, default=0.0)  # pre-computed USD stable sum
+    snapshot_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Tag(Base):
