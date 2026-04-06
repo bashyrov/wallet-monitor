@@ -6,6 +6,26 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+    # ── Database ──────────────────────────────────────────────────────────
+    # PostgreSQL in production: postgresql://user:pass@host:5432/dbname
+    # SQLite for local dev (default):
+    DATABASE_URL: str = "sqlite:///./wallet_monitor.db"
+
+    # ── Auth ──────────────────────────────────────────────────────────────
+    # MUST be overridden in production via environment variables!
+    SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"
+    ENCRYPTION_KEY: str = "change-me-in-production-use-a-long-random-string"
+    ACCESS_TOKEN_EXPIRE_DAYS: int = 30
+
+    # ── CORS ──────────────────────────────────────────────────────────────
+    # Comma-separated list of allowed origins, or "*" for dev.
+    # Example: https://yourdomain.com,https://www.yourdomain.com
+    ALLOWED_ORIGINS: str = ""
+
+    # ── Logging ───────────────────────────────────────────────────────────
+    # DEBUG | INFO | WARNING | ERROR | CRITICAL
+    LOG_LEVEL: str = "INFO"
+
     BINANCE_BASE_URL: str = "https://api.binance.com"
     OKX_BASE_URL: str = "https://www.okx.com"
     GATE_BASE_URL: str = "https://api.gateio.ws"
@@ -14,24 +34,24 @@ class Settings(BaseSettings):
     BYBIT_BASE_URL: str = "https://api.bybit.com"
     BITGET_BASE_URL: str = "https://api.bitget.com"
 
-    ETHEREUM_RPC: str
-    BSC_RPC: str
-    POLYGON_RPC: str
-    ARBITRUM_RPC: str
-    OPTIMISM_RPC: str
-    BASE_RPC: str
-    AVALANCHE_RPC: str
-    FANTOM_RPC: str
-    SOLANA_RPC: str
-    ZKSYNC_RPC: str
-    LINEA_RPC: str
-    SCROLL_RPC: str
-    MANTLE_RPC: str
-    BLAST_RPC: str
+    ETHEREUM_RPC: str | None = None
+    BSC_RPC: str | None = None
+    POLYGON_RPC: str | None = None
+    ARBITRUM_RPC: str | None = None
+    OPTIMISM_RPC: str | None = None
+    BASE_RPC: str | None = None
+    AVALANCHE_RPC: str | None = None
+    FANTOM_RPC: str | None = None
+    SOLANA_RPC: str | None = None
+    ZKSYNC_RPC: str | None = None
+    LINEA_RPC: str | None = None
+    SCROLL_RPC: str | None = None
+    MANTLE_RPC: str | None = None
+    BLAST_RPC: str | None = None
 
-    ANKR_KEY: str
-    TATUM_KEY: str
-    TRON_RPC: str
-    TRON_KEY: str
+    ANKR_KEY: str | None = None
+    TATUM_KEY: str | None = None
+    TRON_RPC: str | None = None
+    TRON_KEY: str | None = None
 
 settings = Settings()

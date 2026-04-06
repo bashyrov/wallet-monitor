@@ -1,0 +1,65 @@
+services:
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: avalant
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d avalant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    # Port not exposed directly — nginx proxies to it
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://wallet:${POSTGRES_PASSWORD:-changeme}@db:5432/avalant
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      ACCESS_TOKEN_EXPIRE_DAYS: ${ACCESS_TOKEN_EXPIRE_DAYS:-30}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # Optional — EVM / chain providers
+      ANKR_KEY: ${ANKR_KEY:-}
+      TRON_KEY: ${TRON_KEY:-}
+      TRON_RPC: ${TRON_RPC:-}
+      ETHEREUM_RPC: ${ETHEREUM_RPC:-}
+      BSC_RPC: ${BSC_RPC:-}
+      POLYGON_RPC: ${POLYGON_RPC:-}
+      ARBITRUM_RPC: ${ARBITRUM_RPC:-}
+      OPTIMISM_RPC: ${OPTIMISM_RPC:-}
+      BASE_RPC: ${BASE_RPC:-}
+      AVALANCHE_RPC: ${AVALANCHE_RPC:-}
+      ZKSYNC_RPC: ${ZKSYNC_RPC:-}
+      LINEA_RPC: ${LINEA_RPC:-}
+      SCROLL_RPC: ${SCROLL_RPC:-}
+      MANTLE_RPC: ${MANTLE_RPC:-}
+      BLAST_RPC: ${BLAST_RPC:-}
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:

@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+wallet_monitor.db
+.git/
+.gitignore
+README.md
+UI_RESEARCH.md
+CLAUDE.md
