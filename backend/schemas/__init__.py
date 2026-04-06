@@ -1,7 +1,3 @@
-# schemas/                # Pydantic схемы (request/response)
-#     __init__.py
-#     wallets.py
-#     portfolio.py
-#     common.py
-
-from .wallets import ChainWalletSchema, ExchangeWalletSchema
+from .wallets import ChainWalletSchema, ExchangeWalletSchema, PerpDexWalletSchema
+from .common import TagCreate, TagUpdate, TagOut, WalletCreate, WalletOut
+from .portfolio import BalanceFetchRequest, WalletBalanceResult, AggregatedBalance, BalanceResponse

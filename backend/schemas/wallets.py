@@ -22,6 +22,7 @@ class WalletBasicSchema(BaseModel):
             raise ValueError("Name field must have minimum length of 6")
         return value
 
+
 class ChainWalletSchema(WalletBasicSchema):
     address: str = Field(
         ...,
@@ -30,7 +31,7 @@ class ChainWalletSchema(WalletBasicSchema):
     )
     chain: ChainType = Field(
         ...,
-        examples=["ethereum"],
+        examples=["ethereum, evm"],
         description="Blockchain type (e.g., ethereum, solana)"
     )
 

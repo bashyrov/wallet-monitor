@@ -36,6 +36,7 @@ class ChainType(str, Enum):
     TRON = "tron"
 
 class PerpDexType(str, Enum):
+    ASTER = "aster"
     LIGHTER = "lighter"
     HYPERLIQUID = "hyperliquid"
     ETHEREAL = "ethereal"

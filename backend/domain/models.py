@@ -20,13 +20,13 @@ class WalletBasic(ABC):
 @dataclass
 class ChainWallet(WalletBasic):
     address: str
-    chain: ChainType
+    chain: ChainType = None
 
-    def _resolve_provider(self, ) -> str:
+    def _resolve_provider(self) -> str:
         from backend.providers.chains import CHAIN_PROVIDERS
         provider = CHAIN_PROVIDERS.get(self.chain)
         if not provider:
-            raise ValueError(f"Unsupported exchange: {self.chain}")
+            raise ValueError(f"Unsupported chain: {self.chain}")
         return provider
 
 
@@ -48,7 +48,9 @@ class ExchangeWallet(WalletBasic):
 @dataclass
 class PerpDexWallet(WalletBasic):
     perp_dex: ExchangeType
-    address: str
+    address: str = ""
+    api_key: str | None = None
+    api_secret: str | None = None
 
     def _resolve_provider(self, ) -> str:
         from backend.providers import PERPDEX_PROVIDERS
