@@ -1,10 +1,12 @@
 """Fetch last 5 transactions from providers for a single wallet."""
 import base64
 import time
+from decimal import Decimal
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 import httpx
+from backend.providers.http import RetryClient
 
 from backend.db.models import Wallet
 from backend.schemas.portfolio import Transaction, TransactionResponse
@@ -68,7 +70,7 @@ async def _binance_txs(creds: dict) -> list[Transaction]:
         qs = urlencode(p, doseq=True)
         sig = hex_hmac_sha256(creds["api_secret"], qs)
         url = f"{base}{path}?{qs}&signature={sig}"
-        async with httpx.AsyncClient(timeout=15) as c:
+        async with RetryClient(timeout=15) as c:
             r = await c.get(url, headers=headers)
             r.raise_for_status()
             return r.json()
@@ -140,7 +142,7 @@ async def _okx_txs(creds: dict) -> list[Transaction]:
 
     base = "https://www.okx.com"
 
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         r = await c.get(f"{base}/api/v5/public/time")
         ts_ms = int(r.json()["data"][0]["ts"])
         dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
@@ -221,7 +223,7 @@ async def _bybit_txs(creds: dict) -> list[Transaction]:
         }
 
     txs: list[Transaction] = []
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         # 1. Deposits
         try:
             qs = urlencode({"limit": LIMIT})
@@ -289,7 +291,7 @@ async def _gate_txs(creds: dict) -> list[Transaction]:
         return {"KEY": creds["api_key"], "SIGN": sign, "Timestamp": ts}
 
     txs: list[Transaction] = []
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         # 1. Deposits
         try:
             path = "/api/v4/wallet/deposits"
@@ -358,7 +360,7 @@ async def _kucoin_txs(creds: dict) -> list[Transaction]:
 
     base = "https://api.kucoin.com"
 
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         r = await c.get(f"{base}/api/v1/timestamp")
         ts = str(int(r.json()["data"]))
 
@@ -376,7 +378,7 @@ async def _kucoin_txs(creds: dict) -> list[Transaction]:
         }
 
     txs: list[Transaction] = []
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         # KuCoin requires pageSize >= 10
         PAGE = max(LIMIT, 10)
 
@@ -442,7 +444,7 @@ async def _mexc_txs(creds: dict) -> list[Transaction]:
         qs = urlencode(p, doseq=True)
         sig = hex_hmac_sha256(creds["api_secret"], qs)
         url = f"{base}{path}?{qs}&signature={sig}"
-        async with httpx.AsyncClient(timeout=15) as c2:
+        async with RetryClient(timeout=15) as c2:
             r2 = await c2.get(url, headers=headers)
             r2.raise_for_status()
             return r2.json()
@@ -496,7 +498,7 @@ async def _bitget_txs(creds: dict) -> list[Transaction]:
         }
 
     txs: list[Transaction] = []
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         # 1. Spot account bills (deposits, withdrawals, trades)
         try:
             path = f"/api/v2/spot/account/bills?limit={LIMIT}"
@@ -581,7 +583,7 @@ async def _backpack_txs(creds: dict) -> list[Transaction]:
         }
 
     txs: list[Transaction] = []
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         # 1. Deposits
         try:
             r = await c.get(f"{base}/wapi/v1/capital/deposits",
@@ -644,7 +646,7 @@ async def _backpack_txs(creds: dict) -> list[Transaction]:
 # ---------------------------------------------------------------------------
 
 async def _hyperliquid_txs(address: str) -> list[Transaction]:
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         r = await c.post("https://api.hyperliquid.xyz/info",
                          json={"type": "userFills", "user": address},
                          headers={"accept": "application/json"})
@@ -666,7 +668,7 @@ async def _lighter_txs(address: str) -> list[Transaction]:
     base = "https://mainnet.zklighter.elliot.ai"
     txs: list[Transaction] = []
 
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         # Try order history endpoint (public)
         try:
             params = {"by": "l1_address", "value": address, "limit": LIMIT}
@@ -715,7 +717,7 @@ async def _ethereal_txs(address: str) -> list[Transaction]:
     base = "https://api.ethereal.trade"
     txs: list[Transaction] = []
 
-    async with httpx.AsyncClient(timeout=15) as c:
+    async with RetryClient(timeout=15) as c:
         # Step 1: resolve subaccount_id
         subaccount_id = None
         try:
@@ -788,7 +790,7 @@ async def _evm_txs(address: str, chain: str) -> list[Transaction]:
     # Primary: token transfers (already decoded symbol + human amount)
     token_txs: list[Transaction] = []
     try:
-        async with httpx.AsyncClient(timeout=20) as c:
+        async with RetryClient(timeout=20) as c:
             r = await c.post(url, json={
                 "jsonrpc": "2.0",
                 "method": "ankr_getTokenTransfers",
@@ -821,7 +823,7 @@ async def _evm_txs(address: str, chain: str) -> list[Transaction]:
     # Fallback: native transactions
     native_txs: list[Transaction] = []
     try:
-        async with httpx.AsyncClient(timeout=20) as c:
+        async with RetryClient(timeout=20) as c:
             r = await c.post(url, json={
                 "jsonrpc": "2.0",
                 "method": "ankr_getTransactionsByAddress",
@@ -867,7 +869,7 @@ async def _tron_txs(address: str) -> list[Transaction]:
         headers["TRON-PRO-API-KEY"] = tron_key
 
     txs: list[Transaction] = []
-    async with httpx.AsyncClient(timeout=20, headers=headers) as c:
+    async with RetryClient(timeout=20, headers=headers) as c:
         try:
             r = await c.get(
                 f"https://api.trongrid.io/v1/accounts/{address}/transactions/trc20",
@@ -892,11 +894,145 @@ async def _tron_txs(address: str) -> list[Transaction]:
     return txs
 
 
+async def _solana_txs(address: str) -> list[Transaction]:
+    """Fetch recent Solana transactions via individual getTransaction calls."""
+    import asyncio as _asyncio
+    from settings import settings
+    from backend.providers.chains.solana_provider import _symbol_for
+    rpc = settings.SOLANA_RPC or "https://api.mainnet-beta.solana.com"
+
+    def _parse_tx(sig: str, tx: dict) -> Transaction | None:
+        """Parse a single transaction dict into a Transaction or None."""
+        if not tx:
+            return None
+        block_time = tx.get("blockTime")
+        meta = tx.get("meta") or {}
+        if meta.get("err"):
+            return None  # skip failed
+
+        account_keys_raw = (tx.get("transaction", {})
+                              .get("message", {})
+                              .get("accountKeys") or [])
+        account_keys = [
+            (k if isinstance(k, str) else k.get("pubkey", ""))
+            for k in account_keys_raw
+        ]
+
+        # --- SPL token balance changes for our address ---
+        pre_tok  = {b["accountIndex"]: b for b in (meta.get("preTokenBalances")  or [])}
+        post_tok = {b["accountIndex"]: b for b in (meta.get("postTokenBalances") or [])}
+        all_idx = set(pre_tok) | set(post_tok)
+
+        for idx in all_idx:
+            pre  = pre_tok.get(idx, {})
+            post = post_tok.get(idx, {})
+            owner = post.get("owner") or pre.get("owner") or ""
+            if owner != address:
+                continue
+            mint = post.get("mint") or pre.get("mint") or ""
+            try:
+                pre_amt  = Decimal(str((pre.get("uiTokenAmount")  or {}).get("uiAmountString") or "0"))
+                post_amt = Decimal(str((post.get("uiTokenAmount") or {}).get("uiAmountString") or "0"))
+            except Exception:
+                continue
+            diff = post_amt - pre_amt
+            if abs(diff) < Decimal("0.000001"):
+                continue
+            symbol    = _symbol_for(mint) if mint else "SPL"
+            direction = "deposit" if diff > 0 else "withdraw"
+            # counterparty: other token account owner for the same mint
+            counterparty = None
+            for oth in all_idx:
+                if oth == idx:
+                    continue
+                op = pre_tok.get(oth, {}); oq = post_tok.get(oth, {})
+                if (op.get("mint") or oq.get("mint")) != mint:
+                    continue
+                counterparty = oq.get("owner") or op.get("owner")
+                break
+            return _tx(sig, direction, symbol, str(abs(diff)),
+                       block_time, address=counterparty or None, network="Solana")
+
+        # --- Native SOL change (fallback) ---
+        pre_sol_list  = meta.get("preBalances")  or []
+        post_sol_list = meta.get("postBalances") or []
+        if address in account_keys:
+            idx = account_keys.index(address)
+            if idx < len(pre_sol_list):
+                pre_sol  = Decimal(pre_sol_list[idx])  / Decimal(10 ** 9)
+                post_sol = Decimal(post_sol_list[idx]) / Decimal(10 ** 9)
+                diff = post_sol - pre_sol
+                fee  = Decimal(meta.get("fee", 0)) / Decimal(10 ** 9)
+                if abs(diff) >= Decimal("0.000001") and abs(diff) > fee:
+                    direction = "deposit" if diff > 0 else "withdraw"
+                    counterparty = None
+                    for i2, key in enumerate(account_keys):
+                        if i2 == idx or i2 >= len(pre_sol_list):
+                            continue
+                        od = (Decimal(post_sol_list[i2]) - Decimal(pre_sol_list[i2])) / Decimal(10 ** 9)
+                        if abs(od) >= Decimal("0.000001") and (od > 0) != (diff > 0):
+                            counterparty = key
+                            break
+                    return _tx(sig, direction, "SOL", str(abs(diff)),
+                               block_time, address=counterparty or None, network="Solana")
+        return None
+
+    async def _fetch_one(c: httpx.AsyncClient, sig: str) -> dict | None:
+        try:
+            r = await c.post(rpc, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "getTransaction",
+                "params": [sig, {"encoding": "jsonParsed",
+                                 "maxSupportedTransactionVersion": 0,
+                                 "commitment": "confirmed"}],
+            }, timeout=15)
+            if r.status_code == 200:
+                return r.json().get("result")
+        except Exception:
+            pass
+        return None
+
+    txs: list[Transaction] = []
+    try:
+        async with RetryClient(timeout=15) as c:
+            # 1. recent signatures (fetch extra to account for failed/irrelevant txs)
+            r = await c.post(rpc, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "getSignaturesForAddress",
+                "params": [address, {"limit": LIMIT * 4}],
+            }, timeout=15)
+            r.raise_for_status()
+            sigs_data = r.json().get("result") or []
+            if not sigs_data:
+                return []
+
+            signatures = [s["signature"] for s in sigs_data]
+
+            # 2. Fetch all transactions in parallel
+            results = await _asyncio.gather(
+                *[_fetch_one(c, sig) for sig in signatures],
+                return_exceptions=True,
+            )
+
+            for sig, tx_data in zip(signatures, results):
+                if isinstance(tx_data, Exception) or tx_data is None:
+                    continue
+                parsed = _parse_tx(sig, tx_data)
+                if parsed:
+                    txs.append(parsed)
+                if len(txs) >= LIMIT:
+                    break
+
+    except Exception:
+        pass
+    return txs[:LIMIT]
+
+
 async def _aster_txs(address: str) -> list[Transaction]:
     """Aster DEX — fetch recent fills via JSON-RPC."""
     txs: list[Transaction] = []
     try:
-        async with httpx.AsyncClient(timeout=15) as c:
+        async with RetryClient(timeout=15) as c:
             r = await c.post(
                 "https://tapi.asterdex.com/info",
                 json={"id": 1, "jsonrpc": "2.0", "method": "aster_getUserFills",
@@ -971,6 +1107,8 @@ async def fetch_transactions(db_wallet: Wallet) -> TransactionResponse:
             address = creds.get("address", "")
             if tv == "tron":
                 txs = await _tron_txs(address)
+            elif tv == "solana":
+                txs = await _solana_txs(address)
             else:
                 txs = await _evm_txs(address, tv)
 
