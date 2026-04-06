@@ -1,4 +1,5 @@
 import httpx
+from backend.providers.http import RetryClient
 from collections import defaultdict
 from decimal import Decimal
 from backend.domain.models import BalanceResult
@@ -14,7 +15,7 @@ class HyperliquidProvider(BaseWalletProvider):
     base_url = "https://api.hyperliquid.xyz"
 
     def __init__(self):
-        self._client = httpx.AsyncClient(timeout=20.0)
+        self._client = RetryClient(timeout=20.0)
 
     async def aclose(self):
         await self._client.aclose()

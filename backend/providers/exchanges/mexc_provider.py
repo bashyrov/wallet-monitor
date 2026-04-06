@@ -6,6 +6,7 @@ from typing import Any, Optional
 from urllib.parse import urlencode
 
 import httpx
+from backend.providers.http import RetryClient
 
 from backend.domain import ExchangeWallet
 from backend.providers.base_wallet_provider import BaseWalletProvider
@@ -27,7 +28,7 @@ class MexcProvider(BaseWalletProvider):
     FUT_RECV_WINDOW_MS = 10_000
 
     def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=15)
+        self._http = RetryClient(timeout=15)
         self._spot_ts_cached: int | None = None
         self._spot_ts_cached_at: float = 0.0
         self._spot_ts_ttl_s: float = 25.0

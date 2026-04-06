@@ -2,6 +2,7 @@ import time
 from urllib.parse import urlencode
 
 import httpx
+from backend.providers.http import RetryClient
 from decimal import Decimal
 from eth_account import Account
 from eth_account.messages import encode_typed_data
@@ -40,7 +41,7 @@ class AsterProvider(BaseWalletProvider):
     soon = True
 
     def __init__(self):
-        self._client = httpx.AsyncClient(timeout=20.0)
+        self._client = RetryClient(timeout=20.0)
 
     async def aclose(self):
         await self._client.aclose()

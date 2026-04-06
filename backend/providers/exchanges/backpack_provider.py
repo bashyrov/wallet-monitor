@@ -6,6 +6,7 @@ from decimal import Decimal
 from urllib.parse import urlencode
 
 import httpx
+from backend.providers.http import RetryClient
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from backend.domain import ExchangeWallet
@@ -21,7 +22,7 @@ class BackpackProvider(BaseWalletProvider):
     recv_window = 60000
 
     def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=20)
+        self._http = RetryClient(timeout=20)
 
     async def aclose(self):
         await self._http.aclose()

@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 from urllib.parse import urlencode
 
 import httpx
+from backend.providers.http import RetryClient
 
 from backend.domain import ExchangeWallet
 from backend.providers.base_wallet_provider import BaseWalletProvider
@@ -24,7 +25,7 @@ class BitgetProvider(BaseWalletProvider):
     base_url = settings.BITGET_BASE_URL.rstrip("/")
 
     def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=20)
+        self._http = RetryClient(timeout=20)
 
     async def aclose(self) -> None:
         await self._http.aclose()

@@ -1,5 +1,6 @@
 from urllib.parse import urlencode
 import httpx
+from backend.providers.http import RetryClient
 
 from backend.domain.models import BalanceResult
 from backend.providers.base_wallet_provider import BaseWalletProvider
@@ -15,7 +16,7 @@ class LighterProvider(BaseWalletProvider):
     base_url = "https://mainnet.zklighter.elliot.ai"
 
     def __init__(self):
-        self._client = httpx.AsyncClient(timeout=15.0)
+        self._client = RetryClient(timeout=15.0)
 
     async def aclose(self):
         await self._client.aclose()

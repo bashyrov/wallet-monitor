@@ -1,4 +1,5 @@
 import httpx
+from backend.providers.http import RetryClient
 from collections import defaultdict
 from decimal import Decimal
 
@@ -18,7 +19,7 @@ class GateProvider(BaseWalletProvider):
     base_url = settings.GATE_BASE_URL.rstrip("/")  # например "https://api.gateio.ws"
 
     def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=10)
+        self._http = RetryClient(timeout=10)
 
     async def aclose(self) -> None:
         await self._http.aclose()

@@ -3,6 +3,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 import httpx
+from backend.providers.http import RetryClient
 
 from backend.domain.models import BalanceResult
 from backend.providers.chains.base_chain_provider import BaseChainProvider
@@ -81,7 +82,7 @@ class TronProvider(BaseChainProvider):
         totals: dict[str, Decimal] = defaultdict(Decimal)
 
         try:
-            async with httpx.AsyncClient(timeout=20, headers=headers) as client:
+            async with RetryClient(timeout=20, headers=headers) as client:
                 resp = await client.get(f"{self.base_url}/v1/accounts/{wallet.address}")
                 resp.raise_for_status()
                 payload = resp.json()

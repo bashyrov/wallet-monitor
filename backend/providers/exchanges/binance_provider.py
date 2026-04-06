@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 from urllib.parse import urlencode
 
 import httpx
+from backend.providers.http import RetryClient
 from binance.async_client import AsyncClient
 
 from backend.domain import ExchangeWallet
@@ -22,7 +23,7 @@ class BinanceProvider(BaseWalletProvider):
     base_url = settings.BINANCE_BASE_URL
 
     def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=20)
+        self._http = RetryClient(timeout=20)
         self.client: AsyncClient | None = None
 
     async def aclose(self) -> None:

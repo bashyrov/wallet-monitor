@@ -1,6 +1,7 @@
 import time
 
 import httpx
+from backend.providers.http import RetryClient
 from collections import defaultdict
 from decimal import Decimal
 
@@ -20,7 +21,7 @@ class KucoinProvider(BaseWalletProvider):
     key_version = "2"
 
     def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=10)
+        self._http = RetryClient(timeout=10)
         self._ts_cached: str | None = None
         self._ts_cached_at: float = 0.0
         self._ts_ttl_s: float = 25.0

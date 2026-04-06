@@ -1,5 +1,6 @@
 import asyncio
 import httpx
+from backend.providers.http import RetryClient
 from collections import defaultdict
 from decimal import Decimal
 from urllib.parse import urlencode
@@ -20,7 +21,7 @@ class BybitProvider(BaseWalletProvider):
     base_url = settings.BYBIT_BASE_URL  # "https://api.bybit.com"
 
     def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=10)
+        self._http = RetryClient(timeout=10)
 
     async def aclose(self) -> None:
         await self._http.aclose()
