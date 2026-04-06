@@ -54,4 +54,7 @@ class Settings(BaseSettings):
     TRON_RPC: str | None = None
     TRON_KEY: str | None = None
 
+    # CoinMarketCap — for top-100 symbol list (hourly price cache)
+    CMC_API_KEY: str | None = None
+
 settings = Settings()

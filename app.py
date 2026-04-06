@@ -50,7 +50,14 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Avalant")
     run_migrations()
     logger.info("Migrations applied — server ready")
+
+    from backend.services.price_service import start_price_loop, stop_price_loop
+    start_price_loop()
+    logger.info("Price refresh loop started")
+
     yield
+
+    stop_price_loop()
     logger.info("Avalant shutting down")
 
 

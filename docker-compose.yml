@@ -32,10 +32,14 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+      # Optional — price cache (top-100 CMC → Gate prices, every 30 min)
+      CMC_API_KEY: ${CMC_API_KEY:-}
+
       # Optional — EVM / chain providers
       ANKR_KEY: ${ANKR_KEY:-}
       TRON_KEY: ${TRON_KEY:-}
       TRON_RPC: ${TRON_RPC:-}
+      SOLANA_RPC: ${SOLANA_RPC:-}
       ETHEREUM_RPC: ${ETHEREUM_RPC:-}
       BSC_RPC: ${BSC_RPC:-}
       POLYGON_RPC: ${POLYGON_RPC:-}
