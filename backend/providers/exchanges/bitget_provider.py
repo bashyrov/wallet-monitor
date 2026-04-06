@@ -2,7 +2,6 @@ import asyncio
 import base64
 import hashlib
 import hmac
-import json
 from collections import defaultdict
 from decimal import Decimal
 from typing import Optional, Dict, Any
@@ -11,15 +10,17 @@ from urllib.parse import urlencode
 import httpx
 
 from backend.domain import ExchangeWallet
-from backend.domain.models import BalanceResult
-from backend.providers.base import BaseProvider
+from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
 from backend.providers.exchanges._signing import ms
 
 
-class BitgetProvider(BaseProvider):
+class BitgetProvider(BaseWalletProvider):
     name = "BitgetProvider"
+    label = "Bitget"
+    enabled = True
+    needs_passphrase = True
     base_url = settings.BITGET_BASE_URL.rstrip("/")
 
     def __init__(self) -> None:
@@ -208,44 +209,16 @@ class BitgetProvider(BaseProvider):
 
         return dict(totals)
 
-    async def fetch_balance(self, wallet: ExchangeWallet) -> BalanceResult:
+    async def fetch_balance(self, wallet: ExchangeWallet):
         creds = self.creds_execution(wallet)
 
-        try:
-            spot_task = self.get_spot_balance(creds)
-            futures_task = self.get_all_futures_balances(creds)
+        spot, futures = await asyncio.gather(
+            self.get_spot_balance(creds),
+            self.get_all_futures_balances(creds),
+            return_exceptions=True,
+        )
 
-            spot, futures = await asyncio.gather(
-                spot_task,
-                futures_task,
-                return_exceptions=True,
-            )
+        if isinstance(spot, Exception): raise spot
+        if isinstance(futures, Exception): futures = {}
 
-            if isinstance(spot, Exception):
-                raise spot
-
-            if isinstance(futures, Exception):
-                print(f"Error fetching Bitget futures: {futures}")
-                futures = {}
-
-            totals = defaultdict(Decimal)
-            for bucket in (spot, futures):
-                for asset, amount in bucket.items():
-                    totals[asset] += amount
-
-            return BalanceResult(
-                wallet=wallet,
-                provider=self.name,
-                totals={k: str(v) for k, v in totals.items() if v != 0},
-                details={
-                    "spot": {k: str(v) for k, v in spot.items() if v != 0},
-                    "futures": {k: str(v) for k, v in futures.items() if v != 0},
-                },
-            )
-
-        except Exception as e:
-            print(f"Error fetching Bitget balance: {e}")
-            return BalanceResult(wallet=wallet, provider=self.name)
-
-        finally:
-            await self.aclose()
+        return self._build_result(wallet, self.name, spot, futures, {})

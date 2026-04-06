@@ -1,3 +1,4 @@
+import asyncio
 import time
 from collections import defaultdict
 from decimal import Decimal
@@ -7,21 +8,22 @@ from urllib.parse import urlencode
 import httpx
 
 from backend.domain import ExchangeWallet
-from backend.domain.models import BalanceResult
-from backend.providers.base import BaseProvider
+from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
 from backend.providers.exchanges._signing import b64_hmac_sha256
 
 
-class OKXProvider(BaseProvider):
+class OKXProvider(BaseWalletProvider):
     name = "OKXProvider"
+    label = "OKX"
+    enabled = True
+    needs_passphrase = True
     base_url = settings.OKX_BASE_URL  # "https://www.okx.com"
 
     def __init__(self) -> None:
         self._http = httpx.AsyncClient(timeout=20)
 
-        # ✅ cache для server time
         self._ts_cached: str | None = None
         self._ts_cached_at: float = 0.0
         self._ts_ttl_s: float = 25.0
@@ -29,7 +31,8 @@ class OKXProvider(BaseProvider):
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    def creds_execution(self, wallet: ExchangeWallet) -> dict[str, str]:
+    @staticmethod
+    def creds_execution(wallet: ExchangeWallet) -> dict[str, str]:
         if not wallet.api_key or not wallet.api_secret:
             raise ValueError("OKX api_key/api_secret are required")
         if not wallet.api_passphrase:
@@ -50,7 +53,6 @@ class OKXProvider(BaseProvider):
         r.raise_for_status()
         ts_ms = int(r.json()["data"][0]["ts"])
 
-        # ✅ делаем ISO как раньше, но без новых хелперов
         from datetime import datetime, timezone
         dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
         ts_iso = dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -117,36 +119,16 @@ class OKXProvider(BaseProvider):
                 out[ccy] += amt
         return dict(out)
 
-    async def fetch_balance(self, wallet: ExchangeWallet) -> BalanceResult:
+    async def fetch_balance(self, wallet: ExchangeWallet):
         creds = self.creds_execution(wallet)
-        try:
-            # ✅ параллельно 2 секции
-            import asyncio
-            trading, savings = await asyncio.gather(
-                self._get_trading_balance(creds),
-                self._get_savings_balance(creds),
-                return_exceptions=True,
-            )
 
-            if isinstance(trading, Exception):
-                raise trading
-            if isinstance(savings, Exception):
-                print(f"Error fetching OKX savings: {savings}")
-                savings = {}
+        trading, earn = await asyncio.gather(
+            self._get_trading_balance(creds),
+            self._get_savings_balance(creds),
+            return_exceptions=True,
+        )
 
-            totals = defaultdict(Decimal)
-            for b in (trading, savings):
-                for asset, amt in b.items():
-                    totals[asset] += amt
+        if isinstance(trading, Exception): raise trading
+        if isinstance(earn, Exception): earn = {}
 
-            return BalanceResult(
-                wallet=wallet,
-                provider=self.name,
-                totals={k: str(v) for k, v in totals.items() if v != 0},
-                details={
-                    "trading": {k: str(v) for k, v in trading.items() if v != 0},
-                    "earn": {k: str(v) for k, v in savings.items() if v != 0},
-                },
-            )
-        finally:
-            await self.aclose()
+        return self._build_result(wallet, self.name, trading, {}, earn)

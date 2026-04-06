@@ -8,15 +8,17 @@ import httpx
 from binance.async_client import AsyncClient
 
 from backend.domain import ExchangeWallet
-from backend.domain.models import BalanceResult
-from backend.providers.base import BaseProvider
+from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
 from backend.providers.exchanges._signing import ms, hex_hmac_sha256
 
 
-class BinanceProvider(BaseProvider):
+class BinanceProvider(BaseWalletProvider):
     name = "BinanceProvider"
+    label = "Binance"
+    enabled = True
+    needs_passphrase = False
     base_url = settings.BINANCE_BASE_URL
 
     def __init__(self) -> None:
@@ -91,51 +93,24 @@ class BinanceProvider(BaseProvider):
 
         return {k: v for k, v in totals.items() if v != 0}
 
-    async def fetch_balance(self, wallet: ExchangeWallet) -> BalanceResult:
+    async def fetch_balance(self, wallet: ExchangeWallet):
         creds = self.creds_execution(wallet)
         self.client = await AsyncClient.create(creds["api_key"], creds["api_secret"])
 
         try:
-            # ✅ быстрый параллельный сбор
-            spot_task = self.get_spot_balance()
-            futures_task = self.get_futures_balance()
-            earn_task = self.get_simple_earn_balances(creds)
-
             spot, futures, earn = await asyncio.gather(
-                spot_task, futures_task, earn_task, return_exceptions=True
+                self.get_spot_balance(),
+                self.get_futures_balance(),
+                self.get_simple_earn_balances(creds),
+                return_exceptions=True,
             )
 
-            if isinstance(spot, Exception):
-                raise spot
-            if isinstance(futures, Exception):
-                raise futures
-            if isinstance(earn, Exception):
-                # earn не критичен — просто логируем
-                print(f"Error fetching Binance Earn: {earn}")
-                earn = {}
+            if isinstance(spot, Exception): raise spot
+            if isinstance(futures, Exception): futures = {}
+            if isinstance(earn, Exception): earn = {}
 
-            totals = defaultdict(Decimal)
-            for b in (spot, futures, earn):
-                for asset, amt in b.items():
-                    totals[asset] += amt
-
-            return BalanceResult(
-                wallet=wallet,
-                provider=self.name,
-                totals={k: str(v) for k, v in totals.items() if v != 0},
-                details={
-                    "spot": {k: str(v) for k, v in spot.items() if v != 0},
-                    "futures": {k: str(v) for k, v in futures.items() if v != 0},
-                    "simple_earn": {k: str(v) for k, v in earn.items() if v != 0},
-                },
-            )
-
-        except Exception as e:
-            print(f"Error fetching Binance balance: {e}")
-            return BalanceResult(wallet=wallet, provider=self.name)
+            return self._build_result(wallet, self.name, spot, futures, earn)
 
         finally:
-            if self.client is not None:
-                await self.client.close_connection()
-                self.client = None
+            await self.client.close_connection()
             await self.aclose()

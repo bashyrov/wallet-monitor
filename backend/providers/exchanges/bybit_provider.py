@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 from collections import defaultdict
 from decimal import Decimal
@@ -5,14 +6,17 @@ from urllib.parse import urlencode
 
 from backend.domain import ExchangeWallet
 from backend.domain.models import BalanceResult
-from backend.providers.base import BaseProvider
+from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
 from ._signing import ms, hex_hmac_sha256
 
 
-class BybitProvider(BaseProvider):
+class BybitProvider(BaseWalletProvider):
     name = "BybitProvider"
+    label = "Bybit"
+    enabled = True
+    needs_passphrase = False
     base_url = settings.BYBIT_BASE_URL  # "https://api.bybit.com"
 
     def __init__(self) -> None:
@@ -34,29 +38,37 @@ class BybitProvider(BaseProvider):
             "X-BAPI-RECV-WINDOW": recv_window,
         }
 
-    async def fetch_balance(self, wallet: ExchangeWallet) -> BalanceResult:
-        # unified / spot баланс: /v5/account/wallet-balance
-        params = {"accountType": "UNIFIED"}
+    async def _fetch_account(self, wallet: ExchangeWallet, account_type: str) -> defaultdict:
+        params = {"accountType": account_type}
         qs = urlencode(params)
-        url = f"{self.base_url}/v5/account/wallet-balance?{qs}"
-
-        headers = self._headers_get(wallet, qs)
-        r = await self._http.get(url, headers=headers)
-        r.raise_for_status()
-        data = r.json()
-
-        totals = defaultdict(Decimal)
-        for acc in ((data.get("result") or {}).get("list") or []):
-            for coin in (acc.get("coin") or []):
-                sym = coin.get("coin")
-                bal = coin.get("walletBalance") or coin.get("equity") or "0"
-                amt = Decimal(str(bal))
-                if sym and amt != 0:
-                    totals[sym] += amt
-
-        return BalanceResult(
-            wallet=wallet,
-            provider=self.name,
-            totals={k: str(v) for k, v in totals.items() if v != 0},
-            details={"wallet": {k: str(v) for k, v in totals.items() if v != 0}},
+        r = await self._http.get(
+            f"{self.base_url}/v5/account/wallet-balance?{qs}",
+            headers=self._headers_get(wallet, qs),
         )
+        r.raise_for_status()
+        totals: defaultdict = defaultdict(Decimal)
+        for acc in r.json().get("result", {}).get("list", []):
+            for c in acc.get("coin", []):
+                amt = Decimal(str(c.get("walletBalance") or "0"))
+                if amt > 0:
+                    totals[c["coin"]] += amt
+        return totals
+
+    async def fetch_balance(self, wallet: ExchangeWallet):
+        results = await asyncio.gather(
+            self._fetch_account(wallet, "UNIFIED"),
+            self._fetch_account(wallet, "FUND"),
+            return_exceptions=True,
+        )
+
+        trading_res, funding_res = results[0], results[1]
+
+        if isinstance(trading_res, Exception) and isinstance(funding_res, Exception):
+            raise trading_res  # both failed — propagate, service layer will show error
+
+        trading = trading_res if isinstance(trading_res, defaultdict) else defaultdict(Decimal)
+        funding = funding_res if isinstance(funding_res, defaultdict) else defaultdict(Decimal)
+
+        # _build_result(wallet, provider, spot, futures, earn)
+        # reuse spot=trading account, futures=funding account
+        return self._build_result(wallet, self.name, dict(trading), dict(funding), {})

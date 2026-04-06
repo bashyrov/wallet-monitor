@@ -5,15 +5,17 @@ from collections import defaultdict
 from decimal import Decimal
 
 from backend.domain import ExchangeWallet
-from backend.domain.models import BalanceResult
-from backend.providers.base import BaseProvider
+from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
 from ._signing import ms, b64_hmac_sha256
 
 
-class KucoinProvider(BaseProvider):
+class KucoinProvider(BaseWalletProvider):
     name = "KucoinProvider"
+    label = "KuCoin"
+    enabled = True
+    needs_passphrase = True
     base_url = settings.KUCOIN_BASE_URL  # "https://api.kucoin.com"
     key_version = "2"
 
@@ -62,26 +64,18 @@ class KucoinProvider(BaseProvider):
             "Content-Type": "application/json",
         }
 
-    async def fetch_balance(self, wallet: ExchangeWallet) -> BalanceResult:
-        # /api/v1/accounts — один запрос, вернёт balances по типам account
-        path = "/api/v1/accounts"
-        headers = await self._headers(wallet, "GET", path)
-
-        r = await self._http.get(f"{self.base_url}{path}", headers=headers)
-        r.raise_for_status()
-        data = r.json()
-
-        totals = defaultdict(Decimal)
-        for it in (data.get("data") or []):
-            cur = it.get("currency")
-            bal = it.get("balance") or "0"
-            amt = Decimal(str(bal))
-            if cur and amt != 0:
-                totals[cur] += amt
-
-        return BalanceResult(
-            wallet=wallet,
-            provider=self.name,
-            totals={k: str(v) for k, v in totals.items() if v != 0},
-            details={"accounts": {k: str(v) for k, v in totals.items() if v != 0}},
+    async def fetch_balance(self, wallet: ExchangeWallet):
+        r = await self._http.get(
+            f"{self.base_url}/api/v1/accounts",
+            headers=await self._headers(wallet, "GET", "/api/v1/accounts"),
         )
+        r.raise_for_status()
+
+        spot = defaultdict(Decimal)
+
+        for x in r.json().get("data", []):
+            amt = Decimal(str(x["balance"]))
+            if amt > 0:
+                spot[x["currency"]] += amt
+
+        return self._build_result(wallet, self.name, dict(spot), {}, {})

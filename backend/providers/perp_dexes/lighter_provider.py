@@ -1,100 +1,56 @@
-from collections import defaultdict
-from decimal import Decimal
 from urllib.parse import urlencode
-import asyncio
-
-import requests
+import httpx
 
 from backend.domain.models import BalanceResult
-from backend.providers.base import BaseProvider
+from backend.providers.base_wallet_provider import BaseWalletProvider
+from collections import defaultdict
+from decimal import Decimal
 
 
-class LighterProvider(BaseProvider):
+class LighterProvider(BaseWalletProvider):
     name = "LighterProvider"
+    label = "Lighter"
+    enabled = True
+    needs_api_key = False
     base_url = "https://mainnet.zklighter.elliot.ai"
 
-    def __init__(self) -> None:
-        self._session = requests.Session()
+    def __init__(self):
+        self._client = httpx.AsyncClient(timeout=15.0)
 
-    async def aclose(self) -> None:
-        self._session.close()
+    async def aclose(self):
+        await self._client.aclose()
 
     @staticmethod
-    def _d(value) -> Decimal:
+    def _d(value):
         if value in (None, "", False):
             return Decimal("0")
         return Decimal(str(value))
 
-    def _get_account_sync(self, address: str) -> dict:
-        params = {
-            "by": "l1_address",
-            "value": address,
-        }
-        url = f"{self.base_url}/api/v1/account?{urlencode(params)}"
-        headers = {"accept": "application/json"}
-
-        response = self._session.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        return response.json()
-
-    async def _get_account(self, address: str) -> dict:
-        return await asyncio.to_thread(self._get_account_sync, address)
-
-    @staticmethod
-    def _extract_account(data: dict) -> dict:
-        if not isinstance(data, dict):
-            return {}
-
-        # формат 1: аккаунт уже на верхнем уровне
-        if "assets" in data:
-            return data
-
-        # формат 2: {"accounts": [{...}]}
-        accounts = data.get("accounts") or []
-        if accounts and isinstance(accounts[0], dict):
-            return accounts[0]
-
-        return {}
-
     async def fetch_balance(self, wallet) -> BalanceResult:
         if not wallet.address:
             raise ValueError("Lighter wallet requires l1_address")
-
         try:
-            data = await self._get_account(wallet.address)
-            acc = self._extract_account(data)
+            params = {"by": "l1_address", "value": wallet.address}
+            url = f"{self.base_url}/api/v1/account?{urlencode(params)}"
+            resp = await self._client.get(url, headers={"accept": "application/json"})
+            resp.raise_for_status()
+            data = resp.json()
 
-            assets = acc.get("assets") or []
+            acc = data if "assets" in data else (data.get("accounts") or [{}])[0]
+
             totals = defaultdict(Decimal)
-
-            for asset in assets:
-                symbol = (asset.get("symbol") or "").strip().upper()
-                balance = self._d(asset.get("balance"))
-                locked = self._d(asset.get("locked_balance"))
-                total = balance + locked
-
+            for asset in acc.get("assets") or []:
+                symbol = (asset.get("symbol") or "").upper()
+                total = self._d(asset.get("balance")) + self._d(asset.get("locked_balance"))
                 if symbol and total > 0:
                     totals[symbol] += total
 
             filtered_assets = {k: str(v) for k, v in totals.items() if v > 0}
-
-            return BalanceResult(
-                wallet=wallet,
-                provider=self.name,
-                totals=filtered_assets,
-                details={
-                    "assets": filtered_assets,
-                },
-            )
+            return BalanceResult(wallet=wallet, provider=self.name, totals=filtered_assets, details={"assets": filtered_assets})
 
         except Exception as e:
             print(f"Error fetching Lighter balance: {e}")
-            return BalanceResult(
-                wallet=wallet,
-                provider=self.name,
-                totals={},
-                details={"assets": {}},
-            )
+            return BalanceResult(wallet=wallet, provider=self.name, totals={}, details={"assets": {}})
 
         finally:
             await self.aclose()

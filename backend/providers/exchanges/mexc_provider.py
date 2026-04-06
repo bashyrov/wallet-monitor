@@ -8,17 +8,18 @@ from urllib.parse import urlencode
 import httpx
 
 from backend.domain import ExchangeWallet
-from backend.domain.models import BalanceResult
-from backend.providers.base import BaseProvider
+from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
 from backend.providers.exchanges._signing import ms, hex_hmac_sha256
 
 
-class MexcProvider(BaseProvider):
+class MexcProvider(BaseWalletProvider):
     name = "MexcProvider"
+    label = "MEXC"
+    enabled = True
+    needs_passphrase = False
 
-    # spot base можно держать в settings, futures обычно фиксированный
     spot_base_url = settings.MEXC_BASE_URL  # "https://api.mexc.com"
     futures_base_url = "https://contract.mexc.com"
 
@@ -53,7 +54,6 @@ class MexcProvider(BaseProvider):
         if self._spot_ts_cached is not None and (now - self._spot_ts_cached_at) < self._spot_ts_ttl_s:
             return self._spot_ts_cached
 
-        # MEXC: GET /api/v3/time -> {"serverTime": 171...}
         r = await self._http.get(f"{self.spot_base_url}/api/v3/time")
         r.raise_for_status()
         server_ms = int(r.json()["serverTime"])
@@ -62,7 +62,6 @@ class MexcProvider(BaseProvider):
         self._spot_ts_cached_at = now
         return server_ms
 
-    # ---------- SPOT ----------
     async def _spot_get(self, creds: dict[str, str], path: str, params: Optional[dict[str, Any]] = None) -> dict:
         p = dict(params or {})
         p["timestamp"] = str(await self._mexc_spot_server_time_ms())
@@ -102,7 +101,6 @@ class MexcProvider(BaseProvider):
 
         return dict(out)
 
-    # ---------- FUTURES ----------
     @staticmethod
     def _futures_param_string(params: dict[str, Any]) -> str:
         if not params:
@@ -117,7 +115,6 @@ class MexcProvider(BaseProvider):
         ts = str(int(ms()))
         ps = self._futures_param_string(params)
 
-        # signature = HMAC_SHA256(secret, apiKey + timestamp + param_string)
         sign_payload = f"{creds['api_key']}{ts}{ps}"
         sig = hex_hmac_sha256(creds["api_secret"], sign_payload)
 
@@ -142,7 +139,6 @@ class MexcProvider(BaseProvider):
             )
 
         data = r.json()
-        # как в примере: бывает {"success": false, ...}
         if isinstance(data, dict) and data.get("success") is False:
             raise RuntimeError(f"MEXC Futures error: {data}")
 
@@ -162,38 +158,16 @@ class MexcProvider(BaseProvider):
 
         return dict(out)
 
-    # ---------- PUBLIC ----------
-    async def fetch_balance(self, wallet: ExchangeWallet) -> BalanceResult:
+    async def fetch_balance(self, wallet: ExchangeWallet):
         creds = self._creds(wallet)
 
-        try:
-            # ✅ быстрее: spot + futures параллельно
-            spot_task = self._get_spot_balances(creds)
-            fut_task = self._get_futures_equity_by_currency(creds)
+        spot, futures = await asyncio.gather(
+            self._get_spot_balances(creds),
+            self._get_futures_equity_by_currency(creds),
+            return_exceptions=True,
+        )
 
-            spot, futures = await asyncio.gather(spot_task, fut_task, return_exceptions=True)
+        if isinstance(spot, Exception): raise spot
+        if isinstance(futures, Exception): futures = {}
 
-            if isinstance(spot, Exception):
-                raise spot
-            if isinstance(futures, Exception):
-                # futures не всегда включены/разрешены, не валим весь результат
-                print(f"Error fetching MEXC futures: {futures}")
-                futures = {}
-
-            totals = defaultdict(Decimal)
-            for b in (spot, futures):
-                for asset, amt in b.items():
-                    totals[asset] += amt
-
-            return BalanceResult(
-                wallet=wallet,
-                provider=self.name,
-                totals={k: str(v) for k, v in totals.items() if v != 0},
-                details={
-                    "spot": {k: str(v) for k, v in spot.items() if v != 0},
-                    "futures": {k: str(v) for k, v in futures.items() if v != 0},
-                },
-            )
-
-        finally:
-            await self.aclose()
+        return self._build_result(wallet, self.name, spot, futures, {})

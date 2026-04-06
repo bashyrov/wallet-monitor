@@ -3,15 +3,17 @@ from collections import defaultdict
 from decimal import Decimal
 
 from backend.domain import ExchangeWallet
-from backend.domain.models import BalanceResult
-from backend.providers.base import BaseProvider
+from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
 from backend.providers.exchanges._signing import s, sha512_hex, hex_hmac_sha512
 
 
-class GateProvider(BaseProvider):
+class GateProvider(BaseWalletProvider):
     name = "GateProvider"
+    label = "Gate.io"
+    enabled = True
+    needs_passphrase = False
     # важно: без /api/v4
     base_url = settings.GATE_BASE_URL.rstrip("/")  # например "https://api.gateio.ws"
 
@@ -24,7 +26,6 @@ class GateProvider(BaseProvider):
     def _headers(self, wallet: ExchangeWallet, method: str, url_path: str, query: str = "", body: str = "") -> dict[str, str]:
         ts = s()
         payload_hash = sha512_hex(body or "")
-        # ВАЖНО: url_path должен быть /api/v4/...
         sign_str = "\n".join([method.upper(), url_path, query, payload_hash, ts])
         sign = hex_hmac_sha512(wallet.api_secret.strip(), sign_str)
 
@@ -35,36 +36,19 @@ class GateProvider(BaseProvider):
             "Content-Type": "application/json",
         }
 
-    async def fetch_balance(self, wallet: ExchangeWallet) -> BalanceResult:
-        try:
-            url_path = "/api/v4/spot/accounts"
-            headers = self._headers(wallet, "GET", url_path, query="", body="")
+    async def fetch_balance(self, wallet: ExchangeWallet):
+        path = "/api/v4/spot/accounts"
+        r = await self._http.get(
+            f"{self.base_url}{path}",
+            headers=self._headers(wallet, "GET", path),
+        )
+        r.raise_for_status()
 
-            r = await self._http.get(f"{self.base_url}{url_path}", headers=headers)
+        spot = defaultdict(Decimal)
 
-            if r.status_code >= 400:
-                raise httpx.HTTPStatusError(
-                    f"GATE error {r.status_code}: {r.text}",
-                    request=r.request,
-                    response=r,
-                )
+        for x in r.json():
+            total = Decimal(x["available"]) + Decimal(x["locked"])
+            if total > 0:
+                spot[x["currency"].upper()] += total
 
-            data = r.json()
-            totals = defaultdict(Decimal)
-
-            for it in (data or []):
-                cur = (it.get("currency") or "").upper()
-                avail = it.get("available") or "0"
-                locked = it.get("locked") or "0"
-                amt = Decimal(str(avail)) + Decimal(str(locked))
-                if cur and amt != 0:
-                    totals[cur] += amt
-
-            return BalanceResult(
-                wallet=wallet,
-                provider=self.name,
-                totals={k: str(v) for k, v in totals.items() if v != 0},
-                details={"spot": {k: str(v) for k, v in totals.items() if v != 0}},
-            )
-        finally:
-            await self.aclose()
+        return self._build_result(wallet, self.name, dict(spot), {}, {})
