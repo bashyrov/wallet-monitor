@@ -1,0 +1,2843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Avalant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ══════════════════════════════════════════
+       TOKEN TERMINAL DESIGN SYSTEM
+    ══════════════════════════════════════════ */
+    :root {
+      --bg:          #0E0E11;
+      --surface:     #131217;
+      --surface2:    #17171C;
+      --surface3:    #202028;
+      --surface4:    #22222A;
+      --border:      #22222A;
+      --border2:     rgba(255,255,255,0.04);
+
+      --text:        #E6E8E3;
+      --text2:       #9B9FAB;
+      --text3:       #676B7E;
+      --text4:       #393B47;
+
+      --green:       #1AFFAB;
+      --green-dim:   rgba(26,255,171,0.08);
+      --green-glow:  rgba(26,255,171,0.2);
+      --teal:        #06B6D4;
+      --teal-dim:    rgba(6,182,212,0.1);
+      --blue:        #3B82F6;
+      --purple:      #925BD6;
+      --purple-dim:  rgba(146,91,214,0.1);
+      --yellow:      #E5C07B;
+      --yellow-dim:  rgba(229,192,123,0.1);
+      --red:         #F87171;
+      --red-dim:     rgba(248,113,113,0.08);
+
+      --font:  'Inter', system-ui, -apple-system, sans-serif;
+      --mono:  'JetBrains Mono', 'SF Mono', monospace;
+
+      --radius:      10px;
+      --radius-sm:   6px;
+      --radius-pill: 99px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    ::selection { background: var(--green-dim); color: var(--green); }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 24px; height: 52px;
+      background: rgba(14,14,17,0.88);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .topbar::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.15), transparent);
+      pointer-events: none;
+    }
+    .brand {
+      display: flex; align-items: center;
+      font-size: 18px; font-weight: 800; letter-spacing: -0.7px; line-height: 1;
+      color: var(--text); text-decoration: none; user-select: none; flex-shrink: 0;
+      font-family: var(--font);
+    }
+    .brand:hover { opacity: 0.85; }
+    .brand-cursor {
+      color: var(--green);
+      animation: blink 1.1s step-start infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .topbar-nav {
+      display: flex; align-items: center; gap: 2px;
+      justify-content: center;
+    }
+    .topbar-right {
+      display: flex; align-items: center; gap: 8px;
+      justify-content: flex-end;
+    }
+    .nav-lnk {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 11px; border-radius: 8px;
+      font-size: 13px; font-weight: 500; color: var(--text3);
+      text-decoration: none; white-space: nowrap;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      border: 1px solid transparent;
+    }
+    .nav-lnk svg { opacity: 0.6; transition: opacity 0.15s; flex-shrink: 0; }
+    .nav-lnk:hover {
+      color: var(--green);
+      background: rgba(26,255,171,0.08);
+      border-color: rgba(26,255,171,0.12);
+    }
+    .nav-lnk:hover svg { opacity: 1; }
+    .nav-lnk.active {
+      color: var(--green);
+      background: rgba(26,255,171,0.1);
+      border-color: rgba(26,255,171,0.18);
+    }
+    .nav-lnk.active svg { opacity: 1; }
+    .avatar-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--green), #06B6D4);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #09090B;
+      text-decoration: none; cursor: pointer; flex-shrink: 0;
+      transition: box-shadow 0.2s;
+    }
+    .avatar-btn:hover { box-shadow: 0 0 10px rgba(26,255,171,0.35); }
+    .topbar-right .btn-primary {
+      height: 30px;
+      padding: 0 12px;
+      font-size: 13px;
+      transition: box-shadow 0.2s, background 0.15s;
+    }
+    .topbar-right .btn-primary:hover {
+      background: #00E89A;
+      box-shadow: 0 0 14px rgba(26,255,171,0.35);
+      transform: none;
+    }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 14px; height: 34px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text2);
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .btn:hover { border-color: var(--surface4); color: var(--text); background: var(--surface3); }
+
+    .btn-primary {
+      background: var(--green);
+      border-color: var(--green);
+      color: #09090B;
+      font-weight: 500;
+    }
+    .btn-primary:hover {
+      background: #00E89A;
+      border-color: #00E89A;
+      box-shadow: 0 0 20px var(--green-glow);
+      transform: translateY(-1px);
+    }
+    .btn-primary:active { transform: translateY(0); box-shadow: none; }
+
+    .btn-sm { padding: 0 10px; height: 28px; font-size: 12px; }
+    .btn-ghost { border-color: transparent; background: transparent; }
+    .btn-ghost:hover { background: var(--surface3); border-color: var(--border); }
+    .btn[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+    .icon-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      background: var(--surface3);
+      color: var(--text2);
+      cursor: pointer;
+      font-size: 15px;
+      transition: all 0.12s;
+      flex-shrink: 0;
+    }
+    .icon-btn:hover { background: var(--green-dim); border-color: rgba(26,255,171,0.2); color: var(--green); }
+    .icon-btn.danger { color: var(--text3); }
+    .icon-btn.danger:hover { background: var(--red-dim); border-color: rgba(248,113,113,0.2); color: var(--red); }
+    .icon-btn.active { background: var(--green-dim); border-color: rgba(26,255,171,0.25); color: var(--green); }
+
+    /* ── TOOLTIPS ── */
+    .has-tip { position: relative; }
+    .has-tip::before {
+      content: attr(data-tip);
+      position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%) scale(0.88);
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text2);
+      font-size: 11px; font-weight: 500; white-space: nowrap;
+      padding: 4px 9px; border-radius: 6px;
+      pointer-events: none; opacity: 0;
+      transition: opacity 0.12s, transform 0.12s;
+      z-index: 50;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+    .has-tip::after {
+      content: ''; position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%);
+      border: 4px solid transparent; border-top-color: var(--border);
+      pointer-events: none; opacity: 0; transition: opacity 0.12s; z-index: 50;
+    }
+    .has-tip:hover::before, .has-tip:hover::after { opacity: 1; transform: translateX(-50%) scale(1); }
+
+    /* ── CONFIRM POPUP ── */
+    .confirm-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(6px); z-index: 500;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .confirm-overlay.hidden { display: none; }
+    .confirm-modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; width: 100%; max-width: 360px;
+      overflow: hidden; animation: confirmIn 0.22s cubic-bezier(0.16,1,0.3,1);
+    }
+    @keyframes confirmIn {
+      from { opacity: 0; transform: scale(0.94) translateY(8px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .confirm-body { padding: 24px 24px 20px; }
+    .confirm-icon {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; margin-bottom: 14px;
+    }
+    .confirm-title { font-size: 15px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 6px; }
+    .confirm-sub { font-size: 13px; color: var(--text3); line-height: 1.55; }
+    .confirm-name {
+      display: inline-block; margin-top: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 4px 10px;
+      font-family: var(--mono); font-size: 12px; color: var(--text2);
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .confirm-footer {
+      display: flex; gap: 8px; padding: 14px 24px 20px;
+      border-top: 1px solid var(--border);
+    }
+    .confirm-cancel {
+      flex: 1; padding: 9px; border-radius: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text2); font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: all 0.12s;
+    }
+    .confirm-cancel:hover { background: var(--surface3); color: var(--text); }
+    .confirm-delete {
+      flex: 1; padding: 9px; border-radius: 8px;
+      background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25);
+      color: var(--red); font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: all 0.12s;
+    }
+    .confirm-delete:hover { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.4); }
+
+    /* ── LAYOUT ── */
+    .main {
+      display: flex;
+      height: calc(100vh - 52px);
+      overflow: hidden;
+    }
+    @media (max-width: 800px) {
+      .main { flex-direction: column; height: auto; }
+      .panel-wallets { width: 100% !important; }
+    }
+
+    /* ── LEFT PANEL ── */
+    .panel-wallets {
+      display: flex; flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      overflow: hidden;
+      width: 360px;
+      min-width: 0;
+      flex-shrink: 0;
+      transition: width 0.32s cubic-bezier(0.16,1,0.3,1),
+                  border-color 0.32s ease;
+    }
+    .panel-wallets.collapsed {
+      width: 0;
+      border-color: transparent;
+    }
+    .panel-results {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* ── TAG FILTER ── */
+    .tag-strip {
+      display: flex; align-items: center; gap: 6px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto; flex-shrink: 0;
+      scrollbar-width: none;
+    }
+    .tag-strip::-webkit-scrollbar { display: none; }
+    .tag-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 0 10px; height: 24px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text3);
+      font-family: var(--font);
+      font-size: 11px; font-weight: 500;
+      cursor: pointer;
+      transition: all 0.12s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .tag-chip:hover { color: var(--text); border-color: var(--surface4); }
+    .tag-chip.active-all {
+      background: var(--surface3);
+      border-color: var(--surface4);
+      color: var(--text);
+    }
+
+    /* ── WALLET CONTROLS ── */
+    .wallet-ctrl {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    /* ── CHECK BALANCE FOOTER ── */
+    .panel-check-footer {
+      flex-shrink: 0;
+      padding: 10px 12px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    #btn-check-balance {
+      width: 100%; height: 36px;
+      font-size: 13px; font-weight: 500;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .check-wrap {
+      display: flex; align-items: center; gap: 6px;
+      cursor: pointer; user-select: none;
+      color: var(--text2); font-size: 13px; font-weight: 500;
+    }
+    .check-wrap input { accent-color: var(--green); cursor: pointer; width: 14px; height: 14px; }
+    .wallet-counter {
+      margin-left: auto;
+      font-size: 12px; color: var(--text3); font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── WALLET LIST ── */
+    .wallet-list {
+      overflow-y: auto; flex: 1;
+      padding: 8px 10px;
+    }
+
+    .wallet-row {
+      position: relative;
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 12px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      transition: all 0.15s;
+      cursor: default;
+      margin-bottom: 4px;
+    }
+    .wallet-row:hover {
+      background: var(--surface3);
+      border-color: rgba(255,255,255,0.08);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .wallet-row.selected {
+      background: rgba(26,255,171,0.05);
+      border-color: rgba(26,255,171,0.22);
+      border-left: 2px solid var(--green);
+      padding-left: 11px;
+    }
+    .wallet-row input[type="checkbox"] {
+      accent-color: var(--green); cursor: pointer;
+      flex-shrink: 0; margin-top: 3px;
+      width: 14px; height: 14px;
+    }
+
+    .wallet-body { flex: 1; min-width: 0; }
+    .wallet-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; letter-spacing: -0.2px; }
+    .wallet-meta {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--text2);
+      margin-bottom: 4px;
+    }
+    .type-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%; flex-shrink: 0;
+    }
+    .wallet-addr {
+      font-family: var(--mono);
+      font-size: 11px; color: var(--text3);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 200px;
+    }
+    .wallet-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+    .tag-pill {
+      display: inline-flex; align-items: center;
+      padding: 2px 7px;
+      border-radius: var(--radius-pill);
+      font-size: 10px; font-weight: 500;
+    }
+    .wallet-actions {
+      display: flex; gap: 3px; flex-shrink: 0;
+      opacity: 0; transition: opacity 0.12s;
+      margin-top: 1px;
+    }
+    .wallet-row:hover .wallet-actions { opacity: 1; }
+
+    /* ── ADDRESS MODAL ── */
+    .addr-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .addr-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .addr-item-name { color: var(--text); font-weight: 600; flex-shrink: 0; min-width: 80px; }
+    .addr-item-val  {
+      color: var(--text3); font-family: var(--mono); font-size: 11px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+    }
+    .addr-del {
+      flex-shrink: 0; background: none; border: none;
+      color: var(--text4); cursor: pointer; font-size: 14px; line-height: 1;
+      padding: 2px 5px; border-radius: 5px; transition: color .12s, background .12s;
+    }
+    .addr-del:hover { color: var(--red); background: var(--red-dim); }
+    .addr-add-row { display: flex; gap: 6px; }
+    .addr-input {
+      flex: 1; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--surface2);
+      color: var(--text); font-family: var(--font); font-size: 13px; outline: none;
+      transition: border-color .15s;
+    }
+    .addr-input:focus { border-color: var(--green); outline: none; }
+    .addr-input::placeholder { color: var(--text4); }
+    .addr-save {
+      padding: 8px 16px; border-radius: 8px;
+      background: var(--green); color: #09090B;
+      border: none; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: background .12s; flex-shrink: 0;
+    }
+    .addr-save:hover { background: #00E89A; }
+    .addr-empty { font-size: 13px; color: var(--text4); padding: 12px 0; text-align: center; }
+    .addr-divider { height: 1px; background: var(--border); margin: 14px 0; }
+    .addr-add-title { font-size: 12px; color: var(--text3); font-weight: 500; margin-bottom: 8px; }
+
+    /* ── TX NETWORK BADGE ── */
+    .tx-network {
+      display: inline-block; padding: 1px 5px; border-radius: 3px;
+      font-size: 10px; font-weight: 600; letter-spacing: .3px;
+      background: rgba(6,182,212,0.1); border: 1px solid rgba(6,182,212,0.2);
+      color: var(--teal); vertical-align: middle; margin-left: 4px;
+      font-family: var(--mono);
+    }
+
+    /* ── TX ADDRESS MATCH ── */
+    .tx-row.addr-match { border-color: rgba(26,255,171,0.2); background: rgba(26,255,171,0.03); }
+    .tx-addr-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      margin-top: 2px; padding: 1px 5px; border-radius: 4px;
+      background: rgba(26,255,171,0.1); border: 1px solid rgba(26,255,171,0.2);
+      font-size: 10px; color: var(--green); font-weight: 500;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
+    }
+
+    /* ── TAG DROPDOWN ── */
+    .tag-dropdown {
+      position: fixed;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      min-width: 160px; z-index: 2000;
+      padding: 4px;
+      animation: dropIn 0.12s ease;
+    }
+    @keyframes dropIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .tag-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 6px;
+      cursor: pointer; font-size: 12px; color: var(--text2);
+      transition: background 0.1s;
+    }
+    .tag-option:hover { background: var(--surface3); color: var(--text); }
+    .tag-option input { accent-color: var(--green); cursor: pointer; }
+    .t-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── EMPTY STATE ── */
+    .empty {
+      text-align: center; padding: 48px 20px;
+      color: var(--text4); font-size: 13px; line-height: 1.8;
+    }
+    .empty-icon { font-size: 32px; margin-bottom: 10px; opacity: 0.4; display: block; }
+    .empty-sm { font-size: 11px; color: var(--text4); padding: 6px; }
+
+    /* ── RIGHT PANEL ── */
+    .panel-results {
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .results-scroll { overflow-y: auto; flex: 1; padding: 20px; }
+
+    /* ── EMPTY RESULTS ── */
+    .result-empty {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100%; gap: 14px;
+      color: var(--text4); text-align: center;
+    }
+    .result-empty-icon {
+      width: 56px; height: 56px;
+      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+    }
+    .result-empty p { font-size: 13px; color: var(--text3); }
+    .result-empty small { font-size: 11px; color: var(--text4); }
+
+    /* ── SHIMMER LOADING ── */
+    .shimmer-wrap { padding: 4px 0; }
+    .shimmer {
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--surface) 0%, var(--surface3) 50%, var(--surface) 100%);
+      background-size: 200% 100%;
+      animation: shimmer 1.6s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ── SCAN LINE ── */
+    .scan-container {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .scan-line {
+      position: absolute;
+      left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent 0%, var(--green) 50%, transparent 100%);
+      animation: scanDown 2s linear infinite;
+      opacity: 0.5;
+    }
+    @keyframes scanDown {
+      0%   { top: 0%; }
+      100% { top: 100%; }
+    }
+    .loading-label {
+      font-size: 11px; font-weight: 500; letter-spacing: 1.2px;
+      text-transform: uppercase; color: var(--text3);
+      text-align: center; padding-top: 12px;
+    }
+    .loading-dots::after {
+      content: '';
+      animation: dots 1.2s steps(4, end) infinite;
+    }
+    @keyframes dots {
+      0%  { content: ''; }
+      25% { content: '.'; }
+      50% { content: '..'; }
+      75% { content: '...'; }
+    }
+
+    /* ── AGGREGATED BLOCK ── */
+    .agg-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .agg-block::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--green-glow), transparent);
+    }
+    .agg-label {
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 1.2px;
+      color: var(--text3); margin-bottom: 6px;
+    }
+    .agg-total {
+      font-family: var(--mono);
+      font-size: 40px; font-weight: 700; letter-spacing: -1px;
+      color: var(--green);
+      text-shadow: 0 0 60px rgba(26,255,171,0.35);
+      margin-bottom: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .agg-sub { font-size: 12px; color: var(--text3); margin-bottom: 16px; }
+    .agg-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+    }
+    .agg-cell {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      transition: border-color 0.12s;
+    }
+    .agg-cell:hover { border-color: var(--surface4); }
+    .agg-cell-asset {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--text3); margin-bottom: 3px;
+    }
+    .agg-cell-amount {
+      font-family: var(--mono); font-size: 14px; font-weight: 500;
+      color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    .agg-cell-amount.stable { color: var(--green); }
+    .agg-sep {
+      border: none; border-top: 1px solid var(--border);
+      margin: 14px 0;
+    }
+
+    /* ── RESULT CARDS ── */
+    .results-section-label {
+      font-size: 10px; font-weight: 600; letter-spacing: 1.2px;
+      text-transform: uppercase; color: var(--text4);
+      margin-bottom: 8px; margin-top: 4px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .results-section-label::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    .result-cards { display: grid; gap: 8px; }
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      transition: border-color 0.12s;
+    }
+    .result-card:hover { border-color: var(--surface4); }
+    .result-card.has-error { border-color: var(--border); }
+    .result-card-head {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    }
+    .result-wallet-name { font-size: 13px; font-weight: 500; flex: 1; }
+    .result-badge {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.6px;
+      text-transform: uppercase;
+      padding: 2px 7px; border-radius: var(--radius-pill);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text3);
+    }
+    .result-error {
+      display: flex; align-items: flex-start; gap: 7px;
+      font-size: 11.5px; color: var(--text3);
+      padding: 8px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .result-error-icon {
+      flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
+      background: rgba(229,192,123,0.12); border: 1px solid rgba(229,192,123,0.25);
+      color: var(--yellow); font-size: 10px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    }
+    .result-error-text { color: var(--text3); line-height: 1.5; }
+    .result-rows {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 6px;
+    }
+    .result-row {
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+    }
+    .r-asset { font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text3); margin-bottom: 2px; }
+    .r-amt {
+      font-family: var(--mono); font-size: 13px; font-weight: 500;
+      color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    .r-amt.stable { color: var(--green); }
+    .no-balance { font-size: 11px; color: var(--text4); }
+
+    /* ── MODALS ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(9,9,11,0.8);
+      backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 200; padding: 20px;
+      animation: fadeOverlay 0.15s ease;
+    }
+    .modal-overlay.hidden { display: none; }
+    @keyframes fadeOverlay {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--surface4);
+      border-radius: 14px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+      width: 100%; max-width: 460px;
+      max-height: 88vh; overflow-y: auto;
+      animation: slideUpModal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideUpModal {
+      from { transform: translateY(20px); opacity: 0; }
+      to   { transform: translateY(0); opacity: 1; }
+    }
+    .modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 18px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-title { font-size: 15px; font-weight: 600; }
+    .modal-x {
+      background: none; border: none;
+      color: var(--text3); font-size: 20px;
+      cursor: pointer; padding: 2px 6px; border-radius: 6px;
+      line-height: 1; transition: all 0.12s;
+    }
+    .modal-x:hover { background: var(--surface3); color: var(--text); }
+    .modal-body { padding: 18px; }
+
+    /* ── ACCORDION TYPE SELECTOR ── */
+    .acc-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .acc-item {
+      border: 1px solid var(--border); border-radius: 10px;
+      overflow: hidden; transition: border-color 0.18s, background 0.18s;
+      background: var(--surface2);
+    }
+    .acc-item.open { background: var(--surface); }
+    .acc-item.open.tc-exchange { border-color: rgba(229,192,123,0.35); }
+    .acc-item.open.tc-chain    { border-color: rgba(6,182,212,0.35); }
+    .acc-item.open.tc-perpdex  { border-color: rgba(146,91,214,0.35); }
+    .acc-head {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 14px; cursor: pointer; width: 100%;
+      background: none; border: none; color: var(--text);
+      text-align: left; transition: background 0.12s; min-height: 54px;
+    }
+    .acc-head:hover { background: rgba(255,255,255,0.025); }
+    .acc-item.open .acc-head { background: rgba(255,255,255,0.015); }
+    .acc-icon {
+      width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.18s;
+    }
+    .tc-exchange .acc-icon { background: rgba(229,192,123,0.1); color: var(--yellow); }
+    .tc-chain    .acc-icon { background: rgba(6,182,212,0.1);   color: var(--teal); }
+    .tc-perpdex  .acc-icon { background: rgba(146,91,214,0.1);  color: var(--purple); }
+    .acc-item.open.tc-exchange .acc-icon { background: rgba(229,192,123,0.18); }
+    .acc-item.open.tc-chain    .acc-icon { background: rgba(6,182,212,0.18); }
+    .acc-item.open.tc-perpdex  .acc-icon { background: rgba(146,91,214,0.18); }
+    .acc-info { flex: 1; min-width: 0; }
+    .acc-label { font-size: 13px; font-weight: 600; color: var(--text3); transition: color 0.15s; }
+    .acc-item.open .acc-label { color: var(--text); }
+    .acc-desc { font-size: 11px; color: var(--text4); margin-top: 1px; }
+    .acc-chevron { flex-shrink: 0; color: var(--text4); transition: transform 0.24s cubic-bezier(0.16,1,0.3,1), color 0.15s; }
+    .acc-item.open .acc-chevron { transform: rotate(90deg); color: var(--text3); }
+    .acc-content {
+      max-height: 0; overflow: hidden;
+      transition: max-height 0.32s cubic-bezier(0.16,1,0.3,1);
+    }
+    .acc-item.open .acc-content { max-height: 700px; }
+    .acc-content-inner { padding: 14px 14px 16px; border-top: 1px solid var(--border); }
+
+    /* ── PROTOCOL CHIPS ── */
+    .proto-grid { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+    .proto-chip {
+      padding: 4px 11px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface2);
+      font-size: 12px; font-weight: 500; color: var(--text3);
+      cursor: pointer; transition: all 0.12s; white-space: nowrap;
+      font-family: var(--font);
+    }
+    .proto-chip:hover:not(:disabled) { border-color: rgba(255,255,255,0.1); color: var(--text2); background: var(--surface3); }
+    .proto-chip:disabled { opacity: 0.35; cursor: not-allowed; }
+    .tc-exchange .proto-chip.selected { border-color: rgba(229,192,123,0.45); background: rgba(229,192,123,0.08); color: var(--yellow); }
+    .tc-chain    .proto-chip.selected { border-color: rgba(6,182,212,0.45);   background: rgba(6,182,212,0.08);   color: var(--teal); }
+    .tc-perpdex  .proto-chip.selected { border-color: rgba(146,91,214,0.45);  background: rgba(146,91,214,0.08);  color: var(--purple); }
+
+    /* ── FORM ── */
+    .form-group { margin-bottom: 12px; }
+    .form-label {
+      display: block; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.7px; text-transform: uppercase;
+      color: var(--text3); margin-bottom: 5px;
+    }
+    .form-input, .form-select {
+      width: 100%; padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      color: var(--text); font-family: var(--font); font-size: 13px;
+      outline: none; transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .form-input:focus, .form-select:focus {
+      border-color: rgba(26,255,171,0.4);
+      box-shadow: 0 0 0 3px rgba(26,255,171,0.06);
+    }
+    .form-input::placeholder { color: var(--text4); }
+    .form-select option { background: var(--surface2); color: var(--text); }
+    .form-input.invalid { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(248,113,113,0.1) !important; }
+    .field-err { font-size: 11px; color: var(--red); margin-top: 4px; display: none; }
+    .field-err.show { display: block; }
+    .form-error { font-size: 12px; color: var(--red); margin-top: 8px; display: none; }
+    .form-error.show { display: block; }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
+    /* credentials section */
+    .creds-section {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .creds-section-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+      color: var(--text4); margin-bottom: 12px;
+    }
+    .creds-section .form-group:last-child { margin-bottom: 0; }
+    .creds-section .form-input, .creds-section .form-select {
+      background: var(--surface);
+    }
+
+    /* read-only hint */
+    .readonly-hint {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 12px;
+      background: rgba(26,255,171,0.04);
+      border: 1px solid rgba(26,255,171,0.12);
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    .readonly-hint-icon {
+      flex-shrink: 0; margin-top: 1px;
+      color: var(--green); opacity: 0.8;
+    }
+    .readonly-hint-text {
+      font-size: 12px; line-height: 1.5; color: var(--text3);
+    }
+    .readonly-hint-text strong {
+      color: var(--green); font-weight: 600;
+    }
+
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; color: var(--text3); cursor: pointer;
+      background: var(--surface2); border: 1px solid var(--border);
+      font-family: var(--font); padding: 5px 10px;
+      border-radius: 8px; transition: all 0.12s;
+      margin-bottom: 16px;
+    }
+    .back-btn:hover { color: var(--text); background: var(--surface3); border-color: var(--surface4); }
+
+    /* ── TAG MANAGE CHIP & INLINE PANEL ── */
+    .tag-chip-manage {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 0 10px; height: 24px;
+      border-radius: var(--radius-pill);
+      border: 1px dashed var(--border);
+      background: transparent;
+      color: var(--text3);
+      font-family: var(--font);
+      font-size: 11px; font-weight: 500;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0;
+      transition: all 0.12s;
+    }
+    .tag-chip-manage:hover { color: var(--green); border-color: var(--green); }
+    .tag-chip-manage.open { color: var(--green); border-color: var(--green); background: rgba(26,255,171,0.06); }
+    .tag-manage-panel {
+      display: none; position: fixed;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px;
+      width: 260px; z-index: 500;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    .tag-manage-panel.open { display: block; }
+    .tag-strip-wrap { flex-shrink: 0; }
+    .tag-manage-title { font-size: 10px; font-weight: 600; letter-spacing: 0.7px; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
+    .tags-list { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+    .tag-item {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .tag-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .tag-item-name { flex: 1; font-size: 12px; font-weight: 500; }
+    .tag-add-sep { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+    .tag-add-title { font-size: 10px; font-weight: 600; letter-spacing: 0.7px; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
+    .tag-form-row { display: flex; gap: 6px; align-items: flex-end; }
+    .color-pick {
+      width: 34px; height: 30px; padding: 2px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface2); cursor: pointer; flex-shrink: 0;
+    }
+
+    /* ── TOAST ── */
+    #toast-container {
+      position: fixed; bottom: 20px; right: 20px;
+      z-index: 999; display: flex; flex-direction: column; gap: 6px;
+    }
+    .toast {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 11px 14px;
+      border-radius: 10px;
+      font-size: 13px; font-weight: 500;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      animation: toastIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      max-width: 320px;
+      backdrop-filter: blur(8px);
+    }
+    .toast-icon { font-size: 15px; flex-shrink: 0; margin-top: 0px; line-height: 1.4; }
+    .toast-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .toast-title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .toast-sub { font-size: 11px; opacity: 0.7; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    @keyframes toastIn {
+      from { transform: translateX(20px) scale(0.96); opacity: 0; }
+      to   { transform: translateX(0) scale(1); opacity: 1; }
+    }
+    .toast.success { background: rgba(13,43,30,0.95); border: 1px solid rgba(26,255,171,0.25); color: var(--green); box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(26,255,171,0.05); }
+    .toast.error   { background: rgba(43,13,13,0.95); border: 1px solid rgba(248,113,113,0.25); color: var(--red); }
+    .toast.info    { background: rgba(23,23,28,0.95); border: 1px solid var(--border); color: var(--text); }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--surface4); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text4); }
+
+    /* ═══════════════════════════════════════════
+       ANIMATIONS & ENHANCEMENTS
+    ═══════════════════════════════════════════ */
+
+    /* ── PANEL HEADERS ── */
+    .panel-hdr {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 14px 10px;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-hdr-title {
+      font-size: 11px; font-weight: 700; letter-spacing: 1.4px;
+      text-transform: uppercase; color: var(--text2);
+    }
+    .type-pills { display: flex; gap: 6px; margin-left: auto; }
+    .type-pill {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
+      color: var(--text4);
+    }
+    .tpd { width: 5px; height: 5px; border-radius: 50%; }
+
+    /* ── WALLET ROW ENTRANCE ── */
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateX(-10px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .wallet-row { animation: rowIn 0.22s cubic-bezier(0.16,1,0.3,1) both; }
+
+    /* ── RESULT CARD ENTRANCE ── */
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .result-card, .agg-block { animation: cardIn 0.28s cubic-bezier(0.16,1,0.3,1) both; }
+
+    /* ── FLOATING EMPTY ICON ── */
+    @keyframes floatIcon {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-8px); }
+    }
+    .result-empty-icon { animation: floatIcon 3.5s ease-in-out infinite; }
+
+    /* ── SELECTION GLOW ON CHECK BALANCE BTN ── */
+    @keyframes btnPulse {
+      0%, 100% { box-shadow: 0 0 0 0 transparent; }
+      50%       { box-shadow: 0 0 18px 2px var(--green-glow); }
+    }
+    #btn-check-balance.has-sel { animation: btnPulse 2.2s ease-in-out infinite; }
+
+    /* ── TOTAL NUMBER GLOW PULSE ── */
+    @keyframes numPulse {
+      0%, 100% { text-shadow: 0 0 60px rgba(26,255,171,0.35); }
+      50%       { text-shadow: 0 0 100px rgba(26,255,171,0.6), 0 0 40px rgba(26,255,171,0.4); }
+    }
+    .agg-total { animation: numPulse 3s ease-in-out infinite; }
+
+    /* ── SCAN LINE TEAL SHIFT ── */
+    .scan-line {
+      background: linear-gradient(90deg,
+        transparent 0%, var(--green) 25%, var(--teal) 75%, transparent 100%) !important;
+    }
+
+    /* ── TOAST EXIT ── */
+    @keyframes toastOut {
+      to { opacity: 0; transform: translateX(20px); max-height: 0; padding: 0; margin: 0; }
+    }
+    .toast.removing { animation: toastOut 0.22s ease forwards; }
+
+    /* ── RESULT PANEL HEADER ── */
+    .res-panel-hdr {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .res-panel-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 1.6px;
+      text-transform: uppercase; color: var(--text3);
+    }
+    .sel-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 9px; border-radius: var(--radius-pill);
+      background: var(--green-dim); border: 1px solid rgba(26,255,171,0.15);
+      font-size: 11px; font-weight: 600; color: var(--green);
+      transition: all 0.2s;
+    }
+    .sel-badge.hidden { opacity: 0; pointer-events: none; }
+    .last-checked {
+      margin-left: auto; font-size: 11px; color: var(--text4);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── RESULT CARD TYPE ACCENT ── */
+    .result-card.t-exchange { border-left: 2px solid rgba(229,192,123,0.5); padding-left: 13px; }
+    .result-card.t-chain    { border-left: 2px solid rgba(6,182,212,0.5);   padding-left: 13px; }
+    .result-card.t-perpdex  { border-left: 2px solid rgba(146,91,214,0.5);  padding-left: 13px; }
+
+    /* ── WALLET ROW HOVER GLOW ── */
+    .wallet-row { transition: all 0.15s cubic-bezier(0.16,1,0.3,1); }
+    .wallet-row.selected {
+      box-shadow: 0 0 0 1px rgba(26,255,171,0.18) inset, 0 2px 8px rgba(26,255,171,0.04);
+    }
+
+    /* brand-icon hover defined in topbar section above */
+
+    /* ── INPUT FOCUS RING ── */
+    .form-input:focus, .form-select:focus {
+      box-shadow: 0 0 0 2px rgba(26,255,171,0.12);
+    }
+
+    /* ── AGG BLOCK INSET GLOW ── */
+    @keyframes aggGlow {
+      from { box-shadow: none; }
+      to   { box-shadow: inset 0 0 60px rgba(26,255,171,0.04); }
+    }
+    .agg-block { animation: aggGlow 0.6s ease both, cardIn 0.28s cubic-bezier(0.16,1,0.3,1) both; }
+
+    /* ── STAGGER HELPERS (set via JS style) ── */
+    /* .wallet-row uses animation-delay set inline */
+
+    /* ── UPGRADE POPUP ── */
+    .upgrade-overlay {
+      position: fixed; inset: 0;
+      background: rgba(9,9,11,0.82);
+      backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 300; padding: 20px;
+      animation: fadeOverlay 0.15s ease;
+    }
+    .upgrade-overlay.hidden { display: none; }
+    .upgrade-modal {
+      background: var(--surface);
+      border: 1px solid rgba(26,255,171,0.2);
+      border-radius: 20px;
+      width: 100%; max-width: 420px;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(26,255,171,0.06);
+      overflow: hidden;
+      animation: slideUpModal 0.25s cubic-bezier(0.16,1,0.3,1);
+    }
+    .upgrade-top {
+      position: relative;
+      padding: 32px 28px 24px;
+      text-align: center;
+      background: linear-gradient(160deg, rgba(26,255,171,0.06) 0%, transparent 60%);
+      border-bottom: 1px solid var(--border);
+    }
+    .upgrade-top::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--green), transparent);
+    }
+    .upgrade-icon {
+      width: 56px; height: 56px; border-radius: 16px;
+      background: var(--green-dim);
+      border: 1px solid rgba(26,255,171,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px; margin: 0 auto 16px;
+    }
+    .upgrade-title { font-size: 18px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 6px; }
+    .upgrade-sub { font-size: 13px; color: var(--text3); line-height: 1.6; }
+    .upgrade-body { padding: 22px 28px; }
+    .upgrade-limit-bar {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 20px;
+    }
+    .upgrade-limit-track {
+      flex: 1; height: 6px; background: var(--surface3);
+      border-radius: 3px; overflow: hidden;
+    }
+    .upgrade-limit-fill {
+      height: 100%; background: linear-gradient(90deg, var(--green), var(--teal));
+      border-radius: 3px; width: 100%;
+    }
+    .upgrade-limit-label { font-size: 11px; color: var(--text3); white-space: nowrap; }
+    .upgrade-limit-val   { font-size: 11px; font-family: var(--mono); color: var(--red); font-weight: 600; white-space: nowrap; }
+    .upgrade-cta {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      width: 100%; height: 44px; border-radius: 8px;
+      background: var(--green); color: #09090B;
+      font-family: var(--font); font-size: 14px; font-weight: 500;
+      border: none; cursor: pointer; text-decoration: none;
+      transition: all .15s; margin-bottom: 10px;
+    }
+    .upgrade-cta:hover { background: #00E89A; box-shadow: 0 0 28px var(--green-glow); transform: translateY(-1px); }
+    .upgrade-cta:active { transform: translateY(0); box-shadow: none; }
+    .upgrade-cancel {
+      display: block; text-align: center;
+      font-size: 13px; color: var(--text3); cursor: pointer;
+      padding: 6px; border-radius: 6px; transition: color .12s;
+      background: none; border: none; font-family: var(--font); width: 100%;
+    }
+    .upgrade-cancel:hover { color: var(--text); }
+
+    /* ── PANEL TOGGLE BTN ── */
+    .panel-toggle {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      border: 1.5px solid var(--green);
+      background: var(--green-dim);
+      color: var(--green);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
+    }
+    .panel-toggle:hover {
+      background: var(--green);
+      color: #09090B;
+      box-shadow: 0 0 14px var(--green-glow);
+    }
+    .panel-toggle svg {
+      transition: transform 0.32s cubic-bezier(0.16,1,0.3,1);
+    }
+    .panel-toggle.collapsed svg { transform: rotate(180deg); }
+
+    /* ── EXTRA MICRO-ANIMATIONS ── */
+    /* Wallet row delete slide-out */
+    @keyframes rowOut {
+      to { opacity: 0; transform: translateX(-20px); max-height: 0; padding: 0; margin: 0; }
+    }
+    .wallet-row.deleting { animation: rowOut 0.22s ease forwards; }
+
+    /* Checkbox bounce */
+    @keyframes checkBounce {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.25); }
+      100% { transform: scale(1); }
+    }
+
+    /* Result card hover glow by type */
+    .result-card.t-exchange:hover { box-shadow: 0 4px 24px rgba(229,192,123,0.08); }
+    .result-card.t-chain:hover    { box-shadow: 0 4px 24px rgba(6,182,212,0.08); }
+    .result-card.t-perpdex:hover  { box-shadow: 0 4px 24px rgba(146,91,214,0.08); }
+
+    /* Agg cell hover */
+    .agg-cell { transition: border-color 0.15s, transform 0.15s; }
+    .agg-cell:hover { transform: translateY(-1px); }
+
+    /* ── TRANSACTIONS ACCORDION ── */
+    .tx-toggle {
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 10px; padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      font-size: 11px; font-weight: 500; color: var(--text3);
+      letter-spacing: 0.4px; text-transform: uppercase;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .tx-toggle:hover { background: var(--surface3); color: var(--text2); border-color: var(--surface4); }
+    .tx-toggle .tx-icon { font-size: 12px; }
+    .tx-toggle .tx-arrow {
+      margin-left: auto;
+      transition: transform 0.22s cubic-bezier(0.16,1,0.3,1);
+    }
+    .tx-toggle.open .tx-arrow { transform: rotate(180deg); }
+
+    .tx-panel {
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.28s cubic-bezier(0.16,1,0.3,1);
+    }
+    .tx-panel.open { max-height: 600px; }
+
+    .tx-inner { padding-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+
+    .tx-row {
+      display: grid;
+      grid-template-columns: 20px 1fr auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      border: 1px solid transparent;
+      font-size: 12px;
+      transition: border-color 0.12s;
+      animation: txIn 0.2s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    @keyframes txIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .tx-row:hover { border-color: var(--border); }
+
+    .tx-type-icon {
+      width: 20px; height: 20px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; flex-shrink: 0;
+    }
+    .tx-type-icon.deposit  { background: rgba(26,255,171,0.12); color: var(--green); }
+    .tx-type-icon.withdraw { background: rgba(248,113,113,0.12); color: var(--red); }
+    .tx-type-icon.trade    { background: rgba(6,182,212,0.12);   color: var(--teal); }
+    .tx-type-icon.fill     { background: rgba(6,182,212,0.12);   color: var(--teal); }
+    .tx-type-icon.transfer { background: rgba(229,192,123,0.12); color: var(--yellow); }
+    .tx-type-icon.contract { background: rgba(146,91,214,0.12);  color: var(--purple); }
+
+    .tx-info { min-width: 0; }
+    .tx-type-label { font-size: 11px; font-weight: 500; color: var(--text); text-transform: capitalize; }
+    .tx-asset { font-size: 10px; color: var(--text3); font-family: var(--mono); }
+
+    .tx-amount {
+      font-family: var(--mono); font-size: 12px; font-weight: 500;
+      color: var(--text); white-space: nowrap;
+    }
+
+    .tx-meta { text-align: right; }
+    .tx-time { font-size: 10px; color: var(--text3); white-space: nowrap; }
+    .tx-status {
+      display: inline-block; margin-top: 2px;
+      font-size: 9px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase;
+      padding: 1px 5px; border-radius: 3px;
+    }
+    .tx-status.completed { background: rgba(26,255,171,0.1);  color: var(--green); }
+    .tx-status.pending   { background: rgba(229,192,123,0.1); color: var(--yellow); }
+    .tx-status.failed    { background: rgba(248,113,113,0.1); color: var(--red); }
+
+    .tx-shimmer-row {
+      height: 42px; border-radius: var(--radius-sm);
+      background: linear-gradient(90deg, var(--surface) 0%, var(--surface3) 50%, var(--surface) 100%);
+      background-size: 200% 100%;
+      animation: shimmer 1.6s ease-in-out infinite;
+    }
+    .tx-empty { font-size: 11px; color: var(--text4); padding: 10px; text-align: center; }
+    .tx-error { font-size: 11px; color: var(--red); padding: 8px 10px; }
+
+    /* ── BOTTOM NAV ── */
+    .bottom-nav {
+      display: none;
+      position: fixed;
+      bottom: 12px; left: 12px; right: 12px;
+      height: 64px;
+      background: rgba(13,13,16,0.82);
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 20px;
+      z-index: 300;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 4px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .bnav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 14px; border-radius: 12px;
+      text-decoration: none; color: var(--text3);
+      font-size: 10px; font-weight: 500; letter-spacing: 0.1px;
+      transition: color 0.15s, background 0.15s;
+      flex: 1; max-width: 80px;
+    }
+    .bnav-item svg { flex-shrink: 0; transition: opacity 0.15s; opacity: 0.45; }
+    .bnav-item:hover { color: var(--text2); }
+    .bnav-item:hover svg { opacity: 0.7; }
+    .bnav-item.active { color: var(--green); }
+    .bnav-item.active svg { opacity: 1; }
+
+    /* ── MOBILE ── */
+    @media (max-width: 768px) {
+      .bottom-nav { display: flex; }
+      body { padding-bottom: 88px; }
+
+      /* Topbar: brand left, actions right — no center nav */
+      .topbar { grid-template-columns: auto 1fr; padding: 0 14px; gap: 0; }
+      .topbar-nav { display: none; }
+      .topbar-right { gap: 6px; }
+
+
+      /* Stacked panel layout */
+      .main { flex-direction: column; height: auto; min-height: calc(100vh - 52px - 88px); overflow: visible; }
+      .panel-wallets { width: 100% !important; max-height: none; height: auto; border-right: none; border-bottom: 1px solid var(--border); overflow: visible; }
+      .panel-results { flex: 1; min-height: 40vh; overflow: visible; }
+      .results-scroll { overflow: visible; }
+
+      /* Wallet actions always visible on touch */
+      .wallet-actions { opacity: 1; }
+
+      /* Hide panel toggle on mobile */
+      .panel-toggle { display: none; }
+
+      /* Tooltips don't work on touch — hide them */
+      .has-tip::before, .has-tip::after { display: none; }
+
+      .agg-total { font-size: 28px; }
+      .modal { max-height: 95vh; margin: 0; border-radius: 16px 16px 0 0; align-self: flex-end; }
+      .modal-overlay { align-items: flex-end; }
+      .wallet-row { padding: 10px 12px; }
+      .wallet-name { font-size: 13px; }
+
+      /* Confirm popup full-width on mobile */
+      .confirm-modal { border-radius: 16px 16px 0 0; }
+      .confirm-overlay { align-items: flex-end; }
+    }
+
+    @media (max-width: 480px) {
+      .panel-wallets { max-height: none; }
+    }
+    /* ── PROMO BANNER ── */
+    .promo-banner {
+      background: rgba(26,255,171,0.05);
+      border-bottom: 1px solid rgba(26,255,171,0.1);
+      padding: 9px 24px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      font-size: 13px; font-weight: 500; color: var(--green);
+      position: relative; z-index: 101; flex-shrink: 0;
+    }
+    .banner-close {
+      position: absolute; right: 16px;
+      background: none; border: none; cursor: pointer;
+      color: var(--green); opacity: 0.5;
+      display: flex; align-items: center; padding: 4px; border-radius: 4px;
+      transition: opacity 0.15s;
+    }
+    .banner-close:hover { opacity: 1; }
+    @media (max-width: 768px) {
+      .promo-banner { font-size: 12px; padding: 9px 44px 9px 16px; }
+    }
+  
+    /* ── Free Banner ── */
+    .free-banner {
+      position: fixed;
+      top: 60px;
+      left: 12px;
+      right: 12px;
+      z-index: 98;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 9px 20px;
+      background: rgba(14,14,17,0.92);
+      border: 1px solid rgba(26,255,171,0.18);
+      border-radius: 12px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      font-size: 13px;
+      color: var(--text2);
+      letter-spacing: 0.01em;
+      animation: bannerIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
+      animation-delay: 0.7s;
+      opacity: 0;
+    }
+    .free-banner-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 7px rgba(26,255,171,0.65);
+      flex-shrink: 0;
+    }
+    .free-banner em { font-style: normal; color: var(--text); font-weight: 500; }
+    .free-banner-close {
+      position: absolute;
+      right: 12px;
+      background: none; border: none;
+      color: var(--text3); font-size: 15px; line-height: 1;
+      cursor: pointer; padding: 4px 5px; border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .free-banner-close:hover { color: var(--text); background: var(--surface3); }
+    @keyframes bannerIn {
+      from { transform: translateY(-14px); opacity: 0; }
+      to   { transform: translateY(0);     opacity: 1; }
+    }
+
+    </style>
+</head>
+<body>
+
+<!-- ══ TOPBAR ══════════════════════════════════════════════════════════ -->
+<header class="topbar">
+  <a href="/index.html" class="brand">
+    avalant<span class="brand-cursor">_</span>
+  </a>
+  <nav class="topbar-nav">
+    <a href="/app.html" class="nav-lnk active">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <rect x="1" y="6" width="3" height="5" rx="0.7" fill="currentColor" opacity=".5"/>
+        <rect x="4.5" y="3.5" width="3" height="7.5" rx="0.7" fill="currentColor" opacity=".75"/>
+        <rect x="8" y="1" width="3" height="10" rx="0.7" fill="currentColor"/>
+      </svg>
+      Portfolio
+    </a>
+    <a href="/archive.html" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+      Archive
+    </a>
+    <a href="/pricing.html" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h3.8l5 5-3.8 3.8-5-5V1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.9" fill="currentColor"/></svg>
+      Pricing
+    </a>
+  </nav>
+  <div class="topbar-right">
+    <button class="btn btn-primary btn-sm" onclick="openAddWalletModal()">+ Add Wallet</button>
+    <a href="/profile.html" class="avatar-btn" title="Profile" id="nav-avatar">U</a>
+  </div>
+</header>
+
+<!-- ── Free Banner ── -->
+<div class="free-banner" id="free-banner">
+  <span class="free-banner-dot"></span>
+  Use all features for free — <em>no credit card required</em>
+  <button class="free-banner-close" onclick="dismissBanner()" aria-label="Dismiss">✕</button>
+</div>
+<script>
+  (function(){
+    if(localStorage.getItem('avalant-banner-dismissed')){
+      var b=document.getElementById('free-banner');
+      if(b) b.style.display='none';
+    }
+  })();
+  function dismissFreeBanner(){
+    var b=document.getElementById('free-banner');
+    if(!b) return;
+    b.style.transition='opacity 0.2s, transform 0.2s';
+    b.style.opacity='0';
+    b.style.transform='translateY(-14px)';
+    setTimeout(function(){ b && b.remove(); }, 220);
+    localStorage.setItem('avalant-banner-dismissed','1');
+  }
+</script>
+
+
+<!-- ══ MAIN ═══════════════════════════════════════════════════════════ -->
+<div class="main">
+
+  <!-- LEFT: Wallets -->
+  <div class="panel-wallets">
+    <div class="panel-hdr">
+      <span class="panel-hdr-title">Wallets</span>
+      <div class="type-pills" id="type-pills"></div>
+    </div>
+    <div class="tag-strip" id="tag-filters">
+      <button class="tag-chip active-all" onclick="setTagFilter(null)">All</button>
+      <div class="tag-strip-wrap" id="tag-manage-wrap">
+        <button class="tag-chip-manage" id="tag-manage-btn" onclick="toggleTagPanel(event)">+ Manage tags</button>
+        <div class="tag-manage-panel" id="tag-manage-panel">
+          <div class="tag-manage-title">Your tags</div>
+          <div class="tags-list" id="tags-list"></div>
+          <hr class="tag-add-sep">
+          <div class="tag-add-title">Create tag</div>
+          <div class="tag-form-row">
+            <div class="form-group" style="flex:1;margin:0;">
+              <input class="form-input" id="new-tag-name" placeholder="Tag name" maxlength="50" style="height:30px;font-size:12px;" onkeydown="if(event.key==='Enter')createTag()">
+            </div>
+            <input type="color" class="color-pick" id="new-tag-color" value="#1AFFAB" title="Color">
+            <button class="btn btn-primary btn-sm" onclick="createTag()" style="height:30px;font-size:11px;padding:0 10px;">Add</button>
+          </div>
+          <div class="form-error" id="tag-err" style="margin-top:6px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="wallet-ctrl">
+      <label class="check-wrap">
+        <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)">
+        <span style="font-size:12px;">Select all</span>
+      </label>
+      <span class="wallet-counter" id="wallet-count">0</span>
+    </div>
+    <div class="wallet-list" id="wallet-list">
+      <div class="empty"><span class="empty-icon">◈</span>Loading wallets...</div>
+    </div>
+    <div class="panel-check-footer">
+      <button class="btn btn-primary" id="btn-check-balance" onclick="checkBalance()">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.4"/><path d="M6 3.5v2.7L7.5 7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        Check Balance
+      </button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Results -->
+  <div class="panel-results">
+    <div class="res-panel-hdr">
+      <button class="panel-toggle" id="panel-toggle" onclick="togglePanel()" title="Toggle sidebar">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M7.5 2L3.5 6L7.5 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <span class="res-panel-title">Portfolio</span>
+      <span class="sel-badge hidden" id="sel-badge">0 selected</span>
+      <span class="last-checked" id="last-checked"></span>
+    </div>
+    <div class="results-scroll" id="results-scroll">
+      <div class="result-empty" id="result-empty">
+        <div class="result-empty-icon">◈</div>
+        <p>Select wallets and run balance check</p>
+        <small>Supports exchanges, chains and perp DEXes</small>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ MODAL: Add Wallet ══════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modal-wallet">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="modal-wallet-title">Add Wallet</span>
+      <button class="modal-x" onclick="closeAddWalletModal()">×</button>
+    </div>
+    <div class="modal-body">
+
+      <form id="wallet-form" onsubmit="submitAddWallet(event)">
+        <div class="form-group" style="margin-bottom:16px;">
+          <label class="form-label">Wallet name</label>
+          <input class="form-input" name="name" placeholder="e.g. My Binance Main (min 6 chars)" required minlength="6">
+        </div>
+
+        <div class="acc-list">
+
+          <!-- Exchange -->
+          <div class="acc-item tc-exchange" id="acc-exchange">
+            <button type="button" class="acc-head" onclick="selectWalletType('exchange')">
+              <div class="acc-icon">
+                <svg width="18" height="18" viewBox="0 0 22 22" fill="none"><rect x="2" y="7" width="18" height="12" rx="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M7 7V5.5A3.5 3.5 0 0 1 10.5 2h1A3.5 3.5 0 0 1 15 5.5V7" stroke="currentColor" stroke-width="1.6"/><circle cx="11" cy="13" r="1.8" fill="currentColor"/></svg>
+              </div>
+              <div class="acc-info">
+                <div class="acc-label">Exchange</div>
+                <div class="acc-desc">CEX API keys · Binance, OKX, Bybit…</div>
+              </div>
+              <svg class="acc-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="acc-content">
+              <div class="acc-content-inner">
+                <div class="proto-grid" id="proto-exchange"></div>
+                <input type="hidden" name="exchange_type">
+                <div class="readonly-hint">
+                  <span class="readonly-hint-icon">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1.5a4 4 0 0 0-4 4v1.5H3a1 1 0 0 0-1 1V13a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-.5V5.5a4 4 0 0 0-4-4Zm2.5 5.5H5V5.5a2.5 2.5 0 0 1 5 0V7Z" fill="currentColor"/></svg>
+                  </span>
+                  <div class="readonly-hint-text">
+                    <strong>Read-only keys only.</strong> Create API keys with <strong>read permissions only</strong> — no trading, no withdrawals. Your funds stay safe even if keys are compromised.
+                  </div>
+                </div>
+                <div class="creds-section">
+                  <div class="creds-section-title">API Credentials</div>
+                  <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input class="form-input" name="api_key" placeholder="Paste your API key" autocomplete="off" spellcheck="false">
+                    <div class="field-err" id="err-api_key"></div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">API Secret</label>
+                    <input class="form-input" name="api_secret" type="password" placeholder="Paste your API secret" autocomplete="off">
+                    <div class="field-err" id="err-api_secret"></div>
+                  </div>
+                  <div class="form-group" id="passphrase-group" style="display:none;">
+                    <label class="form-label">Passphrase</label>
+                    <input class="form-input" name="api_passphrase" type="password" placeholder="API passphrase" autocomplete="off">
+                    <div class="field-err" id="err-api_passphrase"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chain -->
+          <div class="acc-item tc-chain" id="acc-chain">
+            <button type="button" class="acc-head" onclick="selectWalletType('chain')">
+              <div class="acc-icon">
+                <svg width="18" height="18" viewBox="0 0 22 22" fill="none"><circle cx="6.5" cy="11" r="3" stroke="currentColor" stroke-width="1.6"/><circle cx="15.5" cy="11" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M9.5 11h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </div>
+              <div class="acc-info">
+                <div class="acc-label">Chain</div>
+                <div class="acc-desc">On-chain address · ETH, BSC, Tron…</div>
+              </div>
+              <svg class="acc-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="acc-content">
+              <div class="acc-content-inner">
+                <div class="proto-grid" id="proto-chain"></div>
+                <input type="hidden" name="chain_type">
+                <div class="form-group">
+                  <label class="form-label">Wallet Address</label>
+                  <input class="form-input" name="chain_address" placeholder="Your on-chain address" spellcheck="false">
+                  <div class="field-err" id="err-chain_address"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Perp DEX -->
+          <div class="acc-item tc-perpdex" id="acc-perpdex">
+            <button type="button" class="acc-head" onclick="selectWalletType('perpdex')">
+              <div class="acc-icon">
+                <svg width="18" height="18" viewBox="0 0 22 22" fill="none"><polyline points="3,15 8,9 12,12 19,5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><polyline points="15,5 19,5 19,9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="acc-info">
+                <div class="acc-label">Perp DEX</div>
+                <div class="acc-desc">Public address · Hyperliquid, Lighter…</div>
+              </div>
+              <svg class="acc-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="acc-content">
+              <div class="acc-content-inner">
+                <div class="proto-grid" id="proto-perpdex"></div>
+                <input type="hidden" name="perpdex_type">
+                <div class="form-group" id="perpdex-address-group">
+                  <label class="form-label">EVM Address</label>
+                  <input class="form-input" name="perpdex_address" placeholder="0x..." spellcheck="false">
+                  <div class="field-err" id="err-perpdex_address"></div>
+                </div>
+                <div id="perpdex-apikey-group" style="display:none;">
+                  <div class="form-group">
+                    <label class="form-label" id="perpdex-key-label">Wallet Address</label>
+                    <input class="form-input" name="perpdex_api_key" placeholder="0x..." spellcheck="false" autocomplete="off">
+                    <div class="field-err" id="err-perpdex_api_key"></div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" id="perpdex-secret-label">API Private Key</label>
+                    <input class="form-input" name="perpdex_api_secret" placeholder="0x..." spellcheck="false" autocomplete="off">
+                    <div class="field-err" id="err-perpdex_api_secret"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="form-error" id="wallet-err"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeAddWalletModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-wallet">Add Wallet</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: Addresses ══════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modal-addresses" onclick="if(event.target===this)closeAddrModal()">
+  <div class="modal" style="min-width:460px;max-width:520px;">
+    <div class="modal-head">
+      <span class="modal-title" id="modal-addresses-title">Addresses</span>
+      <button class="modal-x" onclick="closeAddrModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="addr-list" id="addr-list"></div>
+      <div class="addr-divider"></div>
+      <div class="addr-add-title">Add address</div>
+      <div class="addr-add-row">
+        <input class="addr-input" id="addr-modal-name" placeholder="Label (e.g. Binance SOL)" style="max-width:160px">
+        <input class="addr-input" id="addr-modal-val" placeholder="On-chain address">
+        <button class="addr-save" onclick="addWalletAddr()">Add</button>
+      </div>
+      <div class="form-error" id="addr-err" style="margin-top:6px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONFIRM DELETE POPUP ════════════════════════════════════════ -->
+<div class="confirm-overlay hidden" id="confirm-overlay">
+  <div class="confirm-modal">
+    <div class="confirm-body">
+      <div class="confirm-icon">✕</div>
+      <div class="confirm-title" id="confirm-title">Delete?</div>
+      <div class="confirm-sub" id="confirm-sub">This action cannot be undone.<br>
+        <span class="confirm-name" id="confirm-item-name"></span>
+      </div>
+    </div>
+    <div class="confirm-footer">
+      <button class="confirm-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="confirm-delete" id="confirm-delete-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ UPGRADE POPUP ════════════════════════════════════════════════ -->
+<div class="upgrade-overlay hidden" id="upgrade-overlay">
+  <div class="upgrade-modal">
+    <div class="upgrade-top">
+      <div class="upgrade-icon">🚀</div>
+      <div class="upgrade-title">Wallet limit reached</div>
+      <div class="upgrade-sub">Free plan includes <b style="color:var(--text)">5 wallets</b>. Upgrade to Pro for unlimited wallets, balance history, and more.</div>
+    </div>
+    <div class="upgrade-body">
+      <div class="upgrade-limit-bar">
+        <span class="upgrade-limit-label">Free plan</span>
+        <div class="upgrade-limit-track">
+          <div class="upgrade-limit-fill" id="upgrade-fill"></div>
+        </div>
+        <span class="upgrade-limit-val" id="upgrade-val">5/5</span>
+      </div>
+      <a href="/pricing.html" class="upgrade-cta">
+        View pricing plans
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <button class="upgrade-cancel" onclick="closeUpgradePopup()">Not now</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TOASTS ══════════════════════════════════════════════════════════ -->
+<div id="toast-container"></div>
+
+<script src="/auth.js"></script>
+<script>
+(function() {
+  if (localStorage.getItem('promo_dismissed')) {
+    var b = document.getElementById('promo-banner');
+    if (b) b.style.display = 'none';
+  }
+})();
+function dismissBanner() {
+  var b = document.getElementById('promo-banner');
+  if (b) b.style.display = 'none';
+  localStorage.setItem('promo_dismissed', '1');
+}
+Auth.requireAuth('/login.html');
+
+// ═══════════════════════════════════════════════════
+//  PLAN LIMITS
+// ═══════════════════════════════════════════════════
+const FREE_WALLET_LIMIT = 5;
+
+// ═══════════════════════════════════════════════════
+//  STABLE COINS SET
+// ═══════════════════════════════════════════════════
+const STABLES = new Set(['USD','USDT','USDC','USDC.E','DAI','USDE','PYUSD','FDUSD','TUSD','USDC_PERP','USDD','USDGLO']);
+
+// ═══════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════
+const S = {
+  wallets: [],
+  tags: [],
+  options: { exchange_types: [], chain_types: [], perpdex_types: [] },
+  selected: new Set(),
+  tagFilter: null,
+  loadingBalance: false,
+  results: null,
+  tagDropOpen: null,
+  addressBook: {},       // { "0xabc...": { label, walletName } }
+  walletType: null,
+  lastChecked: null,
+};
+
+// ═══════════════════════════════════════════════════
+//  API
+// ═══════════════════════════════════════════════════
+function _authHeaders(extra = {}) {
+  const token = localStorage.getItem('wm_token');
+  return { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}), ...extra };
+}
+function _handleUnauth(r) {
+  if (r.status === 401) { Auth.logout('/login.html'); throw new Error('Session expired'); }
+}
+
+const api = {
+  async get(p) {
+    const r = await fetch('/api' + p, { headers: _authHeaders() });
+    _handleUnauth(r);
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async post(p, b) {
+    const r = await fetch('/api' + p, { method:'POST', headers: _authHeaders(), body:JSON.stringify(b) });
+    _handleUnauth(r);
+    if (!r.ok) throw new Error(await r.text());
+    if (r.status === 204) return null;
+    return r.json();
+  },
+  async del(p) {
+    const r = await fetch('/api' + p, { method:'DELETE', headers: _authHeaders() });
+    _handleUnauth(r);
+    if (!r.ok && r.status !== 204) throw new Error(await r.text());
+  },
+  async put(p, b) {
+    const r = await fetch('/api' + p, { method:'PUT', headers: _authHeaders(), body:JSON.stringify(b) });
+    _handleUnauth(r);
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+};
+
+// ═══════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════
+async function init() {
+  // Show username initial in avatar
+  const u = Auth.getUser();
+  if (u) {
+    const av = document.getElementById('nav-avatar');
+    if (av) av.textContent = (u.username || u.email || 'U')[0].toUpperCase();
+  }
+  try {
+    const [wallets, tags, options] = await Promise.all([
+      api.get('/wallets'), api.get('/tags'), api.get('/wallets/options'),
+    ]);
+    S.wallets = wallets; S.tags = tags; S.options = options;
+    populateSelects();
+    renderAll();
+    loadAddressBook();
+  } catch(e) { toast('Failed to load: ' + e.message, 'error'); }
+}
+
+async function loadAddressBook() {
+  try {
+    const list = await api.get('/wallets/all-addresses');
+    S.addressBook = {};
+    for (const a of list) {
+      S.addressBook[a.address.toLowerCase()] = {
+        label: a.label,
+        walletName: a.wallet_name,
+        walletType: a.wallet_type,
+        typeValue: a.type_value,
+      };
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+function populateSelects() {
+  renderProtoGrid('proto-exchange', 'exchange_type', S.options.exchange_types, _onExchangeSelect);
+  renderProtoGrid('proto-chain',    'chain_type',    S.options.chain_types,    null);
+  renderProtoGrid('proto-perpdex',  'perpdex_type',  S.options.perpdex_types,  _onPerpdexSelect);
+}
+function renderProtoGrid(containerId, fieldName, options, onSelect) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  options.forEach((opt, i) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'proto-chip';
+    chip.textContent = opt.label || opt.value;
+    chip.dataset.value = opt.value;
+    chip.dataset.opt = JSON.stringify(opt);
+    if (opt.soon) { chip.disabled = true; chip.title = 'Coming soon'; }
+    chip.onclick = () => {
+      container.querySelectorAll('.proto-chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      document.querySelector(`[name="${fieldName}"]`).value = opt.value;
+      if (onSelect) onSelect(opt);
+    };
+    container.appendChild(chip);
+    if (i === 0) chip.click();
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════
+function renderAll() { renderTagFilters(); renderWallets(); }
+
+function filtered() {
+  if (!S.tagFilter) return S.wallets;
+  return S.wallets.filter(w => w.tags.some(t => t.id === S.tagFilter));
+}
+
+function renderTagFilters() {
+  const el = document.getElementById('tag-filters');
+  // Detach manage-wrap before innerHTML replacement
+  const manageWrap = document.getElementById('tag-manage-wrap');
+  const isAll = S.tagFilter === null;
+  let h = `<button class="tag-chip${isAll?' active-all':''}" onclick="setTagFilter(null)">All <span style="color:var(--text4)">${S.wallets.length}</span></button>`;
+  for (const t of S.tags) {
+    const cnt = S.wallets.filter(w => w.tags.some(x => x.id === t.id)).length;
+    const active = S.tagFilter === t.id;
+    const s = active
+      ? `background:${t.color}18;border-color:${t.color};color:${t.color}`
+      : `border-color:${t.color}30;color:${t.color}`;
+    h += `<button class="tag-chip" style="${s}" onclick="setTagFilter(${t.id})">${esc(t.name)} <span style="opacity:.5">${cnt}</span></button>`;
+  }
+  el.innerHTML = h;
+  el.appendChild(manageWrap);
+}
+
+function renderWallets() {
+  const ws = filtered();
+  const el = document.getElementById('wallet-list');
+  document.getElementById('wallet-count').textContent = ws.length;
+
+  const allCk = ws.length > 0 && ws.every(w => S.selected.has(w.id));
+  const someCk = ws.some(w => S.selected.has(w.id));
+  const sa = document.getElementById('select-all');
+  sa.checked = allCk;
+  sa.indeterminate = !allCk && someCk;
+
+  // Type pill counters
+  const ex = S.wallets.filter(w => w.wallet_type==='exchange').length;
+  const ch = S.wallets.filter(w => w.wallet_type==='chain').length;
+  const px = S.wallets.filter(w => w.wallet_type==='perpdex').length;
+  document.getElementById('type-pills').innerHTML = [
+    ex ? `<span class="type-pill"><span class="tpd" style="background:#E5C07B"></span>${ex} EX</span>` : '',
+    ch ? `<span class="type-pill"><span class="tpd" style="background:#06B6D4"></span>${ch} CH</span>` : '',
+    px ? `<span class="type-pill"><span class="tpd" style="background:#925BD6"></span>${px} PX</span>` : '',
+  ].join('');
+
+  updateSelectionUI();
+
+  if (!ws.length) {
+    el.innerHTML = `<div class="empty"><span class="empty-icon">◈</span>${S.wallets.length ? 'No wallets match this tag' : 'No wallets yet.<br>Click <b>+ Add Wallet</b> to begin'}</div>`;
+    return;
+  }
+  el.innerHTML = ws.map((w, i) => walletRow(w, i)).join('');
+}
+
+function typeMeta(type) {
+  return {
+    exchange: { color: '#E5C07B', label: 'EX' },
+    chain:    { color: '#06B6D4', label: 'CH' },
+    perpdex:  { color: '#925BD6', label: 'PX' },
+  }[type] || { color: '#676B7E', label: '?' };
+}
+
+function walletRow(w, idx = 0) {
+  const ck = S.selected.has(w.id);
+  const { color, label } = typeMeta(w.wallet_type);
+  const tagPills = w.tags.map(t =>
+    `<span class="tag-pill" style="background:${t.color}14;color:${t.color};border:1px solid ${t.color}30">${esc(t.name)}</span>`
+  ).join('');
+  const isExchange = w.wallet_type === 'exchange';
+  const delay = `animation-delay:${idx * 30}ms`;
+  const addrCount = (w.addresses || []).length;
+  const addrBtnTitle = `Addresses${addrCount ? ' (' + addrCount + ')' : ''}`;
+
+  return `<div class="wallet-row${ck?' selected':''}" id="wr-${w.id}" style="${delay}">
+    <input type="checkbox" ${ck?'checked':''} onchange="toggleW(${w.id},this.checked)">
+    <div class="wallet-body">
+      <div class="wallet-name">${esc(w.name)}</div>
+      <div class="wallet-meta">
+        <span class="type-dot" style="background:${color}"></span>
+        <span style="color:${color};font-size:11px;font-weight:600;letter-spacing:.4px">${label}</span>
+        <span style="color:var(--border)">·</span>
+        <span style="color:var(--text2)">${esc(w.type_value)}</span>
+        ${isExchange && addrCount ? `<span style="color:var(--border)">·</span><span style="color:var(--green);font-size:11px;font-weight:500">${addrCount} addr</span>` : ''}
+      </div>
+      <div class="wallet-addr">${esc(w.display_info)}</div>
+      ${tagPills ? `<div class="wallet-tags">${tagPills}</div>` : ''}
+    </div>
+    <div class="wallet-actions">
+      ${isExchange ? `<button class="icon-btn has-tip" data-tip="Addresses" onclick="toggleAddrPanel(event,${w.id})">◈</button>` : ''}
+      <button class="icon-btn has-tip" data-tip="Tags" onclick="openTagDrop(event,${w.id})">⊕</button>
+      <button class="icon-btn has-tip" data-tip="Archive" onclick="archiveWallet(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">⊟</button>
+      <button class="icon-btn danger has-tip" data-tip="Delete" onclick="delWallet(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">✕</button>
+    </div>
+  </div>`;
+}
+
+let _addrModalWalletId = null;
+
+function toggleAddrPanel(e, walletId) {
+  e.stopPropagation();
+  _addrModalWalletId = walletId;
+  const w = S.wallets.find(x => x.id === walletId);
+  document.getElementById('modal-addresses-title').textContent =
+    `Addresses — ${w ? w.name : ''}`;
+  _renderAddrList(w);
+  document.getElementById('addr-modal-name').value = '';
+  document.getElementById('addr-modal-val').value = '';
+  document.getElementById('addr-err').textContent = '';
+  document.getElementById('modal-addresses').classList.remove('hidden');
+}
+
+function closeAddrModal() {
+  document.getElementById('modal-addresses').classList.add('hidden');
+  _addrModalWalletId = null;
+}
+
+function _renderAddrList(w) {
+  const addrs = (w && w.addresses) || [];
+  const el = document.getElementById('addr-list');
+  if (!addrs.length) {
+    el.innerHTML = `<div class="addr-empty">No addresses yet</div>`;
+    return;
+  }
+  el.innerHTML = addrs.map(a => `
+    <div class="addr-item">
+      <span class="addr-item-name">${esc(a.name)}</span>
+      <span class="addr-item-val" title="${esc(a.address)}">${esc(a.address)}</span>
+      <button class="addr-del" title="Remove" onclick="delWalletAddr(${w.id},${a.id})">✕</button>
+    </div>`).join('');
+}
+
+async function addWalletAddr() {
+  const walletId = _addrModalWalletId;
+  if (!walletId) return;
+  const nameEl    = document.getElementById('addr-modal-name');
+  const addressEl = document.getElementById('addr-modal-val');
+  const errEl     = document.getElementById('addr-err');
+  const name    = nameEl.value.trim();
+  const address = addressEl.value.trim();
+  if (!name) { errEl.textContent = 'Enter a label'; return; }
+  if (address.length < 5) { errEl.textContent = 'Address is too short'; return; }
+  errEl.textContent = '';
+  const btn = document.querySelector('#modal-addresses .addr-save');
+  if (btn) btn.disabled = true;
+  try {
+    await api.post(`/wallets/${walletId}/addresses`, { name, address });
+    nameEl.value = '';
+    addressEl.value = '';
+    const wallets = await api.get('/wallets');
+    S.wallets = wallets;
+    await loadAddressBook();
+    const w = S.wallets.find(x => x.id === walletId);
+    _renderAddrList(w);
+    renderWallets();
+    toast(`Address "${name}" added`);
+  } catch(err) {
+    try {
+      const detail = JSON.parse(e.message);
+      errEl.textContent = 'Error: ' + (typeof detail.detail === 'string' ? detail.detail : JSON.stringify(detail.detail));
+    } catch { errEl.textContent = 'Failed to add: ' + e.message; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function delWalletAddr(walletId, addressId) {
+  try {
+    await api.del(`/wallets/${walletId}/addresses/${addressId}`);
+    const wallets = await api.get('/wallets');
+    S.wallets = wallets;
+    await loadAddressBook();
+    const w = S.wallets.find(x => x.id === walletId);
+    _renderAddrList(w);
+    renderWallets();
+    toast('Address removed');
+  } catch(e) { toast('Failed to remove: ' + e.message, 'error'); }
+}
+
+function tagDropdown(w, rect) {
+  closeTagDrop();
+  const inner = !S.tags.length
+    ? `<div class="empty-sm">No tags yet — use "Manage tags" to create one</div>`
+    : S.tags.map(t => {
+        const has = w.tags.some(x => x.id === t.id);
+        return `<label class="tag-option">
+          <input type="checkbox" ${has?'checked':''} onchange="toggleWT(${w.id},${t.id},this.checked)">
+          <span class="t-dot" style="background:${t.color}"></span>
+          ${esc(t.name)}
+        </label>`;
+      }).join('');
+  const el = document.createElement('div');
+  el.className = 'tag-dropdown';
+  el.id = 'tag-drop-portal';
+  el.innerHTML = inner;
+  document.body.appendChild(el);
+  // Position below the button, align right edge
+  const dropW = 170;
+  let left = rect.right - dropW;
+  let top  = rect.bottom + 4;
+  if (left < 8) left = 8;
+  if (top + 200 > window.innerHeight) top = rect.top - el.offsetHeight - 4;
+  el.style.left = left + 'px';
+  el.style.top  = top  + 'px';
+}
+
+function closeTagDrop() {
+  const old = document.getElementById('tag-drop-portal');
+  if (old) old.remove();
+}
+
+// ═══════════════════════════════════════════════════
+//  RESULTS RENDER
+// ═══════════════════════════════════════════════════
+function renderResults() {
+  const el = document.getElementById('results-scroll');
+
+  if (S.loadingBalance) {
+    el.innerHTML = `
+      <div class="scan-container">
+        <div class="scan-line"></div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="shimmer" style="height:14px;width:30%"></div>
+          <div class="shimmer" style="height:48px;width:55%"></div>
+          <div class="shimmer" style="height:12px;width:45%"></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px">
+            <div class="shimmer" style="height:56px"></div>
+            <div class="shimmer" style="height:56px"></div>
+            <div class="shimmer" style="height:56px"></div>
+          </div>
+        </div>
+        <div class="loading-label loading-dots">Fetching balances</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${[1,2,3].map(()=>`<div class="shimmer" style="height:72px;border-radius:10px"></div>`).join('')}
+      </div>`;
+    return;
+  }
+
+  if (!S.results) {
+    el.innerHTML = `<div class="result-empty">
+      <div class="result-empty-icon">◈</div>
+      <p>Select wallets and click "Check Balance"</p>
+      <small>Supports exchanges · chains · perp DEXes</small>
+    </div>`;
+    return;
+  }
+
+  const { results, aggregated } = S.results;
+  const fUSD = v => '$' + parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fAmt = v => parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6});
+  const isStable = k => STABLES.has(k.toUpperCase().replace('.','_'));
+
+  const stableTotal = parseFloat(aggregated.stable_total||0);
+  const stableItems = Object.entries(aggregated.stable).map(([k,v])=>
+    `<div class="agg-cell">
+      <div class="agg-cell-asset">${k}</div>
+      <div class="agg-cell-amount stable">${fUSD(v)}</div>
+    </div>`).join('');
+  const otherItems = Object.entries(aggregated.other).map(([k,v])=>
+    `<div class="agg-cell">
+      <div class="agg-cell-asset">${k}</div>
+      <div class="agg-cell-amount">${fAmt(v)}</div>
+    </div>`).join('');
+
+  const cards = results.map((r, i) => {
+    const typeClass = `t-${r.wallet_type}`;
+    const delay = `animation-delay:${(i + 1) * 60}ms`;
+    if (r.error) return `<div class="result-card has-error ${typeClass}" style="${delay}">
+      <div class="result-card-head">
+        <span class="result-wallet-name">${esc(r.wallet_name)}</span>
+        <span class="result-badge">${esc(r.type_value)}</span>
+      </div>
+      <div class="result-error">
+        <div class="result-error-icon">!</div>
+        <span class="result-error-text">${esc(r.error)}</span>
+      </div>
+    </div>`;
+
+    const rows = Object.entries(r.totals);
+    const rowsHtml = rows.length
+      ? `<div class="result-rows">${rows.map(([k,v])=>`<div class="result-row">
+          <div class="r-asset">${k}</div>
+          <div class="r-amt${isStable(k)?' stable':''}">${isStable(k)?fUSD(v):fAmt(v)}</div>
+        </div>`).join('')}</div>`
+      : `<div class="no-balance" style="color:var(--text4);font-size:11px">No balance</div>`;
+
+    return `<div class="result-card ${typeClass}" style="${delay}">
+      <div class="result-card-head">
+        <span class="result-wallet-name">${esc(r.wallet_name)}</span>
+        <span class="result-badge">${esc(r.type_value)}</span>
+      </div>
+      ${rowsHtml}
+      <div class="tx-toggle" id="tx-toggle-${r.wallet_id}" onclick="toggleTxPanel(${r.wallet_id})">
+        <span class="tx-icon">⟳</span>
+        <span>Last transactions</span>
+        <svg class="tx-arrow" width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="tx-panel" id="tx-panel-${r.wallet_id}">
+        <div class="tx-inner" id="tx-inner-${r.wallet_id}"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const checkedAt = S.lastChecked
+    ? S.lastChecked.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '';
+  const lcEl = document.getElementById('last-checked');
+  if (lcEl) lcEl.textContent = checkedAt ? `updated ${checkedAt}` : '';
+
+  el.innerHTML = `
+    <div class="agg-block">
+      <div class="agg-label">Total Portfolio</div>
+      <div class="agg-total" id="agg-num">$0.00</div>
+      <div class="agg-sub">${results.length} wallet${results.length!==1?'s':''} · stablecoins</div>
+      <div class="agg-grid">${stableItems}</div>
+      ${otherItems ? `<hr class="agg-sep"><div class="agg-grid">${otherItems}</div>` : ''}
+    </div>
+    <div class="results-section-label">Individual</div>
+    <div class="result-cards">${cards}</div>`;
+
+  // Animate counter
+  animateCounter(document.getElementById('agg-num'), 0, stableTotal);
+}
+
+function animateCounter(el, from, to, duration = 900) {
+  if (!el) return;
+  const fmt = v => '$' + v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const t0 = performance.now();
+  const tick = now => {
+    const p = Math.min((now - t0) / duration, 1);
+    const e = 1 - Math.pow(1 - p, 4);
+    el.textContent = fmt(from + (to - from) * e);
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function renderTagsModal() {
+  const el = document.getElementById('tags-list');
+  if (!S.tags.length) { el.innerHTML = `<div class="empty-sm">No tags yet</div>`; return; }
+  el.innerHTML = S.tags.map(t => `
+    <div class="tag-item">
+      <span class="tag-item-dot" style="background:${t.color}"></span>
+      <span class="tag-item-name">${esc(t.name)}</span>
+      <button class="icon-btn danger" onclick="delTag(${t.id},'${esc(t.name).replace(/'/g,"\\'")}')">⊗</button>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════
+//  SELECTION UI HELPER
+// ═══════════════════════════════════════════════════
+function updateSelectionUI() {
+  const n = S.selected.size;
+  const btn = document.getElementById('btn-check-balance');
+  const badge = document.getElementById('sel-badge');
+  if (btn) btn.classList.toggle('has-sel', n > 0);
+  if (badge) {
+    badge.textContent = `${n} selected`;
+    badge.classList.toggle('hidden', n === 0);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  EVENT HANDLERS
+// ═══════════════════════════════════════════════════
+function setTagFilter(id) { S.tagFilter = id; renderTagFilters(); renderWallets(); }
+
+function toggleW(id, ck) {
+  if (ck) S.selected.add(id); else S.selected.delete(id);
+  const row = document.getElementById('wr-' + id);
+  if (row) row.classList.toggle('selected', ck);
+  const ws = filtered();
+  const allCk = ws.length > 0 && ws.every(w => S.selected.has(w.id));
+  const sa = document.getElementById('select-all');
+  sa.checked = allCk;
+  sa.indeterminate = !allCk && ws.some(w => S.selected.has(w.id));
+  updateSelectionUI();
+}
+
+function toggleSelectAll(ck) {
+  filtered().forEach(w => { if (ck) S.selected.add(w.id); else S.selected.delete(w.id); });
+  renderWallets();
+}
+
+function openTagDrop(e, id) {
+  e.stopPropagation();
+  if (S.tagDropOpen === id) {
+    S.tagDropOpen = null;
+    closeTagDrop();
+    return;
+  }
+  S.tagDropOpen = id;
+  const w = S.wallets.find(x => x.id === id);
+  if (w) tagDropdown(w, e.currentTarget.getBoundingClientRect());
+}
+
+async function toggleWT(wid, tid, ck) {
+  try {
+    let updated;
+    if (ck) {
+      updated = await api.post(`/wallets/${wid}/tags/${tid}`, {});
+    } else {
+      await api.del(`/wallets/${wid}/tags/${tid}`);
+      updated = (await api.get('/wallets')).find(w => w.id === wid);
+    }
+    const i = S.wallets.findIndex(w => w.id === wid);
+    if (i !== -1 && updated) S.wallets[i] = updated;
+    renderAll();
+  } catch(e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+function openConfirm({ title, sub, name, onConfirm }) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-sub').innerHTML = sub + (name ? `<br><span class="confirm-name">${esc(name)}</span>` : '');
+  document.getElementById('confirm-delete-btn').onclick = () => { closeConfirm(); onConfirm(); };
+  document.getElementById('confirm-overlay').classList.remove('hidden');
+}
+function closeConfirm() {
+  document.getElementById('confirm-overlay').classList.add('hidden');
+}
+document.getElementById('confirm-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeConfirm();
+});
+
+function delWallet(id, name) {
+  openConfirm({
+    title: 'Delete wallet?',
+    sub: 'This action cannot be undone. The wallet and all its settings will be permanently removed.',
+    name,
+    onConfirm: () => _doDelWallet(id, name),
+  });
+}
+
+async function _doDelWallet(id, name) {
+  closeConfirm();
+  try {
+    const row = document.getElementById('wr-' + id);
+    if (row) {
+      row.classList.add('deleting');
+      await new Promise(r => setTimeout(r, 200));
+    }
+    await api.del(`/wallets/${id}`);
+    S.wallets = S.wallets.filter(w => w.id !== id);
+    S.selected.delete(id);
+    renderAll();
+    toast(`Deleted "${name}"`, 'success', 'Wallet removed permanently');
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function archiveWallet(id, name) {
+  try {
+    const row = document.getElementById('wr-' + id);
+    if (row) { row.classList.add('deleting'); await new Promise(r => setTimeout(r, 200)); }
+    await api.post(`/wallets/${id}/archive`, {});
+    S.wallets = S.wallets.filter(w => w.id !== id);
+    S.selected.delete(id);
+    renderAll();
+    toast(`"${name}" archived`, 'success', 'Moved to Archive — restore anytime');
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function checkBalance() {
+  const ids = [...S.selected];
+  const btn = document.getElementById('btn-check-balance');
+  btn.disabled = true;
+  S.loadingBalance = true; S.results = null;
+  renderResults();
+  try {
+    S.results = await api.post('/portfolio/balance', { wallet_ids: ids });
+    S.lastChecked = new Date();
+  } catch(err) {
+    toast('Balance check failed: ' + e.message, 'error');
+  } finally {
+    S.loadingBalance = false; btn.disabled = false;
+    renderResults();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  UPGRADE POPUP
+// ═══════════════════════════════════════════════════
+function openUpgradePopup() {
+  const n = S.wallets.length;
+  document.getElementById('upgrade-val').textContent = `${n}/${FREE_WALLET_LIMIT}`;
+  document.getElementById('upgrade-fill').style.width = Math.min((n / FREE_WALLET_LIMIT) * 100, 100) + '%';
+  document.getElementById('upgrade-overlay').classList.remove('hidden');
+}
+function closeUpgradePopup() {
+  document.getElementById('upgrade-overlay').classList.add('hidden');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('upgrade-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeUpgradePopup();
+  });
+});
+
+// ═══════════════════════════════════════════════════
+//  ADD WALLET MODAL
+// ═══════════════════════════════════════════════════
+function openAddWalletModal() {
+  if (S.wallets.length >= FREE_WALLET_LIMIT) { openUpgradePopup(); return; }
+  S.walletType = null;
+  document.getElementById('modal-wallet').classList.remove('hidden');
+  document.getElementById('wallet-form').reset();
+  document.getElementById('wallet-err').classList.remove('show');
+  _clearFieldErrors();
+  ['exchange','chain','perpdex'].forEach(t => document.getElementById('acc-'+t).classList.remove('open'));
+  document.getElementById('modal-wallet-title').textContent = 'Add Wallet';
+  _resetProtoChips();
+}
+function closeAddWalletModal() { document.getElementById('modal-wallet').classList.add('hidden'); }
+
+function selectWalletType(type) {
+  if (S.walletType === type) return;
+  if (S.walletType) document.getElementById('acc-'+S.walletType).classList.remove('open');
+  S.walletType = type;
+  document.getElementById('acc-'+type).classList.add('open');
+  document.getElementById('wallet-err').classList.remove('show');
+  _clearFieldErrors();
+}
+
+function _onExchangeSelect(opt) {
+  document.getElementById('passphrase-group').style.display = opt.needs_passphrase ? '' : 'none';
+}
+function _onPerpdexSelect(opt) {
+  const needsKey = opt.needs_api_key;
+  document.getElementById('perpdex-address-group').style.display = needsKey ? 'none' : '';
+  document.getElementById('perpdex-apikey-group').style.display = needsKey ? '' : 'none';
+}
+function _resetProtoChips() {
+  [
+    { gridId:'proto-exchange', name:'exchange_type', cb:_onExchangeSelect },
+    { gridId:'proto-chain',    name:'chain_type',    cb:null },
+    { gridId:'proto-perpdex',  name:'perpdex_type',  cb:_onPerpdexSelect },
+  ].forEach(({ gridId, name, cb }) => {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    grid.querySelectorAll('.proto-chip').forEach(c => c.classList.remove('selected'));
+    const first = grid.querySelector('.proto-chip:not(:disabled)');
+    if (!first) return;
+    first.classList.add('selected');
+    document.querySelector(`[name="${name}"]`).value = first.dataset.value;
+    if (cb) cb(JSON.parse(first.dataset.opt));
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  WALLET FORM VALIDATION
+// ═══════════════════════════════════════════════════
+const EVM_CHAINS = new Set(['ethereum','bsc','polygon','arbitrum','optimism','base','avalanche','zksync','linea','scroll','mantle','blast']);
+const RE = {
+  evm:        /^0x[0-9a-fA-F]{40}$/i,
+  tron:       /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
+  starknet:   /^0x[0-9a-fA-F]{1,64}$/i,
+  api_key:    /^[a-zA-Z0-9\-_]{8,256}$/,
+  api_secret: /^[a-zA-Z0-9+/=\-_]{8,256}$/,
+  passphrase: /^[\x21-\x7E]{1,128}$/,
+  priv_key:   /^(0x)?[0-9a-fA-F]{64}$/,
+};
+
+function _fieldErr(name, msg) {
+  const errEl = document.getElementById('err-' + name);
+  const inp = document.querySelector(`[name="${name}"]`);
+  if (errEl) { errEl.textContent = msg; errEl.classList.add('show'); }
+  if (inp) inp.classList.add('invalid');
+  return false;
+}
+function _clearFieldErrors() {
+  document.querySelectorAll('.field-err').forEach(el => { el.textContent = ''; el.classList.remove('show'); });
+  document.querySelectorAll('.form-input.invalid').forEach(el => el.classList.remove('invalid'));
+}
+
+function validateWalletForm(form) {
+  _clearFieldErrors();
+  let ok = true;
+  if (S.walletType === 'exchange') {
+    const key = form.api_key.value.trim();
+    const secret = form.api_secret.value.trim();
+    const pp = form.api_passphrase?.value?.trim();
+    if (!key) { _fieldErr('api_key', 'API key is required'); ok = false; }
+    else if (!RE.api_key.test(key)) { _fieldErr('api_key', 'Only letters, digits, hyphens and underscores allowed (min 8 chars)'); ok = false; }
+    if (!secret) { _fieldErr('api_secret', 'API secret is required'); ok = false; }
+    else if (!RE.api_secret.test(secret)) { _fieldErr('api_secret', 'Only letters, digits and +/=-_ chars allowed (min 8 chars)'); ok = false; }
+    if (pp && !RE.passphrase.test(pp)) { _fieldErr('api_passphrase', 'Passphrase must be printable characters with no spaces'); ok = false; }
+  } else if (S.walletType === 'chain') {
+    const chain = form.elements['chain_type'].value;
+    const addr = form.chain_address.value.trim();
+    if (!addr) { _fieldErr('chain_address', 'Address is required'); ok = false; }
+    else if (chain === 'tron' && !RE.tron.test(addr)) {
+      _fieldErr('chain_address', 'Tron address must start with T and be 34 Base58 characters'); ok = false;
+    } else if (EVM_CHAINS.has(chain) && !RE.evm.test(addr)) {
+      _fieldErr('chain_address', 'EVM address must be 0x followed by 40 hex characters'); ok = false;
+    }
+  } else if (S.walletType === 'perpdex') {
+    const dex = form.elements['perpdex_type'].value;
+    const pdOpt = S.options.perpdex_types.find(o => o.value === dex);
+    const needsKey = pdOpt && pdOpt.needs_api_key;
+    if (needsKey) {
+      const walletAddr = form.perpdex_api_key.value.trim();
+      const privKey = form.perpdex_api_secret.value.trim();
+      if (!walletAddr) { _fieldErr('perpdex_api_key', 'Wallet address is required'); ok = false; }
+      else if (!RE.evm.test(walletAddr)) { _fieldErr('perpdex_api_key', 'Must be a valid EVM address (0x + 40 hex chars)'); ok = false; }
+      if (!privKey) { _fieldErr('perpdex_api_secret', 'Private key is required'); ok = false; }
+      else if (!RE.priv_key.test(privKey)) { _fieldErr('perpdex_api_secret', 'Must be a 64-char hex private key (with or without 0x prefix)'); ok = false; }
+    } else {
+      const addr = form.perpdex_address.value.trim();
+      if (!addr) { _fieldErr('perpdex_address', 'Address is required'); ok = false; }
+      else if (dex === 'paradex' && !RE.starknet.test(addr)) {
+        _fieldErr('perpdex_address', 'Paradex uses a Starknet address (0x followed by hex)'); ok = false;
+      } else if (dex !== 'paradex' && !RE.evm.test(addr)) {
+        _fieldErr('perpdex_address', 'Must be a valid EVM address (0x + 40 hex chars)'); ok = false;
+      }
+    }
+  }
+  return ok;
+}
+
+async function submitAddWallet(e) {
+  e.preventDefault();
+  const form = e.target, errEl = document.getElementById('wallet-err');
+  errEl.classList.remove('show');
+  if (!validateWalletForm(form)) return;
+  const body = { name: form.elements['name'].value.trim(), wallet_type: S.walletType };
+  if (S.walletType === 'exchange') {
+    body.type_value = form.elements['exchange_type'].value;
+    body.api_key = form.api_key.value.trim();
+    body.api_secret = form.api_secret.value.trim();
+    const pp = form.api_passphrase?.value?.trim();
+    if (pp) body.api_passphrase = pp;
+  } else if (S.walletType === 'chain') {
+    body.type_value = form.elements['chain_type'].value;
+    body.address = form.chain_address.value.trim();
+  } else {
+    body.type_value = form.elements['perpdex_type'].value;
+    const pdOpt = S.options.perpdex_types.find(o => o.value === body.type_value);
+    if (pdOpt && pdOpt.needs_api_key) {
+      body.api_key = form.perpdex_api_key.value.trim();
+      body.api_secret = form.perpdex_api_secret.value.trim();
+    } else {
+      body.address = form.perpdex_address.value.trim();
+    }
+  }
+  const btn = document.getElementById('btn-submit-wallet');
+  btn.disabled = true;
+  try {
+    const w = await api.post('/wallets', body);
+    S.wallets.unshift(w);
+    renderAll();
+    closeAddWalletModal();
+    toast(`Added "${w.name}"`, 'success', 'Wallet connected successfully');
+  } catch(e) {
+    let msg = e.message;
+    try {
+      const parsed = JSON.parse(msg);
+      const detail = Array.isArray(parsed.detail)
+        ? parsed.detail.map(d => d.msg).join(', ')
+        : parsed.detail;
+      if (parsed.status === 402 || (detail && detail.toLowerCase && detail.toLowerCase().includes('limit'))) {
+        closeAddWalletModal();
+        openUpgradePopup();
+        btn.disabled = false;
+        return;
+      }
+      msg = detail || msg;
+    } catch {}
+    errEl.textContent = msg; errEl.classList.add('show');
+  } finally { btn.disabled = false; }
+}
+
+// ═══════════════════════════════════════════════════
+//  TAG MANAGE PANEL
+// ═══════════════════════════════════════════════════
+function toggleTagPanel(e) {
+  e.stopPropagation();
+  const panel = document.getElementById('tag-manage-panel');
+  const btn = document.getElementById('tag-manage-btn');
+  const isOpen = panel.classList.contains('open');
+  if (isOpen) { closeTagPanel(); return; }
+  // Position panel relative to button
+  const r = btn.getBoundingClientRect();
+  panel.style.top = (r.bottom + 6) + 'px';
+  // Align right edge to button right, clamp to viewport
+  const left = Math.max(8, r.right - 260);
+  panel.style.left = left + 'px';
+  panel.classList.add('open');
+  btn.classList.add('open');
+  document.getElementById('new-tag-name').value = '';
+  document.getElementById('tag-err').classList.remove('show');
+  renderTagsModal();
+}
+function closeTagPanel() {
+  document.getElementById('tag-manage-panel').classList.remove('open');
+  document.getElementById('tag-manage-btn').classList.remove('open');
+}
+
+async function createTag() {
+  const name = document.getElementById('new-tag-name').value.trim();
+  const color = document.getElementById('new-tag-color').value;
+  const errEl = document.getElementById('tag-err');
+  errEl.classList.remove('show');
+  if (!name) { errEl.textContent = 'Name is required'; errEl.classList.add('show'); return; }
+  try {
+    const tag = await api.post('/tags', { name, color });
+    S.tags.push(tag);
+    document.getElementById('new-tag-name').value = '';
+    renderTagsModal(); renderTagFilters();
+    toast(`Tag "${tag.name}" created`, 'success', 'Use it to group your wallets');
+  } catch(err) {
+    let msg = err.message;
+    try { msg = JSON.parse(msg).detail || msg; } catch {}
+    errEl.textContent = msg; errEl.classList.add('show');
+  }
+}
+
+function delTag(id, name) {
+  openConfirm({
+    title: 'Delete tag?',
+    sub: 'The tag will be removed from all wallets. Wallets themselves are not affected.',
+    name,
+    onConfirm: () => _doDelTag(id, name),
+  });
+}
+async function _doDelTag(id, name) {
+  try {
+    await api.del(`/tags/${id}`);
+    S.tags = S.tags.filter(t => t.id !== id);
+    S.wallets.forEach(w => { w.tags = w.tags.filter(t => t.id !== id); });
+    if (S.tagFilter === id) S.tagFilter = null;
+    renderTagsModal(); renderAll();
+    toast(`Tag "${name}" deleted`, 'success', 'Wallets are not affected');
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// Clear individual field error as user types
+document.getElementById('wallet-form').addEventListener('input', e => {
+  if (e.target.classList.contains('invalid')) {
+    e.target.classList.remove('invalid');
+    const errEl = document.getElementById('err-' + e.target.name);
+    if (errEl) { errEl.textContent = ''; errEl.classList.remove('show'); }
+  }
+});
+
+// ═══════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg, type = 'info', sub = '') {
+  const icons = { success: '✓', error: '✕', info: '·' };
+  const icon = icons[type] || icons.info;
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `
+    <span class="toast-icon">${icon}</span>
+    <div class="toast-body">
+      <span class="toast-title">${msg}</span>
+      ${sub ? `<span class="toast-sub">${sub}</span>` : ''}
+    </div>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => {
+    el.classList.add('removing');
+    setTimeout(() => el.remove(), 250);
+  }, 3200);
+}
+
+// Close dropdowns on outside click
+document.addEventListener('click', e => {
+  if (S.tagDropOpen !== null && !e.target.closest('#tag-drop-portal') && !e.target.closest('.icon-btn')) {
+    S.tagDropOpen = null;
+    closeTagDrop();
+  }
+  if (!e.target.closest('#tag-manage-wrap')) {
+    closeTagPanel();
+  }
+});
+// Close tag dropdown on scroll inside wallet list
+document.querySelector('.wallet-list') && document.querySelector('.wallet-list').addEventListener('scroll', () => {
+  if (S.tagDropOpen !== null) { S.tagDropOpen = null; closeTagDrop(); }
+}, { passive: true });
+document.getElementById('modal-wallet').addEventListener('click', e => { if(e.target===e.currentTarget) closeAddWalletModal(); });
+
+// ═══════════════════════════════════════════════════
+//  PANEL TOGGLE
+// ═══════════════════════════════════════════════════
+function togglePanel() {
+  const panel = document.querySelector('.panel-wallets');
+  const btn   = document.getElementById('panel-toggle');
+  panel.classList.toggle('collapsed');
+  btn.classList.toggle('collapsed');
+}
+
+// ═══════════════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  // Cmd+Enter or Ctrl+Enter — check balance
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    const btn = document.getElementById('btn-check-balance');
+    if (!btn.disabled && S.selected.size > 0 && !S.loadingBalance) {
+      e.preventDefault(); checkBalance();
+    }
+  }
+  // Escape — close modals
+  if (e.key === 'Escape') {
+    closeAddWalletModal(); closeTagPanel(); closeUpgradePopup();
+    if (S.tagDropOpen !== null) { S.tagDropOpen = null; closeTagDrop(); }
+  }
+});
+
+// ═══════════════════════════════════════════════════
+//  START
+// ═══════════════════════════════════════════════════
+//  TRANSACTIONS
+// ═══════════════════════════════════════════════════
+const TX_ICONS = { deposit: '↓', withdraw: '↑', trade: '⇄', fill: '⇄', transfer: '→', contract: '⬡' };
+
+function txTypeIcon(type) {
+  const base = type.split(' ')[0].toLowerCase();
+  const icon = TX_ICONS[base] || '•';
+  return `<div class="tx-type-icon ${base}">${icon}</div>`;
+}
+
+function renderTxRows(txs) {
+  if (!txs || !txs.length) return `<div class="tx-empty">No transactions found</div>`;
+  return txs.map((tx, i) => {
+    const statusCls = tx.status === 'completed' ? 'completed' : tx.status === 'failed' ? 'failed' : 'pending';
+    const shortId = tx.tx_id ? tx.tx_id.slice(0, 8) + '…' : '—';
+
+    // Address book matching
+    const matchedAddr = tx.address ? S.addressBook[(tx.address || '').toLowerCase()] : null;
+    const matchCls = matchedAddr ? ' addr-match' : '';
+    let addrBadge = '';
+    if (matchedAddr) {
+      let displayText;
+      if (matchedAddr.walletType === 'exchange') {
+        // Named address on exchange: "My Binance › Binance SOL"
+        displayText = `${esc(matchedAddr.walletName)} › ${esc(matchedAddr.label)}`;
+      } else {
+        // Chain or perpdex wallet's own address: "ETH Wallet" or "Hyperliquid"
+        displayText = esc(matchedAddr.walletName);
+      }
+      addrBadge = `<div class="tx-addr-badge" title="${esc(tx.address)}">⟶ ${displayText}</div>`;
+    }
+
+    return `<div class="tx-row${matchCls}" style="animation-delay:${i * 40}ms" title="ID: ${esc(tx.tx_id)}">
+      ${txTypeIcon(tx.type)}
+      <div class="tx-info">
+        <div class="tx-type-label">${esc(tx.type)}</div>
+        <div class="tx-asset">${esc(tx.asset)} · ${esc(shortId)}${tx.network ? `<span class="tx-network">${esc(tx.network)}</span>` : ''}</div>
+        ${addrBadge}
+      </div>
+      <div class="tx-amount">${esc(tx.amount)}</div>
+      <div class="tx-meta">
+        <div class="tx-time">${esc(tx.timestamp)}</div>
+        <div class="tx-status ${statusCls}">${esc(tx.status)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+const _txCache = {};
+const _txLoading = new Set();
+
+async function toggleTxPanel(walletId) {
+  const toggle = document.getElementById(`tx-toggle-${walletId}`);
+  const panel  = document.getElementById(`tx-panel-${walletId}`);
+  const inner  = document.getElementById(`tx-inner-${walletId}`);
+  if (!toggle || !panel || !inner) return;
+
+  const isOpen = panel.classList.contains('open');
+
+  if (isOpen) {
+    panel.classList.remove('open');
+    toggle.classList.remove('open');
+    return;
+  }
+
+  panel.classList.add('open');
+  toggle.classList.add('open');
+
+  // already loaded
+  if (_txCache[walletId]) return;
+
+  // already loading
+  if (_txLoading.has(walletId)) return;
+  _txLoading.add(walletId);
+
+  // shimmer
+  inner.innerHTML = [1,2,3].map(() => `<div class="tx-shimmer-row"></div>`).join('');
+
+  try {
+    const data = await api.post('/portfolio/transactions', { wallet_id: walletId });
+    if (data.error) {
+      inner.innerHTML = `<div class="tx-error">⚠ ${esc(data.error)}</div>`;
+    } else {
+      _txCache[walletId] = data.transactions;
+      inner.innerHTML = `<div class="tx-inner">${renderTxRows(data.transactions)}</div>`;
+    }
+  } catch(err) {
+    inner.innerHTML = `<div class="tx-error">⚠ ${esc(e.message)}</div>`;
+  } finally {
+    _txLoading.delete(walletId);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+init();
+</script>
+
+<nav class="bottom-nav">
+  <a href="/app.html" class="bnav-item active">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
+    Portfolio
+  </a>
+  <a href="/archive.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="7" width="16" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 7l2.5-4h11L18 7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Archive
+  </a>
+  <a href="/pricing.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
+    Pricing
+  </a>
+  <a href="/profile.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Profile
+  </a>
+</nav>
+</body>
+</html>

@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Avalant — All your crypto in one place</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #0E0E11;
+      --s1:       #131217;
+      --s2:       #17171C;
+      --s3:       #202028;
+      --border:   #22222A;
+      --text:     #E6E8E3;
+      --text2:    #9B9FAB;
+      --text3:    #676B7E;
+      --text4:    #393B47;
+      --green:    #1AFFAB;
+      --teal:     #06B6D4;
+      --red:      #F87171;
+      --yellow:   #E5C07B;
+      --purple:   #925BD6;
+      --font:     'Inter', system-ui, sans-serif;
+      --mono:     'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    ::selection { background: rgba(26,255,171,0.15); color: var(--green); }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ─── BACKGROUND GRID ─── */
+    :root { --cx: -600px; --cy: -600px; }
+
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+    }
+    .bg-glow {
+      position: fixed; top: -200px; left: 50%; transform: translateX(-50%);
+      width: 900px; height: 500px; z-index: 0; pointer-events: none;
+      background: radial-gradient(ellipse at center, rgba(26,255,171,0.07) 0%, transparent 70%);
+    }
+    /* cursor-following green grid */
+    .cursor-grid {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(26,255,171,0.13) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(26,255,171,0.13) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(circle 280px at var(--cx) var(--cy), black 0%, transparent 75%);
+      -webkit-mask-image: radial-gradient(circle 280px at var(--cx) var(--cy), black 0%, transparent 75%);
+    }
+    /* soft green glow under cursor */
+    .cursor-glow-spot {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: radial-gradient(circle 300px at var(--cx) var(--cy),
+        rgba(26,255,171,0.055) 0%,
+        rgba(26,255,171,0.02) 50%,
+        transparent 75%);
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 24px; height: 52px;
+      background: rgba(14,14,17,0.88);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .topbar::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.15), transparent);
+      pointer-events: none;
+    }
+    .brand {
+      display: flex; align-items: center;
+      font-size: 18px; font-weight: 800; letter-spacing: -0.7px; line-height: 1;
+      color: var(--text); text-decoration: none; user-select: none; flex-shrink: 0;
+      font-family: var(--font);
+    }
+    .brand:hover { opacity: 0.85; }
+    .brand-cursor {
+      color: var(--green);
+      animation: blink 1.1s step-start infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .topbar-nav {
+      display: flex; align-items: center; gap: 2px;
+      justify-content: center;
+    }
+    .topbar-right {
+      display: flex; align-items: center; gap: 8px;
+      justify-content: flex-end;
+    }
+    .nav-lnk {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 11px; border-radius: 8px;
+      font-size: 13px; font-weight: 500; color: var(--text3);
+      text-decoration: none; white-space: nowrap;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      border: 1px solid transparent;
+    }
+    .nav-lnk svg { opacity: 0.6; transition: opacity 0.15s; flex-shrink: 0; }
+    .nav-lnk:hover {
+      color: var(--green);
+      background: rgba(26,255,171,0.08);
+      border-color: rgba(26,255,171,0.12);
+    }
+    .nav-lnk:hover svg { opacity: 1; }
+    .nav-lnk.active {
+      color: var(--green);
+      background: rgba(26,255,171,0.1);
+      border-color: rgba(26,255,171,0.18);
+    }
+    .nav-lnk.active svg { opacity: 1; }
+    .avatar-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--green), #06B6D4);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #09090B;
+      text-decoration: none; cursor: pointer; flex-shrink: 0;
+      transition: box-shadow 0.2s;
+    }
+    .avatar-btn:hover { box-shadow: 0 0 10px rgba(26,255,171,0.35); }
+    .topbar-right .btn-primary {
+      border-radius: 8px;
+      height: 30px;
+      padding: 0 12px;
+      font-size: 13px;
+      transition: box-shadow 0.2s, background 0.15s;
+    }
+    .topbar-right .btn-primary:hover {
+      background: #00E89A;
+      box-shadow: 0 0 14px rgba(26,255,171,0.35);
+      transform: none;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 14px; height: 34px; border-radius: 8px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--text2); cursor: pointer;
+      font-family: var(--font); font-size: 13px; font-weight: 500;
+      transition: all 0.15s ease; white-space: nowrap; user-select: none;
+      text-decoration: none;
+    }
+    .btn:hover { border-color: var(--s3); color: var(--text); background: var(--s3); }
+    .btn-primary {
+      background: var(--green); border-color: var(--green); color: #09090B; font-weight: 500;
+    }
+    .btn-primary:hover {
+      background: #00E89A; border-color: #00E89A;
+      box-shadow: 0 0 20px rgba(26,255,171,0.25); transform: translateY(-1px);
+    }
+    .btn-sm { padding: 0 10px; height: 28px; font-size: 12px; }
+
+    /* ─── HERO ─── */
+    .hero {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 64px 24px 80px;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 99px;
+      border: 1px solid rgba(26,255,171,0.2);
+      background: rgba(26,255,171,0.06);
+      color: var(--green); font-size: 12px; font-weight: 500;
+      letter-spacing: 0.3px; margin-bottom: 28px;
+      opacity: 0; animation: fadeUp .6s .1s ease forwards;
+    }
+    .hero-badge-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .5; transform: scale(.8); }
+    }
+
+    .hero-h1 {
+      font-size: clamp(40px, 7vw, 76px);
+      font-weight: 800; line-height: 1.08;
+      letter-spacing: -2.5px; margin-bottom: 24px;
+      color: var(--text);
+      opacity: 0; animation: fadeUp .7s .2s ease forwards;
+    }
+    .hero-h1 em {
+      font-style: normal;
+      background: linear-gradient(135deg, var(--green) 0%, var(--teal) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      max-width: 520px; font-size: 17px; color: var(--text2);
+      line-height: 1.65; margin-bottom: 36px; font-weight: 400;
+      opacity: 0; animation: fadeUp .7s .3s ease forwards;
+    }
+
+    .hero-actions {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 64px;
+      opacity: 0; animation: fadeUp .7s .4s ease forwards;
+    }
+    .btn-hero {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 0 22px; height: 44px; border-radius: 8px;
+      background: var(--green); color: #09090B;
+      font-size: 14px; font-weight: 500; text-decoration: none;
+      transition: all .15s; letter-spacing: -.1px;
+    }
+    .btn-hero:hover { background: #00E89A; box-shadow: 0 0 32px rgba(26,255,171,0.3); transform: translateY(-2px); }
+    .btn-hero svg { transition: transform .15s; }
+    .btn-hero:hover svg { transform: translateX(3px); }
+    .btn-hero-ghost {
+      display: inline-flex; align-items: center;
+      padding: 0 20px; height: 44px; border-radius: 8px;
+      border: 1px solid var(--border);
+      color: var(--text2); font-size: 14px; font-weight: 500;
+      text-decoration: none; transition: all .15s;
+    }
+    .btn-hero-ghost:hover { border-color: var(--s3); color: var(--text); background: var(--s1); }
+
+    /* ─── HERO STATS ─── */
+    .hero-stats {
+      display: flex; align-items: center; gap: 0;
+      border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden;
+      background: var(--s1);
+      opacity: 0; animation: fadeUp .7s .5s ease forwards;
+    }
+    .stat-item {
+      padding: 16px 28px; border-right: 1px solid var(--border);
+      text-align: center;
+    }
+    .stat-item:last-child { border-right: none; }
+    .stat-num {
+      font-family: var(--mono); font-size: 24px; font-weight: 500;
+      color: var(--text); display: block; font-variant-numeric: tabular-nums;
+    }
+    .stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+    /* ─── MOCKUP ─── */
+    .hero-mockup {
+      position: relative; z-index: 1;
+      margin-top: 72px; margin-bottom: -60px;
+      width: 100%; max-width: 780px;
+      opacity: 0; animation: fadeUp .8s .6s ease forwards;
+    }
+    .mockup-window {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    }
+    .mockup-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--s2);
+    }
+    .mockup-dots { display: flex; gap: 6px; }
+    .mockup-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+    .mockup-title { font-size: 12px; color: var(--text3); font-family: var(--mono); }
+    .mockup-status { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--green); }
+    .mockup-status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+
+    .mockup-body { display: grid; grid-template-columns: 280px 1fr; min-height: 280px; }
+    .mockup-left {
+      border-right: 1px solid var(--border);
+      padding: 12px 8px;
+    }
+    .mockup-wallet-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 8px; border-radius: 6px;
+      margin-bottom: 2px; cursor: default;
+    }
+    .mockup-wallet-row.active { background: rgba(26,255,171,0.05); border-left: 2px solid var(--green); padding-left: 6px; }
+    .mockup-wdot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .mockup-wname { font-size: 12px; color: var(--text2); flex: 1; }
+    .mockup-wamt { font-size: 11px; font-family: var(--mono); color: var(--green); }
+    .mockup-right { padding: 20px; }
+    .mockup-total-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text3); margin-bottom: 4px; }
+    .mockup-total-num {
+      font-family: var(--mono); font-size: 36px; font-weight: 600;
+      color: var(--green); letter-spacing: -1px;
+      text-shadow: 0 0 40px rgba(26,255,171,0.3);
+      font-variant-numeric: tabular-nums;
+    }
+    .mockup-sub { font-size: 11px; color: var(--text3); margin-bottom: 16px; margin-top: 2px; }
+    .mockup-asset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .mockup-asset {
+      background: var(--s2); border-radius: 7px; padding: 8px 10px;
+      border: 1px solid var(--border);
+    }
+    .mockup-asset-sym { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--text3); margin-bottom: 2px; }
+    .mockup-asset-val { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+    .mockup-asset-val.s { color: var(--green); }
+
+    /* shimmer on mockup numbers */
+    .num-anim { opacity: 0; animation: fadeIn .4s ease forwards; }
+    @keyframes fadeIn { to { opacity: 1; } }
+
+    /* ─── SECTION COMMON ─── */
+    section { position: relative; z-index: 1; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+    .section-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 1.4px;
+      text-transform: uppercase; color: var(--green); margin-bottom: 12px;
+    }
+    .section-h2 {
+      font-size: clamp(28px, 4vw, 44px); font-weight: 700;
+      letter-spacing: -1.2px; line-height: 1.15; margin-bottom: 16px;
+    }
+    .section-sub { font-size: 16px; color: var(--text2); max-width: 520px; line-height: 1.65; }
+
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity .6s ease, transform .6s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    /* ─── DIVIDER ─── */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+      margin: 0;
+    }
+
+    /* ─── SOURCES ─── */
+    .sources-section { padding: 80px 0; }
+    .sources-label-row {
+      text-align: center; margin-bottom: 36px;
+    }
+    .sources-label { font-size: 12px; color: var(--text3); text-transform: uppercase; letter-spacing: 1.2px; }
+    .sources-grid {
+      display: flex; flex-wrap: wrap;
+      justify-content: center; gap: 8px;
+    }
+    .source-chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 14px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--s1);
+      font-size: 13px; font-weight: 500; color: var(--text2);
+      transition: all .15s;
+    }
+    .source-chip:hover { border-color: var(--s3); color: var(--text); transform: translateY(-2px); }
+    .source-chip-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+    /* ─── FEATURES ─── */
+    .features-section { padding: 100px 0; }
+    .features-head { margin-bottom: 56px; }
+    .features-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; }
+    @media(max-width: 680px) { .features-grid { grid-template-columns: 1fr; } }
+
+    .feature-card {
+      padding: 32px 32px;
+      background: var(--s1);
+      border: 1px solid var(--border);
+      transition: border-color .2s;
+      position: relative; overflow: hidden;
+    }
+    .feature-card:nth-child(1) { border-radius: 14px 0 0 0; }
+    .feature-card:nth-child(2) { border-radius: 0 14px 0 0; }
+    .feature-card:nth-child(3) { border-radius: 0 0 0 14px; }
+    .feature-card:nth-child(4) { border-radius: 0 0 14px 0; }
+    .feature-card:hover { border-color: var(--s3); }
+    .feature-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 0% 0%, rgba(26,255,171,0.04) 0%, transparent 60%);
+      opacity: 0; transition: opacity .3s;
+    }
+    .feature-card:hover::before { opacity: 1; }
+
+    .feature-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 19px; margin-bottom: 18px;
+      background: var(--s2);
+    }
+    .feature-h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; letter-spacing: -.3px; }
+    .feature-p { font-size: 14px; color: var(--text2); line-height: 1.65; }
+
+    /* ─── HOW IT WORKS ─── */
+    .how-section { padding: 100px 0; }
+    .how-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
+    @media(max-width: 800px) { .how-inner { grid-template-columns: 1fr; } }
+
+    .steps { display: flex; flex-direction: column; gap: 0; }
+    .step {
+      display: flex; gap: 20px;
+      padding: 24px 0;
+      border-bottom: 1px solid var(--border);
+      cursor: default;
+    }
+    .step:last-child { border-bottom: none; }
+    .step-num {
+      font-family: var(--mono); font-size: 12px; font-weight: 500;
+      color: var(--text4); min-width: 24px; padding-top: 2px;
+    }
+    .step-body {}
+    .step-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .step-desc { font-size: 13px; color: var(--text2); line-height: 1.6; }
+    .step:hover .step-num { color: var(--green); }
+
+    .how-visual {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 14px; padding: 24px;
+      position: relative; overflow: hidden;
+    }
+    .how-visual::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.2), transparent);
+    }
+    .how-tag-list { display: flex; flex-direction: column; gap: 8px; }
+    .how-tag-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      background: var(--s2); border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .how-tag-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .how-tag-name { flex: 1; font-weight: 500; }
+    .how-tag-val { font-family: var(--mono); font-size: 12px; color: var(--green); }
+    .how-tag-count { font-size: 11px; color: var(--text3); }
+
+    /* ─── CTA BLOCK ─── */
+    .cta-section { padding: 100px 0 120px; }
+    .cta-block {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 20px; padding: 64px 48px;
+      text-align: center; position: relative; overflow: hidden;
+    }
+    .cta-block::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.25), transparent);
+    }
+    .cta-glow {
+      position: absolute; top: -100px; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 300px; pointer-events: none;
+      background: radial-gradient(ellipse, rgba(26,255,171,0.08) 0%, transparent 70%);
+    }
+    .cta-h2 {
+      font-size: clamp(26px, 4vw, 42px); font-weight: 700;
+      letter-spacing: -1.2px; margin-bottom: 16px; position: relative;
+    }
+    .cta-sub { font-size: 16px; color: var(--text2); margin-bottom: 32px; position: relative; }
+
+    /* ─── FOOTER ─── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 40px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: relative; z-index: 1;
+    }
+    .footer-brand { font-size: 13px; color: var(--text3); }
+    .footer-brand b { color: var(--text2); font-weight: 500; }
+    .footer-link {
+      font-size: 13px; color: var(--text3); text-decoration: none;
+      transition: color .15s;
+    }
+    .footer-link:hover { color: var(--text); }
+
+    /* ─── ANIMATIONS ─── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── SCROLLBAR ─── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ─── EXTRAS ─── */
+
+    /* source chips entrance stagger */
+    .sources-grid .source-chip {
+      opacity: 0;
+      animation: fadeUp .5s ease forwards;
+    }
+
+    /* feature cards hover accent glow */
+    .feature-card {
+      transition: border-color .2s, box-shadow .2s, transform .2s;
+    }
+    .feature-card:hover {
+      box-shadow: 0 8px 40px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(26,255,171,0.08);
+      transform: translateY(-3px);
+    }
+
+    /* how-it-works step number glow */
+    .step-num {
+      transition: box-shadow .2s, color .2s;
+    }
+    .how-step:hover .step-num {
+      box-shadow: 0 0 16px rgba(26,255,171,0.25);
+      color: var(--green);
+    }
+
+    /* subtle scan line on hero mockup top border */
+    @keyframes topScan {
+      0%   { left: -20%; }
+      100% { left: 120%; }
+    }
+    .mockup-window::before {
+      content: '';
+      position: absolute; top: 0; height: 1px; width: 20%;
+      background: linear-gradient(90deg, transparent, var(--green), transparent);
+      animation: topScan 3s linear infinite;
+      opacity: 0.5;
+      z-index: 2;
+    }
+    .mockup-window { position: relative; overflow: hidden; }
+
+    /* CTA button ripple on hero */
+    .btn-hero { position: relative; overflow: hidden; }
+    .btn-hero::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(circle at var(--x,50%) var(--y,50%), rgba(255,255,255,0.2) 0%, transparent 60%);
+      opacity: 0; transition: opacity .3s;
+    }
+    .btn-hero:hover::after { opacity: 1; }
+
+    /* ── BOTTOM NAV ── */
+    .bottom-nav {
+      display: none;
+      position: fixed;
+      bottom: 12px; left: 12px; right: 12px;
+      height: 64px;
+      background: rgba(13,13,16,0.82);
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 20px;
+      z-index: 300;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 4px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .bnav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 14px; border-radius: 12px;
+      text-decoration: none; color: var(--text3);
+      font-size: 10px; font-weight: 500; letter-spacing: 0.1px;
+      transition: color 0.15s, background 0.15s;
+      flex: 1; max-width: 80px;
+    }
+    .bnav-item svg { flex-shrink: 0; transition: opacity 0.15s; opacity: 0.45; }
+    .bnav-item:hover { color: var(--text2); }
+    .bnav-item:hover svg { opacity: 0.7; }
+    .bnav-item.active { color: var(--green); }
+    .bnav-item.active svg { opacity: 1; }
+
+    /* ── MOBILE ── */
+    @media (max-width: 768px) {
+      .bottom-nav { display: flex; }
+      body { padding-bottom: 88px; }
+
+      /* Topbar: hide nav + right links, keep brand */
+      .topbar { grid-template-columns: auto 1fr; padding: 0 16px; }
+      .topbar-nav { display: none; }
+      .topbar-right { display: none; }
+
+      /* Hero */
+      .hero { padding: 40px 16px 48px; min-height: auto; }
+      .hero-sub { font-size: 15px; }
+      .hero-actions { gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+      /* Hero stats: 2×2 grid */
+      .hero-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        width: 100%; max-width: 360px;
+        border-radius: 10px;
+      }
+      .stat-item { padding: 12px 14px; }
+      .stat-item:nth-child(2n) { border-right: none; }
+      .stat-item:nth-child(1),
+      .stat-item:nth-child(2) { border-bottom: 1px solid var(--border); }
+      .stat-num { font-size: 20px; }
+
+      /* Hero mockup: hide sidebar, simplify */
+      .hero-mockup { margin-top: 36px; margin-bottom: 0; }
+      .mockup-body { grid-template-columns: 1fr; }
+      .mockup-left { display: none; }
+      .mockup-total-num { font-size: 26px; }
+      .mockup-asset-grid { grid-template-columns: repeat(2, 1fr); }
+
+      /* Sections */
+      .container { padding: 0 16px; }
+      .sources-section { padding: 48px 0; }
+      .features-section { padding: 60px 0; }
+      .features-grid { gap: 0; }
+      .feature-card { padding: 24px 20px; }
+      .feature-card:nth-child(1),
+      .feature-card:nth-child(2),
+      .feature-card:nth-child(3) { border-radius: 0; }
+      .feature-card:nth-child(1) { border-radius: 14px 14px 0 0; }
+      .feature-card:nth-child(4) { border-radius: 0 0 14px 14px; }
+      .how-section { padding: 60px 0; }
+      .cta-section { padding: 60px 0 72px; }
+      .cta-block { padding: 40px 20px; border-radius: 14px; }
+
+      /* Footer */
+      footer { flex-direction: column; gap: 10px; padding: 24px 20px; text-align: center; }
+    }
+
+    @media (max-width: 420px) {
+      .hero-actions { flex-direction: column; width: 100%; }
+      .btn-hero, .btn-hero-ghost { width: 100%; justify-content: center; }
+    }
+
+  
+    /* ── Free Banner ── */
+    .free-banner {
+      position: fixed;
+      top: 60px;
+      left: 12px;
+      right: 12px;
+      z-index: 98;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 9px 20px;
+      background: rgba(14,14,17,0.92);
+      border: 1px solid rgba(26,255,171,0.18);
+      border-radius: 12px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      font-size: 13px;
+      color: var(--text2);
+      letter-spacing: 0.01em;
+      animation: bannerIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
+      animation-delay: 0.7s;
+      opacity: 0;
+    }
+    .free-banner-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 7px rgba(26,255,171,0.65);
+      flex-shrink: 0;
+    }
+    .free-banner em { font-style: normal; color: var(--text); font-weight: 500; }
+    .free-banner-close {
+      position: absolute;
+      right: 12px;
+      background: none; border: none;
+      color: var(--text3); font-size: 15px; line-height: 1;
+      cursor: pointer; padding: 4px 5px; border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .free-banner-close:hover { color: var(--text); background: var(--surface3); }
+    @keyframes bannerIn {
+      from { transform: translateY(-14px); opacity: 0; }
+      to   { transform: translateY(0);     opacity: 1; }
+    }
+
+    </style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+<div class="cursor-grid"></div>
+<div class="cursor-glow-spot"></div>
+
+<!-- ══ NAV ══════════════════════════════════════════════════════════ -->
+<header class="topbar">
+  <a href="/index.html" class="brand">
+    avalant<span class="brand-cursor">_</span>
+  </a>
+  <nav class="topbar-nav">
+    <a href="/app.html" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="6" width="3" height="5" rx="0.7" fill="currentColor" opacity=".5"/><rect x="4.5" y="3.5" width="3" height="7.5" rx="0.7" fill="currentColor" opacity=".75"/><rect x="8" y="1" width="3" height="10" rx="0.7" fill="currentColor"/></svg>
+      Portfolio
+    </a>
+    <a href="/pricing.html" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h3.8l5 5-3.8 3.8-5-5V1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.9" fill="currentColor"/></svg>
+      Pricing
+    </a>
+  </nav>
+  <div class="topbar-right" id="topbar-right-guest">
+    <a href="/login.html" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2H10a1 1 0 011 1v6a1 1 0 01-1 1H8M5 9l3-3-3-3M1 6h7" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Sign In
+    </a>
+    <a href="/register.html" class="btn btn-primary btn-sm">Get Started</a>
+  </div>
+  <div class="topbar-right" id="topbar-right-user" style="display:none">
+    <a href="/app.html" class="btn btn-primary btn-sm">Open App</a>
+    <a href="/profile.html" class="avatar-btn" id="nav-avatar" title="Profile">U</a>
+  </div>
+</header>
+
+<!-- ── Free Banner ── -->
+<div class="free-banner" id="free-banner">
+  <span class="free-banner-dot"></span>
+  Use all features for free — <em>no credit card required</em>
+  <button class="free-banner-close" onclick="dismissFreeBanner()" aria-label="Dismiss">✕</button>
+</div>
+<script>
+  (function(){
+    if(localStorage.getItem('avalant-banner-dismissed')){
+      var b=document.getElementById('free-banner');
+      if(b) b.style.display='none';
+    }
+  })();
+  function dismissFreeBanner(){
+    var b=document.getElementById('free-banner');
+    if(!b) return;
+    b.style.transition='opacity 0.2s, transform 0.2s';
+    b.style.opacity='0';
+    b.style.transform='translateY(-14px)';
+    setTimeout(function(){ b && b.remove(); }, 220);
+    localStorage.setItem('avalant-banner-dismissed','1');
+  }
+</script>
+
+
+<!-- ══ HERO ══════════════════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-badge">
+    <span class="hero-badge-dot"></span>
+    Self-hosted · Open source · No cloud
+  </div>
+
+  <h1 class="hero-h1">
+    All your crypto.<br>
+    <em>One dashboard.</em>
+  </h1>
+
+  <p class="hero-sub">
+    Connect CEX accounts, on-chain wallets and perp positions.
+    See your entire portfolio in one place — instantly.
+  </p>
+
+  <div class="hero-actions">
+    <a href="/app.html" class="btn-hero">
+      Open App
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+    <a href="#features" class="btn-hero-ghost">See features</a>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat-item">
+      <span class="stat-num" id="cnt-ex">0</span>
+      <div class="stat-label">Exchanges</div>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num" id="cnt-ch">0</span>
+      <div class="stat-label">Chains</div>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num" id="cnt-dex">0</span>
+      <div class="stat-label">Perp DEXes</div>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num" style="color:var(--green)">∞</span>
+      <div class="stat-label">API Keys</div>
+    </div>
+  </div>
+
+  <!-- MOCKUP -->
+  <div class="hero-mockup">
+    <div class="mockup-window">
+      <div class="mockup-bar">
+        <div class="mockup-dots">
+          <div class="mockup-dot"></div>
+          <div class="mockup-dot"></div>
+          <div class="mockup-dot"></div>
+        </div>
+        <div class="mockup-title">avalant_ · dashboard</div>
+        <div class="mockup-status">
+          <span class="mockup-status-dot"></span>
+          live
+        </div>
+      </div>
+      <div class="mockup-body">
+        <div class="mockup-left">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding:4px 8px 8px;font-weight:600">Wallets · 6</div>
+          <div class="mockup-wallet-row active">
+            <span class="mockup-wdot" style="background:#E5C07B"></span>
+            <span class="mockup-wname">Binance</span>
+            <span class="mockup-wamt" id="m1">—</span>
+          </div>
+          <div class="mockup-wallet-row active">
+            <span class="mockup-wdot" style="background:#925BD6"></span>
+            <span class="mockup-wname">Hyperliquid</span>
+            <span class="mockup-wamt" id="m2">—</span>
+          </div>
+          <div class="mockup-wallet-row active">
+            <span class="mockup-wdot" style="background:#06B6D4"></span>
+            <span class="mockup-wname">Ethereum</span>
+            <span class="mockup-wamt" id="m3">—</span>
+          </div>
+          <div class="mockup-wallet-row active">
+            <span class="mockup-wdot" style="background:#E5C07B"></span>
+            <span class="mockup-wname">OKX</span>
+            <span class="mockup-wamt" id="m4">—</span>
+          </div>
+          <div class="mockup-wallet-row active">
+            <span class="mockup-wdot" style="background:#06B6D4"></span>
+            <span class="mockup-wname">Tron</span>
+            <span class="mockup-wamt" id="m5">—</span>
+          </div>
+        </div>
+        <div class="mockup-right">
+          <div class="mockup-total-label">Total Portfolio</div>
+          <div class="mockup-total-num" id="mock-total">$0.00</div>
+          <div class="mockup-sub">5 wallets · stablecoins</div>
+          <div class="mockup-asset-grid">
+            <div class="mockup-asset">
+              <div class="mockup-asset-sym">USDT</div>
+              <div class="mockup-asset-val s" id="ma1">—</div>
+            </div>
+            <div class="mockup-asset">
+              <div class="mockup-asset-sym">USDC</div>
+              <div class="mockup-asset-val s" id="ma2">—</div>
+            </div>
+            <div class="mockup-asset">
+              <div class="mockup-asset-sym">USDe</div>
+              <div class="mockup-asset-val s" id="ma3">—</div>
+            </div>
+            <div class="mockup-asset">
+              <div class="mockup-asset-sym">ETH</div>
+              <div class="mockup-asset-val" id="ma4">—</div>
+            </div>
+            <div class="mockup-asset">
+              <div class="mockup-asset-sym">BTC</div>
+              <div class="mockup-asset-val" id="ma5">—</div>
+            </div>
+            <div class="mockup-asset">
+              <div class="mockup-asset-sym">SOL</div>
+              <div class="mockup-asset-val" id="ma6">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ SOURCES ════════════════════════════════════════════════════════ -->
+<div class="divider"></div>
+<section class="sources-section">
+  <div class="container">
+    <div class="sources-label-row reveal">
+      <div class="sources-label">Works with everything you already use</div>
+    </div>
+    <div class="sources-grid reveal">
+      <div class="source-chip"><span class="source-chip-dot" style="background:#F0B90B"></span>Binance</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#0ECB81"></span>OKX</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#F7931A"></span>Bybit</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#2354E6"></span>Gate.io</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#1DA2B4"></span>KuCoin</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#00B897"></span>MEXC</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#00F0FF"></span>Bitget</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#8B5CF6"></span>Backpack</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#1AFFAB"></span>Hyperliquid</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#06B6D4"></span>Lighter</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#925BD6"></span>Ethereal</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#627EEA"></span>Ethereum</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#F3BA2F"></span>BSC</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#8247E5"></span>Polygon</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#28A0F0"></span>Arbitrum</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#FF0420"></span>Optimism</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#0052FF"></span>Base</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#E84142"></span>Avalanche</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#C2A633"></span>Tron</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#1C9BEF"></span>zkSync</div>
+    </div>
+  </div>
+</section>
+<div class="divider"></div>
+
+<!-- ══ FEATURES ══════════════════════════════════════════════════════ -->
+<section class="features-section" id="features">
+  <div class="container">
+    <div class="features-head reveal">
+      <div class="section-label">Features</div>
+      <h2 class="section-h2">Built for serious<br>crypto users</h2>
+      <p class="section-sub">No compromises. Everything you need to track a multi-source portfolio — without giving up control.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <div class="feature-icon">🔗</div>
+        <h3 class="feature-h3">Multi-source aggregation</h3>
+        <p class="feature-p">Pull balances from CEX accounts via API, on-chain wallets by address, and perp DEX positions — all in one request, all in parallel.</p>
+      </div>
+      <div class="feature-card reveal" style="transition-delay:.08s">
+        <div class="feature-icon">⚡</div>
+        <h3 class="feature-h3">Instant parallel fetch</h3>
+        <p class="feature-p">All providers are queried simultaneously using asyncio. 8 exchanges + 5 chains responds in under 3 seconds, not 30.</p>
+      </div>
+      <div class="feature-card reveal" style="transition-delay:.12s">
+        <div class="feature-icon">🏷</div>
+        <h3 class="feature-h3">Custom tags & filters</h3>
+        <p class="feature-p">Create your own tags — by strategy, risk, person, or anything else. Filter wallets instantly. Group checks by tag.</p>
+      </div>
+      <div class="feature-card reveal" style="transition-delay:.18s">
+        <div class="feature-icon">🔒</div>
+        <h3 class="feature-h3">Fully self-hosted</h3>
+        <p class="feature-p">Your API keys and addresses never leave your server. No cloud, no third party, no tracking. SQLite, one command to start.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ HOW IT WORKS ══════════════════════════════════════════════════ -->
+<div class="divider"></div>
+<section class="how-section" id="how">
+  <div class="container">
+    <div class="how-inner">
+      <div>
+        <div class="section-label reveal">How it works</div>
+        <h2 class="section-h2 reveal">Three steps to full visibility</h2>
+        <div class="steps">
+          <div class="step reveal">
+            <div class="step-num">01</div>
+            <div class="step-body">
+              <div class="step-title">Add your wallets</div>
+              <div class="step-desc">Paste API keys for exchanges, or a wallet address for chains and perp DEXes. Supports read-only API keys — write access never needed.</div>
+            </div>
+          </div>
+          <div class="step reveal">
+            <div class="step-num">02</div>
+            <div class="step-body">
+              <div class="step-title">Tag & organize</div>
+              <div class="step-desc">Create custom tags with colors. Assign multiple tags per wallet. Filter the dashboard to see only what matters right now.</div>
+            </div>
+          </div>
+          <div class="step reveal">
+            <div class="step-num">03</div>
+            <div class="step-body">
+              <div class="step-title">Check balance</div>
+              <div class="step-desc">Select wallets with checkboxes — or check all at once. See individual breakdowns and a unified portfolio total with stablecoins separated.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="how-visual reveal">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:12px;font-weight:600">Portfolio by tag</div>
+        <div class="how-tag-list">
+          <div class="how-tag-item">
+            <span class="how-tag-dot" style="background:#1AFFAB"></span>
+            <span class="how-tag-name">DeFi</span>
+            <span class="how-tag-val">$48,230</span>
+            <span class="how-tag-count">3 wallets</span>
+          </div>
+          <div class="how-tag-item">
+            <span class="how-tag-dot" style="background:#06B6D4"></span>
+            <span class="how-tag-name">CEX</span>
+            <span class="how-tag-val">$62,450</span>
+            <span class="how-tag-count">4 wallets</span>
+          </div>
+          <div class="how-tag-item">
+            <span class="how-tag-dot" style="background:#925BD6"></span>
+            <span class="how-tag-name">Perps</span>
+            <span class="how-tag-val">$14,177</span>
+            <span class="how-tag-count">2 wallets</span>
+          </div>
+          <div class="how-tag-item">
+            <span class="how-tag-dot" style="background:#E5C07B"></span>
+            <span class="how-tag-name">Cold storage</span>
+            <span class="how-tag-val">$33,891</span>
+            <span class="how-tag-count">1 wallet</span>
+          </div>
+        </div>
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px">Total</span>
+          <span style="font-family:var(--mono);font-size:20px;font-weight:600;color:var(--green)">$158,748</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="divider"></div>
+
+<!-- ══ CTA ═══════════════════════════════════════════════════════════ -->
+<section class="cta-section">
+  <div class="container">
+    <div class="cta-block reveal">
+      <div class="cta-glow"></div>
+      <h2 class="cta-h2">Ready to see everything?</h2>
+      <p class="cta-sub">Open the dashboard, add your first wallet,<br>and check your full portfolio in seconds.</p>
+      <a href="/app.html" class="btn-hero" style="position:relative">
+        Open App
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══ FOOTER ═════════════════════════════════════════════════════════ -->
+<footer>
+  <div class="footer-brand"><b>avalant<span style="color:var(--green)">_</span></b> · self-hosted crypto portfolio tracker</div>
+  <a href="/app.html" class="footer-link">Open App →</a>
+</footer>
+
+<nav class="bottom-nav" id="bottom-nav">
+  <a href="/app.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
+    Portfolio
+  </a>
+  <a href="/archive.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="M3 7v9a1 1 0 001 1h12a1 1 0 001-1V7" stroke="currentColor" stroke-width="1.5"/><path d="M8 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Archive
+  </a>
+  <a href="/pricing.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
+    Pricing
+  </a>
+  <!-- Auth-aware: replaced by JS -->
+  <a href="/profile.html" class="bnav-item" id="bnav-auth">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Profile
+  </a>
+</nav>
+
+<script src="/auth.js"></script>
+<script>
+// Update nav based on auth state
+(function() {
+  const loggedIn = Auth.isLoggedIn();
+  const guestEl = document.getElementById('topbar-right-guest');
+  const userEl  = document.getElementById('topbar-right-user');
+  if (loggedIn) {
+    if (guestEl) guestEl.style.display = 'none';
+    if (userEl)  userEl.style.display  = 'flex';
+    const u = Auth.getUser();
+    const av = document.getElementById('nav-avatar');
+    if (av && u) av.textContent = (u.username || u.email || 'U')[0].toUpperCase();
+  } else {
+    const bnavAuth = document.getElementById('bnav-auth');
+    if (bnavAuth) {
+      bnavAuth.href = '/login.html';
+      bnavAuth.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M13 3h4a1 1 0 011 1v12a1 1 0 01-1 1h-4M8 14l4-4-4-4M2 10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Sign In`;
+    }
+  }
+})();
+</script>
+<script>
+// ─── COUNTER ANIMATION ───
+function counter(el, target, duration = 1200, prefix = '') {
+  const t0 = performance.now();
+  const tick = now => {
+    const p = Math.min((now - t0) / duration, 1);
+    const e = 1 - Math.pow(1 - p, 3);
+    el.textContent = prefix + Math.round(target * e);
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+// ─── MOCKUP NUMBER ANIMATION ───
+function mockNum(id, val, delay = 0) {
+  setTimeout(() => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.transition = 'opacity .4s';
+    el.style.opacity = '0';
+    setTimeout(() => {
+      el.textContent = val;
+      el.style.opacity = '1';
+    }, 200);
+  }, delay);
+}
+
+function animateMockTotal(target, duration = 1400, delay = 600) {
+  setTimeout(() => {
+    const el = document.getElementById('mock-total');
+    if (!el) return;
+    const t0 = performance.now();
+    const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const tick = now => {
+      const p = Math.min((now - t0) / duration, 1);
+      const e = 1 - Math.pow(1 - p, 4);
+      el.textContent = fmt(target * e);
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, delay);
+}
+
+// Start animations after page loads
+window.addEventListener('load', () => {
+  // Stats counters — fetch real provider counts from backend
+  fetch('/api/providers')
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      const ex  = data ? data.exchanges  : 8;
+      const ch  = data ? data.chains     : 13;
+      const dex = data ? data.perp_dexes : 5;
+      setTimeout(() => {
+        counter(document.getElementById('cnt-ex'),  ex,  1000);
+        counter(document.getElementById('cnt-ch'),  ch,  1200);
+        counter(document.getElementById('cnt-dex'), dex, 800);
+      }, 700);
+    })
+    .catch(() => {
+      setTimeout(() => {
+        counter(document.getElementById('cnt-ex'),  8,  1000);
+        counter(document.getElementById('cnt-ch'),  13, 1200);
+        counter(document.getElementById('cnt-dex'), 5,  800);
+      }, 700);
+    });
+
+  // Mockup numbers
+  animateMockTotal(124857.32);
+  mockNum('m1', '$52,341', 800);
+  mockNum('m2', '$18,230', 950);
+  mockNum('m3', '$31,450', 1100);
+  mockNum('m4', '$14,280', 1250);
+  mockNum('m5', '$8,556', 1400);
+  mockNum('ma1', '$68,430', 900);
+  mockNum('ma2', '$32,180', 1050);
+  mockNum('ma3', '$24,247', 1200);
+  mockNum('ma4', '2.8431', 1300);
+  mockNum('ma5', '0.4821', 1400);
+  mockNum('ma6', '47.92', 1500);
+});
+
+// ─── SCROLL REVEAL ───
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); }
+  });
+}, { threshold: 0.12 });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ─── SOURCE CHIPS STAGGER ───
+const chipsObserver = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.querySelectorAll('.source-chip').forEach((chip, i) => {
+        chip.style.animationDelay = (i * 35) + 'ms';
+        chip.style.animationFillMode = 'both';
+      });
+      chipsObserver.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.1 });
+
+const grid = document.querySelector('.sources-grid');
+if (grid) chipsObserver.observe(grid);
+
+// ─── SMOOTH ANCHOR ───
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth' }); }
+  });
+});
+
+// Cursor grid glow
+(function () {
+  const root = document.documentElement;
+  // Initialize via JS so browser treats these as dynamic inline props from first paint
+  root.style.setProperty('--cx', '-9999px');
+  root.style.setProperty('--cy', '-9999px');
+  let raf = null;
+  let tx = -9999, ty = -9999;
+
+  document.addEventListener('mousemove', e => {
+    tx = e.clientX;
+    ty = e.clientY;
+    if (!raf) {
+      raf = requestAnimationFrame(() => {
+        root.style.setProperty('--cx', tx + 'px');
+        root.style.setProperty('--cy', ty + 'px');
+        raf = null;
+      });
+    }
+  });
+
+  document.addEventListener('mouseleave', () => {
+    root.style.setProperty('--cx', '-9999px');
+    root.style.setProperty('--cy', '-9999px');
+  });
+})();
+</script>
+</body>
+</html>

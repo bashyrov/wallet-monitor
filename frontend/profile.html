@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile — Avalant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:        #0E0E11;
+      --surface:   #131217;
+      --surface2:  #17171C;
+      --surface3:  #202028;
+      --surface4:  #22222A;
+      --border:    #22222A;
+      --text:      #E6E8E3;
+      --text2:     #9B9FAB;
+      --text3:     #676B7E;
+      --text4:     #393B47;
+      --green:     #1AFFAB;
+      --green-dim: rgba(26,255,171,0.08);
+      --green-glow:rgba(26,255,171,0.2);
+      --teal:      #06B6D4;
+      --teal-dim:  rgba(6,182,212,0.1);
+      --purple:    #925BD6;
+      --purple-dim:rgba(146,91,214,0.1);
+      --yellow:    #E5C07B;
+      --yellow-dim:rgba(229,192,123,0.1);
+      --red:       #F87171;
+      --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    ::selection { background: var(--green-dim); color: var(--green); }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 24px; height: 52px;
+      background: rgba(14,14,17,0.88);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .topbar::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.15), transparent);
+      pointer-events: none;
+    }
+    .brand {
+      display: flex; align-items: center;
+      font-size: 18px; font-weight: 800; letter-spacing: -0.7px; line-height: 1;
+      color: var(--text); text-decoration: none; user-select: none; flex-shrink: 0;
+      font-family: var(--font);
+    }
+    .brand:hover { opacity: 0.85; }
+    .brand-cursor {
+      color: var(--green);
+      animation: blink 1.1s step-start infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .topbar-nav {
+      display: flex; align-items: center; gap: 2px;
+      justify-content: center;
+    }
+    .topbar-right {
+      display: flex; align-items: center; gap: 8px;
+      justify-content: flex-end;
+    }
+    .nav-lnk {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 11px; border-radius: 8px;
+      font-size: 13px; font-weight: 500; color: var(--text3);
+      text-decoration: none; white-space: nowrap;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      border: 1px solid transparent;
+    }
+    .nav-lnk svg { opacity: 0.6; transition: opacity 0.15s; flex-shrink: 0; }
+    .nav-lnk:hover {
+      color: var(--green);
+      background: rgba(26,255,171,0.08);
+      border-color: rgba(26,255,171,0.12);
+    }
+    .nav-lnk:hover svg { opacity: 1; }
+    .nav-lnk.active {
+      color: var(--green);
+      background: rgba(26,255,171,0.1);
+      border-color: rgba(26,255,171,0.18);
+    }
+    .nav-lnk.active svg { opacity: 1; }
+    .avatar-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--green), #06B6D4);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #09090B;
+      text-decoration: none; cursor: pointer; flex-shrink: 0;
+      transition: box-shadow 0.2s;
+    }
+    .avatar-btn:hover { box-shadow: 0 0 10px rgba(26,255,171,0.35); }
+    .topbar-right .btn-primary {
+      border-radius: 8px;
+      height: 30px;
+      padding: 0 12px;
+      font-size: 13px;
+      transition: box-shadow 0.2s, background 0.15s;
+    }
+    .topbar-right .btn-primary:hover {
+      background: #00E89A;
+      box-shadow: 0 0 14px rgba(26,255,171,0.35);
+      transform: none;
+    }
+
+    /* ── PAGE ── */
+    .page { position: relative; z-index: 1; max-width: 840px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    /* ── PROFILE HERO ── */
+    .profile-hero {
+      display: flex; align-items: center; gap: 20px;
+      padding: 28px 32px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 20px;
+      position: relative; overflow: hidden;
+      animation: fadeUp 0.4s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .profile-hero::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.15), transparent);
+    }
+    .profile-avatar {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--green) 0%, var(--teal) 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px; font-weight: 700; color: #09090B;
+      flex-shrink: 0;
+      box-shadow: 0 0 32px rgba(26,255,171,0.25);
+    }
+    .profile-info { flex: 1; }
+    .profile-name { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 3px; }
+    .profile-email { font-size: 13px; color: var(--text3); margin-bottom: 8px; }
+    .profile-joined { font-size: 11px; color: var(--text4); }
+    .profile-actions { display: flex; gap: 8px; }
+    .btn-ghost {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 14px; height: 32px;
+      border: 1px solid var(--border); border-radius: 99px;
+      background: transparent; color: var(--text2);
+      font-family: var(--font); font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: all 0.12s;
+    }
+    .btn-ghost:hover { border-color: var(--surface4); color: var(--text); background: var(--surface3); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── STATS GRID ── */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      animation: fadeUp 0.4s cubic-bezier(0.16,1,0.3,1) both;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .stat-card:hover { border-color: var(--surface4); transform: translateY(-2px); }
+    .stat-card:nth-child(1) { animation-delay: 0.05s; }
+    .stat-card:nth-child(2) { animation-delay: 0.10s; }
+    .stat-card:nth-child(3) { animation-delay: 0.15s; }
+    .stat-card:nth-child(4) { animation-delay: 0.20s; }
+
+    .stat-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; margin-bottom: 12px;
+    }
+    .stat-num {
+      font-family: var(--mono); font-size: 28px; font-weight: 600;
+      letter-spacing: -1px; margin-bottom: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.8px; }
+
+    /* ── TWO COLUMN ── */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr 1fr; } .two-col { grid-template-columns: 1fr; } }
+
+    /* ── SECTION CARD ── */
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      animation: fadeUp 0.4s cubic-bezier(0.16,1,0.3,1) 0.25s both;
+    }
+    .section-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-title { font-size: 13px; font-weight: 600; }
+    .section-body { padding: 20px; }
+
+    /* ── PLAN CARD ── */
+    .plan-hero {
+      display: flex; align-items: center; gap: 16px;
+      padding: 20px;
+      background: var(--green-dim);
+      border: 1px solid rgba(26,255,171,0.15);
+      border-radius: 10px;
+      margin-bottom: 16px;
+    }
+    .plan-badge {
+      padding: 4px 12px; border-radius: 99px;
+      background: var(--green); color: #09090B;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .plan-name { font-size: 15px; font-weight: 600; }
+    .plan-desc { font-size: 12px; color: var(--text3); margin-top: 2px; }
+
+    .plan-limits { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+    .plan-limit { display: flex; align-items: center; gap: 10px; }
+    .plan-limit-bar-wrap {
+      flex: 1; height: 4px; background: var(--surface3);
+      border-radius: 2px; overflow: hidden;
+    }
+    .plan-limit-bar {
+      height: 100%; border-radius: 2px;
+      background: var(--green);
+      transition: width 0.6s cubic-bezier(0.16,1,0.3,1);
+    }
+    .plan-limit-label { font-size: 12px; color: var(--text3); min-width: 80px; }
+    .plan-limit-val { font-size: 12px; font-family: var(--mono); color: var(--text2); min-width: 40px; text-align: right; }
+
+    .plan-pro-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .plan-pro-badge {
+      padding: 4px 12px; border-radius: 99px;
+      background: var(--surface3); color: var(--text2);
+      font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase; white-space: nowrap;
+    }
+    .plan-pro-info { flex: 1; }
+    .plan-pro-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .plan-pro-desc { font-size: 12px; color: var(--text3); }
+    .btn-coming {
+      padding: 0 14px; height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      background: transparent; color: var(--text3);
+      font-size: 12px; font-weight: 500; white-space: nowrap;
+      cursor: default; opacity: 0.7;
+    }
+
+    /* ── WALLET BREAKDOWN LIST ── */
+    .wallet-type-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .wallet-type-row:last-child { border-bottom: none; }
+    .wt-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .wt-name { font-size: 13px; font-weight: 500; flex: 1; }
+    .wt-count { font-family: var(--mono); font-size: 13px; color: var(--text2); }
+
+    /* ── DANGER ZONE ── */
+    .danger-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px;
+    }
+    .danger-row + .danger-row { border-top: 1px solid var(--border); }
+    .danger-label { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+    .danger-desc { font-size: 12px; color: var(--text3); }
+    .btn-danger {
+      padding: 0 14px; height: 30px;
+      border: 1px solid rgba(248,113,113,0.3);
+      border-radius: 99px;
+      background: rgba(248,113,113,0.06); color: var(--red);
+      font-family: var(--font); font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: all 0.12s; white-space: nowrap;
+    }
+    .btn-danger:hover { background: rgba(248,113,113,0.12); border-color: rgba(248,113,113,0.5); }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--surface4); border-radius: 2px; }
+
+    /* ── BOTTOM NAV ── */
+    .bottom-nav {
+      display: none;
+      position: fixed;
+      bottom: 12px; left: 12px; right: 12px;
+      height: 64px;
+      background: rgba(13,13,16,0.82);
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 20px;
+      z-index: 300;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 4px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .bnav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 14px; border-radius: 12px;
+      text-decoration: none; color: var(--text3);
+      font-size: 10px; font-weight: 500; letter-spacing: 0.1px;
+      transition: color 0.15s, background 0.15s;
+      flex: 1; max-width: 80px;
+    }
+    .bnav-item svg { flex-shrink: 0; transition: opacity 0.15s; opacity: 0.45; }
+    .bnav-item:hover { color: var(--text2); }
+    .bnav-item:hover svg { opacity: 0.7; }
+    .bnav-item.active { color: var(--green); }
+    .bnav-item.active svg { opacity: 1; }
+
+    /* ── MOBILE ── */
+    @media (max-width: 768px) {
+      .bottom-nav { display: flex; }
+      body { padding-bottom: 88px; }
+      .topbar { grid-template-columns: auto 1fr; padding: 0 16px; }
+      .topbar-nav { display: none; }
+      .topbar-right { display: none; }
+      .page { padding: 24px 16px 60px; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+      .two-col { grid-template-columns: 1fr !important; }
+      .profile-hero { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .profile-avatar { width: 52px; height: 52px; font-size: 20px; }
+    }
+
+    :root { --cx: -600px; --cy: -600px; }
+    .cursor-grid {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(26,255,171,0.13) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(26,255,171,0.13) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(circle 280px at var(--cx) var(--cy), black 0%, transparent 75%);
+      -webkit-mask-image: radial-gradient(circle 280px at var(--cx) var(--cy), black 0%, transparent 75%);
+    }
+    .cursor-glow-spot {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: radial-gradient(circle 300px at var(--cx) var(--cy),
+        rgba(26,255,171,0.055) 0%, rgba(26,255,171,0.02) 50%, transparent 75%);
+    }
+    /* ── PROMO BANNER ── */
+    .promo-banner {
+      background: rgba(26,255,171,0.05);
+      border-bottom: 1px solid rgba(26,255,171,0.1);
+      padding: 9px 24px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      font-size: 13px; font-weight: 500; color: var(--green);
+      position: relative; z-index: 101;
+    }
+    .banner-close {
+      position: absolute; right: 16px;
+      background: none; border: none; cursor: pointer;
+      color: var(--green); opacity: 0.5;
+      display: flex; align-items: center; padding: 4px; border-radius: 4px;
+      transition: opacity 0.15s;
+    }
+    .banner-close:hover { opacity: 1; }
+    @media (max-width: 768px) {
+      .promo-banner { font-size: 12px; padding: 9px 44px 9px 16px; }
+    }
+  
+    /* ── Free Banner ── */
+    .free-banner {
+      position: fixed;
+      top: 60px;
+      left: 12px;
+      right: 12px;
+      z-index: 98;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 9px 20px;
+      background: rgba(14,14,17,0.92);
+      border: 1px solid rgba(26,255,171,0.18);
+      border-radius: 12px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      font-size: 13px;
+      color: var(--text2);
+      letter-spacing: 0.01em;
+      animation: bannerIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
+      animation-delay: 0.7s;
+      opacity: 0;
+    }
+    .free-banner-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 7px rgba(26,255,171,0.65);
+      flex-shrink: 0;
+    }
+    .free-banner em { font-style: normal; color: var(--text); font-weight: 500; }
+    .free-banner-close {
+      position: absolute;
+      right: 12px;
+      background: none; border: none;
+      color: var(--text3); font-size: 15px; line-height: 1;
+      cursor: pointer; padding: 4px 5px; border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .free-banner-close:hover { color: var(--text); background: var(--surface3); }
+    @keyframes bannerIn {
+      from { transform: translateY(-14px); opacity: 0; }
+      to   { transform: translateY(0);     opacity: 1; }
+    }
+
+    </style>
+</head>
+<body>
+<div class="cursor-grid"></div>
+<div class="cursor-glow-spot"></div>
+
+<!-- ══ TOPBAR ══════════════════════════════════════════════════════ -->
+<header class="topbar">
+  <a href="/index.html" class="brand">
+    avalant<span class="brand-cursor">_</span>
+  </a>
+  <nav class="topbar-nav">
+    <a href="/app.html" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="6" width="3" height="5" rx="0.7" fill="currentColor" opacity=".5"/><rect x="4.5" y="3.5" width="3" height="7.5" rx="0.7" fill="currentColor" opacity=".75"/><rect x="8" y="1" width="3" height="10" rx="0.7" fill="currentColor"/></svg>
+      Portfolio
+    </a>
+    <a href="/archive.html" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+      Archive
+    </a>
+    <a href="/pricing.html" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h3.8l5 5-3.8 3.8-5-5V1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.9" fill="currentColor"/></svg>
+      Pricing
+    </a>
+  </nav>
+  <div class="topbar-right">
+    <a href="/profile.html" class="avatar-btn" id="nav-avatar" title="Profile">U</a>
+  </div>
+</header>
+
+<!-- ── Free Banner ── -->
+<div class="free-banner" id="free-banner">
+  <span class="free-banner-dot"></span>
+  Use all features for free — <em>no credit card required</em>
+  <button class="free-banner-close" onclick="dismissBanner()" aria-label="Dismiss">✕</button>
+</div>
+<script>
+  (function(){
+    if(localStorage.getItem('avalant-banner-dismissed')){
+      var b=document.getElementById('free-banner');
+      if(b) b.style.display='none';
+    }
+  })();
+  function dismissFreeBanner(){
+    var b=document.getElementById('free-banner');
+    if(!b) return;
+    b.style.transition='opacity 0.2s, transform 0.2s';
+    b.style.opacity='0';
+    b.style.transform='translateY(-14px)';
+    setTimeout(function(){ b && b.remove(); }, 220);
+    localStorage.setItem('avalant-banner-dismissed','1');
+  }
+</script>
+
+
+<!-- ══ PAGE ═══════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <!-- Profile Hero -->
+  <div class="profile-hero">
+    <div class="profile-avatar" id="hero-avatar">U</div>
+    <div class="profile-info">
+      <div class="profile-name" id="profile-name">User</div>
+      <div class="profile-email" id="profile-email">user@example.com</div>
+      <div class="profile-joined" id="profile-joined">Member since —</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--green-dim)">📊</div>
+      <div class="stat-num" id="stat-total" style="color:var(--green)">—</div>
+      <div class="stat-label">Total Wallets</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--yellow-dim)">🏦</div>
+      <div class="stat-num" id="stat-ex" style="color:var(--yellow)">—</div>
+      <div class="stat-label">Exchanges</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--teal-dim)">⛓</div>
+      <div class="stat-num" id="stat-ch" style="color:var(--teal)">—</div>
+      <div class="stat-label">Chain Wallets</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--purple-dim)">📈</div>
+      <div class="stat-num" id="stat-px" style="color:var(--purple)">—</div>
+      <div class="stat-label">Perp DEXes</div>
+    </div>
+  </div>
+
+  <!-- Two-column: Plan + Wallets breakdown -->
+  <div class="two-col" style="margin-bottom:20px">
+
+    <!-- Plan -->
+    <div class="section-card">
+      <div class="section-head">
+        <span class="section-title">Subscription Plan</span>
+      </div>
+      <div class="section-body">
+        <div class="plan-hero">
+          <div>
+            <div class="plan-badge">Free</div>
+          </div>
+          <div>
+            <div class="plan-name">Free Plan</div>
+            <div class="plan-desc">Up to 5 wallets · API access</div>
+          </div>
+        </div>
+
+        <div class="plan-limits" id="plan-limits">
+          <div class="plan-limit">
+            <span class="plan-limit-label">Wallets</span>
+            <div class="plan-limit-bar-wrap">
+              <div class="plan-limit-bar" id="limit-bar" style="width:0%"></div>
+            </div>
+            <span class="plan-limit-val" id="limit-val">0 / 5</span>
+          </div>
+        </div>
+
+        <div class="plan-pro-card">
+          <span class="plan-pro-badge">Pro</span>
+          <div class="plan-pro-info">
+            <div class="plan-pro-name">Pro Plan</div>
+            <div class="plan-pro-desc">Unlimited wallets · History · Alerts · Export</div>
+          </div>
+          <a href="/pricing.html" style="padding:0 14px;height:30px;border-radius:8px;background:var(--green);color:#09090B;font-size:12px;font-weight:500;text-decoration:none;display:flex;align-items:center;transition:all .15s;white-space:nowrap;" onmouseover="this.style.background='#00E89A'" onmouseout="this.style.background='var(--green)'">Upgrade →</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wallet breakdown -->
+    <div class="section-card">
+      <div class="section-head">
+        <span class="section-title">Wallet Breakdown</span>
+        <a href="/app.html" style="font-size:12px;color:var(--green);text-decoration:none;">View all →</a>
+      </div>
+      <div class="section-body" id="wallet-breakdown">
+        <div style="color:var(--text4);font-size:13px;padding:8px 0">Loading...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Danger Zone -->
+  <div class="section-card" style="animation-delay:0.3s">
+    <div class="section-head">
+      <span class="section-title" style="color:var(--red)">Danger Zone</span>
+    </div>
+    <div class="danger-row" style="border-bottom:1px solid var(--border)" id="admin-row">
+      <div>
+        <div class="danger-label" style="color:var(--text)">Admin Panel</div>
+        <div class="danger-desc">System statistics and user management</div>
+      </div>
+      <a href="/admin.html" style="padding:0 14px;height:30px;border-radius:99px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:12px;font-weight:500;text-decoration:none;display:flex;align-items:center;transition:all .12s;" onmouseover="this.style.background='var(--surface3)';this.style.color='var(--text)'" onmouseout="this.style.background='transparent';this.style.color='var(--text2)'">Open →</a>
+    </div>
+    <div class="danger-row">
+      <div>
+        <div class="danger-label">Sign out</div>
+        <div class="danger-desc">Sign out of your account on this device</div>
+      </div>
+      <button class="btn-danger" onclick="Auth.logout('/login.html')">Sign out</button>
+    </div>
+    <div class="danger-row">
+      <div>
+        <div class="danger-label">Delete account</div>
+        <div class="danger-desc">Permanently delete your account and all wallets</div>
+      </div>
+      <button class="btn-danger" onclick="alert('Account deletion coming soon.')">Delete account</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="/auth.js"></script>
+<script>
+(function() {
+  if (localStorage.getItem('promo_dismissed')) {
+    var b = document.getElementById('promo-banner');
+    if (b) b.style.display = 'none';
+  }
+})();
+function dismissBanner() {
+  var b = document.getElementById('promo-banner');
+  if (b) b.style.display = 'none';
+  localStorage.setItem('promo_dismissed', '1');
+}
+Auth.requireAuth('/login.html');
+
+// Populate user info — fetch fresh from /api/auth/me for accurate created_at
+(async function() {
+  const u = Auth.getUser();
+  const initial = (u && (u.username || u.email || 'U'))[0].toUpperCase();
+  const navAvatar = document.getElementById('nav-avatar');
+  const heroAvatar = document.getElementById('hero-avatar');
+  if (navAvatar) navAvatar.textContent = initial;
+  if (heroAvatar) heroAvatar.textContent = initial;
+  if (u) {
+    const nameEl = document.getElementById('profile-name');
+    const emailEl = document.getElementById('profile-email');
+    if (nameEl) nameEl.textContent = u.username || 'User';
+    if (emailEl) emailEl.textContent = u.email || '';
+    const adminRow = document.getElementById('admin-row');
+    if (adminRow) adminRow.style.display = u.is_admin ? '' : 'none';
+  }
+  // Fetch fresh user data for created_at
+  try {
+    const res = await Auth.apiFetch('/auth/me');
+    if (res.ok) {
+      const me = await res.json();
+      const joinedEl = document.getElementById('profile-joined');
+      if (joinedEl && me.created_at) {
+        const d = new Date(me.created_at);
+        joinedEl.textContent = 'Member since ' + d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      }
+    }
+  } catch(e) {}
+})();
+
+async function loadProfile() {
+  try {
+    const token = localStorage.getItem('wm_token');
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    const wallets = await (await fetch('/api/wallets', { headers })).json();
+
+    const total = wallets.length;
+    const ex = wallets.filter(w => w.wallet_type === 'exchange').length;
+    const ch = wallets.filter(w => w.wallet_type === 'chain').length;
+    const px = wallets.filter(w => w.wallet_type === 'perpdex').length;
+
+    // Animate stat counters
+    animNum('stat-total', total);
+    animNum('stat-ex', ex);
+    animNum('stat-ch', ch);
+    animNum('stat-px', px);
+
+    // Plan usage bar
+    const FREE_LIMIT = 5;
+    const pct = Math.min((total / FREE_LIMIT) * 100, 100);
+    document.getElementById('limit-bar').style.width = pct + '%';
+    document.getElementById('limit-val').textContent = `${total} / ${FREE_LIMIT}`;
+
+    // Breakdown
+    const bEl = document.getElementById('wallet-breakdown');
+    if (!total) {
+      bEl.innerHTML = `<div style="color:var(--text4);font-size:13px;padding:8px 0">No wallets yet. <a href="/app.html" style="color:var(--green);text-decoration:none">Add one →</a></div>`;
+    } else {
+      const rows = [
+        ex ? `<div class="wallet-type-row"><span class="wt-dot" style="background:#E5C07B"></span><span class="wt-name">Exchanges</span><span class="wt-count">${ex}</span></div>` : '',
+        ch ? `<div class="wallet-type-row"><span class="wt-dot" style="background:#06B6D4"></span><span class="wt-name">Chain wallets</span><span class="wt-count">${ch}</span></div>` : '',
+        px ? `<div class="wallet-type-row"><span class="wt-dot" style="background:#925BD6"></span><span class="wt-name">Perp DEXes</span><span class="wt-count">${px}</span></div>` : '',
+      ].filter(Boolean).join('');
+      bEl.innerHTML = rows;
+    }
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function animNum(id, to, duration = 700) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const t0 = performance.now();
+  const tick = now => {
+    const p = Math.min((now - t0) / duration, 1);
+    const e = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(to * e);
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+loadProfile();
+
+(function () {
+  const root = document.documentElement;
+  root.style.setProperty('--cx', '-9999px');
+  root.style.setProperty('--cy', '-9999px');
+  let raf = null;
+  document.addEventListener('mousemove', e => {
+    if (!raf) raf = requestAnimationFrame(() => {
+      root.style.setProperty('--cx', e.clientX + 'px');
+      root.style.setProperty('--cy', e.clientY + 'px');
+      raf = null;
+    });
+  });
+  document.addEventListener('mouseleave', () => {
+    root.style.setProperty('--cx', '-9999px');
+    root.style.setProperty('--cy', '-9999px');
+  });
+})();
+</script>
+
+<nav class="bottom-nav">
+  <a href="/app.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
+    Portfolio
+  </a>
+  <a href="/archive.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="M3 7v9a1 1 0 001 1h12a1 1 0 001-1V7" stroke="currentColor" stroke-width="1.5"/><path d="M8 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Archive
+  </a>
+  <a href="/pricing.html" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
+    Pricing
+  </a>
+  <a href="/profile.html" class="bnav-item active">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M3 17c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Profile
+  </a>
+</nav>
+</body>
+</html>

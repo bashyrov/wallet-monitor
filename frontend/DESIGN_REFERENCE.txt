@@ -1,0 +1,896 @@
+================================================================================
+CRYPTO / DEFI DASHBOARD UI/UX DESIGN REFERENCE
+Compiled from: Token Terminal, Hyperliquid, Lighter.xyz, Dune Analytics, DefiLlama
+================================================================================
+
+
+================================================================================
+SECTION 1: SITE-BY-SITE ANALYSIS
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1  TOKEN TERMINAL  (tokenterminal.com)
+--------------------------------------------------------------------------------
+
+PHILOSOPHY
+  Institutional-grade analytics. Clean, data-forward, built for analysts and
+  serious investors. Emphasizes accuracy, standardization, and financial-
+  statement-style data presentation. "Blockchain data you can understand."
+
+COLOR PALETTE
+  The site uses a custom CSS variable system built on OKLCH color space,
+  with HSL for the root body background.
+
+  Dark mode body background:  hsl(0 0% 2.5%)   -- near-pure black, ~#060606
+  Light mode body background: hsl(0 0% 98%)    -- near-pure white
+
+  Dark mode token colors (OKLCH -- approximate hex equivalents):
+    --bg-main:        oklch(0.148 0.004 228.8)  ~  #0f1419  (very dark blue-black)
+    --bg-secondary:   oklch(0.194 0.004 229)    ~  #151d24  (dark navy)
+    --bg-card:        oklch(0 0 0)               =  #000000
+    --bg-glass:       oklch(0.157 0.012 206.6 / 0.7)  -- translucent dark
+    --bg-surface:     oklch(0.21 0.008 274.5)   ~  #1a1a2e  (dark indigo-navy)
+    --bg-input:       oklch(0.292 0.005 248)    ~  #232b36
+    --bg-border:      oklch(0.47 0.025 273.6)   ~  #5a5f7a
+
+    --text-primary:   oklch(0.985 0 0)           ~  #fafafa  (near-white)
+    --text-secondary: oklch(0.824 0.009 271.3)   ~  #c8ccda
+    --text-tertiary:  oklch(0.553 0.029 270.9)   ~  #7a7f9a
+
+    --primary:        oklch(0.571 0.191 258.5)   ~  #4b6ef5  (blue)
+    --success:        oklch(0.692 0.181 145.5)   ~  #3fd977  (green)
+    --error:          oklch(0.621 0.19 27.1)     ~  #f05a3d  (red-orange)
+    --warning:        oklch(0.82 0.147 81.2)     ~  #e8b83a  (amber)
+
+    --app-bg:         oklch(0.148 0.004 228.8)   ~  #0f1419
+    --cards-bg:       oklch(0.194 0.004 229)     ~  #151d24
+    --cards-border:   oklch(0.255 0.002 247.9)   ~  #202530
+
+  Extended subscription palette (exact hex):
+    Dark surfaces:
+      --sub-surface-dark:        #131516
+      --sub-surface-dark-deep:   #090e13
+      --sub-surface-dark-section:#151a1d
+      --sub-surface-dark-row:    #181a1b
+      --sub-surface-elevated-2:  #232628
+
+    Neutral scale:
+      #0a0a0c  #131316  #17171c  #202027  #2e2e3b
+      #444456  #5a5a6d  #7e7e94  #9f9fb7  #bdbdd5
+      #e0e0ee  #eeeef4  #ffffff
+
+    Purple (brand/premium):
+      #090919  #121232  #252564  #373795  #4a4ac7
+      #5c5cf9  #7d7dfa  #9d9dfb  #bebefd  #dedefe  #efefff
+
+    Green (positive/up):
+      #06170e  #0d2f1c  #195e38  #268d55  #32bc71
+      #3feb8d  #65efa4  #8cf3bb  #b2f7d1  #d9fbe8  #ecfdf4
+
+    Red (negative/down):
+      #19080b  #330f15  #661f2b  #992e40  #cc3e55
+      #ff4d6b  #ff7188  #ff94a6  #ffb8c4  #ffdbe1  #ffeef1
+
+    Orange (warning):
+      #2a1f18  #422b1b  #71441e  #a15d23  #d07526
+      #ff8e2b  #ffa455  #ffbb80  #ffd2aa  #ffe8d5  #fff4ea
+
+    Brand blue:
+      --sub-brand-primary:   #1f67d2
+      --sub-brand-secondary: #4b86db
+      --sub-brand-tertiary:  #5f95e2
+
+    Chart palette:
+      #1f67d2  #22c55e  #f59e0b  #38bdf8  #f97316  #a855f7  #14b8a6
+
+TYPOGRAPHY
+  --font-inter:      Inter var, 'Inter-fallback', sans-serif
+  --font-jetbrains:  JetBrains Mono, monospace
+
+  Font scale: large bold for key metrics, medium for controls, small muted for
+  helper text. Monospace used for numeric data in tables.
+
+LAYOUT
+  - Left sidebar navigation (collapsible)
+  - Top horizontal navigation bar with logo + product tabs
+  - Main content area with full-width data sections
+  - Financial-statement-style tables with monthly columns
+  - Metric cards arranged in horizontal strips
+
+COMPONENTS
+  - Borderless tables with subtle row striping (#181a1b vs #151a1d)
+  - Metric cards with large number display + percentage change indicators
+  - Tabbed date selectors (monthly data navigation)
+  - Color-coded percentage badges (green up, red down)
+  - Live chat launcher (Intercom integration)
+  - Cookie consent banner
+  - Theme toggle (dark/light/system)
+
+KEY UI PATTERNS
+  - Extremely dark backgrounds create maximum contrast for data
+  - Financial statement format creates institutional credibility
+  - Color-coded performance metrics (green/red) are instantly scannable
+  - Logo trust wall (Google, Binance, Bloomberg) establishes enterprise tone
+  - Minimal decorative elements -- data is the hero
+  - Consistent 8px grid throughout
+
+
+--------------------------------------------------------------------------------
+1.2  HYPERLIQUID  (app.hyperliquid.xyz)
+--------------------------------------------------------------------------------
+
+PHILOSOPHY
+  High-performance perp DEX. Design balances clarity for fast traders with
+  trust signals needed for DeFi. Priorities: high information density,
+  predictable interactions, clear visual hierarchy, micro-interactions that
+  reduce cognitive load during volatile markets. "Performance-first."
+
+COLOR PALETTE
+  Primary background:    #0f172a   (deep navy-slate -- Tailwind slate-900)
+  Card background:       #0b1220   (darker navy panel)
+  Dark surface variants: #071127   (very deep navy)
+                         #071a2a   (alternative deep)
+  Muted text:            #94a3b8   (Tailwind slate-400)
+  Primary text:          #e6eef6   (near-white with blue tint)
+  Secondary text:        #cfe7ff   (light blue-white)
+  Accent (primary):      #06b6d4   (Tailwind cyan-500) -- all interactive elements
+  Glass overlay:         rgba(255,255,255,0.03)
+
+  CSS Variables:
+    --bg:     #0f172a
+    --card:   #0b1220
+    --muted:  #94a3b8
+    --accent: #06b6d4
+    --glass:  rgba(255,255,255,0.03)
+
+  Status colors (referenced from brand palette):
+    Green (profit/long):  #90ee90  (light green -- gain indicators)
+    Cyan (interactive):   #00ffff  (bright cyan -- buttons/links)
+    Pink (short/loss):    #ff0099  (hot pink -- loss/short positions)
+    Orange (alert):       #ff8c00  (dark orange -- warnings)
+    Yellow (caution):     #ffc125  (golden yellow -- secondary alerts)
+
+TYPOGRAPHY
+  Font stack: Inter, Segoe UI, Arial, sans-serif
+  - Large, bold text for price and position size
+  - Medium text for order form controls
+  - Small, muted text for helper copy
+  - Monospace for order book prices and quantities
+  - Base line height: 24px vertical rhythm
+  - Animations: 120-220ms, never obscure numeric changes
+
+LAYOUT
+  Three-column trading canvas:
+    Left column:   Market overview / instrument selector
+    Center column: Price chart (TradingView) + order entry form
+    Right column:  Positions, open orders, portfolio summary
+  Mobile: stacked layout (chart, controls, portfolio)
+  Topbar: minimal height, logo + market selector + account info
+
+COMPONENTS
+  - Order book with bid/ask depth visualization (green/red bars)
+  - TradingView chart integration (dark theme)
+  - Position cards showing PnL with color-coded background tinting
+  - Tab navigation for Positions / Orders / Trade History / Funding
+  - Glassmorphism panels for overlays and modals
+  - Collapsible panels to manage information density
+  - Sub-200ms animation for order fills and confirmation states
+
+KEY UI PATTERNS
+  - Navy-slate base creates softer dark mode vs pure black
+  - Cyan accent creates clear CTA hierarchy without aggression
+  - Micro-animations signal system feedback (120-220ms)
+  - Information density managed via collapsible sections
+  - Subtle glassmorphism (rgba 0.03) adds depth without distraction
+  - Three-column layout mirrors professional trading terminals
+
+
+--------------------------------------------------------------------------------
+1.3  LIGHTER.XYZ  (app.lighter.xyz)
+--------------------------------------------------------------------------------
+
+PHILOSOPHY
+  ZK-rollup perp DEX emphasizing speed, verifiability, and zero fees.
+  Design language signals "serious infrastructure" -- technical and minimal.
+  Inspired by professional trading terminal aesthetics. Verifiable, trustless,
+  performant. Typography and layout communicate speed and precision.
+
+COLOR PALETTE
+  (Inferred from design deep-dive source and platform analysis)
+  Background:      #0f172a or similar deep navy-slate
+  Card surfaces:   ~#111827 (Tailwind gray-900)
+  Border lines:    ~#1f2937 (Tailwind gray-800) -- hairline borders
+  Primary text:    ~#f9fafb (near-white)
+  Secondary text:  ~#9ca3af (Tailwind gray-400)
+  Accent color:    Likely a green or cyan -- "zero fee" / positive framing
+
+  The site uses a dark monochromatic palette with tight contrast between
+  surface layers, communicating speed and precision. Minimal color use
+  with white text on deep backgrounds. Technical aesthetic.
+
+TYPOGRAPHY
+  - Inter or similar neutral sans-serif
+  - Monospace font for numbers, prices, order quantities
+  - "START TRADING" buttons use uppercase tracking (all-caps CTA style)
+  - Large hero numbers for stats
+
+LAYOUT
+  - Topbar navigation (horizontal)
+  - Three-panel trading interface: sidebar/market list, chart+order entry, positions
+  - Architecture diagram in marketing: shows system components as labeled boxes
+  - Technical/schematic visual language in marketing materials
+
+COMPONENTS
+  - Minimal rounded corners (sharp or near-sharp on trading components)
+  - Tight border hairlines between panels
+  - Zero-fee value proposition prominently surfaced in UI
+  - Orderbook with quantity visualization
+  - ZK proof status indicator (unique technical differentiator)
+
+KEY UI PATTERNS
+  - Dark + tight grid signals precision and speed
+  - Minimal decoration focuses attention on execution
+  - Technical system diagrams in marketing build trust through transparency
+  - All-caps uppercase CTAs signal urgency and professional grade
+  - Deep navy background consistent with perp DEX category aesthetic
+
+
+--------------------------------------------------------------------------------
+1.4  DUNE ANALYTICS  (dune.com)
+--------------------------------------------------------------------------------
+
+PHILOSOPHY
+  Collaborative on-chain data analytics platform. Mix of professional SaaS
+  and community/open-data ethos. Orange accent creates warmth/energy within
+  a dark professional shell. "Make onchain data work for you."
+  Built for 20k+ companies, 1M+ users -- both enterprise and community.
+
+COLOR PALETTE
+  Background (dark):    ~#1a1a2e or #13131a (very dark, near-black)
+  Card backgrounds:     ~#1f1f2e (dark navy-gray)
+  Border:               ~#2a2a3e (subtle border)
+  Text primary:         #ffffff or near-white
+  Text secondary:       ~#9fa3ae
+  Primary accent:       #F1582A (orange-red -- primary brand color)
+               OR       #f4603e (orange -- confirmed in community stylesheet)
+
+  Additional confirmed colors (from community dark stylesheet):
+    Dark backgrounds:   #333333, #292929, #2d2d2d
+    Primary text:       #afafaf (medium gray), #d8d8d8 (light gray)
+    Accent text:        #ffffff, #0bb (mint/teal)
+    Borders:            #afafaf, #222
+    Orange accent:      #f4603e
+    Green (success):    #006400, #5dd170
+    Red (error):        #d93025, #f43e3e
+    Blue (info):        #31c7ed (sky blue)
+    Interactive:        #56569b
+
+TYPOGRAPHY
+  Primary:     Neue Haas Grotesk Display 55 Roman (display headings)
+  Body:        Neue Haas Grotesk Text 55 Roman
+  Monospace:   Neue Haas Grotesk Text Mono 55 Roman
+  Secondary:   Tiempos Headline Light (editorial sections)
+  UI fallback: Geist
+
+  All fonts served via /static/media/ (self-hosted, not Google Fonts).
+  Neue Haas Grotesk is a premium update to Helvetica -- signals editorial
+  quality and typographic seriousness.
+
+LAYOUT
+  - Left sidebar navigation (~240px wide) with icon + label nav items
+  - Top search/filter bar
+  - Main content area: dashboard grid, query editor, results table
+  - Dashboards: free-form widget grid (drag-and-drop placement)
+  - Navigation tabs: Dashboards, Datasets, Queries, Blockchains,
+                     Data Hub, APIs, Connectors, Datashare
+
+COMPONENTS
+  - Visualization widgets (charts, tables, counters, pie charts)
+  - SQL query editor with syntax highlighting
+  - Dashboard grid with resizable, repositionable chart widgets
+  - Table results with column sorting and type-aware formatting
+  - Parameter inputs for interactive queries
+  - Community star/fork/share mechanics on each dashboard
+  - Top-right sign up / login buttons (ghost + filled style)
+  - Dropdown menus for blockchain/protocol filtering
+
+KEY UI PATTERNS
+  - Orange accent on dark creates maximum premium visual impact
+  - Community metrics (stars, views, forks) add social proof layer
+  - SQL-first design signals power-user audience
+  - Card-based dashboard grid enables flexible data storytelling
+  - Neutral dark shell lets data visualizations be colorful
+  - Neue Haas Grotesk gives editorial quality to data presentation
+
+
+--------------------------------------------------------------------------------
+1.5  DEFILLAMA  (defillama.com)
+--------------------------------------------------------------------------------
+
+PHILOSOPHY
+  Open-source, community-driven DeFi analytics. Prioritizes comprehensive
+  data coverage over visual polish, but has evolved into a genuinely clean
+  dark-mode data dashboard. "Data over design" but increasingly professional.
+
+COLOR PALETTE (complete CSS variable system -- actual source code):
+
+  DARK MODE BACKGROUNDS (OKLCH):
+    --app-bg:          oklch(0.148 0.004 228.8)  ~  #0f1419
+    --cards-bg:        oklch(0.194 0.004 229)    ~  #151d24
+    --cards-border:    oklch(0.255 0.002 247.9)  ~  #202530
+    --bg-main:         oklch(0.259 0.01 260.7)   ~  #202535
+    --bg-secondary:    oklch(0.305 0.013 267.1)  ~  #262d3f
+    --bg-tertiary:     oklch(0.387 0.019 269.6)  ~  #343d57
+    --bg-card:         oklch(0 0 0)               =  #000000
+    --bg-glass:        oklch(0.157 0.012 206.6 / 0.7)
+    --bg-surface:      oklch(0.21 0.008 274.5)   ~  #191f30
+    --bg-input:        oklch(0.292 0.005 248)    ~  #232b36
+
+  DARK MODE TEXT (OKLCH):
+    --text-primary:    oklch(0.985 0 0)           ~  #fafafa
+    --text-secondary:  oklch(0.824 0.009 271.3)   ~  #c8ccda
+    --text-tertiary:   oklch(0.553 0.029 270.9)   ~  #7a7f9a
+    --text-label:      oklch(0.845 0 0)            ~  #d4d4d4
+    --text-meta:       oklch(0.735 0 0)            ~  #bbbbbb
+    --text-disabled:   oklch(0.65 0 0)             ~  #a3a3a3
+
+  BRAND / ACCENT COLORS (OKLCH):
+    --primary:         oklch(0.571 0.191 258.5)   ~  #4a6ef0  (blue)
+    --primary-hover:   (same at 0.2 opacity)
+    --link-text:       oklch(0.699 0.141 256.9)   ~  #7d9fe8
+    --success:         oklch(0.692 0.181 145.5)   ~  #3fd977
+    --error:           oklch(0.621 0.19 27.1)     ~  #f05a3d
+    --warning:         oklch(0.82 0.147 81.2)     ~  #e8b83a
+    --blue:            oklch(0.609 0.182 257.3)   ~  #5079e8
+    --apy-pink:        oklch(0.673 0.237 356.7)   ~  #f5607e
+    --apy-blue:        oklch(0.65 0.152 257.5)    ~  #6b92e8
+
+  BUTTON COLORS (OKLCH dark):
+    --btn-bg:          oklch(0.261 0.012 270.9)   ~  #212538
+    --btn-hover-bg:    oklch(0.286 0.013 272.9)   ~  #252b40
+
+  SPECIAL/COMPONENT COLORS:
+    Dark borders:    #222425
+    Backdrop:        rgba(0,0,0,0.4) to rgba(0,0,0,0.7)
+    AI glow:         rgba(91,133,255,0.2)
+    Hacker mode:     #00ff41 (matrix green -- fun easter egg)
+
+  EXTENDED NEUTRAL SCALE (hex):
+    #0a0a0c  #131316  #17171c  #202027  #2e2e3b
+    #444456  #5a5a6d  #7e7e94  #9f9fb7  #bdbdd5  #e0e0ee  #eeeef4
+
+  CHART COLORS:
+    #1f67d2  #22c55e  #f59e0b  #38bdf8  #f97316  #a855f7  #14b8a6
+
+  BRAND COLORS:
+    --sub-brand-primary:   #1f67d2
+    --sub-brand-secondary: #4b86db
+
+TYPOGRAPHY
+  --font-inter:      Inter var, 'Inter-fallback', sans-serif
+  --font-jetbrains:  JetBrains Mono, monospace
+
+  Inter for all UI text. JetBrains Mono for code, addresses, on-chain data.
+  Uses CSS @layer and Tailwind v4 for utility classes.
+
+LAYOUT
+  - Left sidebar (~220px) with collapsible protocol/category navigation
+  - Topbar with search + wallet connector (optional)
+  - Main content: full-width tables and chart sections
+  - Tables are the primary UI element (sortable, paginated)
+  - Protocol pages: stat cards strip + line chart + data table
+
+COMPONENTS
+  - Sortable data tables with token logos in rows
+  - Sparkline mini-charts in table cells
+  - Protocol stat cards (TVL, Volume, Fees, Revenue)
+  - Chain filter bar (multi-select pills)
+  - Category/sector filter sidebar
+  - Toggle switches for metric views
+  - Pagination controls
+  - "Hacker mode" easter egg (matrix green text)
+
+KEY UI PATTERNS
+  - Deep navy backgrounds (not pure black) reduce eye strain
+  - OKLCH color space enables perceptually uniform UI tokens
+  - Tables as primary data communication -- not dashboards
+  - Protocol logos in every table row aid fast recognition
+  - Minimal chrome lets volume/TVL numbers dominate
+  - Blue as primary accent -- professional, trustworthy
+  - JetBrains Mono for addresses and numeric precision
+
+
+================================================================================
+SECTION 2: CROSS-SITE PATTERNS
+================================================================================
+
+2.1  UNIVERSAL COLOR PATTERNS
+------------------------------
+
+BACKGROUNDS
+  All 5 sites use dark mode as default or primary.
+  Background color range: #060606 (Token Terminal) to #1a1a2e (Dune)
+  The most common approach: layered surfaces
+    Layer 0 (page bg):    #0f1419 to #13131a
+    Layer 1 (card bg):    #151d24 to #1f1f2e  (+5-8% lightness)
+    Layer 2 (input/hover):  #232b36 to #2e2e3b  (+3-5% lightness)
+    Borders:              1px at 30-40% lightness of text
+
+  Avoid pure #000000 for large surfaces -- use #0a0a0c or #0f1419.
+  Cards are typically 4-8 lightness points above the page background.
+  The "layering" approach creates depth without heavy shadows.
+
+ACCENT COLORS
+  Each platform picks ONE strong accent and uses it consistently:
+    Token Terminal:  Blue (#4b6ef5 / #1f67d2)
+    Hyperliquid:     Cyan (#06b6d4)
+    Lighter:         Likely green or cyan (TBD -- technical/performant)
+    Dune Analytics:  Orange (#f4603e)
+    DefiLlama:       Blue (#1f67d2 / #4a6ef0)
+
+  Pattern: blue dominates analytics tools; cyan/green for trading apps;
+  orange as the "energy" accent for community/explorer products.
+
+STATUS COLORS (universal across all 5 sites)
+  Green (positive/gain/up):    #22c55e / #3feb8d / #3fd977 / #32bc71
+  Red (negative/loss/down):    #f05a3d / #ff4d6b / #f43e3e / #cc3e55
+  Orange (warning/caution):    #f59e0b / #ff8e2b / #e8b83a
+  Blue (info/link):            #1f67d2 / #38bdf8 / #31c7ed
+
+TEXT HIERARCHY (universal 3-level pattern)
+  Level 1 (primary):   ~#fafafa / #e6eef6 -- near-white, 95%+ lightness
+  Level 2 (secondary): ~#94a3b8 / #9f9fb7 -- medium gray, ~55-65% lightness
+  Level 3 (tertiary):  ~#5a5a6d / #444456 -- dark gray, ~35-45% lightness
+
+2.2  UNIVERSAL TYPOGRAPHY PATTERNS
+------------------------------------
+
+FONTS USED ACROSS ALL SITES
+  - Inter (4/5 sites): The dominant crypto/DeFi UI font. Variable font.
+    Reasons: excellent screen rendering, open source, great number spacing.
+  - JetBrains Mono / monospace (3/5 sites): Used for addresses, prices,
+    on-chain data, amounts. Signals technical precision.
+  - Neue Haas Grotesk (Dune, 1/5): Premium editorial choice.
+  - No decorative or serif fonts anywhere -- pure sans-serif.
+
+TYPOGRAPHIC SCALE PATTERN
+  - Very large (48-72px bold): hero metrics, portfolio totals
+  - Large (24-32px semibold): section headers, asset names
+  - Medium (16-18px regular): table content, card labels
+  - Small (12-14px regular): metadata, timestamps, helper text
+  - Mono (13-14px): prices, quantities, addresses, percentages
+
+NUMBER FORMATTING CONVENTIONS
+  - Tabular numeric figures (tnum feature) for aligned columns
+  - Monospace font for orderbook data
+  - K/M/B suffixes for large numbers (e.g., "$94.64m")
+  - Always 2 decimal places for dollar amounts
+  - Color-coded: green for positive, red for negative
+
+2.3  UNIVERSAL LAYOUT PATTERNS
+--------------------------------
+
+NAVIGATION STRUCTURE
+  All sites use one of two primary patterns:
+    A) Left sidebar (220-280px) + main content area   [DefiLlama, Dune, TT]
+    B) Top navigation bar + multi-column content area  [Hyperliquid, Lighter]
+
+  Trading apps (Hyperliquid, Lighter) use topbar + three-column trading canvas.
+  Analytics apps (Dune, DefiLlama, Token Terminal) use left sidebar.
+
+  Sidebar items: icon + label, with hover state background, active state
+  using accent color text (not filled background).
+
+GRID SYSTEM
+  - 8px base unit (all spacing is multiples of 8)
+  - Cards: typically 16px or 24px padding inside
+  - Gaps between cards: 8px or 16px
+  - Section padding: 24px or 32px from viewport edge
+  - Tables: 12px vertical row padding, 16px horizontal cell padding
+
+TOPBAR HEIGHT
+  Typically 48-64px. Contains:
+  - Logo (left)
+  - Primary navigation (center or left-adjacent)
+  - Secondary actions: search, notifications, wallet connect, user (right)
+
+SIDEBAR WIDTH
+  Typically 220-280px (expanded), 56-64px (collapsed/icon-only).
+  Always includes collapse toggle.
+
+2.4  UNIVERSAL COMPONENT PATTERNS
+------------------------------------
+
+CARDS
+  - Background: 1 layer above page bg (e.g., page #0f1419, card #151d24)
+  - Border: 1px solid ~#202530 (subtle, not high-contrast)
+  - Border-radius: 8px or 12px (never 0, never >16px for data cards)
+  - No drop shadows on dark themes (elevation shown through bg color only)
+  - Internal padding: 16px or 24px
+  - Header: label in secondary text, value in primary text (large/bold)
+
+TABLES
+  - No external borders on the table container
+  - Subtle row dividers (1px, very dark -- same as card border)
+  - Alternating row backgrounds: transparent + #151d24 or transparent + #1a1a1a
+  - Header row: slightly lighter bg (#202030), secondary text color, uppercase
+  - Hover state: subtle bg highlight (~3-5% lighter than row bg)
+  - Sortable columns: arrow indicators in secondary text color
+  - Token logos: 20-24px circular, adjacent to token name in col 1
+  - Numerical columns: right-aligned, monospace font
+  - Text columns: left-aligned, normal font
+
+BUTTONS
+  Primary:    Filled accent color bg, white text, 8px border-radius
+              Hover: 10% lighter or 10% opacity overlay
+  Secondary:  Transparent bg, accent color border + text, same radius
+  Ghost:      No border, accent color text, subtle hover bg (5% opacity)
+  Destructive: Red (#ff4d6b) fill on hover, red text in default state
+
+BADGES / PILLS (for percentage changes)
+  Positive:   #3eb87a text on rgba(#22c55e, 0.15) bg  (green pill)
+  Negative:   #ff4d6b text on rgba(#ff4d6b, 0.12) bg  (red pill)
+  Neutral:    Secondary text color, transparent bg
+  Border-radius: 4px (rectangular pill) or 9999px (round pill)
+
+INPUT FIELDS
+  Background: slightly lighter than card bg
+  Border: 1px solid ~#2e2e3b (subtle dark border)
+  Focus border: accent color (1-2px)
+  Border-radius: 6-8px
+  Placeholder: tertiary text color
+
+CHARTS (universal pattern)
+  - TradingView for candle/price charts (Hyperliquid, Lighter)
+  - Custom SVG/recharts/echarts for analytics (Dune, DefiLlama, TT)
+  - Dark background (#0d1117 or similar inside chart area)
+  - Grid lines: very subtle (rgba white at 5-8% opacity)
+  - Blue or brand-color line for primary series
+  - Green fill under area charts (with low opacity -- 10-20%)
+  - Tooltips: dark card with sharp border, white text
+
+PERCENTAGE INDICATORS
+  - Arrow up + green for positive: ▲ +12.5%
+  - Arrow down + red for negative: ▼ -3.2%
+  - Always show sign (+/-), always show 2 decimal places
+
+2.5  UNIVERSAL DESIGN PHILOSOPHY PATTERNS
+-------------------------------------------
+
+1. DATA IS THE HERO
+   No site uses large hero images, full-bleed photos, or heavy illustrations.
+   Data (numbers, charts, tables) occupies primary visual real estate.
+   Decorative elements are subtle -- gradients, not illustrations.
+
+2. DARK MODE IS DEFAULT
+   All 5 sites default to dark mode. Dark mode:
+   - Reduces eye strain during long sessions
+   - Makes charts/data visualizations pop
+   - Signals technical seriousness to crypto-native users
+   - Creates contrast for color-coded data (green/red PnL)
+
+3. MINIMAL BUT NOT SPARSE
+   Dense information presentation, but with clear visual hierarchy.
+   Every pixel earns its place. No filler content.
+   "Data-dense but not cluttered" is the target state.
+
+4. MONOCHROMATIC BASE + ONE ACCENT
+   Near-black or deep-navy base, gray scale for surfaces and text,
+   one brand accent color for interactive elements and CTAs.
+   Status colors (green/red/amber) are purely semantic, not decorative.
+
+5. TRUST THROUGH PRECISION
+   Small details signal competence:
+   - Monospace fonts for numbers
+   - 2 consistent decimal places
+   - Exact timestamps, not relative ("2 hours ago")
+   - System status indicators
+   - Chain/network badges on assets
+
+6. PERFORMANCE OVER ANIMATION
+   Minimal animations. When present: 120-220ms, utility-only (confirm states,
+   loading indicators). No scroll-triggered animations, no parallax,
+   no entrance animations on data tables.
+
+7. RESPONSIVE BUT DESKTOP-FIRST
+   Primary design target is desktop (1280-1440px+).
+   Mobile views exist but are simplified -- trading features especially.
+   Three-column layouts collapse to stacked single-column on mobile.
+
+
+================================================================================
+SECTION 3: DESIGN DECISIONS FOR WALLET MONITOR DASHBOARD
+================================================================================
+
+3.1  RECOMMENDED COLOR PALETTE
+---------------------------------
+
+  Use the DefiLlama/Token Terminal layered navy-dark system as reference.
+  It is the most fully documented and fits an analytics dashboard.
+
+  PAGE BACKGROUND:         #0f1419   (deep navy-black, not pure black)
+  SIDEBAR BACKGROUND:      #111827   (slightly lighter than page bg)
+  CARD BACKGROUND:         #151d24   (card surface)
+  CARD BORDER:             #1e2535   (hairline border, 1px)
+  ELEVATED SURFACE:        #1a2332   (hover states, dropdowns, modals)
+  INPUT BACKGROUND:        #1e2a3a   (form inputs)
+  SECTION DIVIDER:         #1e2535   (same as card border for consistency)
+
+  TEXT - PRIMARY:          #f0f6ff   (near-white with slight blue tint)
+  TEXT - SECONDARY:        #94a3b8   (Tailwind slate-400)
+  TEXT - MUTED:            #4b5563   (Tailwind gray-600)
+  TEXT - PLACEHOLDER:      #374151   (Tailwind gray-700)
+
+  ACCENT (interactive):    #3b82f6   (Tailwind blue-500)
+  ACCENT HOVER:            #2563eb   (Tailwind blue-600)
+  ACCENT SUBTLE BG:        rgba(59,130,246,0.1)
+
+  POSITIVE (gains/up):     #22c55e   (Tailwind green-500)
+  POSITIVE BG:             rgba(34,197,94,0.12)
+  NEGATIVE (losses/down):  #ef4444   (Tailwind red-500)
+  NEGATIVE BG:             rgba(239,68,68,0.12)
+  WARNING:                 #f59e0b   (Tailwind amber-500)
+  INFO:                    #38bdf8   (Tailwind sky-400)
+
+  CHART COLORS (sequence for multi-asset):
+    #3b82f6  #22c55e  #f59e0b  #8b5cf6  #ec4899  #06b6d4  #f97316
+
+3.2  RECOMMENDED TYPOGRAPHY
+------------------------------
+
+  PRIMARY FONT:   Inter (Variable) -- use from Google Fonts or self-host
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    OR use `inter` npm package for self-hosting.
+
+  MONOSPACE FONT: JetBrains Mono -- for all wallet addresses, amounts,
+    balances, prices, percentages in tables.
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+
+  FONT SIZES:
+    Portfolio total:    48px / font-weight 700 / letter-spacing -0.02em
+    Section headers:    20px / font-weight 600
+    Card labels:        13px / font-weight 500 / uppercase / letter-spacing 0.05em
+    Table values:       14px / JetBrains Mono / font-weight 500
+    Table headers:      12px / font-weight 600 / uppercase / letter-spacing 0.08em
+    Metadata/timestamps:12px / secondary text color
+    Helper text:        11px / muted text color
+
+  CSS FEATURE: Use `font-variant-numeric: tabular-nums` on all columns
+  containing numeric data to ensure columns align perfectly.
+
+3.3  RECOMMENDED LAYOUT
+-------------------------
+
+  STRUCTURE: Left sidebar + topbar + main content area
+
+  SIDEBAR:    240px wide (expanded), 64px (collapsed icon-only)
+              Background: #111827
+              Items: 40px height, 16px horizontal padding
+              Icon: 20px, secondary text color
+              Label: 14px, secondary text (active: primary text + accent left border)
+              Active left border: 2px solid accent (#3b82f6)
+              Hover: bg #1a2332
+
+  TOPBAR:     56px height
+              Background: same as sidebar or 1px border-bottom from sidebar
+              Contents: page title (left), last updated time, wallet count,
+                        refresh button, settings (right)
+
+  MAIN GRID:  24px gutter, responsive
+              Row 1: 4 stat cards (Total Value, 24h Change, # Wallets, # Chains)
+              Row 2: Portfolio breakdown chart (60%) + top assets list (40%)
+              Row 3: Wallet-by-wallet table (full width)
+              Row 4: Exchange balances table | Chain balances table (50/50)
+              Row 5: Recent activity / transaction history (optional)
+
+  CARD SPACING: 16px gap between cards, 16px internal padding
+  PAGE PADDING: 24px from edges
+
+3.4  RECOMMENDED COMPONENT STYLES
+------------------------------------
+
+STAT CARDS (4 at top)
+  Background:      #151d24
+  Border:          1px solid #1e2535
+  Border-radius:   10px
+  Padding:         20px 24px
+  Label:           12px, uppercase, letter-spacing 0.06em, #94a3b8
+  Value:           28px, font-weight 700, #f0f6ff
+  Change pill:     see badge pattern below
+  Subtle top:      2px colored top border using chart color for that metric
+
+TABLES
+  Container:       no border, no bg -- sits on page bg
+  Header row:      12px, uppercase, #4b5563, border-bottom 1px #1e2535
+  Data rows:       height 44px, border-bottom 1px #1a2332
+  Row hover:       bg #151d24 (same as card -- subtle highlight)
+  Wallet address:  JetBrains Mono, truncated with tooltip on hover
+  Dollar amounts:  JetBrains Mono, right-aligned, tabular-nums
+  Token amounts:   JetBrains Mono, right-aligned, tabular-nums
+  Chain badges:    8px dot in chain color + chain name text
+  Exchange logos:  20px circular, adjacent to exchange name
+
+PERCENTAGE CHANGE BADGES
+  Positive:  background rgba(34,197,94,0.12), color #22c55e
+             prefix "▲ " or "+", border-radius 4px, padding 2px 8px
+  Negative:  background rgba(239,68,68,0.12), color #ef4444
+             prefix "▼ " or "-", same radius/padding
+  Neutral:   color #94a3b8, no background
+
+EXCHANGE / WALLET ROW COLORS
+  Each source (Binance, OKX, Hyperliquid, etc.) gets a distinct chain/brand color
+  as a small left-side accent or icon badge. Use the Dune color-palettes project
+  as reference for official protocol brand colors.
+
+BUTTONS
+  Primary:   bg #3b82f6, color white, border-radius 8px, 14px font, 400-500 weight
+             hover: bg #2563eb, transition 150ms
+  Secondary: bg transparent, border 1px #3b82f6, color #3b82f6, same radius
+             hover: bg rgba(59,130,246,0.08)
+  Refresh:   icon button, ghost style, icon color #94a3b8
+             hover: color #f0f6ff, bg #1a2332
+
+SIDEBAR NAV ITEMS
+  Default:   color #94a3b8, no background
+  Hover:     color #f0f6ff, bg #1a2332, border-radius 8px
+  Active:    color #f0f6ff, bg rgba(59,130,246,0.12),
+             border-left 2px solid #3b82f6, border-radius 0 8px 8px 0
+
+LOADING STATES
+  Use skeleton shimmer animation on card content (bg gradient sweep)
+  Color: from #151d24 to #1a2332 to #151d24, animate left to right
+  Duration: 1.5s, ease-in-out, infinite
+
+ERROR STATES
+  Background: rgba(239,68,68,0.08)
+  Border:     1px solid rgba(239,68,68,0.3)
+  Text:       #ef4444
+  Icon:       warning triangle or circle-x
+
+3.5  KEY PREMIUM UI DETAILS
+------------------------------
+
+1. SCROLLBAR STYLING
+   Custom scrollbar on webkit:
+   ::-webkit-scrollbar         { width: 6px; }
+   ::-webkit-scrollbar-track   { background: transparent; }
+   ::-webkit-scrollbar-thumb   { background: #374151; border-radius: 3px; }
+   ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+2. SELECTION COLOR
+   ::selection { background: rgba(59,130,246,0.3); color: inherit; }
+
+3. FOCUS RINGS
+   Use accent color ring: outline 2px solid rgba(59,130,246,0.6), offset 2px
+   Never use browser default (blue box on most browsers)
+
+4. CHART TOOLTIPS
+   Background: #1a2332
+   Border: 1px solid #2d3a4e
+   Border-radius: 8px
+   Box-shadow: 0 4px 20px rgba(0,0,0,0.5)
+   Font: Inter, 13px
+   Values: JetBrains Mono, 14px
+
+5. EMPTY STATES
+   Icon: 48px, muted color (#374151)
+   Heading: "No wallets added yet", 16px, secondary text
+   Subtext: 14px, muted, brief instructions
+   CTA button: primary style
+
+6. WALLET ADDRESS DISPLAY
+   Always truncate: first 6 + "..." + last 4 characters
+   Font: JetBrains Mono
+   Copy-to-clipboard icon appears on hover
+   Full address in tooltip on hover
+
+7. NUMBER FORMATTING
+   Balances >= $1M:   "$1.24M"
+   Balances >= $1K:   "$12.4K" or "$12,400"
+   Balances < $1:     "$0.0042" (up to 4 decimal places)
+   Crypto amounts:    show up to 6 significant digits
+   Percentage:        always 2 decimal places, always show sign
+
+8. TRANSITION TIMING
+   Hover transitions:    150ms ease
+   Modal open:           200ms ease-out
+   Sidebar collapse:     250ms ease-in-out
+   Data refresh flash:   brief 300ms yellow highlight on changed cells
+   Loading skeleton:     1500ms infinite
+
+9. CHAIN COLOR CODING
+   Use small colored dot indicators for each chain:
+   Ethereum:   #627EEA
+   BSC:        #F3BA2F
+   Solana:     #9945FF
+   Polygon:    #8247E5
+   Arbitrum:   #2D374B (with #12AAFF accent)
+   Optimism:   #FF0420
+   Avalanche:  #E84142
+   Tron:       #EF0027
+   (Source: Dune color-palettes standard)
+
+10. GLASSMORPHISM (use sparingly)
+    For modals and overlays only:
+    background: rgba(15,20,25,0.8)
+    backdrop-filter: blur(12px)
+    border: 1px solid rgba(255,255,255,0.06)
+    Use on: modals, dropdowns, floating panels
+    Do NOT use on main content cards -- hurts readability
+
+3.6  WHAT TO AVOID
+--------------------
+
+  - Pure black (#000000) backgrounds on large content areas
+  - Pure white text on near-black (too harsh -- use #f0f6ff instead)
+  - Gradient-heavy backgrounds (too Web3-marketing, not product)
+  - Neon glow effects on data (Hyperliquid accent colors as brand, not data)
+  - Right-to-left or center-aligned numbers in tables
+  - Sans-serif fonts for prices/quantities in tables (use monospace)
+  - Serif fonts anywhere in the UI
+  - More than one accent color for interactive elements
+  - Mixing blue accent with orange -- pick one
+  - Drop shadows in dark mode (they look muddled -- use bg color for elevation)
+  - Icon-only buttons without tooltips
+  - Table rows with padding < 10px vertical
+  - Font sizes below 11px anywhere visible
+  - Saturated colors for large background areas
+
+
+================================================================================
+SECTION 4: DOMINANT AESTHETIC SUMMARY
+================================================================================
+
+The dominant aesthetic across leading crypto/DeFi UIs in 2024-2026 can be
+described as:
+
+  "PRECISION DARK" -- or -- "DATA-TERMINAL MINIMALISM"
+
+Core characteristics:
+
+  1. Deep navy-black layered surfaces (not pure black)
+  2. One accent color (blue or cyan for analytics, orange or green for trading)
+  3. Inter as the universal UI font, JetBrains Mono for all numbers
+  4. 3-level text hierarchy (near-white / medium-gray / dark-gray)
+  5. Tables and charts as primary UI elements, not cards or illustrations
+  6. Semantic green/red for all directional data (no ambiguity)
+  7. Minimal animation, maximum data density
+  8. Institutional credibility through typographic precision
+  9. Desktop-first multi-column layouts
+  10. OKLCH or layered HSL color systems for dark mode consistency
+
+This aesthetic evolved from Bloomberg Terminal / traditional finance tools,
+filtered through open-source crypto ethos, and refined by product-focused
+teams into clean, trust-inspiring interfaces that signal:
+  - "We take your money seriously"
+  - "We are technically sophisticated"
+  - "We give you the data to make informed decisions"
+
+The wallet monitor dashboard should target this same position:
+  Professional analytics tool for a technical crypto audience,
+  prioritizing data clarity over visual decoration.
+
+
+================================================================================
+REFERENCES
+================================================================================
+
+Analyzed sites:
+  - https://tokenterminal.com  (Token Terminal)
+  - https://app.hyperliquid.xyz (Hyperliquid DEX)
+  - https://app.lighter.xyz  (Lighter Perp DEX)
+  - https://dune.com  (Dune Analytics)
+  - https://defillama.com  (DefiLlama)
+
+Color source code:
+  - DefiLlama: https://github.com/DefiLlama/defillama-app/blob/main/src/tailwind.css
+  - Dune palette standards: https://github.com/duneanalytics/color-palettes
+  - Hyperliquid design deep-dive: https://hyperliq-trade-us.pages.dev/
+  - Token Terminal theme: extracted from HTML (hsl values in AvoidThemeFlickerScript)
+
+Font references:
+  - Inter: https://fonts.google.com/specimen/Inter
+  - JetBrains Mono: https://www.jetbrains.com/lp/mono/
+  - Neue Haas Grotesk (Dune): Commercial font, Linotype
+
+Compiled: April 2026
