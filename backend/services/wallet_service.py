@@ -67,36 +67,37 @@ def archive_wallet(db: Session, wallet_id: int, user_id: int) -> WalletOut:
     return wallet_to_out(wallet)
 
 
-def unarchive_wallet(db: Session, wallet_id: int, user_id: int) -> WalletOut:
+def unarchive_wallet(db: Session, wallet_id: int, user_id: int, is_admin: bool = False) -> WalletOut:
     wallet = db.query(Wallet).filter(
         Wallet.id == wallet_id, Wallet.user_id == user_id
     ).first()
     if not wallet:
         raise WalletNotFound(wallet_id)
-    # Check active wallet limit before restoring
-    active_count = db.query(Wallet).filter(
-        Wallet.user_id == user_id,
-        Wallet.is_archived == False,
-    ).count()
-    if active_count >= FREE_WALLET_LIMIT:
-        from backend.domain.errors import WalletLimitReached
-        raise WalletLimitReached(FREE_WALLET_LIMIT)
+    if not is_admin:
+        active_count = db.query(Wallet).filter(
+            Wallet.user_id == user_id,
+            Wallet.is_archived == False,
+        ).count()
+        if active_count >= FREE_WALLET_LIMIT:
+            from backend.domain.errors import WalletLimitReached
+            raise WalletLimitReached(FREE_WALLET_LIMIT)
     wallet.is_archived = False
     db.commit()
     db.refresh(wallet)
     return wallet_to_out(wallet)
 
 
-FREE_WALLET_LIMIT = 5
+FREE_WALLET_LIMIT = 4
 
 
-def create_wallet(db: Session, body: WalletCreate, user_id: int) -> WalletOut:
-    count = db.query(Wallet).filter(
-        Wallet.user_id == user_id, Wallet.is_archived == False
-    ).count()
-    if count >= FREE_WALLET_LIMIT:
-        from backend.domain.errors import WalletLimitReached
-        raise WalletLimitReached(FREE_WALLET_LIMIT)
+def create_wallet(db: Session, body: WalletCreate, user_id: int, is_admin: bool = False) -> WalletOut:
+    if not is_admin:
+        count = db.query(Wallet).filter(
+            Wallet.user_id == user_id, Wallet.is_archived == False
+        ).count()
+        if count >= FREE_WALLET_LIMIT:
+            from backend.domain.errors import WalletLimitReached
+            raise WalletLimitReached(FREE_WALLET_LIMIT)
 
     if body.wallet_type == "exchange" or (body.wallet_type == "perpdex" and body.type_value == "aster"):
         raw_creds = {

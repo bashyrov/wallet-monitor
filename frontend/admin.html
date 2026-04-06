@@ -278,6 +278,9 @@
     .btn-block.block:hover { background: var(--red-dim); border-color: rgba(248,113,113,0.5); }
     .btn-block.unblock { background: transparent; border-color: rgba(26,255,171,0.25); color: var(--green); }
     .btn-block.unblock:hover { background: var(--green-dim); border-color: rgba(26,255,171,0.4); }
+    .sort-th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .sort-th:hover { color: var(--text2); }
+    .sort-arrow { font-size: 10px; margin-left: 3px; color: var(--green); }
 
     /* ── ACTIVITY LOG ── */
     .log-list { display: flex; flex-direction: column; }
@@ -358,12 +361,89 @@
     .bnav-item.active { color: var(--green); }
     .bnav-item.active svg { opacity: 1; }
 
+    /* ── BURGER ── */
+    .burger-btn {
+      display: none;
+      background: none; border: none; cursor: pointer;
+      color: var(--text2); padding: 6px; border-radius: 8px;
+      transition: background 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .burger-btn:hover { background: var(--surface3); color: var(--text); }
+
+    .mobile-drawer {
+      display: none;
+      position: fixed; inset: 0; z-index: 500;
+    }
+    .mobile-drawer.open { display: block; }
+    .drawer-overlay {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      animation: fadeOverlay 0.2s ease;
+    }
+    @keyframes fadeOverlay { from { opacity: 0; } to { opacity: 1; } }
+    .drawer-panel {
+      position: absolute; top: 0; left: 0; bottom: 0;
+      width: 240px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 20px 10px;
+      display: flex; flex-direction: column; gap: 2px;
+      animation: slideDrawer 0.25s cubic-bezier(0.16,1,0.3,1);
+    }
+    @keyframes slideDrawer { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+    .drawer-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 8px 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    .drawer-brand { font-size: 17px; font-weight: 800; letter-spacing: -0.6px; color: var(--text); }
+    .drawer-brand span { color: var(--green); }
+    .drawer-close {
+      background: none; border: none; cursor: pointer;
+      color: var(--text3); font-size: 18px; line-height: 1;
+      padding: 2px 5px; border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .drawer-close:hover { color: var(--text); background: var(--surface3); }
+    .drawer-item {
+      display: flex; align-items: center; gap: 9px;
+      padding: 9px 12px; border-radius: 8px;
+      font-size: 13px; color: var(--text3);
+      cursor: pointer; text-decoration: none;
+      transition: color .12s, background .12s;
+    }
+    .drawer-item:hover { color: var(--text); background: var(--surface3); }
+    .drawer-item.active { color: var(--text); background: var(--surface2); }
+    .drawer-item svg { flex-shrink: 0; opacity: .7; }
+    .drawer-item.active svg { opacity: 1; }
+    .drawer-sep { height: 1px; background: var(--border); margin: 8px 0; }
+
     @media (max-width: 768px) {
       .bottom-nav { display: flex; }
       body { padding-bottom: 88px; }
-      .topbar { grid-template-columns: auto 1fr; padding: 0 16px; }
+      .topbar { grid-template-columns: auto 1fr; padding: 0 14px; }
       .topbar-nav { display: none; }
       .topbar-right { display: none; }
+      .burger-btn { display: flex; }
+
+      /* Layout: hide sidebar, full-width main */
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .main { padding: 20px 14px 60px; }
+
+      /* Tables: hide less important columns */
+      .col-hide-mobile { display: none; }
+
+      /* Grids */
+      .two-col, .three-col { grid-template-columns: 1fr !important; }
+
+      /* Page header */
+      .page-title { font-size: 17px; }
+      .page-sub { margin-bottom: 16px; }
     }
   
     /* ── Free Banner ── */
@@ -419,6 +499,9 @@
 <!-- ══ TOPBAR ══════════════════════════════════════════════════════ -->
 <header class="topbar">
   <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <button class="burger-btn" onclick="openDrawer()" aria-label="Menu">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
     <a href="/index.html" class="brand">
     avalant<span class="brand-cursor">_</span>
     </a>
@@ -465,84 +548,89 @@
 </script>
 
 
+<!-- ── MOBILE DRAWER ── -->
+<div class="mobile-drawer" id="mobile-drawer">
+  <div class="drawer-overlay" onclick="closeDrawer()"></div>
+  <div class="drawer-panel">
+    <div class="drawer-head">
+      <span class="drawer-brand">avalant<span>_</span></span>
+      <button class="drawer-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <a class="drawer-item active" id="drawer-dashboard" href="#" onclick="showTab('dashboard',this);closeDrawer();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="8" width="3.5" height="5" rx="1" fill="currentColor" opacity=".5"/><rect x="5.25" y="5" width="3.5" height="8" rx="1" fill="currentColor" opacity=".7"/><rect x="9.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
+      Dashboard
+    </a>
+    <a class="drawer-item" id="drawer-users" href="#" onclick="showTab('users',this);closeDrawer();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 12c0-2.8 2.7-5 6-5s6 2.2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Users
+    </a>
+    <div class="drawer-sep"></div>
+    <a class="drawer-item" href="/app.html">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 2H2a1 1 0 00-1 1v9a1 1 0 001 1h10a1 1 0 001-1V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8 1h5v5M13 1L7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Go to App
+    </a>
+  </div>
+</div>
+
 <div class="layout">
 
   <!-- ── SIDEBAR ── -->
   <aside class="sidebar">
     <div class="sidebar-section">Overview</div>
-    <a class="sidebar-item active" href="#">
+    <a class="sidebar-item active" href="#" onclick="showTab('dashboard',this);return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="8" width="3.5" height="5" rx="1" fill="currentColor" opacity=".5"/><rect x="5.25" y="5" width="3.5" height="8" rx="1" fill="currentColor" opacity=".7"/><rect x="9.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
       Dashboard
     </a>
-    <a class="sidebar-item" href="#">
+    <a class="sidebar-item" href="#" onclick="showTab('users',this);return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 12c0-2.8 2.7-5 6-5s6 2.2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Users
-    </a>
-    <div class="sidebar-sep"></div>
-    <div class="sidebar-section">Billing</div>
-    <a class="sidebar-item" href="#">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M1 6h12" stroke="currentColor" stroke-width="1.3"/></svg>
-      Subscriptions
-    </a>
-    <a class="sidebar-item" href="#">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 4H2L1 2h12L12 4zM2 4l1 8h8l1-8" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-      Revenue
-    </a>
-    <div class="sidebar-sep"></div>
-    <div class="sidebar-section">System</div>
-    <a class="sidebar-item" href="#">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3.5L9 9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Activity Log
-    </a>
-    <a class="sidebar-item" href="#">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M2 7h7M2 10h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Settings
     </a>
   </aside>
 
   <!-- ── MAIN ── -->
   <main class="main">
-    <div class="page-title">Dashboard</div>
-    <div class="page-sub">Live data — <span id="last-updated">Loading...</span></div>
 
-    <!-- KPI Grid -->
-    <div class="kpi-grid" style="margin-bottom:24px;">
-      <div class="kpi green">
-        <div class="kpi-icon" style="background:var(--green-dim)">👥</div>
-        <div class="kpi-num" id="kpi-users" style="color:var(--green)">—</div>
-        <div class="kpi-label">Total users</div>
-      </div>
-      <div class="kpi yellow">
-        <div class="kpi-icon" style="background:var(--yellow-dim)">📊</div>
-        <div class="kpi-num" id="kpi-wallets" style="color:var(--yellow)">—</div>
-        <div class="kpi-label">Total wallets</div>
-      </div>
-      <div class="kpi teal">
-        <div class="kpi-icon" style="background:var(--teal-dim)">🏦</div>
-        <div class="kpi-num" id="kpi-exchanges" style="color:var(--teal)">—</div>
-        <div class="kpi-label">Exchange wallets</div>
-      </div>
-      <div class="kpi purple">
-        <div class="kpi-icon" style="background:var(--purple-dim)">⛓</div>
-        <div class="kpi-num" id="kpi-chains" style="color:var(--purple)">—</div>
-        <div class="kpi-label">Chain wallets</div>
-      </div>
-      <div class="kpi" style="animation-delay:.16s">
-        <div class="kpi-icon" style="background:var(--surface3)">📈</div>
-        <div class="kpi-num" id="kpi-perpdex">—</div>
-        <div class="kpi-label">Perp DEX wallets</div>
-      </div>
-      <div class="kpi" style="animation-delay:.2s">
-        <div class="kpi-icon" style="background:var(--surface3)">🏷️</div>
-        <div class="kpi-num" id="kpi-tags">—</div>
-        <div class="kpi-label">Tags created</div>
-      </div>
-    </div>
+    <!-- ══ DASHBOARD TAB ══ -->
+    <div id="tab-dashboard">
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub">Live data — <span id="last-updated">Loading...</span></div>
 
-    <!-- Two-col: wallet type donut + recent users -->
-    <div class="two-col" style="margin-bottom:24px;">
-      <!-- Wallet type donut -->
-      <div class="card">
+      <!-- KPI Grid -->
+      <div class="kpi-grid" style="margin-bottom:24px;">
+        <div class="kpi green">
+          <div class="kpi-icon" style="background:var(--green-dim)">👥</div>
+          <div class="kpi-num" id="kpi-users" style="color:var(--green)">—</div>
+          <div class="kpi-label">Total users</div>
+        </div>
+        <div class="kpi yellow">
+          <div class="kpi-icon" style="background:var(--yellow-dim)">📊</div>
+          <div class="kpi-num" id="kpi-wallets" style="color:var(--yellow)">—</div>
+          <div class="kpi-label">Total wallets</div>
+        </div>
+        <div class="kpi teal">
+          <div class="kpi-icon" style="background:var(--teal-dim)">🏦</div>
+          <div class="kpi-num" id="kpi-exchanges" style="color:var(--teal)">—</div>
+          <div class="kpi-label">Exchange wallets</div>
+        </div>
+        <div class="kpi purple">
+          <div class="kpi-icon" style="background:var(--purple-dim)">⛓</div>
+          <div class="kpi-num" id="kpi-chains" style="color:var(--purple)">—</div>
+          <div class="kpi-label">Chain wallets</div>
+        </div>
+        <div class="kpi" style="animation-delay:.16s">
+          <div class="kpi-icon" style="background:var(--surface3)">📈</div>
+          <div class="kpi-num" id="kpi-perpdex">—</div>
+          <div class="kpi-label">Perp DEX wallets</div>
+        </div>
+        <div class="kpi" style="animation-delay:.2s">
+          <div class="kpi-icon" style="background:var(--surface3)">🏷️</div>
+          <div class="kpi-num" id="kpi-tags">—</div>
+          <div class="kpi-label">Tags created</div>
+        </div>
+      </div>
+
+      <!-- Wallets by type donut -->
+      <div class="card" style="margin-bottom:24px;">
         <div class="card-head">
           <span class="card-title">Wallets by type</span>
         </div>
@@ -554,10 +642,31 @@
         </div>
       </div>
 
-      <!-- Recent users -->
+      <!-- Wallet type breakdown -->
       <div class="card">
         <div class="card-head">
-          <span class="card-title">Recent users</span>
+          <span class="card-title">Wallet type breakdown</span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="table">
+            <thead><tr>
+              <th>Type</th><th>Count</th><th>% of total</th><th>Top provider</th>
+            </tr></thead>
+            <tbody id="wallet-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ USERS TAB ══ -->
+    <div id="tab-users" style="display:none">
+      <div class="page-title">Users</div>
+      <div class="page-sub">All registered accounts</div>
+
+      <!-- Recent users -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-head">
+          <span class="card-title">Recent signups</span>
         </div>
         <div class="card-body" style="padding:0">
           <table class="table">
@@ -568,36 +677,45 @@
           </table>
         </div>
       </div>
-    </div>
 
-    <!-- All users table -->
-    <div class="card" style="animation-delay:.2s;margin-bottom:24px;">
-      <div class="card-head">
-        <span class="card-title">All users</span>
-        <button class="card-action" onclick="loadStats()">Refresh</button>
-      </div>
-      <div class="card-body" style="padding:0">
-        <table class="table">
-          <thead><tr>
-            <th>Username</th><th>Email</th><th>Wallets</th><th>Requests</th><th>Role</th><th>Status</th><th>Joined</th><th></th>
-          </tr></thead>
-          <tbody id="all-users-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Wallet type breakdown -->
-    <div class="card" style="animation-delay:.3s">
-      <div class="card-head">
-        <span class="card-title">Wallet type breakdown</span>
-      </div>
-      <div class="card-body" style="padding:0">
-        <table class="table">
-          <thead><tr>
-            <th>Type</th><th>Count</th><th>% of total</th><th>Top provider</th>
-          </tr></thead>
-          <tbody id="wallet-tbody"></tbody>
-        </table>
+      <!-- All users -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">All users</span>
+          <button class="card-action" onclick="loadStats()">Refresh</button>
+        </div>
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+          <input id="user-search" type="text" placeholder="Search by username or email…"
+            oninput="usersPage=0;renderUsersTable()"
+            style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+                   padding:7px 12px;font-size:13px;color:var(--text);font-family:var(--font);outline:none;
+                   transition:border-color .15s"
+            onfocus="this.style.borderColor='rgba(26,255,171,0.3)'"
+            onblur="this.style.borderColor='var(--border)'">
+        </div>
+        <div style="overflow-x:auto">
+          <table class="table" style="min-width:400px">
+            <thead><tr>
+              <th>Username</th>
+              <th class="col-hide-mobile">Email</th>
+              <th class="sort-th" onclick="setSort('wallets')">
+                Wallets <span id="sort-wallets" class="sort-arrow"></span>
+              </th>
+              <th class="sort-th" onclick="setSort('requests')">
+                Requests <span id="sort-requests" class="sort-arrow"></span>
+              </th>
+              <th>Role</th><th>Status</th>
+            </tr></thead>
+            <tbody id="all-users-tbody"></tbody>
+          </table>
+        </div>
+        <div id="users-pagination" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--border);font-size:13px;color:var(--text3)">
+          <span id="users-page-info"></span>
+          <div style="display:flex;gap:6px">
+            <button class="card-action" id="btn-prev" onclick="usersPage--;renderUsersTable()">← Prev</button>
+            <button class="card-action" id="btn-next" onclick="usersPage++;renderUsersTable()">Next →</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -608,17 +726,112 @@
 <script>
 Auth.requireAdmin('/app.html');
 
+const TABS = ['dashboard', 'users'];
+function showTab(tab, el) {
+  TABS.forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
+  });
+  // Sync sidebar + drawer active state
+  document.querySelectorAll('.sidebar-item, .drawer-item').forEach(a => a.classList.remove('active'));
+  document.querySelectorAll(`[onclick*="'${tab}'"]`).forEach(a => a.classList.add('active'));
+}
+
+function openDrawer() {
+  document.getElementById('mobile-drawer').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeDrawer() {
+  document.getElementById('mobile-drawer').classList.remove('open');
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+// ── Users table state ──────────────────────────────────────
+let usersPage = 0;
+let usersSort = { key: null, dir: 1 }; // dir: 1=asc, -1=desc
+const PAGE_SIZE = 10;
+
+function setSort(key) {
+  if (usersSort.key === key) {
+    usersSort.dir *= -1;
+  } else {
+    usersSort.key = key;
+    usersSort.dir = -1; // default desc
+  }
+  usersPage = 0;
+  renderUsersTable();
+}
+
+function renderUsersTable() {
+  const q = (document.getElementById('user-search')?.value || '').toLowerCase().trim();
+
+  let rows = allUsers.filter(u =>
+    !q || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+  );
+
+  if (usersSort.key) {
+    const k = usersSort.key === 'wallets' ? 'wallets' : 'request_count';
+    rows = rows.slice().sort((a, b) => ((b[k] || 0) - (a[k] || 0)) * (usersSort.dir === -1 ? 1 : -1));
+  }
+
+  // Sort arrows
+  ['wallets', 'requests'].forEach(k => {
+    const el = document.getElementById('sort-' + k);
+    if (!el) return;
+    const active = (k === 'wallets' && usersSort.key === 'wallets') ||
+                   (k === 'requests' && usersSort.key === 'requests');
+    el.textContent = !active ? '' : usersSort.dir === -1 ? '↓' : '↑';
+  });
+
+  const total = rows.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  usersPage = Math.min(usersPage, pages - 1);
+  const slice = rows.slice(usersPage * PAGE_SIZE, (usersPage + 1) * PAGE_SIZE);
+
+  // Page info
+  const info = document.getElementById('users-page-info');
+  if (info) {
+    const from = total ? usersPage * PAGE_SIZE + 1 : 0;
+    const to   = Math.min((usersPage + 1) * PAGE_SIZE, total);
+    info.textContent = total ? `${from}–${to} of ${total}` : 'No results';
+  }
+  const btnPrev = document.getElementById('btn-prev');
+  const btnNext = document.getElementById('btn-next');
+  if (btnPrev) btnPrev.disabled = usersPage === 0;
+  if (btnNext) btnNext.disabled = usersPage >= pages - 1;
+
+  const tbody = document.getElementById('all-users-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = slice.length
+    ? slice.map(u => {
+        const req = u.request_count || 0;
+        const reqClass = req > 1000 ? 'danger' : req > 100 ? 'warn' : '';
+        const isBlocked = u.is_blocked;
+        return `<tr style="${isBlocked ? 'opacity:0.55' : ''};cursor:pointer" onclick="window.location='/admin-user.html?id=${u.id}'">
+          <td style="font-weight:500">${u.username}</td>
+          <td class="col-hide-mobile" style="color:var(--text3);font-size:12px">${u.email}</td>
+          <td class="mono">${u.wallets}</td>
+          <td><span class="req-count ${reqClass}">${req.toLocaleString('en-US')}</span></td>
+          <td>${u.is_admin ? '<span class="badge pro">admin</span>' : '<span class="badge free">user</span>'}</td>
+          <td>${isBlocked ? '<span class="badge blocked">blocked</span>' : '<span class="badge active">active</span>'}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="6" style="color:var(--text4);text-align:center;padding:20px">No users found</td></tr>';
+}
+
+let allUsers = [];
+
 async function loadStats() {
   const btn = document.getElementById('refresh-btn');
   btn.classList.add('loading');
 
-  let stats = null, allUsers = [];
+  let stats = null;
   try {
     const [statsRes, usersRes] = await Promise.all([
       Auth.apiFetch('/admin/stats'),
       Auth.apiFetch('/admin/users'),
     ]);
-    if (statsRes.ok) stats = await statsRes.json();
+    if (statsRes.ok) stats  = await statsRes.json();
     if (usersRes.ok) allUsers = await usersRes.json();
   } catch(e) {}
 
@@ -668,29 +881,7 @@ async function loadStats() {
         </tr>`).join('')
     : '<tr><td colspan="4" style="color:var(--text4);text-align:center;padding:16px">No users yet</td></tr>';
 
-  // All users table
-  document.getElementById('all-users-tbody').innerHTML = allUsers.length
-    ? allUsers.map(u => {
-        const req = u.request_count || 0;
-        const reqClass = req > 1000 ? 'danger' : req > 100 ? 'warn' : '';
-        const isBlocked = u.is_blocked;
-        const rowStyle = isBlocked ? 'opacity:0.55' : '';
-        return `<tr style="${rowStyle}" id="urow-${u.id}">
-          <td style="font-weight:500">${u.username}</td>
-          <td style="color:var(--text3);font-size:12px">${u.email}</td>
-          <td class="mono">${u.wallets}</td>
-          <td><span class="req-count ${reqClass}" title="${req} requests">${req.toLocaleString('en-US')}</span></td>
-          <td>${u.is_admin ? '<span class="badge pro">admin</span>' : '<span class="badge free">user</span>'}</td>
-          <td>${isBlocked ? '<span class="badge blocked">blocked</span>' : '<span class="badge active">active</span>'}</td>
-          <td style="color:var(--text4);font-size:12px">${u.created_at}</td>
-          <td>
-            <button class="btn-block ${isBlocked ? 'unblock' : 'block'}" onclick="toggleBlock(${u.id}, ${isBlocked})">
-              ${isBlocked ? 'Unblock' : 'Block'}
-            </button>
-          </td>
-        </tr>`;
-      }).join('')
-    : '<tr><td colspan="8" style="color:var(--text4);text-align:center;padding:16px">No users yet</td></tr>';
+  renderUsersTable();
 
   // Wallet type breakdown
   const wTypes = [

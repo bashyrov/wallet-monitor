@@ -77,20 +77,30 @@ def admin_list_users(
     return result
 
 
-@router.patch("/users/{user_id}/admin")
-def toggle_admin(
+@router.get("/users/{user_id}")
+def admin_get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_admin_user),
+    _: User = Depends(get_admin_user),
 ):
-    if user_id == current_admin.id:
-        raise HTTPException(status_code=400, detail="Cannot change your own admin status")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    user.is_admin = not user.is_admin
-    db.commit()
-    return {"id": user.id, "username": user.username, "is_admin": user.is_admin}
+    wallets = db.query(Wallet).filter(Wallet.user_id == user_id).all()
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "is_admin": user.is_admin,
+        "is_blocked": getattr(user, "is_blocked", False),
+        "request_count": getattr(user, "request_count", 0),
+        "created_at": user.created_at.strftime("%Y-%m-%d %H:%M"),
+        "wallets": [
+            {"id": w.id, "name": w.name, "wallet_type": w.wallet_type, "type_value": w.type_value}
+            for w in wallets
+        ],
+    }
+
 
 
 @router.patch("/users/{user_id}/block")
