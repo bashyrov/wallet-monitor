@@ -40,19 +40,16 @@ def _check_security():
 
 
 def run_migrations():
-    from alembic.script import ScriptDirectory
-    from alembic.runtime.migration import MigrationContext
-    from backend.db.base import engine
-    alembic_cfg = Config("alembic.ini")
-    script = ScriptDirectory.from_config(alembic_cfg)
-    with engine.connect() as conn:
-        ctx = MigrationContext.configure(conn)
-        current = set(ctx.get_current_heads())
-        heads = set(script.get_heads())
-        if current >= heads:
-            logger.info("Database already at head, skipping migrations")
-            return
-    command.upgrade(alembic_cfg, "head")
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.stdout:
+        logger.info("Alembic: %s", result.stdout.strip())
+    if result.returncode != 0:
+        logger.error("Migration failed: %s", result.stderr.strip())
+        raise RuntimeError("Migration failed")
 
 
 def _ensure_system_tags() -> None:
