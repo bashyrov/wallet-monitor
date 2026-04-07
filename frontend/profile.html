@@ -313,6 +313,17 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--surface4); border-radius: 2px; }
 
+    /* ── CHART ── */
+    .chart-range-btn {
+      padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border);
+      background: none; color: var(--text3); font-family: var(--font);
+      font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+    }
+    .chart-range-btn:hover { color: var(--text2); border-color: var(--surface4); }
+    .chart-range-btn.active { background: var(--surface3); color: var(--text); border-color: var(--surface4); }
+    .chart-svg { width: 100%; overflow: visible; display: block; }
+    .chart-empty { font-size: 12px; color: var(--text4); text-align: center; padding: 32px 0; }
+
     /* ── BOTTOM NAV ── */
     .bottom-nav {
       display: none;
@@ -596,6 +607,23 @@
 
   </div>
 
+  <!-- Balance History Chart -->
+  <div class="section-card" style="margin-bottom:20px;animation-delay:0.28s" id="history-card">
+    <div class="section-head">
+      <span class="section-title">Balance History</span>
+      <div style="display:flex;gap:4px">
+        <button class="chart-range-btn active" id="rb-30" onclick="loadHistory(30,this)">30d</button>
+        <button class="chart-range-btn" id="rb-7"  onclick="loadHistory(7,this)">7d</button>
+        <button class="chart-range-btn" id="rb-90" onclick="loadHistory(90,this)">90d</button>
+      </div>
+    </div>
+    <div class="section-body" style="padding:16px 20px 20px">
+      <div id="chart-wrap" style="width:100%;min-height:140px;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:12px;color:var(--text4)">Tag wallets with <span style="color:var(--green);font-weight:600">◈ Owner</span> and check balance to start tracking</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Danger Zone -->
   <div class="section-card" style="animation-delay:0.3s">
     <div class="section-head">
@@ -724,6 +752,99 @@ function animNum(id, to, duration = 700) {
   requestAnimationFrame(tick);
 }
 
+// ── Balance History Chart ────────────────────────────────────────────────────
+async function loadHistory(days, btn) {
+  // Update active button
+  document.querySelectorAll('.chart-range-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  const wrap = document.getElementById('chart-wrap');
+  wrap.innerHTML = `<span style="font-size:12px;color:var(--text4)">Loading…</span>`;
+
+  let data = [];
+  try {
+    const res = await Auth.apiFetch(`/portfolio/history?days=${days}`);
+    if (res.ok) data = await res.json();
+  } catch(e) {}
+
+  if (!data.length) {
+    wrap.innerHTML = `<div class="chart-empty">No history yet — tag wallets with <span style="color:var(--green);font-weight:600">◈ Owner</span> and check balance</div>`;
+    return;
+  }
+  wrap.innerHTML = buildChart(data);
+}
+
+function buildChart(data) {
+  const W = 600, H = 160, PL = 48, PR = 12, PT = 16, PB = 32;
+  const cw = W - PL - PR, ch = H - PT - PB;
+
+  const values = data.map(d => d.usd_total);
+  const times  = data.map(d => d.at);
+  const minV = Math.min(...values), maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+
+  const xOf = i => PL + (i / (data.length - 1 || 1)) * cw;
+  const yOf = v => PT + ch - ((v - minV) / range) * ch;
+
+  // Smooth cubic bezier path through all points
+  const pts = data.map((d, i) => [xOf(i), yOf(d.usd_total)]);
+  let linePath = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    const cx = (x0 + x1) / 2;
+    linePath += ` C ${cx} ${y0}, ${cx} ${y1}, ${x1} ${y1}`;
+  }
+
+  // Area path (close below)
+  const areaPath = linePath + ` L ${pts[pts.length-1][0]} ${PT+ch} L ${pts[0][0]} ${PT+ch} Z`;
+
+  // Y axis labels (3 levels)
+  const fUSD = v => '$' + v.toLocaleString('en-US', {maximumFractionDigits: 0});
+  const yLabels = [minV, minV + range * 0.5, maxV].map(v =>
+    `<text x="${PL - 6}" y="${yOf(v) + 4}" text-anchor="end" font-size="10" fill="#676B7E" font-family="JetBrains Mono,monospace">${fUSD(v)}</text>`
+  ).join('');
+
+  // X axis labels — show first, middle, last
+  const xIdxs = data.length <= 1 ? [0] : [0, Math.floor((data.length-1)/2), data.length-1];
+  const xLabels = xIdxs.map(i =>
+    `<text x="${xOf(i)}" y="${H - 4}" text-anchor="middle" font-size="10" fill="#676B7E" font-family="Inter,sans-serif">${times[i].slice(0,10)}</text>`
+  ).join('');
+
+  // Current value label at last point
+  const last = pts[pts.length - 1];
+  const lastLabel = `<text x="${last[0]}" y="${last[1] - 8}" text-anchor="middle" font-size="11" fill="#1AFFAB" font-weight="600" font-family="JetBrains Mono,monospace">${fUSD(values[values.length-1])}</text>`;
+
+  // Dots at each point (only if few points)
+  const dots = data.length <= 30
+    ? pts.map(([x,y]) => `<circle cx="${x}" cy="${y}" r="2.5" fill="#1AFFAB" opacity="0.7"/>`).join('')
+    : '';
+
+  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#1AFFAB" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="#1AFFAB" stop-opacity="0"/>
+      </linearGradient>
+      <clipPath id="chartClip">
+        <rect x="${PL}" y="${PT}" width="${cw}" height="${ch}" rx="6"/>
+      </clipPath>
+    </defs>
+    <!-- grid lines -->
+    <line x1="${PL}" y1="${PT}"    x2="${PL+cw}" y2="${PT}"    stroke="#22222A" stroke-width="1"/>
+    <line x1="${PL}" y1="${PT+ch/2}" x2="${PL+cw}" y2="${PT+ch/2}" stroke="#22222A" stroke-width="1" stroke-dasharray="3,4"/>
+    <line x1="${PL}" y1="${PT+ch}" x2="${PL+cw}" y2="${PT+ch}" stroke="#22222A" stroke-width="1"/>
+    <!-- area fill -->
+    <path d="${areaPath}" fill="url(#chartGrad)" clip-path="url(#chartClip)"/>
+    <!-- line -->
+    <path d="${linePath}" fill="none" stroke="#1AFFAB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#chartClip)"/>
+    ${dots}
+    ${lastLabel}
+    ${yLabels}
+    ${xLabels}
+  </svg>`;
+}
+
+loadHistory(30, document.getElementById('rb-30'));
 loadProfile();
 
 (function () {

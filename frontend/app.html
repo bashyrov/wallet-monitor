@@ -2195,9 +2195,12 @@ function typeMeta(type) {
 function walletRow(w, idx = 0) {
   const ck = S.selected.has(w.id);
   const { color, label } = typeMeta(w.wallet_type);
-  const tagPills = w.tags.map(t =>
-    `<span class="tag-pill" style="background:${t.color}14;color:${t.color};border:1px solid ${t.color}30">${esc(t.name)}</span>`
-  ).join('');
+  const tagPills = w.tags.map(t => {
+    if (t.name === 'Owner') {
+      return `<span class="tag-pill" style="background:rgba(26,255,171,0.1);color:var(--green);border:1px solid rgba(26,255,171,0.3);font-weight:600">◈ Owner</span>`;
+    }
+    return `<span class="tag-pill" style="background:${t.color}14;color:${t.color};border:1px solid ${t.color}30">${esc(t.name)}</span>`;
+  }).join('');
   const isExchange = w.wallet_type === 'exchange';
   const delay = `animation-delay:${idx * 30}ms`;
   const addrCount = (w.addresses || []).length;
@@ -2533,12 +2536,19 @@ function animateCounter(el, from, to, duration = 900) {
 function renderTagsModal() {
   const el = document.getElementById('tags-list');
   if (!S.tags.length) { el.innerHTML = `<div class="empty-sm">No tags yet</div>`; return; }
-  el.innerHTML = S.tags.map(t => `
-    <div class="tag-item">
-      <span class="tag-item-dot" style="background:${t.color}"></span>
-      <span class="tag-item-name">${esc(t.name)}</span>
-      <button class="icon-btn danger" onclick="delTag(${t.id},'${esc(t.name).replace(/'/g,"\\'")}')">⊗</button>
-    </div>`).join('');
+  el.innerHTML = S.tags.map(t => {
+    const isSystem = t.name === 'Owner';
+    const dot = isSystem
+      ? `<span class="tag-item-dot" style="background:var(--green)"></span>`
+      : `<span class="tag-item-dot" style="background:${t.color}"></span>`;
+    const name = isSystem
+      ? `<span class="tag-item-name" style="color:var(--green);font-weight:600">◈ ${esc(t.name)}</span>`
+      : `<span class="tag-item-name">${esc(t.name)}</span>`;
+    const action = isSystem
+      ? `<span style="font-size:10px;color:var(--text4);padding:0 4px">system</span>`
+      : `<button class="icon-btn danger" onclick="delTag(${t.id},'${esc(t.name).replace(/'/g,"\\'")}')">⊗</button>`;
+    return `<div class="tag-item">${dot}${name}${action}</div>`;
+  }).join('');
 }
 
 // ═══════════════════════════════════════════════════
