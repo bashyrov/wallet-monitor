@@ -3,9 +3,9 @@ from decimal import Decimal
 
 
 STABLE_COINS = (
-    "USD", "USDT", "USDC",
-    "USDC.e", "DAI", "USDe",
-    "PYUSD", "FDUSD", "TUSD"
+    "USD", "USDT", "USDC", "USDC.E", "USDCE",
+    "DAI", "USDE", "BUSD", "TUSD", "USDP", "USDD",
+    "FDUSD", "PYUSD",
 )
 
 

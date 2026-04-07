@@ -54,6 +54,7 @@ class AggregatedBalance(BaseModel):
     other: dict[str, str]
     stable_total: str
     usd_total: str               # grand total across all wallets (stable + priced non-stable)
+    usd_values: dict[str, str]   # symbol → USD value for aggregated amounts
     pnl: PnL | None = None
 
 

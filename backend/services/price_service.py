@@ -20,8 +20,8 @@ logger = logging.getLogger("avalant.prices")
 
 STABLE_PRICE = 1.0
 STABLES = {
-    "USDT", "USDC", "DAI", "BUSD", "TUSD", "USDP", "USDD",
-    "FDUSD", "PYUSD", "USDE", "USDC.E", "USDCE",
+    "USD", "USDT", "USDC", "USDC.E", "USDCE", "DAI", "USDE", "USDE",
+    "BUSD", "TUSD", "USDP", "USDD", "FDUSD", "PYUSD",
 }
 
 # In-memory cache: symbol (uppercase) → USD price as float
@@ -32,11 +32,28 @@ _top100: set[str] = set()
 _refresh_task: asyncio.Task | None = None
 
 
+# Wrapped / bridged tokens → underlying symbol for price lookup
+WRAPPED_MAP: dict[str, str] = {
+    "WBTC": "BTC", "BTCB": "BTC", "BTC.B": "BTC",
+    "WETH": "ETH", "ETH.E": "ETH", "WETH.E": "ETH",
+    "WBNB": "BNB",
+    "WMATIC": "POL", "MATIC": "POL",
+    "WAVAX": "AVAX",
+    "WSOL": "SOL",
+    "WTRX": "TRX",
+    "WFTM": "FTM",
+}
+
+
 def get_price(symbol: str) -> float | None:
     """Return USD price for symbol, or None if unknown."""
     s = symbol.upper().replace(".E", "").replace("-PERP", "").replace("_PERP", "")
     if s in STABLES:
         return STABLE_PRICE
+    # Try wrapped map first
+    underlying = WRAPPED_MAP.get(s)
+    if underlying:
+        return _prices.get(underlying)
     return _prices.get(s)
 
 

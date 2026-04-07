@@ -49,9 +49,11 @@ class LighterProvider(BaseWalletProvider):
             filtered_assets = {k: str(v) for k, v in totals.items() if v > 0}
             return BalanceResult(wallet=wallet, provider=self.name, totals=filtered_assets, details={"assets": filtered_assets})
 
-        except Exception as e:
-            print(f"Error fetching Lighter balance: {e}")
-            return BalanceResult(wallet=wallet, provider=self.name, totals={}, details={"assets": {}})
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                # Address not registered on Lighter — treat as empty balance
+                return BalanceResult(wallet=wallet, provider=self.name, totals={}, details={"assets": {}})
+            raise
 
         finally:
             await self.aclose()
