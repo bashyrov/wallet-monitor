@@ -419,47 +419,73 @@
     /* ── Free Banner ── */
     .free-banner {
       position: fixed;
-      top: 60px;
-      left: 12px;
-      right: 12px;
+      top: 68px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 98;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: 9px 20px;
-      background: rgba(14,14,17,0.92);
-      border: 1px solid rgba(26,255,171,0.18);
-      border-radius: 12px;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      font-size: 13px;
+      gap: 8px;
+      padding: 6px 10px 6px 12px;
+      background: rgba(14,14,17,0.95);
+      border: 1px solid rgba(26,255,171,0.2);
+      border-radius: 99px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      font-size: 12px;
       color: var(--text2);
-      letter-spacing: 0.01em;
+      white-space: nowrap;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
       animation: bannerIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
       animation-delay: 0.7s;
       opacity: 0;
     }
     .free-banner-dot {
-      width: 6px; height: 6px;
+      width: 5px; height: 5px;
       border-radius: 50%;
       background: var(--green);
-      box-shadow: 0 0 7px rgba(26,255,171,0.65);
+      box-shadow: 0 0 6px rgba(26,255,171,0.8);
       flex-shrink: 0;
     }
-    .free-banner em { font-style: normal; color: var(--text); font-weight: 500; }
-    .free-banner-close {
-      position: absolute;
-      right: 12px;
-      background: none; border: none;
-      color: var(--text3); font-size: 15px; line-height: 1;
-      cursor: pointer; padding: 4px 5px; border-radius: 6px;
-      transition: color 0.15s, background 0.15s;
+    .free-banner-upgrade {
+      display: inline-flex; align-items: center;
+      padding: 3px 9px;
+      background: var(--green);
+      color: #09090B;
+      border-radius: 99px;
+      font-size: 11px; font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s;
     }
-    .free-banner-close:hover { color: var(--text); background: var(--surface3); }
+    .free-banner-upgrade:hover { background: #00E89A; }
+    .free-banner-close {
+      background: none; border: none;
+      color: var(--text3); font-size: 13px; line-height: 1;
+      cursor: pointer; padding: 2px 4px; border-radius: 99px;
+      transition: color 0.15s;
+      margin-left: 2px;
+    }
+    .free-banner-close:hover { color: var(--text); }
     @keyframes bannerIn {
-      from { transform: translateY(-14px); opacity: 0; }
-      to   { transform: translateY(0);     opacity: 1; }
+      from { transform: translateX(-50%) translateY(-10px); opacity: 0; }
+      to   { transform: translateX(-50%) translateY(0);     opacity: 1; }
+    }
+    @media (max-width: 600px) {
+      .free-banner {
+        top: auto;
+        bottom: 20px;
+        left: 16px;
+        right: 16px;
+        transform: none;
+        justify-content: space-between;
+        border-radius: 14px;
+        padding: 10px 12px 10px 14px;
+        font-size: 13px;
+      }
+      @keyframes bannerIn {
+        from { transform: translateY(14px); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
     }
 
     </style>
@@ -495,7 +521,8 @@
 <!-- ── Free Banner ── -->
 <div class="free-banner" id="free-banner">
   <span class="free-banner-dot"></span>
-  Use all features for free — <em>no credit card required</em>
+  <span>Free plan · No card needed</span>
+  <a href="/pricing.html" class="free-banner-upgrade">Upgrade →</a>
   <button class="free-banner-close" onclick="dismissBanner()" aria-label="Dismiss">✕</button>
 </div>
 <script>
