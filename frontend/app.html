@@ -572,6 +572,105 @@
       100% { background-position: -200% 0; }
     }
 
+    /* ── VIEW SWITCHER ── */
+    .view-switcher {
+      display: flex; align-items: center; gap: 4px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 3px;
+    }
+    .view-btn {
+      padding: 4px 12px; border-radius: 6px; border: none; background: none;
+      font-size: 12px; font-weight: 500; color: var(--text3);
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .view-btn.active { background: var(--surface3); color: var(--text); }
+    .view-btn:hover:not(.active) { color: var(--text2); }
+
+    /* ── PROGRESS LOADER ── */
+    .fetch-progress {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 80px 24px; gap: 0; position: relative; overflow: hidden;
+    }
+    .fetch-progress-pct {
+      font-family: var(--mono); font-size: 56px; font-weight: 700;
+      color: var(--green); line-height: 1; letter-spacing: -3px;
+      margin-bottom: 20px; position: relative; z-index: 1;
+    }
+    .fetch-progress-bar {
+      width: 100%; max-width: 280px; height: 2px;
+      background: var(--surface3); border-radius: 2px; overflow: hidden;
+      margin-bottom: 14px; position: relative; z-index: 1;
+    }
+    .fetch-progress-fill {
+      height: 100%; border-radius: 2px;
+      background: linear-gradient(90deg, var(--green), #06d6a0);
+      box-shadow: 0 0 12px rgba(26,255,171,0.6);
+      transition: width 0.18s ease-out;
+    }
+    .fetch-progress-label {
+      font-size: 12px; color: var(--text2); font-weight: 500;
+      text-align: center; max-width: 260px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 4px; position: relative; z-index: 1;
+    }
+    .fetch-progress-sub { font-size: 11px; color: var(--text4); position: relative; z-index: 1; }
+
+    /* floating dots */
+    .fp-dots { position: absolute; inset: 0; pointer-events: none; }
+    .fp-dot {
+      position: absolute; border-radius: 50%;
+      background: var(--green); opacity: 0;
+      animation: fp-float linear infinite;
+    }
+    @keyframes fp-float {
+      0%   { transform: translateY(0)   scale(1);   opacity: 0; }
+      15%  { opacity: 0.35; }
+      85%  { opacity: 0.15; }
+      100% { transform: translateY(-180px) scale(0.4); opacity: 0; }
+    }
+
+    /* ── TX TIMELINE ── */
+    .tx-timeline { display: flex; flex-direction: column; gap: 1px; }
+    .tx-timeline-wallet {
+      font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+      color: var(--text4); padding: 16px 0 6px; display: flex; align-items: center; gap: 8px;
+    }
+    .tx-timeline-wallet::after { content:''; flex:1; height:1px; background:var(--border); }
+    .tx-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 9px 12px; border-radius: 8px;
+      transition: background 0.12s; cursor: default;
+    }
+    .tx-item:hover { background: var(--surface2); }
+    .tx-icon {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+    }
+    .tx-icon.deposit  { background: rgba(26,255,171,0.1);  color: var(--green); }
+    .tx-icon.withdraw { background: rgba(248,113,113,0.1); color: var(--red);   }
+    .tx-icon.trade    { background: rgba(229,192,123,0.1); color: var(--yellow);}
+    .tx-icon.fill     { background: rgba(146,91,214,0.1);  color: var(--purple);}
+    .tx-icon.transfer { background: rgba(6,182,212,0.1);   color: var(--teal);  }
+    .tx-main { flex: 1; min-width: 0; }
+    .tx-top { display: flex; align-items: center; gap: 6px; }
+    .tx-type { font-size: 12px; font-weight: 600; color: var(--text); text-transform: capitalize; }
+    .tx-asset { font-size: 12px; font-family: var(--mono); color: var(--text2); }
+    .tx-wallet-badge {
+      font-size: 10px; padding: 1px 6px; border-radius: 4px;
+      font-weight: 600; letter-spacing: 0.3px; flex-shrink: 0;
+    }
+    .tx-bottom { font-size: 11px; color: var(--text3); margin-top: 1px; font-family: var(--mono); }
+    .tx-amount { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text); flex-shrink: 0; }
+    .tx-time { font-size: 11px; color: var(--text4); flex-shrink: 0; white-space: nowrap; }
+    .tx-error-row {
+      padding: 10px 12px; border-radius: 8px;
+      background: rgba(248,113,113,0.06); border: 1px solid rgba(248,113,113,0.15);
+      font-size: 12px; color: var(--red); display: flex; align-items: center; gap: 8px;
+      margin-top: 4px;
+    }
+
     /* ── SCAN LINE ── */
     .scan-container {
       position: relative;
@@ -651,6 +750,7 @@
       transition: border-color 0.12s;
       overflow: hidden;
       min-width: 0;
+      position: relative;
     }
     .agg-cell:hover { border-color: var(--surface4); }
     .agg-cell-asset {
@@ -669,6 +769,11 @@
       font-family: var(--mono); font-size: 10px; font-weight: 400;
       color: var(--text3); margin-top: 1px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .agg-cell-pct {
+      position: absolute; top: 7px; right: 8px;
+      font-family: var(--mono); font-size: 9px; font-weight: 500;
+      color: var(--text4); letter-spacing: 0.2px;
     }
     .agg-sep {
       border: none; border-top: 1px solid var(--border);
@@ -1596,10 +1701,17 @@
     <div class="wallet-list" id="wallet-list">
       <div class="empty"><span class="empty-icon">◈</span>Loading wallets...</div>
     </div>
-    <div class="panel-check-footer">
+    <div class="panel-check-footer" style="display:flex;flex-direction:column;gap:6px">
       <button class="btn btn-primary" id="btn-check-balance" onclick="checkBalance()">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.4"/><path d="M6 3.5v2.7L7.5 7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         Check Balance
+      </button>
+      <button class="btn" id="btn-check-tx" onclick="fetchAllTransactions()"
+        style="width:100%;height:34px;font-size:12px;font-weight:500;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);cursor:pointer;transition:all 0.15s"
+        onmouseover="this.style.borderColor='rgba(26,255,171,0.25)';this.style.color='var(--text)'"
+        onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 3h9M1 5.5h6M1 8h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Check Transactions
       </button>
     </div>
   </div>
@@ -1613,6 +1725,16 @@
         </svg>
       </button>
       <span class="res-panel-title">Portfolio</span>
+      <div class="view-switcher">
+        <button class="view-btn active" id="vbtn-balances" onclick="setView('balances')">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="1" y="6" width="2.5" height="4" rx="1" fill="currentColor" opacity=".6"/><rect x="4.25" y="3.5" width="2.5" height="6.5" rx="1" fill="currentColor" opacity=".8"/><rect x="7.5" y="1" width="2.5" height="9" rx="1" fill="currentColor"/></svg>
+          Balances
+        </button>
+        <button class="view-btn" id="vbtn-transactions" onclick="setView('transactions')">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 3h9M1 5.5h6M1 8h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          Transactions
+        </button>
+      </div>
       <span class="sel-badge hidden" id="sel-badge">0 selected</span>
       <span class="last-checked" id="last-checked"></span>
     </div>
@@ -1869,9 +1991,16 @@ const S = {
   loadingBalance: false,
   results: null,
   tagDropOpen: null,
-  addressBook: {},       // { "0xabc...": { label, walletName } }
+  addressBook: {},
   walletType: null,
   lastChecked: null,
+  view: 'balances',       // 'balances' | 'transactions'
+  txResults: null,
+  loadingTx: false,
+  _progress: 0,
+  _progressLabel: '',
+  _progressSub: '',
+  _progressTimer: null,
 };
 
 // ═══════════════════════════════════════════════════
@@ -2217,25 +2346,40 @@ function closeTagDrop() {
 function renderResults() {
   const el = document.getElementById('results-scroll');
 
-  if (S.loadingBalance) {
+  if (S.loadingBalance || S.loadingTx) {
+    const pct = Math.round(S._progress);
+    const dots = Array.from({length: 12}, (_, i) => {
+      const size = 2 + Math.random() * 4;
+      const left = 5 + Math.random() * 90;
+      const delay = (Math.random() * 3).toFixed(2);
+      const dur   = (2.5 + Math.random() * 2).toFixed(2);
+      const bot   = Math.random() * 30;
+      return `<div class="fp-dot" style="width:${size}px;height:${size}px;left:${left}%;bottom:${bot}%;animation-duration:${dur}s;animation-delay:${delay}s"></div>`;
+    }).join('');
     el.innerHTML = `
-      <div class="scan-container">
-        <div class="scan-line"></div>
-        <div style="display:flex;flex-direction:column;gap:10px;">
-          <div class="shimmer" style="height:14px;width:30%"></div>
-          <div class="shimmer" style="height:48px;width:55%"></div>
-          <div class="shimmer" style="height:12px;width:45%"></div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px">
-            <div class="shimmer" style="height:56px"></div>
-            <div class="shimmer" style="height:56px"></div>
-            <div class="shimmer" style="height:56px"></div>
-          </div>
+      <div class="fetch-progress">
+        <div class="fp-dots">${dots}</div>
+        <div class="fetch-progress-pct" id="fp-pct">${pct}%</div>
+        <div class="fetch-progress-bar">
+          <div class="fetch-progress-fill" id="fp-fill" style="width:${pct}%"></div>
         </div>
-        <div class="loading-label loading-dots">Fetching balances</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${[1,2,3].map(()=>`<div class="shimmer" style="height:72px;border-radius:10px"></div>`).join('')}
+        <div class="fetch-progress-label" id="fp-label">${S._progressLabel}</div>
+        <div class="fetch-progress-sub" id="fp-sub">${S._progressSub || ''}</div>
       </div>`;
+    return;
+  }
+
+  // ── Transactions view ──
+  if (S.view === 'transactions') {
+    if (!S.txResults) {
+      el.innerHTML = `<div class="result-empty">
+        <div class="result-empty-icon">◈</div>
+        <p>Click "Check Transactions" to load history</p>
+        <small>Fetches last 5 transactions from each wallet</small>
+      </div>`;
+    } else {
+      el.innerHTML = renderTxView(S.txResults);
+    }
     return;
   }
 
@@ -2271,24 +2415,35 @@ function renderResults() {
   const stableTotal = parseFloat(aggregated.stable_total || 0);
   const hasUsdPrices = usdTotal > stableTotal + 0.01;
 
-  const allUsdValues = {};
-  results.forEach(r => { if (r.usd_values) Object.assign(allUsdValues, r.usd_values); });
+  const aggUsd = aggregated.usd_values || {};
 
-  const stableItems = Object.entries(aggregated.stable).map(([k,v])=>
-    `<div class="agg-cell">
-      <div class="agg-cell-asset">${k}</div>
-      <div class="agg-cell-amount">${fAmt(v)}</div>
-      <div class="agg-cell-sub">${fUSD(v)}</div>
-    </div>`).join('');
+  const pctLabel = (usdV) => {
+    if (!usdTotal || !usdV) return '';
+    const p = parseFloat(usdV) / usdTotal * 100;
+    if (p <= 0) return '';
+    const txt = p < 0.1 ? '<0.1%' : p.toFixed(1) + '%';
+    return `<span class="agg-cell-pct">${txt}</span>`;
+  };
 
-  const otherItems = Object.entries(aggregated.other).map(([k,v])=> {
-    const usdV = allUsdValues[k];
+  const allTokens = [
+    ...Object.entries(aggregated.stable).map(([k,v]) => ({ k, v, usdV: parseFloat(aggUsd[k] || v), stable: true })),
+    ...Object.entries(aggregated.other).map(([k,v])  => ({ k, v, usdV: parseFloat(aggUsd[k] || 0), stable: false })),
+  ].sort((a, b) => b.usdV - a.usdV);
+
+  const allItems = allTokens.map(({ k, v, usdV, stable }) => {
+    const usdStr = usdV > 0 ? String(usdV) : null;
+    const amtDisplay = stable ? fAmt(v) : fAmt(v);
+    const usdDisplay = stable ? fUSD(String(usdV || v)) : (usdStr ? fUSD(usdStr) : null);
     return `<div class="agg-cell">
+      ${pctLabel(usdStr || (stable ? v : null))}
       <div class="agg-cell-asset">${k}</div>
-      <div class="agg-cell-amount">${fAmt(v)}</div>
-      ${usdV ? `<div class="agg-cell-sub">${fUSD(usdV)}</div>` : ''}
+      <div class="agg-cell-amount${stable ? ' stable' : ''}">${amtDisplay}</div>
+      ${usdDisplay ? `<div class="agg-cell-sub">${usdDisplay}</div>` : ''}
     </div>`;
   }).join('');
+
+  const stableItems = ''; // merged into allItems
+  const otherItems  = ''; // merged into allItems
 
   const cards = results.map((r, i) => {
     const typeClass = `t-${r.wallet_type}`;
@@ -2352,14 +2507,14 @@ function renderResults() {
       <div class="agg-total" id="agg-num">$0.00</div>
       ${pnlBadge(aggregated.pnl, 'agg-pnl')}
       <div class="agg-sub">${results.length} wallet${results.length!==1?'s':''} · ${hasUsdPrices ? 'all assets in USD' : 'stablecoins only'}</div>
-      <div class="agg-grid">${stableItems}</div>
-      ${otherItems ? `<hr class="agg-sep"><div class="agg-grid">${otherItems}</div>` : ''}
+      <div class="agg-grid">${allItems}</div>
     </div>
     <div class="results-section-label">Individual</div>
     <div class="result-cards">${cards}</div>`;
 
-  // Animate counter — use usd_total if prices available, else stable only
+  // Animate counter + update tab title
   animateCounter(document.getElementById('agg-num'), 0, usdTotal);
+  if (usdTotal > 0) document.title = '$' + usdTotal.toLocaleString('en-US',{maximumFractionDigits:0}) + ' · Avalant';
 }
 
 function animateCounter(el, from, to, duration = 900) {
@@ -2499,21 +2654,201 @@ async function archiveWallet(id, name) {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
+// ── View switcher ──────────────────────────────────────────────────────────
+function setView(v) {
+  S.view = v;
+  document.getElementById('vbtn-balances').classList.toggle('active', v === 'balances');
+  document.getElementById('vbtn-transactions').classList.toggle('active', v === 'transactions');
+  renderResults();
+}
+
+// ── Progress helpers ────────────────────────────────────────────────────────
+function _startProgress(label, sub) {
+  S._progress = 0; S._progressLabel = label; S._progressSub = sub || '';
+  clearInterval(S._progressTimer);
+  // Ease toward 88% — will snap to 100 on finish
+  S._progressTimer = setInterval(() => {
+    if (S._progress < 88) {
+      S._progress += (88 - S._progress) * 0.035;
+      _updateProgressDOM();
+    }
+  }, 80);
+}
+function _finishProgress() {
+  clearInterval(S._progressTimer);
+  S._progress = 100; S._progressLabel = 'Done'; S._progressSub = '';
+  _updateProgressDOM();
+}
+function _updateProgressDOM() {
+  const fill = document.getElementById('fp-fill');
+  const pct  = document.getElementById('fp-pct');
+  const lbl  = document.getElementById('fp-label');
+  const sub  = document.getElementById('fp-sub');
+  if (fill) fill.style.width = S._progress.toFixed(1) + '%';
+  if (pct)  pct.textContent  = Math.round(S._progress) + '%';
+  if (lbl)  lbl.textContent  = S._progressLabel;
+  if (sub)  sub.textContent  = S._progressSub || '';
+}
+function _setProgressStep(label, sub) {
+  S._progressLabel = label; S._progressSub = sub || '';
+  _updateProgressDOM();
+}
+
+// ── Check Balance ───────────────────────────────────────────────────────────
 async function checkBalance() {
   const ids = [...S.selected];
+  const srcWallets = ids.length
+    ? S.wallets.filter(w => ids.includes(w.id))
+    : S.wallets.filter(w => !w.is_archived);
+  const total = srcWallets.length || ids.length;
   const btn = document.getElementById('btn-check-balance');
-  btn.disabled = true;
+  const btnTx = document.getElementById('btn-check-tx');
+  btn.disabled = true; if (btnTx) btnTx.disabled = true;
   S.loadingBalance = true; S.results = null;
+  setView('balances');
+  _startProgress(`Fetching ${total} wallet${total !== 1 ? 's' : ''}…`, 'Running in parallel');
   renderResults();
   try {
     S.results = await api.post('/portfolio/balance', { wallet_ids: ids });
     S.lastChecked = new Date();
+    _finishProgress();
+    _updateProgressDOM();
+    await new Promise(r => setTimeout(r, 400));
   } catch(err) {
-    toast('Balance check failed: ' + e.message, 'error');
+    toast('Balance check failed: ' + err.message, 'error');
   } finally {
-    S.loadingBalance = false; btn.disabled = false;
+    S.loadingBalance = false; btn.disabled = false; if (btnTx) btnTx.disabled = false;
     renderResults();
   }
+}
+
+// ── Check All Transactions (sequential — real %) ────────────────────────────
+async function fetchAllTransactions() {
+  const ids = S.selected.size > 0 ? [...S.selected] : S.wallets.filter(w => !w.is_archived).map(w => w.id);
+  if (!ids.length) { toast('No wallets selected', 'error'); return; }
+
+  const btn = document.getElementById('btn-check-balance');
+  const btnTx = document.getElementById('btn-check-tx');
+  btn.disabled = true; if (btnTx) btnTx.disabled = true;
+  S.loadingTx = true; S.txResults = null;
+  setView('transactions');
+  renderResults();
+
+  const results = [];
+  for (let i = 0; i < ids.length; i++) {
+    const wallet = S.wallets.find(w => w.id === ids[i]);
+    const name = wallet?.name || `Wallet #${ids[i]}`;
+    S._progress = Math.round((i / ids.length) * 100);
+    S._progressLabel = name;
+    S._progressSub = `${i + 1} / ${ids.length} wallets`;
+    _updateProgressDOM();
+    try {
+      const r = await api.post('/portfolio/transactions', { wallet_id: ids[i] });
+      results.push(r);
+    } catch(e) {
+      results.push({ wallet_id: ids[i], wallet_name: name, wallet_type: wallet?.wallet_type || '', type_value: wallet?.type_value || '', transactions: [], error: 'Failed to fetch' });
+    }
+  }
+  S._progress = 100; S._progressLabel = 'Done'; S._progressSub = '';
+  _updateProgressDOM();
+  await new Promise(r => setTimeout(r, 400));
+
+  S.txResults = results;
+  S.loadingTx = false;
+  btn.disabled = false; if (btnTx) btnTx.disabled = false;
+  renderResults();
+}
+
+// ── Render Transactions View ────────────────────────────────────────────────
+let S_txMode = 'wallet'; // 'wallet' | 'time'
+
+function setTxMode(mode) {
+  S_txMode = mode;
+  document.getElementById('txm-wallet').classList.toggle('active', mode === 'wallet');
+  document.getElementById('txm-time').classList.toggle('active', mode === 'time');
+  const el = document.getElementById('tx-body');
+  if (el && S.txResults) el.innerHTML = S_txMode === 'wallet' ? _txByWallet(S.txResults) : _txByTime(S.txResults);
+}
+
+function renderTxView(txResults) {
+  const totalTx = txResults.reduce((s, r) => s + (r.transactions?.length || 0), 0);
+  const summary = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px;flex-wrap:wrap">
+    <div style="font-size:12px;color:var(--text3)">${totalTx} transaction${totalTx !== 1 ? 's' : ''} across ${txResults.length} wallet${txResults.length !== 1 ? 's' : ''}</div>
+    <div class="view-switcher">
+      <button class="view-btn ${S_txMode === 'wallet' ? 'active' : ''}" id="txm-wallet" onclick="setTxMode('wallet')">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="2.5" rx="1" fill="currentColor" opacity=".6"/><rect x="1" y="4.5" width="5" height="2" rx="1" fill="currentColor" opacity=".4"/><rect x="1" y="7.5" width="3" height="1.5" rx=".75" fill="currentColor" opacity=".3"/></svg>
+        By wallet
+      </button>
+      <button class="view-btn ${S_txMode === 'time' ? 'active' : ''}" id="txm-time" onclick="setTxMode('time')">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/><path d="M5 3v2.2L6.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        By time
+      </button>
+    </div>
+  </div>`;
+  return summary + `<div class="tx-timeline" id="tx-body">${S_txMode === 'wallet' ? _txByWallet(txResults) : _txByTime(txResults)}</div>`;
+}
+
+const _WTYPE_COLOR = { exchange: 'var(--yellow)', chain: 'var(--teal)', perpdex: 'var(--purple)' };
+const _WTYPE_BG    = { exchange: 'rgba(229,192,123,0.12)', chain: 'rgba(6,182,212,0.12)', perpdex: 'rgba(146,91,214,0.12)' };
+
+function _txIcon(type) {
+  const t = (type || '').toLowerCase();
+  if (t.includes('deposit'))  return { cls: 'deposit',  sym: '↓' };
+  if (t.includes('withdraw')) return { cls: 'withdraw', sym: '↑' };
+  if (t.includes('fill'))     return { cls: 'fill',     sym: '▪' };
+  if (t.includes('transfer')) return { cls: 'transfer', sym: '⟷' };
+  return { cls: 'trade', sym: '⟷' };
+}
+
+function _txRow(tx, walletBadge) {
+  const ic = _txIcon(tx.type);
+  const addrMatch = tx.address && S.addressBook[tx.address.toLowerCase()];
+  const addrLabel = addrMatch ? `<span style="font-size:10px;color:var(--green);margin-left:4px">⟶ ${addrMatch.label}</span>` : '';
+  return `<div class="tx-item">
+    <div class="tx-icon ${ic.cls}">${ic.sym}</div>
+    <div class="tx-main">
+      <div class="tx-top">
+        ${walletBadge ? walletBadge + ' ' : ''}<span class="tx-type">${tx.type}</span>
+        <span class="tx-asset">${tx.asset}</span>
+        ${addrLabel}
+      </div>
+      ${tx.address ? `<div class="tx-bottom">${tx.address.slice(0,14)}…${tx.address.slice(-6)}</div>` : ''}
+    </div>
+    <span class="tx-amount">${parseFloat(tx.amount || 0).toLocaleString('en-US',{maximumFractionDigits:6})}</span>
+    <span class="tx-time">${(tx.timestamp || '').slice(0,16)}</span>
+  </div>`;
+}
+
+function _txByWallet(txResults) {
+  return txResults.map(r => {
+    const color = _WTYPE_COLOR[r.wallet_type] || 'var(--text3)';
+    const bg    = _WTYPE_BG[r.wallet_type]    || 'rgba(100,100,100,0.1)';
+    const badge = `<span class="tx-wallet-badge" style="background:${bg};color:${color}">${r.type_value}</span>`;
+    let body;
+    if (r.error) {
+      body = `<div class="tx-error-row">⚠ ${r.error}</div>`;
+    } else if (!r.transactions?.length) {
+      body = `<div style="font-size:12px;color:var(--text4);padding:6px 12px">No transactions found</div>`;
+    } else {
+      const sorted = [...r.transactions].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+      body = sorted.map(tx => _txRow(tx, null)).join('');
+    }
+    return `<div class="tx-timeline-wallet">${badge} ${r.wallet_name}</div>${body}`;
+  }).join('');
+}
+
+function _txByTime(txResults) {
+  const all = [];
+  txResults.forEach(r => {
+    if (!r.transactions?.length) return;
+    const color = _WTYPE_COLOR[r.wallet_type] || 'var(--text3)';
+    const bg    = _WTYPE_BG[r.wallet_type]    || 'rgba(100,100,100,0.1)';
+    const badge = `<span class="tx-wallet-badge" style="background:${bg};color:${color}">${r.wallet_name}</span>`;
+    r.transactions.forEach(tx => all.push({ tx, badge }));
+  });
+  if (!all.length) return `<div style="font-size:12px;color:var(--text4);padding:16px">No transactions found</div>`;
+  all.sort((a, b) => (b.tx.timestamp || '').localeCompare(a.tx.timestamp || ''));
+  return all.map(({ tx, badge }) => _txRow(tx, badge)).join('');
 }
 
 // ═══════════════════════════════════════════════════
@@ -2593,7 +2928,7 @@ const RE = {
   tron:       /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
   solana:     /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
   starknet:   /^0x[0-9a-fA-F]{1,64}$/i,
-  api_key:    /^[a-zA-Z0-9\-_]{8,256}$/,
+  api_key:    /^[a-zA-Z0-9+/=\-_]{8,256}$/,
   api_secret: /^[a-zA-Z0-9+/=\-_]{8,256}$/,
   passphrase: /^[\x21-\x7E]{1,128}$/,
   priv_key:   /^(0x)?[0-9a-fA-F]{64}$/,
@@ -2619,7 +2954,7 @@ function validateWalletForm(form) {
     const secret = form.api_secret.value.trim();
     const pp = form.api_passphrase?.value?.trim();
     if (!key) { _fieldErr('api_key', 'API key is required'); ok = false; }
-    else if (!RE.api_key.test(key)) { _fieldErr('api_key', 'Only letters, digits, hyphens and underscores allowed (min 8 chars)'); ok = false; }
+    else if (!RE.api_key.test(key)) { _fieldErr('api_key', 'Invalid API key format (min 8 chars)'); ok = false; }
     if (!secret) { _fieldErr('api_secret', 'API secret is required'); ok = false; }
     else if (!RE.api_secret.test(secret)) { _fieldErr('api_secret', 'Only letters, digits and +/=-_ chars allowed (min 8 chars)'); ok = false; }
     if (pp && !RE.passphrase.test(pp)) { _fieldErr('api_passphrase', 'Passphrase must be printable characters with no spaces'); ok = false; }
