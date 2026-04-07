@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from backend.db.models import Wallet, BalanceSnapshot, ProviderErrorLog
+from backend.db.models import Wallet, BalanceSnapshot, ProviderErrorLog, BalanceHistory
 from backend.domain.models import BalanceResult
 from backend.providers.utils import STABLE_COINS
 from backend.schemas.portfolio import WalletBalanceResult, AggregatedBalance, BalanceResponse, PnL
@@ -232,6 +232,23 @@ async def fetch_balances(db_wallets: list[Wallet], db: Session) -> BalanceRespon
                     ))
             except Exception:
                 pass
+
+    # Write balance history for Owner-tagged wallets
+    owner_wallets = [w for w in db_wallets if any(t.name == "Owner" for t in (w.tags or []))]
+    if owner_wallets:
+        owner_ids = {w.id for w in owner_wallets}
+        owner_usd = sum(
+            Decimal(r.usd_total) for r in results
+            if r.wallet_id in owner_ids and not r.error
+        )
+        try:
+            db.add(BalanceHistory(
+                user_id=owner_wallets[0].user_id,
+                usd_total=float(owner_usd),
+                snapshot_at=now,
+            ))
+        except Exception:
+            pass
 
     try:
         db.commit()

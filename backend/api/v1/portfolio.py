@@ -1,11 +1,11 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_user
-from backend.db.models import Wallet, User, ProviderErrorLog
+from backend.db.models import Wallet, User, ProviderErrorLog, BalanceHistory
 from backend.schemas.portfolio import BalanceFetchRequest, BalanceResponse, TransactionFetchRequest, TransactionResponse
 from backend.services.balance_service import fetch_balances
 from backend.services.transaction_service import fetch_transactions
@@ -122,3 +122,25 @@ async def check_transactions_bulk(
         responses.append(resp)
 
     return responses
+
+
+@router.get("/history")
+def get_balance_history(
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = (
+        db.query(BalanceHistory)
+        .filter(
+            BalanceHistory.user_id == current_user.id,
+            BalanceHistory.snapshot_at >= since,
+        )
+        .order_by(BalanceHistory.snapshot_at.asc())
+        .all()
+    )
+    return [
+        {"usd_total": r.usd_total, "at": r.snapshot_at.strftime("%Y-%m-%d %H:%M")}
+        for r in rows
+    ]
