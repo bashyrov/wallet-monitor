@@ -2024,7 +2024,7 @@ const api = {
   async post(p, b) {
     const r = await fetch('/api' + p, { method:'POST', headers: _authHeaders(), body:JSON.stringify(b) });
     _handleUnauth(r);
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) { const e = new Error(await r.text()); e.status = r.status; throw e; }
     if (r.status === 204) return null;
     return r.json();
   },
@@ -3094,6 +3094,7 @@ async function createTag() {
     renderTagsModal(); renderTagFilters();
     toast(`Tag "${tag.name}" created`, 'success', 'Use it to group your wallets');
   } catch(err) {
+    if (err.status === 402) { document.getElementById('tag-manage-panel').classList.remove('open'); openUpgradePopup(); return; }
     let msg = err.message;
     try { msg = JSON.parse(msg).detail || msg; } catch {}
     errEl.textContent = msg; errEl.classList.add('show');
