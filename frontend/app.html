@@ -897,7 +897,9 @@
       border-radius: 14px;
       box-shadow: 0 24px 80px rgba(0,0,0,0.6);
       width: 100%; max-width: 460px;
-      max-height: 88vh; overflow-y: auto;
+      max-height: 88vh;
+      display: flex; flex-direction: column;
+      overflow: hidden;
       animation: slideUpModal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     @keyframes slideUpModal {
@@ -917,7 +919,13 @@
       line-height: 1; transition: all 0.12s;
     }
     .modal-x:hover { background: var(--surface3); color: var(--text); }
-    .modal-body { padding: 18px; }
+    .modal-body { padding: 18px; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .modal-footer {
+      padding: 12px 18px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
 
     /* ── ACCORDION TYPE SELECTOR ── */
     .acc-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
@@ -1638,18 +1646,19 @@
     @media (max-width: 600px) {
       .free-banner {
         top: auto;
-        bottom: 20px;
-        left: 16px;
-        right: 16px;
-        transform: none;
+        bottom: 96px;
+        left: 12px;
+        right: 12px;
+        transform: none !important;
         justify-content: space-between;
         border-radius: 14px;
         padding: 10px 12px 10px 14px;
         font-size: 13px;
+        z-index: 150;
       }
       @keyframes bannerIn {
-        from { transform: translateY(14px); opacity: 0; }
-        to   { transform: translateY(0);    opacity: 1; }
+        from { transform: translateY(14px) !important; opacity: 0; }
+        to   { transform: translateY(0) !important;    opacity: 1; }
       }
     }
 
@@ -1703,9 +1712,10 @@
   function dismissFreeBanner(){
     var b=document.getElementById('free-banner');
     if(!b) return;
+    var mobile = window.innerWidth <= 600;
     b.style.transition='opacity 0.2s, transform 0.2s';
     b.style.opacity='0';
-    b.style.transform='translateY(-14px)';
+    b.style.transform = mobile ? 'translateY(14px)' : 'translateX(-50%) translateY(-10px)';
     setTimeout(function(){ b && b.remove(); }, 220);
     localStorage.setItem('avalant-banner-dismissed','1');
   }
@@ -1936,12 +1946,14 @@
         </div>
 
         <div class="form-error" id="wallet-err"></div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-ghost" onclick="closeAddWalletModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btn-submit-wallet">Add Wallet</button>
-        </div>
       </form>
 
+    </div>
+    <div class="modal-footer">
+      <div class="form-actions" style="margin-top:0">
+        <button type="button" class="btn btn-ghost" onclick="closeAddWalletModal()">Cancel</button>
+        <button type="submit" form="wallet-form" class="btn btn-primary" id="btn-submit-wallet">Add Wallet</button>
+      </div>
     </div>
   </div>
 </div>

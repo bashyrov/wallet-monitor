@@ -473,14 +473,15 @@
     @media (max-width: 600px) {
       .free-banner {
         top: auto;
-        bottom: 20px;
-        left: 16px;
-        right: 16px;
-        transform: none;
+        bottom: 96px;
+        left: 12px;
+        right: 12px;
+        transform: none !important;
         justify-content: space-between;
         border-radius: 14px;
         padding: 10px 12px 10px 14px;
         font-size: 13px;
+        z-index: 150;
       }
       @keyframes bannerIn {
         from { transform: translateY(14px); opacity: 0; }
@@ -523,7 +524,7 @@
   <span class="free-banner-dot"></span>
   <span>Free plan · No card needed</span>
   <a href="/pricing.html" class="free-banner-upgrade">Upgrade →</a>
-  <button class="free-banner-close" onclick="dismissBanner()" aria-label="Dismiss">✕</button>
+  <button class="free-banner-close" onclick="dismissFreeBanner()" aria-label="Dismiss">✕</button>
 </div>
 <script>
   (function(){
@@ -535,9 +536,10 @@
   function dismissFreeBanner(){
     var b=document.getElementById('free-banner');
     if(!b) return;
+    var mobile = window.innerWidth <= 600;
     b.style.transition='opacity 0.2s, transform 0.2s';
     b.style.opacity='0';
-    b.style.transform='translateY(-14px)';
+    b.style.transform = mobile ? 'translateY(14px)' : 'translateX(-50%) translateY(-10px)';
     setTimeout(function(){ b && b.remove(); }, 220);
     localStorage.setItem('avalant-banner-dismissed','1');
   }
