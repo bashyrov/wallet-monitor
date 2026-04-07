@@ -1516,59 +1516,45 @@
 
       .agg-total { font-size: 28px; }
 
-      /* Modals slide up from bottom on mobile */
+      /* Modals: centered with margins, fully scrollable, button always visible */
       .modal-overlay {
-        align-items: flex-end;
-        padding: 0;
+        align-items: center;
+        padding: 12px;
       }
       .modal {
         width: 100%;
         max-width: 100%;
-        max-height: 92vh;
+        max-height: calc(100dvh - 24px);
         margin: 0;
-        border-radius: 20px 20px 0 0;
-        border-bottom: none;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+      }
+      .modal-body {
+        flex: 1;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
       }
       @keyframes slideUpModal {
-        from { transform: translateY(100%); opacity: 0; }
+        from { transform: translateY(16px); opacity: 0; }
         to   { transform: translateY(0);    opacity: 1; }
       }
-
-      /* Addresses modal — remove fixed min-width */
-      #modal-addresses .modal { min-width: unset !important; max-width: 100% !important; }
 
       /* Wallet row */
       .wallet-row { padding: 10px 12px; }
       .wallet-name { font-size: 13px; }
 
-      /* Confirm popup: slides up from bottom */
-      .confirm-overlay { align-items: flex-end; padding: 0; }
-      .confirm-modal {
-        border-radius: 20px 20px 0 0;
-        margin: 0;
-        width: 100%;
-        max-width: 100%;
-      }
-      @keyframes confirmIn {
-        from { transform: translateY(100%); opacity: 0; }
-        to   { transform: translateY(0);    opacity: 1; }
-      }
+      /* Confirm popup: centered with margins */
+      .confirm-overlay { align-items: center; padding: 12px; }
+      .confirm-modal { border-radius: 16px; width: 100%; max-width: 100%; margin: 0; }
 
-      /* Upgrade popup: slides up from bottom */
-      .upgrade-overlay { align-items: flex-end; padding: 0; }
-      .upgrade-modal {
-        border-radius: 20px 20px 0 0;
-        width: 100%;
-        max-width: 100%;
-      }
+      /* Upgrade popup: centered with margins */
+      .upgrade-overlay { align-items: center; padding: 12px; }
+      .upgrade-modal { border-radius: 16px; width: 100%; max-width: 100%; }
       .upgrade-top { padding: 24px 20px 18px; }
       .upgrade-icon { width: 44px; height: 44px; font-size: 20px; margin-bottom: 12px; }
       .upgrade-title { font-size: 16px; }
-      .upgrade-body { padding: 16px 20px 32px; }
-      @keyframes slideUpModal { /* reuse for upgrade */
-        from { transform: translateY(100%); opacity: 0; }
-        to   { transform: translateY(0);    opacity: 1; }
-      }
+      .upgrade-body { padding: 16px 20px 24px; }
     }
 
     @media (max-width: 480px) {
