@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from backend.db.models import Wallet, BalanceSnapshot
+from backend.db.models import Wallet, BalanceSnapshot, ProviderErrorLog
 from backend.domain.models import BalanceResult
 from backend.providers.utils import STABLE_COINS
 from backend.schemas.portfolio import WalletBalanceResult, AggregatedBalance, BalanceResponse, PnL
@@ -44,8 +44,10 @@ def _stable_sum(totals: dict[str, str]) -> Decimal:
     return total
 
 
-async def _fetch_single(db_wallet: Wallet) -> tuple[BalanceResult | None, str | None]:
-    """Returns (BalanceResult | None, error_str | None)."""
+async def _fetch_single(db_wallet: Wallet) -> tuple[BalanceResult | None, str | None, str | None]:
+    """Returns (BalanceResult | None, error_str | None, error_type | None).
+    error_type: 'rate_limit' | 'auth' | 'network' | 'unknown' | None
+    """
     from backend.crypto import decrypt_credentials
     creds = decrypt_credentials(db_wallet.credentials or {})
     provider_instance = None
@@ -92,11 +94,11 @@ async def _fetch_single(db_wallet: Wallet) -> tuple[BalanceResult | None, str | 
             )
 
         else:
-            return None, f"Unknown wallet type: {db_wallet.wallet_type}"
+            return None, f"Unknown wallet type: {db_wallet.wallet_type}", "unknown"
 
         provider_instance = wallet_obj.provider()
         result = await provider_instance.fetch_balance(wallet=wallet_obj)
-        return result, None
+        return result, None, None
 
     except Exception as e:
         msg = str(e)
@@ -105,15 +107,19 @@ async def _fetch_single(db_wallet: Wallet) -> tuple[BalanceResult | None, str | 
             db_wallet.id, db_wallet.wallet_type, db_wallet.type_value, msg,
             exc_info=True,
         )
-        if "401" in msg or "403" in msg or "Unauthorized" in msg or "Invalid" in msg:
+        if "429" in msg or "rate" in msg.lower():
+            friendly = "Rate limit exceeded — try again later"
+            etype = "rate_limit"
+        elif "401" in msg or "403" in msg or "Unauthorized" in msg or "Invalid" in msg:
             friendly = "Invalid API credentials"
+            etype = "auth"
         elif "timeout" in msg.lower() or "connect" in msg.lower() or "network" in msg.lower():
             friendly = "Provider unavailable — try again later"
-        elif "429" in msg or "rate" in msg.lower():
-            friendly = "Rate limit exceeded — try again later"
+            etype = "network"
         else:
             friendly = "Failed to fetch — try again later"
-        return None, friendly
+            etype = "unknown"
+        return None, friendly, etype
 
     finally:
         if provider_instance:
@@ -148,9 +154,9 @@ async def fetch_balances(db_wallets: list[Wallet], db: Session) -> BalanceRespon
 
     for db_wallet, item in zip(db_wallets, raw):
         if isinstance(item, Exception):
-            result, error = None, str(item)
+            result, error, etype = None, str(item), "unknown"
         else:
-            result, error = item
+            result, error, etype = item
 
         prev_snap = prev_snapshots.get(db_wallet.id)
         prev_stable = Decimal(str(prev_snap.stable_total)) if prev_snap else Decimal("0")
@@ -169,6 +175,15 @@ async def fetch_balances(db_wallets: list[Wallet], db: Session) -> BalanceRespon
                 error=error or "Unknown error",
                 pnl=None,
             ))
+            try:
+                db.add(ProviderErrorLog(
+                    wallet_type=db_wallet.wallet_type,
+                    type_value=db_wallet.type_value,
+                    error_type=etype or "unknown",
+                    created_at=now,
+                ))
+            except Exception:
+                pass
         else:
             totals = result.totals or {}
             curr_stable = _stable_sum(totals)
@@ -235,10 +250,15 @@ async def fetch_balances(db_wallets: list[Wallet], db: Session) -> BalanceRespon
 
     stable_total = str(sum(Decimal(v) for v in stable.values()) if stable else Decimal("0"))
 
-    # Grand USD total across all wallets
-    grand_usd = sum(
-        Decimal(r.usd_total) for r in results if not r.error
-    )
+    # USD values for each aggregated symbol (computed from total amounts × price)
+    agg_usd_values: dict[str, str] = {}
+    for asset, amt in aggregated_totals.items():
+        uv = get_usd_value(asset, str(amt))
+        if uv is not None:
+            agg_usd_values[asset] = f"{uv:.2f}"
+
+    # Grand USD total from aggregated USD values (avoids double-counting from per-wallet)
+    grand_usd = sum(Decimal(v) for v in agg_usd_values.values())
 
     # Aggregate PnL — only if at least one wallet had a previous snapshot
     agg_pnl = None
@@ -252,6 +272,7 @@ async def fetch_balances(db_wallets: list[Wallet], db: Session) -> BalanceRespon
             other=other,
             stable_total=stable_total,
             usd_total=f"{grand_usd:.2f}",
+            usd_values=agg_usd_values,
             pnl=agg_pnl,
         ),
     )

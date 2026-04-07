@@ -564,6 +564,10 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 12c0-2.8 2.7-5 6-5s6 2.2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Users
     </a>
+    <a class="drawer-item" id="drawer-errors" href="#" onclick="showTab('errors',this);loadErrors();closeDrawer();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L1.5 11.5h11L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v2.5M7 10.2v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Provider Errors
+    </a>
     <div class="drawer-sep"></div>
     <a class="drawer-item" href="/app.html">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 2H2a1 1 0 00-1 1v9a1 1 0 001 1h10a1 1 0 001-1V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8 1h5v5M13 1L7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -584,6 +588,10 @@
     <a class="sidebar-item" href="#" onclick="showTab('users',this);return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 12c0-2.8 2.7-5 6-5s6 2.2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Users
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('errors',this);loadErrors();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L1.5 11.5h11L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v2.5M7 10.2v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Provider Errors
     </a>
   </aside>
 
@@ -626,6 +634,11 @@
           <div class="kpi-icon" style="background:var(--surface3)">🏷️</div>
           <div class="kpi-num" id="kpi-tags">—</div>
           <div class="kpi-label">Tags created</div>
+        </div>
+        <div class="kpi green" style="animation-delay:.24s">
+          <div class="kpi-icon" style="background:var(--green-dim)">⚡</div>
+          <div class="kpi-num" id="kpi-requests" style="color:var(--green)">—</div>
+          <div class="kpi-label">Total requests</div>
         </div>
       </div>
 
@@ -704,7 +717,7 @@
               <th class="sort-th" onclick="setSort('requests')">
                 Requests <span id="sort-requests" class="sort-arrow"></span>
               </th>
-              <th>Role</th><th>Status</th>
+              <th>Role</th><th>Status</th><th class="col-hide-mobile">Last active</th>
             </tr></thead>
             <tbody id="all-users-tbody"></tbody>
           </table>
@@ -719,6 +732,54 @@
       </div>
     </div>
 
+    <!-- ══ ERRORS TAB ══ -->
+    <div id="tab-errors" style="display:none">
+      <div class="page-title">Provider Errors</div>
+      <div class="page-sub">Failed balance fetches grouped by provider</div>
+
+      <!-- Controls -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)">
+          Window (last N errors):
+          <select id="err-window" onchange="loadErrors()"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+                   padding:5px 10px;font-size:13px;color:var(--text);font-family:var(--font);outline:none;cursor:pointer">
+            <option value="100">100</option>
+            <option value="500" selected>500</option>
+            <option value="1000">1 000</option>
+            <option value="5000">5 000</option>
+            <option value="10000">All (10 000)</option>
+          </select>
+        </div>
+        <button class="card-action" onclick="loadErrors()" style="margin-left:auto">Refresh</button>
+      </div>
+
+      <!-- Summary KPI row -->
+      <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap" id="err-kpi-row"></div>
+
+      <!-- Main table -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Error breakdown</span>
+          <span id="err-window-label" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="table" style="min-width:500px">
+            <thead><tr>
+              <th>Provider</th>
+              <th>Type</th>
+              <th>Error category</th>
+              <th>Count</th>
+              <th>Last seen</th>
+            </tr></thead>
+            <tbody id="err-tbody">
+              <tr><td colspan="5" style="color:var(--text4);text-align:center;padding:32px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -726,7 +787,7 @@
 <script>
 Auth.requireAdmin('/app.html');
 
-const TABS = ['dashboard', 'users'];
+const TABS = ['dashboard', 'users', 'errors'];
 function showTab(tab, el) {
   TABS.forEach(t => {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
@@ -814,9 +875,10 @@ function renderUsersTable() {
           <td><span class="req-count ${reqClass}">${req.toLocaleString('en-US')}</span></td>
           <td>${u.is_admin ? '<span class="badge pro">admin</span>' : '<span class="badge free">user</span>'}</td>
           <td>${isBlocked ? '<span class="badge blocked">blocked</span>' : '<span class="badge active">active</span>'}</td>
+          <td class="col-hide-mobile" style="color:var(--text3);font-size:12px">${u.last_active_at || '—'}</td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="6" style="color:var(--text4);text-align:center;padding:20px">No users found</td></tr>';
+    : '<tr><td colspan="7" style="color:var(--text4);text-align:center;padding:20px">No users found</td></tr>';
 }
 
 let allUsers = [];
@@ -835,9 +897,10 @@ async function loadStats() {
     if (usersRes.ok) allUsers = await usersRes.json();
   } catch(e) {}
 
-  const totalUsers   = stats ? stats.users_count  : 0;
-  const totalWallets = stats ? stats.wallets_count : 0;
-  const tagsCount    = stats ? (stats.tags_count || 0) : 0;
+  const totalUsers     = stats ? stats.users_count     : 0;
+  const totalWallets   = stats ? stats.wallets_count   : 0;
+  const tagsCount      = stats ? (stats.tags_count     || 0) : 0;
+  const requestsTotal  = stats ? (stats.requests_total || 0) : 0;
   const byType       = stats ? stats.by_type : {};
   const ex = byType.exchange ? byType.exchange.count : 0;
   const ch = byType.chain    ? byType.chain.count    : 0;
@@ -851,6 +914,7 @@ async function loadStats() {
   animNum('kpi-chains',    ch);
   animNum('kpi-perpdex',   px);
   animNum('kpi-tags',      tagsCount);
+  animNum('kpi-requests',  requestsTotal);
 
   document.getElementById('last-updated').textContent =
     'Last updated: ' + new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
@@ -953,6 +1017,78 @@ async function toggleBlock(userId, currentlyBlocked) {
 }
 
 loadStats();
+
+// ── Provider Errors ────────────────────────────────────────────────────────
+const ERR_TYPE_META = {
+  rate_limit: { label: 'Rate limit (429)', color: '#E5C07B', bg: 'rgba(229,192,123,0.12)' },
+  auth:       { label: 'Auth / credentials', color: '#F87171', bg: 'rgba(248,113,113,0.1)' },
+  network:    { label: 'Network / timeout',  color: '#06B6D4', bg: 'rgba(6,182,212,0.1)'   },
+  unknown:    { label: 'Unknown',            color: '#676B7E', bg: 'rgba(103,107,126,0.1)'  },
+};
+
+const WTYPE_COLOR = { exchange: '#E5C07B', chain: '#06B6D4', perpdex: '#925BD6' };
+
+async function loadErrors() {
+  const n = document.getElementById('err-window')?.value || 500;
+  const tbody = document.getElementById('err-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text4);text-align:center;padding:32px">Loading…</td></tr>';
+
+  let data = null;
+  try {
+    const res = await Auth.apiFetch(`/admin/provider-errors?n=${n}`);
+    if (res.ok) data = await res.json();
+  } catch(e) {}
+
+  if (!data) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text4);text-align:center;padding:32px">Failed to load</td></tr>';
+    return;
+  }
+
+  const label = document.getElementById('err-window-label');
+  if (label) label.textContent = `window: last ${Number(n).toLocaleString('en-US')} · total stored: ${data.total_stored.toLocaleString('en-US')}`;
+
+  // KPI summary — total per error_type
+  const byEtype = {};
+  data.rows.forEach(r => { byEtype[r.error_type] = (byEtype[r.error_type] || 0) + r.count; });
+  const kpiRow = document.getElementById('err-kpi-row');
+  if (kpiRow) {
+    const total = data.rows.reduce((s, r) => s + r.count, 0);
+    kpiRow.innerHTML = [
+      { key: '_total', label: 'Total errors', count: total, color: '#E6E8E3', bg: 'rgba(230,232,227,0.06)' },
+      ...Object.entries(ERR_TYPE_META).map(([k, m]) => ({ key: k, label: m.label, count: byEtype[k] || 0, color: m.color, bg: m.bg })),
+    ].map(item => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 18px;min-width:140px;flex:1">
+        <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:${item.color}">${item.count.toLocaleString('en-US')}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">${item.label}</div>
+      </div>`).join('');
+  }
+
+  if (!tbody) return;
+  if (!data.rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text4);text-align:center;padding:32px">No errors recorded yet</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.rows.map(r => {
+    const em = ERR_TYPE_META[r.error_type] || ERR_TYPE_META.unknown;
+    const wc = WTYPE_COLOR[r.wallet_type] || '#9B9FAB';
+    const barPct = data.rows.length ? Math.round((r.count / data.rows[0].count) * 100) : 0;
+    return `<tr>
+      <td style="font-weight:600">${r.type_value}</td>
+      <td><span style="font-size:11px;padding:2px 7px;border-radius:99px;background:${wc}22;color:${wc};font-weight:600;text-transform:uppercase;letter-spacing:.4px">${r.wallet_type}</span></td>
+      <td><span style="font-size:11px;padding:2px 7px;border-radius:99px;background:${em.bg};color:${em.color};font-weight:600">${em.label}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--mono);font-weight:600;color:${em.color}">${r.count.toLocaleString('en-US')}</span>
+          <div style="width:64px;height:4px;background:var(--surface3);border-radius:2px;overflow:hidden">
+            <div style="width:${barPct}%;height:100%;background:${em.color};border-radius:2px"></div>
+          </div>
+        </div>
+      </td>
+      <td style="color:var(--text3);font-size:12px;font-family:var(--mono)">${r.last_seen || '—'}</td>
+    </tr>`;
+  }).join('');
+}
 </script>
 
 <nav class="bottom-nav">

@@ -219,6 +219,10 @@
       <div class="stat-num" id="stat-requests">—</div>
       <div class="stat-label">Requests</div>
     </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat-last-active" style="font-size:13px;font-family:var(--mono)">—</div>
+      <div class="stat-label">Last active</div>
+    </div>
   </div>
 
   <!-- Wallets list -->
@@ -274,6 +278,7 @@ async function load() {
   // Stats
   document.getElementById('stat-wallets').textContent = u.wallets.length;
   document.getElementById('stat-requests').textContent = (u.request_count || 0).toLocaleString('en-US');
+  document.getElementById('stat-last-active').textContent = u.last_active_at || 'Never';
 
   // Actions
   renderActions(u);

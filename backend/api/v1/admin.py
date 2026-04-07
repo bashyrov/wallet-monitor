@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from backend.api.deps import get_admin_user, get_db
-from backend.db.models import User, Wallet, Tag
+from backend.db.models import User, Wallet, Tag, ProviderErrorLog
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -13,9 +13,10 @@ def admin_stats(
     db: Session = Depends(get_db),
     _: User = Depends(get_admin_user),
 ):
-    users_count   = db.query(func.count(User.id)).scalar()
-    wallets_count = db.query(func.count(Wallet.id)).scalar()
-    tags_count    = db.query(func.count(Tag.id)).scalar()
+    users_count    = db.query(func.count(User.id)).scalar()
+    wallets_count  = db.query(func.count(Wallet.id)).scalar()
+    tags_count     = db.query(func.count(Tag.id)).scalar()
+    requests_total = db.query(func.sum(User.request_count)).scalar() or 0
 
     rows = (
         db.query(Wallet.wallet_type, Wallet.type_value, func.count(Wallet.id))
@@ -43,6 +44,7 @@ def admin_stats(
             "email": u.email,
             "is_admin": u.is_admin,
             "wallets": wc,
+            "last_active_at": u.last_active_at.strftime("%Y-%m-%d %H:%M") if u.last_active_at else None,
             "joined": u.created_at.strftime("%Y-%m-%d %H:%M"),
         })
 
@@ -50,6 +52,7 @@ def admin_stats(
         "users_count": users_count,
         "wallets_count": wallets_count,
         "tags_count": tags_count,
+        "requests_total": requests_total,
         "by_type": by_type,
         "recent_users": recent_users,
     }
@@ -64,6 +67,7 @@ def admin_list_users(
     result = []
     for u in users:
         wc = db.query(func.count(Wallet.id)).filter(Wallet.user_id == u.id).scalar()
+        last_active = u.last_active_at.strftime("%Y-%m-%d %H:%M") if u.last_active_at else None
         result.append({
             "id": u.id,
             "username": u.username,
@@ -71,6 +75,7 @@ def admin_list_users(
             "is_admin": u.is_admin,
             "is_blocked": getattr(u, 'is_blocked', False),
             "request_count": getattr(u, 'request_count', 0),
+            "last_active_at": last_active,
             "wallets": wc,
             "created_at": u.created_at.strftime("%Y-%m-%d %H:%M"),
         })
@@ -94,6 +99,7 @@ def admin_get_user(
         "is_admin": user.is_admin,
         "is_blocked": getattr(user, "is_blocked", False),
         "request_count": getattr(user, "request_count", 0),
+        "last_active_at": user.last_active_at.strftime("%Y-%m-%d %H:%M") if user.last_active_at else None,
         "created_at": user.created_at.strftime("%Y-%m-%d %H:%M"),
         "wallets": [
             {"id": w.id, "name": w.name, "wallet_type": w.wallet_type, "type_value": w.type_value}
@@ -101,6 +107,48 @@ def admin_get_user(
         ],
     }
 
+
+
+@router.get("/provider-errors")
+def provider_errors(
+    n: int = Query(default=500, ge=1, le=10000),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    """Return error counts grouped by provider, from the last N error rows."""
+    subq = (
+        db.query(ProviderErrorLog)
+        .order_by(ProviderErrorLog.created_at.desc())
+        .limit(n)
+        .subquery()
+    )
+    rows = (
+        db.query(
+            subq.c.wallet_type,
+            subq.c.type_value,
+            subq.c.error_type,
+            func.count().label("count"),
+            func.max(subq.c.created_at).label("last_seen"),
+        )
+        .group_by(subq.c.wallet_type, subq.c.type_value, subq.c.error_type)
+        .order_by(func.count().desc())
+        .all()
+    )
+    total = db.query(func.count(ProviderErrorLog.id)).scalar() or 0
+    return {
+        "window": n,
+        "total_stored": total,
+        "rows": [
+            {
+                "wallet_type": r.wallet_type,
+                "type_value":  r.type_value,
+                "error_type":  r.error_type,
+                "count":       r.count,
+                "last_seen":   r.last_seen.strftime("%Y-%m-%d %H:%M") if r.last_seen else None,
+            }
+            for r in rows
+        ],
+    }
 
 
 @router.patch("/users/{user_id}/block")
