@@ -1515,14 +1515,60 @@
       .has-tip::before, .has-tip::after { display: none; }
 
       .agg-total { font-size: 28px; }
-      .modal { max-height: 90vh; margin: 0 12px; border-radius: 16px; align-self: center; width: 100%; }
-      .modal-overlay { align-items: center; }
+
+      /* Modals slide up from bottom on mobile */
+      .modal-overlay {
+        align-items: flex-end;
+        padding: 0;
+      }
+      .modal {
+        width: 100%;
+        max-width: 100%;
+        max-height: 92vh;
+        margin: 0;
+        border-radius: 20px 20px 0 0;
+        border-bottom: none;
+      }
+      @keyframes slideUpModal {
+        from { transform: translateY(100%); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
+
+      /* Addresses modal — remove fixed min-width */
+      #modal-addresses .modal { min-width: unset !important; max-width: 100% !important; }
+
+      /* Wallet row */
       .wallet-row { padding: 10px 12px; }
       .wallet-name { font-size: 13px; }
 
-      /* Confirm popup full-width on mobile */
-      .confirm-modal { border-radius: 16px; margin: 0 12px; }
-      .confirm-overlay { align-items: center; }
+      /* Confirm popup: slides up from bottom */
+      .confirm-overlay { align-items: flex-end; padding: 0; }
+      .confirm-modal {
+        border-radius: 20px 20px 0 0;
+        margin: 0;
+        width: 100%;
+        max-width: 100%;
+      }
+      @keyframes confirmIn {
+        from { transform: translateY(100%); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
+
+      /* Upgrade popup: slides up from bottom */
+      .upgrade-overlay { align-items: flex-end; padding: 0; }
+      .upgrade-modal {
+        border-radius: 20px 20px 0 0;
+        width: 100%;
+        max-width: 100%;
+      }
+      .upgrade-top { padding: 24px 20px 18px; }
+      .upgrade-icon { width: 44px; height: 44px; font-size: 20px; margin-bottom: 12px; }
+      .upgrade-title { font-size: 16px; }
+      .upgrade-body { padding: 16px 20px 32px; }
+      @keyframes slideUpModal { /* reuse for upgrade */
+        from { transform: translateY(100%); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
     }
 
     @media (max-width: 480px) {
@@ -1916,7 +1962,7 @@
 
 <!-- ══ MODAL: Addresses ══════════════════════════════════════════════ -->
 <div class="modal-overlay hidden" id="modal-addresses" onclick="if(event.target===this)closeAddrModal()">
-  <div class="modal" style="min-width:460px;max-width:520px;">
+  <div class="modal" style="max-width:520px;">
     <div class="modal-head">
       <span class="modal-title" id="modal-addresses-title">Addresses</span>
       <button class="modal-x" onclick="closeAddrModal()">×</button>

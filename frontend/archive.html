@@ -221,8 +221,16 @@
     }
     .confirm-delete:hover { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.4); }
     @media (max-width: 768px) {
-      .confirm-modal { border-radius: 16px 16px 0 0; }
-      .confirm-overlay { align-items: flex-end; }
+      .confirm-modal { border-radius: 20px 20px 0 0; width: 100%; max-width: 100%; margin: 0; }
+      .confirm-overlay { align-items: flex-end; padding: 0; }
+      @keyframes confirmIn {
+        from { transform: translateY(100%); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
+      .upgrade-modal { border-radius: 20px 20px 0 0; width: 100%; max-width: 100%; }
+      .upgrade-overlay { align-items: flex-end; padding: 0; }
+      .upgrade-top { padding: 24px 20px 18px; }
+      .upgrade-body { padding: 16px 20px 32px; }
     }
 
     /* ── TOAST ── */
