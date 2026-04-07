@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.crypto import encrypt_credentials, decrypt_credentials
 from backend.db.models import Wallet, Tag, WalletAddress
-from backend.domain.errors import WalletNotFound, TagNotFound, TagAlreadyExists
+from backend.domain.errors import WalletNotFound, TagNotFound, TagAlreadyExists, TagLimitReached
 from backend.schemas.common import WalletCreate, WalletOut, TagCreate, TagUpdate, TagOut, WalletAddressCreate, WalletAddressOut
 
 
@@ -211,29 +211,44 @@ def all_addresses(db: Session, user_id: int) -> list[dict]:
     return result
 
 
+FREE_TAG_LIMIT = 5
+
 # ── Tags ──────────────────────────────────────────────────────────────────────
 
-def list_tags(db: Session) -> list[Tag]:
-    return db.query(Tag).order_by(Tag.name).all()
+def list_tags(db: Session, user_id: int) -> list[Tag]:
+    """Return system tags (user_id IS NULL) + current user's tags."""
+    return (
+        db.query(Tag)
+        .filter((Tag.user_id == None) | (Tag.user_id == user_id))
+        .order_by(Tag.name)
+        .all()
+    )
 
 
-def create_tag(db: Session, body: TagCreate) -> Tag:
-    existing = db.query(Tag).filter(Tag.name == body.name).first()
+def create_tag(db: Session, body: TagCreate, user_id: int) -> Tag:
+    # Enforce limit (system tags don't count)
+    user_tag_count = db.query(Tag).filter(Tag.user_id == user_id).count()
+    if user_tag_count >= FREE_TAG_LIMIT:
+        raise TagLimitReached(FREE_TAG_LIMIT)
+    # Check name uniqueness within user's scope
+    existing = db.query(Tag).filter(Tag.name == body.name, Tag.user_id == user_id).first()
     if existing:
         raise TagAlreadyExists(body.name)
-    tag = Tag(name=body.name, color=body.color)
+    tag = Tag(name=body.name, color=body.color, user_id=user_id)
     db.add(tag)
     db.commit()
     db.refresh(tag)
     return tag
 
 
-def update_tag(db: Session, tag_id: int, body: TagUpdate) -> Tag:
-    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+def update_tag(db: Session, tag_id: int, body: TagUpdate, user_id: int) -> Tag:
+    tag = db.query(Tag).filter(Tag.id == tag_id, Tag.user_id == user_id).first()
     if not tag:
         raise TagNotFound(tag_id)
     if body.name is not None:
-        conflict = db.query(Tag).filter(Tag.name == body.name, Tag.id != tag_id).first()
+        conflict = db.query(Tag).filter(
+            Tag.name == body.name, Tag.user_id == user_id, Tag.id != tag_id
+        ).first()
         if conflict:
             raise TagAlreadyExists(body.name)
         tag.name = body.name
@@ -244,8 +259,8 @@ def update_tag(db: Session, tag_id: int, body: TagUpdate) -> Tag:
     return tag
 
 
-def delete_tag(db: Session, tag_id: int) -> None:
-    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+def delete_tag(db: Session, tag_id: int, user_id: int) -> None:
+    tag = db.query(Tag).filter(Tag.id == tag_id, Tag.user_id == user_id).first()
     if not tag:
         raise TagNotFound(tag_id)
     db.delete(tag)

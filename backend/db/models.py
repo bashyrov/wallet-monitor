@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, JSON, Boolean, Float
+from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, JSON, Boolean, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.db.base import Base
@@ -95,9 +95,13 @@ class BalanceHistory(Base):
 
 class Tag(Base):
     __tablename__ = "tags"
+    __table_args__ = (
+        UniqueConstraint("name", "user_id", name="uq_tag_name_user"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)
     color = Column(String, nullable=False, default="#6366f1")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # NULL = system tag
 
     wallets = relationship("Wallet", secondary=wallet_tags, back_populates="tags", lazy="joined")

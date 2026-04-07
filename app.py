@@ -49,8 +49,8 @@ def _ensure_system_tags() -> None:
     from backend.db.models import Tag
     db = SessionLocal()
     try:
-        if not db.query(Tag).filter(Tag.name == "Owner").first():
-            db.add(Tag(name="Owner", color="#1AFFAB"))
+        if not db.query(Tag).filter(Tag.name == "Owner", Tag.user_id == None).first():
+            db.add(Tag(name="Owner", color="#1AFFAB", user_id=None))
             db.commit()
             logger.info("Created system tag: Owner")
     except Exception:

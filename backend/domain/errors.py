@@ -44,6 +44,12 @@ class WalletLimitReached(DomainError):
         self.limit = limit
 
 
+class TagLimitReached(DomainError):
+    def __init__(self, limit: int):
+        super().__init__(f"Free plan limit of {limit} tags reached")
+        self.limit = limit
+
+
 class ProviderUnavailable(DomainError):
     """Provider is temporarily unavailable (rate-limit, network error, etc.)."""
     def __init__(self, provider: str, reason: str):
