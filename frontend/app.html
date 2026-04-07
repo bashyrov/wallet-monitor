@@ -2967,7 +2967,11 @@ function openAddWalletModal() {
 function closeAddWalletModal() { document.getElementById('modal-wallet').classList.add('hidden'); }
 
 function selectWalletType(type) {
-  if (S.walletType === type) return;
+  if (S.walletType === type) {
+    document.getElementById('acc-'+type).classList.remove('open');
+    S.walletType = null;
+    return;
+  }
   if (S.walletType) document.getElementById('acc-'+S.walletType).classList.remove('open');
   S.walletType = type;
   document.getElementById('acc-'+type).classList.add('open');
