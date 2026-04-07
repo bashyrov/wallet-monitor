@@ -554,6 +554,23 @@
     </div>
   </div>
 
+  <!-- Balance History Chart -->
+  <div class="section-card" style="margin-bottom:20px;animation-delay:0.28s" id="history-card">
+    <div class="section-head">
+      <span class="section-title">Balance History</span>
+      <div style="display:flex;gap:4px">
+        <button class="chart-range-btn active" id="rb-30" onclick="loadHistory(30,this)">30d</button>
+        <button class="chart-range-btn" id="rb-7"  onclick="loadHistory(7,this)">7d</button>
+        <button class="chart-range-btn" id="rb-90" onclick="loadHistory(90,this)">90d</button>
+      </div>
+    </div>
+    <div class="section-body" style="padding:16px 20px 20px">
+      <div id="chart-wrap" style="width:100%;min-height:140px;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:12px;color:var(--text4)">Tag wallets with <span style="color:var(--green);font-weight:600">◈ Owner</span> and check balance to start tracking</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Two-column: Plan + Wallets breakdown -->
   <div class="two-col" style="margin-bottom:20px">
 
@@ -605,23 +622,6 @@
       </div>
     </div>
 
-  </div>
-
-  <!-- Balance History Chart -->
-  <div class="section-card" style="margin-bottom:20px;animation-delay:0.28s" id="history-card">
-    <div class="section-head">
-      <span class="section-title">Balance History</span>
-      <div style="display:flex;gap:4px">
-        <button class="chart-range-btn active" id="rb-30" onclick="loadHistory(30,this)">30d</button>
-        <button class="chart-range-btn" id="rb-7"  onclick="loadHistory(7,this)">7d</button>
-        <button class="chart-range-btn" id="rb-90" onclick="loadHistory(90,this)">90d</button>
-      </div>
-    </div>
-    <div class="section-body" style="padding:16px 20px 20px">
-      <div id="chart-wrap" style="width:100%;min-height:140px;display:flex;align-items:center;justify-content:center">
-        <span style="font-size:12px;color:var(--text4)">Tag wallets with <span style="color:var(--green);font-weight:600">◈ Owner</span> and check balance to start tracking</span>
-      </div>
-    </div>
   </div>
 
   <!-- Danger Zone -->

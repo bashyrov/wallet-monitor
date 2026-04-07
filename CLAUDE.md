@@ -34,42 +34,92 @@ docker compose up -d
 
 ---
 
+## Deployment
+
+### First deploy on a server
+```bash
+cp .env.sample .env          # fill SECRET_KEY, ENCRYPTION_KEY, POSTGRES_PASSWORD
+# Step 1: start nginx in HTTP-only mode (comment out 443 server block in nginx/nginx.conf)
+make up
+# Step 2: get SSL cert
+make ssl-init DOMAIN=yourdomain.com EMAIL=your@email.com
+# Step 3: uncomment 443 server block, replace yourdomain.com in nginx/nginx.conf
+make restart-nginx
+```
+
+### Backup
+```bash
+./backup.sh           # pg_dump → backups/avalant_YYYYMMDD_HHMMSS.sql.gz (keeps 14 days)
+./backup.sh 7         # keep last 7 days
+
+# Restore
+make restore FILE=backups/avalant_20260407_120000.sql.gz
+```
+
+**Cron (nightly at 3:00)**:
+```
+0 3 * * * cd /path/to/wallet-monitor && ./backup.sh >> /var/log/avalant-backup.log 2>&1
+```
+
+### Makefile commands
+```bash
+make dev              # local uvicorn --reload
+make up / down        # docker compose up/down
+make restart          # restart app container
+make rebuild          # rebuild + restart app
+make logs             # follow app logs
+make backup           # PostgreSQL backup
+make restore FILE=... # restore from backup
+make ssl-init         # get Let's Encrypt cert (first time)
+make restart-nginx    # reload nginx config
+```
+
+---
+
 ## Project structure
 
 ```
 wallet-monitor/
-├── app.py                              # FastAPI entry point: lifespan, CORS, security headers, routers
+├── app.py                              # FastAPI entry point: lifespan, CORS, security headers, routers, _ensure_system_tags()
 ├── settings.py                         # Pydantic BaseSettings — config from .env
 ├── requirements.txt
 ├── Dockerfile                          # python:3.13-slim, uvicorn
-├── docker-compose.yml                  # PostgreSQL 16 + app, named volume postgres_data
-├── alembic.ini                         # Alembic config
+├── docker-compose.yml                  # PostgreSQL 16 + app + nginx + certbot (Let's Encrypt auto-renew)
+├── Makefile                            # dev/deploy shortcuts
+├── backup.sh                           # pg_dump with retention (default 14 days)
+├── alembic.ini
 ├── alembic/
 │   ├── env.py                          # Reads DATABASE_URL from settings, normalizes postgres:// → postgresql://
 │   └── versions/
 │       ├── 014613d42a04_initial.py     # Tables: users, wallets, tags, wallet_tags, wallet_addresses
 │       ├── fb0ca8a11562_add_is_admin.py
 │       ├── a1b2c3d4e5f6_add_is_archived.py
-│       └── c3d4e5f6a7b8_add_is_blocked_request_count.py
+│       ├── c3d4e5f6a7b8_add_is_blocked_request_count.py
+│       ├── d0e1f2a3b4c5_add_last_active_at.py
+│       ├── e1f2a3b4c5d6_add_provider_error_logs.py
+│       ├── e5f6a7b8c9d0_add_balance_snapshots.py
+│       └── f2a3b4c5d6e7_add_balance_history.py
 │
 ├── frontend/
 │   ├── auth.js                         # Shared auth module (getToken, setSession, requireAuth, requireAdmin, isAdmin, logout)
 │   ├── index.html                      # Landing page
 │   ├── app.html                        # Main app — portfolio, balances, transactions
-│   ├── profile.html                    # User profile, stats, plan, admin link (is_admin only)
+│   ├── profile.html                    # User profile, balance history chart, plan, admin link
 │   ├── login.html                      # Login form → JWT token → redirect to app.html
 │   ├── register.html                   # Register form → JWT token → redirect to app.html
 │   ├── pricing.html                    # Free / Pro pricing page
 │   ├── checkout.html                   # Card payment form (stub)
-│   ├── archive.html                    # Archived wallets
-│   └── admin.html                      # Admin panel — is_admin only (requireAdmin)
+│   ├── archive.html                    # Archived wallets with restore/delete
+│   ├── admin.html                      # Admin panel — KPI, users, provider errors tab
+│   └── admin-user.html                 # Per-user admin detail page
 │
 └── backend/
     ├── crypto.py                       # Fernet credential encryption: encrypt/decrypt_credentials()
     │
     ├── db/
     │   ├── base.py                     # _make_engine() (SQLite + PostgreSQL), SessionLocal, Base, get_db()
-    │   └── models.py                   # ORM: User, Wallet, Tag, wallet_tags (M2M), WalletAddress
+    │   └── models.py                   # ORM: User, Wallet, Tag, wallet_tags (M2M), WalletAddress,
+    │                                   #   BalanceSnapshot, ProviderErrorLog, BalanceHistory
     │
     ├── domain/
     │   ├── models.py                   # Dataclasses: WalletBasic, ExchangeWallet, ChainWallet, PerpDexWallet, BalanceResult
@@ -79,8 +129,9 @@ wallet-monitor/
     ├── schemas/
     │   ├── auth.py                     # UserRegister, UserLogin, Token, UserOut (includes is_admin)
     │   ├── common.py                   # TagCreate/Update/Out, WalletCreate, WalletOut, WalletAddressCreate/Out
-    │   ├── portfolio.py                # BalanceFetchRequest, WalletBalanceResult, BalanceResponse,
-    │   │                               #   TransactionFetchRequest, Transaction (with address field), TransactionResponse
+    │   ├── portfolio.py                # BalanceFetchRequest, WalletBalanceResult, AggregatedBalance,
+    │   │                               #   BalanceResponse, PnL, TransactionFetchRequest,
+    │   │                               #   Transaction (with address field), TransactionResponse
     │   ├── wallets.py                  # ExchangeWalletSchema, ChainWalletSchema, PerpDexWalletSchema
     │   └── __init__.py                 # Re-exports from all three files
     │
@@ -103,7 +154,7 @@ wallet-monitor/
     │   │   ├── __init__.py             # PERPDEX_PROVIDERS dict {value → class}
     │   │   ├── hyperliquid_provider.py # Public POST /info
     │   │   ├── aster_provider.py       # Aster DEX (soon=True)
-    │   │   ├── lighter_provider.py     # Public GET /api/v1/account
+    │   │   ├── lighter_provider.py     # Public GET /api/v1/account; HTTP 400 = unregistered addr (→ empty, not error)
     │   │   ├── ethereal_provider.py    # Public GET /v1/subaccount
     │   │   └── paradex_provider.py     # Starknet address
     │   └── chains/
@@ -118,16 +169,21 @@ wallet-monitor/
     │       ├── router.py               # Main APIRouter prefix="/api", mounts all sub-routers
     │       ├── health.py               # GET /api/health
     │       ├── auth.py                 # POST /api/auth/register, /login; GET /api/auth/me; rate limiter
-    │       ├── admin.py                # GET /api/admin/stats, /users; PATCH /api/admin/users/{id}/admin|block
-    │       ├── wallets.py              # CRUD wallets, tags, addresses
-    │       ├── tags.py                 # GET/POST/PUT/DELETE /api/tags
-    │       └── portfolio.py            # POST /api/portfolio/balance, /transactions
+    │       ├── admin.py                # GET /api/admin/stats, /users, /users/{id}, /provider-errors
+    │       │                           #   PATCH /api/admin/users/{id}/admin|block
+    │       ├── wallets.py              # CRUD wallets, archive/unarchive, tags, addresses
+    │       ├── tags.py                 # GET/POST/PUT/DELETE /api/tags; guards system tags (Owner)
+    │       └── portfolio.py            # POST /balance, /transactions, /transactions/bulk
+    │                                   #   GET /history
     │
     └── services/
         ├── auth_service.py             # register_user, authenticate_user, create_token, decode_token, get_user_by_*
         ├── wallet_service.py           # CRUD wallets, tags, wallet addresses + all_addresses()
-        ├── balance_service.py          # fetch_balances(db_wallets) → BalanceResponse (parallel via asyncio.gather)
-        └── transaction_service.py      # fetch_transactions(db_wallet) → TransactionResponse (last 5 tx)
+        ├── balance_service.py          # fetch_balances() → BalanceResponse; writes BalanceSnapshot + BalanceHistory
+        │                               #   _fetch_single() returns 3-tuple (result, error, error_type)
+        │                               #   writes ProviderErrorLog on failure
+        ├── transaction_service.py      # fetch_transactions(db_wallet) → TransactionResponse (last 5 tx)
+        └── price_service.py            # get_usd_value(asset, amount) — CMC top-100 + Gate fallback, 30min cache
 ```
 
 ---
@@ -140,13 +196,18 @@ wallet-monitor/
 | POST | `/api/auth/register` | — | Register → `{access_token}` |
 | POST | `/api/auth/login` | — | Login → `{access_token}` |
 | GET | `/api/auth/me` | Bearer | Current user (`id, username, email, is_admin`) |
-| GET | `/api/admin/stats` | Bearer + admin | Stats: users_count, wallets_count, by_type, recent_users |
-| GET | `/api/admin/users` | Bearer + admin | All users with wallet count, request_count, is_blocked |
+| GET | `/api/admin/stats` | Bearer + admin | KPI: users_count, wallets_count, by_type, recent_users |
+| GET | `/api/admin/users` | Bearer + admin | All users with wallet_count, request_count, last_active_at, is_blocked |
+| GET | `/api/admin/users/{id}` | Bearer + admin | Single user detail |
+| GET | `/api/admin/provider-errors?n=500` | Bearer + admin | Aggregated error counts by provider + error_type |
 | PATCH | `/api/admin/users/{id}/admin` | Bearer + admin | Toggle is_admin (cannot change self) |
 | PATCH | `/api/admin/users/{id}/block` | Bearer + admin | Toggle is_blocked (cannot block self) |
-| GET | `/api/wallets` | Bearer | Current user's wallets |
+| GET | `/api/wallets` | Bearer | Current user's active wallets |
 | POST | `/api/wallets` | Bearer | Create wallet |
 | DELETE | `/api/wallets/{id}` | Bearer | Delete wallet |
+| GET | `/api/wallets/archived` | Bearer | Archived wallets |
+| POST | `/api/wallets/{id}/archive` | Bearer | Archive wallet |
+| POST | `/api/wallets/{id}/unarchive` | Bearer | Unarchive wallet |
 | POST | `/api/wallets/{id}/tags/{tag_id}` | Bearer | Add tag to wallet |
 | DELETE | `/api/wallets/{id}/tags/{tag_id}` | Bearer | Remove tag |
 | GET | `/api/wallets/options` | Bearer | Available types (exchange/chain/perpdex lists) |
@@ -155,11 +216,13 @@ wallet-monitor/
 | POST | `/api/wallets/{id}/addresses` | Bearer | Add named address `{name, address}` |
 | DELETE | `/api/wallets/{id}/addresses/{addr_id}` | Bearer | Delete named address |
 | GET | `/api/tags` | Bearer | Tag list |
-| POST | `/api/tags` | Bearer | Create tag |
-| PUT | `/api/tags/{id}` | Bearer | Update tag |
-| DELETE | `/api/tags/{id}` | Bearer | Delete tag |
+| POST | `/api/tags` | Bearer | Create tag (cannot use reserved names: "Owner") |
+| PUT | `/api/tags/{id}` | Bearer | Update tag (cannot modify system tags) |
+| DELETE | `/api/tags/{id}` | Bearer | Delete tag (cannot delete system tags) |
 | POST | `/api/portfolio/balance` | Bearer | Balances `{"wallet_ids": [1,2,3]}` — empty list = all |
-| POST | `/api/portfolio/transactions` | Bearer | Last 5 transactions `{"wallet_id": 1}` |
+| POST | `/api/portfolio/transactions` | Bearer | Last 5 tx for one wallet `{"wallet_id": 1}` |
+| POST | `/api/portfolio/transactions/bulk` | Bearer | Last 5 tx for all (or selected) wallets in parallel |
+| GET | `/api/portfolio/history?days=30` | Bearer | Balance history for chart (1–365 days) |
 
 ---
 
@@ -198,7 +261,8 @@ PostgreSQL (production) / SQLite (local). Migrations run automatically on startu
 | hashed_password | String | bcrypt |
 | is_admin | Boolean | default False; first user → True |
 | is_blocked | Boolean | default False; blocked users cannot login |
-| request_count | Integer | counts balance/transaction API calls |
+| request_count | Integer | incremented on balance + transaction API calls |
+| last_active_at | DateTime nullable | updated on each balance/transaction request |
 | created_at | DateTime | |
 
 ### Table `wallets`
@@ -232,6 +296,33 @@ wallet_id + tag_id, CASCADE DELETE
 | address | String | On-chain address |
 | created_at | DateTime | |
 
+### Table `balance_snapshots`
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Integer PK | |
+| wallet_id | Integer FK UNIQUE | one row per wallet |
+| user_id | Integer FK | |
+| totals | JSON | `{"USDT": "1234.56", "BTC": "0.5"}` |
+| stable_total | Float | pre-computed stablecoin USD sum (for PnL) |
+| snapshot_at | DateTime | |
+
+### Table `provider_error_logs`
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Integer PK | |
+| wallet_type | String | `exchange` / `chain` / `perpdex` |
+| type_value | String | `binance`, `ethereum`, etc. |
+| error_type | String | `rate_limit` / `auth` / `network` / `unknown` |
+| created_at | DateTime index | |
+
+### Table `balance_history`
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Integer PK | |
+| user_id | Integer FK index | |
+| usd_total | Float | aggregate USD of all Owner-tagged wallets |
+| snapshot_at | DateTime index | written on each balance check with Owner wallets |
+
 ---
 
 ## Credential Encryption (`backend/crypto.py`)
@@ -252,6 +343,7 @@ All string values in the `credentials` JSON are Fernet-encrypted on save and dec
 - **Security headers**: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`; removes `Server` header
 - **OpenAPI hidden**: `docs_url=None, redoc_url=None, openapi_url=None`
 - **`_check_security()`**: warns on startup if default `SECRET_KEY` / `ENCRYPTION_KEY` are used
+- **`_ensure_system_tags()`**: creates the "Owner" tag (color `#1AFFAB`) on startup if it doesn't exist
 
 ### Access control
 - **`get_current_user`** (`deps.py`): validates Bearer JWT, 401 if missing/invalid, 403 if `is_blocked`
@@ -260,14 +352,30 @@ All string values in the `credentials` JSON are Fernet-encrypted on save and dec
 
 ---
 
+## System Tags
+
+`SYSTEM_TAGS = {"Owner"}` defined in `backend/api/v1/tags.py`.
+
+Rules enforced on the backend:
+- Cannot create a tag with a reserved name
+- Cannot update or delete a system tag (`_guard_system()` → HTTP 400)
+
+The **Owner** tag is auto-created on every startup (`_ensure_system_tags()` in `app.py`).
+
+**Purpose**: wallets tagged "Owner" are included in balance history snapshots. The aggregate USD total of all Owner-tagged wallets is written to `balance_history` after each balance check.
+
+Frontend displays Owner tag with `◈ Owner` green pill and no delete button. The "system" label appears instead of the delete action in the manage-tags view.
+
+---
+
 ## How the provider system works
 
 ### Balances
 ```
 POST /api/portfolio/balance
-  → balance_service.fetch_balances(db_wallets)
+  → balance_service.fetch_balances(db_wallets, db)
     → asyncio.gather(_fetch_single(w) for w in wallets)   # return_exceptions=True
-      → _fetch_single(db_wallet):
+      → _fetch_single(db_wallet) → (BalanceResult|None, error_str|None, error_type|None):
           1. decrypt_credentials(db_wallet.credentials)
           2. Validate via Pydantic (ExchangeWalletSchema / ChainWalletSchema / ...)
           3. Create domain object (ExchangeWallet / ChainWallet / ...)
@@ -275,15 +383,29 @@ POST /api/portfolio/balance
           5. provider = wallet.provider()  # creates instance
           6. await provider.fetch_balance(wallet) → BalanceResult
           7. aclose() in finally
+          error_type: 'rate_limit'|'auth'|'network'|'unknown'
+
+    After gathering:
+    - per wallet: upsert BalanceSnapshot, compute PnL vs previous snapshot
+    - on error: write ProviderErrorLog row
+    - if any Owner-tagged wallets: write BalanceHistory row (aggregate usd_total)
+    - compute AggregatedBalance across all wallets
 ```
 
-### Transactions
+### Transactions (single)
 ```
 POST /api/portfolio/transactions
   → transaction_service.fetch_transactions(db_wallet)
     → dispatch by wallet_type / type_value
       → provider-specific async function (_binance_txs, _okx_txs, ...)
         → decrypt_credentials → returns list[Transaction] (max 5)
+```
+
+### Transactions (bulk)
+```
+POST /api/portfolio/transactions/bulk
+  → asyncio.gather(fetch_transactions(w) for w in wallets)   # parallel
+  → on error per wallet: ProviderErrorLog written, empty TransactionResponse returned
 ```
 
 ### BalanceResult
@@ -295,6 +417,16 @@ class BalanceResult:
     totals: dict | None    # {"USDT": "1234.56", "BTC": "0.5"}
     details: dict | None   # {"spot": {...}, "futures": {...}, "earn": {...}}
 ```
+
+### PnL (in BalanceResponse)
+```python
+class PnL(BaseModel):
+    prev: str        # previous stable total
+    abs: str         # absolute change e.g. "+120.34"
+    pct: str         # percent change e.g. "+4.32"
+    direction: str   # "up" | "down" | "flat"
+```
+PnL is computed per-wallet (vs `balance_snapshots.stable_total`) and aggregated across all wallets.
 
 ### Transaction
 ```python
@@ -381,6 +513,9 @@ ACCESS_TOKEN_EXPIRE_DAYS=30
 # CORS (empty = same-origin only)
 ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
+# Logging
+LOG_LEVEL=INFO   # DEBUG | INFO | WARNING | ERROR | CRITICAL
+
 # EVM RPC URLs (only needed without ANKR_KEY)
 ETHEREUM_RPC=   BSC_RPC=       POLYGON_RPC=   ARBITRUM_RPC=
 OPTIMISM_RPC=   BASE_RPC=      AVALANCHE_RPC= ZKSYNC_RPC=
@@ -389,13 +524,20 @@ LINEA_RPC=      SCROLL_RPC=    MANTLE_RPC=    BLAST_RPC=
 # Ankr — provides all ERC-20 token balances for all EVM chains (recommended)
 ANKR_KEY=
 
+# CoinMarketCap — top-100 token list for price cache (refreshed every 30 min)
+CMC_API_KEY=
+
 # Tron — TronGrid Pro key (optional, increases rate limits)
 TRON_KEY=
 TRON_RPC=
+
+# Solana
+SOLANA_RPC=
 ```
 
 **EVM balances**: `ANKR_KEY` → `ankr_getAccountBalance` (all tokens). Without it → `eth_getBalance` (native only).  
-**EVM transactions**: `ANKR_KEY` → `ankr_getTokenTransfers` → `ankr_getTransactionsByAddress` (fallback). Without it — empty list.
+**EVM transactions**: `ANKR_KEY` → `ankr_getTokenTransfers` → `ankr_getTransactionsByAddress` (fallback). Without it — empty list.  
+**Token prices**: `CMC_API_KEY` → top-100 list, then `get_usd_value()` fills in via Gate spot prices. Without it — only stablecoin totals shown.
 
 ---
 
@@ -407,14 +549,15 @@ Multiple self-contained HTML pages (inline CSS + JS). Shared design language. Al
 | File | Auth guard | Description |
 |------|-----------|-------------|
 | `index.html` | — | Landing page |
-| `app.html` | requireAuth | Main app: wallet list, balance check, transaction history |
-| `profile.html` | requireAuth | Profile: wallet stats, plan (Free/Pro), admin link for is_admin |
+| `app.html` | requireAuth | Main app: wallet list, balance check, transactions view |
+| `profile.html` | requireAuth | Profile: balance history chart, plan (Free/Pro), admin link |
 | `login.html` | redirectIfAuthed | Login form → JWT → redirect to app.html |
 | `register.html` | redirectIfAuthed | Register form + plan selection → JWT → redirect to app.html |
-| `pricing.html` | — | Free ($0, 3 wallets) and Pro ($9/mo) plans, FAQ |
+| `pricing.html` | — | Free ($0, 5 wallets) and Pro ($9/mo) plans, FAQ |
 | `checkout.html` | — | Card payment form (stub) |
 | `archive.html` | requireAuth | Archived wallets with restore/delete |
-| `admin.html` | requireAdmin | KPI grid, sparklines, plan donut, user table, activity |
+| `admin.html` | requireAdmin | KPI grid, sparklines, plan donut, user table, provider errors tab |
+| `admin-user.html` | requireAdmin | Per-user detail: stats, wallet list, last active |
 
 ### auth.js — API
 ```javascript
@@ -464,39 +607,71 @@ S = {
   walletType,             // 'exchange' | 'chain' | 'perpdex' | null — open accordion section
   addrPanelOpen,          // wallet_id with open address panel (or null)
   addressBook,            // { "0xabc...": { label, walletName } } — for tx highlighting
-  results, loadingBalance, lastChecked
+  view,                   // 'balances' | 'transactions' — current results panel view
+  results,                // balance results
+  txResults,              // transaction results (bulk)
+  loadingBalance,
+  loadingTx,
+  lastChecked,
+  _progress,              // 0–100 progress for loader
+  _progressLabel,         // "Checking balances..." etc.
+  _progressSub,           // sub-label e.g. "3 / 7"
+  _progressTimer,         // setInterval reference
 }
 
-api.get/post/del/put()       // Auth.apiFetch wrappers to /api/*
-init()                       // loads wallets + tags + options in parallel, then loadAddressBook()
-loadAddressBook()            // GET /api/wallets/all-addresses → builds S.addressBook
-renderAll()                  // renderTagFilters() + renderWallets()
-renderResults()              // shimmer → result cards with animateCounter()
-checkBalance()               // POST /api/portfolio/balance
-toggleTxPanel(walletId)      // expands tx accordion, lazy-fetch via POST /api/portfolio/transactions
-toggleAddrPanel(e, walletId) // opens inline address panel for wallet
-addWalletAddr(walletId)      // POST /api/wallets/{id}/addresses
+S_txMode = 'wallet' | 'time'   // transaction grouping mode (module-level, not in S)
+
+api.get/post/del/put()          // Auth.apiFetch wrappers to /api/*
+init()                          // loads wallets + tags + options in parallel, then loadAddressBook()
+loadAddressBook()               // GET /api/wallets/all-addresses → builds S.addressBook
+renderAll()                     // renderTagFilters() + renderWallets()
+renderResults()                 // shimmer → token grid sorted by USD desc, allocation %
+checkBalance()                  // POST /api/portfolio/balance → S.view = 'balances'
+checkTransactions()             // POST /api/portfolio/transactions/bulk → S.view = 'transactions'
+renderTxView()                  // renders tx panel with mode switcher (By wallet / By time)
+_txByWallet()                   // groups transactions by wallet, each wallet collapsible
+_txByTime()                     // merges all tx across wallets, sorted by timestamp desc, wallet badge on each row
+_txRow(tx, opts)                // renders single tx row with addr-match highlight
+_txIcon(type)                   // returns SVG icon for tx type
+
+toggleTxPanel(walletId)         // single-wallet tx accordion (inside balance view)
+toggleAddrPanel(e, walletId)    // opens inline address panel for wallet
+addWalletAddr(walletId)         // POST /api/wallets/{id}/addresses
 delWalletAddr(walletId, addrId) // DELETE /api/wallets/{id}/addresses/{addr_id}
-togglePanel()                // collapse/expand left wallet panel
-openAddWalletModal()         // checks limit → openUpgradePopup() or opens add modal
+togglePanel()                   // collapse/expand left wallet panel
+openAddWalletModal()            // checks limit → openUpgradePopup() or opens add modal
 
 // Add Wallet Modal — accordion
-selectWalletType(type)       // opens the correct accordion section (exchange/chain/perpdex)
+selectWalletType(type)          // opens the correct accordion section (exchange/chain/perpdex)
 renderProtoGrid(id, name, options, cb)  // renders protocol chip selectors instead of <select>
-_resetProtoChips()           // resets chip selection when modal opens
+_resetProtoChips()              // resets chip selection when modal opens
 
 // Tag dropdown — rendered as a fixed portal in document.body
-openTagDrop(e, id)           // positions dropdown via getBoundingClientRect(), appends to body
-tagDropdown(w, rect)         // creates #tag-drop-portal with position:fixed — avoids overflow clipping
-closeTagDrop()               // removes portal element
+openTagDrop(e, id)              // positions dropdown via getBoundingClientRect(), appends to body
+tagDropdown(w, rect)            // creates #tag-drop-portal with position:fixed — avoids overflow clipping
+closeTagDrop()                  // removes portal element
 
 // Confirm popup (universal)
 openConfirm({title, sub, name, onConfirm})  // custom popup instead of confirm()
 closeConfirm()
 
 // Free banner
-dismissFreeBanner()          // fade out + localStorage.setItem('avalant-banner-dismissed', '1')
+dismissFreeBanner()             // fade out + localStorage.setItem('avalant-banner-dismissed', '1')
 ```
+
+### Token grid in balance results
+- Stablecoins and other tokens merged into a single sorted grid
+- Sorted by USD value descending (largest allocation first)
+- Each cell shows: token name, amount, USD value, allocation % (top-right corner, `position:absolute`)
+- `document.title` updated to `"$12,345 · Avalant"` after balance check
+
+### Progress loader
+Shown during balance check (parallel) and bulk transaction fetch (sequential).
+- Large centered `%` counter with ease animation
+- Glowing progress bar
+- 12 floating dots with random `@keyframes fp-float` animations (CSS only, no wallet list)
+- Balance: smooth fake progress easing to 88%, jumps to 100% on completion
+- Transactions: real `N / total` progress (sequential fetch)
 
 ### Add Wallet Modal
 Three-section accordion (Exchange / Chain / Perp DEX). Clicking a section header opens it and closes the previous one. Protocol selection uses clickable chips (`proto-chip`) instead of `<select>`. Hidden `<input type="hidden" name="exchange_type|chain_type|perpdex_type">` holds the current selection. Accent color changes by type: yellow / teal / purple.
@@ -520,9 +695,27 @@ All destructive actions use `openConfirm()` instead of native `confirm()`:
 - Result cards: `border-left: 2px solid` with type color (yellow/teal/purple)
 - Balance counter: ease-out-quart animation from 0 to value
 - TX address match: `tx-row.addr-match` — green highlight + badge `⟶ Label`
-- Upgrade popup: on attempt to add 4th wallet, progress bar + link to /pricing.html
+- Upgrade popup: on attempt to add wallet over limit, progress bar + link to /pricing.html
 - Type accordion: `.acc-content` max-height 0→700px, cubic-bezier animation
 - Free banner: fixed below navbar (top: 60px), slides in from top on load, dismissible, persists via localStorage
+
+### profile.html — Balance History Chart
+Section order: Balance History chart → Subscription Plan → Wallet Breakdown → Danger Zone.
+
+```javascript
+loadHistory(days, btn)   // GET /api/portfolio/history?days=N → calls buildChart(data)
+buildChart(data)         // renders SVG line chart
+```
+
+SVG chart features:
+- `viewBox="0 0 600 160"` + `preserveAspectRatio="xMidYMid meet"` — mobile-responsive, no JS resize needed
+- Cubic bezier smooth curves: symmetric control points `cx = (x0+x1)/2`
+- `linearGradient` fill from `#1AFFAB22` to transparent
+- `clipPath` with `rx=6` — rounded corners
+- Y-axis labels (min/max), X-axis date labels, last-value label top-right
+- Dot markers when ≤30 data points
+- Empty state: "No history yet — tag wallets with ◈ Owner and check balance"
+- Range buttons: 7d / 30d / 90d
 
 ---
 
@@ -564,12 +757,24 @@ Allows attaching arbitrary on-chain addresses to any wallet with a custom label.
 
 ---
 
+## Admin panel (admin.html)
+
+Tabs: Overview · All Users · Provider Errors
+
+**Provider Errors tab** (`GET /api/admin/provider-errors?n=500`):
+- Window selector: 100/500/1000/5000/10000 last rows
+- KPI cards per error type (rate_limit / auth / network / unknown)
+- Table: provider, type, error counts with mini bar charts
+- Helps identify consistently failing providers
+
+**All Users table** includes `last_active_at` column (hidden on mobile).
+
+---
+
 ## Roadmap
 
-- [ ] **Balance caching** — save last result to DB, show on startup
-- [ ] **Solana provider** — `SOLANA_RPC` in settings already exists, provider not written
+- [ ] **Solana provider** — `SOLANA_RPC` in settings exists, `_solana_txs()` stub in transaction_service, balance provider not written
 - [ ] **Notifications** — alert if balance changes > N%
-- [ ] **Balance history** — save snapshots to DB, build charts
 - [ ] **Edit wallet** — currently only create and delete
 - [ ] **Export** — CSV/JSON balance export
 - [ ] **Search** — wallet search in left panel
@@ -602,3 +807,7 @@ Allows attaching arbitrary on-chain addresses to any wallet with a custom label.
 19. **`form.name.value`** — DO NOT use. `HTMLFormElement.name` is an IDL attribute that returns `""`. Always use `form.elements['name'].value`.
 20. **Tag dropdown** rendered as a portal in `document.body` with `position: fixed` — avoids being clipped by `overflow-y: auto` on the wallet list container.
 21. **`request_count`** incremented only on `/api/portfolio/balance` and `/api/portfolio/transactions` — tracks active wallet usage, not all API calls.
+22. **Lighter HTTP 400** = address not registered on the platform (normal case) → treated as empty balance, NOT logged as error. All other HTTP errors from Lighter → re-raised → ProviderErrorLog.
+23. **BalanceHistory** written only when Owner-tagged wallets are present in the fetch. Tags are global (no user_id), but wallets have user_id — history is per-user via wallet's user_id.
+24. **`_fetch_single` returns 3-tuple** `(BalanceResult|None, error_str|None, error_type|None)`. error_type used for ProviderErrorLog categorization.
+25. **Certbot volumes** in docker-compose — `certbot_certs` mounted at `/etc/letsencrypt` in certbot and `/etc/nginx/certs` in nginx. Cert paths in nginx.conf: `/etc/nginx/certs/live/yourdomain.com/fullchain.pem`.
