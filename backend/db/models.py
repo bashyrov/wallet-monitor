@@ -24,6 +24,7 @@ class User(Base):
     is_admin = Column(Boolean, nullable=False, default=False)
     is_blocked = Column(Boolean, nullable=False, default=False)
     request_count = Column(Integer, nullable=False, default=0)
+    last_active_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
@@ -69,6 +70,17 @@ class BalanceSnapshot(Base):
     totals = Column(JSON, nullable=False)         # {"USDT": "1234.56", "BTC": "0.5"}
     stable_total = Column(Float, nullable=False, default=0.0)  # pre-computed USD stable sum
     snapshot_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProviderErrorLog(Base):
+    """One row per failed provider fetch — used for error analytics."""
+    __tablename__ = "provider_error_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wallet_type = Column(String, nullable=False)   # exchange | chain | perpdex
+    type_value  = Column(String, nullable=False)   # binance | ethereum | hyperliquid
+    error_type  = Column(String, nullable=False)   # rate_limit | auth | network | unknown
+    created_at  = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class Tag(Base):
