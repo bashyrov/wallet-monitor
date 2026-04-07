@@ -83,6 +83,16 @@ class ProviderErrorLog(Base):
     created_at  = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class BalanceHistory(Base):
+    """Aggregate USD snapshot for Owner-tagged wallets — used for the portfolio chart."""
+    __tablename__ = "balance_history"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    user_id     = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    usd_total   = Column(Float,   nullable=False)
+    snapshot_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class Tag(Base):
     __tablename__ = "tags"
 
