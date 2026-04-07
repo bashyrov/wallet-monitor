@@ -44,11 +44,27 @@ def run_migrations():
     command.upgrade(alembic_cfg, "head")
 
 
+def _ensure_system_tags() -> None:
+    from backend.db.base import SessionLocal
+    from backend.db.models import Tag
+    db = SessionLocal()
+    try:
+        if not db.query(Tag).filter(Tag.name == "Owner").first():
+            db.add(Tag(name="Owner", color="#1AFFAB"))
+            db.commit()
+            logger.info("Created system tag: Owner")
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _check_security()
     logger.info("Starting Avalant")
     run_migrations()
+    _ensure_system_tags()
     logger.info("Migrations applied — server ready")
 
     from backend.services.price_service import start_price_loop, stop_price_loop
