@@ -1668,11 +1668,11 @@
 
 <!-- ══ TOPBAR ══════════════════════════════════════════════════════════ -->
 <header class="topbar">
-  <a href="/index.html" class="brand">
+  <a href="/" class="brand">
     avalant<span class="brand-cursor">_</span>
   </a>
   <nav class="topbar-nav">
-    <a href="/app.html" class="nav-lnk active">
+    <a href="/app" class="nav-lnk active">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
         <rect x="1" y="6" width="3" height="5" rx="0.7" fill="currentColor" opacity=".5"/>
         <rect x="4.5" y="3.5" width="3" height="7.5" rx="0.7" fill="currentColor" opacity=".75"/>
@@ -1680,18 +1680,18 @@
       </svg>
       Portfolio
     </a>
-    <a href="/archive.html" class="nav-lnk">
+    <a href="/archive" class="nav-lnk">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
       Archive
     </a>
-    <a href="/pricing.html" class="nav-lnk">
+    <a href="/pricing" class="nav-lnk">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h3.8l5 5-3.8 3.8-5-5V1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.9" fill="currentColor"/></svg>
       Pricing
     </a>
   </nav>
   <div class="topbar-right">
     <button class="btn btn-primary btn-sm" onclick="openAddWalletModal()">+ Add Wallet</button>
-    <a href="/profile.html" class="avatar-btn" title="Profile" id="nav-avatar">U</a>
+    <a href="/profile" class="avatar-btn" title="Profile" id="nav-avatar">U</a>
   </div>
 </header>
 
@@ -1699,7 +1699,7 @@
 <div class="free-banner" id="free-banner">
   <span class="free-banner-dot"></span>
   <span>Free plan · No card needed</span>
-  <a href="/pricing.html" class="free-banner-upgrade">Upgrade →</a>
+  <a href="/pricing" class="free-banner-upgrade">Upgrade →</a>
   <button class="free-banner-close" onclick="dismissFreeBanner()" aria-label="Dismiss">✕</button>
 </div>
 <script>
@@ -2012,7 +2012,7 @@
         </div>
         <span class="upgrade-limit-val" id="upgrade-val">5/5</span>
       </div>
-      <a href="/pricing.html" class="upgrade-cta">
+      <a href="/pricing" class="upgrade-cta">
         View pricing plans
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
@@ -2037,7 +2037,7 @@ function dismissBanner() {
   if (b) b.style.display = 'none';
   localStorage.setItem('promo_dismissed', '1');
 }
-Auth.requireAuth('/login.html');
+Auth.requireAuth('/login');
 
 // ═══════════════════════════════════════════════════
 //  PLAN LIMITS
@@ -2082,7 +2082,7 @@ function _authHeaders(extra = {}) {
   return { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}), ...extra };
 }
 function _handleUnauth(r) {
-  if (r.status === 401) { Auth.logout('/login.html'); throw new Error('Session expired'); }
+  if (r.status === 401) { Auth.logout('/login'); throw new Error('Session expired'); }
 }
 
 const api = {
@@ -3373,19 +3373,19 @@ init();
 </script>
 
 <nav class="bottom-nav">
-  <a href="/app.html" class="bnav-item active">
+  <a href="/app" class="bnav-item active">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
     Portfolio
   </a>
-  <a href="/archive.html" class="bnav-item">
+  <a href="/archive" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="7" width="16" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 7l2.5-4h11L18 7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Archive
   </a>
-  <a href="/pricing.html" class="bnav-item">
+  <a href="/pricing" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
     Pricing
   </a>
-  <a href="/profile.html" class="bnav-item">
+  <a href="/profile" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Profile
   </a>

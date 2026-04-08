@@ -443,11 +443,11 @@
 <div class="cursor-glow-spot"></div>
 
 <header class="topbar">
-  <a href="/index.html" class="brand">
+  <a href="/" class="brand">
     avalant<span class="brand-cursor">_</span>
   </a>
   <nav class="topbar-nav">
-    <a href="/app.html" class="nav-lnk">
+    <a href="/app" class="nav-lnk">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
         <rect x="1" y="6" width="3" height="5" rx="0.7" fill="currentColor" opacity=".5"/>
         <rect x="4.5" y="3.5" width="3" height="7.5" rx="0.7" fill="currentColor" opacity=".75"/>
@@ -455,11 +455,11 @@
       </svg>
       Portfolio
     </a>
-    <a href="/archive.html" class="nav-lnk">
+    <a href="/archive" class="nav-lnk">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
       Archive
     </a>
-    <a href="/pricing.html" class="nav-lnk active">
+    <a href="/pricing" class="nav-lnk active">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
         <path d="M1.5 1.5h3.8l5 5-3.8 3.8-5-5V1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
         <circle cx="4" cy="4" r="0.9" fill="currentColor"/>
@@ -468,7 +468,7 @@
     </a>
   </nav>
   <div class="topbar-right">
-    <a href="/app.html" class="btn btn-primary btn-sm">Open App</a>
+    <a href="/app" class="btn btn-primary btn-sm">Open App</a>
   </div>
 </header>
 
@@ -530,7 +530,7 @@
         <li class="plan-feature"><span class="feat-icon no">–</span><span style="color:var(--text4)">CSV export</span></li>
         <li class="plan-feature"><span class="feat-icon no">–</span><span style="color:var(--text4)">API access</span></li>
       </ul>
-      <a href="/app.html" class="plan-btn free-btn">
+      <a href="/app" class="plan-btn free-btn">
         Get started free
       </a>
     </div>
@@ -590,19 +590,19 @@
 </div>
 
 <nav class="bottom-nav">
-  <a href="/app.html" class="bnav-item">
+  <a href="/app" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
     Portfolio
   </a>
-  <a href="/archive.html" class="bnav-item">
+  <a href="/archive" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="M3 7v9a1 1 0 001 1h12a1 1 0 001-1V7" stroke="currentColor" stroke-width="1.5"/><path d="M8 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Archive
   </a>
-  <a href="/pricing.html" class="bnav-item active">
+  <a href="/pricing" class="bnav-item active">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
     Pricing
   </a>
-  <a href="/profile.html" class="bnav-item">
+  <a href="/profile" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Profile
   </a>
@@ -621,7 +621,7 @@ function dismissBanner() {
   localStorage.setItem('promo_dismissed', '1');
 }
 function goCheckout(plan) {
-  window.location.href = `/checkout.html?plan=${plan}`;
+  window.location.href = `/checkout?plan=${plan}`;
 }
 
 (function () {

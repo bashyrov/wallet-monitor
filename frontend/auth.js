@@ -26,16 +26,16 @@ const Auth = (() => {
   function isLoggedIn() { return !!getToken(); }
 
   /** Redirect to login if not authenticated. */
-  function requireAuth(redirectTo = '/login.html') {
+  function requireAuth(redirectTo = '/login') {
     if (!isLoggedIn()) {
       window.location.replace(redirectTo + '?next=' + encodeURIComponent(window.location.pathname));
     }
   }
 
   /** Redirect to app if authenticated but not admin. */
-  function requireAdmin(redirectTo = '/app.html') {
+  function requireAdmin(redirectTo = '/app') {
     if (!isLoggedIn()) {
-      window.location.replace('/login.html?next=' + encodeURIComponent(window.location.pathname));
+      window.location.replace('/login?next=' + encodeURIComponent(window.location.pathname));
       return;
     }
     const user = getUser();
@@ -51,14 +51,14 @@ const Auth = (() => {
   }
 
   /** If already logged in, redirect away from login/register pages. */
-  function redirectIfAuthed(redirectTo = '/app.html') {
+  function redirectIfAuthed(redirectTo = '/app') {
     if (isLoggedIn()) {
       window.location.replace(redirectTo);
     }
   }
 
   /** Logout: clear session + redirect. */
-  function logout(redirectTo = '/login.html') {
+  function logout(redirectTo = '/login') {
     clearSession();
     window.location.replace(redirectTo);
   }
@@ -71,7 +71,7 @@ const Auth = (() => {
     const resp = await fetch('/api' + path, { ...opts, headers });
     if (resp.status === 401) {
       clearSession();
-      window.location.replace('/login.html');
+      window.location.replace('/login');
       throw new Error('Session expired');
     }
     return resp;
