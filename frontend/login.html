@@ -486,7 +486,7 @@ async function handleLogin(e) {
     const user = await meResp.json();
     Auth.setSession(data.access_token, user);
     const params = new URLSearchParams(window.location.search);
-    window.location.replace(params.get('next') || '/app');
+    window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
   } catch (err) {
     errEl.textContent = 'Network error — is the server running?';
     errEl.style.display = 'block';
