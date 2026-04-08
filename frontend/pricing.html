@@ -447,7 +447,7 @@
     avalant<span class="brand-cursor">_</span>
   </a>
   <nav class="topbar-nav">
-    <a href="/app" class="nav-lnk">
+    <a href="/app" class="nav-lnk" id="tnav-app" style="display:none">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
         <rect x="1" y="6" width="3" height="5" rx="0.7" fill="currentColor" opacity=".5"/>
         <rect x="4.5" y="3.5" width="3" height="7.5" rx="0.7" fill="currentColor" opacity=".75"/>
@@ -455,7 +455,7 @@
       </svg>
       Portfolio
     </a>
-    <a href="/archive" class="nav-lnk">
+    <a href="/archive" class="nav-lnk" id="tnav-archive" style="display:none">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
       Archive
     </a>
@@ -467,8 +467,8 @@
       Pricing
     </a>
   </nav>
-  <div class="topbar-right">
-    <a href="/app" class="btn btn-primary btn-sm">Open App</a>
+  <div class="topbar-right" id="topbar-right">
+    <a href="/login" class="btn btn-primary btn-sm" id="topbar-cta">Sign In</a>
   </div>
 </header>
 
@@ -590,11 +590,11 @@
 </div>
 
 <nav class="bottom-nav">
-  <a href="/app" class="bnav-item">
+  <a href="/app" class="bnav-item" id="bnav-app" style="display:none">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
     Portfolio
   </a>
-  <a href="/archive" class="bnav-item">
+  <a href="/archive" class="bnav-item" id="bnav-archive" style="display:none">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="M3 7v9a1 1 0 001 1h12a1 1 0 001-1V7" stroke="currentColor" stroke-width="1.5"/><path d="M8 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Archive
   </a>
@@ -602,13 +602,24 @@
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
     Pricing
   </a>
-  <a href="/profile" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    Profile
+  <a href="/login" class="bnav-item" id="bnav-auth">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M13 3h4a1 1 0 011 1v12a1 1 0 01-1 1h-4M8 14l4-4-4-4M2 10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Sign In
   </a>
 </nav>
 
+<script src="/auth.js"></script>
 <script>
+(function() {
+  if (Auth.isLoggedIn()) {
+    var show = ['tnav-app','tnav-archive','bnav-app','bnav-archive'];
+    show.forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display=''; });
+    var cta = document.getElementById('topbar-cta');
+    if (cta) { cta.href='/app'; cta.textContent='Open App'; }
+    var auth = document.getElementById('bnav-auth');
+    if (auth) { auth.href='/profile'; auth.innerHTML='<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Profile'; }
+  }
+})();
 (function() {
   if (localStorage.getItem('promo_dismissed')) {
     var b = document.getElementById('promo-banner');
