@@ -125,18 +125,35 @@ async def security_headers(request: Request, call_next) -> Response:
 from backend.api.v1.router import router as api_router  # noqa: E402
 app.include_router(api_router)
 
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.exceptions import HTTPException
+from sqlalchemy.orm import Session
+from backend.db.base import get_db
+from fastapi import Depends
 import os
 
+_AUTH_PAGES  = {"app", "profile", "archive"}
+_ADMIN_PAGES = {"admin", "admin-user"}
+
 @app.get("/{page:path}", include_in_schema=False)
-async def serve_page(page: str):
+async def serve_page(page: str, request: Request, db: Session = Depends(get_db)):
     if page.startswith("api") or "." in page.split("/")[-1]:
         raise HTTPException(status_code=404)
-    if not page:
-        filepath = "frontend/index.html"
-    else:
-        filepath = os.path.join("frontend", page + ".html")
+
+    base = page.split("/")[0] if page else ""
+    filepath = "frontend/index.html" if not page else os.path.join("frontend", page + ".html")
+
+    if base in _AUTH_PAGES or base in _ADMIN_PAGES:
+        from backend.services.auth_service import decode_token, get_user_by_id
+        token = request.cookies.get("session")
+        user_id = decode_token(token) if token else None
+        if not user_id:
+            return RedirectResponse(f"/login?next=/{page}", status_code=302)
+        if base in _ADMIN_PAGES:
+            user = get_user_by_id(db, user_id)
+            if not user or not user.is_admin:
+                return RedirectResponse("/app", status_code=302)
+
     if os.path.exists(filepath):
         return FileResponse(
             filepath,

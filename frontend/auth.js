@@ -57,10 +57,12 @@ const Auth = (() => {
     }
   }
 
-  /** Logout: clear session + redirect. */
+  /** Logout: clear session + clear server cookie + redirect. */
   function logout(redirectTo = '/login') {
     clearSession();
-    window.location.replace(redirectTo);
+    fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
+      window.location.replace(redirectTo);
+    });
   }
 
   /** Base fetch wrapper that adds Authorization header. */

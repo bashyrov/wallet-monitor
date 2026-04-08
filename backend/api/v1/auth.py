@@ -3,7 +3,8 @@ import time
 from collections import defaultdict
 from threading import Lock
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_user
@@ -59,8 +60,20 @@ def _get_ip(request: Request) -> str:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+def _set_session_cookie(response: Response, token: str) -> None:
+    from settings import settings
+    response.set_cookie(
+        key="session",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
+        path="/",
+    )
+
+
 @router.post("/register", response_model=Token, status_code=201)
-def register(body: UserRegister, request: Request, db: Session = Depends(get_db)):
+def register(body: UserRegister, request: Request, response: Response, db: Session = Depends(get_db)):
     ip = _get_ip(request)
     _check_rate_limit(ip)
     if svc.get_user_by_email(db, body.email):
@@ -74,25 +87,34 @@ def register(body: UserRegister, request: Request, db: Session = Depends(get_db)
     user = svc.register_user(db, body.username, body.email, body.password)
     _clear_attempts(ip)
     logger.info("New user registered: %s (id=%d, admin=%s)", user.username, user.id, user.is_admin)
-    return Token(access_token=svc.create_token(user.id))
+    token = svc.create_token(user.id)
+    _set_session_cookie(response, token)
+    return Token(access_token=token)
 
 
 @router.post("/login", response_model=Token)
-def login(body: UserLogin, request: Request, db: Session = Depends(get_db)):
+def login(body: UserLogin, request: Request, response: Response, db: Session = Depends(get_db)):
     ip = _get_ip(request)
     _check_rate_limit(ip)
     user = svc.authenticate_user(db, body.login, body.password)
     if not user:
         _record_attempt(ip)
         logger.warning("Failed login attempt for %r from IP %s", body.login, ip)
-        # Return the same message whether user exists or not (no enumeration)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if getattr(user, 'is_blocked', False):
         logger.warning("Blocked user login attempt: %s from IP %s", user.username, ip)
         raise HTTPException(status_code=403, detail="Your account has been blocked. Please contact support.")
     _clear_attempts(ip)
     logger.info("User logged in: %s (id=%d) from IP %s", user.username, user.id, ip)
-    return Token(access_token=svc.create_token(user.id))
+    token = svc.create_token(user.id)
+    _set_session_cookie(response, token)
+    return Token(access_token=token)
+
+
+@router.post("/logout")
+def logout(response: Response):
+    response.delete_cookie("session", path="/")
+    return {"ok": True}
 
 
 @router.get("/me", response_model=UserOut)
