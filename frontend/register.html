@@ -352,29 +352,6 @@
   </div>
 </header>
 
-<!-- ── Free Banner ── -->
-<div class="free-banner" id="free-banner">
-  <span class="free-banner-dot"></span>
-  Use all features for free — <em>no credit card required</em>
-  <button class="free-banner-close" onclick="dismissFreeBanner()" aria-label="Dismiss">✕</button>
-</div>
-<script>
-  (function(){
-    if(localStorage.getItem('avalant-banner-dismissed')){
-      var b=document.getElementById('free-banner');
-      if(b) b.style.display='none';
-    }
-  })();
-  function dismissFreeBanner(){
-    var b=document.getElementById('free-banner');
-    if(!b) return;
-    b.style.transition='opacity 0.2s, transform 0.2s';
-    b.style.opacity='0';
-    b.style.transform='translateY(-14px)';
-    setTimeout(function(){ b && b.remove(); }, 220);
-    localStorage.setItem('avalant-banner-dismissed','1');
-  }
-</script>
 
 
 <div class="page-center">
