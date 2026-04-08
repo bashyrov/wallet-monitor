@@ -125,5 +125,19 @@ async def security_headers(request: Request, call_next) -> Response:
 from backend.api.v1.router import router as api_router  # noqa: E402
 app.include_router(api_router)
 
+from fastapi.responses import FileResponse
+from fastapi.exceptions import HTTPException
+import os
+
+@app.get("/{page:path}", include_in_schema=False)
+async def serve_page(page: str):
+    # Пропускаем API и файлы со статикой
+    if page.startswith("api") or "." in page.split("/")[-1]:
+        raise HTTPException(status_code=404)
+    filepath = os.path.join("frontend", page + ".html")
+    if os.path.exists(filepath):
+        return FileResponse(filepath, media_type="text/html")
+    raise HTTPException(status_code=404)
+
 # ── Static frontend ───────────────────────────────────────────────────────────
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
