@@ -1153,6 +1153,7 @@
       font-size: 11px; font-weight: 700; letter-spacing: 1.4px;
       text-transform: uppercase; color: var(--text2);
     }
+    .mobile-collapse-btn { display: none; }
     .type-pills { display: flex; gap: 6px; margin-left: auto; }
     .type-pill {
       display: inline-flex; align-items: center; gap: 3px;
@@ -1518,6 +1519,30 @@
       /* Wallet actions always visible on touch */
       .wallet-actions { opacity: 1; }
 
+      /* Hide last-checked and overflow fix on mobile */
+      .last-checked { display: none; }
+      .res-panel-hdr { flex-wrap: wrap; gap: 6px; }
+      .sel-badge { font-size: 10px; }
+
+      /* Mobile collapse button */
+      .mobile-collapse-btn {
+        display: flex; align-items: center; justify-content: center;
+        background: none; border: 1px solid var(--border);
+        border-radius: 6px; padding: 3px 6px; cursor: pointer;
+        color: var(--text3); transition: color 0.15s, border-color 0.15s;
+        margin-left: auto; flex-shrink: 0;
+      }
+      .mobile-collapse-btn:hover { color: var(--text); border-color: var(--text3); }
+      .mobile-collapse-icon-up { transform: rotate(180deg); }
+
+      /* Collapsible wallet content */
+      .wallet-collapsible {
+        overflow: hidden;
+        transition: max-height 0.3s cubic-bezier(0.16,1,0.3,1);
+        max-height: 2000px;
+      }
+      .wallet-collapsible.collapsed { max-height: 0; }
+
       /* Hide panel toggle on mobile */
       .panel-toggle { display: none; }
 
@@ -1707,7 +1732,11 @@
     <div class="panel-hdr">
       <span class="panel-hdr-title">Wallets</span>
       <div class="type-pills" id="type-pills"></div>
+      <button class="mobile-collapse-btn" id="mobile-collapse-btn" onclick="toggleMobileWalletList()" title="Collapse wallet list">
+        <svg id="mobile-collapse-icon" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
     </div>
+    <div class="wallet-collapsible" id="wallet-collapsible">
     <div class="tag-strip" id="tag-filters">
       <button class="tag-chip active-all" onclick="setTagFilter(null)">All</button>
       <div class="tag-strip-wrap" id="tag-manage-wrap">
@@ -1746,6 +1775,7 @@
     </div>
     <div class="wallet-list" id="wallet-list">
       <div class="empty"><span class="empty-icon">◈</span>Loading wallets...</div>
+    </div>
     </div>
     <div class="panel-check-footer" style="display:flex;flex-direction:column;gap:6px">
       <button class="btn btn-primary" id="btn-check-balance" onclick="checkBalance()">
@@ -3242,6 +3272,14 @@ function togglePanel() {
   const btn   = document.getElementById('panel-toggle');
   panel.classList.toggle('collapsed');
   btn.classList.toggle('collapsed');
+}
+
+function toggleMobileWalletList() {
+  const col  = document.getElementById('wallet-collapsible');
+  const icon = document.getElementById('mobile-collapse-icon');
+  const open = !col.classList.contains('collapsed');
+  col.classList.toggle('collapsed', open);
+  icon.style.transform = open ? 'rotate(180deg)' : '';
 }
 
 // ═══════════════════════════════════════════════════
