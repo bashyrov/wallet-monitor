@@ -225,6 +225,15 @@
     }
     .form-input::placeholder { color: var(--text4); }
 
+    .pw-wrap { position: relative; }
+    .pw-wrap .form-input { padding-right: 40px; }
+    .pw-toggle {
+      position: absolute; right: 11px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; padding: 2px;
+      color: var(--text3); display: flex; align-items: center;
+    }
+    .pw-toggle:hover { color: var(--text); }
+
     .form-row {
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 6px;
@@ -390,7 +399,12 @@
       <div class="form-row">
         <label class="form-label" style="margin:0">Password</label>
       </div>
-      <input id="f-password" class="form-input" type="password" placeholder="••••••••" autocomplete="current-password" required>
+      <div class="pw-wrap">
+        <input id="f-password" class="form-input" type="password" placeholder="••••••••" autocomplete="current-password" required>
+        <button type="button" class="pw-toggle" onclick="togglePw('f-password',this)" tabindex="-1" aria-label="Show password">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
     </div>
 
     <div id="login-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--red-dim);border-radius:7px;"></div>
@@ -426,6 +440,15 @@
 <script src="/auth.js"></script>
 <script>
 Auth.redirectIfAuthed('/app');
+
+function togglePw(id, btn) {
+  const inp = document.getElementById(id);
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  btn.innerHTML = show
+    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
 
 async function handleLogin(e) {
   e.preventDefault();
