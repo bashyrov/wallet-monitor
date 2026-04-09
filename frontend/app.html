@@ -2862,12 +2862,13 @@ function _txRow(tx, walletBadge) {
   let addrLabel = '';
   let addrLine = '';
   if (addrMatch) {
-    // Show "WalletName · AddrLabel" if label differs from walletName, else just walletName
-    const parts = [];
-    if (addrMatch.walletName) parts.push(addrMatch.walletName);
-    if (addrMatch.label && addrMatch.label !== addrMatch.walletName) parts.push(addrMatch.label);
-    const display = parts.join(' · ');
-    addrLabel = `<span style="font-size:10px;color:var(--green);margin-left:6px;font-weight:500">⟶ ${display}</span>`;
+    const color = _WTYPE_COLOR[addrMatch.walletType] || 'var(--text3)';
+    const bg    = _WTYPE_BG[addrMatch.walletType]    || 'rgba(100,100,100,0.1)';
+    const nameBadge = `<span class="tx-wallet-badge" style="background:${bg};color:${color}">${addrMatch.walletName}</span>`;
+    const suffix = addrMatch.label && addrMatch.label !== addrMatch.walletName
+      ? `<span style="font-size:10px;color:var(--green);font-weight:500"> · ${addrMatch.label}</span>`
+      : '';
+    addrLabel = `<span style="margin-left:6px;display:inline-flex;align-items:center;gap:2px">⟶ ${nameBadge}${suffix}</span>`;
     addrLine = `<div class="tx-bottom" style="color:var(--text4)">${tx.address.slice(0,14)}…${tx.address.slice(-6)}</div>`;
   } else if (tx.address) {
     addrLine = `<div class="tx-bottom">${tx.address.slice(0,14)}…${tx.address.slice(-6)}</div>`;
