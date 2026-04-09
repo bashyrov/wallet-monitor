@@ -23,6 +23,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_admin = Column(Boolean, nullable=False, default=False)
     is_blocked = Column(Boolean, nullable=False, default=False)
+    plan = Column(String, nullable=False, default="basic")  # basic | pro | platinum | enterprise | unlim
+    plan_expires_at = Column(DateTime, nullable=True)
     request_count = Column(Integer, nullable=False, default=0)
     last_active_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

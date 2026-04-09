@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from backend.crypto import encrypt_credentials, decrypt_credentials
 from backend.db.models import Wallet, Tag, WalletAddress
 from backend.domain.errors import WalletNotFound, TagNotFound, TagAlreadyExists, TagLimitReached
+from backend.plans import wallet_limit
 from backend.schemas.common import WalletCreate, WalletOut, TagCreate, TagUpdate, TagOut, WalletAddressCreate, WalletAddressOut
 
 
@@ -67,37 +68,36 @@ def archive_wallet(db: Session, wallet_id: int, user_id: int) -> WalletOut:
     return wallet_to_out(wallet)
 
 
-def unarchive_wallet(db: Session, wallet_id: int, user_id: int, is_admin: bool = False) -> WalletOut:
+def unarchive_wallet(db: Session, wallet_id: int, user_id: int, plan: str = "basic") -> WalletOut:
     wallet = db.query(Wallet).filter(
         Wallet.id == wallet_id, Wallet.user_id == user_id
     ).first()
     if not wallet:
         raise WalletNotFound(wallet_id)
-    if not is_admin:
+    limit = wallet_limit(plan)
+    if limit is not None:
         active_count = db.query(Wallet).filter(
             Wallet.user_id == user_id,
             Wallet.is_archived == False,
         ).count()
-        if active_count >= FREE_WALLET_LIMIT:
+        if active_count >= limit:
             from backend.domain.errors import WalletLimitReached
-            raise WalletLimitReached(FREE_WALLET_LIMIT)
+            raise WalletLimitReached(limit)
     wallet.is_archived = False
     db.commit()
     db.refresh(wallet)
     return wallet_to_out(wallet)
 
 
-FREE_WALLET_LIMIT = 4
-
-
-def create_wallet(db: Session, body: WalletCreate, user_id: int, is_admin: bool = False) -> WalletOut:
-    if not is_admin:
+def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "basic") -> WalletOut:
+    limit = wallet_limit(plan)
+    if limit is not None:
         count = db.query(Wallet).filter(
             Wallet.user_id == user_id, Wallet.is_archived == False
         ).count()
-        if count >= FREE_WALLET_LIMIT:
+        if count >= limit:
             from backend.domain.errors import WalletLimitReached
-            raise WalletLimitReached(FREE_WALLET_LIMIT)
+            raise WalletLimitReached(limit)
 
     if body.wallet_type == "exchange" or (body.wallet_type == "perpdex" and body.type_value == "aster"):
         raw_creds = {

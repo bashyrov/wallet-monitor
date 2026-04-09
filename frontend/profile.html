@@ -587,13 +587,13 @@
         <span class="section-title">Subscription Plan</span>
       </div>
       <div class="section-body">
-        <div class="plan-hero">
+        <div class="plan-hero" id="plan-hero">
           <div>
-            <div class="plan-badge">Free</div>
+            <div class="plan-badge" id="plan-badge-label">—</div>
           </div>
           <div>
-            <div class="plan-name">Free Plan</div>
-            <div class="plan-desc">Up to 5 wallets · API access</div>
+            <div class="plan-name" id="plan-name-text">Loading…</div>
+            <div class="plan-desc" id="plan-desc-text"></div>
           </div>
         </div>
 
@@ -603,15 +603,15 @@
             <div class="plan-limit-bar-wrap">
               <div class="plan-limit-bar" id="limit-bar" style="width:0%"></div>
             </div>
-            <span class="plan-limit-val" id="limit-val">0 / 5</span>
+            <span class="plan-limit-val" id="limit-val">0 / —</span>
           </div>
         </div>
 
-        <div class="plan-pro-card">
+        <div class="plan-pro-card" id="plan-upgrade-card">
           <span class="plan-pro-badge">Pro</span>
           <div class="plan-pro-info">
-            <div class="plan-pro-name">Pro Plan</div>
-            <div class="plan-pro-desc">Unlimited wallets · History · Alerts · Export</div>
+            <div class="plan-pro-name">Upgrade your plan</div>
+            <div class="plan-pro-desc">More wallets · History · Priority support</div>
           </div>
           <a href="/pricing" style="padding:0 14px;height:30px;border-radius:8px;background:var(--green);color:#09090B;font-size:12px;font-weight:500;text-decoration:none;display:flex;align-items:center;transition:all .15s;white-space:nowrap;" onmouseover="this.style.background='#00E89A'" onmouseout="this.style.background='var(--green)'">Upgrade →</a>
         </div>
@@ -692,7 +692,7 @@ Auth.requireAuth('/login');
     const adminRow = document.getElementById('admin-row');
     if (adminRow) adminRow.style.display = u.is_admin ? '' : 'none';
   }
-  // Fetch fresh user data for created_at
+  // Fetch fresh user data for created_at + plan
   try {
     const res = await Auth.apiFetch('/auth/me');
     if (res.ok) {
@@ -702,9 +702,48 @@ Auth.requireAuth('/login');
         const d = new Date(me.created_at);
         joinedEl.textContent = 'Member since ' + d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       }
+      _renderPlanCard(me);
     }
   } catch(e) {}
 })();
+
+const _PLAN_INFO = {
+  basic:      { label: 'Basic',      name: 'Basic Plan',      limit: 4,    desc: '4 wallets · Free' },
+  pro:        { label: 'Pro',        name: 'Pro Plan',        limit: 30,   desc: '30 wallets · $5/mo' },
+  platinum:   { label: 'Platinum',   name: 'Platinum Plan',   limit: 70,   desc: '70 wallets · $10/mo' },
+  enterprise: { label: 'Enterprise', name: 'Enterprise Plan', limit: null, desc: 'Custom wallets · Custom pricing' },
+  unlim:      { label: 'Unlimited',  name: 'Unlimited',       limit: null, desc: 'No limits · Admin' },
+};
+
+function _renderPlanCard(me) {
+  const plan = me.plan || 'basic';
+  const info = _PLAN_INFO[plan] || _PLAN_INFO.basic;
+  const badgeEl = document.getElementById('plan-badge-label');
+  const nameEl  = document.getElementById('plan-name-text');
+  const descEl  = document.getElementById('plan-desc-text');
+  const planColors = { basic:'#676B7E', pro:'#3B82F6', platinum:'#925BD6', enterprise:'#E5C07B', unlim:'#1AFFAB' };
+  const planBgs    = { basic:'rgba(103,107,126,0.1)', pro:'rgba(59,130,246,0.1)', platinum:'rgba(146,91,214,0.1)', enterprise:'rgba(229,192,123,0.1)', unlim:'rgba(26,255,171,0.1)' };
+  if (badgeEl) {
+    badgeEl.textContent = info.label;
+    badgeEl.style.color = planColors[plan] || planColors.basic;
+    badgeEl.style.background = planBgs[plan] || planBgs.basic;
+    badgeEl.style.border = `1px solid ${(planColors[plan] || planColors.basic)}33`;
+  }
+  if (nameEl)  nameEl.textContent  = info.name;
+  if (descEl) {
+    let d = info.desc;
+    if (me.plan_expires_at) {
+      const exp = new Date(me.plan_expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      d += ` · Paid until ${exp}`;
+    }
+    descEl.textContent = d;
+  }
+  // Hide upgrade card if unlimited/enterprise/unlim
+  const upgradeCard = document.getElementById('plan-upgrade-card');
+  if (upgradeCard) upgradeCard.style.display = (plan === 'unlim' || plan === 'enterprise') ? 'none' : '';
+  // Store limit for use in loadProfile
+  window._planLimit = info.limit;
+}
 
 async function loadProfile() {
   try {
@@ -724,10 +763,10 @@ async function loadProfile() {
     animNum('stat-px', px);
 
     // Plan usage bar
-    const FREE_LIMIT = 5;
-    const pct = Math.min((total / FREE_LIMIT) * 100, 100);
+    const planLimit = window._planLimit != null ? window._planLimit : null;
+    const pct = planLimit ? Math.min((total / planLimit) * 100, 100) : 0;
     document.getElementById('limit-bar').style.width = pct + '%';
-    document.getElementById('limit-val').textContent = `${total} / ${FREE_LIMIT}`;
+    document.getElementById('limit-val').textContent = planLimit ? `${total} / ${planLimit}` : `${total} / ∞`;
 
     // Breakdown
     const bEl = document.getElementById('wallet-breakdown');

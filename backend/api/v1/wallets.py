@@ -86,7 +86,7 @@ def create_wallet(
         raise HTTPException(status_code=422, detail="Invalid wallet_type")
 
     try:
-        return svc.create_wallet(db, body, current_user.id, is_admin=current_user.is_admin)
+        return svc.create_wallet(db, body, current_user.id, plan=getattr(current_user, 'plan', 'basic'))
     except WalletLimitReached as e:
         raise HTTPException(status_code=402, detail=str(e))
 
@@ -118,7 +118,7 @@ def unarchive_wallet(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        return svc.unarchive_wallet(db, wallet_id, current_user.id, is_admin=current_user.is_admin)
+        return svc.unarchive_wallet(db, wallet_id, current_user.id, plan=getattr(current_user, 'plan', 'basic'))
     except WalletNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     except WalletLimitReached as e:

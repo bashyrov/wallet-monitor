@@ -4,6 +4,7 @@ from sqlalchemy import func
 
 from backend.api.deps import get_admin_user, get_db
 from backend.db.models import User, Wallet, Tag, ProviderErrorLog
+from backend.plans import PLAN_LIMITS, VALID_PLANS, ADMIN_ONLY_PLANS, wallet_limit
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -68,12 +69,17 @@ def admin_list_users(
     for u in users:
         wc = db.query(func.count(Wallet.id)).filter(Wallet.user_id == u.id).scalar()
         last_active = u.last_active_at.strftime("%Y-%m-%d %H:%M") if u.last_active_at else None
+        plan = getattr(u, 'plan', 'basic') or 'basic'
+        expires = u.plan_expires_at.strftime("%Y-%m-%d") if getattr(u, 'plan_expires_at', None) else None
         result.append({
             "id": u.id,
             "username": u.username,
             "email": u.email,
             "is_admin": u.is_admin,
             "is_blocked": getattr(u, 'is_blocked', False),
+            "plan": plan,
+            "plan_expires_at": expires,
+            "wallet_limit": wallet_limit(plan),
             "request_count": getattr(u, 'request_count', 0),
             "last_active_at": last_active,
             "wallets": wc,
@@ -92,12 +98,17 @@ def admin_get_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     wallets = db.query(Wallet).filter(Wallet.user_id == user_id).all()
+    plan = getattr(user, 'plan', 'basic') or 'basic'
+    expires = user.plan_expires_at.strftime("%Y-%m-%d") if getattr(user, 'plan_expires_at', None) else None
     return {
         "id": user.id,
         "username": user.username,
         "email": user.email,
         "is_admin": user.is_admin,
         "is_blocked": getattr(user, "is_blocked", False),
+        "plan": plan,
+        "plan_expires_at": expires,
+        "wallet_limit": wallet_limit(plan),
         "request_count": getattr(user, "request_count", 0),
         "last_active_at": user.last_active_at.strftime("%Y-%m-%d %H:%M") if user.last_active_at else None,
         "created_at": user.created_at.strftime("%Y-%m-%d %H:%M"),
@@ -165,3 +176,50 @@ def toggle_block(
     user.is_blocked = not getattr(user, 'is_blocked', False)
     db.commit()
     return {"id": user.id, "username": user.username, "is_blocked": user.is_blocked}
+
+
+from pydantic import BaseModel
+from datetime import datetime as _dt
+
+
+class _PlanBody(BaseModel):
+    plan: str
+    plan_expires_at: str | None = None
+
+
+@router.patch("/users/{user_id}/plan")
+def set_plan(
+    user_id: int,
+    body: _PlanBody,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    if body.plan not in VALID_PLANS:
+        raise HTTPException(status_code=400, detail=f"Invalid plan. Valid: {', '.join(sorted(VALID_PLANS))}")
+    if body.plan in ADMIN_ONLY_PLANS:
+        target = db.query(User).filter(User.id == user_id).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not target.is_admin:
+            raise HTTPException(status_code=400, detail="Plan 'unlim' can only be assigned to admin users")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.plan = body.plan
+    if body.plan_expires_at:
+        try:
+            user.plan_expires_at = _dt.strptime(body.plan_expires_at, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="plan_expires_at must be YYYY-MM-DD")
+    else:
+        user.plan_expires_at = None
+    db.commit()
+    plan = user.plan
+    expires = user.plan_expires_at.strftime("%Y-%m-%d") if user.plan_expires_at else None
+    return {
+        "id": user.id,
+        "username": user.username,
+        "plan": plan,
+        "plan_expires_at": expires,
+        "wallet_limit": wallet_limit(plan),
+    }

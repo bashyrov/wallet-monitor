@@ -62,6 +62,7 @@ def register_user(db: Session, username: str, email: str, password: str) -> User
         email=email.lower().strip(),
         hashed_password=hash_password(password),
         is_admin=is_first,
+        plan="unlim" if is_first else "basic",
     )
     db.add(user)
     db.commit()

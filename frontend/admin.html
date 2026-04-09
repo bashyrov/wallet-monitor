@@ -264,11 +264,47 @@
       padding: 2px 8px; border-radius: 99px;
       font-size: 10px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase;
     }
-    .badge.free    { background: var(--surface3); color: var(--text3); }
-    .badge.pro     { background: var(--green-dim); color: var(--green); border: 1px solid rgba(26,255,171,0.15); }
-    .badge.active  { background: var(--green-dim); color: var(--green); }
-    .badge.churn   { background: var(--red-dim);   color: var(--red); }
-    .badge.blocked { background: var(--red-dim);   color: var(--red);  border: 1px solid rgba(248,113,113,0.2); }
+    .badge.free       { background: var(--surface3); color: var(--text3); }
+    .badge.pro        { background: var(--green-dim); color: var(--green); border: 1px solid rgba(26,255,171,0.15); }
+    .badge.active     { background: var(--green-dim); color: var(--green); }
+    .badge.churn      { background: var(--red-dim);   color: var(--red); }
+    .badge.blocked    { background: var(--red-dim);   color: var(--red);  border: 1px solid rgba(248,113,113,0.2); }
+    .badge.plan-basic    { background: var(--surface3); color: var(--text2); }
+    .badge.plan-pro      { background: rgba(59,130,246,0.12); color: #60A5FA; border: 1px solid rgba(59,130,246,0.2); }
+    .badge.plan-platinum { background: rgba(146,91,214,0.12); color: var(--purple); border: 1px solid rgba(146,91,214,0.2); }
+    .badge.plan-enterprise { background: rgba(229,192,123,0.12); color: var(--yellow); border: 1px solid rgba(229,192,123,0.2); }
+    .badge.plan-unlim    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(26,255,171,0.2); }
+    /* Plan modal */
+    .plan-modal-overlay {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65);
+      z-index:500; align-items:center; justify-content:center;
+    }
+    .plan-modal-overlay.open { display:flex; }
+    .plan-modal {
+      background:var(--surface); border:1px solid var(--border); border-radius:14px;
+      padding:24px; width:360px; max-width:calc(100vw - 32px);
+    }
+    .plan-modal h3 { font-size:15px; font-weight:700; margin-bottom:4px; }
+    .plan-modal .sub { font-size:12px; color:var(--text3); margin-bottom:20px; }
+    .plan-select-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; }
+    .plan-opt {
+      padding:10px 12px; border-radius:10px; border:1.5px solid var(--border);
+      cursor:pointer; transition:all .15s; background:var(--surface2);
+    }
+    .plan-opt:hover { border-color:rgba(26,255,171,0.3); }
+    .plan-opt.selected { border-color:var(--green); background:var(--green-dim); }
+    .plan-opt-name { font-size:13px; font-weight:600; }
+    .plan-opt-limit { font-size:11px; color:var(--text3); margin-top:2px; }
+    .plan-expires-row { margin-bottom:16px; }
+    .plan-expires-row label { display:block; font-size:11px; color:var(--text3); font-weight:600; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+    .plan-expires-row input { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:8px 12px; color:var(--text); font-size:13px; font-family:var(--font); outline:none; }
+    .plan-expires-row input:focus { border-color:rgba(26,255,171,0.4); }
+    .plan-modal-footer { display:flex; gap:8px; justify-content:flex-end; }
+    .plan-modal-footer button { padding:7px 16px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:1px solid; font-family:var(--font); transition:all .15s; }
+    .btn-cancel-plan { background:transparent; border-color:var(--border); color:var(--text2); }
+    .btn-cancel-plan:hover { border-color:var(--text3); }
+    .btn-save-plan { background:var(--green); border-color:var(--green); color:#09090B; }
+    .btn-save-plan:hover { opacity:.85; }
     .req-count { font-family: var(--mono); font-size: 12px; }
     .req-count.warn { color: var(--yellow); }
     .req-count.danger { color: var(--red); font-weight: 600; }
@@ -284,6 +320,36 @@
     .sort-th { cursor: pointer; user-select: none; white-space: nowrap; }
     .sort-th:hover { color: var(--text2); }
     .sort-arrow { font-size: 10px; margin-left: 3px; color: var(--green); }
+
+    /* ── PLAN BADGES ── */
+    .plan-badge { display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;letter-spacing:.3px;text-transform:uppercase; }
+    .plan-basic     { background:var(--surface3);color:var(--text3); }
+    .plan-pro       { background:rgba(59,130,246,0.12);color:#3B82F6;border:1px solid rgba(59,130,246,0.2); }
+    .plan-platinum  { background:rgba(146,91,214,0.12);color:#925BD6;border:1px solid rgba(146,91,214,0.2); }
+    .plan-enterprise{ background:rgba(229,192,123,0.12);color:#E5C07B;border:1px solid rgba(229,192,123,0.2); }
+    .plan-unlim     { background:rgba(26,255,171,0.1);color:var(--green);border:1px solid rgba(26,255,171,0.2); }
+
+    /* ── PLAN MODAL ── */
+    .plan-modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px); }
+    .plan-modal-overlay.open { display:flex; }
+    .plan-modal { background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;width:380px;max-width:94vw; }
+    .plan-modal-title { font-size:16px;font-weight:700;margin-bottom:4px; }
+    .plan-modal-sub   { font-size:12px;color:var(--text3);margin-bottom:20px; }
+    .plan-select-grid { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px; }
+    .plan-opt { padding:10px 12px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;transition:all .15s;text-align:left;font-family:var(--font);width:100%; }
+    .plan-opt:hover { border-color:rgba(26,255,171,0.3);background:var(--surface3); }
+    .plan-opt.selected { border-color:var(--green);background:rgba(26,255,171,0.06); }
+    .plan-opt-name  { font-size:13px;font-weight:600;margin-bottom:2px; }
+    .plan-opt-limit { font-size:11px;color:var(--text3); }
+    .plan-expires-label { font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px; }
+    .plan-expires-input { width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:13px;font-family:var(--font);outline:none; }
+    .plan-expires-input:focus { border-color:rgba(26,255,171,0.4); }
+    .plan-modal-btns { display:flex;gap:8px;justify-content:flex-end;margin-top:20px; }
+    .plan-modal-btns button { padding:8px 18px;border-radius:8px;font-size:13px;font-weight:500;font-family:var(--font);cursor:pointer;border:1px solid; }
+    .btn-cancel { background:transparent;border-color:var(--border);color:var(--text3); }
+    .btn-cancel:hover { background:var(--surface2); }
+    .btn-save { background:var(--green);border-color:var(--green);color:#09090B; }
+    .btn-save:hover { opacity:.88; }
 
     /* ── ACTIVITY LOG ── */
     .log-list { display: flex; flex-direction: column; }
@@ -697,7 +763,7 @@
               <th class="sort-th" onclick="setSort('requests')">
                 Requests <span id="sort-requests" class="sort-arrow"></span>
               </th>
-              <th>Role</th><th>Status</th><th class="col-hide-mobile">Last active</th>
+              <th>Plan</th><th class="col-hide-mobile">Expires</th><th>Role</th><th>Status</th><th class="col-hide-mobile">Last active</th><th>Actions</th>
             </tr></thead>
             <tbody id="all-users-tbody"></tbody>
           </table>
@@ -848,17 +914,26 @@ function renderUsersTable() {
         const req = u.request_count || 0;
         const reqClass = req > 1000 ? 'danger' : req > 100 ? 'warn' : '';
         const isBlocked = u.is_blocked;
-        return `<tr style="${isBlocked ? 'opacity:0.55' : ''};cursor:pointer" onclick="window.location='/admin-user?id=${u.id}'">
-          <td style="font-weight:500">${u.username}</td>
-          <td class="col-hide-mobile" style="color:var(--text3);font-size:12px">${u.email}</td>
-          <td class="mono">${u.wallets}</td>
-          <td><span class="req-count ${reqClass}">${req.toLocaleString('en-US')}</span></td>
+        const plan = u.plan || 'basic';
+        const limit = u.wallet_limit != null ? u.wallet_limit : '∞';
+        const expires = u.plan_expires_at || '—';
+        return `<tr id="urow-${u.id}" style="${isBlocked ? 'opacity:0.55' : ''}">
+          <td style="font-weight:500;cursor:pointer" onclick="window.location='/admin-user?id=${u.id}'">${u.username}</td>
+          <td class="col-hide-mobile" style="color:var(--text3);font-size:12px;cursor:pointer" onclick="window.location='/admin-user?id=${u.id}'">${u.email}</td>
+          <td class="mono" style="cursor:pointer" onclick="window.location='/admin-user?id=${u.id}'">${u.wallets} / ${limit}</td>
+          <td style="cursor:pointer" onclick="window.location='/admin-user?id=${u.id}'"><span class="req-count ${reqClass}">${req.toLocaleString('en-US')}</span></td>
+          <td id="uplan-${u.id}">${planBadge(plan)}</td>
+          <td class="col-hide-mobile" id="uexpires-${u.id}" style="color:var(--text3);font-size:12px">${expires}</td>
           <td>${u.is_admin ? '<span class="badge pro">admin</span>' : '<span class="badge free">user</span>'}</td>
-          <td>${isBlocked ? '<span class="badge blocked">blocked</span>' : '<span class="badge active">active</span>'}</td>
+          <td id="ustatus-${u.id}">${isBlocked ? '<span class="badge blocked">blocked</span>' : '<span class="badge active">active</span>'}</td>
           <td class="col-hide-mobile" style="color:var(--text3);font-size:12px">${u.last_active_at || '—'}</td>
+          <td style="white-space:nowrap">
+            <button class="btn-block ${isBlocked ? 'unblock' : 'block'}" id="ubtn-${u.id}" onclick="event.stopPropagation();toggleBlock(${u.id},${isBlocked})">${isBlocked ? 'Unblock' : 'Block'}</button>
+            <button class="btn-block" style="margin-left:4px;background:rgba(26,255,171,0.08);color:var(--green);border-color:rgba(26,255,171,0.2)" onclick="event.stopPropagation();openPlanModal(${u.id},'${u.username}','${plan}',${u.is_admin},'${u.plan_expires_at||''}')">Plan</button>
+          </td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="7" style="color:var(--text4);text-align:center;padding:20px">No users found</td></tr>';
+    : '<tr><td colspan="10" style="color:var(--text4);text-align:center;padding:20px">No users found</td></tr>';
 }
 
 let allUsers = [];
@@ -977,22 +1052,90 @@ function animNum(id, to) {
   requestAnimationFrame(tick);
 }
 
+const PLAN_META = {
+  basic:      { label: 'Basic',      limit: '4',      cls: 'plan-basic' },
+  pro:        { label: 'Pro',        limit: '30',     cls: 'plan-pro' },
+  platinum:   { label: 'Platinum',   limit: '70',     cls: 'plan-platinum' },
+  enterprise: { label: 'Enterprise', limit: 'Custom', cls: 'plan-enterprise' },
+  unlim:      { label: 'Unlim',      limit: '∞',      cls: 'plan-unlim' },
+};
+
+function planBadge(plan) {
+  const m = PLAN_META[plan] || PLAN_META.basic;
+  return `<span class="badge ${m.cls}">${m.label}</span>`;
+}
+
 async function toggleBlock(userId, currentlyBlocked) {
   try {
     const res = await Auth.apiFetch(`/admin/users/${userId}/block`, { method: 'PATCH' });
     if (!res.ok) { const e = await res.json(); alert(e.detail || 'Error'); return; }
     const data = await res.json();
-    // Update row in-place without full reload
     const row = document.getElementById('urow-' + userId);
     if (row) {
       row.style.opacity = data.is_blocked ? '0.55' : '';
-      const statusCell = row.children[5];
-      statusCell.innerHTML = data.is_blocked
+      document.getElementById('ustatus-' + userId).innerHTML = data.is_blocked
         ? '<span class="badge blocked">blocked</span>'
         : '<span class="badge active">active</span>';
-      const actionCell = row.children[7];
-      actionCell.innerHTML = `<button class="btn-block ${data.is_blocked ? 'unblock' : 'block'}" onclick="toggleBlock(${userId}, ${data.is_blocked})">${data.is_blocked ? 'Unblock' : 'Block'}</button>`;
+      document.getElementById('ubtn-' + userId).className = `btn-block ${data.is_blocked ? 'unblock' : 'block'}`;
+      document.getElementById('ubtn-' + userId).textContent = data.is_blocked ? 'Unblock' : 'Block';
     }
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ── Plan modal ─────────────────────────────────────────────────────────────────
+let _planUserId = null;
+let _planSelected = 'basic';
+
+function openPlanModal(userId, username, currentPlan, isAdmin, currentExpires) {
+  _planUserId = userId;
+  _planSelected = currentPlan;
+  document.getElementById('plan-modal-title').textContent = `Change plan for ${username}`;
+  document.getElementById('plan-expires-input').value = currentExpires || '';
+  renderPlanOpts(isAdmin);
+  document.getElementById('plan-modal').classList.add('open');
+}
+
+function renderPlanOpts(isAdmin) {
+  const grid = document.getElementById('plan-select-grid');
+  const plans = ['basic', 'pro', 'platinum', 'enterprise'];
+  if (isAdmin) plans.push('unlim');
+  grid.innerHTML = plans.map(p => {
+    const m = PLAN_META[p];
+    return `<div class="plan-opt${_planSelected === p ? ' selected' : ''}" onclick="selectPlanOpt('${p}',${isAdmin})">
+      <div class="plan-opt-name">${m.label}</div>
+      <div class="plan-opt-limit">${m.limit} wallets</div>
+    </div>`;
+  }).join('');
+}
+
+function selectPlanOpt(plan, isAdmin) {
+  _planSelected = plan;
+  renderPlanOpts(isAdmin);
+}
+
+function closePlanModal() {
+  document.getElementById('plan-modal').classList.remove('open');
+  _planUserId = null;
+}
+
+async function savePlan() {
+  if (!_planUserId) return;
+  const expires = document.getElementById('plan-expires-input').value.trim() || null;
+  try {
+    const res = await Auth.apiFetch(`/admin/users/${_planUserId}/plan`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: _planSelected, plan_expires_at: expires }),
+    });
+    if (!res.ok) { const e = await res.json(); alert(e.detail || 'Error'); return; }
+    const data = await res.json();
+    document.getElementById('uplan-' + _planUserId).innerHTML = planBadge(data.plan);
+    const exEl = document.getElementById('uexpires-' + _planUserId);
+    if (exEl) exEl.textContent = data.plan_expires_at || '—';
+    // update allUsers cache
+    const u = allUsers.find(x => x.id === _planUserId);
+    if (u) { u.plan = data.plan; u.plan_expires_at = data.plan_expires_at; u.wallet_limit = data.wallet_limit; }
+    closePlanModal();
   } catch(e) { alert('Error: ' + e.message); }
 }
 
@@ -1085,5 +1228,21 @@ async function loadErrors() {
     Admin
   </a>
 </nav>
+<!-- Plan modal -->
+<div class="plan-modal-overlay" id="plan-modal" onclick="if(event.target===this)closePlanModal()">
+  <div class="plan-modal">
+    <div class="plan-modal-title" id="plan-modal-title">Change plan</div>
+    <div class="plan-modal-sub">Select a plan and optional expiry date</div>
+    <div class="plan-select-grid" id="plan-select-grid"></div>
+    <div style="margin-bottom:16px">
+      <div class="plan-expires-label">Paid until (leave empty = no expiry)</div>
+      <input type="date" id="plan-expires-input" class="plan-expires-input">
+    </div>
+    <div class="plan-modal-btns">
+      <button class="btn-cancel" onclick="closePlanModal()">Cancel</button>
+      <button class="btn-save" onclick="savePlan()">Save</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
