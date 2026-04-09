@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+  <link rel="icon" type="image/png" href="/avalant_favicon.png">
+  <link rel="apple-touch-icon" href="/avalant_favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maintenance — Avalant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #0E0E11;
+      --surface: #131217;
+      --border:  #22222A;
+      --text:    #E6E8E3;
+      --text2:   #9B9FAB;
+      --text3:   #676B7E;
+      --green:   #1AFFAB;
+      --mono:    'JetBrains Mono', monospace;
+    }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .grid-bg {
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(26,255,171,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(26,255,171,0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 100%);
+    }
+
+    .glow {
+      position: fixed;
+      width: 700px; height: 700px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(26,255,171,0.05) 0%, transparent 70%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none; z-index: 0;
+      animation: pulse 5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+      50%       { opacity: 1;   transform: translate(-50%, -50%) scale(1.06); }
+    }
+
+    .brand {
+      position: fixed; top: 20px; left: 24px; z-index: 10;
+      font-weight: 800; font-size: 18px; letter-spacing: -0.5px;
+      color: var(--text); text-decoration: none;
+    }
+    .brand-cursor { color: var(--green); animation: blink 1.1s step-end infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    .content {
+      position: relative; z-index: 1;
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center; padding: 24px;
+      animation: fadeUp 0.7s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Icon */
+    .icon-wrap {
+      width: 72px; height: 72px; border-radius: 20px;
+      background: rgba(26,255,171,0.07);
+      border: 1px solid rgba(26,255,171,0.15);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 28px;
+      box-shadow: 0 0 40px rgba(26,255,171,0.08);
+    }
+
+    /* Title */
+    .title {
+      font-size: clamp(22px, 5vw, 32px);
+      font-weight: 700; letter-spacing: -0.5px;
+      margin-bottom: 12px;
+    }
+    .title span { color: var(--green); }
+
+    .sub {
+      font-size: 15px; color: var(--text3); line-height: 1.7;
+      max-width: 360px; margin-bottom: 36px;
+    }
+
+    /* Progress bar */
+    .progress-wrap {
+      width: 100%; max-width: 340px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 99px; height: 6px;
+      overflow: hidden; margin-bottom: 10px;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--green), rgba(26,255,171,0.5));
+      border-radius: 99px;
+      width: 0%;
+      animation: progress 8s cubic-bezier(0.4,0,0.2,1) forwards;
+    }
+    @keyframes progress {
+      0%   { width: 0%; }
+      20%  { width: 35%; }
+      50%  { width: 58%; }
+      80%  { width: 75%; }
+      100% { width: 82%; }
+    }
+    .progress-label {
+      font-family: var(--mono);
+      font-size: 11px; color: var(--text3);
+      margin-bottom: 32px;
+    }
+    .progress-label span { color: var(--green); }
+
+    /* Status list */
+    .status-list {
+      display: flex; flex-direction: column; gap: 10px;
+      width: 100%; max-width: 340px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      text-align: left;
+    }
+    .status-item {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; color: var(--text2);
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot-done  { background: var(--green); box-shadow: 0 0 6px rgba(26,255,171,0.6); }
+    .dot-active {
+      background: var(--green);
+      box-shadow: 0 0 6px rgba(26,255,171,0.6);
+      animation: dotPulse 1.2s ease-in-out infinite;
+    }
+    .dot-pending { background: var(--border); }
+    @keyframes dotPulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.4; transform: scale(0.7); }
+    }
+    .status-item.done   { color: var(--text2); }
+    .status-item.active { color: var(--text); font-weight: 500; }
+    .status-item.pending{ color: var(--text3); }
+
+    @media (max-width: 480px) {
+      .title { font-size: 22px; }
+      .sub   { font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+<div class="glow"></div>
+
+<a href="/" class="brand">avalant<span class="brand-cursor">_</span></a>
+
+<div class="content">
+  <div class="icon-wrap">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+      <path d="M16 4v4M16 24v4M4 16h4M24 16h4" stroke="#1AFFAB" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="7" stroke="#1AFFAB" stroke-width="1.8"/>
+      <circle cx="16" cy="16" r="2.5" fill="#1AFFAB"/>
+    </svg>
+  </div>
+
+  <h1 class="title">Maintenance <span>in progress</span></h1>
+  <p class="sub">We're upgrading the system to serve you better.<br>Back shortly — hang tight.</p>
+
+  <div class="progress-wrap">
+    <div class="progress-bar"></div>
+  </div>
+  <div class="progress-label">Status: <span>working...</span></div>
+
+  <div class="status-list">
+    <div class="status-item done">
+      <div class="status-dot dot-done"></div>
+      Database backup complete
+    </div>
+    <div class="status-item done">
+      <div class="status-dot dot-done"></div>
+      Deploying new version
+    </div>
+    <div class="status-item active">
+      <div class="status-dot dot-active"></div>
+      Running migrations
+    </div>
+    <div class="status-item pending">
+      <div class="status-dot dot-pending"></div>
+      Final checks
+    </div>
+    <div class="status-item pending">
+      <div class="status-dot dot-pending"></div>
+      Back online
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
