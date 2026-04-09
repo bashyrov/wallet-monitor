@@ -2859,8 +2859,20 @@ function _txIcon(type) {
 function _txRow(tx, walletBadge) {
   const ic = _txIcon(tx.type);
   const addrMatch = tx.address && S.addressBook[tx.address.toLowerCase()];
-  const addrLabel = addrMatch ? `<span style="font-size:10px;color:var(--green);margin-left:4px">⟶ ${addrMatch.label}</span>` : '';
-  return `<div class="tx-item">
+  let addrLabel = '';
+  let addrLine = '';
+  if (addrMatch) {
+    // Show "WalletName · AddrLabel" if label differs from walletName, else just walletName
+    const parts = [];
+    if (addrMatch.walletName) parts.push(addrMatch.walletName);
+    if (addrMatch.label && addrMatch.label !== addrMatch.walletName) parts.push(addrMatch.label);
+    const display = parts.join(' · ');
+    addrLabel = `<span style="font-size:10px;color:var(--green);margin-left:6px;font-weight:500">⟶ ${display}</span>`;
+    addrLine = `<div class="tx-bottom" style="color:var(--text4)">${tx.address.slice(0,14)}…${tx.address.slice(-6)}</div>`;
+  } else if (tx.address) {
+    addrLine = `<div class="tx-bottom">${tx.address.slice(0,14)}…${tx.address.slice(-6)}</div>`;
+  }
+  return `<div class="tx-item${addrMatch ? ' addr-match' : ''}">
     <div class="tx-icon ${ic.cls}">${ic.sym}</div>
     <div class="tx-main">
       <div class="tx-top">
@@ -2868,7 +2880,7 @@ function _txRow(tx, walletBadge) {
         <span class="tx-asset">${tx.asset}</span>
         ${addrLabel}
       </div>
-      ${tx.address ? `<div class="tx-bottom">${tx.address.slice(0,14)}…${tx.address.slice(-6)}</div>` : ''}
+      ${addrLine}
     </div>
     <span class="tx-amount">${parseFloat(tx.amount || 0).toLocaleString('en-US',{maximumFractionDigits:6})}</span>
     <span class="tx-time">${(tx.timestamp || '').slice(0,16)}</span>
