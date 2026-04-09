@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Allow: /pricing
+Disallow: /app
+Disallow: /profile
+Disallow: /archive
+Disallow: /admin
+Disallow: /admin-user
+Disallow: /checkout
+
+Sitemap: https://avalant.xyz/sitemap.xml
