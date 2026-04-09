@@ -166,7 +166,12 @@ async def serve_page(page: str, request: Request, db: Session = Depends(get_db))
             media_type="text/html",
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
         )
-    raise HTTPException(status_code=404)
+    return FileResponse(
+        "frontend/404.html",
+        status_code=404,
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 # ── Static frontend ───────────────────────────────────────────────────────────
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
