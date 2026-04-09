@@ -4,7 +4,7 @@
 
 **Avalant** — a web application for aggregating crypto wallet balances from multiple sources. FastAPI backend + multi-page vanilla JS frontend. Database: PostgreSQL (production) / SQLite (local dev). Migrations: Alembic.
 
-Brand: "avalant_" — Inter 800, 18px, with a blinking green `_`.
+Brand: "avalant_" — Inter 800, 18px, with a blinking green `_`. Logo: `/avalant_favicon.svg` (icon), `/avalant-logo.svg` (full logo used in login/register forms).
 
 Supported sources:
 - **8 CEX exchanges**: Binance, OKX, Bybit, Gate, MEXC, KuCoin, Bitget, Backpack
@@ -30,7 +30,7 @@ docker compose up -d
 # Frontend: http://localhost:8000
 ```
 
-**First registered user** (lowest `id`) automatically gets `is_admin = true`.
+**First registered user** (lowest `id`) automatically gets `is_admin = true` and `plan = "unlim"`.
 
 ---
 
@@ -80,7 +80,8 @@ make restart-nginx    # reload nginx config
 
 ```
 wallet-monitor/
-├── app.py                              # FastAPI entry point: lifespan, CORS, security headers, routers, _ensure_system_tags()
+├── app.py                              # FastAPI entry point: lifespan, CORS, security headers, routers,
+│                                       #   _ensure_system_tags(), serve_page() handler (pages without .html)
 ├── settings.py                         # Pydantic BaseSettings — config from .env
 ├── requirements.txt
 ├── Dockerfile                          # python:3.13-slim, uvicorn
@@ -98,23 +99,35 @@ wallet-monitor/
 │       ├── d0e1f2a3b4c5_add_last_active_at.py
 │       ├── e1f2a3b4c5d6_add_provider_error_logs.py
 │       ├── e5f6a7b8c9d0_add_balance_snapshots.py
-│       └── f2a3b4c5d6e7_add_balance_history.py
+│       ├── f2a3b4c5d6e7_add_balance_history.py
+│       ├── a2b3c4d5e6f7_tags_user_scoped.py   # tags.user_id (NULL = system tag)
+│       └── g3h4i5j6k7l8_add_plan_to_users.py  # plan + plan_expires_at
 │
 ├── frontend/
 │   ├── auth.js                         # Shared auth module (getToken, setSession, requireAuth, requireAdmin, isAdmin, logout)
-│   ├── index.html                      # Landing page
-│   ├── app.html                        # Main app — portfolio, balances, transactions
-│   ├── profile.html                    # User profile, balance history chart, plan, admin link
-│   ├── login.html                      # Login form → JWT token → redirect to app.html
-│   ├── register.html                   # Register form → JWT token → redirect to app.html
-│   ├── pricing.html                    # Free / Pro pricing page
+│   ├── avalant_favicon.svg             # Browser favicon (SVG)
+│   ├── avalant_favicon.png             # Browser favicon (PNG fallback)
+│   ├── avalant-logo.svg                # Full logo — used in login/register form cards
+│   ├── favicon.ico                     # ICO for Google Search
+│   ├── robots.txt                      # SEO: allow all
+│   ├── sitemap.xml                     # SEO: all public pages
+│   ├── og-image.jpg                    # Open Graph social preview image (1200×630)
+│   ├── index.html                      # Landing page (public)
+│   ├── app.html                        # Main app — portfolio, balances, transactions (auth required)
+│   ├── profile.html                    # User profile, balance history chart, plan info, admin link (auth required)
+│   ├── login.html                      # Login form → JWT + HttpOnly cookie → redirect to /app
+│   ├── register.html                   # Register form → JWT + HttpOnly cookie → redirect to /app
+│   ├── pricing.html                    # Pricing: Basic/Pro/Platinum/Enterprise with monthly/annual toggle
 │   ├── checkout.html                   # Card payment form (stub)
-│   ├── archive.html                    # Archived wallets with restore/delete
-│   ├── admin.html                      # Admin panel — KPI, users, provider errors tab
-│   └── admin-user.html                 # Per-user admin detail page
+│   ├── archive.html                    # Archived wallets with restore/delete (auth required)
+│   ├── admin.html                      # Admin panel — KPI, users table with plan management, provider errors tab (admin required)
+│   ├── admin-user.html                 # Per-user admin detail page (admin required)
+│   ├── 404.html                        # Custom 404 page with terminal animation
+│   └── maintenance.html               # Maintenance mode page
 │
 └── backend/
     ├── crypto.py                       # Fernet credential encryption: encrypt/decrypt_credentials()
+    ├── plans.py                        # PLAN_LIMITS dict, VALID_PLANS, ADMIN_ONLY_PLANS, wallet_limit()
     │
     ├── db/
     │   ├── base.py                     # _make_engine() (SQLite + PostgreSQL), SessionLocal, Base, get_db()
@@ -127,7 +140,7 @@ wallet-monitor/
     │   └── errors.py                   # Domain exceptions: WalletNotFound, TagNotFound, InvalidProviderType, etc.
     │
     ├── schemas/
-    │   ├── auth.py                     # UserRegister, UserLogin, Token, UserOut (includes is_admin)
+    │   ├── auth.py                     # UserRegister, UserLogin, Token, UserOut (includes is_admin, plan, plan_expires_at)
     │   ├── common.py                   # TagCreate/Update/Out, WalletCreate, WalletOut, WalletAddressCreate/Out
     │   ├── portfolio.py                # BalanceFetchRequest, WalletBalanceResult, AggregatedBalance,
     │   │                               #   BalanceResponse, PnL, TransactionFetchRequest,
@@ -168,9 +181,9 @@ wallet-monitor/
     │   └── v1/
     │       ├── router.py               # Main APIRouter prefix="/api", mounts all sub-routers
     │       ├── health.py               # GET /api/health
-    │       ├── auth.py                 # POST /api/auth/register, /login; GET /api/auth/me; rate limiter
+    │       ├── auth.py                 # POST /api/auth/register, /login, /logout; GET /api/auth/me; rate limiter
     │       ├── admin.py                # GET /api/admin/stats, /users, /users/{id}, /provider-errors
-    │       │                           #   PATCH /api/admin/users/{id}/admin|block
+    │       │                           #   PATCH /api/admin/users/{id}/block|plan
     │       ├── wallets.py              # CRUD wallets, archive/unarchive, tags, addresses
     │       ├── tags.py                 # GET/POST/PUT/DELETE /api/tags; guards system tags (Owner)
     │       └── portfolio.py            # POST /balance, /transactions, /transactions/bulk
@@ -179,6 +192,7 @@ wallet-monitor/
     └── services/
         ├── auth_service.py             # register_user, authenticate_user, create_token, decode_token, get_user_by_*
         ├── wallet_service.py           # CRUD wallets, tags, wallet addresses + all_addresses()
+        │                               #   wallet limit enforced via plans.wallet_limit(user.plan)
         ├── balance_service.py          # fetch_balances() → BalanceResponse; writes BalanceSnapshot + BalanceHistory
         │                               #   _fetch_single() returns 3-tuple (result, error, error_type)
         │                               #   writes ProviderErrorLog on failure
@@ -193,21 +207,22 @@ wallet-monitor/
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/health` | — | `{"status": "ok"}` |
-| POST | `/api/auth/register` | — | Register → `{access_token}` |
-| POST | `/api/auth/login` | — | Login → `{access_token}` |
-| GET | `/api/auth/me` | Bearer | Current user (`id, username, email, is_admin`) |
+| POST | `/api/auth/register` | — | Register → `{access_token}` + sets HttpOnly `session` cookie |
+| POST | `/api/auth/login` | — | Login → `{access_token}` + sets HttpOnly `session` cookie |
+| POST | `/api/auth/logout` | — | Deletes `session` cookie |
+| GET | `/api/auth/me` | Bearer | Current user (`id, username, email, is_admin, plan, plan_expires_at`) |
 | GET | `/api/admin/stats` | Bearer + admin | KPI: users_count, wallets_count, by_type, recent_users |
-| GET | `/api/admin/users` | Bearer + admin | All users with wallet_count, request_count, last_active_at, is_blocked |
-| GET | `/api/admin/users/{id}` | Bearer + admin | Single user detail |
+| GET | `/api/admin/users` | Bearer + admin | All users with wallet_count, plan, plan_expires_at, wallet_limit, request_count, last_active_at, is_blocked |
+| GET | `/api/admin/users/{id}` | Bearer + admin | Single user detail with plan info |
 | GET | `/api/admin/provider-errors?n=500` | Bearer + admin | Aggregated error counts by provider + error_type |
-| PATCH | `/api/admin/users/{id}/admin` | Bearer + admin | Toggle is_admin (cannot change self) |
 | PATCH | `/api/admin/users/{id}/block` | Bearer + admin | Toggle is_blocked (cannot block self) |
+| PATCH | `/api/admin/users/{id}/plan` | Bearer + admin | Set plan + optional plan_expires_at; `unlim` only assignable to admins |
 | GET | `/api/wallets` | Bearer | Current user's active wallets |
-| POST | `/api/wallets` | Bearer | Create wallet |
+| POST | `/api/wallets` | Bearer | Create wallet (enforces plan limit on backend) |
 | DELETE | `/api/wallets/{id}` | Bearer | Delete wallet |
 | GET | `/api/wallets/archived` | Bearer | Archived wallets |
 | POST | `/api/wallets/{id}/archive` | Bearer | Archive wallet |
-| POST | `/api/wallets/{id}/unarchive` | Bearer | Unarchive wallet |
+| POST | `/api/wallets/{id}/unarchive` | Bearer | Unarchive wallet (enforces plan limit on backend) |
 | POST | `/api/wallets/{id}/tags/{tag_id}` | Bearer | Add tag to wallet |
 | DELETE | `/api/wallets/{id}/tags/{tag_id}` | Bearer | Remove tag |
 | GET | `/api/wallets/options` | Bearer | Available types (exchange/chain/perpdex lists) |
@@ -233,18 +248,48 @@ JWT Bearer tokens (`python-jose`, HS256). Passwords — bcrypt (`passlib[bcrypt]
 ```
 POST /api/auth/register {username, email, password}
   → auth_service.register_user(db, username, email, password)
-    → bcrypt.hash(password) → User(is_admin=True if first user)
-    → return Token(access_token=create_token(user.id))
+    → bcrypt.hash(password) → User(is_admin=True, plan="unlim" if first user, else plan="basic")
+    → set HttpOnly "session" cookie + return Token(access_token=create_token(user.id))
 
 POST /api/auth/login {login, password}   # login = username OR email
   → auth_service.authenticate_user(db, login, password)
-  → bcrypt.verify(password, hashed) → Token
+  → bcrypt.verify(password, hashed) → set cookie + Token
+
+POST /api/auth/logout
+  → delete "session" cookie
 
 GET /api/auth/me   Authorization: Bearer <token>
   → deps.get_current_user → decode_token → User
 ```
 
 **Rate limiting on `/api/auth/*`**: in-memory, per IP, 10 attempts / 60 sec → 429. Cleared on successful login. `X-Forwarded-For` supported.
+
+**HttpOnly session cookie**: set on login/register, used by `serve_page()` in `app.py` for backend page protection. Frontend still uses Bearer token from localStorage for API calls.
+
+---
+
+## Plan System (`backend/plans.py`)
+
+```python
+PLAN_LIMITS = {
+    "basic":      4,      # free, default for all new users
+    "pro":        30,     # $5/mo or $48/yr
+    "platinum":   70,     # $10/mo or $96/yr
+    "enterprise": None,   # custom/unlimited, from $10/mo
+    "unlim":      None,   # unlimited, admin-only
+}
+```
+
+- **Default plan**: `basic` (4 wallets) for all new registrations
+- **First user** (admin): automatically gets `unlim`
+- **`unlim`** can only be assigned to users who are already admins
+- Wallet limit enforced on backend in `wallet_service.create_wallet()` and `unarchive_wallet()` via `wallet_limit(user.plan)`
+- Admin sets plan via `PATCH /api/admin/users/{id}/plan {plan, plan_expires_at}`
+- `plan_expires_at` is stored but not automatically enforced (manual management)
+
+**Annual pricing** (20% discount, rounded):
+- Pro: $5/mo → $48/yr ($4/mo effective)
+- Platinum: $10/mo → $96/yr ($8/mo effective)
 
 ---
 
@@ -261,6 +306,8 @@ PostgreSQL (production) / SQLite (local). Migrations run automatically on startu
 | hashed_password | String | bcrypt |
 | is_admin | Boolean | default False; first user → True |
 | is_blocked | Boolean | default False; blocked users cannot login |
+| plan | String | `basic` \| `pro` \| `platinum` \| `enterprise` \| `unlim`; default `basic` |
+| plan_expires_at | DateTime nullable | date until which the paid plan is active |
 | request_count | Integer | incremented on balance + transaction API calls |
 | last_active_at | DateTime nullable | updated on each balance/transaction request |
 | created_at | DateTime | |
@@ -281,8 +328,9 @@ PostgreSQL (production) / SQLite (local). Migrations run automatically on startu
 | Field | Type | Description |
 |-------|------|-------------|
 | id | Integer PK | |
-| name | String UNIQUE | |
+| name | String | unique per user |
 | color | String | hex `#RRGGBB` |
+| user_id | Integer FK nullable | NULL = system tag (Owner); otherwise scoped to user |
 
 ### Table `wallet_tags` (M2M)
 wallet_id + tag_id, CASCADE DELETE
@@ -311,8 +359,8 @@ wallet_id + tag_id, CASCADE DELETE
 |-------|------|-------------|
 | id | Integer PK | |
 | wallet_type | String | `exchange` / `chain` / `perpdex` |
-| type_value | String | `binance`, `ethereum`, etc. |
-| error_type | String | `rate_limit` / `auth` / `network` / `unknown` |
+| type_value  | String | `binance`, `ethereum`, etc. |
+| error_type  | String | `rate_limit` / `auth` / `network` / `unknown` |
 | created_at | DateTime index | |
 
 ### Table `balance_history`
@@ -344,11 +392,19 @@ All string values in the `credentials` JSON are Fernet-encrypted on save and dec
 - **OpenAPI hidden**: `docs_url=None, redoc_url=None, openapi_url=None`
 - **`_check_security()`**: warns on startup if default `SECRET_KEY` / `ENCRYPTION_KEY` are used
 - **`_ensure_system_tags()`**: creates the "Owner" tag (color `#1AFFAB`) on startup if it doesn't exist
+- **`serve_page()`**: serves all pages without `.html` extension; checks HttpOnly `session` cookie for protected pages; redirects unauthenticated users to `/login?next=/page`
 
 ### Access control
 - **`get_current_user`** (`deps.py`): validates Bearer JWT, 401 if missing/invalid, 403 if `is_blocked`
 - **`get_admin_user`** (`deps.py`): wraps `get_current_user`, 403 if `is_admin=False`
-- **Frontend** (`auth.js`): `requireAuth()` → redirect to `/login.html`; `requireAdmin()` → redirect to `/app.html`; `admin.html` guarded by `requireAdmin()`; admin link in `profile.html` hidden if `!is_admin`
+- **Backend page protection** (`serve_page` in `app.py`): `_AUTH_PAGES = {"app", "profile", "archive"}`, `_ADMIN_PAGES = {"admin", "admin-user"}` — checked via HttpOnly `session` cookie
+- **Frontend** (`auth.js`): `requireAuth()` → redirect to `/login`; `requireAdmin()` → redirect to `/app`
+
+### URL routing (no .html)
+All pages are served without `.html` extension:
+- `/app`, `/profile`, `/archive`, `/admin`, `/admin-user`, `/login`, `/register`, `/pricing`, `/checkout`
+- `serve_page` handler in `app.py` maps `/{page}` → `frontend/{page}.html`
+- Static files (`.js`, `.svg`, `.css`, etc.) are served directly from `frontend/`
 
 ---
 
@@ -360,7 +416,7 @@ Rules enforced on the backend:
 - Cannot create a tag with a reserved name
 - Cannot update or delete a system tag (`_guard_system()` → HTTP 400)
 
-The **Owner** tag is auto-created on every startup (`_ensure_system_tags()` in `app.py`).
+The **Owner** tag is auto-created on every startup (`_ensure_system_tags()` in `app.py`). It is a system tag with `user_id = NULL`.
 
 **Purpose**: wallets tagged "Owner" are included in balance history snapshots. The aggregate USD total of all Owner-tagged wallets is written to `balance_history` after each balance check.
 
@@ -535,29 +591,31 @@ TRON_RPC=
 SOLANA_RPC=
 ```
 
-**EVM balances**: `ANKR_KEY` → `ankr_getAccountBalance` (all tokens). Without it → `eth_getBalance` (native only).  
-**EVM transactions**: `ANKR_KEY` → `ankr_getTokenTransfers` → `ankr_getTransactionsByAddress` (fallback). Without it — empty list.  
+**EVM balances**: `ANKR_KEY` → `ankr_getAccountBalance` (all tokens). Without it → `eth_getBalance` (native only).
+**EVM transactions**: `ANKR_KEY` → `ankr_getTokenTransfers` → `ankr_getTransactionsByAddress` (fallback). Without it — empty list.
 **Token prices**: `CMC_API_KEY` → top-100 list, then `get_usd_value()` fills in via Gate spot prices. Without it — only stablecoin totals shown.
 
 ---
 
 ## Frontend
 
-Multiple self-contained HTML pages (inline CSS + JS). Shared design language. All pages use `auth.js` for authentication.
+Multiple self-contained HTML pages (inline CSS + JS). Shared design language. All pages use `auth.js` for authentication. All URLs served **without `.html`** extension via `serve_page()` in `app.py`.
 
 ### Pages
 | File | Auth guard | Description |
 |------|-----------|-------------|
 | `index.html` | — | Landing page |
-| `app.html` | requireAuth | Main app: wallet list, balance check, transactions view |
-| `profile.html` | requireAuth | Profile: balance history chart, plan (Free/Pro), admin link |
-| `login.html` | redirectIfAuthed | Login form → JWT → redirect to app.html |
-| `register.html` | redirectIfAuthed | Register form + plan selection → JWT → redirect to app.html |
-| `pricing.html` | — | Free ($0, 5 wallets) and Pro ($9/mo) plans, FAQ |
+| `app.html` | requireAuth + backend cookie | Main app: wallet list, balance check, transactions view |
+| `profile.html` | requireAuth + backend cookie | Profile: balance history chart, plan info with color badge, admin link |
+| `login.html` | redirectIfAuthed | Login form → JWT + HttpOnly cookie → redirect to /app |
+| `register.html` | redirectIfAuthed | Register form → JWT + HttpOnly cookie → redirect to /app |
+| `pricing.html` | — | Basic/Pro/Platinum/Enterprise plans, monthly/annual toggle |
 | `checkout.html` | — | Card payment form (stub) |
-| `archive.html` | requireAuth | Archived wallets with restore/delete |
-| `admin.html` | requireAdmin | KPI grid, sparklines, plan donut, user table, provider errors tab |
-| `admin-user.html` | requireAdmin | Per-user detail: stats, wallet list, last active |
+| `archive.html` | requireAuth + backend cookie | Archived wallets with restore/delete |
+| `admin.html` | requireAdmin + backend cookie | KPI, users table with plan badge + plan modal, provider errors tab |
+| `admin-user.html` | requireAdmin + backend cookie | Per-user detail: stats, wallet list, last active |
+| `404.html` | — | Custom 404 with terminal animation |
+| `maintenance.html` | — | Maintenance mode page |
 
 ### auth.js — API
 ```javascript
@@ -567,10 +625,10 @@ Auth.setSession(token, user)      // Save to localStorage
 Auth.clearSession()               // Clear localStorage
 Auth.isLoggedIn()                 // Check for token presence
 Auth.isAdmin()                    // is_admin from saved user
-Auth.requireAuth(redirect)        // Redirect to /login.html if not logged in
-Auth.requireAdmin(redirect)       // Redirect to /app.html if not admin
+Auth.requireAuth(redirect)        // Redirect to /login if not logged in
+Auth.requireAdmin(redirect)       // Redirect to /app if not admin
 Auth.redirectIfAuthed(redirect)   // Redirect if already logged in
-Auth.logout()                     // clearSession + redirect
+Auth.logout()                     // POST /api/auth/logout (delete cookie) + clearSession + redirect
 Auth.apiFetch(url, opts)          // fetch with Bearer header — prepends /api automatically
 ```
 
@@ -597,7 +655,8 @@ Fonts: **Inter** (Google Fonts) — all UI; **JetBrains Mono** — numbers, addr
 
 ### app.html — JS structure
 ```javascript
-FREE_WALLET_LIMIT = 3  // free plan limit; on reaching it → openUpgradePopup()
+// Wallet limit is now enforced on the backend by user.plan.
+// Frontend reads limit from API response on wallet create (402 = limit reached).
 
 S = {
   wallets, tags, options,
@@ -606,7 +665,7 @@ S = {
   tagDropOpen,            // wallet_id with open tag dropdown (or null)
   walletType,             // 'exchange' | 'chain' | 'perpdex' | null — open accordion section
   addrPanelOpen,          // wallet_id with open address panel (or null)
-  addressBook,            // { "0xabc...": { label, walletName } } — for tx highlighting
+  addressBook,            // { "0xabc...": { label, walletName, walletType } } — for tx highlighting
   view,                   // 'balances' | 'transactions' — current results panel view
   results,                // balance results
   txResults,              // transaction results (bulk)
@@ -631,15 +690,16 @@ checkTransactions()             // POST /api/portfolio/transactions/bulk → S.v
 renderTxView()                  // renders tx panel with mode switcher (By wallet / By time)
 _txByWallet()                   // groups transactions by wallet, each wallet collapsible
 _txByTime()                     // merges all tx across wallets, sorted by timestamp desc, wallet badge on each row
-_txRow(tx, opts)                // renders single tx row with addr-match highlight
+_txRow(tx, opts)                // renders single tx row; addr-match shows wallet name as colored type badge
 _txIcon(type)                   // returns SVG icon for tx type
 
 toggleTxPanel(walletId)         // single-wallet tx accordion (inside balance view)
 toggleAddrPanel(e, walletId)    // opens inline address panel for wallet
 addWalletAddr(walletId)         // POST /api/wallets/{id}/addresses
 delWalletAddr(walletId, addrId) // DELETE /api/wallets/{id}/addresses/{addr_id}
-togglePanel()                   // collapse/expand left wallet panel
-openAddWalletModal()            // checks limit → openUpgradePopup() or opens add modal
+togglePanel()                   // collapse/expand left wallet panel (desktop)
+toggleMobileWalletList()        // collapse/expand wallet list on mobile
+openAddWalletModal()            // opens add modal; 402 from backend → openUpgradePopup()
 
 // Add Wallet Modal — accordion
 selectWalletType(type)          // opens the correct accordion section (exchange/chain/perpdex)
@@ -654,9 +714,6 @@ closeTagDrop()                  // removes portal element
 // Confirm popup (universal)
 openConfirm({title, sub, name, onConfirm})  // custom popup instead of confirm()
 closeConfirm()
-
-// Free banner
-dismissFreeBanner()             // fade out + localStorage.setItem('avalant-banner-dismissed', '1')
 ```
 
 ### Token grid in balance results
@@ -691,13 +748,16 @@ All destructive actions use `openConfirm()` instead of native `confirm()`:
 ### UI effects in app.html
 - Left wallet panel: `width: 360px → 0` with `transition: width 0.32s cubic-bezier(0.16,1,0.3,1)`
 - Panel toggle button: green, SVG arrow rotates 180° on collapse
+- Mobile: collapse button at top of wallet list, hides list via `max-height` transition
 - Wallet rows: stagger animation `animation-delay: ${idx * 30}ms`
 - Result cards: `border-left: 2px solid` with type color (yellow/teal/purple)
 - Balance counter: ease-out-quart animation from 0 to value
-- TX address match: `tx-row.addr-match` — green highlight + badge `⟶ Label`
-- Upgrade popup: on attempt to add wallet over limit, progress bar + link to /pricing.html
+- TX address match: colored wallet-type badge showing wallet name + optional label suffix
+- Upgrade popup: on 402 from backend (limit reached), progress bar + link to /pricing
 - Type accordion: `.acc-content` max-height 0→700px, cubic-bezier animation
-- Free banner: fixed below navbar (top: 60px), slides in from top on load, dismissible, persists via localStorage
+
+### Password visibility toggle
+Login and register forms have eye-icon toggle buttons in password fields (`togglePw(id, btn)`). Icon switches between open-eye and crossed-eye SVG.
 
 ### profile.html — Balance History Chart
 Section order: Balance History chart → Subscription Plan → Wallet Breakdown → Danger Zone.
@@ -705,6 +765,7 @@ Section order: Balance History chart → Subscription Plan → Wallet Breakdown 
 ```javascript
 loadHistory(days, btn)   // GET /api/portfolio/history?days=N → calls buildChart(data)
 buildChart(data)         // renders SVG line chart
+_renderPlanCard(me)      // renders plan badge with color, name, desc, expiry, usage bar
 ```
 
 SVG chart features:
@@ -716,6 +777,19 @@ SVG chart features:
 - Dot markers when ≤30 data points
 - Empty state: "No history yet — tag wallets with ◈ Owner and check balance"
 - Range buttons: 7d / 30d / 90d
+
+Plan card colors by plan:
+- basic → `#676B7E` (grey), pro → `#3B82F6` (blue), platinum → `#925BD6` (purple)
+- enterprise → `#E5C07B` (yellow), unlim → `#1AFFAB` (green)
+
+### admin.html — Plan management
+Users table columns: Username · Email · Wallets/Limit · Requests · **Plan** · **Expires** · Role · Status · Last active · Actions
+
+- **Plan badge**: colored pill per plan (`.plan-basic`, `.plan-pro`, `.plan-platinum`, `.plan-enterprise`, `.plan-unlim`)
+- **Plan button**: opens plan modal (`openPlanModal(userId, username, currentPlan, isAdmin, currentExpires)`)
+- **Plan modal**: grid of plan options, date input for expiry, Save calls `PATCH /api/admin/users/{id}/plan`
+- `unlim` option only shown when target user is admin
+- After save: badge and expires cell updated in-place without full reload
 
 ---
 
@@ -739,7 +813,7 @@ Each provider has its own async function. Strategy: deposits/withdrawals first, 
 | EVM chains | `ankr_getTokenTransfers` (primary) → `ankr_getTransactionsByAddress` (fallback) | ANKR_KEY |
 | Tron | `/v1/accounts/{addr}/transactions/trc20` | TRON_KEY (optional) |
 
-Transactions are normalized into the `Transaction` model. Cached on the frontend in `_txCache[walletId]`.  
+Transactions are normalized into the `Transaction` model. Cached on the frontend in `_txCache[walletId]`.
 The `address` field (counterparty) is populated where available: Binance deposits/withdrawals, OKX, Bybit, EVM, Tron.
 
 ---
@@ -752,8 +826,8 @@ Allows attaching arbitrary on-chain addresses to any wallet with a custom label.
 
 **How matching works**:
 1. `GET /api/wallets/all-addresses` returns: named addresses from `wallet_addresses` + addresses from chain/perpdex wallet credentials
-2. Frontend builds `S.addressBook` (map `address.toLowerCase() → { label, walletName }`)
-3. When rendering transactions: if `tx.address` (counterparty) is in addressBook → `.addr-match` class + green badge
+2. Frontend builds `S.addressBook` (map `address.toLowerCase() → { label, walletName, walletType }`)
+3. When rendering transactions: if `tx.address` (counterparty) is in addressBook → colored wallet-type badge showing wallet name
 
 ---
 
@@ -767,7 +841,7 @@ Tabs: Overview · All Users · Provider Errors
 - Table: provider, type, error counts with mini bar charts
 - Helps identify consistently failing providers
 
-**All Users table** includes `last_active_at` column (hidden on mobile).
+**All Users table**: plan badge, wallet count vs limit, plan expiry, block/unblock, plan change button.
 
 ---
 
@@ -779,8 +853,8 @@ Tabs: Overview · All Users · Provider Errors
 - [ ] **Export** — CSV/JSON balance export
 - [ ] **Search** — wallet search in left panel
 - [ ] **Fantom** — exists in `CHAIN_PROVIDERS` but not in `CHAIN_META` → add entry to `CHAIN_META` to show in UI
-- [ ] **Payment system** — checkout.html is a stub
-- [ ] **Wallet limit enforcement on backend** — currently frontend-only
+- [ ] **Payment system** — checkout.html is a stub; plan_expires_at not auto-enforced yet
+- [ ] **Auto plan expiry** — currently `plan_expires_at` is stored but not enforced; needs scheduled job
 
 ---
 
@@ -794,11 +868,11 @@ Tabs: Overview · All Users · Provider Errors
 6. **`name` validation** — minimum 6 characters (in `WalletCreate` and `WalletBasicSchema`).
 7. **`return_exceptions=True`** in `asyncio.gather` — one provider error does not crash the others.
 8. **Domain errors → HTTP exceptions**: conversion happens in routers (api/v1/*.py), not in services.
-9. **First user = admin**: `auth_service.register_user` checks `COUNT(users) == 0` → `is_admin=True`. Duplicated in Alembic migration.
+9. **First user = admin + unlim**: `auth_service.register_user` checks `COUNT(users) == 0` → `is_admin=True, plan="unlim"`.
 10. **SQLite boolean quirk**: `server_default='false'` (string) in Alembic saves the literal `'false'` in SQLite, which Python treats as truthy. Always use `sa.false()` in migrations.
 11. **`bcrypt<5`**: passlib 1.7.4 is incompatible with bcrypt 5.x. In requirements.txt: `bcrypt>=4.0.0,<5.0.0`.
 12. **`postgres://` → `postgresql://`**: SQLAlchemy 2.x does not support the old scheme. Normalized in `db/base.py` and `alembic/env.py`.
-13. **`FREE_WALLET_LIMIT = 3`** defined in `app.html` on the frontend; backend does not enforce this limit.
+13. **Wallet limit enforced on backend** via `plans.wallet_limit(user.plan)` in `wallet_service.py`. Returns HTTP 402 on limit exceeded. Frontend shows upgrade popup on 402.
 14. **KuCoin** requires `pageSize >= 10` for deposits/withdrawals/ledgers.
 15. **Bitget** deposit/withdrawal v2 endpoints return 404 — bills endpoints are used instead.
 16. **`/api/wallets/all-addresses`** route must be declared BEFORE `/{wallet_id}` in FastAPI, otherwise `all-addresses` is treated as a wallet_id.
@@ -808,6 +882,9 @@ Tabs: Overview · All Users · Provider Errors
 20. **Tag dropdown** rendered as a portal in `document.body` with `position: fixed` — avoids being clipped by `overflow-y: auto` on the wallet list container.
 21. **`request_count`** incremented only on `/api/portfolio/balance` and `/api/portfolio/transactions` — tracks active wallet usage, not all API calls.
 22. **Lighter HTTP 400** = address not registered on the platform (normal case) → treated as empty balance, NOT logged as error. All other HTTP errors from Lighter → re-raised → ProviderErrorLog.
-23. **BalanceHistory** written only when Owner-tagged wallets are present in the fetch. Tags are global (no user_id), but wallets have user_id — history is per-user via wallet's user_id.
+23. **BalanceHistory** written only when Owner-tagged wallets are present in the fetch. Tags are global (user_id=NULL for system tags), but wallets have user_id — history is per-user via wallet's user_id.
 24. **`_fetch_single` returns 3-tuple** `(BalanceResult|None, error_str|None, error_type|None)`. error_type used for ProviderErrorLog categorization.
 25. **Certbot volumes** in docker-compose — `certbot_certs` mounted at `/etc/letsencrypt` in certbot and `/etc/nginx/certs` in nginx. Cert paths in nginx.conf: `/etc/nginx/certs/live/yourdomain.com/fullchain.pem`.
+26. **No `.html` in URLs** — `serve_page()` in `app.py` maps `/{page}` → `frontend/{page}.html`. Static files (`.js`, `.svg`, `.png`) served directly. Alembic migration fork causes startup failure — always check that each migration has a unique `down_revision`.
+27. **`unlim` plan** — admin-only. Backend enforces this: `PATCH /api/admin/users/{id}/plan` returns 400 if trying to assign `unlim` to a non-admin user.
+28. **Tags are user-scoped** — `user_id` nullable; `NULL` = system tag. Unique constraint is `(name, user_id)` per `UQ_tag_name_user`. System tags visible to all users.
