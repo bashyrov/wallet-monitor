@@ -460,12 +460,17 @@ async function handleLogin(e) {
     const meResp = await fetch('/api/auth/me', {
       headers: { 'Authorization': 'Bearer ' + data.access_token }
     });
+    if (!meResp.ok) {
+      errEl.textContent = 'Auth error: ' + meResp.status;
+      errEl.style.display = 'block';
+      return;
+    }
     const user = await meResp.json();
     Auth.setSession(data.access_token, user);
     const params = new URLSearchParams(window.location.search);
     window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
   } catch (err) {
-    errEl.textContent = 'Network error — is the server running?';
+    errEl.textContent = err.message || 'Network error';
     errEl.style.display = 'block';
   } finally {
     btn.disabled = false;
