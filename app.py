@@ -137,7 +137,13 @@ _ADMIN_PAGES = {"admin", "admin-user"}
 
 @app.get("/{page:path}", include_in_schema=False)
 async def serve_page(page: str, request: Request, db: Session = Depends(get_db)):
-    if page.startswith("api") or "." in page.split("/")[-1]:
+    if page.startswith("api"):
+        raise HTTPException(status_code=404)
+    # Static files (have extension) — serve directly from frontend/
+    if "." in page.split("/")[-1]:
+        filepath = os.path.join("frontend", page)
+        if os.path.exists(filepath):
+            return FileResponse(filepath)
         raise HTTPException(status_code=404)
 
     base = page.split("/")[0] if page else ""
