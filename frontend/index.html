@@ -649,25 +649,27 @@
     .free-banner {
       position: fixed;
       top: 60px;
-      left: 12px;
-      right: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: calc(100vw - 24px);
       z-index: 98;
       display: flex;
       align-items: center;
-      justify-content: center;
       gap: 10px;
-      padding: 9px 20px;
-      background: rgba(14,14,17,0.92);
-      border: 1px solid rgba(26,255,171,0.18);
-      border-radius: 12px;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
+      padding: 8px 10px 8px 14px;
+      background: rgba(14,14,17,0.94);
+      border: 1px solid rgba(26,255,171,0.15);
+      border-radius: 99px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       font-size: 13px;
       color: var(--text2);
-      letter-spacing: 0.01em;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.35);
       animation: bannerIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
       animation-delay: 0.7s;
       opacity: 0;
+      white-space: nowrap;
     }
     .free-banner-dot {
       width: 6px; height: 6px;
@@ -676,19 +678,44 @@
       box-shadow: 0 0 7px rgba(26,255,171,0.65);
       flex-shrink: 0;
     }
-    .free-banner em { font-style: normal; color: var(--text); font-weight: 500; }
-    .free-banner-close {
-      position: absolute;
-      right: 12px;
-      background: none; border: none;
-      color: var(--text3); font-size: 15px; line-height: 1;
-      cursor: pointer; padding: 4px 5px; border-radius: 6px;
-      transition: color 0.15s, background 0.15s;
+    .free-banner-text { color: var(--text2); }
+    .free-banner-upgrade {
+      display: inline-flex; align-items: center;
+      padding: 4px 12px;
+      background: rgba(26,255,171,0.1);
+      border: 1px solid rgba(26,255,171,0.2);
+      border-radius: 99px;
+      color: var(--green);
+      font-size: 12px; font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
     }
-    .free-banner-close:hover { color: var(--text); background: var(--surface3); }
+    .free-banner-upgrade:hover { background: rgba(26,255,171,0.18); border-color: rgba(26,255,171,0.35); }
+    .free-banner-close {
+      background: none; border: none;
+      color: var(--text3); font-size: 14px; line-height: 1;
+      cursor: pointer; padding: 3px 5px; border-radius: 99px;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+    }
+    .free-banner-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
     @keyframes bannerIn {
-      from { transform: translateY(-14px); opacity: 0; }
-      to   { transform: translateY(0);     opacity: 1; }
+      from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    @media (max-width: 600px) {
+      .free-banner {
+        top: auto;
+        bottom: 96px;
+        left: 12px;
+        right: 12px;
+        transform: none !important;
+        width: auto;
+        border-radius: 16px;
+        white-space: normal;
+        z-index: 150;
+      }
     }
 
     </style>
@@ -731,7 +758,8 @@
 <!-- ── Free Banner ── -->
 <div class="free-banner" id="free-banner">
   <span class="free-banner-dot"></span>
-  Use all features for free — <em>no credit card required</em>
+  <span class="free-banner-text">Free forever — no card needed</span>
+  <a href="/pricing" class="free-banner-upgrade">See plans →</a>
   <button class="free-banner-close" onclick="dismissFreeBanner()" aria-label="Dismiss">✕</button>
 </div>
 <script>
@@ -744,9 +772,10 @@
   function dismissFreeBanner(){
     var b=document.getElementById('free-banner');
     if(!b) return;
+    var mobile = window.innerWidth <= 600;
     b.style.transition='opacity 0.2s, transform 0.2s';
     b.style.opacity='0';
-    b.style.transform='translateY(-14px)';
+    b.style.transform = mobile ? 'translateY(14px)' : 'translateX(-50%) translateY(-10px)';
     setTimeout(function(){ b && b.remove(); }, 220);
     localStorage.setItem('avalant-banner-dismissed','1');
   }
