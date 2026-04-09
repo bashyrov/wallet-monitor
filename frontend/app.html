@@ -381,6 +381,10 @@
     }
 
     /* ── WALLET LIST ── */
+    .wallet-collapsible {
+      display: flex; flex-direction: column;
+      flex: 1; overflow: hidden; min-height: 0;
+    }
     .wallet-list {
       overflow-y: auto; flex: 1;
       padding: 8px 10px;
@@ -1538,7 +1542,7 @@
 
       /* Collapsible wallet content */
       .wallet-collapsible {
-        overflow: hidden;
+        flex: none; overflow: hidden;
         transition: max-height 0.3s cubic-bezier(0.16,1,0.3,1);
         max-height: 2000px;
       }
@@ -2050,7 +2054,7 @@ Auth.requireAuth('/login');
 // ═══════════════════════════════════════════════════
 //  PLAN LIMITS
 // ═══════════════════════════════════════════════════
-const FREE_WALLET_LIMIT = 4;
+let FREE_WALLET_LIMIT = 4; // updated from API on init
 
 // ═══════════════════════════════════════════════════
 //  STABLE COINS SET
@@ -2131,10 +2135,18 @@ async function init() {
     if (av) av.textContent = (u.username || u.email || 'U')[0].toUpperCase();
   }
   try {
-    const [wallets, tags, options] = await Promise.all([
+    const [wallets, tags, options, meRes] = await Promise.all([
       api.get('/wallets'), api.get('/tags'), api.get('/wallets/options'),
+      Auth.apiFetch('/auth/me'),
     ]);
     S.wallets = wallets; S.tags = tags; S.options = options;
+    if (meRes && meRes.ok) {
+      const me = await meRes.json();
+      const PLAN_LIMITS = { basic: 4, pro: 30, platinum: 70, enterprise: null, unlim: null };
+      const lim = PLAN_LIMITS[me.plan];
+      if (lim != null) FREE_WALLET_LIMIT = lim;
+      else FREE_WALLET_LIMIT = Infinity; // enterprise / unlim
+    }
     populateSelects();
     renderAll();
     loadAddressBook();
@@ -2975,7 +2987,7 @@ document.addEventListener('DOMContentLoaded', () => {
 //  ADD WALLET MODAL
 // ═══════════════════════════════════════════════════
 function openAddWalletModal() {
-  if (!Auth.isAdmin() && S.wallets.length >= FREE_WALLET_LIMIT) { openUpgradePopup(); return; }
+  if (S.wallets.length >= FREE_WALLET_LIMIT) { openUpgradePopup(); return; }
   S.walletType = null;
   document.getElementById('modal-wallet').classList.remove('hidden');
   document.getElementById('wallet-form').reset();
