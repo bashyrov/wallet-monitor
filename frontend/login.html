@@ -189,11 +189,9 @@
       display: flex; justify-content: center; margin-bottom: 28px;
     }
     .logo-mark {
-      font-size: 26px; font-weight: 800; letter-spacing: -0.5px;
-      color: var(--text);
+      width: 64px; height: 64px; border-radius: 16px; overflow: hidden;
     }
-    .logo-mark span { color: var(--green); animation: blink 1.1s step-end infinite; }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .logo-mark img { width: 100%; height: 100%; display: block; }
 
     .card-title {
       text-align: center;
@@ -376,7 +374,7 @@
 <div class="page-center">
 <div class="card">
   <div class="card-logo">
-    <div class="logo-mark">avalant<span>_</span></div>
+    <div class="logo-mark"><img src="/avalant_favicon.svg" alt="Avalant"></div>
   </div>
 
   <div class="card-title">Welcome back</div>
