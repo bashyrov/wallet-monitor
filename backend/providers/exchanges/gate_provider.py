@@ -65,22 +65,25 @@ class GateProvider(BaseWalletProvider):
         return {currency: total} if total > 0 else {}
 
     async def _get_earn(self, wallet: ExchangeWallet) -> dict[str, Decimal]:
-        """Gate.io Flexible Earn (Uni holdings)"""
-        path = "/api/v4/earn/uni/holdings"
+        """Gate.io Uni Lending positions (Simple Earn has no public API)"""
+        path = "/api/v4/earn/uni/lends"
         try:
             r = await self._http.get(
                 f"{self.base_url}{path}",
                 headers=self._headers(wallet, "GET", path),
             )
             r.raise_for_status()
+            raw = r.json()
             out = defaultdict(Decimal)
-            for item in r.json():
+            for item in raw if isinstance(raw, list) else []:
                 currency = (item.get("currency") or "").upper()
-                amount = Decimal(str(item.get("current_amount") or "0"))
+                amount = Decimal(str(item.get("amount") or "0"))
                 if currency and amount > 0:
                     out[currency] += amount
             return dict(out)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Gate.io earn fetch failed: %s", e)
             return {}
 
     async def fetch_balance(self, wallet: ExchangeWallet):
