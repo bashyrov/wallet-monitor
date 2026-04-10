@@ -825,20 +825,36 @@
       color: var(--text3);
     }
     .result-error {
-      display: flex; align-items: flex-start; gap: 7px;
-      font-size: 11.5px; color: var(--text3);
-      padding: 8px 10px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 12px; color: var(--text2);
+      padding: 10px 12px;
+      background: rgba(248,113,113,0.06);
+      border: 1px solid rgba(248,113,113,0.2);
       border-radius: var(--radius-sm);
     }
     .result-error-icon {
-      flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
-      background: rgba(229,192,123,0.12); border: 1px solid rgba(229,192,123,0.25);
-      color: var(--yellow); font-size: 10px; font-weight: 700;
+      flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.3);
+      color: var(--red); font-size: 11px; font-weight: 700;
       display: flex; align-items: center; justify-content: center; margin-top: 1px;
     }
-    .result-error-text { color: var(--text3); line-height: 1.5; }
+    .result-error-text { color: var(--text2); line-height: 1.5; }
+    /* Error summary banner */
+    .err-summary {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; margin-bottom: 16px;
+      background: rgba(248,113,113,0.07);
+      border: 1px solid rgba(248,113,113,0.22);
+      border-radius: 10px; font-size: 12.5px;
+    }
+    .err-summary-icon {
+      flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+      background: rgba(248,113,113,0.15); border: 1px solid rgba(248,113,113,0.3);
+      color: var(--red); font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .err-summary-text { color: var(--text2); flex: 1; }
+    .err-summary-names { color: var(--red); font-weight: 500; }
     .result-rows {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
@@ -2542,7 +2558,7 @@ function renderResults() {
   const cards = results.map((r, i) => {
     const typeClass = `t-${r.wallet_type}`;
     const delay = `animation-delay:${(i + 1) * 60}ms`;
-    if (r.error) return `<div class="result-card has-error ${typeClass}" style="${delay}">
+    if (r.error) return `<div class="result-card has-error ${typeClass}" style="${delay};border-color:rgba(248,113,113,0.25)">
       <div class="result-card-head">
         <span class="result-wallet-name">${esc(r.wallet_name)}</span>
         <span class="result-badge">${esc(r.type_value)}</span>
@@ -2595,6 +2611,17 @@ function renderResults() {
   const lcEl = document.getElementById('last-checked');
   if (lcEl) lcEl.textContent = checkedAt ? `updated ${checkedAt}` : '';
 
+  const failedWallets = results.filter(r => r.error);
+  const errBanner = failedWallets.length ? `
+    <div class="err-summary">
+      <div class="err-summary-icon">!</div>
+      <div class="err-summary-text">
+        Failed to fetch balance for
+        <span class="err-summary-names">${failedWallets.map(r => esc(r.wallet_name)).join(', ')}</span>.
+        Check credentials or try again later.
+      </div>
+    </div>` : '';
+
   el.innerHTML = `
     <div class="agg-block">
       <div class="agg-label">Total Portfolio</div>
@@ -2603,6 +2630,7 @@ function renderResults() {
       <div class="agg-sub">${results.length} wallet${results.length!==1?'s':''} · ${hasUsdPrices ? 'all assets in USD' : 'stablecoins only'}</div>
       <div class="agg-grid">${allItems}</div>
     </div>
+    ${errBanner}
     <div class="results-section-label">Individual</div>
     <div class="result-cards">${cards}</div>`;
 
