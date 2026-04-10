@@ -1,6 +1,6 @@
+import asyncio
 import time
 
-import httpx
 from backend.providers.http import RetryClient
 from collections import defaultdict
 from decimal import Decimal
@@ -9,7 +9,7 @@ from backend.domain import ExchangeWallet
 from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
-from ._signing import ms, b64_hmac_sha256
+from ._signing import b64_hmac_sha256
 
 
 class KucoinProvider(BaseWalletProvider):
@@ -18,6 +18,7 @@ class KucoinProvider(BaseWalletProvider):
     enabled = True
     needs_passphrase = True
     base_url = settings.KUCOIN_BASE_URL  # "https://api.kucoin.com"
+    futures_base_url = "https://api-futures.kucoin.com"
     key_version = "2"
 
     def __init__(self) -> None:
@@ -65,18 +66,50 @@ class KucoinProvider(BaseWalletProvider):
             "Content-Type": "application/json",
         }
 
-    async def fetch_balance(self, wallet: ExchangeWallet):
+    async def _get_spot(self, wallet: ExchangeWallet) -> dict[str, Decimal]:
+        """Spot + margin + main accounts"""
+        path = "/api/v1/accounts"
         r = await self._http.get(
-            f"{self.base_url}/api/v1/accounts",
-            headers=await self._headers(wallet, "GET", "/api/v1/accounts"),
+            f"{self.base_url}{path}",
+            headers=await self._headers(wallet, "GET", path),
         )
         r.raise_for_status()
-
-        spot = defaultdict(Decimal)
-
+        out = defaultdict(Decimal)
         for x in r.json().get("data", []):
             amt = Decimal(str(x["balance"]))
             if amt > 0:
-                spot[x["currency"]] += amt
+                out[x["currency"]] += amt
+        return dict(out)
 
-        return self._build_result(wallet, self.name, dict(spot), {}, {})
+    async def _get_futures(self, wallet: ExchangeWallet) -> dict[str, Decimal]:
+        """KuCoin Futures account (separate domain)"""
+        path = "/api/v1/account-overview"
+        try:
+            r = await self._http.get(
+                f"{self.futures_base_url}{path}",
+                headers=await self._headers(wallet, "GET", path),
+            )
+            r.raise_for_status()
+            data = r.json().get("data") or {}
+            currency = (data.get("currency") or "XBT").upper()
+            # normalise XBT → BTC
+            if currency == "XBT":
+                currency = "BTC"
+            equity = Decimal(str(data.get("accountEquity") or "0"))
+            return {currency: equity} if equity > 0 else {}
+        except Exception:
+            return {}
+
+    async def fetch_balance(self, wallet: ExchangeWallet):
+        spot, futures = await asyncio.gather(
+            self._get_spot(wallet),
+            self._get_futures(wallet),
+            return_exceptions=True,
+        )
+
+        if isinstance(spot, Exception):
+            raise spot
+
+        futures_dict = futures if not isinstance(futures, Exception) else {}
+
+        return self._build_result(wallet, self.name, dict(spot), futures_dict, {})

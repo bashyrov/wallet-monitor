@@ -55,21 +55,44 @@ class BybitProvider(BaseWalletProvider):
                     totals[c["coin"]] += amt
         return totals
 
+    async def _fetch_earn(self, wallet: ExchangeWallet) -> defaultdict:
+        """Bybit Earn locked products — silently empty on failure"""
+        try:
+            params = {"category": "FlexibleSaving"}
+            qs = urlencode(params)
+            r = await self._http.get(
+                f"{self.base_url}/v5/earn/product/list?{qs}",
+                headers=self._headers_get(wallet, qs),
+            )
+            r.raise_for_status()
+            totals: defaultdict = defaultdict(Decimal)
+            for item in r.json().get("result", {}).get("list", []):
+                coin = (item.get("coinName") or "").upper()
+                # stakedAmount is the user's locked position
+                amt = Decimal(str(item.get("stakedAmount") or "0"))
+                if coin and amt > 0:
+                    totals[coin] += amt
+            return totals
+        except Exception:
+            return defaultdict(Decimal)
+
     async def fetch_balance(self, wallet: ExchangeWallet):
         results = await asyncio.gather(
             self._fetch_account(wallet, "UNIFIED"),
             self._fetch_account(wallet, "FUND"),
+            self._fetch_earn(wallet),
             return_exceptions=True,
         )
 
-        trading_res, funding_res = results[0], results[1]
+        trading_res, funding_res, earn_res = results[0], results[1], results[2]
 
         if isinstance(trading_res, Exception) and isinstance(funding_res, Exception):
             raise trading_res  # both failed — propagate, service layer will show error
 
         trading = trading_res if isinstance(trading_res, defaultdict) else defaultdict(Decimal)
         funding = funding_res if isinstance(funding_res, defaultdict) else defaultdict(Decimal)
+        earn = earn_res if isinstance(earn_res, defaultdict) else defaultdict(Decimal)
 
         # _build_result(wallet, provider, spot, futures, earn)
         # reuse spot=trading account, futures=funding account
-        return self._build_result(wallet, self.name, dict(trading), dict(funding), {})
+        return self._build_result(wallet, self.name, dict(trading), dict(funding), dict(earn))
