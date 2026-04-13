@@ -705,7 +705,7 @@
       </div>
 
       <!-- Wallet type breakdown -->
-      <div class="card">
+      <div class="card" style="margin-bottom:24px;">
         <div class="card-head">
           <span class="card-title">Wallet type breakdown</span>
         </div>
@@ -715,6 +715,24 @@
               <th>Type</th><th>Count</th><th>% of total</th><th>Top provider</th>
             </tr></thead>
             <tbody id="wallet-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Recent provider errors -->
+      <div class="card" id="dash-errors-card">
+        <div class="card-head">
+          <span class="card-title">Recent provider errors</span>
+          <a href="#" onclick="showTab('errors',null);loadErrors();return false;" class="card-action">View all</a>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="table">
+            <thead><tr>
+              <th>Provider</th><th>Type</th><th>Error</th><th>Count</th><th>Last seen</th>
+            </tr></thead>
+            <tbody id="dash-err-tbody">
+              <tr><td colspan="5" style="color:var(--text4);text-align:center;padding:24px">Loading…</td></tr>
+            </tbody>
           </table>
         </div>
       </div>
@@ -1142,8 +1160,6 @@ async function savePlan() {
   } catch(e) { alert('Error: ' + e.message); }
 }
 
-loadStats();
-
 // ── Provider Errors ────────────────────────────────────────────────────────
 const ERR_TYPE_META = {
   rate_limit: { label: 'Rate limit (429)', color: '#E5C07B', bg: 'rgba(229,192,123,0.12)' },
@@ -1153,6 +1169,37 @@ const ERR_TYPE_META = {
 };
 
 const WTYPE_COLOR = { exchange: '#E5C07B', chain: '#06B6D4', perpdex: '#925BD6' };
+
+loadStats();
+loadDashErrors();
+
+async function loadDashErrors() {
+  const tbody = document.getElementById('dash-err-tbody');
+  let data = null;
+  try {
+    const res = await Auth.apiFetch('/admin/provider-errors?n=100');
+    if (res.ok) data = await res.json();
+  } catch(e) {}
+
+  if (!tbody) return;
+  if (!data || !data.rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text4);text-align:center;padding:24px">No errors recorded</td></tr>';
+    return;
+  }
+
+  const top = data.rows.slice(0, 10);
+  tbody.innerHTML = top.map(r => {
+    const em = ERR_TYPE_META[r.error_type] || ERR_TYPE_META.unknown;
+    const wc = WTYPE_COLOR[r.wallet_type] || '#9B9FAB';
+    return `<tr>
+      <td style="font-weight:600">${r.type_value}</td>
+      <td><span style="font-size:11px;padding:2px 7px;border-radius:99px;background:${wc}22;color:${wc};font-weight:600;text-transform:uppercase;letter-spacing:.4px">${r.wallet_type}</span></td>
+      <td><span style="font-size:11px;padding:2px 7px;border-radius:99px;background:${em.bg};color:${em.color};font-weight:600">${em.label}</span></td>
+      <td style="font-family:var(--mono);font-weight:600;color:${em.color}">${r.count.toLocaleString('en-US')}</td>
+      <td style="color:var(--text3);font-size:12px;font-family:var(--mono)">${r.last_seen || '—'}</td>
+    </tr>`;
+  }).join('');
+}
 
 async function loadErrors() {
   const n = document.getElementById('err-window')?.value || 500;
