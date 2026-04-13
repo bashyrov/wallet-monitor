@@ -132,7 +132,7 @@ from backend.db.base import get_db
 from fastapi import Depends
 import os
 
-_AUTH_PAGES  = {"app", "profile", "archive"}
+_AUTH_PAGES  = {"app", "profile", "archive", "screener"}
 _ADMIN_PAGES = {"admin", "admin-user"}
 
 @app.get("/{page:path}", include_in_schema=False)
