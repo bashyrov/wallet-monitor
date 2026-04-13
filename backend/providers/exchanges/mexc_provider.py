@@ -145,9 +145,10 @@ class MexcProvider(BaseWalletProvider):
 
         return data
 
-    async def _get_futures_equity_by_currency(self, creds: dict[str, str]) -> dict[str, Decimal]:
+    async def _get_futures_equity_by_currency(self, creds: dict[str, str]) -> tuple[dict[str, Decimal], Decimal]:
         data = await self._futures_get(creds, "/api/v1/private/account/assets", {})
         out = defaultdict(Decimal)
+        upnl = Decimal("0")
 
         for row in (data.get("data") or []):
             ccy = (row.get("currency") or "").strip()
@@ -156,8 +157,9 @@ class MexcProvider(BaseWalletProvider):
             equity = self._D(row.get("equity"))
             if equity != 0:
                 out[ccy] += equity
+            upnl += self._D(row.get("unrealized"))
 
-        return dict(out)
+        return dict(out), upnl
 
     async def fetch_balance(self, wallet: ExchangeWallet):
         creds = self._creds(wallet)
@@ -169,6 +171,10 @@ class MexcProvider(BaseWalletProvider):
         )
 
         if isinstance(spot, Exception): raise spot
-        if isinstance(futures, Exception): futures = {}
+        if isinstance(futures, Exception):
+            futures_dict, upnl = {}, None
+        else:
+            futures_dict, upnl = futures
+            upnl = str(upnl) if upnl != 0 else None
 
-        return self._build_result(wallet, self.name, spot, futures, {})
+        return self._build_result(wallet, self.name, spot, futures_dict, {}, upnl_usd=upnl)

@@ -295,6 +295,76 @@ async def _fetch_bitget() -> list[dict]:
     return out
 
 
+# ── Aster DEX (Binance Futures-compatible API) ─────────────────────────────────
+async def _fetch_aster() -> list[dict]:
+    r = await _http.get("https://fapi.asterdex.com/fapi/v1/premiumIndex")
+    r.raise_for_status()
+    out = []
+    for item in r.json():
+        sym = item.get("symbol", "")
+        # Aster uses "GNSUSD", "BTCUSDT" — keep USDT, skip pure USD perpetuals
+        if sym.endswith("USDT"):
+            token = sym[:-4]
+        elif sym.endswith("USD"):
+            token = sym[:-3]
+        else:
+            continue
+        rate = float(item.get("lastFundingRate") or 0)
+        next_ms = int(item.get("nextFundingTime") or 0)
+        price = float(item.get("markPrice") or 0)
+        if price == 0:
+            continue
+        out.append({
+            "symbol": token,
+            "exchange": "aster",
+            "price": price,
+            "rate": rate,
+            "next_ts": next_ms // 1000,
+            "interval_h": 8,
+        })
+    return out
+
+
+# ── Ethereal DEX (via ethereal-sdk) ───────────────────────────────────────────
+async def _fetch_ethereal() -> list[dict]:
+    try:
+        from ethereal import AsyncRESTClient  # type: ignore
+    except ImportError:
+        logger.warning("ethereal-sdk not installed, skipping Ethereal")
+        return []
+
+    client = await AsyncRESTClient.create({"base_url": "https://api.ethereal.trade"})
+    try:
+        products = await client.list_products()
+        ids = [p.id for p in products]
+        prices = await client.list_market_prices(product_ids=ids)
+        price_map = {str(p.product_id): float(p.oracle_price) for p in prices}
+
+        now = int(time.time())
+        next_ts = (now // 3600 + 1) * 3600   # next full hour boundary
+
+        out = []
+        for p in products:
+            if str(p.status) != "Status1.active":
+                continue
+            token = p.base_token_name
+            rate_1h = float(p.funding_rate1h or 0)
+            price = price_map.get(str(p.id), 0)
+            if price == 0:
+                continue
+            out.append({
+                "symbol": token,
+                "exchange": "ethereal",
+                "price": price,
+                "rate": rate_1h,
+                "next_ts": next_ts,
+                "interval_h": 1,
+            })
+        return out
+    finally:
+        await client.close()
+
+
 # ── Dispatcher ─────────────────────────────────────────────────────────────────
 FETCHERS: dict[str, object] = {
     "binance":     _fetch_binance,
@@ -305,6 +375,8 @@ FETCHERS: dict[str, object] = {
     "mexc":        _fetch_mexc,
     "bitget":      _fetch_bitget,
     "hyperliquid": _fetch_hyperliquid,
+    "aster":       _fetch_aster,
+    "ethereal":    _fetch_ethereal,
 }
 
 
@@ -384,6 +456,8 @@ EXCHANGE_FEES: dict[str, float] = {
     "mexc":        0.0002,    # 0.02%
     "bitget":      0.0006,    # 0.06%
     "hyperliquid": 0.00035,   # 0.035%
+    "aster":       0.0005,    # 0.05%
+    "ethereal":    0.0003,    # 0.03% (takerFee from API)
 }
 _DEFAULT_FEE = 0.0006  # fallback if exchange not in map
 

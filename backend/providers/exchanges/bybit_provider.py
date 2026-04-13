@@ -39,7 +39,7 @@ class BybitProvider(BaseWalletProvider):
             "X-BAPI-RECV-WINDOW": recv_window,
         }
 
-    async def _fetch_account(self, wallet: ExchangeWallet, account_type: str) -> defaultdict:
+    async def _fetch_account(self, wallet: ExchangeWallet, account_type: str) -> tuple[defaultdict, Decimal]:
         params = {"accountType": account_type}
         qs = urlencode(params)
         r = await self._http.get(
@@ -48,12 +48,14 @@ class BybitProvider(BaseWalletProvider):
         )
         r.raise_for_status()
         totals: defaultdict = defaultdict(Decimal)
+        upnl = Decimal("0")
         for acc in r.json().get("result", {}).get("list", []):
             for c in acc.get("coin", []):
                 amt = Decimal(str(c.get("walletBalance") or "0"))
                 if amt > 0:
                     totals[c["coin"]] += amt
-        return totals
+                upnl += Decimal(str(c.get("unrealisedPnl") or "0"))
+        return totals, upnl
 
     async def _fetch_earn(self, wallet: ExchangeWallet) -> defaultdict:
         """Bybit Earn locked products — silently empty on failure"""
@@ -89,10 +91,13 @@ class BybitProvider(BaseWalletProvider):
         if isinstance(trading_res, Exception) and isinstance(funding_res, Exception):
             raise trading_res  # both failed — propagate, service layer will show error
 
-        trading = trading_res if isinstance(trading_res, defaultdict) else defaultdict(Decimal)
-        funding = funding_res if isinstance(funding_res, defaultdict) else defaultdict(Decimal)
+        if isinstance(trading_res, Exception):
+            trading, upnl = defaultdict(Decimal), Decimal("0")
+        else:
+            trading, upnl = trading_res
+
+        funding = funding_res[0] if not isinstance(funding_res, Exception) else defaultdict(Decimal)
         earn = earn_res if isinstance(earn_res, defaultdict) else defaultdict(Decimal)
 
-        # _build_result(wallet, provider, spot, futures, earn)
-        # reuse spot=trading account, futures=funding account
-        return self._build_result(wallet, self.name, dict(trading), dict(funding), dict(earn))
+        upnl_str = str(upnl) if upnl != 0 else None
+        return self._build_result(wallet, self.name, dict(trading), dict(funding), dict(earn), upnl_usd=upnl_str)

@@ -81,7 +81,7 @@ class KucoinProvider(BaseWalletProvider):
                 out[x["currency"]] += amt
         return dict(out)
 
-    async def _get_futures(self, wallet: ExchangeWallet) -> dict[str, Decimal]:
+    async def _get_futures(self, wallet: ExchangeWallet) -> tuple[dict[str, Decimal], str | None]:
         """KuCoin Futures account (separate domain)"""
         path = "/api/v1/account-overview"
         try:
@@ -92,13 +92,14 @@ class KucoinProvider(BaseWalletProvider):
             r.raise_for_status()
             data = r.json().get("data") or {}
             currency = (data.get("currency") or "XBT").upper()
-            # normalise XBT → BTC
             if currency == "XBT":
                 currency = "BTC"
             equity = Decimal(str(data.get("accountEquity") or "0"))
-            return {currency: equity} if equity > 0 else {}
+            upnl = data.get("unrealisedPnl")
+            upnl_str = str(upnl) if upnl is not None else None
+            return ({currency: equity} if equity > 0 else {}), upnl_str
         except Exception:
-            return {}
+            return {}, None
 
     async def fetch_balance(self, wallet: ExchangeWallet):
         spot, futures = await asyncio.gather(
@@ -110,6 +111,9 @@ class KucoinProvider(BaseWalletProvider):
         if isinstance(spot, Exception):
             raise spot
 
-        futures_dict = futures if not isinstance(futures, Exception) else {}
+        if isinstance(futures, Exception):
+            futures_dict, upnl_str = {}, None
+        else:
+            futures_dict, upnl_str = futures
 
-        return self._build_result(wallet, self.name, dict(spot), futures_dict, {})
+        return self._build_result(wallet, self.name, dict(spot), futures_dict, {}, upnl_usd=upnl_str)

@@ -28,33 +28,79 @@
   --teal:     #06B6D4;
   --purple:   #925BD6;
   --mono:     'JetBrains Mono', monospace;
+  --font:     'Inter', system-ui, -apple-system, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: Inter, sans-serif;
+  font-family: var(--font);
   font-size: 14px;
   min-height: 100vh;
-  padding-bottom: 80px;
 }
 
-/* ── TOP NAV ── */
-.top-nav {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 20px; height: 52px;
+/* ── TOPBAR ── */
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 24px; height: 52px;
+  background: rgba(14,14,17,0.88);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; background: var(--bg); z-index: 50;
+  position: sticky; top: 0; z-index: 100;
 }
-.nav-brand { font-weight: 800; font-size: 16px; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 4px; }
-.nav-brand span { color: var(--green); animation: blink 1s step-end infinite; }
+.topbar::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(26,255,171,0.15), transparent);
+  pointer-events: none;
+}
+.brand {
+  display: flex; align-items: center;
+  font-size: 18px; font-weight: 800; letter-spacing: -0.7px; line-height: 1;
+  color: var(--text); text-decoration: none; user-select: none; flex-shrink: 0;
+  font-family: var(--font);
+}
+.brand:hover { opacity: 0.85; }
+.brand-cursor {
+  color: var(--green);
+  animation: blink 1.1s step-start infinite;
+}
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-.nav-avatar {
+.topbar-nav {
+  display: flex; align-items: center; gap: 2px;
+  justify-content: center;
+}
+.topbar-right {
+  display: flex; align-items: center; gap: 8px;
+  justify-content: flex-end;
+}
+.nav-lnk {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: 8px;
+  font-size: 13px; font-weight: 500; color: var(--text3);
+  text-decoration: none; white-space: nowrap;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  border: 1px solid transparent;
+}
+.nav-lnk svg { opacity: 0.6; transition: opacity 0.15s; flex-shrink: 0; }
+.nav-lnk:hover { color: var(--green); background: rgba(26,255,171,0.08); border-color: rgba(26,255,171,0.12); }
+.nav-lnk:hover svg { opacity: 1; }
+.nav-lnk.active { color: var(--green); background: rgba(26,255,171,0.1); border-color: rgba(26,255,171,0.18); }
+.nav-lnk.active svg { opacity: 1; }
+.avatar-btn {
   width: 30px; height: 30px; border-radius: 50%;
-  background: var(--surface3); border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--green), #06B6D4);
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; color: var(--text2);
-  cursor: pointer; text-decoration: none;
+  font-size: 12px; font-weight: 700; color: #09090B;
+  text-decoration: none; cursor: pointer; flex-shrink: 0;
+  transition: box-shadow 0.2s;
+}
+.avatar-btn:hover { box-shadow: 0 0 10px rgba(26,255,171,0.35); }
+@media (max-width: 700px) {
+  .topbar { grid-template-columns: auto 1fr; padding: 0 14px; }
+  .topbar-nav { display: none; }
+  .topbar-right { gap: 6px; }
 }
 
 /* ── MODE TABS ── */
@@ -174,9 +220,17 @@ body {
 .filter-toggle.active { border-color: var(--green); color: var(--green); background: rgba(26,255,171,.06); }
 .filter-toggle input { display: none; }
 
-/* ── REFRESH ── */
+/* ── REFRESH / STATUS ── */
 .toolbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.refresh-info { font-size: 11px; color: var(--text3); font-family: var(--mono); white-space: nowrap; }
+.refresh-info { font-size: 11px; color: var(--text3); font-family: var(--mono); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.ws-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text3); flex-shrink: 0;
+  transition: background .3s;
+}
+.ws-dot.live { background: var(--green); animation: ws-pulse 2s ease-in-out infinite; }
+.ws-dot.error { background: var(--red); }
+@keyframes ws-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 .btn-refresh {
   padding: 7px 12px; background: transparent;
   border: 1px solid var(--border); border-radius: 8px;
@@ -228,6 +282,8 @@ tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
 .ex-mexc        { background: rgba(0,192,154,.15);   color: #00C09A; }
 .ex-bitget      { background: rgba(0,180,216,.15);   color: #00B4D8; }
 .ex-hyperliquid { background: rgba(72,205,216,.15);  color: #48CDD8; }
+.ex-aster       { background: rgba(255,140,0,.15);   color: #FF8C00; }
+.ex-ethereal    { background: rgba(147,112,219,.15); color: #9370DB; }
 
 .td-price { font-family: var(--mono); color: var(--text2); }
 .td-rate  { font-family: var(--mono); font-weight: 600; }
@@ -261,33 +317,128 @@ tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── BOTTOM NAV ── */
-.bottom-nav {
-  position: fixed; bottom: 0; left: 0; right: 0; height: 60px;
-  background: var(--surface); border-top: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-around; z-index: 100;
+/* ── MOBILE SORT BAR ── */
+.mobile-sort {
+  display: none;
+  padding: 0 12px 10px;
+  max-width: 1400px; margin: 0 auto;
 }
-.bnav-item {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  color: var(--text3); text-decoration: none; font-size: 10px; font-weight: 500;
-  padding: 6px 12px; transition: color .15s;
+.mobile-sort-label { font-size: 11px; color: var(--text3); font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
+.mobile-sort-chips {
+  display: flex; gap: 6px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+  scrollbar-width: none;
 }
-.bnav-item.active, .bnav-item:hover { color: var(--green); }
+.mobile-sort-chips::-webkit-scrollbar { display: none; }
+.sort-chip {
+  flex-shrink: 0;
+  padding: 5px 11px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text3);
+  font-size: 12px; font-weight: 500; font-family: inherit;
+  cursor: pointer; transition: all .15s;
+  white-space: nowrap;
+  display: flex; align-items: center; gap: 5px;
+}
+.sort-chip:hover { border-color: var(--green); color: var(--text2); }
+.sort-chip.active { background: rgba(26,255,171,.08); border-color: var(--green); color: var(--green); }
+.sort-chip .sc-arr { font-size: 10px; }
 
-@media (max-width: 600px) {
-  .toolbar { gap: 8px; }
+@media (max-width: 700px) {
+  .mobile-sort { display: block; }
+}
+
+/* ── MOBILE CARDS ── */
+.cards-wrap {
+  display: none; padding: 0 12px 8px;
+  max-width: 1400px; margin: 0 auto;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.card:active { border-color: var(--border); opacity: .9; }
+.card.open   { border-color: rgba(26,255,171,.3); }
+.card-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 14px;
+}
+.card-symbol { font-weight: 700; font-family: var(--mono); font-size: 14px; min-width: 56px; }
+.card-badges { display: flex; gap: 5px; flex-wrap: wrap; flex: 1; align-items: center; }
+.card-right  { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+.card-apr    { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+.card-next   { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+.card-chevron { color: var(--text3); font-size: 12px; transition: transform .2s; margin-left: 4px; flex-shrink: 0; }
+.card.open .card-chevron { transform: rotate(180deg); }
+.card-body {
+  display: none;
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+}
+.card.open .card-body { display: block; }
+.card-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(34,34,42,.6);
+}
+.card-row:last-child { border-bottom: none; }
+.card-lbl { font-size: 11px; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: .5px; }
+.card-val { font-family: var(--mono); font-size: 13px; }
+
+/* arb card specifics */
+.card-net { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+.card-exrow { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+.card-exrow-item { display: flex; align-items: center; gap: 5px; }
+
+@media (max-width: 700px) {
+  .table-wrap  { display: none !important; }
+  .cards-wrap  { display: block; }
+  .toolbar     { gap: 8px; }
   .search-wrap { max-width: 100%; }
   .toolbar-right { width: 100%; justify-content: space-between; }
   .filters { width: 100%; }
+  .stats-bar { padding: 0 12px 10px; }
+  .mode-tabs { padding: 12px 12px 0; }
 }
 </style>
 </head>
 <body>
 
-<nav class="top-nav">
-  <a class="nav-brand" href="/app">avalant<span>_</span></a>
-  <a class="nav-avatar" href="/profile" id="nav-avatar">?</a>
-</nav>
+<header class="topbar">
+  <a href="/" class="brand">
+    avalant<span class="brand-cursor">_</span>
+  </a>
+  <nav class="topbar-nav">
+    <a href="/app" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="6" width="3" height="5" rx="0.7" fill="currentColor" opacity=".5"/><rect x="4.5" y="3.5" width="3" height="7.5" rx="0.7" fill="currentColor" opacity=".75"/><rect x="8" y="1" width="3" height="10" rx="0.7" fill="currentColor"/></svg>
+      Portfolio
+    </a>
+    <a href="/screener" class="nav-lnk active">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6h9M1.5 3h9M1.5 9h5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+      Screener
+    </a>
+    <a href="/archive" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+      Archive
+    </a>
+    <a href="/pricing" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h3.8l5 5-3.8 3.8-5-5V1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.9" fill="currentColor"/></svg>
+      Pricing
+    </a>
+  </nav>
+  <div class="topbar-right">
+    <a href="/profile" class="avatar-btn" id="nav-avatar" title="Profile">U</a>
+  </div>
+</header>
 
 <!-- ── MODE TABS ── -->
 <div class="mode-tabs">
@@ -339,49 +490,68 @@ tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
   </div>
 
   <div class="toolbar-right">
-    <span class="refresh-info" id="refresh-info">—</span>
-    <button class="btn-refresh" onclick="load()">↻ Refresh</button>
+    <span class="refresh-info" id="refresh-info">
+      <span class="ws-dot" id="ws-dot"></span>
+      <span id="ws-status">Connecting…</span>
+    </span>
+    <button class="btn-refresh" id="btn-refresh" onclick="reconnectWs()">↻</button>
   </div>
 </div>
 
 <!-- ── STATS ── -->
 <div class="stats-bar" id="stats-bar"></div>
 
-<!-- ── FUNDING TABLE ── -->
-<div class="table-wrap" id="section-funding">
-  <table id="tbl-funding">
-    <thead>
-      <tr>
-        <th onclick="sortBy('symbol')"   data-col="symbol">Token <span class="sort-arrow">↕</span></th>
-        <th onclick="sortBy('exchange')" data-col="exchange">Exchange <span class="sort-arrow">↕</span></th>
-        <th onclick="sortBy('price')"    data-col="price">Price <span class="sort-arrow">↕</span></th>
-        <th onclick="sortBy('rate')"     data-col="rate">Funding / interval <span class="sort-arrow">↕</span></th>
-        <th onclick="sortBy('apr')"      data-col="apr" class="sorted">APR <span class="sort-arrow">↓</span></th>
-        <th onclick="sortBy('next_ts')"  data-col="next_ts">Next funding <span class="sort-arrow">↕</span></th>
-      </tr>
-    </thead>
-    <tbody id="tbody-funding"></tbody>
-  </table>
+<!-- ── MOBILE SORT BAR ── -->
+<div class="mobile-sort" id="mobile-sort-funding">
+  <div class="mobile-sort-label">Sort by</div>
+  <div class="mobile-sort-chips" id="sort-chips-funding"></div>
+</div>
+<div class="mobile-sort" id="mobile-sort-arb" style="display:none">
+  <div class="mobile-sort-label">Sort by</div>
+  <div class="mobile-sort-chips" id="sort-chips-arb"></div>
 </div>
 
-<!-- ── ARBITRAGE TABLE ── -->
-<div class="table-wrap" id="section-arb" style="display:none">
-  <table id="tbl-arb">
-    <thead>
-      <tr>
-        <th onclick="sortArb('symbol')"        data-acol="symbol">Token <span class="sort-arrow">↕</span></th>
-        <th onclick="sortArb('long_exchange')"  data-acol="long_exchange">Long <span class="sort-arrow">↕</span></th>
-        <th onclick="sortArb('short_exchange')" data-acol="short_exchange">Short <span class="sort-arrow">↕</span></th>
-        <th onclick="sortArb('gross_funding')"  data-acol="gross_funding">Gross funding <span class="sort-arrow">↕</span></th>
-        <th onclick="sortArb('price_spread')"   data-acol="price_spread">Price spread <span class="sort-arrow">↕</span></th>
-        <th onclick="sortArb('total_fees')"     data-acol="total_fees">Fees <span class="sort-arrow">↕</span></th>
-        <th onclick="sortArb('net_profit')"     data-acol="net_profit" class="sorted">Net profit <span class="sort-arrow">↓</span></th>
-        <th onclick="sortArb('net_apr')"        data-acol="net_apr">Net APR <span class="sort-arrow">↕</span></th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody id="tbody-arb"></tbody>
-  </table>
+<!-- ── FUNDING SECTION ── -->
+<div id="section-funding">
+  <div class="table-wrap">
+    <table id="tbl-funding">
+      <thead>
+        <tr>
+          <th onclick="sortBy('symbol')"   data-col="symbol">Token <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('exchange')" data-col="exchange">Exchange <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('price')"    data-col="price">Price <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('rate')"     data-col="rate">Funding / interval <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('apr')"      data-col="apr" class="sorted">APR <span class="sort-arrow">↓</span></th>
+          <th onclick="sortBy('next_ts')"  data-col="next_ts">Next funding <span class="sort-arrow">↕</span></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-funding"></tbody>
+    </table>
+  </div>
+  <div class="cards-wrap" id="cards-funding"></div>
+</div>
+
+<!-- ── ARBITRAGE SECTION ── -->
+<div id="section-arb" style="display:none">
+  <div class="table-wrap">
+    <table id="tbl-arb">
+      <thead>
+        <tr>
+          <th onclick="sortArb('symbol')"        data-acol="symbol">Token <span class="sort-arrow">↕</span></th>
+          <th onclick="sortArb('long_exchange')"  data-acol="long_exchange">Long <span class="sort-arrow">↕</span></th>
+          <th onclick="sortArb('short_exchange')" data-acol="short_exchange">Short <span class="sort-arrow">↕</span></th>
+          <th onclick="sortArb('gross_funding')"  data-acol="gross_funding">Gross funding <span class="sort-arrow">↕</span></th>
+          <th onclick="sortArb('price_spread')"   data-acol="price_spread">Price spread <span class="sort-arrow">↕</span></th>
+          <th onclick="sortArb('total_fees')"     data-acol="total_fees">Fees <span class="sort-arrow">↕</span></th>
+          <th onclick="sortArb('net_profit')"     data-acol="net_profit" class="sorted">Net profit <span class="sort-arrow">↓</span></th>
+          <th onclick="sortArb('net_apr')"        data-acol="net_apr">Net APR <span class="sort-arrow">↕</span></th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-arb"></tbody>
+    </table>
+  </div>
+  <div class="cards-wrap" id="cards-arb"></div>
 </div>
 
 <div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:200" id="toast-wrap"></div>
@@ -391,9 +561,9 @@ tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
 Auth.requireAuth('/login');
 
 // ── constants ──────────────────────────────────────────────────────────────────
-const EXCHANGES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid'];
-const EX_LABEL  = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate.io', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', hyperliquid:'Hyperliquid' };
-const EX_COLOR  = { binance:'#F0B90B', bybit:'#F7A600', okx:'#E0E0E0', gate:'#E40C5B', kucoin:'#00BC8C', mexc:'#00C09A', bitget:'#00B4D8', hyperliquid:'#48CDD8' };
+const EXCHANGES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal'];
+const EX_LABEL  = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate.io', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', hyperliquid:'Hyperliquid', aster:'Aster', ethereal:'Ethereal' };
+const EX_COLOR  = { binance:'#F0B90B', bybit:'#F7A600', okx:'#E0E0E0', gate:'#E40C5B', kucoin:'#00BC8C', mexc:'#00C09A', bitget:'#00B4D8', hyperliquid:'#48CDD8', aster:'#FF8C00', ethereal:'#9370DB' };
 
 // ── state ──────────────────────────────────────────────────────────────────────
 let _mode = 'funding';
@@ -406,9 +576,10 @@ let _sortF = { col: 'apr', asc: false };
 let _sortA = { col: 'net_profit', asc: false };
 let _validOnly = false;
 let _crossOnly = true;   // show only tokens on 2+ exchanges by default
-let _refreshTimer = null;
-let _countdown = 0;
-const REFRESH = 30;
+
+// ── WebSocket state ────────────────────────────────────────────────────────────
+let _ws    = null;  // funding WebSocket
+let _wsArb = null;  // arbitrage WebSocket
 
 // ── init nav ───────────────────────────────────────────────────────────────────
 (function initNav() {
@@ -500,10 +671,12 @@ function switchMode(mode) {
   _mode = mode;
   document.getElementById('tab-funding').classList.toggle('active', mode === 'funding');
   document.getElementById('tab-arb').classList.toggle('active', mode === 'arb');
-  document.getElementById('section-funding').style.display = mode === 'funding' ? '' : 'none';
-  document.getElementById('section-arb').style.display     = mode === 'arb'     ? '' : 'none';
-  document.getElementById('filters-funding').style.display = mode === 'funding' ? '' : 'none';
-  document.getElementById('filters-arb').style.display     = mode === 'arb'     ? '' : 'none';
+  document.getElementById('section-funding').style.display     = mode === 'funding' ? '' : 'none';
+  document.getElementById('section-arb').style.display         = mode === 'arb'     ? '' : 'none';
+  document.getElementById('filters-funding').style.display     = mode === 'funding' ? '' : 'none';
+  document.getElementById('filters-arb').style.display         = mode === 'arb'     ? '' : 'none';
+  document.getElementById('mobile-sort-funding').style.display = mode === 'funding' ? '' : 'none';
+  document.getElementById('mobile-sort-arb').style.display     = mode === 'arb'     ? '' : 'none';
   if (mode === 'arb' && !_arbRows.length) loadArb();
   else if (mode === 'funding') applyFilter();
   else applyArb();
@@ -527,55 +700,115 @@ function toggleCrossOnly() {
   applyFilter();
 }
 
-// ── data loading ───────────────────────────────────────────────────────────────
-async function load() {
-  clearTimeout(_refreshTimer);
-  document.getElementById('tbody-funding').innerHTML =
-    '<tr><td colspan="6" class="empty-msg"><span class="spinner"></span>Loading funding rates…</td></tr>';
-  document.getElementById('stats-bar').innerHTML = '';
+// ── WebSocket helpers ──────────────────────────────────────────────────────────
+function _wsUrl(path) {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${location.host}/api/screener/ws/${path}?token=${Auth.getToken()}`;
+}
 
-  try {
-    const res = await Auth.apiFetch('/screener/funding');
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
+function setWsStatus(state) {
+  const dot = document.getElementById('ws-dot');
+  const lbl = document.getElementById('ws-status');
+  const states = {
+    live:         ['ws-dot live',  'Live'],
+    connecting:   ['ws-dot',       'Connecting…'],
+    reconnecting: ['ws-dot error', 'Reconnecting…'],
+    error:        ['ws-dot error', 'Disconnected'],
+  };
+  const [cls, text] = states[state] || states.error;
+  dot.className = cls;
+  lbl.textContent = text;
+}
+
+function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) {
+  const state = { retry: retryRef.val, ping: null, retryTimer: null };
+
+  function connect() {
+    const ws = new WebSocket(_wsUrl(path));
+
+    ws.onopen = () => {
+      retryRef.val = 0;
+      clearInterval(pingRef.val);
+      pingRef.val = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+      }, 20000);
+      if (onOpen) onOpen();
+    };
+
+    ws.onmessage = (ev) => {
+      if (ev.data === 'pong') return;
+      try { onMessage(JSON.parse(ev.data)); } catch (_) {}
+    };
+
+    ws.onclose = (ev) => {
+      clearInterval(pingRef.val);
+      if (ev.code === 4001) { Auth.requireAuth('/login'); return; }
+      const delay = Math.min(2000 * Math.pow(2, retryRef.val), 30000);
+      retryRef.val++;
+      clearTimeout(retryTimerRef.val);
+      retryTimerRef.val = setTimeout(connect, delay);
+    };
+
+    ws.onerror = () => ws.close();
+    return ws;
+  }
+
+  return connect;
+}
+
+// ── Funding WebSocket ──────────────────────────────────────────────────────────
+const _retryF      = { val: 0 };
+const _pingF       = { val: null };
+const _retryTimerF = { val: null };
+
+const _connectFunding = _makeWs({
+  path: 'funding',
+  retryRef: _retryF, pingRef: _pingF, retryTimerRef: _retryTimerF,
+  onOpen: () => setWsStatus('live'),
+  onMessage: (data) => {
     _rows = data.rows || [];
     renderStats(data);
     applyFilter();
-    scheduleRefresh();
-    // pre-fetch arb in background if already visited
-    if (_arbRows.length) loadArb();
-  } catch (e) {
-    document.getElementById('tbody-funding').innerHTML =
-      `<tr><td colspan="6" class="empty-msg">Failed to load: ${esc(e.message)}</td></tr>`;
-  }
+  },
+});
+
+function connectWs() {
+  _ws = _connectFunding();
+  setWsStatus('connecting');
 }
 
-async function loadArb() {
-  document.getElementById('tbody-arb').innerHTML =
-    '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing arbitrage opportunities…</td></tr>';
-  try {
-    const res = await Auth.apiFetch('/screener/arbitrage');
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
+function reconnectWs() {
+  clearTimeout(_retryTimerF.val);
+  if (_ws) { _ws.onclose = null; _ws.close(); _ws = null; }
+  _retryF.val = 0;
+  connectWs();
+}
+
+// ── Arbitrage WebSocket ────────────────────────────────────────────────────────
+const _retryA      = { val: 0 };
+const _pingA       = { val: null };
+const _retryTimerA = { val: null };
+
+const _connectArb = _makeWs({
+  path: 'arb',
+  retryRef: _retryA, pingRef: _pingA, retryTimerRef: _retryTimerA,
+  onMessage: (data) => {
     _arbRows = data.opportunities || [];
     applyArb();
-  } catch (e) {
-    document.getElementById('tbody-arb').innerHTML =
-      `<tr><td colspan="9" class="empty-msg">Failed to load: ${esc(e.message)}</td></tr>`;
-  }
-}
+  },
+});
 
-function scheduleRefresh() {
-  _countdown = REFRESH;
-  updateCountdown();
-  _refreshTimer = setInterval(() => {
-    _countdown--;
-    updateCountdown();
-    if (_countdown <= 0) { clearInterval(_refreshTimer); load(); }
-  }, 1000);
-}
-function updateCountdown() {
-  document.getElementById('refresh-info').textContent = `Auto-refresh in ${_countdown}s`;
+function loadArb() {
+  // Show loading state first time
+  if (!_arbRows.length) {
+    document.getElementById('tbody-arb').innerHTML =
+      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
+    document.getElementById('cards-arb').innerHTML =
+      '<div class="empty-msg"><span class="spinner"></span>Computing…</div>';
+  }
+  if (!_wsArb || _wsArb.readyState === WebSocket.CLOSED) {
+    _wsArb = _connectArb();
+  }
 }
 
 // ── funding filter + sort ──────────────────────────────────────────────────────
@@ -726,18 +959,19 @@ function renderFunding() {
   const tbody = document.getElementById('tbody-funding');
   if (!_filtered.length) {
     tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">No contracts match your filter</td></tr>';
-    return;
+  } else {
+    tbody.innerHTML = _filtered.map(r => `
+      <tr>
+        <td class="td-symbol">${esc(r.symbol)}</td>
+        <td><span class="ex-badge ex-${r.exchange}">${EX_LABEL[r.exchange]||r.exchange}</span></td>
+        <td class="td-price">${fmtPrice(r.price)}</td>
+        <td>${fmtRate(r.rate, r.interval_h)}</td>
+        <td>${fmtApr(r.apr)}</td>
+        <td class="td-next">${fmtCountdown(r.next_ts)}</td>
+      </tr>
+    `).join('');
   }
-  tbody.innerHTML = _filtered.map(r => `
-    <tr>
-      <td class="td-symbol">${esc(r.symbol)}</td>
-      <td><span class="ex-badge ex-${r.exchange}">${EX_LABEL[r.exchange]||r.exchange}</span></td>
-      <td class="td-price">${fmtPrice(r.price)}</td>
-      <td>${fmtRate(r.rate, r.interval_h)}</td>
-      <td>${fmtApr(r.apr)}</td>
-      <td class="td-next">${fmtCountdown(r.next_ts)}</td>
-    </tr>
-  `).join('');
+  renderFundingCards();
 }
 
 // ── render arbitrage ───────────────────────────────────────────────────────────
@@ -746,6 +980,7 @@ function renderArb() {
   if (!_filteredArb.length) {
     const msg = _arbRows.length ? 'No opportunities match your filter' : 'No data yet';
     tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    renderArbCards();
     return;
   }
   tbody.innerHTML = _filteredArb.map(r => {
@@ -788,6 +1023,217 @@ function renderArb() {
       <td class="td-status">${validBadge}</td>
     </tr>`;
   }).join('');
+  renderArbCards();
+}
+
+// ── mobile sort bar ───────────────────────────────────────────────────────────
+const SORT_CHIPS_F = [
+  { col: 'apr',      label: 'APR' },
+  { col: 'rate',     label: 'Rate' },
+  { col: 'symbol',   label: 'Token' },
+  { col: 'exchange', label: 'Exchange' },
+  { col: 'price',    label: 'Price' },
+  { col: 'next_ts',  label: 'Next' },
+];
+const SORT_CHIPS_A = [
+  { col: 'net_profit',    label: 'Net profit' },
+  { col: 'net_apr',       label: 'Net APR' },
+  { col: 'gross_funding', label: 'Gross' },
+  { col: 'price_spread',  label: 'Spread' },
+  { col: 'symbol',        label: 'Token' },
+  { col: 'total_fees',    label: 'Fees' },
+];
+
+function buildSortChips() {
+  const wf = document.getElementById('sort-chips-funding');
+  const wa = document.getElementById('sort-chips-arb');
+  wf.innerHTML = SORT_CHIPS_F.map(c => `
+    <button class="sort-chip${_sortF.col === c.col ? ' active' : ''}"
+            id="sc-f-${c.col}" onclick="mobileSortF('${c.col}')">
+      ${c.label}<span class="sc-arr" id="sc-f-arr-${c.col}">${_sortF.col === c.col ? (_sortF.asc ? '↑' : '↓') : ''}</span>
+    </button>`).join('');
+  wa.innerHTML = SORT_CHIPS_A.map(c => `
+    <button class="sort-chip${_sortA.col === c.col ? ' active' : ''}"
+            id="sc-a-${c.col}" onclick="mobileSortA('${c.col}')">
+      ${c.label}<span class="sc-arr" id="sc-a-arr-${c.col}">${_sortA.col === c.col ? (_sortA.asc ? '↑' : '↓') : ''}</span>
+    </button>`).join('');
+}
+
+function mobileSortF(col) {
+  if (_sortF.col === col) _sortF.asc = !_sortF.asc;
+  else { _sortF.col = col; _sortF.asc = col === 'symbol' || col === 'exchange'; }
+  // sync desktop headers
+  document.querySelectorAll('#tbl-funding thead th').forEach(th => {
+    const c = th.dataset.col;
+    th.classList.toggle('sorted', c === _sortF.col);
+    const a = th.querySelector('.sort-arrow');
+    if (a) a.textContent = c === _sortF.col ? (_sortF.asc ? '↑' : '↓') : '↕';
+  });
+  // update chips
+  SORT_CHIPS_F.forEach(c => {
+    const chip = document.getElementById(`sc-f-${c.col}`);
+    const arr  = document.getElementById(`sc-f-arr-${c.col}`);
+    if (!chip) return;
+    chip.classList.toggle('active', c.col === _sortF.col);
+    arr.textContent = c.col === _sortF.col ? (_sortF.asc ? '↑' : '↓') : '';
+  });
+  sortFRows();
+}
+
+function mobileSortA(col) {
+  if (_sortA.col === col) _sortA.asc = !_sortA.asc;
+  else { _sortA.col = col; _sortA.asc = col === 'symbol' || col === 'long_exchange' || col === 'short_exchange'; }
+  // sync desktop headers
+  document.querySelectorAll('#tbl-arb thead th').forEach(th => {
+    const c = th.dataset.acol;
+    if (!c) return;
+    th.classList.toggle('sorted', c === _sortA.col);
+    const a = th.querySelector('.sort-arrow');
+    if (a) a.textContent = c === _sortA.col ? (_sortA.asc ? '↑' : '↓') : '↕';
+  });
+  // update chips
+  SORT_CHIPS_A.forEach(c => {
+    const chip = document.getElementById(`sc-a-${c.col}`);
+    const arr  = document.getElementById(`sc-a-arr-${c.col}`);
+    if (!chip) return;
+    chip.classList.toggle('active', c.col === _sortA.col);
+    arr.textContent = c.col === _sortA.col ? (_sortA.asc ? '↑' : '↓') : '';
+  });
+  sortARows();
+}
+
+// ── mobile cards ──────────────────────────────────────────────────────────────
+function toggleCard(el) {
+  el.classList.toggle('open');
+}
+
+function renderFundingCards() {
+  const wrap = document.getElementById('cards-funding');
+  if (!_filtered.length) {
+    wrap.innerHTML = '<div class="empty-msg">No contracts match your filter</div>';
+    return;
+  }
+  wrap.innerHTML = _filtered.map((r, i) => {
+    const aprSign = r.apr >= 0 ? '+' : '';
+    const aprCls  = r.apr > 0 ? 'rate-pos' : r.apr < 0 ? 'rate-neg' : 'rate-zero';
+    const ratePct = (r.rate * 100).toFixed(4);
+    const rateSign = r.rate >= 0 ? '+' : '';
+    const rateCls  = r.rate > 0 ? 'rate-pos' : r.rate < 0 ? 'rate-neg' : 'rate-zero';
+    const intLbl = r.interval_h === 1 ? '1h' : `${r.interval_h}h`;
+    return `
+    <div class="card" onclick="toggleCard(this)" data-fi="${i}">
+      <div class="card-head">
+        <span class="card-symbol">${esc(r.symbol)}</span>
+        <div class="card-badges">
+          <span class="ex-badge ex-${r.exchange}">${EX_LABEL[r.exchange]||r.exchange}</span>
+        </div>
+        <div class="card-right">
+          <span class="card-apr ${aprCls}">${aprSign}${Math.abs(r.apr).toFixed(2)}% APR</span>
+          <span class="card-next" id="cn-f-${i}">${fmtCountdown(r.next_ts)}</span>
+        </div>
+        <span class="card-chevron">▼</span>
+      </div>
+      <div class="card-body">
+        <div class="card-row">
+          <span class="card-lbl">Price</span>
+          <span class="card-val">${fmtPrice(r.price)}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Funding / ${intLbl}</span>
+          <span class="card-val ${rateCls}">${rateSign}${ratePct}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Annual APR</span>
+          <span class="card-val ${aprCls}">${aprSign}${Math.abs(r.apr).toFixed(2)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Next funding</span>
+          <span class="card-val" id="cn-fb-${i}">${fmtCountdown(r.next_ts)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderArbCards() {
+  const wrap = document.getElementById('cards-arb');
+  if (!_filteredArb.length) {
+    const msg = _arbRows.length ? 'No opportunities match your filter' : 'No data yet';
+    wrap.innerHTML = `<div class="empty-msg">${msg}</div>`;
+    return;
+  }
+  wrap.innerHTML = _filteredArb.map((r, i) => {
+    const netCls   = r.net_profit > 0 ? 'net-pos' : 'net-neg';
+    const netSign  = r.net_profit >= 0 ? '+' : '';
+    const grossSign = r.gross_funding >= 0 ? '+' : '';
+    const spreadSign = r.price_spread >= 0 ? '+' : '';
+    const spreadCls  = r.price_spread >= 0 ? 'rate-neg' : 'rate-pos';
+    const longRateCls  = r.long_rate  > 0 ? 'rate-pos' : r.long_rate  < 0 ? 'rate-neg' : 'rate-zero';
+    const shortRateCls = r.short_rate > 0 ? 'rate-pos' : r.short_rate < 0 ? 'rate-neg' : 'rate-zero';
+    const validBadge = r.valid_price
+      ? '<span class="badge-valid">✓ valid</span>'
+      : '<span class="badge-invalid">⚠ spread</span>';
+    const aprCls = r.net_apr > 0 ? 'rate-pos' : r.net_apr < 0 ? 'rate-neg' : 'rate-zero';
+    const aprSign = r.net_apr >= 0 ? '+' : '';
+    return `
+    <div class="card" onclick="toggleCard(this)">
+      <div class="card-head">
+        <span class="card-symbol">${esc(r.symbol)}</span>
+        <div class="card-badges">
+          <span class="ex-badge ex-${r.long_exchange}">${EX_LABEL[r.long_exchange]||r.long_exchange}</span>
+          <span style="color:var(--text3);font-size:11px">→</span>
+          <span class="ex-badge ex-${r.short_exchange}">${EX_LABEL[r.short_exchange]||r.short_exchange}</span>
+        </div>
+        <div class="card-right">
+          <span class="card-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span>
+          <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">net / 8h</span>
+        </div>
+        <span class="card-chevron">▼</span>
+      </div>
+      <div class="card-body">
+        <div class="card-row">
+          <span class="card-lbl">Long</span>
+          <div class="card-exrow">
+            <div class="card-exrow-item">
+              <span class="ex-badge ex-${r.long_exchange}">${EX_LABEL[r.long_exchange]||r.long_exchange}</span>
+              <span class="card-val ${longRateCls}">${r.long_rate >= 0 ? '+' : ''}${r.long_rate.toFixed(4)}%</span>
+            </div>
+            <div style="font-size:11px;color:var(--text3)">${fmtPrice(r.long_price)}</div>
+          </div>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Short</span>
+          <div class="card-exrow">
+            <div class="card-exrow-item">
+              <span class="ex-badge ex-${r.short_exchange}">${EX_LABEL[r.short_exchange]||r.short_exchange}</span>
+              <span class="card-val ${shortRateCls}">${r.short_rate >= 0 ? '+' : ''}${r.short_rate.toFixed(4)}%</span>
+            </div>
+            <div style="font-size:11px;color:var(--text3)">${fmtPrice(r.short_price)}</div>
+          </div>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Gross / 8h</span>
+          <span class="card-val td-gross">${grossSign}${r.gross_funding.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Price spread</span>
+          <span class="card-val ${spreadCls}">${spreadSign}${r.price_spread.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Fees</span>
+          <span class="card-val" style="color:var(--text3)">−${r.total_fees.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Net APR</span>
+          <span class="card-val ${aprCls}">${aprSign}${r.net_apr.toFixed(2)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Status</span>
+          <span>${validBadge}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ── tick countdowns ────────────────────────────────────────────────────────────
@@ -796,35 +1242,34 @@ function tickCountdowns() {
     document.querySelectorAll('.td-next').forEach((td, i) => {
       if (_filtered[i]) td.innerHTML = fmtCountdown(_filtered[i].next_ts);
     });
+    _filtered.forEach((r, i) => {
+      const a = document.getElementById(`cn-f-${i}`);
+      const b = document.getElementById(`cn-fb-${i}`);
+      const t = fmtCountdown(r.next_ts);
+      if (a) a.innerHTML = t;
+      if (b) b.innerHTML = t;
+    });
   }
 }
 
+// ── avatar ────────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    const me = await Auth.apiFetch('/auth/me').then(r => r.json());
+    const el = document.getElementById('nav-avatar');
+    if (el && me.username) el.textContent = me.username[0].toUpperCase();
+  } catch {}
+})();
+
 // ── bootstrap ─────────────────────────────────────────────────────────────────
 buildExDrop();
+buildSortChips();
 document.getElementById('search').addEventListener('input', () => {
   _mode === 'funding' ? applyFilter() : applyArb();
 });
 setInterval(tickCountdowns, 1000);
-load();
+connectWs();
 </script>
 
-<nav class="bottom-nav">
-  <a href="/app" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
-    Portfolio
-  </a>
-  <a href="/screener" class="bnav-item active">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M3 5h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    Screener
-  </a>
-  <a href="/archive" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="7" width="16" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 7l2.5-4h11L18 7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    Archive
-  </a>
-  <a href="/profile" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    Profile
-  </a>
-</nav>
 </body>
 </html>

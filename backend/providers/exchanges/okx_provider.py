@@ -97,9 +97,10 @@ class OKXProvider(BaseWalletProvider):
             return Decimal("0")
         return Decimal(str(x))
 
-    async def _get_trading_balance(self, creds: dict[str, str]) -> dict[str, Decimal]:
+    async def _get_trading_balance(self, creds: dict[str, str]) -> tuple[dict[str, Decimal], Decimal]:
         data = await self._signed_get(creds, "/api/v5/account/balance")
         out = defaultdict(Decimal)
+        upnl = Decimal("0")
         for acc in data.get("data", []) or []:
             for d in acc.get("details", []) or []:
                 ccy = d.get("ccy")
@@ -108,7 +109,8 @@ class OKXProvider(BaseWalletProvider):
                 cash = self._D(d.get("cashBal"))
                 if cash != 0:
                     out[ccy] += cash
-        return dict(out)
+                upnl += self._D(d.get("upl"))
+        return dict(out), upnl
 
     async def _get_savings_balance(self, creds: dict[str, str]) -> dict[str, Decimal]:
         data = await self._signed_get(creds, "/api/v5/finance/savings/balance")
@@ -132,4 +134,6 @@ class OKXProvider(BaseWalletProvider):
         if isinstance(trading, Exception): raise trading
         if isinstance(earn, Exception): earn = {}
 
-        return self._build_result(wallet, self.name, trading, {}, earn)
+        trading_dict, upnl = trading
+        upnl_str = str(upnl) if upnl != 0 else None
+        return self._build_result(wallet, self.name, trading_dict, {}, earn, upnl_usd=upnl_str)

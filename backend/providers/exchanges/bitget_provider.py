@@ -153,7 +153,7 @@ class BitgetProvider(BaseWalletProvider):
         self,
         creds: dict[str, str],
         product_type: str,
-    ) -> dict[str, Decimal]:
+    ) -> tuple[dict[str, Decimal], Decimal]:
         totals = defaultdict(Decimal)
 
         data = await self._private_get(
@@ -162,53 +162,49 @@ class BitgetProvider(BaseWalletProvider):
             params={"productType": product_type},
         )
 
+        upnl = Decimal("0")
         for account in data.get("data") or []:
             margin_coin = (account.get("marginCoin") or "").upper()
 
-            # основной баланс аккаунта
             available = Decimal(str(account.get("available") or "0"))
             locked = Decimal(str(account.get("locked") or "0"))
             account_equity = Decimal(str(account.get("accountEquity") or "0"))
 
-            # Если accountEquity есть, он обычно полезнее total balance,
-            # потому что отражает equity аккаунта
             total = account_equity if account_equity != 0 else (available + locked)
 
             if margin_coin and total != 0:
                 totals[margin_coin] += total
 
-            # Иногда Bitget возвращает assetList с монетами внутри аккаунта
+            upnl += Decimal(str(account.get("unrealizedPL") or "0"))
+
             for asset in account.get("assetList") or []:
                 coin = (asset.get("coin") or "").upper()
                 balance = Decimal(str(asset.get("balance") or "0"))
                 if coin and balance != 0:
                     totals[coin] += balance
 
-        return dict(totals)
+        return dict(totals), upnl
 
-    async def get_all_futures_balances(self, creds: dict[str, str]) -> dict[str, Decimal]:
-        product_types = [
-            "USDT-FUTURES",
-            "COIN-FUTURES",
-            "USDC-FUTURES",
-        ]
+    async def get_all_futures_balances(self, creds: dict[str, str]) -> tuple[dict[str, Decimal], Decimal]:
+        product_types = ["USDT-FUTURES", "COIN-FUTURES", "USDC-FUTURES"]
 
         results = await asyncio.gather(
             *(self.get_futures_balance_by_product_type(creds, pt) for pt in product_types),
             return_exceptions=True,
         )
 
-        totals = defaultdict(Decimal)
+        totals: defaultdict = defaultdict(Decimal)
+        upnl = Decimal("0")
 
         for product_type, result in zip(product_types, results):
             if isinstance(result, Exception):
-                print(f"Error fetching Bitget futures ({product_type}): {result}")
                 continue
-
-            for asset, amount in result.items():
+            bal, pnl = result
+            for asset, amount in bal.items():
                 totals[asset] += amount
+            upnl += pnl
 
-        return dict(totals)
+        return dict(totals), upnl
 
     async def fetch_balance(self, wallet: ExchangeWallet):
         creds = self.creds_execution(wallet)
@@ -220,6 +216,10 @@ class BitgetProvider(BaseWalletProvider):
         )
 
         if isinstance(spot, Exception): raise spot
-        if isinstance(futures, Exception): futures = {}
+        if isinstance(futures, Exception):
+            futures_dict, upnl = {}, None
+        else:
+            futures_dict, upnl = futures
+            upnl = str(upnl) if upnl != 0 else None
 
-        return self._build_result(wallet, self.name, spot, futures, {})
+        return self._build_result(wallet, self.name, spot, futures_dict, {}, upnl_usd=upnl)

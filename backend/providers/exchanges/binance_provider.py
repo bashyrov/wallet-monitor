@@ -66,14 +66,15 @@ class BinanceProvider(BaseWalletProvider):
                 totals[asset["asset"]] = total
         return dict(totals)
 
-    async def get_futures_balance(self) -> dict[str, Decimal]:
+    async def get_futures_balance(self) -> tuple[dict[str, Decimal], str]:
         totals = defaultdict(Decimal)
         futures_account = await self.client.futures_account()
         for asset in futures_account["assets"]:
             total = Decimal(asset["walletBalance"])
             if total > 0:
                 totals[asset["asset"]] = total
-        return dict(totals)
+        upnl = str(futures_account.get("totalUnrealizedProfit") or "0")
+        return dict(totals), upnl
 
     async def get_simple_earn_balances(self, creds: dict[str, str]) -> dict[str, Decimal]:
         totals = defaultdict(Decimal)
@@ -107,10 +108,11 @@ class BinanceProvider(BaseWalletProvider):
             )
 
             if isinstance(spot, Exception): raise spot
-            if isinstance(futures, Exception): futures = {}
+            if isinstance(futures, Exception): futures, upnl = {}, None
+            else: futures, upnl = futures
             if isinstance(earn, Exception): earn = {}
 
-            return self._build_result(wallet, self.name, spot, futures, earn)
+            return self._build_result(wallet, self.name, spot, futures, earn, upnl_usd=upnl)
 
         finally:
             await self.client.close_connection()

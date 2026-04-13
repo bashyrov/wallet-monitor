@@ -79,9 +79,13 @@ async def lifespan(app: FastAPI):
     start_price_loop()
     logger.info("Price refresh loop started")
 
+    from backend.api.v1.screener import start_screener_broadcaster, stop_screener_broadcaster
+    start_screener_broadcaster()
+
     yield
 
     stop_price_loop()
+    stop_screener_broadcaster()
     logger.info("Avalant shutting down")
 
 

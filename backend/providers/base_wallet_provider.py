@@ -23,7 +23,7 @@ class BaseWalletProvider(ABC):
         }
 
     @staticmethod
-    def _build_result(wallet, provider, spot, futures, earn):
+    def _build_result(wallet, provider, spot, futures, earn, upnl_usd=None):
         from collections import defaultdict
         from decimal import Decimal
 
@@ -33,13 +33,17 @@ class BaseWalletProvider(ABC):
             for asset, amt in bucket.items():
                 totals[asset] += amt
 
+        details = {
+            "spot": {k: str(v) for k, v in spot.items() if v != 0},
+            "futures": {k: str(v) for k, v in futures.items() if v != 0},
+            "earn": {k: str(v) for k, v in earn.items() if v != 0},
+        }
+        if upnl_usd is not None:
+            details["upnl_usd"] = str(upnl_usd)
+
         return BalanceResult(
             wallet=wallet,
             provider=provider,
             totals={k: str(v) for k, v in totals.items() if v != 0},
-            details={
-                "spot": {k: str(v) for k, v in spot.items() if v != 0},
-                "futures": {k: str(v) for k, v in futures.items() if v != 0},
-                "earn": {k: str(v) for k, v in earn.items() if v != 0},
-            },
+            details=details,
         )

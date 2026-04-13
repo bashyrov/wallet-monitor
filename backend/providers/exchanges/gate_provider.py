@@ -51,7 +51,7 @@ class GateProvider(BaseWalletProvider):
                 out[x["currency"].upper()] += total
         return dict(out)
 
-    async def _get_futures(self, wallet: ExchangeWallet, settle: str) -> dict[str, Decimal]:
+    async def _get_futures(self, wallet: ExchangeWallet, settle: str) -> tuple[dict[str, Decimal], Decimal]:
         """settle = 'usdt' or 'btc'"""
         path = f"/api/v4/futures/{settle}/accounts"
         r = await self._http.get(
@@ -62,7 +62,8 @@ class GateProvider(BaseWalletProvider):
         data = r.json()
         currency = (data.get("currency") or settle).upper()
         total = Decimal(str(data.get("total") or "0"))
-        return {currency: total} if total > 0 else {}
+        upnl = Decimal(str(data.get("unrealised_pnl") or "0"))
+        return ({currency: total} if total > 0 else {}), upnl
 
     async def _get_earn(self, wallet: ExchangeWallet) -> dict[str, Decimal]:
         """Gate.io Uni Lending positions (Simple Earn has no public API)"""
@@ -99,11 +100,14 @@ class GateProvider(BaseWalletProvider):
             raise spot
 
         futures: dict[str, Decimal] = defaultdict(Decimal)
+        upnl = Decimal("0")
         for f in (fut_usdt, fut_btc):
             if not isinstance(f, Exception):
-                for k, v in f.items():
+                bal, pnl = f
+                for k, v in bal.items():
                     futures[k] += v
+                upnl += pnl
 
         earn_dict = earn if not isinstance(earn, Exception) else {}
-
-        return self._build_result(wallet, self.name, dict(spot), dict(futures), earn_dict)
+        upnl_str = str(upnl) if upnl != 0 else None
+        return self._build_result(wallet, self.name, dict(spot), dict(futures), earn_dict, upnl_usd=upnl_str)

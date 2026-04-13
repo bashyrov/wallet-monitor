@@ -903,6 +903,61 @@
     .pnl-badge.flat { color: var(--text3); background: var(--surface2); border: 1px solid var(--border); }
     .agg-pnl { margin-top: 6px; }
     .card-pnl { margin-top: 8px; }
+    .upnl-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 8px; padding-top: 8px;
+      border-top: 1px solid var(--surface3);
+      font-size: 11px; color: var(--text3);
+    }
+    .upnl-label { font-weight: 500; letter-spacing: .3px; text-transform: uppercase; }
+    .upnl-val {
+      font-family: var(--mono); font-weight: 700; font-size: 12px;
+      margin-left: auto;
+    }
+    .upnl-pos { color: var(--green); }
+    .upnl-neg { color: var(--red); }
+    .upnl-pct { font-size: 10px; color: var(--text3); margin-left: 4px; font-family: var(--mono); }
+
+    /* ── UPNL SUMMARY CARD ── */
+    .upnl-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 2px solid rgba(229,192,123,0.4);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 8px;
+    }
+    .upnl-card-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .upnl-card-title { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; }
+    .upnl-card-total {
+      font-family: var(--mono); font-size: 18px; font-weight: 700;
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .upnl-card-actions { display: flex; align-items: center; gap: 8px; }
+    .upnl-dl-btn {
+      display: flex; align-items: center; gap: 5px;
+      padding: 5px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface2);
+      color: var(--text2); font-size: 11px; font-weight: 500; font-family: inherit;
+      cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .upnl-dl-btn:hover { border-color: var(--green); color: var(--green); }
+    .upnl-rows { display: flex; flex-direction: column; gap: 2px; }
+    .upnl-ex-row {
+      display: flex; align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(34,34,42,.5);
+    }
+    .upnl-ex-row:last-child { border-bottom: none; }
+    .upnl-ex-name { font-size: 12px; font-weight: 600; color: var(--text2); min-width: 140px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .upnl-ex-dollar { font-family: var(--mono); font-size: 13px; font-weight: 700; text-align: right; min-width: 90px; }
+    .upnl-ex-pct { font-family: var(--mono); font-size: 11px; color: var(--text3); text-align: right; min-width: 65px; }
+    .upnl-pos { color: var(--green); }
+    .upnl-neg { color: var(--red); }
+    .upnl-zero { color: var(--text3); }
 
     /* ── MODALS ── */
     .modal-overlay {
@@ -1731,6 +1786,10 @@
         <rect x="8" y="1" width="3" height="10" rx="0.7" fill="currentColor"/>
       </svg>
       Portfolio
+    </a>
+    <a href="/screener" class="nav-lnk">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6h9M1.5 3h9M1.5 9h5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+      Screener
     </a>
     <a href="/archive" class="nav-lnk">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
@@ -2588,6 +2647,22 @@ function renderResults() {
         }).join('')}</div>`
       : `<div class="no-balance" style="color:var(--text4);font-size:11px">No balance</div>`;
 
+    // ── Unrealized PnL row
+    const upnlRaw = r.details && r.details.upnl_usd != null ? parseFloat(r.details.upnl_usd) : null;
+    let upnlHtml = '';
+    if (upnlRaw !== null && !isNaN(upnlRaw) && upnlRaw !== 0) {
+      const upnlCls = upnlRaw > 0 ? 'upnl-pos' : 'upnl-neg';
+      const upnlSign = upnlRaw > 0 ? '+' : '';
+      const upnlDollar = `${upnlSign}$${Math.abs(upnlRaw).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+      const upnlPct = walletUsd > 0
+        ? ` (${upnlSign}${(upnlRaw / walletUsd * 100).toFixed(2)}%)`
+        : '';
+      upnlHtml = `<div class="upnl-row">
+        <span class="upnl-label">Unrealized PnL</span>
+        <span class="upnl-val ${upnlCls}">${upnlDollar}<span class="upnl-pct">${upnlPct}</span></span>
+      </div>`;
+    }
+
     return `<div class="result-card ${typeClass}" style="${delay}">
       <div class="result-card-head">
         <span class="result-wallet-name">${esc(r.wallet_name)}</span>
@@ -2595,6 +2670,7 @@ function renderResults() {
         ${walletUsd > 0 ? `<span class="wallet-usd-total">${fUSD(r.usd_total)}</span>` : ''}
       </div>
       ${rowsHtml}
+      ${upnlHtml}
       ${pnlBadge(r.pnl, 'card-pnl')}
       <div class="tx-toggle" id="tx-toggle-${r.wallet_id}" onclick="toggleTxPanel(${r.wallet_id})">
         <span class="tx-icon">⟳</span>
@@ -2626,6 +2702,57 @@ function renderResults() {
       </div>
     </div>` : '';
 
+  // ── Unrealized PnL summary card ──────────────────────────────────────────────
+  const upnlRows = results
+    .filter(r => !r.error && r.details && r.details.upnl_usd != null)
+    .map(r => ({
+      name: r.wallet_name,
+      type_value: r.type_value,
+      upnl: parseFloat(r.details.upnl_usd),
+      wallet_usd: parseFloat(r.usd_total || 0),
+    }))
+    .filter(r => r.upnl !== 0 && !isNaN(r.upnl));
+
+  let upnlCard = '';
+  if (upnlRows.length) {
+    const totalUpnl = upnlRows.reduce((s, r) => s + r.upnl, 0);
+    const totalUpnlCls = totalUpnl > 0 ? 'upnl-pos' : totalUpnl < 0 ? 'upnl-neg' : 'upnl-zero';
+    const totalSign = totalUpnl > 0 ? '+' : '';
+    const fmt = v => '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    const fmtPct = (upnl, base) => {
+      if (!base) return '';
+      const p = upnl / base * 100;
+      return (p > 0 ? '+' : '') + p.toFixed(2) + '%';
+    };
+    const rowsHtml = upnlRows.map(r => {
+      const cls = r.upnl > 0 ? 'upnl-pos' : r.upnl < 0 ? 'upnl-neg' : 'upnl-zero';
+      const sign = r.upnl > 0 ? '+' : '';
+      return `<div class="upnl-ex-row">
+        <span class="upnl-ex-name">${esc(r.name)}</span>
+        <span class="upnl-ex-pct ${cls}">${fmtPct(r.upnl, r.wallet_usd)}</span>
+        <span class="upnl-ex-dollar ${cls}">${sign}${fmt(r.upnl)}</span>
+      </div>`;
+    }).join('');
+
+    upnlCard = `
+    <div class="upnl-card">
+      <div class="upnl-card-head">
+        <span class="upnl-card-title">Unrealized PnL · Futures</span>
+        <div class="upnl-card-actions">
+          <button class="upnl-dl-btn" onclick="downloadUpnl()">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3.5 5.5L6 8l2.5-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 10.5h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            CSV
+          </button>
+        </div>
+      </div>
+      <div class="upnl-card-total ${totalUpnlCls}">
+        ${totalSign}${fmt(totalUpnl)}
+        <span style="font-size:12px;font-weight:400;color:var(--text3)">total unrealized</span>
+      </div>
+      <div class="upnl-rows" style="margin-top:12px">${rowsHtml}</div>
+    </div>`;
+  }
+
   el.innerHTML = `
     <div class="agg-block">
       <div class="agg-label">Total Portfolio</div>
@@ -2635,12 +2762,47 @@ function renderResults() {
       <div class="agg-grid">${allItems}</div>
     </div>
     ${errBanner}
+    ${upnlCard}
     <div class="results-section-label">Individual</div>
     <div class="result-cards">${cards}</div>`;
 
   // Animate counter + update tab title
   animateCounter(document.getElementById('agg-num'), 0, usdTotal);
   if (usdTotal > 0) document.title = '$' + usdTotal.toLocaleString('en-US',{maximumFractionDigits:0}) + ' · Avalant';
+}
+
+function downloadUpnl() {
+  const results = (S.results && S.results.results) || [];
+  const rows = results
+    .filter(r => !r.error && r.details && r.details.upnl_usd != null)
+    .map(r => {
+      const upnl = parseFloat(r.details.upnl_usd);
+      const base = parseFloat(r.usd_total || 0);
+      const pct  = base > 0 ? (upnl / base * 100).toFixed(4) : '';
+      return [
+        r.wallet_name,
+        r.type_value,
+        upnl.toFixed(4),
+        pct,
+        new Date().toISOString(),
+      ];
+    });
+
+  if (!rows.length) return;
+
+  const header = ['Wallet', 'Exchange', 'Unrealized PnL (USD)', 'PnL %', 'Timestamp'];
+  const csv = [header, ...rows]
+    .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const date = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `upnl_${date}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function animateCounter(el, from, to, duration = 900) {
