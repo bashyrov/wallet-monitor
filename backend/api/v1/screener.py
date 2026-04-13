@@ -30,7 +30,7 @@ async def arbitrage_opportunities(_=Depends(get_current_user)):
 _funding_clients: set[WebSocket] = set()
 _arb_clients: set[WebSocket] = set()
 _broadcaster_task: asyncio.Task | None = None
-BROADCAST_INTERVAL = 30  # seconds
+BROADCAST_INTERVAL = 5  # seconds
 
 
 async def _push(clients: set[WebSocket], msg: str) -> None:

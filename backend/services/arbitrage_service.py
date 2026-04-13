@@ -27,10 +27,18 @@ def _mono() -> float:
 
 # ── Binance Futures ────────────────────────────────────────────────────────────
 async def _fetch_binance() -> list[dict]:
-    r = await _http.get("https://fapi.binance.com/fapi/v1/premiumIndex")
-    r.raise_for_status()
+    prem_r, tick_r = await asyncio.gather(
+        _http.get("https://fapi.binance.com/fapi/v1/premiumIndex"),
+        _http.get("https://fapi.binance.com/fapi/v1/ticker/24hr"),
+    )
+    prem_r.raise_for_status()
+    tick_r.raise_for_status()
+    vol_map: dict[str, float] = {
+        t["symbol"]: float(t.get("quoteVolume") or 0)
+        for t in tick_r.json()
+    }
     out = []
-    for item in r.json():
+    for item in prem_r.json():
         sym = item.get("symbol", "")
         if not sym.endswith("USDT"):
             continue
@@ -44,9 +52,10 @@ async def _fetch_binance() -> list[dict]:
             "symbol": token,
             "exchange": "binance",
             "price": price,
-            "rate": rate,           # per 8h
+            "rate": rate,
             "next_ts": next_ms // 1000,
             "interval_h": 8,
+            "volume_usd": vol_map.get(sym, 0),
         })
     return out
 
@@ -73,30 +82,38 @@ async def _fetch_bybit() -> list[dict]:
             "symbol": token,
             "exchange": "bybit",
             "price": price,
-            "rate": rate,           # per funding interval (usually 8h)
+            "rate": rate,
             "next_ts": next_ms // 1000,
             "interval_h": 8,
+            "volume_usd": float(item.get("turnover24h") or 0),
         })
     return out
 
 
 # ── Gate.io Futures (USDT-settled) ─────────────────────────────────────────────
 async def _fetch_gate() -> list[dict]:
-    r = await _http.get("https://api.gateio.ws/api/v4/futures/usdt/contracts")
-    r.raise_for_status()
+    contracts_r, tickers_r = await asyncio.gather(
+        _http.get("https://api.gateio.ws/api/v4/futures/usdt/contracts"),
+        _http.get("https://api.gateio.ws/api/v4/futures/usdt/tickers"),
+    )
+    contracts_r.raise_for_status()
+    tickers_r.raise_for_status()
+    # volume_24h_usd in tickers (quote volume in USDT)
+    vol_map: dict[str, float] = {
+        t["contract"]: float(t.get("volume_24h_quote") or t.get("volume_24h_usd") or 0)
+        for t in tickers_r.json()
+    }
     now = int(time.time())
     out = []
-    for item in r.json():
-        name = item.get("name", "")   # e.g. "BTC_USDT"
+    for item in contracts_r.json():
+        name = item.get("name", "")
         if not name.endswith("_USDT"):
             continue
         token = name[:-5]
         rate = float(item.get("funding_rate") or 0)
         last_apply = int(item.get("funding_next_apply") or 0)
-        interval = int(item.get("funding_interval") or 28800)  # seconds, default 8h
-        # funding_next_apply is the last applied timestamp; add interval to get real next
+        interval = int(item.get("funding_interval") or 28800)
         next_ts = last_apply + interval if last_apply else 0
-        # If still in the past (clock skew / stale), advance by another interval
         while next_ts and next_ts < now:
             next_ts += interval
         price = float(item.get("mark_price") or 0)
@@ -109,6 +126,7 @@ async def _fetch_gate() -> list[dict]:
             "rate": rate,
             "next_ts": next_ts,
             "interval_h": round(interval / 3600, 2),
+            "volume_usd": vol_map.get(name, 0),
         })
     return out
 
@@ -132,6 +150,7 @@ async def _fetch_kucoin() -> list[dict]:
         price = float(item.get("indexPrice") or 0)
         if price == 0:
             continue
+        vol_base = float(item.get("volumeOf24h") or 0)
         out.append({
             "symbol": token,
             "exchange": "kucoin",
@@ -139,6 +158,7 @@ async def _fetch_kucoin() -> list[dict]:
             "rate": rate,
             "next_ts": next_ts,
             "interval_h": 8,
+            "volume_usd": round(vol_base * price, 2),
         })
     return out
 
@@ -167,9 +187,10 @@ async def _fetch_hyperliquid() -> list[dict]:
             "symbol": token,
             "exchange": "hyperliquid",
             "price": price,
-            "rate": rate_1h,        # per 1h (interval_h = 1)
+            "rate": rate_1h,
             "next_ts": next_ts,
             "interval_h": 1,
+            "volume_usd": float(ctx.get("dayNtlVlm") or 0),
         })
     return out
 
@@ -188,10 +209,15 @@ async def _fetch_okx() -> list[dict]:
         i["instId"] for i in instr_r.json().get("data", [])
         if i.get("settleCcy") == "USDT"
     ]
-    # last price map
+    tick_data = tick_r.json().get("data", [])
+    # last price map + volume map (volCcy24h = base-asset volume; multiply by price for USD)
     price_map: dict[str, float] = {
         t["instId"]: float(t.get("last") or 0)
-        for t in tick_r.json().get("data", [])
+        for t in tick_data
+    }
+    vol_map_okx: dict[str, float] = {
+        t["instId"]: float(t.get("volCcy24h") or 0) * float(t.get("last") or 0)
+        for t in tick_data
     }
 
     # Fetch funding rates concurrently (public, no auth)
@@ -219,6 +245,7 @@ async def _fetch_okx() -> list[dict]:
                     "rate": rate,
                     "next_ts": next_ms // 1000 if next_ms else 0,
                     "interval_h": 8,
+                    "volume_usd": vol_map_okx.get(inst_id, 0),
                 }
             except Exception:
                 return None
@@ -257,6 +284,7 @@ async def _fetch_mexc() -> list[dict]:
             "rate": rate,
             "next_ts": next_ts,
             "interval_h": interval_h,
+            "volume_usd": float(item.get("amount24") or 0),
         })
     return out
 
@@ -291,6 +319,7 @@ async def _fetch_bitget() -> list[dict]:
             "rate": rate,
             "next_ts": next_ts,
             "interval_h": interval_h,
+            "volume_usd": float(item.get("usdtVolume") or 0),
         })
     return out
 
@@ -321,6 +350,7 @@ async def _fetch_aster() -> list[dict]:
             "rate": rate,
             "next_ts": next_ms // 1000,
             "interval_h": 8,
+            "volume_usd": 0,
         })
     return out
 
@@ -359,6 +389,7 @@ async def _fetch_ethereal() -> list[dict]:
                 "rate": rate_1h,
                 "next_ts": next_ts,
                 "interval_h": 1,
+                "volume_usd": 0,
             })
         return out
     finally:
@@ -522,16 +553,18 @@ async def get_arbitrage_opportunities() -> dict:
                     "symbol": symbol,
                     "long_exchange":  long_e["exchange"],
                     "short_exchange": short_e["exchange"],
-                    "long_rate":      round(rate_l * 100, 6),   # % per 8h
+                    "long_rate":      round(rate_l * 100, 6),
                     "short_rate":     round(rate_s * 100, 6),
                     "long_price":     p_l,
                     "short_price":    p_s,
-                    "gross_funding":  round(gross * 100, 6),     # %
-                    "price_spread":   round(price_spread * 100, 4),  # %
+                    "long_volume":    long_e.get("volume_usd", 0),
+                    "short_volume":   short_e.get("volume_usd", 0),
+                    "gross_funding":  round(gross * 100, 6),
+                    "price_spread":   round(price_spread * 100, 4),
                     "fee_long":       round(fee_l * 100, 4),
                     "fee_short":      round(fee_s * 100, 4),
                     "total_fees":     round(total_fees * 100, 4),
-                    "net_profit":     round(net * 100, 6),        # %
+                    "net_profit":     round(net * 100, 6),
                     "gross_apr":      gross_apr,
                     "net_apr":        net_apr,
                     "valid_price":    p_l <= p_s,
