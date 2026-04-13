@@ -46,7 +46,7 @@ async def _fetch_binance() -> list[dict]:
         rate = float(item.get("lastFundingRate") or 0)
         next_ms = int(item.get("nextFundingTime") or 0)
         price = float(item.get("markPrice") or 0)
-        if price == 0:
+        if price == 0 or rate == 0:
             continue
         out.append({
             "symbol": token,
@@ -76,7 +76,7 @@ async def _fetch_bybit() -> list[dict]:
         rate = float(rate_str)
         next_ms = int(item.get("nextFundingTime") or 0)
         price = float(item.get("markPrice") or 0)
-        if price == 0:
+        if price == 0 or rate == 0:
             continue
         out.append({
             "symbol": token,
@@ -117,7 +117,7 @@ async def _fetch_gate() -> list[dict]:
         while next_ts and next_ts < now:
             next_ts += interval
         price = float(item.get("mark_price") or 0)
-        if price == 0:
+        if price == 0 or rate == 0:
             continue
         out.append({
             "symbol": token,
@@ -148,7 +148,7 @@ async def _fetch_kucoin() -> list[dict]:
         ms_until = int(item.get("nextFundingRateTime") or 0)
         next_ts = int(time.time()) + ms_until // 1000 if ms_until else 0
         price = float(item.get("indexPrice") or 0)
-        if price == 0:
+        if price == 0 or rate == 0:
             continue
         vol_base = float(item.get("volumeOf24h") or 0)
         out.append({
@@ -181,7 +181,7 @@ async def _fetch_hyperliquid() -> list[dict]:
         token = asset_meta.get("name", "")
         rate_1h = float(ctx.get("funding") or 0)
         price = float(ctx.get("markPx") or 0)
-        if price == 0:
+        if price == 0 or rate_1h == 0:
             continue
         out.append({
             "symbol": token,
@@ -235,7 +235,7 @@ async def _fetch_okx() -> list[dict]:
                 rate = float(d.get("fundingRate") or 0)
                 next_ms = int(d.get("nextFundingTime") or 0)
                 price = price_map.get(inst_id, 0)
-                if price == 0:
+                if price == 0 or rate == 0:
                     return None
                 token = inst_id.replace("-USDT-SWAP", "")
                 return {
@@ -275,7 +275,7 @@ async def _fetch_mexc() -> list[dict]:
         token = sym[:-5]
         rate = float(item.get("fundingRate") or 0)
         price = float(item.get("fairPrice") or 0)
-        if price == 0:
+        if price == 0 or rate == 0:
             continue
         out.append({
             "symbol": token,
@@ -310,7 +310,7 @@ async def _fetch_bitget() -> list[dict]:
         token = sym[:-4]
         rate = float(item.get("fundingRate") or 0)
         price = float(item.get("markPrice") or 0)
-        if price == 0:
+        if price == 0 or rate == 0:
             continue
         out.append({
             "symbol": token,
@@ -341,7 +341,7 @@ async def _fetch_aster() -> list[dict]:
         rate = float(item.get("lastFundingRate") or 0)
         next_ms = int(item.get("nextFundingTime") or 0)
         price = float(item.get("markPrice") or 0)
-        if price == 0:
+        if price == 0 or rate == 0:
             continue
         out.append({
             "symbol": token,
@@ -380,7 +380,7 @@ async def _fetch_ethereal() -> list[dict]:
             token = p.base_token_name
             rate_1h = float(p.funding_rate1h or 0)
             price = price_map.get(str(p.id), 0)
-            if price == 0:
+            if price == 0 or rate_1h == 0:
                 continue
             out.append({
                 "symbol": token,
