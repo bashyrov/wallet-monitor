@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 
 class UserRegister(BaseModel):
@@ -42,6 +42,13 @@ class UserOut(BaseModel):
     is_admin: bool
     plan: str = "basic"
     plan_expires_at: Optional[datetime] = None
+    wallet_limit: Optional[int] = None   # None = unlimited; computed from plan
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _fill_wallet_limit(self) -> "UserOut":
+        from backend.plans import wallet_limit
+        self.wallet_limit = wallet_limit(self.plan)
+        return self

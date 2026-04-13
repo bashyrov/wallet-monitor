@@ -403,15 +403,15 @@
     <div class="upgrade-top">
       <div class="upgrade-icon">🚀</div>
       <div class="upgrade-title">Wallet limit reached</div>
-      <div class="upgrade-sub">Free plan includes <b style="color:var(--text)">5 wallets</b>. Upgrade to Pro to restore more wallets without limits.</div>
+      <div class="upgrade-sub">Your plan includes <b style="color:var(--text)" id="upgrade-limit-num">—</b> wallets. Upgrade to restore more wallets.</div>
     </div>
     <div class="upgrade-body">
       <div class="upgrade-limit-bar">
-        <span class="upgrade-limit-label">Free plan</span>
+        <span class="upgrade-limit-label" id="upgrade-plan-label">Plan</span>
         <div class="upgrade-limit-track">
           <div class="upgrade-limit-fill" id="upgrade-fill"></div>
         </div>
-        <span class="upgrade-limit-val" id="upgrade-val">5/5</span>
+        <span class="upgrade-limit-val" id="upgrade-val">—/—</span>
       </div>
       <button class="upgrade-cta" onclick="window.location.href='/pricing'">
         Upgrade to Pro →
@@ -445,8 +445,9 @@
 <script>
 Auth.requireAuth('/login');
 
-const FREE_WALLET_LIMIT = 5;
 let _activeCount = 0;
+let _walletLimit = null;   // null = unlimited (from backend plan)
+let _planName    = 'basic';
 
 // Set avatar
 (function() {
@@ -485,13 +486,19 @@ async function loadArchive() {
   listEl.innerHTML = '<div class="empty"><span class="empty-icon">⊟</span><div class="empty-title">Loading...</div></div>';
 
   try {
-    const [archRes, activeRes] = await Promise.all([
+    const [archRes, activeRes, meRes] = await Promise.all([
       Auth.apiFetch('/wallets/archived'),
       Auth.apiFetch('/wallets'),
+      Auth.apiFetch('/auth/me'),
     ]);
     const wallets = archRes.ok ? await archRes.json() : [];
     const active  = activeRes.ok ? await activeRes.json() : [];
+    const me      = meRes.ok ? await meRes.json() : null;
     _activeCount = active.length;
+    if (me) {
+      _walletLimit = me.wallet_limit;  // null = unlimited
+      _planName    = me.plan || 'basic';
+    }
 
     countEl.textContent = `${wallets.length} wallet${wallets.length !== 1 ? 's' : ''}`;
 
@@ -536,10 +543,6 @@ async function loadArchive() {
 }
 
 async function restoreWallet(id, name) {
-  if (_activeCount >= FREE_WALLET_LIMIT) {
-    openUpgradePopup();
-    return;
-  }
   const card = document.getElementById('wc-' + id);
   if (card) card.classList.add('restoring');
   try {
@@ -589,8 +592,12 @@ async function _doDeleteWallet(id, name) {
 }
 
 function openUpgradePopup() {
-  document.getElementById('upgrade-fill').style.width = '100%';
-  document.getElementById('upgrade-val').textContent = `${_activeCount}/${FREE_WALLET_LIMIT}`;
+  const limitStr = _walletLimit != null ? _walletLimit : '∞';
+  document.getElementById('upgrade-fill').style.width = _walletLimit != null ? '100%' : '0%';
+  document.getElementById('upgrade-val').textContent = `${_activeCount}/${limitStr}`;
+  const planLabel = _planName.charAt(0).toUpperCase() + _planName.slice(1);
+  document.getElementById('upgrade-plan-label').textContent = planLabel + ' plan';
+  document.getElementById('upgrade-limit-num').textContent = limitStr;
   document.getElementById('upgrade-overlay').classList.remove('hidden');
 }
 function closeUpgradePopup() {
