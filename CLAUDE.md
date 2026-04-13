@@ -106,9 +106,13 @@ wallet-monitor/
 ├── frontend/
 │   ├── auth.js                         # Shared auth module (getToken, setSession, requireAuth, requireAdmin, isAdmin, logout)
 │   ├── avalant_favicon.svg             # Browser favicon (SVG)
-│   ├── avalant_favicon.png             # Browser favicon (PNG fallback)
+│   ├── avalant_favicon.png             # Browser favicon (PNG, large original 2000×2000)
+│   ├── avalant_favicon-48.png          # 48×48 — Google Search minimum requirement
+│   ├── avalant_favicon-64.png          # 64×64
+│   ├── avalant_favicon-96.png          # 96×96
+│   ├── avalant_favicon-192.png         # 192×192 — apple-touch-icon
 │   ├── avalant-logo.svg                # Full logo — used in login/register form cards
-│   ├── favicon.ico                     # ICO for Google Search
+│   ├── favicon.ico                     # ICO fallback (16/32px)
 │   ├── robots.txt                      # SEO: allow all
 │   ├── sitemap.xml                     # SEO: all public pages
 │   ├── og-image.jpg                    # Open Graph social preview image (1200×630)
@@ -140,7 +144,7 @@ wallet-monitor/
     │   └── errors.py                   # Domain exceptions: WalletNotFound, TagNotFound, InvalidProviderType, etc.
     │
     ├── schemas/
-    │   ├── auth.py                     # UserRegister, UserLogin, Token, UserOut (includes is_admin, plan, plan_expires_at)
+    │   ├── auth.py                     # UserRegister, UserLogin, Token, UserOut (includes is_admin, plan, plan_expires_at, wallet_limit)
     │   ├── common.py                   # TagCreate/Update/Out, WalletCreate, WalletOut, WalletAddressCreate/Out
     │   ├── portfolio.py                # BalanceFetchRequest, WalletBalanceResult, AggregatedBalance,
     │   │                               #   BalanceResponse, PnL, TransactionFetchRequest,
@@ -157,9 +161,9 @@ wallet-monitor/
     │   │   ├── _signing.py             # HMAC helpers: hex_hmac_sha256, b64_hmac_sha256, hex_hmac_sha512, ms(), s()
     │   │   ├── binance_provider.py     # HMAC-SHA256, python-binance AsyncClient + SAPI
     │   │   ├── okx_provider.py         # base64-HMAC-SHA256, server timestamp, passphrase
-    │   │   ├── bybit_provider.py       # HMAC-SHA256, X-BAPI-* headers
-    │   │   ├── gate_provider.py        # HMAC-SHA512, Gate.io v4
-    │   │   ├── kucoin_provider.py      # base64-HMAC-SHA256, server timestamp, encrypted passphrase
+    │   │   ├── bybit_provider.py       # HMAC-SHA256, X-BAPI-* headers; UNIFIED + FUND + Earn locked products
+    │   │   ├── gate_provider.py        # HMAC-SHA512, Gate.io v4; spot + USDT/BTC futures + Uni lending earn
+    │   │   ├── kucoin_provider.py      # base64-HMAC-SHA256, server ts + passphrase; spot + futures (api-futures.kucoin.com)
     │   │   ├── mexc_provider.py        # HMAC-SHA256, spot + futures endpoints
     │   │   ├── bitget_provider.py      # base64-HMAC-SHA256, passphrase
     │   │   └── backpack_provider.py    # Ed25519 signature
@@ -210,7 +214,7 @@ wallet-monitor/
 | POST | `/api/auth/register` | — | Register → `{access_token}` + sets HttpOnly `session` cookie |
 | POST | `/api/auth/login` | — | Login → `{access_token}` + sets HttpOnly `session` cookie |
 | POST | `/api/auth/logout` | — | Deletes `session` cookie |
-| GET | `/api/auth/me` | Bearer | Current user (`id, username, email, is_admin, plan, plan_expires_at`) |
+| GET | `/api/auth/me` | Bearer | Current user (`id, username, email, is_admin, plan, plan_expires_at, wallet_limit`) |
 | GET | `/api/admin/stats` | Bearer + admin | KPI: users_count, wallets_count, by_type, recent_users |
 | GET | `/api/admin/users` | Bearer + admin | All users with wallet_count, plan, plan_expires_at, wallet_limit, request_count, last_active_at, is_blocked |
 | GET | `/api/admin/users/{id}` | Bearer + admin | Single user detail with plan info |
@@ -284,8 +288,10 @@ PLAN_LIMITS = {
 - **First user** (admin): automatically gets `unlim`
 - **`unlim`** can only be assigned to users who are already admins
 - Wallet limit enforced on backend in `wallet_service.create_wallet()` and `unarchive_wallet()` via `wallet_limit(user.plan)`
+- `wallet_limit` is exposed in `UserOut` (computed via `@model_validator` in `schemas/auth.py`) — frontend reads it from `/api/auth/me`; no hardcoded limits in JS
 - Admin sets plan via `PATCH /api/admin/users/{id}/plan {plan, plan_expires_at}`
 - `plan_expires_at` is stored but not automatically enforced (manual management)
+- **To add a new plan**: add entry to `PLAN_LIMITS` in `plans.py` — everything else (API, frontend popup, admin modal) picks it up automatically
 
 **Annual pricing** (20% discount, rounded):
 - Pro: $5/mo → $48/yr ($4/mo effective)
@@ -611,7 +617,7 @@ Multiple self-contained HTML pages (inline CSS + JS). Shared design language. Al
 | `register.html` | redirectIfAuthed | Register form → JWT + HttpOnly cookie → redirect to /app |
 | `pricing.html` | — | Basic/Pro/Platinum/Enterprise plans, monthly/annual toggle |
 | `checkout.html` | — | Card payment form (stub) |
-| `archive.html` | requireAuth + backend cookie | Archived wallets with restore/delete |
+| `archive.html` | requireAuth + backend cookie | Archived wallets with restore/delete; fetches `/auth/me` for wallet_limit |
 | `admin.html` | requireAdmin + backend cookie | KPI, users table with plan badge + plan modal, provider errors tab |
 | `admin-user.html` | requireAdmin + backend cookie | Per-user detail: stats, wallet list, last active |
 | `404.html` | — | Custom 404 with terminal animation |
@@ -802,7 +808,7 @@ Each provider has its own async function. Strategy: deposits/withdrawals first, 
 | Binance | spot deposits + withdrawals + futures income (`/fapi/v1/income`) | HMAC-SHA256 |
 | OKX | asset deposit-history + withdrawal-history + trade fills | base64-HMAC + server ts + passphrase |
 | Bybit | deposit query-record + withdraw query-record + transaction-log | HMAC-SHA256 X-BAPI-* |
-| Gate | wallet deposits + withdrawals + spot trades + futures book | HMAC-SHA512 |
+| Gate | wallet deposits + withdrawals + spot trades + futures book (USDT+BTC settle) | HMAC-SHA512 |
 | KuCoin | `/api/v1/deposits` + `/api/v1/withdrawals` + ledgers (pageSize≥10) | base64-HMAC + server ts + passphrase |
 | MEXC | deposit hisrec + withdraw history | HMAC-SHA256 |
 | Bitget | spot account bills + USDT/USDC futures bills | base64-HMAC + passphrase |
@@ -888,3 +894,8 @@ Tabs: Overview · All Users · Provider Errors
 26. **No `.html` in URLs** — `serve_page()` in `app.py` maps `/{page}` → `frontend/{page}.html`. Static files (`.js`, `.svg`, `.png`) served directly. Alembic migration fork causes startup failure — always check that each migration has a unique `down_revision`.
 27. **`unlim` plan** — admin-only. Backend enforces this: `PATCH /api/admin/users/{id}/plan` returns 400 if trying to assign `unlim` to a non-admin user.
 28. **Tags are user-scoped** — `user_id` nullable; `NULL` = system tag. Unique constraint is `(name, user_id)` per `UQ_tag_name_user`. System tags visible to all users.
+29. **`wallet_limit` in `UserOut`** — computed by `@model_validator(mode="after")` in `schemas/auth.py` via `plans.wallet_limit(self.plan)`. Returns `None` for unlimited plans. Automatically reflects any new plan added to `PLAN_LIMITS`. Never hardcode limits in frontend JS — always read from `/api/auth/me`.
+30. **Gate.io earn endpoints**: `/earn/uni/holdings` and `/earn/savings/account` return 404 — not valid API v4 paths. `/earn/uni/lends` works for Uni Lending positions. Gate.io **Simple Earn Flexible** has no public REST API endpoint — balance is NOT accessible.
+31. **KuCoin Futures** use a separate base domain `https://api-futures.kucoin.com` (not `api.kucoin.com`). Response currency `XBT` is normalized to `BTC`. Auth headers are the same format.
+32. **Bybit Earn** (`/v5/earn/product/list?category=FlexibleSaving`) may return empty `stakedAmount` — fails silently, not logged as error. UNIFIED account balance already includes most earn products.
+33. **Favicon for Google Search** requires at least 48×48px. Use `avalant_favicon-48.png` (or larger). Google ignores SVG favicons. All HTML pages link sized PNGs via `<link rel="icon" sizes="NxN">` — favicon.ico (16/32px) is fallback only. Google updates its cache with delay of days to weeks.
