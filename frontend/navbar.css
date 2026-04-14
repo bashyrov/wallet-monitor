@@ -1,19 +1,18 @@
 /* ── TOPBAR (shared) ──────────────────────────────────────────────────────── */
-app-navbar {
-  display: contents;
-}
 .topbar {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(14,14,17,0.88);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid #22222A;
+}
+app-navbar {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   padding: 0 24px; height: 52px;
-  background: rgba(14,14,17,0.88);
-  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid #22222A;
-  position: sticky; top: 0; z-index: 100;
   position: relative;
 }
-.topbar::after {
+app-navbar::after {
   content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
   background: linear-gradient(90deg, transparent, rgba(26,255,171,0.15), transparent);
   pointer-events: none;
@@ -61,7 +60,7 @@ app-navbar {
 }
 .avatar-btn:hover { box-shadow: 0 0 10px rgba(26,255,171,0.35); }
 @media (max-width: 700px) {
-  .topbar { grid-template-columns: auto 1fr; padding: 0 14px; }
+  app-navbar { grid-template-columns: auto 1fr; padding: 0 14px; }
   .topbar-nav { display: none; }
   .topbar-right { gap: 6px; }
 }
