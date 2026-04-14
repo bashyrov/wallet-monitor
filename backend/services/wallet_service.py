@@ -5,7 +5,7 @@ from backend.crypto import encrypt_credentials, decrypt_credentials
 from backend.db.models import Wallet, Tag, WalletAddress
 from backend.domain.errors import WalletNotFound, TagNotFound, TagAlreadyExists, TagLimitReached
 from backend.plans import wallet_limit
-from backend.schemas.common import WalletCreate, WalletOut, TagCreate, TagUpdate, TagOut, WalletAddressCreate, WalletAddressOut
+from backend.schemas.common import WalletCreate, WalletUpdate, WalletOut, TagCreate, TagUpdate, TagOut, WalletAddressCreate, WalletAddressOut
 
 
 def _display_info(wallet: Wallet) -> str:
@@ -117,6 +117,32 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "ba
         user_id=user_id,
     )
     db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+    return wallet_to_out(wallet)
+
+
+def update_wallet(db: Session, wallet_id: int, body: WalletUpdate, user_id: int) -> WalletOut:
+    wallet = _get_wallet(db, wallet_id, user_id)
+    if body.name is not None:
+        wallet.name = body.name
+
+    creds = decrypt_credentials(wallet.credentials or {})
+    if wallet.wallet_type == "exchange" or (wallet.wallet_type == "perpdex" and wallet.type_value == "aster"):
+        if body.api_key:
+            creds["api_key"] = body.api_key.strip()
+        if body.api_secret:
+            creds["api_secret"] = body.api_secret.strip()
+        if body.api_passphrase is not None:
+            if body.api_passphrase:
+                creds["api_passphrase"] = body.api_passphrase.strip()
+            else:
+                creds.pop("api_passphrase", None)
+    else:
+        if body.address:
+            creds["address"] = body.address.strip()
+
+    wallet.credentials = encrypt_credentials(creds)
     db.commit()
     db.refresh(wallet)
     return wallet_to_out(wallet)

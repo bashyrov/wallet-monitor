@@ -11,7 +11,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Screener · Avalant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg:       #0E0E11;
@@ -35,6 +35,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   font-size: 14px;
   min-height: 100vh;
 }
@@ -103,27 +105,173 @@ body {
   .topbar-right { gap: 6px; }
 }
 
-/* ── MODE TABS ── */
+/* ── LAYOUT (desktop) ── */
+.screener-layout {
+  display: flex;
+  height: calc(100vh - 52px);
+  overflow: hidden;
+}
+.left-panel {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: width 0.32s cubic-bezier(0.16,1,0.3,1);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.left-panel.collapsed { width: 0; overflow: hidden; }
+.panel-toggle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 22px; height: 44px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 10;
+  transition: background 0.15s, left 0.32s cubic-bezier(0.16,1,0.3,1);
+}
+.panel-toggle:hover { background: var(--surface2); }
+.panel-toggle svg { transition: transform 0.25s; }
+.panel-toggle.collapsed svg { transform: rotate(180deg); }
+.panel-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+}
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+/* ── LEFT PANEL SECTIONS ── */
+.lp-section {
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.lp-section:last-child { border-bottom: none; }
+.lp-title {
+  font-size: 10px; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .6px;
+  margin-bottom: 10px;
+}
+
+/* search in panel */
+.lp-search-wrap { position: relative; }
+.lp-search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--text3); pointer-events: none; }
+.lp-search {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px;
+  padding: 7px 9px 7px 30px; outline: none; transition: border-color .2s;
+}
+.lp-search:focus { border-color: var(--green); }
+.lp-search::placeholder { color: var(--text3); }
+
+/* exchange checkboxes in panel */
+.lp-ex-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 4px; cursor: pointer; border-radius: 7px;
+  transition: background .12s; user-select: none;
+}
+.lp-ex-item:hover { background: var(--surface2); }
+.lp-ex-check {
+  width: 15px; height: 15px; border-radius: 4px;
+  border: 1.5px solid var(--border); background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .12s;
+}
+.lp-ex-item.checked .lp-ex-check { background: var(--green); border-color: var(--green); }
+.lp-ex-item.checked .lp-ex-check::after { content: '✓'; font-size: 9px; color: #000; font-weight: 700; }
+.lp-ex-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.lp-ex-label { font-size: 13px; font-weight: 500; }
+.lp-ex-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+.lp-ex-action {
+  flex: 1; padding: 5px 8px; text-align: center;
+  font-size: 11px; font-weight: 600; color: var(--text3);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer; font-family: inherit; transition: color .15s;
+}
+.lp-ex-action:hover { color: var(--green); border-color: var(--green); }
+
+/* filter inputs in panel */
+.lp-filter-group { margin-bottom: 10px; }
+.lp-filter-label { font-size: 11px; color: var(--text3); font-weight: 500; margin-bottom: 5px; }
+.lp-filter-input {
+  width: 100%; padding: 7px 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 13px; font-family: var(--mono);
+  outline: none; transition: border-color .2s;
+}
+.lp-filter-input:focus { border-color: var(--green); }
+.lp-filter-input::placeholder { color: var(--text3); font-family: inherit; }
+.lp-toggle {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 8px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text3); font-size: 12px; font-weight: 500;
+  cursor: pointer; user-select: none; transition: all .15s;
+  width: 100%;
+}
+.lp-toggle.active { border-color: var(--green); color: var(--green); background: rgba(26,255,171,.06); }
+.lp-toggle-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+/* WS status in panel */
+.lp-ws { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text3); font-family: var(--mono); padding: 10px 14px; }
+.lp-refresh-btn {
+  margin: 0 14px 12px;
+  width: calc(100% - 28px);
+  padding: 7px; background: transparent;
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text2); font-size: 12px; cursor: pointer; transition: all .15s; font-family: inherit;
+}
+.lp-refresh-btn:hover { border-color: var(--green); color: var(--green); }
+
+/* desktop: hide old mobile toolbar */
+@media (min-width: 701px) {
+  .toolbar { display: none !important; }
+}
+/* mobile: hide left panel and toggle */
+@media (max-width: 700px) {
+  .screener-layout { display: block; height: auto; overflow: visible; }
+  .panel-wrap { display: none; }
+  .main-content { overflow: visible; }
+}
+
+/* ── MODE TABS in main-content ── */
 .mode-tabs {
-  display: flex; gap: 4px;
-  padding: 16px 20px 0;
-  max-width: 1400px; margin: 0 auto;
+  display: flex; gap: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  margin-bottom: 0;
 }
 .mode-tab {
-  padding: 7px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: transparent;
+  position: relative;
+  padding: 14px 18px 13px;
+  border: none; background: transparent;
   color: var(--text3);
   font-size: 13px; font-weight: 600; font-family: inherit;
-  cursor: pointer; transition: all .15s;
+  cursor: pointer; transition: color .15s;
+  white-space: nowrap;
 }
-.mode-tab:hover { color: var(--text2); border-color: var(--border); }
-.mode-tab.active {
-  background: var(--surface2);
-  border-color: var(--green);
-  color: var(--green);
+.mode-tab::after {
+  content: '';
+  position: absolute; bottom: -1px; left: 0; right: 0; height: 2px;
+  background: var(--green); border-radius: 2px 2px 0 0;
+  opacity: 0; transition: opacity .15s;
 }
+.mode-tab:hover { color: var(--text2); }
+.mode-tab.active { color: var(--text); }
+.mode-tab.active::after { opacity: 1; }
 
 /* ── TOOLBAR ── */
 .toolbar {
@@ -240,14 +388,15 @@ body {
 
 /* ── STATS ── */
 .stats-bar {
-  display: flex; gap: 20px; padding: 0 20px 12px;
-  max-width: 1400px; margin: 0 auto; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 20px; padding: 10px 16px;
+  flex-wrap: wrap;
 }
+#stats-bar { display: contents; }
 .stat-item { font-size: 12px; color: var(--text3); }
 .stat-item b { color: var(--text2); font-family: var(--mono); }
 
 /* ── TABLE ── */
-.table-wrap { max-width: 1400px; margin: 0 auto; padding: 0 20px; overflow-x: auto; }
+.table-wrap { padding: 0 16px; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 #tbl-funding { min-width: 680px; }
 #tbl-arb     { min-width: 960px; }
@@ -259,11 +408,26 @@ thead th {
   cursor: pointer; user-select: none; white-space: nowrap;
 }
 thead th:hover { color: var(--text2); }
+
+/* ── column tooltips ── */
+thead th[data-tip] { position: relative; }
+thead th[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: #1a1a22; border: 1px solid var(--border);
+  color: var(--text2); font-size: 11px; font-weight: 400;
+  white-space: nowrap; padding: 5px 9px; border-radius: 7px;
+  pointer-events: none; opacity: 0; transition: opacity .15s;
+  box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  text-transform: none; letter-spacing: 0;
+  z-index: 50;
+}
+thead th[data-tip]:hover::after { opacity: 1; }
 thead th .sort-arrow { margin-left: 4px; opacity: .4; }
 thead th.sorted .sort-arrow { opacity: 1; color: var(--green); }
 tbody tr { border-bottom: 1px solid rgba(34,34,42,.6); transition: background .12s; }
 tbody tr:hover { background: var(--surface); }
-tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
+tbody td { padding: 14px 12px; font-size: 13px; white-space: nowrap; }
 
 /* symbol */
 .td-symbol { font-weight: 700; font-family: var(--mono); }
@@ -321,7 +485,6 @@ tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
 .mobile-sort {
   display: none;
   padding: 0 12px 10px;
-  max-width: 1400px; margin: 0 auto;
 }
 .mobile-sort-label { font-size: 11px; color: var(--text3); font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
 .mobile-sort-chips {
@@ -350,8 +513,7 @@ tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
 /* ── PAGER ── */
 .pager {
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  padding: 12px 20px 6px;
-  max-width: 1400px; margin: 0 auto;
+  padding: 12px 16px 6px;
 }
 .pager-btn {
   padding: 5px 14px; border-radius: 7px;
@@ -361,19 +523,69 @@ tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
 }
 .pager-btn:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
 .pager-btn:disabled { opacity: 0.3; cursor: default; }
+.pager-btn-active { border-color: var(--green) !important; color: var(--green) !important; background: rgba(26,255,171,.08) !important; }
 .pager-info {
   font-size: 13px; font-family: var(--mono); color: var(--text3);
   min-width: 64px; text-align: center;
 }
 
+.mob-search-input {
+  width: 100%; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px;
+  padding: 7px 10px 7px 32px; outline: none; transition: border-color .2s;
+}
+.mob-search-input:focus { border-color: var(--green); }
+.mob-search-input::placeholder { color: var(--text3); }
+
+.mob-filter-btn {
+  display: none;
+  align-items: center; gap: 6px;
+  padding: 7px 12px; flex-shrink: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text2);
+  font-size: 13px; font-weight: 500; font-family: inherit;
+  cursor: pointer; transition: all .15s;
+}
+.mob-filter-btn:hover, .mob-filter-btn.active { border-color: var(--green); color: var(--green); }
+
+.mob-filters {
+  display: none;
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.32s cubic-bezier(0.16,1,0.3,1);
+  border-bottom: 1px solid var(--border);
+}
+.mob-filters.open { max-height: 700px; }
+.mob-filters-inner {
+  padding: 14px 12px 16px;
+  background: var(--surface);
+}
+
+/* exchange chips on mobile */
+.mob-ex-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px;
+  border: 1.5px solid var(--border); background: var(--surface2);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: all .15s; user-select: none;
+}
+.mob-ex-chip.checked { border-color: currentColor; }
+
 @media (max-width: 700px) {
   .mobile-sort { display: block; }
+  .mob-filter-btn { display: inline-flex; }
+  .mob-filters { display: block; }
+  .toolbar { flex-wrap: nowrap; padding: 10px 12px; }
+  .stats-bar-desktop { display: none !important; }
+  .stats-bar-mobile { display: flex !important; align-items: center; padding: 10px 12px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); flex-wrap: nowrap; gap: 12px; }
+}
+@media (min-width: 701px) {
+  .stats-bar-mobile { display: none !important; }
 }
 
 /* ── MOBILE CARDS ── */
 .cards-wrap {
   display: none; padding: 0 12px 8px;
-  max-width: 1400px; margin: 0 auto;
 }
 .card {
   background: var(--surface);
@@ -510,122 +722,219 @@ tbody td { padding: 10px 12px; font-size: 13px; white-space: nowrap; }
   </div>
 </header>
 
-<!-- ── MODE TABS ── -->
-<div class="mode-tabs">
-  <button class="mode-tab active" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
-  <button class="mode-tab" id="tab-arb" onclick="switchMode('arb')">Arbitrage</button>
-</div>
+<!-- ── LAYOUT ── -->
+<div class="screener-layout">
 
-<!-- ── TOOLBAR ── -->
-<div class="toolbar">
-  <div class="search-wrap">
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.8"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-    <input id="search" type="text" placeholder="Search token…" autocomplete="off">
-  </div>
+  <!-- LEFT PANEL -->
+  <div class="panel-wrap">
+    <div class="left-panel" id="left-panel">
 
-  <!-- Exchange dropdown -->
-  <div class="ex-drop-wrap" id="ex-drop-wrap">
-    <button class="ex-drop-btn" id="ex-drop-btn" onclick="toggleExDrop(event)">
-      <div class="ex-drop-dots" id="ex-drop-dots"></div>
-      <span id="ex-drop-label">All exchanges</span>
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-    <div class="ex-drop-menu" id="ex-drop-menu">
-      <div class="ex-drop-actions">
-        <button class="ex-drop-action" onclick="exSelectAll()">All</button>
-        <button class="ex-drop-action" onclick="exSelectNone()">None</button>
+      <!-- Search -->
+      <div class="lp-section">
+        <div class="lp-search-wrap">
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.8"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <input class="lp-search" id="search" type="text" placeholder="Search token…" autocomplete="off">
+        </div>
       </div>
-      <div id="ex-drop-items"></div>
+
+      <!-- Exchanges -->
+      <div class="lp-section">
+        <div class="lp-title">Exchanges</div>
+        <div class="lp-ex-actions">
+          <button class="lp-ex-action" onclick="exSelectAll()">All</button>
+          <button class="lp-ex-action" onclick="exSelectNone()">None</button>
+        </div>
+        <div id="lp-ex-items"></div>
+      </div>
+
+      <!-- Funding Filters -->
+      <div class="lp-section" id="lp-filters-funding">
+        <div class="lp-title">Funding filters</div>
+        <div class="lp-filter-group">
+          <div class="lp-filter-label">Min |APR|</div>
+          <input class="lp-filter-input" id="f-min-apr" type="number" min="0" step="0.1" placeholder="0%">
+        </div>
+        <div class="lp-toggle active" id="f-cross-toggle" onclick="toggleCrossOnly()">
+          <div class="lp-toggle-dot" id="f-cross-dot"></div>
+          Multi-exchange only
+        </div>
+      </div>
+
+      <!-- Arbitrage Filters -->
+      <div class="lp-section" id="lp-filters-arb" style="display:none">
+        <div class="lp-title">Arbitrage filters</div>
+        <div class="lp-filter-group">
+          <div class="lp-filter-label">Min net profit %</div>
+          <input class="lp-filter-input" id="f-min-net" type="number" step="0.001" placeholder="0%">
+        </div>
+        <div class="lp-filter-group">
+          <div class="lp-filter-label">Min gross funding %</div>
+          <input class="lp-filter-input" id="f-min-gross" type="number" min="0" step="0.001" placeholder="0%">
+        </div>
+        <div class="lp-toggle" id="f-valid-toggle" onclick="toggleValidOnly()">
+          <div class="lp-toggle-dot" id="f-valid-dot" style="opacity:.4"></div>
+          Valid price only
+        </div>
+      </div>
+
+      <!-- WS Status -->
+
     </div>
+    <button class="panel-toggle" id="panel-toggle" onclick="togglePanel()">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <path d="M6.5 2L3.5 5L6.5 8" stroke="var(--green)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
   </div>
 
-  <!-- Funding filters -->
-  <div class="filters" id="filters-funding">
-    <label class="filter-toggle active" id="f-cross-toggle" onclick="toggleCrossOnly()">
-      <span id="f-cross-icon">●</span> Multi-exchange
-    </label>
-    <span class="filter-label">Min |APR|</span>
-    <input class="filter-input" id="f-min-apr" type="number" min="0" step="0.1" placeholder="0%" style="width:90px" oninput="applyFilter()">
-  </div>
+  <!-- MAIN CONTENT -->
+  <div class="main-content">
 
-  <!-- Arbitrage filters -->
-  <div class="filters" id="filters-arb" style="display:none">
-    <span class="filter-label">Min net</span>
-    <input class="filter-input" id="f-min-net" type="number" step="0.001" placeholder="0%" style="width:90px" oninput="applyArb()">
-    <span class="filter-label">Min gross</span>
-    <input class="filter-input" id="f-min-gross" type="number" min="0" step="0.001" placeholder="0%" style="width:90px" oninput="applyArb()">
-    <label class="filter-toggle" id="f-valid-toggle" onclick="toggleValidOnly()">
-      <span id="f-valid-icon">○</span> Valid price only
-    </label>
-  </div>
+    <!-- ── MODE TABS + WS status ── -->
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
+      <button class="mode-tab" id="tab-arb" onclick="switchMode('arb')">Arbitrage</button>
+    </div>
 
-  <div class="toolbar-right">
-    <span class="refresh-info" id="refresh-info">
-      <span class="ws-dot" id="ws-dot"></span>
-      <span id="ws-status">Connecting…</span>
-    </span>
-    <button class="btn-refresh" id="btn-refresh" onclick="reconnectWs()">↻</button>
-  </div>
-</div>
+    <!-- ── STATS (desktop only) ── -->
+    <div class="stats-bar stats-bar-desktop">
+      <div id="stats-bar"></div>
+      <div class="stats-ws-block" style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <span class="refresh-info" style="display:flex;align-items:center;gap:6px">
+          <span class="ws-dot" id="ws-dot"></span>
+          <span id="ws-status">Connecting…</span>
+        </span>
+        <button class="btn-refresh" onclick="reconnectWs()">↻</button>
+      </div>
+    </div>
 
-<!-- ── STATS ── -->
-<div class="stats-bar" id="stats-bar"></div>
+    <!-- ── STATS (mobile) — BEFORE search ── -->
+    <div class="stats-bar stats-bar-mobile">
+      <div id="stats-bar-mob" style="display:flex;align-items:center;gap:12px;flex-shrink:0"></div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <span class="refresh-info" style="display:flex;align-items:center;gap:6px">
+          <span class="ws-dot" id="ws-dot-mob"></span>
+          <span id="ws-status-mob">Connecting…</span>
+        </span>
+        <button class="btn-refresh" onclick="reconnectWs()">↻</button>
+      </div>
+    </div>
 
-<!-- ── MOBILE SORT BAR ── -->
-<div class="mobile-sort" id="mobile-sort-funding">
-  <div class="mobile-sort-label">Sort by</div>
-  <div class="mobile-sort-chips" id="sort-chips-funding"></div>
-</div>
-<div class="mobile-sort" id="mobile-sort-arb" style="display:none">
-  <div class="mobile-sort-label">Sort by</div>
-  <div class="mobile-sort-chips" id="sort-chips-arb"></div>
-</div>
+    <!-- ── MOBILE TOOLBAR (≤700px) ── -->
+    <div class="toolbar">
+      <div class="search-wrap" style="flex:1">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.8"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <input class="mob-search-input" id="search-mobile" type="text" placeholder="Search token…" autocomplete="off" oninput="document.getElementById('search').value=this.value;applyFilter(true);applyArb(true)">
+      </div>
+      <button class="mob-filter-btn" id="mob-filter-btn" onclick="toggleMobFilters()">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M3 7h8M5 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Filters
+      </button>
+    </div>
 
-<!-- ── FUNDING SECTION ── -->
-<div id="section-funding">
-  <div class="table-wrap">
-    <table id="tbl-funding">
-      <thead>
-        <tr>
-          <th onclick="sortBy('symbol')"     data-col="symbol">Token <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('exchange')"   data-col="exchange">Exchange <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('price')"      data-col="price">Price <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('rate')"       data-col="rate">Funding / interval <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('apr')"        data-col="apr" class="sorted">APR <span class="sort-arrow">↓</span></th>
-          <th onclick="sortBy('volume_usd')" data-col="volume_usd">Volume 24h <span class="sort-arrow">↕</span></th>
-          <th onclick="sortBy('next_ts')"    data-col="next_ts">Next funding <span class="sort-arrow">↕</span></th>
-        </tr>
-      </thead>
-      <tbody id="tbody-funding"></tbody>
-    </table>
-  </div>
-  <div class="cards-wrap" id="cards-funding"></div>
-  <div class="pager" id="pager-funding"></div>
-</div>
+    <!-- ── MOBILE FILTERS PANEL ── -->
+    <div class="mob-filters" id="mob-filters">
+      <div class="mob-filters-inner">
 
-<!-- ── ARBITRAGE SECTION ── -->
-<div id="section-arb" style="display:none">
-  <div class="table-wrap">
-    <table id="tbl-arb">
-      <thead>
-        <tr>
-          <th onclick="sortArb('symbol')"        data-acol="symbol">Token <span class="sort-arrow">↕</span></th>
-          <th onclick="sortArb('long_exchange')"  data-acol="long_exchange">Long / Volume <span class="sort-arrow">↕</span></th>
-          <th onclick="sortArb('short_exchange')" data-acol="short_exchange">Short / Volume <span class="sort-arrow">↕</span></th>
-          <th onclick="sortArb('gross_funding')"  data-acol="gross_funding">Gross funding <span class="sort-arrow">↕</span></th>
-          <th onclick="sortArb('price_spread')"   data-acol="price_spread">Price spread <span class="sort-arrow">↕</span></th>
-          <th onclick="sortArb('total_fees')"     data-acol="total_fees">Fees <span class="sort-arrow">↕</span></th>
-          <th onclick="sortArb('net_profit')"     data-acol="net_profit" class="sorted">Net profit <span class="sort-arrow">↓</span></th>
-          <th onclick="sortArb('net_apr')"        data-acol="net_apr">Net APR <span class="sort-arrow">↕</span></th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody id="tbody-arb"></tbody>
-    </table>
-  </div>
-  <div class="cards-wrap" id="cards-arb"></div>
-  <div class="pager" id="pager-arb"></div>
-</div>
+        <!-- Exchanges -->
+        <div class="lp-title" style="margin-bottom:8px">Exchanges</div>
+        <div class="lp-ex-actions">
+          <button class="lp-ex-action" onclick="exSelectAll()">All</button>
+          <button class="lp-ex-action" onclick="exSelectNone()">None</button>
+        </div>
+        <div id="lp-ex-items-mob" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
+
+        <!-- Funding filters -->
+        <div id="mob-filters-funding">
+          <div class="lp-title" style="margin-bottom:8px">Funding filters</div>
+          <div class="lp-filter-group">
+            <div class="lp-filter-label">Min |APR|</div>
+            <input class="lp-filter-input" id="f-min-apr-mob" type="number" min="0" step="0.1" placeholder="0%" oninput="document.getElementById('f-min-apr').value=this.value;applyFilter()">
+          </div>
+          <div class="lp-toggle active" id="f-cross-toggle-mob" onclick="toggleCrossOnly()">
+            <div class="lp-toggle-dot" id="f-cross-dot-mob"></div>
+            Multi-exchange only
+          </div>
+        </div>
+
+        <!-- Arbitrage filters -->
+        <div id="mob-filters-arb" style="display:none">
+          <div class="lp-title" style="margin-bottom:8px">Arbitrage filters</div>
+          <div class="lp-filter-group">
+            <div class="lp-filter-label">Min net profit %</div>
+            <input class="lp-filter-input" id="f-min-net-mob" type="number" step="0.001" placeholder="0%" oninput="document.getElementById('f-min-net').value=this.value;applyArb()">
+          </div>
+          <div class="lp-filter-group">
+            <div class="lp-filter-label">Min gross funding %</div>
+            <input class="lp-filter-input" id="f-min-gross-mob" type="number" min="0" step="0.001" placeholder="0%" oninput="document.getElementById('f-min-gross').value=this.value;applyArb()">
+          </div>
+          <div class="lp-toggle" id="f-valid-toggle-mob" onclick="toggleValidOnly()">
+            <div class="lp-toggle-dot" id="f-valid-dot-mob" style="opacity:.4"></div>
+            Valid price only
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── MOBILE SORT BAR ── -->
+    <div class="mobile-sort" id="mobile-sort-funding">
+      <div class="mobile-sort-label">Sort by</div>
+      <div class="mobile-sort-chips" id="sort-chips-funding"></div>
+    </div>
+    <div class="mobile-sort" id="mobile-sort-arb" style="display:none">
+      <div class="mobile-sort-label">Sort by</div>
+      <div class="mobile-sort-chips" id="sort-chips-arb"></div>
+    </div>
+
+    <!-- ── FUNDING SECTION ── -->
+    <div id="section-funding">
+      <div class="table-wrap">
+        <table id="tbl-funding">
+          <thead>
+            <tr>
+              <th onclick="sortBy('symbol')"     data-col="symbol"     data-tip="Perpetual contract ticker">Token <span class="sort-arrow">↕</span></th>
+              <th onclick="sortBy('exchange')"   data-col="exchange"   data-tip="Exchange where the rate is quoted">Exchange <span class="sort-arrow">↕</span></th>
+              <th onclick="sortBy('price')"      data-col="price"      data-tip="Current mark price">Price <span class="sort-arrow">↕</span></th>
+              <th onclick="sortBy('rate')"       data-col="rate"       data-tip="Funding rate per interval — positive means longs pay shorts">Funding / interval <span class="sort-arrow">↕</span></th>
+              <th onclick="sortBy('apr')"        data-col="apr"        class="sorted" data-tip="Annualised funding rate (rate × intervals per year) — negative = shorts earn">APR <span class="sort-arrow">↓</span></th>
+              <th onclick="sortBy('volume_usd')" data-col="volume_usd" data-tip="24h notional trading volume in USD">Volume 24h <span class="sort-arrow">↕</span></th>
+              <th onclick="sortBy('next_ts')"    data-col="next_ts"    data-tip="Time until the next funding settlement">Next funding <span class="sort-arrow">↕</span></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-funding"></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-funding"></div>
+      <div class="pager" id="pager-funding"></div>
+    </div>
+
+    <!-- ── ARBITRAGE SECTION ── -->
+    <div id="section-arb" style="display:none">
+      <div class="table-wrap">
+        <table id="tbl-arb">
+          <thead>
+            <tr>
+              <th onclick="sortArb('symbol')"        data-acol="symbol"        data-tip="Perpetual contract ticker">Token <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('long_exchange')"  data-acol="long_exchange"  data-tip="Exchange to go long (pay negative funding) + 24h volume">Long / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('short_exchange')" data-acol="short_exchange" data-tip="Exchange to go short (receive positive funding) + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('gross_funding')"  data-acol="gross_funding"  data-tip="Combined funding earned per 8h interval before fees">Gross funding <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('price_spread')"   data-acol="price_spread"   data-tip="Mark price difference between exchanges — large spread increases entry cost">Price spread <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('total_fees')"     data-acol="total_fees"     data-tip="Estimated taker fees for opening both legs (0.06% per side)">Fees <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('net_profit')"     data-acol="net_profit"     class="sorted" data-tip="Net profit per 8h = gross funding − fees − price spread cost">Net profit <span class="sort-arrow">↓</span></th>
+              <th onclick="sortArb('net_apr')"        data-acol="net_apr"        data-tip="Annualised net profit (net × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
+              <th data-tip="Whether mark prices are close enough for the spread not to eat the profit">Status</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-arb"></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-arb"></div>
+      <div class="pager" id="pager-arb"></div>
+    </div>
+
+  </div><!-- /main-content -->
+</div><!-- /screener-layout -->
 
 <div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:200" id="toast-wrap"></div>
 
@@ -674,9 +983,13 @@ let _validOnly = false;
 let _crossOnly = true;   // show only tokens on 2+ exchanges by default
 
 // ── pagination ────────────────────────────────────────────────────────────────
-const PAGE_SIZE = 15;
+let PAGE_SIZE = 15;
 let _pageF = 0;
 let _pageA = 0;
+
+// ── open card state (mobile) ─────────────────────────────────────────────────
+let _openFundingKey = null;  // symbol+exchange
+let _openArbKey    = null;   // symbol+long+short
 
 // ── WebSocket state ────────────────────────────────────────────────────────────
 let _ws    = null;  // funding WebSocket
@@ -691,80 +1004,84 @@ let _wsArb = null;  // arbitrage WebSocket
   }
 })();
 
-// ── exchange dropdown ──────────────────────────────────────────────────────────
+// ── left panel exchange list ───────────────────────────────────────────────────
 function buildExDrop() {
-  const items = document.getElementById('ex-drop-items');
+  const items = document.getElementById('lp-ex-items');
   items.innerHTML = EXCHANGES.map(ex => `
-    <div class="ex-drop-item checked" id="ex-item-${ex}" onclick="toggleEx('${ex}')">
-      <div class="ex-drop-check" id="ex-check-${ex}"></div>
-      <span class="ex-drop-label">
-        <span class="ex-badge ex-${ex}">${EX_LABEL[ex]}</span>
-      </span>
+    <div class="lp-ex-item checked" id="ex-item-${ex}" onclick="toggleEx('${ex}')">
+      <div class="lp-ex-check" id="ex-check-${ex}"></div>
+      <div class="lp-ex-dot" style="background:${EX_COLOR[ex]}"></div>
+      <span class="lp-ex-label">${EX_LABEL[ex]}</span>
     </div>
   `).join('');
-  updateExDropBtn();
 }
-
-function updateExDropBtn() {
-  const active = EXCHANGES.filter(ex => !_exDisabled.has(ex));
-  const dotsEl = document.getElementById('ex-drop-dots');
-  const labelEl = document.getElementById('ex-drop-label');
-  dotsEl.innerHTML = active.slice(0, 6).map(ex =>
-    `<div class="ex-dot" style="background:${EX_COLOR[ex]}"></div>`
-  ).join('');
-  if (_exDisabled.size === 0) {
-    labelEl.textContent = 'All exchanges';
-  } else if (active.length === 0) {
-    labelEl.textContent = 'No exchanges';
-  } else {
-    labelEl.textContent = `${active.length} / ${EXCHANGES.length}`;
-  }
-}
-
-function toggleExDrop(e) {
-  e.stopPropagation();
-  const btn  = document.getElementById('ex-drop-btn');
-  const menu = document.getElementById('ex-drop-menu');
-  const open = menu.classList.toggle('open');
-  btn.classList.toggle('open', open);
-}
-
-function closeExDrop() {
-  document.getElementById('ex-drop-menu').classList.remove('open');
-  document.getElementById('ex-drop-btn').classList.remove('open');
-}
-
-document.addEventListener('click', e => {
-  if (!document.getElementById('ex-drop-wrap').contains(e.target)) closeExDrop();
-});
 
 function toggleEx(ex) {
-  const item  = document.getElementById(`ex-item-${ex}`);
-  if (_exDisabled.has(ex)) {
-    _exDisabled.delete(ex);
-    item.classList.add('checked');
-  } else {
-    _exDisabled.add(ex);
-    item.classList.remove('checked');
-  }
-  updateExDropBtn();
+  const item = document.getElementById(`ex-item-${ex}`);
+  if (_exDisabled.has(ex)) { _exDisabled.delete(ex); item.classList.add('checked'); }
+  else { _exDisabled.add(ex); item.classList.remove('checked'); }
   _mode === 'funding' ? applyFilter() : applyArb();
 }
 
 function exSelectAll() {
   _exDisabled.clear();
-  EXCHANGES.forEach(ex => document.getElementById(`ex-item-${ex}`).classList.add('checked'));
-  updateExDropBtn();
+  EXCHANGES.forEach(ex => {
+    const a = document.getElementById(`ex-item-${ex}`); if (a) a.classList.add('checked');
+    const b = document.getElementById(`mob-ex-${ex}`);  if (b) b.classList.add('checked');
+  });
   _mode === 'funding' ? applyFilter() : applyArb();
 }
 
 function exSelectNone() {
   EXCHANGES.forEach(ex => {
     _exDisabled.add(ex);
-    document.getElementById(`ex-item-${ex}`).classList.remove('checked');
+    const a = document.getElementById(`ex-item-${ex}`); if (a) a.classList.remove('checked');
+    const b = document.getElementById(`mob-ex-${ex}`);  if (b) b.classList.remove('checked');
   });
-  updateExDropBtn();
   _mode === 'funding' ? applyFilter() : applyArb();
+}
+
+// ── mobile filters toggle ─────────────────────────────────────────────────────
+function toggleMobFilters() {
+  const panel = document.getElementById('mob-filters');
+  const btn   = document.getElementById('mob-filter-btn');
+  const open  = panel.classList.toggle('open');
+  btn.classList.toggle('active', open);
+}
+
+function buildMobExChips() {
+  const wrap = document.getElementById('lp-ex-items-mob');
+  if (!wrap) return;
+  wrap.innerHTML = EXCHANGES.map(ex => `
+    <div class="mob-ex-chip checked" id="mob-ex-${ex}" style="color:${EX_COLOR[ex]}" onclick="toggleExMob('${ex}')">
+      ${EX_LABEL[ex]}
+    </div>
+  `).join('');
+}
+
+function toggleExMob(ex) {
+  // mirror to main toggleEx
+  const item = document.getElementById(`ex-item-${ex}`);
+  const mobItem = document.getElementById(`mob-ex-${ex}`);
+  if (_exDisabled.has(ex)) {
+    _exDisabled.delete(ex);
+    if (item) item.classList.add('checked');
+    if (mobItem) mobItem.classList.add('checked');
+  } else {
+    _exDisabled.add(ex);
+    if (item) item.classList.remove('checked');
+    if (mobItem) mobItem.classList.remove('checked');
+  }
+  _mode === 'funding' ? applyFilter() : applyArb();
+}
+
+// ── left panel toggle ──────────────────────────────────────────────────────────
+function togglePanel() {
+  const panel = document.getElementById('left-panel');
+  const btn   = document.getElementById('panel-toggle');
+  const collapsed = panel.classList.toggle('collapsed');
+  btn.classList.toggle('collapsed', collapsed);
+  btn.style.left = collapsed ? '0' : '260px';
 }
 
 // ── mode switch ────────────────────────────────────────────────────────────────
@@ -772,12 +1089,14 @@ function switchMode(mode) {
   _mode = mode;
   document.getElementById('tab-funding').classList.toggle('active', mode === 'funding');
   document.getElementById('tab-arb').classList.toggle('active', mode === 'arb');
-  document.getElementById('section-funding').style.display     = mode === 'funding' ? '' : 'none';
-  document.getElementById('section-arb').style.display         = mode === 'arb'     ? '' : 'none';
-  document.getElementById('filters-funding').style.display     = mode === 'funding' ? '' : 'none';
-  document.getElementById('filters-arb').style.display         = mode === 'arb'     ? '' : 'none';
-  document.getElementById('mobile-sort-funding').style.display = mode === 'funding' ? '' : 'none';
-  document.getElementById('mobile-sort-arb').style.display     = mode === 'arb'     ? '' : 'none';
+  document.getElementById('section-funding').style.display      = mode === 'funding' ? '' : 'none';
+  document.getElementById('section-arb').style.display          = mode === 'arb'     ? '' : 'none';
+  document.getElementById('lp-filters-funding').style.display   = mode === 'funding' ? '' : 'none';
+  document.getElementById('lp-filters-arb').style.display       = mode === 'arb'     ? '' : 'none';
+  const mf = document.getElementById('mob-filters-funding'); if (mf) mf.style.display = mode === 'funding' ? '' : 'none';
+  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = mode === 'arb'     ? '' : 'none';
+  document.getElementById('mobile-sort-funding').style.display  = mode === 'funding' ? '' : 'none';
+  document.getElementById('mobile-sort-arb').style.display      = mode === 'arb'     ? '' : 'none';
   if (mode === 'arb' && !_arbRows.length) loadArb();
   else if (mode === 'funding') applyFilter();
   else applyArb();
@@ -785,19 +1104,15 @@ function switchMode(mode) {
 
 function toggleValidOnly() {
   _validOnly = !_validOnly;
-  const tog = document.getElementById('f-valid-toggle');
-  const ico = document.getElementById('f-valid-icon');
-  tog.classList.toggle('active', _validOnly);
-  ico.textContent = _validOnly ? '●' : '○';
+  ['f-valid-toggle','f-valid-toggle-mob'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.toggle('active', _validOnly); });
+  ['f-valid-dot','f-valid-dot-mob'].forEach(id => { const el = document.getElementById(id); if (el) el.style.opacity = _validOnly ? '1' : '0.4'; });
   applyArb();
 }
 
 function toggleCrossOnly() {
   _crossOnly = !_crossOnly;
-  const tog = document.getElementById('f-cross-toggle');
-  const ico = document.getElementById('f-cross-icon');
-  tog.classList.toggle('active', _crossOnly);
-  ico.textContent = _crossOnly ? '●' : '○';
+  ['f-cross-toggle','f-cross-toggle-mob'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.toggle('active', _crossOnly); });
+  ['f-cross-dot','f-cross-dot-mob'].forEach(id => { const el = document.getElementById(id); if (el) el.style.opacity = _crossOnly ? '1' : '0.4'; });
   applyFilter();
 }
 
@@ -808,8 +1123,6 @@ function _wsUrl(path) {
 }
 
 function setWsStatus(state) {
-  const dot = document.getElementById('ws-dot');
-  const lbl = document.getElementById('ws-status');
   const states = {
     live:         ['ws-dot live',  'Live'],
     connecting:   ['ws-dot',       'Connecting…'],
@@ -817,8 +1130,8 @@ function setWsStatus(state) {
     error:        ['ws-dot error', 'Disconnected'],
   };
   const [cls, text] = states[state] || states.error;
-  dot.className = cls;
-  lbl.textContent = text;
+  ['ws-dot','ws-dot-mob'].forEach(id => { const el = document.getElementById(id); if (el) el.className = cls; });
+  ['ws-status','ws-status-mob'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = text; });
 }
 
 function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) {
@@ -1018,11 +1331,19 @@ function renderStats(data) {
   const total = (data.rows || []).length;
   const exCount = new Set((data.rows || []).map(r => r.exchange)).size;
   const ts = data.ts ? new Date(data.ts * 1000).toLocaleTimeString() : '—';
-  document.getElementById('stats-bar').innerHTML = `
+  const statsHtml = `
     <div class="stat-item"><b>${total}</b> contracts tracked</div>
     <div class="stat-item"><b>${exCount}</b> exchanges</div>
     <div class="stat-item">Updated at <b>${ts}</b></div>
   `;
+  const statsMobHtml = `
+    <div class="stat-item"><b>${total}</b> contracts</div>
+    <div class="stat-item">at <b>${ts}</b></div>
+  `;
+  document.getElementById('stats-bar').innerHTML = statsHtml;
+  const mob = document.getElementById('stats-bar-mob'); if (mob) mob.innerHTML = statsMobHtml;
+  // sync ws status text into stats bar on mobile (dot/button stay in desktop block)
+  const lbl = document.getElementById('ws-status'); if (lbl) lbl.textContent = lbl.textContent;
 }
 
 // ── format helpers ─────────────────────────────────────────────────────────────
@@ -1085,15 +1406,26 @@ function fmtExRate(ex, rate_pct) {
 }
 
 // ── pager helper ───────────────────────────────────────────────────────────────
+const _pgSizes = [10, 15, 25, 50];
+function _pgSizeBtns() {
+  return `<div style="display:flex;gap:4px;align-items:center">
+    <span style="font-size:11px;color:var(--text3);margin-right:2px">Rows:</span>
+    ${_pgSizes.map(n => `<button class="pager-btn${PAGE_SIZE===n?' pager-btn-active':''}" style="padding:4px 9px;font-size:12px" onclick="setPageSize(${n})">${n}</button>`).join('')}
+  </div>`;
+}
+
 function renderPager(id, page, total, goFn) {
   const el = document.getElementById(id);
   if (!el) return;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (pages <= 1) { el.innerHTML = ''; return; }
-  el.innerHTML = `
+  const nav = pages > 1 ? `
     <button class="pager-btn" onclick="${goFn}(${page - 1})" ${page === 0 ? 'disabled' : ''}>← Prev</button>
     <span class="pager-info">${page + 1} / ${pages}</span>
-    <button class="pager-btn" onclick="${goFn}(${page + 1})" ${page >= pages - 1 ? 'disabled' : ''}>Next →</button>`;
+    <button class="pager-btn" onclick="${goFn}(${page + 1})" ${page >= pages - 1 ? 'disabled' : ''}>Next →</button>` : '';
+  el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px">
+    <div style="display:flex;align-items:center;gap:8px">${nav}</div>
+    ${_pgSizeBtns()}
+  </div>`;
 }
 
 function goPageF(n) {
@@ -1265,8 +1597,22 @@ function mobileSortA(col) {
 }
 
 // ── mobile cards ──────────────────────────────────────────────────────────────
+function setPageSize(n) {
+  PAGE_SIZE = n;
+  _pageF = 0; _pageA = 0;
+  _mode === 'funding' ? renderFunding() : renderArb();
+}
+
 function toggleCard(el) {
+  const wasOpen = el.classList.contains('open');
   el.classList.toggle('open');
+  const key = el.dataset.key;
+  if (!key) return;
+  if (el.closest('#cards-funding')) {
+    _openFundingKey = wasOpen ? null : key;
+  } else {
+    _openArbKey = wasOpen ? null : key;
+  }
 }
 
 function renderFundingCards() {
@@ -1285,8 +1631,10 @@ function renderFundingCards() {
     const rateSign = r.rate >= 0 ? '+' : '';
     const rateCls  = r.rate > 0 ? 'rate-pos' : r.rate < 0 ? 'rate-neg' : 'rate-zero';
     const intLbl = r.interval_h === 1 ? '1h' : `${r.interval_h}h`;
+    const key = `${r.symbol}|${r.exchange}`;
+    const isOpen = _openFundingKey === key;
     return `
-    <div class="card" onclick="toggleCard(this)" data-fi="${absI}">
+    <div class="card${isOpen?' open':''}" onclick="toggleCard(this)" data-fi="${absI}" data-key="${key}">
       <div class="card-head">
         <span class="card-symbol">${esc(r.symbol)}</span>
         <div class="card-badges">
@@ -1346,8 +1694,10 @@ function renderArbCards() {
       : '<span class="badge-invalid">⚠ spread</span>';
     const aprCls = r.net_apr > 0 ? 'rate-pos' : r.net_apr < 0 ? 'rate-neg' : 'rate-zero';
     const aprSign = r.net_apr >= 0 ? '+' : '';
+    const key = `${r.symbol}|${r.long_exchange}|${r.short_exchange}`;
+    const isOpen = _openArbKey === key;
     return `
-    <div class="card" onclick="toggleCard(this)">
+    <div class="card${isOpen?' open':''}" onclick="toggleCard(this)" data-key="${key}">
       <div class="card-head">
         <span class="card-symbol">${esc(r.symbol)}</span>
         <div class="card-badges">
@@ -1438,10 +1788,19 @@ function tickCountdowns() {
 
 // ── bootstrap ─────────────────────────────────────────────────────────────────
 buildExDrop();
+buildMobExChips();
 buildSortChips();
-document.getElementById('search').addEventListener('input', () => {
-  _mode === 'funding' ? applyFilter() : applyArb();
-});
+document.getElementById('search').addEventListener('input', () => { _mode === 'funding' ? applyFilter() : applyArb(); });
+document.getElementById('f-min-apr').addEventListener('input', () => applyFilter());
+document.getElementById('f-min-net').addEventListener('input', () => applyArb());
+document.getElementById('f-min-gross').addEventListener('input', () => applyArb());
+
+// Init cross-only dot state
+['f-cross-dot','f-cross-dot-mob'].forEach(id => { const el = document.getElementById(id); if (el) el.style.opacity = _crossOnly ? '1' : '0.4'; });
+
+// Panel toggle initial position
+document.getElementById('panel-toggle').style.left = '260px';
+
 setInterval(tickCountdowns, 1000);
 
 connectWs();

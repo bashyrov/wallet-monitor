@@ -14,7 +14,7 @@
   <title>Avalant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     /* ══════════════════════════════════════════
        TOKEN TERMINAL DESIGN SYSTEM
@@ -2049,6 +2049,32 @@
   </div>
 </div>
 
+<!-- ══ MODAL: Edit Wallet ═════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modal-edit-wallet" onclick="if(event.target===this)closeEditWalletModal()">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head">
+      <span class="modal-title">Edit Wallet</span>
+      <button class="modal-x" onclick="closeEditWalletModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="edit-wallet-form" onsubmit="submitEditWallet(event)">
+        <div class="form-group" style="margin-bottom:16px;">
+          <label class="form-label">Wallet name</label>
+          <input class="form-input" id="ew-name" placeholder="min 6 chars" required minlength="6">
+        </div>
+        <div id="ew-creds"></div>
+        <div class="form-error" id="ew-err"></div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <div class="form-actions" style="margin-top:0">
+        <button type="button" class="btn btn-ghost" onclick="closeEditWalletModal()">Cancel</button>
+        <button type="submit" form="edit-wallet-form" class="btn btn-primary" id="btn-submit-edit-wallet">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ MODAL: Addresses ══════════════════════════════════════════════ -->
 <div class="modal-overlay hidden" id="modal-addresses" onclick="if(event.target===this)closeAddrModal()">
   <div class="modal" style="max-width:520px;">
@@ -2197,6 +2223,12 @@ const api = {
   },
   async put(p, b) {
     const r = await fetch('/api' + p, { method:'PUT', headers: _authHeaders(), body:JSON.stringify(b) });
+    _handleUnauth(r);
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async patch(p, b) {
+    const r = await fetch('/api' + p, { method:'PATCH', headers: _authHeaders(), body:JSON.stringify(b) });
     _handleUnauth(r);
     if (!r.ok) throw new Error(await r.text());
     return r.json();
@@ -2393,6 +2425,7 @@ function walletRow(w, idx = 0) {
     <div class="wallet-actions">
       ${isExchange ? `<button class="icon-btn has-tip" data-tip="Addresses" onclick="toggleAddrPanel(event,${w.id})">◈</button>` : ''}
       <button class="icon-btn has-tip" data-tip="Tags" onclick="openTagDrop(event,${w.id})">⊕</button>
+      <button class="icon-btn has-tip" data-tip="Edit" onclick="openEditWalletModal(${w.id})">✎</button>
       <button class="icon-btn has-tip" data-tip="Archive" onclick="archiveWallet(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">⊟</button>
       <button class="icon-btn danger has-tip" data-tip="Delete" onclick="delWallet(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">✕</button>
     </div>
@@ -2417,6 +2450,103 @@ function toggleAddrPanel(e, walletId) {
 function closeAddrModal() {
   document.getElementById('modal-addresses').classList.add('hidden');
   _addrModalWalletId = null;
+}
+
+// ── Edit Wallet Modal ────────────────────────────────────────────────────────
+let _editWalletId = null;
+
+function openEditWalletModal(walletId) {
+  const w = S.wallets.find(x => x.id === walletId);
+  if (!w) return;
+  _editWalletId = walletId;
+
+  document.getElementById('ew-name').value = w.name;
+  document.getElementById('ew-err').textContent = '';
+
+  const creds = document.getElementById('ew-creds');
+  if (w.wallet_type === 'exchange' || (w.wallet_type === 'perpdex' && w.type_value === 'aster')) {
+    const needsPass = (S.options.exchange_types || []).find(e => e.value === w.type_value)?.needs_passphrase;
+    creds.innerHTML = `
+      <div class="creds-section">
+        <div class="creds-section-title">API Credentials <span style="font-size:11px;color:var(--text3);font-weight:400">(leave blank to keep current)</span></div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input class="form-input" id="ew-api_key" placeholder="New API key (optional)" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Secret</label>
+          <input class="form-input" id="ew-api_secret" type="password" placeholder="New API secret (optional)" autocomplete="off">
+        </div>
+        ${needsPass ? `<div class="form-group">
+          <label class="form-label">Passphrase</label>
+          <input class="form-input" id="ew-api_passphrase" type="password" placeholder="New passphrase (optional)" autocomplete="off">
+        </div>` : ''}
+      </div>`;
+  } else {
+    // chain or perpdex (address-based)
+    const label = w.wallet_type === 'perpdex' ? 'EVM / Starknet Address' : 'Wallet Address';
+    creds.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">${label} <span style="font-size:11px;color:var(--text3);font-weight:400">(leave blank to keep current)</span></label>
+        <input class="form-input" id="ew-address" placeholder="${w.display_info || 'New address (optional)'}" spellcheck="false">
+      </div>`;
+  }
+
+  document.getElementById('modal-edit-wallet').classList.remove('hidden');
+  document.getElementById('ew-name').focus();
+}
+
+function closeEditWalletModal() {
+  document.getElementById('modal-edit-wallet').classList.add('hidden');
+  _editWalletId = null;
+}
+
+async function submitEditWallet(e) {
+  e.preventDefault();
+  if (!_editWalletId) return;
+  const w = S.wallets.find(x => x.id === _editWalletId);
+  if (!w) return;
+
+  const btn = document.getElementById('btn-submit-edit-wallet');
+  const errEl = document.getElementById('ew-err');
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  const body = {};
+  const name = document.getElementById('ew-name').value.trim();
+  if (name && name !== w.name) body.name = name;
+
+  if (w.wallet_type === 'exchange' || (w.wallet_type === 'perpdex' && w.type_value === 'aster')) {
+    const key = document.getElementById('ew-api_key')?.value.trim();
+    const sec = document.getElementById('ew-api_secret')?.value.trim();
+    const pass = document.getElementById('ew-api_passphrase')?.value.trim();
+    if (key) body.api_key = key;
+    if (sec) body.api_secret = sec;
+    if (pass !== undefined) body.api_passphrase = pass;
+  } else {
+    const addr = document.getElementById('ew-address')?.value.trim();
+    if (addr) body.address = addr;
+  }
+
+  if (!Object.keys(body).length) {
+    closeEditWalletModal();
+    btn.disabled = false; btn.textContent = 'Save';
+    return;
+  }
+
+  try {
+    const updated = await api.patch(`/wallets/${_editWalletId}`, body);
+    const idx = S.wallets.findIndex(x => x.id === _editWalletId);
+    if (idx !== -1) S.wallets[idx] = updated;
+    closeEditWalletModal();
+    renderAll();
+    toast('Wallet updated');
+  } catch(err) {
+    errEl.textContent = err.message || 'Failed to save';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
 }
 
 function _renderAddrList(w) {
@@ -2519,7 +2649,9 @@ function closeTagDrop() {
 function renderResults() {
   const el = document.getElementById('results-scroll');
 
-  if (S.loadingBalance || S.loadingTx) {
+  // Show loader only when no partial results yet; once we have cards, let them through
+  const hasPartialResults = S.loadingBalance && S.results && S.results.results && S.results.results.length > 0;
+  if ((S.loadingBalance || S.loadingTx) && !hasPartialResults) {
     const pct = Math.round(S._progress);
     const dots = Array.from({length: 12}, (_, i) => {
       const size = 2 + Math.random() * 4;
@@ -2583,6 +2715,36 @@ function renderResults() {
     return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6});
   };
   const isStable = k => STABLES.has(k.toUpperCase().replace('.','_'));
+
+  // Partial streaming state — show wallet cards only, no aggregated block yet
+  if (!aggregated) {
+    const partialCards = results.map((r, i) => {
+      const typeClass = `t-${r.wallet_type}`;
+      const delay = `animation-delay:${(i + 1) * 60}ms`;
+      if (r.error) return `<div class="result-card has-error ${typeClass}" style="${delay};border-color:rgba(248,113,113,0.25)">
+        <div class="result-card-head">
+          <span class="result-wallet-name">${esc(r.wallet_name)}</span>
+          <span class="result-badge">${esc(r.type_value)}</span>
+        </div>
+        <div class="result-error"><div class="result-error-icon">!</div><span class="result-error-text">${esc(r.error)}</span></div>
+      </div>`;
+      const rows = Object.entries(r.totals || {});
+      const walletUsd = parseFloat(r.usd_total || 0);
+      const rowsHtml = rows.length
+        ? `<div class="result-rows">${rows.map(([k,v]) => `<div class="result-row"><div class="r-asset">${k}</div><div class="r-amt">${fAmt(v)}</div>${r.usd_values && r.usd_values[k] ? `<div class="r-usd">${fUSD(r.usd_values[k])}</div>` : ''}</div>`).join('')}</div>`
+        : `<div class="no-balance" style="color:var(--text4);font-size:11px">No balance</div>`;
+      return `<div class="result-card ${typeClass}" style="${delay}">
+        <div class="result-card-head">
+          <span class="result-wallet-name">${esc(r.wallet_name)}</span>
+          <span class="result-badge">${esc(r.type_value)}</span>
+          ${walletUsd > 0 ? `<span class="wallet-usd-total">${fUSD(r.usd_total)}</span>` : ''}
+        </div>
+        ${rowsHtml}
+      </div>`;
+    }).join('');
+    el.innerHTML = `<div class="results-section-label">Loaded so far</div><div class="result-cards">${partialCards}</div>`;
+    return;
+  }
 
   const usdTotal = parseFloat(aggregated.usd_total || aggregated.stable_total || 0);
   const stableTotal = parseFloat(aggregated.stable_total || 0);
@@ -3003,9 +3165,54 @@ async function checkBalance() {
   setView('balances');
   _startProgress(`Fetching ${total} wallet${total !== 1 ? 's' : ''}…`, 'Running in parallel');
   renderResults();
+
+  const walletResults = [];
+  let done = 0;
+
   try {
-    S.results = await api.post('/portfolio/balance', { wallet_ids: ids });
-    S.lastChecked = new Date();
+    const token = Auth.getToken();
+    const resp = await fetch('/api/portfolio/balance/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ wallet_ids: ids }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done: eof, value } = await reader.read();
+      if (eof) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (evt.type === 'wallet') {
+          walletResults.push(evt.result);
+          done++;
+          // Stop the easing timer; we drive progress manually now
+          if (done === 1) clearInterval(S._progressTimer);
+          S.results = { results: walletResults, aggregated: null };
+          S._progress = Math.round((done / total) * 88);
+          S._progressSub = `${done} / ${total}`;
+          renderResults();
+        } else if (evt.type === 'done') {
+          S.results = { results: walletResults, aggregated: evt.aggregated };
+          S.lastChecked = new Date();
+        }
+      }
+    }
+
     _finishProgress();
     _updateProgressDOM();
     await new Promise(r => setTimeout(r, 400));

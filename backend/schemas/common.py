@@ -38,6 +38,14 @@ class WalletCreate(BaseModel):
     address: str | None = None
 
 
+class WalletUpdate(BaseModel):
+    name: str | None = Field(None, min_length=6)
+    api_key: str | None = None
+    api_secret: str | None = None
+    api_passphrase: str | None = None
+    address: str | None = None
+
+
 class WalletAddressCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     address: str = Field(..., min_length=5, max_length=200)

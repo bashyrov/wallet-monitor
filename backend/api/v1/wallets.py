@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from backend.api.deps import get_db, get_current_user
 from backend.db.models import User
 from backend.domain.errors import WalletNotFound, TagNotFound, InvalidProviderType, WalletLimitReached
-from backend.schemas.common import WalletCreate, WalletOut, WalletAddressCreate, WalletAddressOut
+from backend.schemas.common import WalletCreate, WalletUpdate, WalletOut, WalletAddressCreate, WalletAddressOut
 import backend.services.wallet_service as svc
 
 from backend.providers.exchanges import EXCHANGE_PROVIDERS
@@ -123,6 +123,19 @@ def unarchive_wallet(
         raise HTTPException(status_code=404, detail=str(e))
     except WalletLimitReached as e:
         raise HTTPException(status_code=402, detail=str(e))
+
+
+@router.patch("/{wallet_id}", response_model=WalletOut)
+def update_wallet(
+    wallet_id: int,
+    body: WalletUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return svc.update_wallet(db, wallet_id, body, current_user.id)
+    except WalletNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.delete("/{wallet_id}", status_code=204)
