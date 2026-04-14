@@ -64,3 +64,18 @@ app-navbar::after {
   .topbar-nav { display: none; }
   .topbar-right { gap: 6px; }
 }
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 14px; height: 30px; border-radius: 8px;
+  background: #1AFFAB; border: 1px solid #1AFFAB;
+  color: #09090B !important; font-weight: 600; font-size: 13px;
+  text-decoration: none; cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, box-shadow 0.15s;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.btn-primary:hover {
+  background: #00E89A; border-color: #00E89A;
+  color: #09090B !important;
+  box-shadow: 0 0 16px rgba(26,255,171,0.35);
+}
+.btn-sm { padding: 0 10px; height: 28px; font-size: 12px; }

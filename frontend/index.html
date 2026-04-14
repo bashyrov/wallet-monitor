@@ -112,7 +112,7 @@
       font-size: 13px;
       transition: box-shadow 0.2s, background 0.15s;
     }
-    .topbar-right .btn-primary:hover {
+    .topbar-right .btn-primary:hover { color: #09090B;
       background: #00E89A;
       box-shadow: 0 0 14px rgba(26,255,171,0.35);
       transform: none;
@@ -244,12 +244,42 @@
       position: relative; z-index: 1;
       width: 100%;
     }
+    .mockup-window-wrap {
+      position: relative; border-radius: 15px; padding: 1px;
+      background: var(--border);
+    }
+    .mockup-window-wrap::before {
+      content: '';
+      position: absolute; inset: -1px; border-radius: 15px;
+      background: conic-gradient(
+        from var(--angle, 0deg),
+        transparent 0deg,
+        transparent 300deg,
+        rgba(26,255,171,0.9) 340deg,
+        rgba(26,255,171,0.3) 355deg,
+        transparent 360deg
+      );
+      animation: rotateBorder 3s linear infinite;
+      z-index: 0;
+    }
+    .mockup-window-wrap::after {
+      content: '';
+      position: absolute; inset: 1px; border-radius: 14px;
+      background: var(--s1); z-index: 1;
+      pointer-events: none;
+    }
+    @property --angle {
+      syntax: '<angle>'; initial-value: 0deg; inherits: false;
+    }
+    @keyframes rotateBorder {
+      to { --angle: 360deg; }
+    }
     .mockup-window {
+      position: relative; z-index: 2;
       background: var(--s1);
-      border: 1px solid var(--border);
       border-radius: 14px;
       overflow: hidden;
-      box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+      box-shadow: 0 40px 120px rgba(0,0,0,0.6);
     }
     .mockup-bar {
       display: flex; align-items: center; justify-content: space-between;
@@ -507,19 +537,6 @@
       color: var(--green);
     }
 
-    /* subtle scan line on hero mockup top border */
-    @keyframes topScan {
-      0%   { left: -20%; }
-      100% { left: 120%; }
-    }
-    .mockup-window::before {
-      content: '';
-      position: absolute; top: 0; height: 1px; width: 20%;
-      background: linear-gradient(90deg, transparent, var(--green), transparent);
-      animation: topScan 3s linear infinite;
-      opacity: 0.5;
-      z-index: 2;
-    }
     .mockup-window { position: relative; overflow: hidden; }
 
     /* CTA button ripple on hero */
@@ -961,6 +978,7 @@
   <!-- RIGHT: MOCKUP -->
   <div class="hero-right">
     <div class="hero-mockup">
+      <div class="mockup-window-wrap">
       <div class="mockup-window">
         <div class="mockup-bar">
           <div class="mockup-dots">
@@ -1052,6 +1070,7 @@
           </div>
         </div>
       </div>
+      </div><!-- /mockup-window-wrap -->
     </div>
   </div>
 
