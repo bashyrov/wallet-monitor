@@ -601,6 +601,175 @@
     }
 
   
+    /* ─── ENHANCED EFFECTS ─── */
+
+    /* Hero glow — stronger, layered */
+    .bg-glow {
+      background: radial-gradient(ellipse at center, rgba(26,255,171,0.13) 0%, rgba(26,255,171,0.04) 40%, transparent 70%);
+      width: 1100px; height: 700px; top: -250px;
+    }
+
+    /* Hero h1 gradient shimmer */
+    .hero-h1 em {
+      background: linear-gradient(120deg, var(--green) 0%, var(--teal) 40%, var(--green) 80%);
+      background-size: 200% auto;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: shimmer 4s linear infinite;
+    }
+    @keyframes shimmer { to { background-position: 200% center; } }
+
+    /* Hero badge — glow pulse */
+    .hero-badge {
+      box-shadow: 0 0 20px rgba(26,255,171,0.08), inset 0 0 0 1px rgba(26,255,171,0.15);
+    }
+    .hero-badge-dot {
+      box-shadow: 0 0 8px rgba(26,255,171,0.8);
+    }
+
+    /* section-h2 accent underline */
+    .section-h2 { position: relative; display: inline-block; }
+
+    /* Feature cards — stronger glow on hover */
+    .feature-card:hover {
+      box-shadow: 0 12px 48px rgba(0,0,0,0.4), 0 0 0 1px rgba(26,255,171,0.1), inset 0 1px 0 rgba(26,255,171,0.06);
+    }
+
+    /* Floating orbs — subtle background depth */
+    .orb {
+      position: fixed; border-radius: 50%; pointer-events: none; z-index: 0;
+      filter: blur(80px);
+    }
+    .orb-1 {
+      width: 500px; height: 500px;
+      background: rgba(26,255,171,0.04);
+      top: 10%; left: -15%;
+      animation: orbFloat 18s ease-in-out infinite alternate;
+    }
+    .orb-2 {
+      width: 400px; height: 400px;
+      background: rgba(6,182,212,0.04);
+      top: 40%; right: -12%;
+      animation: orbFloat 22s ease-in-out infinite alternate-reverse;
+    }
+    .orb-3 {
+      width: 300px; height: 300px;
+      background: rgba(146,91,214,0.03);
+      bottom: 20%; left: 20%;
+      animation: orbFloat 26s ease-in-out infinite alternate;
+    }
+    @keyframes orbFloat {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(30px, -40px) scale(1.08); }
+    }
+
+    /* Hero stats — glowing border */
+    .hero-stats {
+      box-shadow: 0 0 0 1px var(--border), 0 8px 40px rgba(0,0,0,0.3), 0 0 60px rgba(26,255,171,0.04);
+    }
+    .stat-num { color: var(--green); }
+
+    /* ─── SCREENER SECTION ─── */
+    .screener-section { padding: 100px 0; }
+    .screener-inner {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
+    }
+    @media(max-width: 860px) {
+      .screener-inner { grid-template-columns: 1fr; gap: 40px; }
+      .screener-section { padding: 60px 0; }
+    }
+
+    .screener-head { margin-bottom: 28px; }
+    .screener-features { display: flex; flex-direction: column; gap: 16px; margin-top: 28px; }
+    .sf-item {
+      display: flex; gap: 14px; align-items: flex-start;
+    }
+    .sf-icon {
+      width: 34px; height: 34px; border-radius: 8px;
+      background: var(--s2); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0; margin-top: 1px;
+    }
+    .sf-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+    .sf-desc { font-size: 13px; color: var(--text2); line-height: 1.55; }
+
+    .screener-cta-link {
+      display: inline-flex; align-items: center; gap: 7px;
+      margin-top: 28px;
+      padding: 0 18px; height: 38px; border-radius: 8px;
+      border: 1px solid rgba(26,255,171,0.25);
+      background: rgba(26,255,171,0.06);
+      color: var(--green); font-size: 13px; font-weight: 500;
+      text-decoration: none;
+      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .screener-cta-link:hover {
+      background: rgba(26,255,171,0.12); border-color: rgba(26,255,171,0.4);
+      box-shadow: 0 0 20px rgba(26,255,171,0.12);
+    }
+    .screener-cta-link svg { transition: transform .15s; }
+    .screener-cta-link:hover svg { transform: translateX(3px); }
+
+    /* Screener mockup */
+    .screener-mockup {
+      background: var(--s1); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+      position: relative;
+    }
+    .screener-mockup::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.2), transparent);
+    }
+    .sm-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      background: var(--s2);
+    }
+    .sm-bar-left { display: flex; align-items: center; gap: 8px; }
+    .sm-dots { display: flex; gap: 5px; }
+    .sm-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border); }
+    .sm-title { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+    .sm-live { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--green); }
+    .sm-live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    .sm-tabs { display: flex; border-bottom: 1px solid var(--border); }
+    .sm-tab {
+      padding: 8px 14px; font-size: 12px; font-weight: 500; color: var(--text3);
+      border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: default;
+    }
+    .sm-tab.active { color: var(--green); border-bottom-color: var(--green); }
+    .sm-stats {
+      display: flex; gap: 16px; padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px; color: var(--text3);
+    }
+    .sm-stats b { color: var(--text2); font-family: var(--mono); }
+    .sm-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .sm-table th {
+      text-align: left; padding: 6px 10px;
+      font-size: 10px; font-weight: 600; color: var(--text3);
+      text-transform: uppercase; letter-spacing: 0.6px;
+      border-bottom: 1px solid var(--border);
+      background: var(--s2);
+    }
+    .sm-table td { padding: 7px 10px; border-bottom: 1px solid rgba(34,34,42,0.6); }
+    .sm-table tr:last-child td { border-bottom: none; }
+    .sm-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .sm-sym { font-weight: 600; color: var(--text); font-family: var(--mono); font-size: 12px; }
+    .sm-ex { color: var(--text3); font-size: 10px; }
+    .sm-rate { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+    .sm-rate.pos { color: #34D399; }
+    .sm-rate.neg { color: var(--red); }
+    .sm-rate.neu { color: var(--text2); }
+    .sm-apr { font-family: var(--mono); font-size: 11px; color: var(--text2); }
+    .sm-badge {
+      display: inline-flex; padding: 2px 7px; border-radius: 4px;
+      font-size: 10px; font-weight: 600;
+    }
+    .sm-badge.arb { background: rgba(26,255,171,0.1); color: var(--green); }
+    .sm-badge.neutral { background: rgba(155,159,171,0.12); color: var(--text3); }
+
     /* ── Free Banner ── */
     .free-banner {
       position: fixed;
@@ -682,6 +851,9 @@
 <div class="bg-glow"></div>
 <div class="cursor-grid"></div>
 <div class="cursor-glow-spot"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
 
 <!-- ══ NAV ══════════════════════════════════════════════════════════ -->
 <header class="topbar"><app-navbar page="index"></app-navbar></header>
@@ -970,6 +1142,123 @@
           <span style="font-family:var(--mono);font-size:20px;font-weight:600;color:var(--green)">$158,748</span>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+<div class="divider"></div>
+
+<!-- ══ SCREENER ═══════════════════════════════════════════════════════ -->
+<div class="divider"></div>
+<section class="screener-section" id="screener">
+  <div class="container">
+    <div class="screener-inner">
+
+      <!-- Left: text -->
+      <div class="reveal">
+        <div class="section-label">Screener</div>
+        <h2 class="section-h2">Funding rates &amp;<br>arb in real time</h2>
+        <p class="section-sub" style="margin-top:14px">Live WebSocket feed across 10 exchanges. Spot cross-exchange arbitrage and compare funding rates for 4 000+ contracts — all in one view.</p>
+
+        <div class="screener-features">
+          <div class="sf-item">
+            <div class="sf-icon">⚡</div>
+            <div>
+              <div class="sf-title">Live funding rates</div>
+              <div class="sf-desc">Real-time rates from Binance, OKX, Bybit, Hyperliquid and 6 more — updated every second via WebSocket.</div>
+            </div>
+          </div>
+          <div class="sf-item">
+            <div class="sf-icon">🔀</div>
+            <div>
+              <div class="sf-title">Arbitrage scanner</div>
+              <div class="sf-desc">Automatically finds pairs where the same asset trades at different prices across exchanges. See spread % instantly.</div>
+            </div>
+          </div>
+          <div class="sf-item">
+            <div class="sf-icon">🔍</div>
+            <div>
+              <div class="sf-title">Filters &amp; search</div>
+              <div class="sf-desc">Filter by exchange, rate direction, min spread. Search any token. Pagination with configurable rows per page.</div>
+            </div>
+          </div>
+        </div>
+
+        <a href="/screener" class="screener-cta-link reveal">
+          Open Screener
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+
+      <!-- Right: mockup -->
+      <div class="screener-mockup reveal" style="transition-delay:.1s">
+        <div class="sm-bar">
+          <div class="sm-bar-left">
+            <div class="sm-dots">
+              <div class="sm-dot"></div><div class="sm-dot"></div><div class="sm-dot"></div>
+            </div>
+            <div class="sm-title">avalant_ · screener</div>
+          </div>
+          <div class="sm-live"><span class="sm-live-dot"></span>Live</div>
+        </div>
+        <div class="sm-tabs">
+          <div class="sm-tab active">Funding Rates</div>
+          <div class="sm-tab">Arbitrage</div>
+        </div>
+        <div class="sm-stats">
+          <span><b>4 341</b> contracts</span>
+          <span><b>10</b> exchanges</span>
+          <span>Updated <b>just now</b></span>
+        </div>
+        <table class="sm-table">
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th>Exchange</th>
+              <th>Rate / 8h</th>
+              <th>APR</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="sm-sym">BTC</div></td>
+              <td><span class="sm-ex">Binance</span></td>
+              <td><span class="sm-rate pos">+0.0420%</span></td>
+              <td><span class="sm-apr">+18.4%</span></td>
+              <td><span class="sm-badge arb">arb</span></td>
+            </tr>
+            <tr>
+              <td><div class="sm-sym">ETH</div></td>
+              <td><span class="sm-ex">Bybit</span></td>
+              <td><span class="sm-rate pos">+0.0312%</span></td>
+              <td><span class="sm-apr">+13.7%</span></td>
+              <td><span class="sm-badge neutral">—</span></td>
+            </tr>
+            <tr>
+              <td><div class="sm-sym">SOL</div></td>
+              <td><span class="sm-ex">OKX</span></td>
+              <td><span class="sm-rate neg">−0.0085%</span></td>
+              <td><span class="sm-apr">−3.7%</span></td>
+              <td><span class="sm-badge neutral">—</span></td>
+            </tr>
+            <tr>
+              <td><div class="sm-sym">HYPE</div></td>
+              <td><span class="sm-ex">Hyperliquid</span></td>
+              <td><span class="sm-rate pos">+0.1250%</span></td>
+              <td><span class="sm-apr">+54.8%</span></td>
+              <td><span class="sm-badge arb">arb</span></td>
+            </tr>
+            <tr>
+              <td><div class="sm-sym">DOGE</div></td>
+              <td><span class="sm-ex">Gate.io</span></td>
+              <td><span class="sm-rate neu">+0.0100%</span></td>
+              <td><span class="sm-apr">+4.4%</span></td>
+              <td><span class="sm-badge neutral">—</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 </section>
