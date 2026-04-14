@@ -139,11 +139,18 @@
     /* ─── HERO ─── */
     .hero {
       position: relative; z-index: 1;
-      min-height: 100vh;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      padding: 64px 24px 80px;
-      text-align: center;
+      min-height: calc(100vh - 52px);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: center;
+      gap: 48px;
+      max-width: 1400px; margin: 0 auto;
+      padding: 72px 40px 80px;
+    }
+    .hero-left { display: flex; flex-direction: column; align-items: flex-start; }
+    .hero-right {
+      position: relative;
+      opacity: 0; animation: fadeUp .8s .3s ease forwards;
     }
 
     .hero-badge {
@@ -152,13 +159,14 @@
       border: 1px solid rgba(26,255,171,0.2);
       background: rgba(26,255,171,0.06);
       color: var(--green); font-size: 12px; font-weight: 500;
-      letter-spacing: 0.3px; margin-bottom: 28px;
+      letter-spacing: 0.3px; margin-bottom: 24px;
       opacity: 0; animation: fadeUp .6s .1s ease forwards;
     }
     .hero-badge-dot {
       width: 6px; height: 6px; border-radius: 50%;
       background: var(--green);
       animation: pulse 2s infinite;
+      box-shadow: 0 0 8px rgba(26,255,171,0.8);
     }
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
@@ -166,37 +174,40 @@
     }
 
     .hero-h1 {
-      font-size: clamp(40px, 7vw, 76px);
-      font-weight: 800; line-height: 1.08;
-      letter-spacing: -2.5px; margin-bottom: 24px;
+      font-size: clamp(36px, 4.5vw, 68px);
+      font-weight: 800; line-height: 1.06;
+      letter-spacing: -2.5px; margin-bottom: 20px;
       color: var(--text);
-      opacity: 0; animation: fadeUp .7s .2s ease forwards;
+      opacity: 0; animation: fadeUp .7s .15s ease forwards;
     }
     .hero-h1 em {
       font-style: normal;
-      background: linear-gradient(135deg, var(--green) 0%, var(--teal) 100%);
+      background: linear-gradient(120deg, var(--green) 0%, var(--teal) 40%, var(--green) 80%);
+      background-size: 200% auto;
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
+      animation: shimmer 4s linear infinite;
     }
 
     .hero-sub {
-      max-width: 520px; font-size: 17px; color: var(--text2);
-      line-height: 1.65; margin-bottom: 36px; font-weight: 400;
-      opacity: 0; animation: fadeUp .7s .3s ease forwards;
+      font-size: 16px; color: var(--text2);
+      line-height: 1.7; margin-bottom: 32px; font-weight: 400;
+      max-width: 420px;
+      opacity: 0; animation: fadeUp .7s .25s ease forwards;
     }
 
     .hero-actions {
-      display: flex; align-items: center; gap: 12px; margin-bottom: 64px;
-      opacity: 0; animation: fadeUp .7s .4s ease forwards;
+      display: flex; align-items: center; gap: 10px; margin-bottom: 44px;
+      opacity: 0; animation: fadeUp .7s .35s ease forwards;
     }
     .btn-hero {
       display: inline-flex; align-items: center; gap: 7px;
       padding: 0 22px; height: 44px; border-radius: 8px;
       background: var(--green); color: #09090B;
-      font-size: 14px; font-weight: 500; text-decoration: none;
+      font-size: 14px; font-weight: 600; text-decoration: none;
       transition: all .15s; letter-spacing: -.1px;
     }
-    .btn-hero:hover { background: #00E89A; box-shadow: 0 0 32px rgba(26,255,171,0.3); transform: translateY(-2px); }
+    .btn-hero:hover { background: #00E89A; box-shadow: 0 0 32px rgba(26,255,171,0.35); transform: translateY(-2px); }
     .btn-hero svg { transition: transform .15s; }
     .btn-hero:hover svg { transform: translateX(3px); }
     .btn-hero-ghost {
@@ -214,25 +225,25 @@
       border: 1px solid var(--border);
       border-radius: 12px; overflow: hidden;
       background: var(--s1);
-      opacity: 0; animation: fadeUp .7s .5s ease forwards;
+      opacity: 0; animation: fadeUp .7s .45s ease forwards;
+      align-self: flex-start;
+      box-shadow: 0 0 0 1px var(--border), 0 8px 40px rgba(0,0,0,0.3), 0 0 60px rgba(26,255,171,0.04);
     }
     .stat-item {
-      padding: 16px 28px; border-right: 1px solid var(--border);
+      padding: 14px 24px; border-right: 1px solid var(--border);
       text-align: center;
     }
     .stat-item:last-child { border-right: none; }
     .stat-num {
-      font-family: var(--mono); font-size: 24px; font-weight: 500;
-      color: var(--text); display: block; font-variant-numeric: tabular-nums;
+      font-family: var(--mono); font-size: 22px; font-weight: 500;
+      color: var(--green); display: block; font-variant-numeric: tabular-nums;
     }
-    .stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+    .stat-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
 
     /* ─── MOCKUP ─── */
     .hero-mockup {
       position: relative; z-index: 1;
-      margin-top: 72px; margin-bottom: -60px;
-      width: 100%; max-width: 960px;
-      opacity: 0; animation: fadeUp .8s .6s ease forwards;
+      width: 100%;
     }
     .mockup-window {
       background: var(--s1);
@@ -551,10 +562,17 @@
 
       /* Topbar: hide nav + right links, keep brand */
 
-      /* Hero */
-      .hero { padding: 40px 16px 48px; min-height: auto; }
-      .hero-sub { font-size: 15px; }
-      .hero-actions { gap: 8px; flex-wrap: wrap; justify-content: center; }
+      /* Hero — stack on mobile */
+      .hero {
+        grid-template-columns: 1fr;
+        padding: 40px 16px 48px;
+        min-height: auto;
+        gap: 36px;
+      }
+      .hero-left { align-items: center; text-align: center; }
+      .hero-sub { max-width: 100%; }
+      .hero-actions { justify-content: center; flex-wrap: wrap; gap: 8px; }
+      .hero-stats { align-self: center; }
 
       /* Hero stats: 2×2 grid */
       .hero-stats {
@@ -570,7 +588,6 @@
       .stat-num { font-size: 20px; }
 
       /* Hero mockup: hide sidebar, simplify */
-      .hero-mockup { margin-top: 36px; margin-bottom: 0; }
       .mockup-body { grid-template-columns: 1fr; }
       .mockup-left { display: none; }
       .mockup-total-num { font-size: 26px; }
@@ -887,126 +904,133 @@
 
 <!-- ══ HERO ══════════════════════════════════════════════════════════ -->
 <section class="hero">
-  <div class="hero-badge">
-    <span class="hero-badge-dot"></span>
-    Self-hosted · Open source · No cloud
-  </div>
 
-  <h1 class="hero-h1">
-    All your crypto.<br>
-    <em>One dashboard.</em>
-  </h1>
-
-  <p class="hero-sub">
-    Connect CEX accounts, on-chain wallets and perp positions.
-    See your entire portfolio in one place — instantly.
-  </p>
-
-  <div class="hero-actions">
-    <a href="/app" class="btn-hero">
-      Open App
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </a>
-    <a href="#features" class="btn-hero-ghost">See features</a>
-  </div>
-
-  <div class="hero-stats">
-    <div class="stat-item">
-      <span class="stat-num" id="cnt-ex">0</span>
-      <div class="stat-label">Exchanges</div>
+  <!-- LEFT -->
+  <div class="hero-left">
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      Self-hosted · Open source · No cloud
     </div>
-    <div class="stat-item">
-      <span class="stat-num" id="cnt-ch">0</span>
-      <div class="stat-label">Chains</div>
-    </div>
-    <div class="stat-item">
-      <span class="stat-num" id="cnt-dex">0</span>
-      <div class="stat-label">Perp DEXes</div>
-    </div>
-    <div class="stat-item">
-      <span class="stat-num" style="color:var(--green)">∞</span>
-      <div class="stat-label">API Keys</div>
-    </div>
-  </div>
 
-  <!-- MOCKUP -->
-  <div class="hero-mockup">
-    <div class="mockup-window">
-      <div class="mockup-bar">
-        <div class="mockup-dots">
-          <div class="mockup-dot"></div>
-          <div class="mockup-dot"></div>
-          <div class="mockup-dot"></div>
-        </div>
-        <div class="mockup-title">avalant_ · dashboard</div>
-        <div class="mockup-status">
-          <span class="mockup-status-dot"></span>
-          live
-        </div>
+    <h1 class="hero-h1">
+      All your crypto.<br>
+      <em>One dashboard.</em>
+    </h1>
+
+    <p class="hero-sub">
+      Connect CEX accounts, on-chain wallets and perp positions.
+      See your entire portfolio in one place — balances, PnL, transactions.
+    </p>
+
+    <div class="hero-actions">
+      <a href="/app" class="btn-hero">
+        Open App
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="#features" class="btn-hero-ghost">See features</a>
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat-item">
+        <span class="stat-num" id="cnt-ex">0</span>
+        <div class="stat-label">Exchanges</div>
       </div>
-      <div class="mockup-body">
-        <div class="mockup-left">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding:4px 8px 8px;font-weight:600">Wallets · 6</div>
-          <div class="mockup-wallet-row active">
-            <span class="mockup-wdot" style="background:#E5C07B"></span>
-            <span class="mockup-wname">Binance</span>
-            <span class="mockup-wamt" id="m1">—</span>
-          </div>
-          <div class="mockup-wallet-row active">
-            <span class="mockup-wdot" style="background:#925BD6"></span>
-            <span class="mockup-wname">Hyperliquid</span>
-            <span class="mockup-wamt" id="m2">—</span>
-          </div>
-          <div class="mockup-wallet-row active">
-            <span class="mockup-wdot" style="background:#06B6D4"></span>
-            <span class="mockup-wname">Ethereum</span>
-            <span class="mockup-wamt" id="m3">—</span>
-          </div>
-          <div class="mockup-wallet-row active">
-            <span class="mockup-wdot" style="background:#E5C07B"></span>
-            <span class="mockup-wname">OKX</span>
-            <span class="mockup-wamt" id="m4">—</span>
-          </div>
-          <div class="mockup-wallet-row active">
-            <span class="mockup-wdot" style="background:#06B6D4"></span>
-            <span class="mockup-wname">Tron</span>
-            <span class="mockup-wamt" id="m5">—</span>
-          </div>
-        </div>
-        <div class="mockup-right">
-          <div class="mockup-total-label">Total Portfolio</div>
-          <div class="mockup-total-num" id="mock-total">$0.00</div>
-          <div class="mockup-sub">4 wallets · stablecoins</div>
-          <div class="mockup-asset-grid">
-            <div class="mockup-asset">
-              <div class="mockup-asset-sym">USDT</div>
-              <div class="mockup-asset-val s" id="ma1">—</div>
-            </div>
-            <div class="mockup-asset">
-              <div class="mockup-asset-sym">USDC</div>
-              <div class="mockup-asset-val s" id="ma2">—</div>
-            </div>
-            <div class="mockup-asset">
-              <div class="mockup-asset-sym">USDe</div>
-              <div class="mockup-asset-val s" id="ma3">—</div>
-            </div>
-            <div class="mockup-asset">
-              <div class="mockup-asset-sym">ETH</div>
-              <div class="mockup-asset-val" id="ma4">—</div>
-            </div>
-            <div class="mockup-asset">
-              <div class="mockup-asset-sym">BTC</div>
-              <div class="mockup-asset-val" id="ma5">—</div>
-            </div>
-            <div class="mockup-asset">
-              <div class="mockup-asset-sym">SOL</div>
-              <div class="mockup-asset-val" id="ma6">—</div>
-            </div>
-          </div>
-        </div>
+      <div class="stat-item">
+        <span class="stat-num" id="cnt-ch">0</span>
+        <div class="stat-label">Chains</div>
+      </div>
+      <div class="stat-item">
+        <span class="stat-num" id="cnt-dex">0</span>
+        <div class="stat-label">Perp DEXes</div>
+      </div>
+      <div class="stat-item">
+        <span class="stat-num">∞</span>
+        <div class="stat-label">API Keys</div>
       </div>
     </div>
   </div>
+
+  <!-- RIGHT: MOCKUP -->
+  <div class="hero-right">
+    <div class="hero-mockup">
+      <div class="mockup-window">
+        <div class="mockup-bar">
+          <div class="mockup-dots">
+            <div class="mockup-dot"></div>
+            <div class="mockup-dot"></div>
+            <div class="mockup-dot"></div>
+          </div>
+          <div class="mockup-title">avalant_ · dashboard</div>
+          <div class="mockup-status">
+            <span class="mockup-status-dot"></span>
+            live
+          </div>
+        </div>
+        <div class="mockup-body">
+          <div class="mockup-left">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding:4px 8px 8px;font-weight:600">Wallets · 6</div>
+            <div class="mockup-wallet-row active">
+              <span class="mockup-wdot" style="background:#E5C07B"></span>
+              <span class="mockup-wname">Binance</span>
+              <span class="mockup-wamt" id="m1">—</span>
+            </div>
+            <div class="mockup-wallet-row active">
+              <span class="mockup-wdot" style="background:#925BD6"></span>
+              <span class="mockup-wname">Hyperliquid</span>
+              <span class="mockup-wamt" id="m2">—</span>
+            </div>
+            <div class="mockup-wallet-row active">
+              <span class="mockup-wdot" style="background:#06B6D4"></span>
+              <span class="mockup-wname">Ethereum</span>
+              <span class="mockup-wamt" id="m3">—</span>
+            </div>
+            <div class="mockup-wallet-row active">
+              <span class="mockup-wdot" style="background:#E5C07B"></span>
+              <span class="mockup-wname">OKX</span>
+              <span class="mockup-wamt" id="m4">—</span>
+            </div>
+            <div class="mockup-wallet-row active">
+              <span class="mockup-wdot" style="background:#06B6D4"></span>
+              <span class="mockup-wname">Tron</span>
+              <span class="mockup-wamt" id="m5">—</span>
+            </div>
+          </div>
+          <div class="mockup-right">
+            <div class="mockup-total-label">Total Portfolio</div>
+            <div class="mockup-total-num" id="mock-total">$0.00</div>
+            <div class="mockup-sub">5 wallets · stablecoins + assets</div>
+            <div class="mockup-asset-grid">
+              <div class="mockup-asset">
+                <div class="mockup-asset-sym">USDT</div>
+                <div class="mockup-asset-val s" id="ma1">—</div>
+              </div>
+              <div class="mockup-asset">
+                <div class="mockup-asset-sym">USDC</div>
+                <div class="mockup-asset-val s" id="ma2">—</div>
+              </div>
+              <div class="mockup-asset">
+                <div class="mockup-asset-sym">USDe</div>
+                <div class="mockup-asset-val s" id="ma3">—</div>
+              </div>
+              <div class="mockup-asset">
+                <div class="mockup-asset-sym">ETH</div>
+                <div class="mockup-asset-val" id="ma4">—</div>
+              </div>
+              <div class="mockup-asset">
+                <div class="mockup-asset-sym">BTC</div>
+                <div class="mockup-asset-val" id="ma5">—</div>
+              </div>
+              <div class="mockup-asset">
+                <div class="mockup-asset-sym">SOL</div>
+                <div class="mockup-asset-val" id="ma6">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </section>
 
 <!-- ══ SOURCES ════════════════════════════════════════════════════════ -->
