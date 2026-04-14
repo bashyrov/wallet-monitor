@@ -139,13 +139,12 @@
     /* ─── HERO ─── */
     .hero {
       position: relative; z-index: 1;
-      min-height: calc(100vh - 52px);
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 5fr 7fr;
       align-items: center;
-      gap: 48px;
+      gap: 56px;
       max-width: 1400px; margin: 0 auto;
-      padding: 72px 40px 80px;
+      padding: 64px 40px 72px;
     }
     .hero-left { display: flex; flex-direction: column; align-items: flex-start; }
     .hero-right {
@@ -264,37 +263,45 @@
     .mockup-status { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--green); }
     .mockup-status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
 
-    .mockup-body { display: grid; grid-template-columns: 280px 1fr; min-height: 280px; }
+    .mockup-body { display: grid; grid-template-columns: 220px 1fr; min-height: 340px; }
     .mockup-left {
       border-right: 1px solid var(--border);
-      padding: 12px 8px;
+      padding: 10px 6px;
     }
     .mockup-wallet-row {
       display: flex; align-items: center; gap: 8px;
-      padding: 8px 8px; border-radius: 6px;
-      margin-bottom: 2px; cursor: default;
+      padding: 9px 8px; border-radius: 6px;
+      margin-bottom: 1px; cursor: default;
     }
     .mockup-wallet-row.active { background: rgba(26,255,171,0.05); border-left: 2px solid var(--green); padding-left: 6px; }
-    .mockup-wdot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .mockup-wdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .mockup-wname { font-size: 12px; color: var(--text2); flex: 1; }
     .mockup-wamt { font-size: 11px; font-family: var(--mono); color: var(--green); }
-    .mockup-right { padding: 20px; }
+    .mockup-right { padding: 20px 20px 16px; }
     .mockup-total-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text3); margin-bottom: 4px; }
     .mockup-total-num {
-      font-family: var(--mono); font-size: 36px; font-weight: 600;
-      color: var(--green); letter-spacing: -1px;
+      font-family: var(--mono); font-size: 42px; font-weight: 600;
+      color: var(--green); letter-spacing: -1.5px;
       text-shadow: 0 0 40px rgba(26,255,171,0.3);
       font-variant-numeric: tabular-nums;
     }
-    .mockup-sub { font-size: 11px; color: var(--text3); margin-bottom: 16px; margin-top: 2px; }
+    .mockup-pnl {
+      display: inline-flex; align-items: center; gap: 5px;
+      margin-top: 4px; margin-bottom: 14px;
+      padding: 3px 8px; border-radius: 6px;
+      background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.2);
+      font-size: 12px; font-family: var(--mono); color: #34D399;
+    }
+    .mockup-sub { font-size: 11px; color: var(--text3); margin-bottom: 14px; margin-top: 2px; }
     .mockup-asset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
     .mockup-asset {
-      background: var(--s2); border-radius: 7px; padding: 8px 10px;
+      background: var(--s2); border-radius: 7px; padding: 9px 10px;
       border: 1px solid var(--border);
     }
-    .mockup-asset-sym { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--text3); margin-bottom: 2px; }
-    .mockup-asset-val { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+    .mockup-asset-sym { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--text3); margin-bottom: 3px; }
+    .mockup-asset-val { font-family: var(--mono); font-size: 13px; font-weight: 500; }
     .mockup-asset-val.s { color: var(--green); }
+    .mockup-asset-alloc { font-size: 10px; color: var(--text3); margin-top: 2px; }
 
     /* shimmer on mockup numbers */
     .num-anim { opacity: 0; animation: fadeIn .4s ease forwards; }
@@ -565,14 +572,14 @@
       /* Hero — stack on mobile */
       .hero {
         grid-template-columns: 1fr;
-        padding: 40px 16px 48px;
-        min-height: auto;
-        gap: 36px;
+        padding: 36px 16px 44px;
+        gap: 32px;
       }
       .hero-left { align-items: center; text-align: center; }
       .hero-sub { max-width: 100%; }
       .hero-actions { justify-content: center; flex-wrap: wrap; gap: 8px; }
       .hero-stats { align-self: center; }
+      .hero-features { align-items: flex-start; align-self: center; }
 
       /* Hero stats: 2×2 grid */
       .hero-stats {
@@ -948,6 +955,7 @@
         <div class="stat-label">API Keys</div>
       </div>
     </div>
+
   </div>
 
   <!-- RIGHT: MOCKUP -->
@@ -968,7 +976,7 @@
         </div>
         <div class="mockup-body">
           <div class="mockup-left">
-            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding:4px 8px 8px;font-weight:600">Wallets · 6</div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding:4px 8px 8px;font-weight:600">Wallets · 7</div>
             <div class="mockup-wallet-row active">
               <span class="mockup-wdot" style="background:#E5C07B"></span>
               <span class="mockup-wname">Binance</span>
@@ -994,35 +1002,51 @@
               <span class="mockup-wname">Tron</span>
               <span class="mockup-wamt" id="m5">—</span>
             </div>
+            <div class="mockup-wallet-row active">
+              <span class="mockup-wdot" style="background:#E5C07B"></span>
+              <span class="mockup-wname">Bybit</span>
+              <span class="mockup-wamt">$9,140</span>
+            </div>
+            <div class="mockup-wallet-row active">
+              <span class="mockup-wdot" style="background:#925BD6"></span>
+              <span class="mockup-wname">Arbitrum</span>
+              <span class="mockup-wamt">$3,812</span>
+            </div>
           </div>
           <div class="mockup-right">
             <div class="mockup-total-label">Total Portfolio</div>
             <div class="mockup-total-num" id="mock-total">$0.00</div>
-            <div class="mockup-sub">5 wallets · stablecoins + assets</div>
+            <div class="mockup-pnl">↑ +$3,241 &nbsp;+2.67% today</div>
             <div class="mockup-asset-grid">
               <div class="mockup-asset">
                 <div class="mockup-asset-sym">USDT</div>
                 <div class="mockup-asset-val s" id="ma1">—</div>
+                <div class="mockup-asset-alloc">54.8%</div>
               </div>
               <div class="mockup-asset">
                 <div class="mockup-asset-sym">USDC</div>
                 <div class="mockup-asset-val s" id="ma2">—</div>
+                <div class="mockup-asset-alloc">25.7%</div>
               </div>
               <div class="mockup-asset">
                 <div class="mockup-asset-sym">USDe</div>
                 <div class="mockup-asset-val s" id="ma3">—</div>
+                <div class="mockup-asset-alloc">19.4%</div>
               </div>
               <div class="mockup-asset">
                 <div class="mockup-asset-sym">ETH</div>
                 <div class="mockup-asset-val" id="ma4">—</div>
+                <div class="mockup-asset-alloc">6.2%</div>
               </div>
               <div class="mockup-asset">
                 <div class="mockup-asset-sym">BTC</div>
                 <div class="mockup-asset-val" id="ma5">—</div>
+                <div class="mockup-asset-alloc">3.8%</div>
               </div>
               <div class="mockup-asset">
                 <div class="mockup-asset-sym">SOL</div>
                 <div class="mockup-asset-val" id="ma6">—</div>
+                <div class="mockup-asset-alloc">1.2%</div>
               </div>
             </div>
           </div>
