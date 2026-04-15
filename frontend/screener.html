@@ -119,44 +119,34 @@ body {
 .lp-search:focus { border-color: var(--green); }
 .lp-search::placeholder { color: var(--text3); }
 
-/* exchange selector — card-style with brand-color accent */
-#lp-ex-items { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+/* exchange selector — minimalist monochrome rows */
+#lp-ex-items { display: flex; flex-direction: column; gap: 1px; }
 .lp-ex-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 9px; cursor: pointer; border-radius: 8px;
-  background: var(--surface2); border: 1px solid var(--border);
-  position: relative; overflow: hidden;
-  transition: transform .12s, border-color .15s, background .15s, box-shadow .15s;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px; cursor: pointer; border-radius: 6px;
+  transition: background .12s, color .12s;
   user-select: none;
 }
-.lp-ex-item::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-  width: 3px; background: var(--_exc, var(--text3)); opacity: 0;
-  transition: opacity .15s;
+.lp-ex-item:hover { background: var(--surface3); }
+.lp-ex-item:not(.checked) .lp-ex-label { color: var(--text3); }
+.lp-ex-item:not(.checked) .lp-ex-dot { opacity: .35; filter: saturate(.3); }
+.lp-ex-check {
+  width: 14px; height: 14px; border-radius: 4px;
+  border: 1.5px solid var(--border2); background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background .12s, border-color .12s;
+  margin-left: auto;
 }
-.lp-ex-item:hover {
-  background: var(--surface3);
-  border-color: var(--_exc, var(--border2));
-  transform: translateX(2px);
+.lp-ex-item.checked .lp-ex-check {
+  background: var(--green); border-color: var(--green);
 }
-.lp-ex-item:hover::before { opacity: .6; }
-.lp-ex-item.checked {
-  background: color-mix(in srgb, var(--_exc, var(--green)) 8%, var(--surface2));
-  border-color: color-mix(in srgb, var(--_exc, var(--green)) 45%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--_exc, var(--green)) 25%, transparent);
+.lp-ex-item.checked .lp-ex-check::after {
+  content: ''; width: 6px; height: 3px;
+  border-left: 1.5px solid #000; border-bottom: 1.5px solid #000;
+  transform: rotate(-45deg) translate(1px, -1px);
 }
-.lp-ex-item.checked::before { opacity: 1; }
-.lp-ex-item.checked .lp-ex-label { color: var(--text); }
-.lp-ex-item:not(.checked) { opacity: .55; }
-.lp-ex-item:not(.checked):hover { opacity: 1; }
-.lp-ex-check { display: none; }
-.lp-ex-dot {
-  width: 9px; height: 9px; border-radius: 50%;
-  flex-shrink: 0; box-shadow: 0 0 0 0 var(--_exc, transparent);
-  transition: box-shadow .2s;
-}
-.lp-ex-item.checked .lp-ex-dot { box-shadow: 0 0 8px color-mix(in srgb, var(--_exc, var(--green)) 60%, transparent); }
-.lp-ex-label { font-size: 12px; font-weight: 600; color: var(--text2); letter-spacing: -.01em; }
+.lp-ex-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; transition: opacity .12s, filter .12s; }
+.lp-ex-label { font-size: 13px; font-weight: 500; color: var(--text); letter-spacing: -.01em; }
 
 .lp-ex-actions { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
 .lp-ex-action {
@@ -1116,9 +1106,10 @@ function removeHiddenToken(token) {
 function buildExDrop() {
   const items = document.getElementById('lp-ex-items');
   items.innerHTML = EXCHANGES.map(ex => `
-    <div class="lp-ex-item checked" id="ex-item-${ex}" onclick="toggleEx('${ex}')" style="--_exc:${EX_COLOR[ex]}">
+    <div class="lp-ex-item checked" id="ex-item-${ex}" onclick="toggleEx('${ex}')">
       <div class="lp-ex-dot" style="background:${EX_COLOR[ex]}"></div>
       <span class="lp-ex-label">${EX_LABEL[ex]}</span>
+      <div class="lp-ex-check"></div>
     </div>
   `).join('');
   _updateExCount();
