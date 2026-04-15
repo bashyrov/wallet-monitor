@@ -32,7 +32,7 @@ CACHE_TTL = 6.0  # seconds — slightly longer than broadcast interval to avoid 
 
 # ── Interval cache ─────────────────────────────────────────────────────────────
 _ivl_cache: dict[str, tuple[dict[str, float], float]] = {}
-IVL_TTL = 300.0  # 5 minutes
+IVL_TTL = 3600.0  # 1 hour — intervals change very rarely
 
 # ── OKX funding-rate cache (500 per-symbol requests, rates change every 8h) ───
 # {inst_id: {"rate": float, "next_ts": int}}

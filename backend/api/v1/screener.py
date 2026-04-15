@@ -370,22 +370,31 @@ async def _push(clients: set[WebSocket], msg: str) -> None:
 
 
 async def _broadcast_loop() -> None:
-    """Warm up interval cache once, then push data to WebSocket clients every 30s."""
-    # Pre-fetch all per-symbol interval maps in parallel so first price fetch is fast
+    """Warm up caches, then keep them hot every BROADCAST_INTERVAL seconds."""
+    # Pre-fetch all per-symbol interval maps in parallel
     await asyncio.gather(
         *(_get_interval_map(ex) for ex in _IVL_FETCHERS),
         return_exceptions=True,
     )
     logger.info("Screener interval cache warmed up")
+
+    # Pre-fill price/rate cache so first HTTP request is instant
+    try:
+        await get_funding_data()
+        logger.info("Screener funding cache warmed up")
+    except Exception as exc:
+        logger.warning("Screener funding warmup error: %s", exc)
+
     while True:
         await asyncio.sleep(BROADCAST_INTERVAL)
-        if _funding_clients or _arb_clients:
-            try:
-                data = await get_funding_data()
+        try:
+            # Always fetch — keeps HTTP cache hot even with no WS clients
+            data = await get_funding_data()
+            if _funding_clients:
                 await _push(_funding_clients, json.dumps(data))
                 logger.debug("Screener funding WS: pushed to %d clients", len(_funding_clients))
-            except Exception as exc:
-                logger.warning("Screener funding broadcast error: %s", exc)
+        except Exception as exc:
+            logger.warning("Screener funding broadcast error: %s", exc)
         if _arb_clients:
             try:
                 data = await get_arbitrage_opportunities()
