@@ -85,8 +85,21 @@ async def lifespan(app: FastAPI):
     from backend.services.alert_service import start_alert_service, stop_alert_service
     start_alert_service()
 
+    import asyncio
+    from backend.services.health_service import health_loop
+    from backend.services.replay_service import snapshot_loop
+    from backend.services.anomaly_service import anomaly_loop
+    _alpha_tasks = [
+        asyncio.create_task(health_loop(interval_s=60)),
+        asyncio.create_task(snapshot_loop(interval_s=60)),
+        asyncio.create_task(anomaly_loop(interval_s=120)),
+    ]
+    logger.info("Alpha loops started (health, snapshot, anomaly)")
+
     yield
 
+    for t in _alpha_tasks:
+        t.cancel()
     stop_price_loop()
     stop_screener_broadcaster()
     stop_alert_service()
