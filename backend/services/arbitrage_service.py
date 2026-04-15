@@ -92,14 +92,26 @@ async def _ivl_okx() -> dict[str, float]:
 
 
 async def _ivl_aster() -> dict[str, float]:
-    """GET /fapi/v1/fundingInfo → {symbol: fundingIntervalHours}"""
-    r = await _http.get("https://fapi.asterdex.com/fapi/v1/fundingInfo")
-    r.raise_for_status()
+    """GET /fapi/v1/fundingInfo → {symbol: fundingIntervalHours}
+    Also fetches exchangeInfo to filter out non-TRADING symbols (1001x/settling contracts).
+    """
+    info_r, fi_r = await asyncio.gather(
+        _http.get("https://fapi.asterdex.com/fapi/v1/exchangeInfo"),
+        _http.get("https://fapi.asterdex.com/fapi/v1/fundingInfo"),
+    )
+    # Only keep symbols actively trading (excludes 1001x SETTLING contracts)
+    trading = {
+        s["symbol"] for s in (info_r.json().get("symbols") or [])
+        if s.get("status") == "TRADING"
+    }
     out: dict[str, float] = {}
-    for fi in r.json():
+    for fi in fi_r.json():
+        sym = fi.get("symbol", "")
+        if sym not in trading:
+            continue
         h = fi.get("fundingIntervalHours")
         if h is not None:
-            out[fi["symbol"]] = float(h)
+            out[sym] = float(h)
     return out
 
 
