@@ -946,3 +946,360 @@ Tabs: Overview · All Users · Provider Errors
 38. **`arb.html` URL params** — `?symbol=BTC&long=binance&short=aster`. All three required; missing params render an error div instead of the page.
 39. **`arb.html` theme** — dark/light toggle saved to `localStorage` key `arb-theme`. Light theme applied via `body.light` CSS class.
 40. **`screener.html`** — the ↗ button on each arb row links to `/arb?symbol=...&long=...&short=...`.
+
+---
+
+# ═══ DEVELOPMENT CONTEXT — SESSION CONTINUITY (A→Z) ═══
+
+This section captures live UX principles, architectural decisions, and working conventions established in recent sessions. A new Claude reading this should be able to continue work without relearning the author's preferences.
+
+## A. User profile & communication style
+
+- **Owner / primary user**: Ukrainian/Russian-speaking developer. Communicates in Russian (sometimes mixed with Ukrainian) — respond in Russian. English is fine for code/commits/PR text.
+- **Senior level**: knows what they want, gives terse directives, expects me to fill in implementation details. Don't over-explain. Confirm intent once, then execute.
+- **Aesthetic sense**: sharp, minimalist, professional. Trading-app polish. Visual noise is a dealbreaker.
+- **Iteration rhythm**: many small adjustments per feature ("увеличь шрифт", "уберу", "нажимается со 2 раза") — treat each as quick surgical edits, not a redesign pass.
+- **Will say "убери" / "отмени" without warning** — be ready to revert cleanly.
+
+## B. Brand & design language
+
+- **Brand**: `avalant_` — Inter 800, blinking green `_` cursor. Logo SVG at `/avalant-logo.svg` (full) and `/avalant_favicon.svg` (icon).
+- **Dark theme is default**. Light theme exists as scaffold (see section G) but the toggle button is intentionally disabled right now (`return;` early in `theme.js`'s injectToggle path).
+- **Never use emojis** in UI unless explicitly requested. Never add emojis to code files.
+- **SVG icons**, thin stroke 1.35–1.7. No filled heavy icons unless it's a solid accent badge.
+- **Fonts**: Inter (UI), JetBrains Mono (numbers, amounts, addresses, candles, order book prices).
+
+## C. Color palette
+
+### Dark (default)
+```
+--bg:       #0E0E11   /* page */
+--surface:  #131217   /* cards */
+--surface2: #17171C   /* nested */
+--surface3: #202028   /* hover */
+--border:   #22222A
+--border2:  #3A3A50
+--text:     #E6E8E3
+--text2:    #9B9FAB
+--text3:    #676B7E  (or #55596A in some pages)
+--green:    #1AFFAB  /* neon — accent + positive */
+--red:      #F87171
+--yellow:   #E5C07B
+--teal:     #06B6D4
+--purple:   #925BD6
+```
+
+### Light (scaffold in `body.light` via `/theme.js`)
+Pure black-and-white, deeper green/red so they read as text on white:
+```
+--bg:        #FFFFFF
+--surface:   #FFFFFF
+--surface2:  #F4F4F4
+--surface3:  #E8E8E8
+--border:    #BABABA
+--border2:   #8C8C8C
+--text:      #000000
+--text2:     #1A1A1A
+--text3:     #595959
+--green:     #006B3C   /* deeper, readable on white */
+--red:       #8B0000
+--yellow:    #6B5011
+```
+**Do NOT brighten light-theme green back up** — the user explicitly chose a saturated dark green. Hover states in light mode use `#EDEDED` / `#F4F4F4` backgrounds, never inverted-black.
+
+## D. Shared frontend modules (load on every page after `/auth.js`)
+
+### `/toast.js` — unified notification system
+- API: `toast('msg')` | `toast('msg', 'success'|'error'|'warn'|'info')` | `toast('title', type, 'subtitle')` | `toast({title, type, sub, duration})`
+- Renders slide-in cards in top-right corner. Success = green ring animation; error = red; warn = yellow.
+- Auto-dismiss: 4000ms success, 3200ms others. Close button `×` always present.
+- Light-theme aware via `body.light` overrides baked into the injected CSS.
+- Every page includes `<script src="/toast.js"></script>`. Previously app.html had its own `toast()` — deleted. Do not reintroduce per-page toast implementations.
+
+### `/theme.js` — theme scaffold + persistence
+- Reads `localStorage.theme` at load, applies `body.light` ASAP (no FOUC).
+- Exposes `window.toggleTheme()` and dispatches `themechange` event for pages with charts to re-render (`arb.html` listens and re-runs `_eeApplyTheme`, `renderSpreadChart`, `renderFundChart`).
+- **The toggle button auto-injection is DISABLED** (early `return;`). Theme still works if triggered manually via `toggleTheme()` in devtools or if re-enabled later. Do not re-enable without asking.
+
+### `/auth.js` — auth wrapper (pre-existing)
+- `Auth.apiFetch(path, opts)` — prepends `/api`, adds Bearer token.
+- `Auth.requireAuth()`, `Auth.requireAdmin()`, `Auth.isLoggedIn()`, `Auth.getUser()`, `Auth.logout()`.
+
+### `/navbar.js` + `/navbar.css` — shared `<app-navbar page="...">`
+- Custom element. Variants: `app`, `screener`, `archive`, `profile`, `index`, `pricing`, `arb`, `login`, `register`, `checkout`.
+- `arb` variant: nav links = `['app', 'pricing']` (Screener moved into infobar, Archive removed per user request). Right-side = Alerts + Fullscreen buttons (`nav-lnk` style) + avatar.
+- Brand is a sibling `.brand`, nav links are `.nav-lnk` — both must have `font-family: inherit` for Inter to apply to `<button>` elements.
+- `.topbar` has `position: sticky`, backdrop-blur, green under-glow via `::after`.
+
+## E. Page inventory (frontend)
+
+| Page | Auth | Key libs/concepts |
+|------|------|-------------------|
+| `/` index.html | public | landing |
+| `/login`, `/register` | public | JWT issuance, HttpOnly cookie |
+| `/pricing`, `/checkout` | public + auth | plan picker |
+| `/app` | auth | main portfolio — balances, tags, txns, address book |
+| `/archive` | auth | archived wallets |
+| `/profile` | auth | plan card, balance history SVG chart, TG username |
+| `/admin`, `/admin-user` | admin | KPI, user list, plan modal, provider-errors |
+| `/screener` | auth | Funding + Arb tables, WS updates, exchange filter |
+| `/arb` | auth | Arbitrage pair detail — see section F |
+| `/404`, `/maintenance` | public | |
+
+All URLs served without `.html` via `serve_page()` in `app.py`.
+
+## F. `/arb` detail page — deep dive
+
+### Layout (desktop)
+Top: shared `<app-navbar page="arb">` (52px). Below: custom `.infobar` (72px, gradient bg, horizontal overflow). Main: 3-column flex — `.col-left` (40%, tabs with charts) | `.col-books` (36%, two order books) | `.col-info` (flex:1, P&L).
+
+### Infobar content (in order)
+1. **Hero block** — clickable: `RAVEUSDT` (opens symbol popover with fuzzy-search dropdown of all symbols from `/screener/funding`), live green pulse dot, exchange pills inside a bordered `.hero-exs` group. Each exchange pill opens its own popover filtered to exchanges listing the current symbol. `⇄` swap icon rotates 180° on hover, click = swap long/short in URL.
+2. **Long ex-card** — green dot + exchange label, row of Fund/Ivl/Next, row of Vol/OI.
+3. **Short ex-card** — red dot + same shape.
+4. **Net/8h** — big (24px) metric. Formula on arb.html is `gross_funding - total_fees` (funding-only, NO price spread — user explicitly separated them).
+5. **Live Spread** — big metric, accent green bg gradient. `(priceShort - priceLong)/priceLong × 100`.
+6. **Alert block** — clickable, opens Alerts modal. Shows active-alert count (`tb-alert-count`).
+7. **Back-to-Screener link** — full remaining width, centered, 20px regular font, left-arrow with stick (full ←), `href="/screener?mode=arb"` so user lands back on the arb tab (not funding).
+
+### Left tabs (order matters — user defined this explicitly)
+1. **Entry/Exit** (active by default) — see below.
+2. **Spread History** — price-history line chart (top 55%) + funding rate history (bottom 45%).
+3. **Overview** — funding tables per side, stats cards.
+4. **Info** — period selector, MAX/MIN IN/OUT, median spread, gap analysis.
+5. **All Rates** — funding rate across every exchange listing the symbol, with LONG/SHORT badges.
+
+### Entry/Exit chart (the signature feature)
+- Uses **TradingView Lightweight Charts v4.1.3** (CDN). Two candlestick series:
+  - **In** (green): `(bidShort − askLong) / askLong × 100` — entry divergence. Positive = free money on entry.
+  - **Out** (red): `(bidLong − askShort) / askShort × 100` — exit divergence. Closer to 0 = cheap exit.
+  - Interpretation: strategy is **enter when In is high, exit when Out approaches 0**.
+- **Timeframes**: 30s / 1m / 5m / 15m / 20m. **One candle = one TF period** (e.g. 5m TF → 5-min candles). `EE_BUCKET = {30:30, 60:60, 300:300, 900:900, 1200:1200}`.
+- **Source**: `_eeHist = [{ts, inPct, outPct}]` — raw samples pushed from `sampleEntryExit()` after every orderbook update (150ms poll). Buffer cap `EE_MAX = 9000` (~22min @ 150ms).
+- **Persistence**: `localStorage[ee-hist:SYMBOL:LONG:SHORT]` — last 2000 samples saved every 1s (throttled). Auto-restored on page load (filtered to <20min old). User explicitly opted NOT to have server-side history — "без истории" if browser clears.
+- **VWAP by size**: input `#ee-size` + USDT/TOKEN toggle. `_vwap(levels, size, unit)` walks orderbook to compute fill-weighted average for the given size. Empty size = best-level only.
+- **Pan/zoom preserved**: `_eeNeedsFit` flag. `fitContent()` called ONLY on init or TF change, never on regular updates — user can scroll back through history without the chart snapping to "now".
+- **Theme-aware**: `_eeThemeColors()` returns palette dict by `body.light`. `_eeApplyTheme()` re-applies on themechange.
+
+### Spread History + Funding Rate charts (SVG, `renderSpreadChart` + `renderFundChart`)
+- Pure SVG, hand-rolled. `_svgTheme()` helper returns palette.
+- `.spread-section` and `.fund-section` are `position:relative` so their tooltips are constrained to the chart (not the body — earlier the tooltip was escaping behind the navbar; this was fixed).
+
+### Order books
+- Two panels side-by-side (`col-books`), polled at **150ms** per side. `_bookInflight[side]` guard prevents queue buildup on slow exchanges (OKX/BingX).
+- Endpoint: `GET /api/screener/orderbook?symbol=X&exchange=Y&limit=50`. Uses shared `_arb_http` with http/1.1 keepalive, pool of 200 connections, keepalive_expiry=30s.
+- KuCoin: must use `depth20` or `depth100` (literal), with BTC→XBT mapping. Other symbols need to exist on KuCoin futures or return Invalid symbol (normal — don't log as error for symbols that just aren't listed).
+- Mid price display: `asks[last] + bids[0]) / 2` with ▲/▼ arrow animation on change.
+
+### Alerts modal
+- Full-width header with green icon plate, title + subtitle, close `×`.
+- Body: pair badge (symbol + dot-long ⇄ dot-short), TG warning note (yellow accent) if user has no `tg_username`, form grid (Threshold | Direction | Add), then list.
+- **Add button is disabled** if `_hasTgUsername === false`. Validates threshold is positive.
+- Create/toggle/delete all go through `Auth.apiFetch('/alerts...')`, all errors → `toast()`.
+- Empty state: dashed circle icon + explanation.
+
+### Mobile responsive
+- Bottom-nav injected at `<768px`: Portfolio / Archive / Screener / Pricing / Profile. Glassmorphic backdrop, `position:fixed`, `body { padding-bottom: 88px }`.
+- `@media (max-width: 900px)`: infobar wraps, columns stack vertically (Charts → Books → P&L), charts get fixed heights (320/260px).
+- `@media (max-width: 560px)`: ex-cards one-per-row, metric-blocks full-width, books stack vertically (long on top), alert modal slides up as a bottom-sheet.
+
+## G. `/screener` page — deep dive
+
+### Modes
+- URL param `?mode=funding|arb`. `_mode` initialized from URL. `switchMode(_mode)` called at bootstrap AND on `pageshow` (bfcache). Preload only calls `applyFilter` or `applyArb` based on mode.
+- The arb row ↗ button opens `/arb?symbol=&long=&short=` in new tab. The back-link from `/arb` uses `?mode=arb` so the user returns to the arb tab, not funding.
+
+### Exchange selector (left panel, current state)
+- **Minimalist rows** (no longer colorful cards — user rejected two prior designs). Vertical stack, `gap: 1px`.
+- Each row: [7px brand-color dot] [label] [14px checkmark square, green when selected].
+- Unchecked: dot desaturated + opacity 0.35, label muted.
+- Hover: `background: var(--surface3)` only. No transforms, no borders, no translates.
+- Header: "Exchanges" + count pill (`X/13`) — green if all, red if none, yellow otherwise.
+- Actions: All / None / Invert, each with tiny SVG icon.
+
+### Bottom nav (mobile)
+- 5 items matching other pages' bottom-nav. Light-theme overrides added.
+
+## H. `/screener` perf architecture (arbitrage_service.py)
+
+- **Two-tier cache**: `_cache` (6s TTL, price/rate) + `_ivl_cache` (1h TTL, intervals).
+- **MEXC/Bitget interval fetchers** are slow (40s+ for ~500 per-symbol requests). They're in `_SLOW_IVL = {"mexc", "bitget"}` and never block user-facing requests — `_get_interval_map(ex, allow_blocking=False)` kicks off a background refresh and returns cached-or-empty. `_fetch_mexc`/`_fetch_bitget` default `interval_h = 4.0` (most common) when the cache is empty; real values fill in once the bg refresh completes.
+- **Per-exchange asyncio.Lock** (`_ivl_locks`) prevents duplicate concurrent interval fetches.
+- **Warmup**: broadcaster fires `asyncio.create_task(_warmup())` on startup so first user request hits warm cache.
+- **OKX funding rate**: has its own `_okx_fr_cache` (5min TTL) because rates require 500 per-symbol calls.
+- **Aster**: two separate caches — `_aster_price_cache` (5s) for lastPrice, `_aster_vol_cache` (60s) for quoteVolume. Also filters `SHIELD*` symbols AND non-`TRADING` status from exchangeInfo to exclude 1001x/Shield synthetic contracts.
+- **Open Interest endpoints** implemented for: binance, bybit, okx, gate, hyperliquid, aster, bingx, mexc, bitget, kucoin, whitebit. Ethereal has no public OI endpoint.
+
+## I. Arbitrage opportunity schema (what's in `_opp`)
+
+```py
+{
+  symbol, long_exchange, short_exchange,
+  long_rate, short_rate,        # already × (8/interval) — i.e. 8h-normalized %
+  long_price, short_price,
+  long_volume, short_volume,
+  long_interval_h, short_interval_h,  # added recently — frontend reads these for Ivl display
+  gross_funding, price_spread,
+  fee_long, fee_short, total_fees,
+  net_profit,                   # on screener = gross+spread-fees; on arb.html Net/8h = gross-fees only (spread shown separately)
+  gross_apr, net_apr,
+  valid_price, next_ts_long, next_ts_short
+}
+```
+
+**Fallback**: if `/screener/arbitrage` skips a direction (because `gross ≤ 0`), arb.html synthesizes a `_opp` from `/screener/all-exchanges-funding?symbol=X` so the page still populates.
+
+## J. API endpoints touched in recent sessions
+
+- `GET /api/screener/funding` — all symbols × exchanges (primary load)
+- `GET /api/screener/arbitrage` — computed opps (filtered gross>0)
+- `GET /api/screener/all-exchanges-funding?symbol=X` — for arb.html All Rates tab + popover filter + fallback synthesis
+- `GET /api/screener/orderbook?symbol=&exchange=&limit=` — 150ms polled from arb.html
+- `GET /api/screener/open-interest?symbol=&long_ex=&short_ex=` — parallel fetch
+- `GET /api/screener/arb-price-history?symbol=&long_ex=&short_ex=`
+- `GET /api/screener/arb-history?symbol=&long_ex=&short_ex=`
+- `WS /api/screener/ws/funding`, `WS /api/screener/ws/arb` — live updates
+- `GET/POST/PATCH/DELETE /api/alerts` — spread alerts CRUD
+
+## K. Backend HTTP client (`_http` in arbitrage_service.py)
+
+Tuned for heavy orderbook polling:
+```py
+_http = httpx.AsyncClient(
+    timeout=httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=2.0),
+    headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
+    follow_redirects=True,
+    limits=httpx.Limits(max_connections=200, max_keepalive_connections=60, keepalive_expiry=30),
+    http2=False,  # exchanges generally work better with HTTP/1.1
+)
+```
+Used by both arbitrage_service fetchers AND the orderbook endpoint (aliased as `_arb_http`). Never create new clients per request.
+
+## L. Workflow — git conventions
+
+- **Conventional commits** with scope-less verbs: `feat:`, `fix:`, `style:`, `perf:`, `refactor:`, `docs:`, `chore:`.
+- **Body**: bulleted list of notable sub-changes. 1–2 line summary at top.
+- **Trailer**: ALWAYS include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`.
+- **Commit via HEREDOC** (see earlier "Creating pull requests" / "Committing" sections in this file for exact format).
+- **Push**: user triggers with "коммит и пуш" — always do both in one step. Never auto-push without that (or equivalent) explicit request.
+- **Never `--amend`**, never `--force-push` unless user explicitly asks. Never skip hooks.
+- **Stage explicitly** — list files on `git add` rather than `git add -A`.
+
+## M. Code style conventions
+
+- **No comments unless non-obvious WHY** — good identifiers beat explanations. Never document what the code does.
+- **No one-off abstractions** — three similar lines beats a premature helper.
+- **No defensive programming inside trusted boundaries** — skip redundant null checks, optional chain everything reachable.
+- **Never add backwards-compat shims** for in-development features.
+- **Response length in chat**: concise. Final answers usually ≤100 words unless explaining architecture.
+
+## N. Auto-restart conventions
+
+- Dev: `uvicorn app:app --port 8000` (no `--reload` — user explicitly asked not to use reload). When backend changes, ALWAYS restart via `lsof -ti:8000 | xargs -r kill -9; nohup uvicorn ... &`.
+- Frontend: no build step — edit HTML and hard-refresh (Cmd+Shift+R). Cache bust is manual.
+
+## O. Local permissions
+
+`.claude/settings.local.json` (gitignored) grants this project `Bash(*)`, `Edit(*)`, `Write(*)`, `Read(*)`, `Grep(*)`, `Glob(*)` without asking. Other projects behave normally. If ops become noisy, check there first.
+
+## P. Known "don't touch" decisions
+
+- **Theme toggle disabled** — don't re-enable the UI button without asking (theme.js early return in injectToggle).
+- **No Screener link in arb.html navbar** — it's only in the infobar back-link. User explicitly removed it from both `_NAV_SET.arb` and the right-side actions.
+- **No Archive link in arb navbar** either.
+- **Light theme uses `#006B3C` green + `#8B0000` red** — user picked these for text readability on white. Do not brighten.
+- **No per-exchange tinted cards** in the screener ex-selector — user rejected colorful grid; settled on monochrome rows with just a color dot.
+- **No tooltips on infobar metrics** — user asked for them, then asked to remove. Don't add back unless explicitly requested.
+- **No "Funding History" panel** in the arb center column — user moved it to Overview tab + Spread History tab only.
+- **Net / 8h on arb.html excludes price spread** — user asked for funding-only on that metric. Screener still computes net_profit as gross+spread-fees (do not propagate the arb.html-only change to the backend).
+
+## Q. Naming patterns
+
+- Frontend state: `S = {...}` for app.html, ad-hoc globals elsewhere.
+- Prefixed-underscore privates: `_opp`, `_eeHist`, `_mode`, `_bookInflight`, `_popState`, `_arb_http`, etc.
+- CSS classes: `kebab-case`, semantic (`.hero-block`, `.ex-card`, `.lp-ex-item`, `.chart-tabs`).
+- DOM IDs: kebab-case matching the feature (`tb-net-val`, `fund-long-rate`, `ee-chart`, `ap-pop`).
+
+## R. Notable fixes / gotchas from recent sessions
+
+- **KuCoin futures orderbook**: endpoint is `/api/v1/level2/depth20` or `depth100` (fixed depth in path). `symbol=` uses `XBT` prefix for BTC. Other base assets use their own symbol as-is.
+- **MEXC / Bitget interval fetch** = 500 per-symbol requests = 40s. Default to 4.0h while the background refresh runs.
+- **Aster 1001x / Shield synthetic tokens** can't be distinguished from Pro contracts via public API fields (all have tradingMode=0, symbolType=0, empty tags). We filter by symbol prefix (SHIELD*) + status != TRADING. 1001x-only tokens usually have tiny volume — but we don't filter by volume (user decided to keep showing them).
+- **Aster EIP-712 auth** (provider, not screener): `encode_typed_data(full_message=td)` keyword arg in eth_account 0.13.7. Base URL `https://fapi.asterdex.com` (not fapi3, which is AWS-blocked in some regions).
+- **OKX URL format** (for "open on exchange" link): `/trade-swap/{sym}-usdt-swap` (lowercase).
+- **Aster deep link**: `/en/trade/pro/futures/{SYM}USDT` — user picked Pro mode path.
+- **Charts tooltip escaping**: make the SVG chart's parent `position:relative` so absolutely-positioned `.chart-tooltip` anchors inside, not to body.
+- **`<button>` in navbar** needs `font-family: inherit` or it renders system font.
+
+## S. Performance budgets (what "fast" means here)
+
+- Screener page open (cold): target ≤10s first paint, achieved via background warmup + non-blocking IVL fetchers.
+- Orderbook refresh interval on arb.html: **150ms**. Not 100ms (client-side storms some exchanges), not 500ms (feels laggy).
+- WS broadcast interval: 5s from server (`BROADCAST_INTERVAL`). Cache TTL 6s (slightly longer to prevent double-fetches).
+- Alert service poll: 60s (set in alert_service.py).
+
+## T. Toast usage cheat sheet
+
+```js
+toast('Saved');                                     // info
+toast('Alert created', 'success');
+toast('Alert created', 'success', 'RAVE · BingX / Gate · trigger at ±0.05%');
+toast('Failed to create alert', 'error');
+toast('Set TG username in profile first', 'warn');
+toast({ title: 'Cron running', type: 'info', duration: 10000 });
+```
+
+HTML in `sub` is allowed — use sparingly (`<span class="mono">X</span>` for emphasis).
+
+## U. Mobile nav pattern (replicate for new pages)
+
+```html
+<nav class="bottom-nav" id="bottom-nav">
+  <a href="/app" class="bnav-item {active?}"><svg…/>Portfolio</a>
+  …5 items total…
+</nav>
+```
+CSS: fixed bottom, 12px inset, 64px tall, glassmorphic, `z-index:300`, backdrop-blur. Body needs `padding-bottom: 88px` at `<768px`. Light theme overrides use `rgba(255,255,255,0.92)` + `#BABABA` border.
+
+## V. Feature flags / "soft launch" switches
+
+- `aster_provider.py` has `soon = True` hint for perpdex metadata (some providers show a "soon" badge in UI even when functional). Double-check before presenting as production.
+- `theme.js` injectToggle disabled.
+- Admin-only `unlim` plan — backend enforces (see gotcha #27).
+- `TG_BOT_TOKEN` missing → alert service no-ops silently.
+
+## W. When user says X, do Y (short dictionary)
+
+- "коммит и пуш" → `git add <specific files> && git commit -m "..." && git push`. Never `git add -A`.
+- "перезапусти" / "перезапускай" → kill uvicorn and start fresh.
+- "убери" → remove last added element + its CSS + its JS + any related state in one edit.
+- "скинь что видно" / "выведи" → dump raw data (API response, logs, etc.) in a fenced code block.
+- "сделай попривлекательнее" / "добавь жизни" → visual polish pass: spacing, typography hierarchy, micro-interactions. Not a rewrite.
+- "сухо" → the user thinks current design lacks personality — add restrained polish, not color.
+- "[page] тоже" / "везде" → propagate the change across all equivalent pages/components.
+- "помни это" / "сохрани" → write to auto-memory or propose a CLAUDE.md addition.
+
+## X. Files that did NOT exist before recent sessions
+
+Add these to your mental model of the repo:
+- `frontend/toast.js`
+- `frontend/theme.js`
+- `backend/providers/exchanges/bingx_provider.py`
+- `backend/providers/exchanges/kraken_provider.py`
+- `backend/providers/exchanges/whitebit_provider.py`
+
+## Y. Debugging workflow preference
+
+- User will paste UI state or error text verbatim. Read carefully; usually the fix is obvious from the snippet.
+- Preferred diagnosis: `curl` against localhost:8000 (often already authed via cookie if browser has session). `Bash` tool + `python -c` for live API probing is normal.
+- When unsure what's happening, user is fine with me running dev Python to probe exchanges directly before changing code.
+
+## Z. Continuity contract
+
+When a new session starts:
+1. Read this file end-to-end before first action.
+2. Don't re-confirm aesthetic preferences — they're locked in above.
+3. Don't "clean up" things listed in section P ("don't touch").
+4. If the user asks something and section W has a matching phrase, execute that pattern immediately.
+5. When in doubt about scope (project-wide vs. local), default to local + tell the user.
+6. End every meaningful turn with a terse status line. No trailing summaries, no "let me know if..." padding.
