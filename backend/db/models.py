@@ -29,7 +29,10 @@ class User(Base):
     last_active_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    tg_username = Column(String, nullable=True)
+
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
+    arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")
 
 
 class Wallet(Base):
@@ -93,6 +96,24 @@ class BalanceHistory(Base):
     user_id     = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     usd_total   = Column(Float,   nullable=False)
     snapshot_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ArbAlert(Base):
+    """Arbitrage spread alert — triggers Telegram message when spread threshold is crossed."""
+    __tablename__ = "arb_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol = Column(String, nullable=False)
+    long_exchange = Column(String, nullable=False)
+    short_exchange = Column(String, nullable=False)
+    threshold = Column(Float, nullable=False)          # min spread % to trigger
+    direction = Column(String, nullable=False, default="any")  # any | above | below
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_triggered_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="arb_alerts")
 
 
 class Tag(Base):

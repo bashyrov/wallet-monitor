@@ -120,3 +120,20 @@ def logout(response: Response):
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+from pydantic import BaseModel as _BM
+
+
+class _UserPatch(_BM):
+    tg_username: str | None = None
+
+
+@router.patch("/me", response_model=UserOut)
+def patch_me(body: _UserPatch, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if body.tg_username is not None:
+        tg = body.tg_username.strip().lstrip("@") or None
+        current_user.tg_username = tg
+        db.commit()
+        db.refresh(current_user)
+    return current_user

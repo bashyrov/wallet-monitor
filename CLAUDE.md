@@ -201,7 +201,12 @@ wallet-monitor/
         │                               #   _fetch_single() returns 3-tuple (result, error, error_type)
         │                               #   writes ProviderErrorLog on failure
         ├── transaction_service.py      # fetch_transactions(db_wallet) → TransactionResponse (last 5 tx)
-        └── price_service.py            # get_usd_value(asset, amount) — CMC top-100 + Gate fallback, 30min cache
+        ├── price_service.py            # get_usd_value(asset, amount) — CMC top-100 + Gate fallback, 30min cache
+        ├── arbitrage_service.py        # Funding rate fetchers for 12 exchanges; two-tier cache (_cache 6s, _ivl_cache 5min)
+        │                               #   get_funding_data() / get_arbitrage_opportunities() / get_cached_rates()
+        │                               #   Aster: separate _aster_price_cache (5s TTL) + _aster_vol_cache (60s TTL)
+        └── alert_service.py            # Background task (60s interval): checks arb spreads vs ArbAlert thresholds
+                                        #   sends Telegram message via TG_BOT_TOKEN; cooldown 1h per alert
 ```
 
 ---
@@ -214,7 +219,8 @@ wallet-monitor/
 | POST | `/api/auth/register` | — | Register → `{access_token}` + sets HttpOnly `session` cookie |
 | POST | `/api/auth/login` | — | Login → `{access_token}` + sets HttpOnly `session` cookie |
 | POST | `/api/auth/logout` | — | Deletes `session` cookie |
-| GET | `/api/auth/me` | Bearer | Current user (`id, username, email, is_admin, plan, plan_expires_at, wallet_limit`) |
+| GET | `/api/auth/me` | Bearer | Current user (`id, username, email, is_admin, plan, plan_expires_at, wallet_limit, tg_username`) |
+| PATCH | `/api/auth/me` | Bearer | Update `tg_username` — `{tg_username: "handle"}` |
 | GET | `/api/admin/stats` | Bearer + admin | KPI: users_count, wallets_count, by_type, recent_users |
 | GET | `/api/admin/users` | Bearer + admin | All users with wallet_count, plan, plan_expires_at, wallet_limit, request_count, last_active_at, is_blocked |
 | GET | `/api/admin/users/{id}` | Bearer + admin | Single user detail with plan info |
@@ -242,6 +248,20 @@ wallet-monitor/
 | POST | `/api/portfolio/transactions` | Bearer | Last 5 tx for one wallet `{"wallet_id": 1}` |
 | POST | `/api/portfolio/transactions/bulk` | Bearer | Last 5 tx for all (or selected) wallets in parallel |
 | GET | `/api/portfolio/history?days=30` | Bearer | Balance history for chart (1–365 days) |
+| GET | `/api/alerts` | Bearer | List user's arb spread alerts |
+| POST | `/api/alerts` | Bearer | Create alert `{symbol, long_exchange, short_exchange, threshold, direction}` |
+| PATCH | `/api/alerts/{id}` | Bearer | Update alert |
+| PATCH | `/api/alerts/{id}/toggle` | Bearer | Toggle alert enabled/disabled |
+| DELETE | `/api/alerts/{id}` | Bearer | Delete alert |
+| GET | `/api/screener/funding` | Bearer | All funding rates (cached 6s per exchange) |
+| GET | `/api/screener/arbitrage` | Bearer | Cross-exchange arb opportunities with net P&L |
+| GET | `/api/screener/orderbook?symbol=&exchange=&limit=` | Bearer | Order book for a symbol on an exchange |
+| GET | `/api/screener/arb-price-history?symbol=&long_ex=&short_ex=` | Bearer | 1h OHLCV klines for two exchanges |
+| GET | `/api/screener/arb-history?symbol=&long_ex=&short_ex=` | Bearer | Funding rate history for two exchanges |
+| GET | `/api/screener/all-exchanges-funding?symbol=` | Bearer | Current funding rate for symbol across all exchanges |
+| GET | `/api/screener/open-interest?symbol=&long_ex=&short_ex=` | Bearer | Open interest for both exchanges |
+| WS | `/api/screener/ws/funding?token=` | Bearer (query) | Live funding rates pushed every 5s |
+| WS | `/api/screener/ws/arb?token=` | Bearer (query) | Live arb opportunities pushed every 5s |
 
 ---
 
@@ -316,6 +336,7 @@ PostgreSQL (production) / SQLite (local). Migrations run automatically on startu
 | plan_expires_at | DateTime nullable | date until which the paid plan is active |
 | request_count | Integer | incremented on balance + transaction API calls |
 | last_active_at | DateTime nullable | updated on each balance/transaction request |
+| tg_username | String nullable | Telegram handle (without @) for alert notifications |
 | created_at | DateTime | |
 
 ### Table `wallets`
@@ -377,6 +398,20 @@ wallet_id + tag_id, CASCADE DELETE
 | usd_total | Float | aggregate USD of all Owner-tagged wallets |
 | snapshot_at | DateTime index | written on each balance check with Owner wallets |
 
+### Table `arb_alerts`
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Integer PK | |
+| user_id | Integer FK index | CASCADE DELETE |
+| symbol | String | e.g. `BTC` (without USDT) |
+| long_exchange | String | exchange name lowercase |
+| short_exchange | String | exchange name lowercase |
+| threshold | Float | min spread % to trigger (e.g. `0.05`) |
+| direction | String | `any` \| `above` \| `below`; default `any` |
+| enabled | Boolean | default True |
+| last_triggered_at | DateTime nullable | used for 1h cooldown |
+| created_at | DateTime | |
+
 ---
 
 ## Credential Encryption (`backend/crypto.py`)
@@ -403,7 +438,7 @@ All string values in the `credentials` JSON are Fernet-encrypted on save and dec
 ### Access control
 - **`get_current_user`** (`deps.py`): validates Bearer JWT, 401 if missing/invalid, 403 if `is_blocked`
 - **`get_admin_user`** (`deps.py`): wraps `get_current_user`, 403 if `is_admin=False`
-- **Backend page protection** (`serve_page` in `app.py`): `_AUTH_PAGES = {"app", "profile", "archive"}`, `_ADMIN_PAGES = {"admin", "admin-user"}` — checked via HttpOnly `session` cookie
+- **Backend page protection** (`serve_page` in `app.py`): `_AUTH_PAGES = {"app", "profile", "archive", "screener", "arb"}`, `_ADMIN_PAGES = {"admin", "admin-user"}` — checked via HttpOnly `session` cookie
 - **Frontend** (`auth.js`): `requireAuth()` → redirect to `/login`; `requireAdmin()` → redirect to `/app`
 
 ### URL routing (no .html)
@@ -595,6 +630,9 @@ TRON_RPC=
 
 # Solana
 SOLANA_RPC=
+
+# Telegram bot token — for spread alert notifications (BotFather)
+TG_BOT_TOKEN=
 ```
 
 **EVM balances**: `ANKR_KEY` → `ankr_getAccountBalance` (all tokens). Without it → `eth_getBalance` (native only).
@@ -612,7 +650,7 @@ Multiple self-contained HTML pages (inline CSS + JS). Shared design language. Al
 |------|-----------|-------------|
 | `index.html` | — | Landing page |
 | `app.html` | requireAuth + backend cookie | Main app: wallet list, balance check, transactions view |
-| `profile.html` | requireAuth + backend cookie | Profile: balance history chart, plan info with color badge, admin link |
+| `profile.html` | requireAuth + backend cookie | Profile: balance history chart, plan info with color badge, Telegram username field, admin link |
 | `login.html` | redirectIfAuthed | Login form → JWT + HttpOnly cookie → redirect to /app |
 | `register.html` | redirectIfAuthed | Register form → JWT + HttpOnly cookie → redirect to /app |
 | `pricing.html` | — | Basic/Pro/Platinum/Enterprise plans, monthly/annual toggle |
@@ -620,6 +658,8 @@ Multiple self-contained HTML pages (inline CSS + JS). Shared design language. Al
 | `archive.html` | requireAuth + backend cookie | Archived wallets with restore/delete; fetches `/auth/me` for wallet_limit |
 | `admin.html` | requireAdmin + backend cookie | KPI, users table with plan badge + plan modal, provider errors tab |
 | `admin-user.html` | requireAdmin + backend cookie | Per-user detail: stats, wallet list, last active |
+| `screener.html` | requireAuth + backend cookie | Funding rate screener: sortable table, WebSocket live updates, ↗ link to arb detail |
+| `arb.html` | requireAuth + backend cookie | Arb pair detail: 3-column terminal layout (charts / order books / P&L) |
 | `404.html` | — | Custom 404 with terminal animation |
 | `maintenance.html` | — | Maintenance mode page |
 
@@ -899,3 +939,10 @@ Tabs: Overview · All Users · Provider Errors
 31. **KuCoin Futures** use a separate base domain `https://api-futures.kucoin.com` (not `api.kucoin.com`). Response currency `XBT` is normalized to `BTC`. Auth headers are the same format.
 32. **Bybit Earn** (`/v5/earn/product/list?category=FlexibleSaving`) may return empty `stakedAmount` — fails silently, not logged as error. UNIFIED account balance already includes most earn products.
 33. **Favicon for Google Search** requires at least 48×48px. Use `avalant_favicon-48.png` (or larger). Google ignores SVG favicons. All HTML pages link sized PNGs via `<link rel="icon" sizes="NxN">` — favicon.ico (16/32px) is fallback only. Google updates its cache with delay of days to weeks.
+34. **`ArbAlert` model** — `direction` values: `"any"` | `"above"` | `"below"`. `threshold` is spread % (e.g. `0.05` = 0.05%). `last_triggered_at` used for 1h cooldown — alert won't re-fire within 1h of last trigger.
+35. **Alert service** reads spreads from `get_cached_rates()` (no new HTTP calls). If `TG_BOT_TOKEN` is not set, alert service starts but silently skips all sends. User must set `tg_username` on their profile to receive messages.
+36. **Orderbook endpoint** reuses the shared `_arb_http` client (persistent keepalive connections) — do NOT create a new `httpx.AsyncClient` inside the handler, it causes TCP handshake overhead on every 500ms poll.
+37. **Aster price cache** — `_aster_price_cache` (5s TTL) separate from `_aster_vol_cache` (60s TTL). Both live in `arbitrage_service.py`. The price is `lastPrice` from `/ticker/24hr`; volume is `quoteVolume` from the same endpoint but cached longer.
+38. **`arb.html` URL params** — `?symbol=BTC&long=binance&short=aster`. All three required; missing params render an error div instead of the page.
+39. **`arb.html` theme** — dark/light toggle saved to `localStorage` key `arb-theme`. Light theme applied via `body.light` CSS class.
+40. **`screener.html`** — the ↗ button on each arb row links to `/arb?symbol=...&long=...&short=...`.

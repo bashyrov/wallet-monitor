@@ -167,6 +167,35 @@ body {
 .lp-toggle.active { border-color: var(--green); color: var(--green); background: rgba(26,255,171,.06); }
 .lp-toggle-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
+/* hidden tokens */
+.lp-hidden-input-wrap { display: flex; gap: 6px; margin-bottom: 8px; }
+.lp-hidden-input {
+  flex: 1; padding: 6px 8px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; color: var(--text); font-size: 12px; font-family: var(--mono);
+  outline: none; transition: border-color .2s; text-transform: uppercase;
+}
+.lp-hidden-input:focus { border-color: var(--red); }
+.lp-hidden-input::placeholder { color: var(--text3); font-family: inherit; text-transform: none; }
+.lp-hidden-add {
+  padding: 6px 10px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; color: var(--text3); font-size: 12px; cursor: pointer;
+  transition: all .15s; font-family: inherit;
+}
+.lp-hidden-add:hover { border-color: var(--red); color: var(--red); }
+.lp-hidden-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.hidden-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 20px;
+  background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3);
+  color: var(--red); font-size: 11px; font-weight: 700; font-family: var(--mono);
+}
+.hidden-chip-x {
+  cursor: pointer; opacity: .6; font-size: 12px; line-height: 1;
+  transition: opacity .15s; font-family: inherit;
+}
+.hidden-chip-x:hover { opacity: 1; }
+
 /* WS status in panel */
 .lp-ws { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text3); font-family: var(--mono); padding: 10px 14px; }
 .lp-refresh-btn {
@@ -338,16 +367,16 @@ body {
 .stat-item b { color: var(--text2); font-family: var(--mono); }
 
 /* ── TABLE ── */
-.table-wrap { padding: 0 16px; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
-#tbl-funding { min-width: 680px; }
-#tbl-arb     { min-width: 960px; }
+.table-wrap { padding: 0 16px; }
+table { width: 100%; border-collapse: collapse; table-layout: auto; }
+#tbl-funding { min-width: 0; }
+#tbl-arb     { min-width: 0; }
 thead th {
-  text-align: left; padding: 8px 12px;
+  text-align: left; padding: 8px 10px;
   font-size: 11px; font-weight: 600; color: var(--text3);
   text-transform: uppercase; letter-spacing: .5px;
   border-bottom: 1px solid var(--border);
-  cursor: pointer; user-select: none; white-space: nowrap;
+  cursor: pointer; user-select: none;
 }
 thead th:hover { color: var(--text2); }
 
@@ -369,7 +398,8 @@ thead th .sort-arrow { margin-left: 4px; opacity: .4; }
 thead th.sorted .sort-arrow { opacity: 1; color: var(--green); }
 tbody tr { border-bottom: 1px solid rgba(34,34,42,.6); transition: background .12s; }
 tbody tr:hover { background: var(--surface); }
-tbody td { padding: 14px 12px; font-size: 13px; white-space: nowrap; }
+tbody td { padding: 11px 10px; font-size: 13px; }
+.td-symbol, .td-price, .td-rate, .td-apr, .td-next, .td-gross, .td-spread, .td-fees, .td-net, .td-vol { white-space: nowrap; }
 
 /* symbol */
 .td-symbol { font-weight: 700; font-family: var(--mono); }
@@ -390,6 +420,8 @@ tbody td { padding: 14px 12px; font-size: 13px; white-space: nowrap; }
 .ex-hyperliquid { background: rgba(72,205,216,.15);  color: #48CDD8; }
 .ex-aster       { background: rgba(255,140,0,.15);   color: #FF8C00; }
 .ex-ethereal    { background: rgba(147,112,219,.15); color: #9370DB; }
+.ex-whitebit    { background: rgba(45,204,205,.15);  color: #2DCCCD; }
+.ex-bingx       { background: rgba(29,184,242,.15);  color: #1DB8F2; }
 
 .td-price { font-family: var(--mono); color: var(--text2); }
 .td-rate  { font-family: var(--mono); font-weight: 600; }
@@ -412,6 +444,8 @@ tbody td { padding: 14px 12px; font-size: 13px; white-space: nowrap; }
 .net-neg { color: var(--red); }
 .td-status { font-size: 11px; }
 .badge-valid { background: rgba(26,255,171,.1); color: var(--green); padding: 2px 7px; border-radius: 99px; font-weight: 600; font-size: 10px; }
+.arb-detail-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; color: var(--text3); font-size: 14px; text-decoration: none; transition: background .15s, color .15s; }
+.arb-detail-btn:hover { background: var(--surface3); color: var(--green); }
 .badge-invalid { background: rgba(248,113,113,.1); color: var(--red); padding: 2px 7px; border-radius: 99px; font-weight: 600; font-size: 10px; }
 
 .empty-msg { text-align: center; padding: 60px 20px; color: var(--text3); }
@@ -664,6 +698,17 @@ tbody td { padding: 14px 12px; font-size: 13px; white-space: nowrap; }
         <div id="lp-ex-items"></div>
       </div>
 
+      <!-- Hidden Tokens -->
+      <div class="lp-section">
+        <div class="lp-title">Hidden tokens</div>
+        <div class="lp-hidden-input-wrap">
+          <input class="lp-hidden-input" id="hidden-token-input" type="text" placeholder="e.g. BTC" autocomplete="off"
+            onkeydown="if(event.key==='Enter')addHiddenToken()">
+          <button class="lp-hidden-add" onclick="addHiddenToken()">Hide</button>
+        </div>
+        <div class="lp-hidden-chips" id="hidden-chips"></div>
+      </div>
+
       <!-- Funding Filters -->
       <div class="lp-section" id="lp-filters-funding">
         <div class="lp-title">Funding filters</div>
@@ -761,6 +806,17 @@ tbody td { padding: 14px 12px; font-size: 13px; white-space: nowrap; }
         </div>
         <div id="lp-ex-items-mob" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
 
+        <!-- Hidden Tokens (mobile) -->
+        <div style="margin-bottom:14px">
+          <div class="lp-title" style="margin-bottom:8px">Hidden tokens</div>
+          <div class="lp-hidden-input-wrap">
+            <input class="lp-hidden-input" id="hidden-token-input-mob" type="text" placeholder="e.g. BTC" autocomplete="off"
+              onkeydown="if(event.key==='Enter')addHiddenToken(true)">
+            <button class="lp-hidden-add" onclick="addHiddenToken(true)">Hide</button>
+          </div>
+          <div class="lp-hidden-chips" id="hidden-chips-mob"></div>
+        </div>
+
         <!-- Funding filters -->
         <div id="mob-filters-funding">
           <div class="lp-title" style="margin-bottom:8px">Funding filters</div>
@@ -833,14 +889,15 @@ tbody td { padding: 14px 12px; font-size: 13px; white-space: nowrap; }
           <thead>
             <tr>
               <th onclick="sortArb('symbol')"        data-acol="symbol"        data-tip="Perpetual contract ticker">Token <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('long_exchange')"  data-acol="long_exchange"  data-tip="Exchange to go long (pay negative funding) + 24h volume">Long / Volume <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('short_exchange')" data-acol="short_exchange" data-tip="Exchange to go short (receive positive funding) + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('gross_funding')"  data-acol="gross_funding"  data-tip="Combined funding earned per 8h interval before fees">Gross funding <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('long_exchange')"  data-acol="long_exchange"  data-tip="Exchange to go long (pay negative funding) + 24h volume. Rate normalised to per-8h for comparison">Long / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('short_exchange')" data-acol="short_exchange" data-tip="Exchange to go short (receive positive funding) + 24h volume. Rate normalised to per-8h for comparison">Short / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('gross_funding')"  data-acol="gross_funding"  data-tip="short_rate − long_rate normalised to per-8h. Regardless of each exchange's actual interval">Gross /8h <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('price_spread')"   data-acol="price_spread"   data-tip="Mark price difference between exchanges — large spread increases entry cost">Price spread <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('total_fees')"     data-acol="total_fees"     data-tip="Estimated taker fees for opening both legs (0.06% per side)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_profit')"     data-acol="net_profit"     class="sorted" data-tip="Net profit per 8h = gross funding − fees − price spread cost">Net profit <span class="sort-arrow">↓</span></th>
               <th onclick="sortArb('net_apr')"        data-acol="net_apr"        data-tip="Annualised net profit (net × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
               <th data-tip="Whether mark prices are close enough for the spread not to eat the profit">Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="tbody-arb"></tbody>
@@ -884,9 +941,9 @@ tbody td { padding: 14px 12px; font-size: 13px; white-space: nowrap; }
 Auth.requireAuth('/login');
 
 // ── constants ──────────────────────────────────────────────────────────────────
-const EXCHANGES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal'];
-const EX_LABEL  = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate.io', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', hyperliquid:'Hyperliquid', aster:'Aster', ethereal:'Ethereal' };
-const EX_COLOR  = { binance:'#F0B90B', bybit:'#F7A600', okx:'#E0E0E0', gate:'#E40C5B', kucoin:'#00BC8C', mexc:'#00C09A', bitget:'#00B4D8', hyperliquid:'#48CDD8', aster:'#FF8C00', ethereal:'#9370DB' };
+const EXCHANGES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx'];
+const EX_LABEL  = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate.io', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', hyperliquid:'Hyperliquid', aster:'Aster', ethereal:'Ethereal', whitebit:'WhiteBIT', bingx:'BingX' };
+const EX_COLOR  = { binance:'#F0B90B', bybit:'#F7A600', okx:'#E0E0E0', gate:'#E40C5B', kucoin:'#00BC8C', mexc:'#00C09A', bitget:'#00B4D8', hyperliquid:'#48CDD8', aster:'#FF8C00', ethereal:'#9370DB', whitebit:'#2DCCCD', bingx:'#1DB8F2' };
 
 // ── state ──────────────────────────────────────────────────────────────────────
 let _mode = 'funding';
@@ -895,6 +952,7 @@ let _arbRows = [];        // arbitrage opportunities
 let _filtered = [];
 let _filteredArb = [];
 let _exDisabled = new Set();   // exchanges to hide (empty = show all)
+let _hiddenTokens = new Set(JSON.parse(localStorage.getItem('screener_hidden_tokens') || '[]'));
 let _sortF = { col: 'apr', asc: false };
 let _sortA = { col: 'net_profit', asc: false };
 let _validOnly = false;
@@ -921,6 +979,41 @@ let _wsArb = null;  // arbitrage WebSocket
     if (el) el.textContent = (u.username || u.email || 'U')[0].toUpperCase();
   }
 })();
+
+// ── hidden tokens ─────────────────────────────────────────────────────────────
+function _saveHiddenTokens() {
+  localStorage.setItem('screener_hidden_tokens', JSON.stringify([..._hiddenTokens]));
+}
+
+function renderHiddenChips() {
+  const makeChips = (tokens) => [...tokens].map(t => `
+    <span class="hidden-chip">${esc(t)}<span class="hidden-chip-x" onclick="removeHiddenToken('${esc(t)}')">×</span></span>
+  `).join('');
+  const d = document.getElementById('hidden-chips');     if (d) d.innerHTML = makeChips(_hiddenTokens);
+  const m = document.getElementById('hidden-chips-mob'); if (m) m.innerHTML = makeChips(_hiddenTokens);
+}
+
+function addHiddenToken(fromMob = false) {
+  const inputId = fromMob ? 'hidden-token-input-mob' : 'hidden-token-input';
+  const inp = document.getElementById(inputId);
+  const token = inp.value.trim().toUpperCase();
+  if (!token) return;
+  _hiddenTokens.add(token);
+  _saveHiddenTokens();
+  inp.value = '';
+  // also clear the other input
+  const other = document.getElementById(fromMob ? 'hidden-token-input' : 'hidden-token-input-mob');
+  if (other) other.value = '';
+  renderHiddenChips();
+  _mode === 'funding' ? applyFilter() : applyArb();
+}
+
+function removeHiddenToken(token) {
+  _hiddenTokens.delete(token);
+  _saveHiddenTokens();
+  renderHiddenChips();
+  _mode === 'funding' ? applyFilter() : applyArb();
+}
 
 // ── left panel exchange list ───────────────────────────────────────────────────
 function buildExDrop() {
@@ -1130,9 +1223,10 @@ const _connectArb = _makeWs({
   },
 });
 
-function loadArb() {
-  // Show loading state first time
-  if (!_arbRows.length) {
+async function loadArb() {
+  if (_arbRows.length) {
+    applyArb();
+  } else {
     document.getElementById('tbody-arb').innerHTML =
       '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
     document.getElementById('cards-arb').innerHTML =
@@ -1141,6 +1235,15 @@ function loadArb() {
   if (!_wsArb || _wsArb.readyState === WebSocket.CLOSED) {
     _wsArb = _connectArb();
   }
+  // Always fetch fresh arb data when switching to this tab
+  try {
+    const res = await Auth.apiFetch('/screener/arbitrage');
+    if (res.ok) {
+      const data = await res.json();
+      _arbRows = data.opportunities || [];
+      applyArb(true);
+    }
+  } catch (_) {}
 }
 
 // ── funding filter + sort ──────────────────────────────────────────────────────
@@ -1149,6 +1252,7 @@ function applyFilter(keepPage = false) {
   const minApr = parseFloat(document.getElementById('f-min-apr').value) || 0;
   _filtered = _rows.filter(r => {
     if (_exDisabled.has(r.exchange)) return false;
+    if (_hiddenTokens.has(r.symbol)) return false;
     if (q && !r.symbol.includes(q)) return false;
     if (minApr > 0 && Math.abs(r.apr) < minApr) return false;
     if (_crossOnly && !r.cross_listed) return false;
@@ -1193,6 +1297,7 @@ function applyArb(keepPage = false) {
 
   _filteredArb = _arbRows.filter(r => {
     if (_exDisabled.has(r.long_exchange) || _exDisabled.has(r.short_exchange)) return false;
+    if (_hiddenTokens.has(r.symbol)) return false;
     if (q && !r.symbol.includes(q)) return false;
     if (r.net_profit < minNet)   return false;
     if (r.gross_funding < minGross) return false;
@@ -1320,7 +1425,8 @@ function fmtExRate(ex, rate_pct) {
   const sign = rate_pct >= 0 ? '+' : '';
   const cls  = rate_pct > 0 ? 'rate-pos' : rate_pct < 0 ? 'rate-neg' : 'rate-zero';
   return `<span class="ex-badge ex-${ex}">${EX_LABEL[ex]||ex}</span>
-          <span class="td-rate ${cls}" style="font-size:12px">${sign}${rate_pct.toFixed(4)}%</span>`;
+          <span class="td-rate ${cls}" style="font-size:12px">${sign}${rate_pct.toFixed(4)}%</span>
+          <span style="font-size:10px;color:var(--text3)">/8h</span>`;
 }
 
 // ── pager helper ───────────────────────────────────────────────────────────────
@@ -1431,6 +1537,7 @@ function renderArb() {
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       <td>${fmtApr(r.net_apr)}</td>
       <td class="td-status">${validBadge}</td>
+      <td><a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page">↗</a></td>
     </tr>`;
   }).join('');
   renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');
@@ -1670,6 +1777,11 @@ function renderArbCards() {
           <span class="card-lbl">Status</span>
           <span>${validBadge}</span>
         </div>
+        <div style="margin-top:12px">
+          <a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;background:var(--surface3);color:var(--text2);font-size:12px;font-weight:600;text-decoration:none;transition:background .15s,color .15s;" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='var(--text2)'">
+            ↗ Open detail
+          </a>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -1708,6 +1820,7 @@ function tickCountdowns() {
 buildExDrop();
 buildMobExChips();
 buildSortChips();
+renderHiddenChips();
 document.getElementById('search').addEventListener('input', () => { _mode === 'funding' ? applyFilter() : applyArb(); });
 document.getElementById('f-min-apr').addEventListener('input', () => applyFilter());
 document.getElementById('f-min-net').addEventListener('input', () => applyArb());
@@ -1721,7 +1834,30 @@ document.getElementById('panel-toggle').style.left = '260px';
 
 setInterval(tickCountdowns, 1000);
 
-connectWs();
+// ── Initial REST load (instant, before WS connects) ───────────────────────────
+(async function preload() {
+  try {
+    // Show skeleton while loading
+    document.getElementById('tbody-funding').innerHTML =
+      '<tr><td colspan="7" class="empty-msg"><span class="spinner"></span>Loading…</td></tr>';
+
+    const [fundingRes, arbRes] = await Promise.all([
+      Auth.apiFetch('/screener/funding'),
+      Auth.apiFetch('/screener/arbitrage'),
+    ]);
+    if (fundingRes.ok) {
+      const data = await fundingRes.json();
+      _rows = data.rows || [];
+      renderStats(data);
+      applyFilter(true);
+    }
+    if (arbRes.ok) {
+      const data = await arbRes.json();
+      _arbRows = data.opportunities || [];
+    }
+  } catch (_) {}
+  connectWs();
+})();
 </script>
 
 </body>

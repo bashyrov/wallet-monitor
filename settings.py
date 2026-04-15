@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     KUCOIN_BASE_URL: str = "https://api.kucoin.com"
     BYBIT_BASE_URL: str = "https://api.bybit.com"
     BITGET_BASE_URL: str = "https://api.bitget.com"
+    KRAKEN_BASE_URL: str = "https://api.kraken.com"
+    WHITEBIT_BASE_URL: str = "https://whitebit.com"
+    BINGX_BASE_URL: str = "https://open-api.bingx.com"
 
     ETHEREUM_RPC: str | None = None
     BSC_RPC: str | None = None
@@ -56,5 +59,8 @@ class Settings(BaseSettings):
 
     # CoinMarketCap — for top-100 symbol list (hourly price cache)
     CMC_API_KEY: str | None = None
+
+    # Telegram alerts bot token (BotFather)
+    TG_BOT_TOKEN: str | None = None
 
 settings = Settings()

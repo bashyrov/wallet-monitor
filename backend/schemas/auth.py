@@ -43,6 +43,7 @@ class UserOut(BaseModel):
     plan: str = "basic"
     plan_expires_at: Optional[datetime] = None
     wallet_limit: Optional[int] = None   # None = unlimited; computed from plan
+    tg_username: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

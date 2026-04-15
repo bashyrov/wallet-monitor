@@ -82,10 +82,14 @@ async def lifespan(app: FastAPI):
     from backend.api.v1.screener import start_screener_broadcaster, stop_screener_broadcaster
     start_screener_broadcaster()
 
+    from backend.services.alert_service import start_alert_service, stop_alert_service
+    start_alert_service()
+
     yield
 
     stop_price_loop()
     stop_screener_broadcaster()
+    stop_alert_service()
     logger.info("Avalant shutting down")
 
 
@@ -136,7 +140,7 @@ from backend.db.base import get_db
 from fastapi import Depends
 import os
 
-_AUTH_PAGES  = {"app", "profile", "archive", "screener"}
+_AUTH_PAGES  = {"app", "profile", "archive", "screener", "arb"}
 _ADMIN_PAGES = {"admin", "admin-user"}
 
 @app.get("/{page:path}", include_in_schema=False)
