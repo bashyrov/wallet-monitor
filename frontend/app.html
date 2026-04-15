@@ -2045,6 +2045,8 @@
 
 <script src="/navbar.js"></script>
 <script src="/auth.js"></script>
+<script src="/toast.js"></script>
+<script src="/theme.js"></script>
 <script>
 (function() {
   if (localStorage.getItem('promo_dismissed')) {
@@ -3547,23 +3549,7 @@ document.getElementById('wallet-form').addEventListener('input', e => {
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function toast(msg, type = 'info', sub = '') {
-  const icons = { success: '✓', error: '✕', info: '·' };
-  const icon = icons[type] || icons.info;
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.innerHTML = `
-    <span class="toast-icon">${icon}</span>
-    <div class="toast-body">
-      <span class="toast-title">${msg}</span>
-      ${sub ? `<span class="toast-sub">${sub}</span>` : ''}
-    </div>`;
-  document.getElementById('toast-container').appendChild(el);
-  setTimeout(() => {
-    el.classList.add('removing');
-    setTimeout(() => el.remove(), 250);
-  }, 3200);
-}
+// toast() is provided globally by /toast.js
 
 // Close dropdowns on outside click
 document.addEventListener('click', e => {

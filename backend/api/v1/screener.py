@@ -199,8 +199,10 @@ async def get_orderbook(
             d = r.json()
             return {"bids": [[float(x["p"]), float(x["s"])] for x in d.get("bids",[])], "asks": [[float(x["p"]), float(x["s"])] for x in d.get("asks",[])]}
         elif exchange == "kucoin":
-            sym = symbol + "USDTM"
-            r = await c.get(f"https://api-futures.kucoin.com/api/v1/level2/depth{limit}?symbol={sym}")
+            # KuCoin Futures only supports depth20 / depth100 endpoints
+            sym = ("XBT" if symbol == "BTC" else symbol) + "USDTM"
+            depth = 100 if limit > 20 else 20
+            r = await c.get(f"https://api-futures.kucoin.com/api/v1/level2/depth{depth}?symbol={sym}")
             d = r.json().get("data", {})
             return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("asks",[])]}
         elif exchange == "mexc":
@@ -300,6 +302,37 @@ async def _fetch_open_interest(exchange: str, symbol: str) -> dict | None:
                         if asset.get("name") == symbol and i < len(ctxs):
                             oi = float(ctxs[i].get("openInterest", 0))
                             return {"exchange": exchange, "oi": oi, "unit": "contracts"}
+            elif exchange == "aster":
+                r = await c.get(f"https://fapi.asterdex.com/fapi/v1/openInterest?symbol={symbol}USDT")
+                d = r.json()
+                return {"exchange": exchange, "oi": float(d.get("openInterest", 0)), "unit": "contracts"}
+            elif exchange == "bingx":
+                r = await c.get(f"https://open-api.bingx.com/openApi/swap/v2/quote/openInterest?symbol={symbol}-USDT")
+                d = r.json().get("data", {})
+                return {"exchange": exchange, "oi": float(d.get("openInterest", 0)), "unit": "contracts"}
+            elif exchange == "mexc":
+                r = await c.get(f"https://contract.mexc.com/api/v1/contract/ticker?symbol={symbol}_USDT")
+                d = r.json().get("data") or {}
+                if isinstance(d, list): d = d[0] if d else {}
+                return {"exchange": exchange, "oi": float(d.get("holdVol", 0)), "unit": "contracts"}
+            elif exchange == "bitget":
+                r = await c.get(f"https://api.bitget.com/api/v2/mix/market/open-interest?symbol={symbol}USDT&productType=USDT-FUTURES")
+                items = (r.json().get("data") or {}).get("openInterestList", [])
+                oi = float(items[0].get("size", 0)) if items else 0
+                return {"exchange": exchange, "oi": oi, "unit": "contracts"}
+            elif exchange == "kucoin":
+                sym = ("XBT" if symbol == "BTC" else symbol) + "USDTM"
+                r = await c.get(f"https://api-futures.kucoin.com/api/v1/contracts/{sym}")
+                d = r.json().get("data") or {}
+                return {"exchange": exchange, "oi": float(d.get("openInterest", 0)), "unit": "contracts"}
+            elif exchange == "whitebit":
+                r = await c.get(f"https://whitebit.com/api/v4/public/futures")
+                items = r.json() if isinstance(r.json(), list) else (r.json().get("result") or r.json().get("data") or [])
+                target = f"{symbol}_PERP"
+                for it in items:
+                    tid = it.get("ticker_id") or it.get("market") or it.get("name") or ""
+                    if tid == target:
+                        return {"exchange": exchange, "oi": float(it.get("open_interest", 0) or 0), "unit": "contracts"}
     except Exception as exc:
         logger.warning("OI %s/%s failed: %s", exchange, symbol, exc)
     return None

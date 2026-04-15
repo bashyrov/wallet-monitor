@@ -1058,6 +1058,231 @@ async def _aster_txs(address: str) -> list[Transaction]:
     return txs[:LIMIT]
 
 
+async def _kraken_txs(creds: dict) -> list[Transaction]:
+    import base64 as _b64
+    import hashlib as _hl
+    import hmac as _hmac
+
+    base = "https://api.kraken.com"
+
+    def _sign(path: str, body: str, nonce: str) -> str:
+        sha256_hash = _hl.sha256((nonce + body).encode()).digest()
+        mac = _hmac.new(_b64.b64decode(creds["api_secret"]), path.encode() + sha256_hash, _hl.sha512)
+        return _b64.b64encode(mac.digest()).decode()
+
+    async def _post(path: str, extra: dict | None = None) -> dict:
+        from urllib.parse import urlencode
+        nonce = str(int(time.time() * 1000))
+        params = {"nonce": nonce, **(extra or {})}
+        body = urlencode(params)
+        sign = _sign(path, body, nonce)
+        headers = {
+            "API-Key": creds["api_key"],
+            "API-Sign": sign,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        async with RetryClient(timeout=15) as c:
+            r = await c.post(f"{base}{path}", content=body.encode(), headers=headers)
+            r.raise_for_status()
+            return r.json()
+
+    _RENAME = {
+        "XXBT": "BTC", "XBT": "BTC", "XETH": "ETH", "ZUSD": "USD",
+        "ZEUR": "EUR", "XXRP": "XRP", "XLTC": "LTC",
+    }
+
+    def _norm(a: str) -> str:
+        return _RENAME.get(a, a)
+
+    txs: list[Transaction] = []
+    try:
+        data = await _post("/0/private/Ledgers", {"type": "all", "ofs": 0})
+        ledger = (data.get("result") or {}).get("ledger") or {}
+        entries = sorted(ledger.values(), key=lambda x: float(x.get("time") or 0), reverse=True)
+        for e in entries[:LIMIT]:
+            ltype = (e.get("type") or "").lower()
+            ttype = (
+                "deposit" if ltype == "deposit"
+                else "withdraw" if ltype == "withdrawal"
+                else "trade" if ltype in ("trade", "settled")
+                else "transfer"
+            )
+            txs.append(_tx(
+                e.get("refid", ""),
+                ttype,
+                _norm(e.get("asset") or ""),
+                e.get("amount", "0"),
+                e.get("time"),
+                address=e.get("wallet"),
+            ))
+    except Exception:
+        pass
+    return txs[:LIMIT]
+
+
+async def _whitebit_txs(creds: dict) -> list[Transaction]:
+    import base64 as _b64
+    import hashlib as _hl
+    import hmac as _hmac
+    import json as _json
+
+    base = "https://whitebit.com"
+
+    def _signed(path: str, extra: dict | None = None) -> tuple[str, dict, bytes]:
+        nonce = str(int(time.time() * 1000))
+        body_dict = {"request": path, "nonce": nonce, **(extra or {})}
+        body_json = _json.dumps(body_dict, separators=(",", ":"))
+        b64_body = _b64.b64encode(body_json.encode()).decode()
+        sign = _hmac.new(creds["api_secret"].encode(), b64_body.encode(), _hl.sha512).hexdigest()
+        headers = {
+            "X-TXC-APIKEY": creds["api_key"],
+            "X-TXC-SIGNATURE": sign,
+            "X-TXC-NONCE": nonce,
+            "Content-Type": "application/json",
+        }
+        return f"{base}{path}", headers, body_json.encode()
+
+    txs: list[Transaction] = []
+    async with RetryClient(timeout=15) as c:
+        # Deposits
+        try:
+            path = "/api/v4/main-account/history"
+            url, headers, body = _signed(path, {"transactionMethod": 1, "limit": LIMIT, "offset": 0})
+            r = await c.post(url, content=body, headers=headers)
+            r.raise_for_status()
+            for item in (r.json().get("records") or [])[:LIMIT]:
+                txs.append(_tx(
+                    item.get("uniqueId") or item.get("transactionHash", ""),
+                    "deposit",
+                    item.get("ticker") or item.get("currency", ""),
+                    item.get("amount", "0"),
+                    item.get("createdAt"),
+                    address=item.get("address"),
+                ))
+        except Exception:
+            pass
+
+        # Withdrawals
+        if len(txs) < LIMIT:
+            try:
+                path = "/api/v4/main-account/history"
+                url, headers, body = _signed(path, {"transactionMethod": 2, "limit": LIMIT, "offset": 0})
+                r = await c.post(url, content=body, headers=headers)
+                r.raise_for_status()
+                for item in (r.json().get("records") or [])[:LIMIT - len(txs)]:
+                    txs.append(_tx(
+                        item.get("uniqueId") or item.get("transactionHash", ""),
+                        "withdraw",
+                        item.get("ticker") or item.get("currency", ""),
+                        item.get("amount", "0"),
+                        item.get("createdAt"),
+                        address=item.get("address"),
+                    ))
+            except Exception:
+                pass
+
+        # Spot deals (trades)
+        if len(txs) < LIMIT:
+            try:
+                path = "/api/v4/trade-account/executed-history"
+                url, headers, body = _signed(path, {"limit": LIMIT, "offset": 0})
+                r = await c.post(url, content=body, headers=headers)
+                r.raise_for_status()
+                deals = r.json()
+                if isinstance(deals, dict):
+                    deals = [item for sublist in deals.values() for item in (sublist or [])]
+                for item in (deals or [])[:LIMIT - len(txs)]:
+                    market = item.get("market", "")
+                    base_asset = market.split("_")[0] if "_" in market else market
+                    txs.append(_tx(
+                        item.get("id", ""),
+                        "trade",
+                        base_asset,
+                        item.get("amount") or item.get("qty", "0"),
+                        item.get("time"),
+                    ))
+            except Exception:
+                pass
+
+    txs.sort(key=lambda t: t.timestamp, reverse=True)
+    return txs[:LIMIT]
+
+
+async def _bingx_txs(creds: dict) -> list[Transaction]:
+    import hashlib as _hl
+    import hmac as _hmac
+    from urllib.parse import urlencode
+
+    base = "https://open-api.bingx.com"
+
+    def _signed_url(path: str, params: dict | None = None) -> tuple[str, dict]:
+        ts = str(int(time.time() * 1000))
+        p = dict(params or {})
+        qs = urlencode(sorted(p.items())) if p else ""
+        payload = (qs + "&" if qs else "") + f"timestamp={ts}"
+        sig = _hmac.new(creds["api_secret"].encode(), payload.encode(), _hl.sha256).hexdigest()
+        return f"{base}{path}?{payload}&signature={sig}", {"X-BX-APIKEY": creds["api_key"]}
+
+    txs: list[Transaction] = []
+    async with RetryClient(timeout=15) as c:
+        # Spot asset records
+        try:
+            url, headers = _signed_url("/openApi/spot/v1/account/depositOrders", {"limit": LIMIT})
+            r = await c.get(url, headers=headers)
+            r.raise_for_status()
+            for item in (r.json().get("data") or {}).get("list") or []:
+                txs.append(_tx(
+                    item.get("txId") or item.get("orderId", ""),
+                    "deposit",
+                    item.get("coin", ""),
+                    item.get("amount", "0"),
+                    item.get("insertTime"),
+                    address=item.get("address"),
+                ))
+        except Exception:
+            pass
+
+        # Spot withdrawals
+        if len(txs) < LIMIT:
+            try:
+                url, headers = _signed_url("/openApi/spot/v1/account/withdrawOrders", {"limit": LIMIT})
+                r = await c.get(url, headers=headers)
+                r.raise_for_status()
+                for item in (r.json().get("data") or {}).get("list") or []:
+                    txs.append(_tx(
+                        item.get("id", ""),
+                        "withdraw",
+                        item.get("coin", ""),
+                        item.get("amount", "0"),
+                        item.get("applyTime"),
+                        address=item.get("address"),
+                    ))
+            except Exception:
+                pass
+
+        # Perp futures income
+        if len(txs) < LIMIT:
+            try:
+                url, headers = _signed_url("/openApi/swap/v2/user/income", {"incomeType": "TRANSFER", "limit": LIMIT})
+                r = await c.get(url, headers=headers)
+                r.raise_for_status()
+                for item in (r.json().get("data") or [])[:LIMIT - len(txs)]:
+                    inc_type = (item.get("incomeType") or "transfer").lower()
+                    ttype = "deposit" if "transfer_in" in inc_type else "withdraw" if "transfer_out" in inc_type else "transfer"
+                    txs.append(_tx(
+                        item.get("tranId") or item.get("tradeId", ""),
+                        ttype,
+                        item.get("asset", "USDT"),
+                        item.get("income", "0"),
+                        item.get("time"),
+                    ))
+            except Exception:
+                pass
+
+    txs.sort(key=lambda t: t.timestamp, reverse=True)
+    return txs[:LIMIT]
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
@@ -1100,6 +1325,12 @@ async def fetch_transactions(db_wallet: Wallet) -> TransactionResponse:
                 txs = await _bitget_txs(c)
             elif tv == "backpack":
                 txs = await _backpack_txs(c)
+            elif tv == "kraken":
+                txs = await _kraken_txs(c)
+            elif tv == "whitebit":
+                txs = await _whitebit_txs(c)
+            elif tv == "bingx":
+                txs = await _bingx_txs(c)
             else:
                 txs = []
 

@@ -1,0 +1,100 @@
+// Shared theme system — Avalant
+// Applies dark/light theme via body.light class.
+// CSS vars auto-flip for all pages.
+// Usage: <script src="/theme.js"></script> — applies saved theme ASAP,
+// then toggleTheme() is available globally.
+
+(function(){
+  if (window.toggleTheme && window.toggleTheme._avalant) return;
+
+  const CSS = `
+/* ── Light theme: pure B&W with slightly darker green/red for readable text ── */
+body.light{
+  --bg:        #FFFFFF;
+  --surface:   #FFFFFF;
+  --surface2:  #F4F4F4;
+  --surface3:  #E8E8E8;
+  --border:    #BABABA;
+  --border2:   #8C8C8C;
+  --text:      #000000;
+  --text2:     #1A1A1A;
+  --text3:     #595959;
+  --green:     #006B3C;   /* darker, readable on white */
+  --red:       #8B0000;
+  --yellow:    #6B5011;
+  --blue:      #1E478F;
+  --teal:      #006970;
+  --purple:    #5A2E9E;
+}
+body.light{color-scheme:light;}
+
+/* Shared component overrides (navbar, toast) */
+body.light .topbar{background:rgba(255,255,255,0.95)!important;border-bottom-color:#E2E2E2;}
+body.light app-navbar::after{background:linear-gradient(90deg,transparent,rgba(0,0,0,0.08),transparent);}
+body.light .brand{color:#000;}
+body.light .brand-cursor{color:#000;}
+body.light .nav-lnk{color:#2A2A2A;}
+body.light .nav-lnk:hover{color:#000;background:#EDEDED;border-color:#BABABA;}
+body.light .nav-lnk.active{color:#000;background:#EDEDED;border-color:#000;}
+body.light .avatar-btn{background:linear-gradient(135deg,#006B3C,#1E478F);color:#FFF;}
+
+/* Positive/negative color helpers (for text on white bg, darker green for contrast) */
+body.light .pos,body.light .pos-text,body.light .net-pos,body.light .rate-pos{color:#006B3C!important;}
+body.light .neg,body.light .neg-text,body.light .net-neg,body.light .rate-neg{color:#8B0000!important;}
+
+/* Theme toggle button (added by this script) */
+.theme-toggle-btn{background:none;border:none;cursor:pointer;padding:5px 9px;border-radius:6px;color:var(--text3);display:inline-flex;align-items:center;justify-content:center;transition:color .15s,background .15s;font-family:inherit;}
+.theme-toggle-btn:hover{color:var(--text);background:rgba(255,255,255,.05);}
+body.light .theme-toggle-btn:hover{background:#EDEDED;color:#000;}
+.theme-toggle-btn svg{width:15px;height:15px;display:block;}
+`;
+
+  const style = document.createElement('style');
+  style.id = 'av-theme-style';
+  style.textContent = CSS;
+  (document.head || document.documentElement).appendChild(style);
+
+  // Apply saved theme ASAP (before DOMContentLoaded to avoid FOUC)
+  try {
+    if (localStorage.getItem('theme') === 'light') {
+      if (document.body) document.body.classList.add('light');
+      else document.documentElement.classList.add('light-preload');
+    }
+  } catch {}
+
+  // Once body exists, transfer preload class
+  if (!document.body) {
+    document.addEventListener('DOMContentLoaded', () => {
+      if (document.documentElement.classList.contains('light-preload')) {
+        document.body.classList.add('light');
+        document.documentElement.classList.remove('light-preload');
+      }
+    });
+  }
+
+  const SUN_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="3.2"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M13 3l-1 1M4 12l-1 1"/></svg>';
+  const MOON_SVG = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 2v10a5 5 0 1 1 0-10z"/></svg>';
+
+  function updateIcon(){
+    const light = document.body.classList.contains('light');
+    document.querySelectorAll('.theme-toggle-btn').forEach(b => {
+      b.innerHTML = light ? SUN_SVG : MOON_SVG;
+      b.title = light ? 'Switch to dark' : 'Switch to light';
+    });
+  }
+
+  function toggleTheme(){
+    const light = document.body.classList.toggle('light');
+    try { localStorage.setItem('theme', light ? 'light' : 'dark'); } catch {}
+    updateIcon();
+    // Page-specific re-renders can hook: window.dispatchEvent(new Event('themechange'))
+    window.dispatchEvent(new CustomEvent('themechange', { detail: { light } }));
+  }
+
+  toggleTheme._avalant = true;
+  window.toggleTheme = toggleTheme;
+
+  // Theme toggle button auto-injection disabled for now (theme stays dark).
+  // To re-enable, remove this early return and the hidden light-preload cleanup above.
+  return;
+})();

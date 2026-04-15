@@ -20,10 +20,11 @@ import httpx
 logger = logging.getLogger("avalant.screener")
 
 _http = httpx.AsyncClient(
-    timeout=15,
-    headers={"User-Agent": "Mozilla/5.0"},
+    timeout=httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=2.0),
+    headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
     follow_redirects=True,
-    limits=httpx.Limits(max_connections=100, max_keepalive_connections=30),
+    limits=httpx.Limits(max_connections=200, max_keepalive_connections=60, keepalive_expiry=30),
+    http2=False,  # most exchanges work better with HTTP/1.1 keepalive
 )
 
 # ── Price/rate cache ───────────────────────────────────────────────────────────
@@ -233,9 +234,33 @@ _IVL_FETCHERS = {
 _ivl_locks: dict[str, asyncio.Lock] = {}
 
 
-async def _get_interval_map(exchange: str) -> dict[str, float]:
+async def _refresh_interval(exchange: str) -> None:
+    """Fire-and-forget background refresh for slow interval fetchers."""
+    fetcher = _IVL_FETCHERS.get(exchange)
+    if not fetcher:
+        return
+    if exchange not in _ivl_locks:
+        _ivl_locks[exchange] = asyncio.Lock()
+    if _ivl_locks[exchange].locked():
+        return
+    async with _ivl_locks[exchange]:
+        try:
+            result = await fetcher()
+            _ivl_cache[exchange] = (result, _mono())
+            logger.info("Interval cache refreshed for %s (%d symbols)", exchange, len(result))
+        except Exception as exc:
+            logger.warning("Background interval fetch %s failed: %s", exchange, exc)
+
+
+_SLOW_IVL = {"mexc", "bitget"}  # per-symbol fetch takes 30-45s — never block on these
+
+
+async def _get_interval_map(exchange: str, *, allow_blocking: bool = True) -> dict[str, float]:
     """Return {symbol: interval_h} for the exchange, refreshed every hour.
-    Per-exchange lock prevents duplicate concurrent fetches."""
+    Per-exchange lock prevents duplicate concurrent fetches.
+    For slow fetchers (MEXC/Bitget), when cache is cold, kick off refresh in
+    background and return whatever we have (possibly empty) — caller falls
+    back to a sane default interval."""
     cached, at = _ivl_cache.get(exchange, ({}, 0.0))
     if _mono() - at < IVL_TTL and cached:
         return cached
@@ -244,19 +269,24 @@ async def _get_interval_map(exchange: str) -> dict[str, float]:
         return cached
     if exchange not in _ivl_locks:
         _ivl_locks[exchange] = asyncio.Lock()
+    # Slow fetchers: never block user-facing requests
+    if exchange in _SLOW_IVL and not allow_blocking:
+        if not _ivl_locks[exchange].locked():
+            asyncio.create_task(_refresh_interval(exchange))
+        return cached
     async with _ivl_locks[exchange]:
         # Re-check after acquiring lock — another coroutine may have filled it
         cached, at = _ivl_cache.get(exchange, ({}, 0.0))
         if _mono() - at < IVL_TTL and cached:
             return cached
-    try:
-        result = await fetcher()
-        _ivl_cache[exchange] = (result, _mono())
-        logger.debug("Interval map refreshed for %s (%d symbols)", exchange, len(result))
-        return result
-    except Exception as exc:
-        logger.warning("Interval fetch %s failed: %s", exchange, exc)
-        return cached  # serve stale on error
+        try:
+            result = await fetcher()
+            _ivl_cache[exchange] = (result, _mono())
+            logger.debug("Interval map refreshed for %s (%d symbols)", exchange, len(result))
+            return result
+        except Exception as exc:
+            logger.warning("Interval fetch %s failed: %s", exchange, exc)
+            return cached  # serve stale on error
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -560,10 +590,9 @@ async def _fetch_mexc() -> list[dict]:
     tick_r.raise_for_status()
     tickers = tick_r.json().get("data") or []
 
-    # Interval cache filled by warm-up at startup; if cold — skip until ready
-    ivl = await _get_interval_map("mexc")
-    if not ivl:
-        return []
+    # MEXC per-symbol interval fetch takes ~45s (461 requests) — never block;
+    # kick off background refresh and default to 4h (most common) until cache fills.
+    ivl = await _get_interval_map("mexc", allow_blocking=False)
 
     out = []
     for item in tickers:
@@ -573,8 +602,8 @@ async def _fetch_mexc() -> list[dict]:
         token = sym[:-5]
         rate = float(item.get("fundingRate") or 0)
         price = float(item.get("lastPrice") or item.get("fairPrice") or 0)
-        interval_h = ivl.get(sym)
-        if price == 0 or rate == 0 or interval_h is None:
+        interval_h = ivl.get(sym, 4.0)
+        if price == 0 or rate == 0:
             continue
         next_ts = int(item.get("nextSettleTime") or 0) // 1000
         out.append({
@@ -597,9 +626,8 @@ async def _fetch_bitget() -> list[dict]:
     tick_r.raise_for_status()
     tickers = tick_r.json().get("data") or []
 
-    ivl = await _get_interval_map("bitget")
-    if not ivl:
-        return []
+    # Same as MEXC — per-symbol interval fetch is slow; never block.
+    ivl = await _get_interval_map("bitget", allow_blocking=False)
 
     out = []
     for item in tickers:
@@ -609,8 +637,8 @@ async def _fetch_bitget() -> list[dict]:
         token = sym[:-4]
         rate = float(item.get("fundingRate") or 0)
         price = float(item.get("lastPr") or item.get("markPrice") or 0)
-        interval_h = ivl.get(sym)
-        if price == 0 or rate == 0 or interval_h is None:
+        interval_h = ivl.get(sym, 4.0)
+        if price == 0 or rate == 0:
             continue
         next_ts = int(item.get("nextFundingTime") or 0) // 1000
         out.append({
@@ -945,6 +973,8 @@ async def get_arbitrage_opportunities() -> dict:
                     "valid_price":    p_l <= p_s,
                     "next_ts_long":   long_e.get("next_ts", 0),
                     "next_ts_short":  short_e.get("next_ts", 0),
+                    "long_interval_h":  long_e.get("interval_h"),
+                    "short_interval_h": short_e.get("interval_h"),
                 })
 
     opportunities.sort(key=lambda x: x["net_profit"], reverse=True)

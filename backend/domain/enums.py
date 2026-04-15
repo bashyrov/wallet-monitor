@@ -11,6 +11,9 @@ class ExchangeType(str, Enum):
     KUCOIN = "kucoin"
     BITGET = "bitget"
     BACKPACK = "backpack"
+    KRAKEN = "kraken"
+    WHITEBIT = "whitebit"
+    BINGX = "bingx"
 
     LIGHTER = "lighter"
     HYPERLIQUID = "hyperliquid"

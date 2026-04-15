@@ -586,7 +586,7 @@
         <div class="danger-label">Delete account</div>
         <div class="danger-desc">Permanently delete your account and all wallets</div>
       </div>
-      <button class="btn-danger" onclick="alert('Account deletion coming soon.')">Delete account</button>
+      <button class="btn-danger" onclick="toast('Account deletion coming soon', 'info')">Delete account</button>
     </div>
   </div>
 
@@ -594,6 +594,8 @@
 
 <script src="/navbar.js"></script>
 <script src="/auth.js"></script>
+<script src="/toast.js"></script>
+<script src="/theme.js"></script>
 <script>
 (function() {
   if (localStorage.getItem('promo_dismissed')) {

@@ -37,6 +37,7 @@ const _NAV_SET = {
   profile:  ['app', 'archive', 'screener', 'pricing'],
   index:    ['app', 'archive', 'screener', 'pricing'],
   pricing:  ['app', 'archive', 'screener', 'pricing'], // Portfolio+Archive hidden until auth
+  arb:      ['app', 'pricing'],
   login:    [],
   register: [],
   checkout: ['app', 'pricing'],
@@ -53,6 +54,7 @@ const _ACTIVE = {
   login:    null,
   register: null,
   checkout: null,
+  arb:      'screener',
 };
 
 function _navLink(link, active) {
@@ -73,6 +75,16 @@ function _rightHtml(page) {
     case 'profile':
     case 'checkout':
       return _avatarBtn();
+    case 'arb':
+      return `
+        <button class="nav-lnk" onclick="openAlertModal&&openAlertModal()" title="Alerts">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+          Alerts
+        </button>
+        <button class="nav-lnk" onclick="toggleFullscreen&&toggleFullscreen()" title="Fullscreen">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5"/></svg>
+        </button>
+        ${_avatarBtn()}`;
     case 'index':
       return `
         <div id="_nb-guest" style="display:flex;align-items:center;gap:8px">

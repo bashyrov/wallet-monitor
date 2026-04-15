@@ -44,7 +44,9 @@ app-navbar::after {
   text-decoration: none; white-space: nowrap;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
   border: 1px solid transparent;
+  font-family: inherit;
 }
+button.nav-lnk { background: none; cursor: pointer; }
 .nav-lnk svg { opacity: 0.6; transition: opacity 0.15s; flex-shrink: 0; }
 .nav-lnk:hover { color: #1AFFAB; background: rgba(26,255,171,0.08); border-color: rgba(26,255,171,0.12); }
 .nav-lnk:hover svg { opacity: 1; }

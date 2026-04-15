@@ -851,6 +851,8 @@
 </div>
 
 <script src="/auth.js"></script>
+<script src="/toast.js"></script>
+<script src="/theme.js"></script>
 <script>
 Auth.requireAdmin('/app');
 
@@ -1089,7 +1091,7 @@ function planBadge(plan) {
 async function toggleBlock(userId, currentlyBlocked) {
   try {
     const res = await Auth.apiFetch(`/admin/users/${userId}/block`, { method: 'PATCH' });
-    if (!res.ok) { const e = await res.json(); alert(e.detail || 'Error'); return; }
+    if (!res.ok) { const e = await res.json(); toast(e.detail || 'Error', 'error'); return; }
     const data = await res.json();
     const row = document.getElementById('urow-' + userId);
     if (row) {
@@ -1100,7 +1102,7 @@ async function toggleBlock(userId, currentlyBlocked) {
       document.getElementById('ubtn-' + userId).className = `btn-block ${data.is_blocked ? 'unblock' : 'block'}`;
       document.getElementById('ubtn-' + userId).textContent = data.is_blocked ? 'Unblock' : 'Block';
     }
-  } catch(e) { alert('Error: ' + e.message); }
+  } catch(e) { toast('Error', 'error', e.message); }
 }
 
 // ── Plan modal ─────────────────────────────────────────────────────────────────
@@ -1148,7 +1150,7 @@ async function savePlan() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plan: _planSelected, plan_expires_at: expires }),
     });
-    if (!res.ok) { const e = await res.json(); alert(e.detail || 'Error'); return; }
+    if (!res.ok) { const e = await res.json(); toast(e.detail || 'Error', 'error'); return; }
     const data = await res.json();
     document.getElementById('uplan-' + _planUserId).innerHTML = planBadge(data.plan);
     const exEl = document.getElementById('uexpires-' + _planUserId);
@@ -1157,7 +1159,7 @@ async function savePlan() {
     const u = allUsers.find(x => x.id === _planUserId);
     if (u) { u.plan = data.plan; u.plan_expires_at = data.plan_expires_at; u.wallet_limit = data.wallet_limit; }
     closePlanModal();
-  } catch(e) { alert('Error: ' + e.message); }
+  } catch(e) { toast('Error', 'error', e.message); }
 }
 
 // ── Provider Errors ────────────────────────────────────────────────────────
