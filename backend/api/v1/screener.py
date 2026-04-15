@@ -369,21 +369,19 @@ async def _push(clients: set[WebSocket], msg: str) -> None:
         logger.debug("Screener WS: removed %d dead connections", len(dead))
 
 
-async def _broadcast_loop() -> None:
-    """Warm up caches, then keep them hot every BROADCAST_INTERVAL seconds."""
-    # Pre-fetch all per-symbol interval maps in parallel
+async def _warmup() -> None:
+    """Background task: pre-fetch interval maps (slow for MEXC/Bitget)."""
     await asyncio.gather(
         *(_get_interval_map(ex) for ex in _IVL_FETCHERS),
         return_exceptions=True,
     )
     logger.info("Screener interval cache warmed up")
 
-    # Pre-fill price/rate cache so first HTTP request is instant
-    try:
-        await get_funding_data()
-        logger.info("Screener funding cache warmed up")
-    except Exception as exc:
-        logger.warning("Screener funding warmup error: %s", exc)
+
+async def _broadcast_loop() -> None:
+    """Keep funding cache hot every BROADCAST_INTERVAL seconds."""
+    # Kick off slow interval warmup in background — don't block the loop
+    asyncio.create_task(_warmup())
 
     while True:
         await asyncio.sleep(BROADCAST_INTERVAL)

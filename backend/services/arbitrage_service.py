@@ -128,7 +128,7 @@ async def _ivl_mexc() -> dict[str, float]:
         t["symbol"] for t in (tick_r.json().get("data") or [])
         if t.get("symbol", "").endswith("_USDT")
     ]
-    sem = asyncio.Semaphore(30)
+    sem = asyncio.Semaphore(5)
 
     async def _one(sym: str) -> tuple[str, float | None]:
         async with sem:
@@ -159,7 +159,7 @@ async def _ivl_bitget() -> dict[str, float]:
         t["symbol"] for t in (tick_r.json().get("data") or [])
         if t.get("symbol", "").endswith("USDT")
     ]
-    sem = asyncio.Semaphore(30)
+    sem = asyncio.Semaphore(5)
 
     async def _one(sym: str) -> tuple[str, float | None]:
         async with sem:
