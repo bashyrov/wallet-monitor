@@ -132,6 +132,7 @@ class AsterProvider(BaseWalletProvider):
 
         # ── Открытые позиции ─────────────────────────────────────────────────
         positions = []
+        upnl = Decimal("0")
         try:
             pos_resp = await self._signed_get("/fapi/v3/positionRisk", user, signer, private_key)
             if pos_resp.is_success:
@@ -139,11 +140,13 @@ class AsterProvider(BaseWalletProvider):
                     notional = self._d(pos.get("notionalValue") or pos.get("notional") or 0)
                     if notional == 0:
                         continue
+                    pnl = self._d(pos.get("unRealizedProfit") or pos.get("unrealizedProfit") or 0)
+                    upnl += pnl
                     positions.append({
                         "symbol":          pos.get("symbol", ""),
                         "side":            pos.get("positionSide", ""),
                         "notional":        str(notional),
-                        "unrealized_pnl":  str(self._d(pos.get("unRealizedProfit") or pos.get("unrealizedProfit") or 0)),
+                        "unrealized_pnl":  str(pnl),
                         "entry_price":     str(self._d(pos.get("entryPrice") or 0)),
                         "mark_price":      str(self._d(pos.get("markPrice") or 0)),
                         "leverage":        pos.get("leverage", 1),
@@ -156,6 +159,7 @@ class AsterProvider(BaseWalletProvider):
             spot={k: v for k, v in totals.items() if v > 0},
             futures={},
             earn={},
+            upnl_usd=upnl if upnl != 0 else None,
         )
         if positions:
             result.details["earn"] = {"positions": positions}
