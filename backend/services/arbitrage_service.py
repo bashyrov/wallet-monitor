@@ -635,6 +635,8 @@ async def _fetch_aster() -> list[dict]:
     out = []
     for item in prem_r.json():
         sym = item.get("symbol", "")
+        if sym.startswith("SHIELD"):  # 1001x Shield mode — skip
+            continue
         if sym.endswith("USDT"):
             token = sym[:-4]
         elif sym.endswith("USD"):
