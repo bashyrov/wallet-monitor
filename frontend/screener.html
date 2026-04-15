@@ -119,31 +119,63 @@ body {
 .lp-search:focus { border-color: var(--green); }
 .lp-search::placeholder { color: var(--text3); }
 
-/* exchange checkboxes in panel */
+/* exchange selector — card-style with brand-color accent */
+#lp-ex-items { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .lp-ex-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 6px 4px; cursor: pointer; border-radius: 7px;
-  transition: background .12s; user-select: none;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px; cursor: pointer; border-radius: 8px;
+  background: var(--surface2); border: 1px solid var(--border);
+  position: relative; overflow: hidden;
+  transition: transform .12s, border-color .15s, background .15s, box-shadow .15s;
+  user-select: none;
 }
-.lp-ex-item:hover { background: var(--surface2); }
-.lp-ex-check {
-  width: 15px; height: 15px; border-radius: 4px;
-  border: 1.5px solid var(--border); background: var(--surface);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; transition: all .12s;
+.lp-ex-item::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--_exc, var(--text3)); opacity: 0;
+  transition: opacity .15s;
 }
-.lp-ex-item.checked .lp-ex-check { background: var(--green); border-color: var(--green); }
-.lp-ex-item.checked .lp-ex-check::after { content: '✓'; font-size: 9px; color: #000; font-weight: 700; }
-.lp-ex-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.lp-ex-label { font-size: 13px; font-weight: 500; }
-.lp-ex-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+.lp-ex-item:hover {
+  background: var(--surface3);
+  border-color: var(--_exc, var(--border2));
+  transform: translateX(2px);
+}
+.lp-ex-item:hover::before { opacity: .6; }
+.lp-ex-item.checked {
+  background: color-mix(in srgb, var(--_exc, var(--green)) 8%, var(--surface2));
+  border-color: color-mix(in srgb, var(--_exc, var(--green)) 45%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--_exc, var(--green)) 25%, transparent);
+}
+.lp-ex-item.checked::before { opacity: 1; }
+.lp-ex-item.checked .lp-ex-label { color: var(--text); }
+.lp-ex-item:not(.checked) { opacity: .55; }
+.lp-ex-item:not(.checked):hover { opacity: 1; }
+.lp-ex-check { display: none; }
+.lp-ex-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  flex-shrink: 0; box-shadow: 0 0 0 0 var(--_exc, transparent);
+  transition: box-shadow .2s;
+}
+.lp-ex-item.checked .lp-ex-dot { box-shadow: 0 0 8px color-mix(in srgb, var(--_exc, var(--green)) 60%, transparent); }
+.lp-ex-label { font-size: 12px; font-weight: 600; color: var(--text2); letter-spacing: -.01em; }
+
+.lp-ex-actions { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
 .lp-ex-action {
-  flex: 1; padding: 5px 8px; text-align: center;
+  flex: 1; padding: 6px 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   font-size: 11px; font-weight: 600; color: var(--text3);
   background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 6px; cursor: pointer; font-family: inherit; transition: color .15s;
+  border-radius: 7px; cursor: pointer; font-family: inherit;
+  transition: color .15s, background .15s, border-color .15s, transform .1s;
 }
-.lp-ex-action:hover { color: var(--green); border-color: var(--green); }
+.lp-ex-action:hover { color: var(--green); border-color: rgba(26,255,171,.35); background: rgba(26,255,171,.06); transform: translateY(-1px); }
+.lp-ex-action:active { transform: translateY(0); }
+.lp-ex-action svg { opacity: .7; }
+.lp-ex-count {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  color: var(--green); background: rgba(26,255,171,.08);
+  padding: 3px 7px; border-radius: 999px;
+  border: 1px solid rgba(26,255,171,.22);
+  min-width: 36px; text-align: center; letter-spacing: -.01em;
+}
 
 /* filter inputs in panel */
 .lp-filter-group { margin-bottom: 10px; }
@@ -700,10 +732,23 @@ a.ex-badge:hover { filter: brightness(1.3); }
 
       <!-- Exchanges -->
       <div class="lp-section">
-        <div class="lp-title">Exchanges</div>
+        <div class="lp-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span>Exchanges</span>
+          <span class="lp-ex-count" id="lp-ex-count">—</span>
+        </div>
         <div class="lp-ex-actions">
-          <button class="lp-ex-action" onclick="exSelectAll()">All</button>
-          <button class="lp-ex-action" onclick="exSelectNone()">None</button>
+          <button class="lp-ex-action" onclick="exSelectAll()" title="Select all">
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6l3 3 5-6"/></svg>
+            All
+          </button>
+          <button class="lp-ex-action" onclick="exSelectNone()" title="Clear">
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+            None
+          </button>
+          <button class="lp-ex-action" onclick="exSelectInvert()" title="Invert selection">
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a2 2 0 0 1 2 2v2M10 8l-1.5-1.5M10 8l-1.5 1.5"/><path d="M10 8H4a2 2 0 0 1-2-2V4M2 4l1.5-1.5M2 4l1.5 1.5"/></svg>
+            Invert
+          </button>
         </div>
         <div id="lp-ex-items"></div>
       </div>
@@ -1067,18 +1112,34 @@ function removeHiddenToken(token) {
 function buildExDrop() {
   const items = document.getElementById('lp-ex-items');
   items.innerHTML = EXCHANGES.map(ex => `
-    <div class="lp-ex-item checked" id="ex-item-${ex}" onclick="toggleEx('${ex}')">
-      <div class="lp-ex-check" id="ex-check-${ex}"></div>
+    <div class="lp-ex-item checked" id="ex-item-${ex}" onclick="toggleEx('${ex}')" style="--_exc:${EX_COLOR[ex]}">
       <div class="lp-ex-dot" style="background:${EX_COLOR[ex]}"></div>
       <span class="lp-ex-label">${EX_LABEL[ex]}</span>
     </div>
   `).join('');
+  _updateExCount();
+}
+
+function _updateExCount(){
+  const el=document.getElementById('lp-ex-count'); if(!el) return;
+  const active = EXCHANGES.length - _exDisabled.size;
+  el.textContent = `${active}/${EXCHANGES.length}`;
+  el.style.color = active === EXCHANGES.length ? 'var(--green)'
+                 : active === 0 ? 'var(--red)'
+                 : 'var(--yellow)';
+  el.style.background = active === EXCHANGES.length ? 'rgba(26,255,171,.08)'
+                      : active === 0 ? 'rgba(248,113,113,.08)'
+                      : 'rgba(229,192,123,.08)';
+  el.style.borderColor = active === EXCHANGES.length ? 'rgba(26,255,171,.22)'
+                       : active === 0 ? 'rgba(248,113,113,.22)'
+                       : 'rgba(229,192,123,.22)';
 }
 
 function toggleEx(ex) {
   const item = document.getElementById(`ex-item-${ex}`);
   if (_exDisabled.has(ex)) { _exDisabled.delete(ex); item.classList.add('checked'); }
   else { _exDisabled.add(ex); item.classList.remove('checked'); }
+  _updateExCount();
   _mode === 'funding' ? applyFilter() : applyArb();
 }
 
@@ -1088,6 +1149,7 @@ function exSelectAll() {
     const a = document.getElementById(`ex-item-${ex}`); if (a) a.classList.add('checked');
     const b = document.getElementById(`mob-ex-${ex}`);  if (b) b.classList.add('checked');
   });
+  _updateExCount();
   _mode === 'funding' ? applyFilter() : applyArb();
 }
 
@@ -1097,6 +1159,18 @@ function exSelectNone() {
     const a = document.getElementById(`ex-item-${ex}`); if (a) a.classList.remove('checked');
     const b = document.getElementById(`mob-ex-${ex}`);  if (b) b.classList.remove('checked');
   });
+  _updateExCount();
+  _mode === 'funding' ? applyFilter() : applyArb();
+}
+
+function exSelectInvert() {
+  EXCHANGES.forEach(ex => {
+    const was = _exDisabled.has(ex);
+    if (was) _exDisabled.delete(ex); else _exDisabled.add(ex);
+    const a = document.getElementById(`ex-item-${ex}`); if (a) a.classList.toggle('checked', was);
+    const b = document.getElementById(`mob-ex-${ex}`);  if (b) b.classList.toggle('checked', was);
+  });
+  _updateExCount();
   _mode === 'funding' ? applyFilter() : applyArb();
 }
 
