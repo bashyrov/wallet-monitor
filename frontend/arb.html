@@ -419,7 +419,21 @@ body.light .alert-item-toggle.enabled{background:#F0F7F3;}
 .all-ex-rate{font-family:var(--mono);font-size:10px;min-width:60px;text-align:right;}
 .all-ex-ivl{font-size:9px;color:var(--text3);min-width:22px;text-align:right;}
 
+/* ── MOBILE BOTTOM NAV ── */
+.bottom-nav{display:none;position:fixed;bottom:12px;left:12px;right:12px;height:64px;background:rgba(13,13,16,0.82);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.07);border-radius:20px;z-index:300;align-items:center;justify-content:space-around;padding:0 4px;}
+.bnav-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 12px;border-radius:12px;text-decoration:none;color:#9B9FAB;font-size:10px;font-weight:500;}
+.bnav-item svg{opacity:0.45;}
+.bnav-item.active{color:#1AFFAB;}
+.bnav-item.active svg{opacity:0.7;}
+body.light .bottom-nav{background:rgba(255,255,255,0.92);border-color:#BABABA;box-shadow:0 8px 28px rgba(0,0,0,.14);}
+body.light .bnav-item{color:#595959;}
+body.light .bnav-item.active{color:#000;}
+
 /* ═══ MOBILE / TABLET RESPONSIVE ═══════════════════════════════════════════ */
+@media (max-width: 768px){
+  .bottom-nav{display:flex;}
+  body{padding-bottom:88px;}
+}
 @media (max-width: 900px){
   html,body{overflow:auto;}
   body{min-height:100vh;}
@@ -2023,5 +2037,30 @@ async function init(){
 window.addEventListener('resize',()=>{if(_spreadBuilt)renderSpreadChart();if(_fundBuilt)renderFundChart();if(_eeHist.length>1)renderEntryExitChart();});
 init();
 </script>
+
+<!-- Mobile bottom navigation -->
+<nav class="bottom-nav" id="bottom-nav">
+  <a href="/app" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
+    Portfolio
+  </a>
+  <a href="/archive" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="7" width="16" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 7l2.5-4h11L18 7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Archive
+  </a>
+  <a href="/screener?mode=arb" class="bnav-item active">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M3 5h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Screener
+  </a>
+  <a href="/pricing" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
+    Pricing
+  </a>
+  <a href="/profile" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5"/></svg>
+    Profile
+  </a>
+</nav>
+
 </body>
 </html>
