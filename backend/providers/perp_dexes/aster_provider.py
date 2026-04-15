@@ -10,7 +10,7 @@ Signing:
   - nonce  = int(time.time()) * 1_000_000  (microseconds)
   - params = urlencode({all params including nonce, user, signer})
   - EIP-712 sign params string → append &signature=0x...
-  - Base URL: https://fapi3.asterdex.com
+  - Base URL: https://fapi.asterdex.com  (V3 endpoints on fapi, not fapi3)
 """
 import threading
 import time
@@ -19,12 +19,12 @@ from decimal import Decimal
 
 import httpx
 from eth_account import Account
-from eth_account.messages import encode_structured_data
+from eth_account.messages import encode_typed_data
 
 from backend.domain.models import BalanceResult
 from backend.providers.base_wallet_provider import BaseWalletProvider
 
-BASE = "https://fapi3.asterdex.com"
+BASE = "https://fapi.asterdex.com"
 
 _TYPED_DATA_TEMPLATE = {
     "types": {
@@ -69,7 +69,7 @@ def _get_nonce() -> int:
 def _eip712_sign(private_key: str, msg: str) -> str:
     td = dict(_TYPED_DATA_TEMPLATE)
     td["message"] = {"msg": msg}
-    signed = Account.sign_message(encode_structured_data(td), private_key=private_key)
+    signed = Account.sign_message(encode_typed_data(full_message=td), private_key=private_key)
     return signed.signature.hex()
 
 
@@ -126,7 +126,7 @@ class AsterProvider(BaseWalletProvider):
         totals: dict[str, Decimal] = {}
         for item in (data if isinstance(data, list) else []):
             symbol = (item.get("asset") or "").upper()
-            bal = self._d(item.get("balance") or item.get("crossWalletBalance") or 0)
+            bal = self._d(item.get("balance") or item.get("crossWalletBalance") or "0")
             if symbol and bal > 0:
                 totals[symbol] = totals.get(symbol, Decimal("0")) + bal
 
@@ -151,10 +151,12 @@ class AsterProvider(BaseWalletProvider):
         except Exception:
             pass
 
-        totals_str = {k: str(v) for k, v in totals.items() if v > 0}
-        return self._build_result(
+        result = self._build_result(
             wallet, self.name,
-            spot=totals_str,
+            spot={k: v for k, v in totals.items() if v > 0},
             futures={},
-            earn={"positions": positions} if positions else {},
+            earn={},
         )
+        if positions:
+            result.details["earn"] = {"positions": positions}
+        return result
