@@ -230,14 +230,25 @@ _IVL_FETCHERS = {
 }
 
 
+_ivl_locks: dict[str, asyncio.Lock] = {}
+
+
 async def _get_interval_map(exchange: str) -> dict[str, float]:
-    """Return {symbol: interval_h} for the exchange, refreshed every hour."""
+    """Return {symbol: interval_h} for the exchange, refreshed every hour.
+    Per-exchange lock prevents duplicate concurrent fetches."""
     cached, at = _ivl_cache.get(exchange, ({}, 0.0))
     if _mono() - at < IVL_TTL and cached:
         return cached
     fetcher = _IVL_FETCHERS.get(exchange)
     if not fetcher:
         return cached
+    if exchange not in _ivl_locks:
+        _ivl_locks[exchange] = asyncio.Lock()
+    async with _ivl_locks[exchange]:
+        # Re-check after acquiring lock — another coroutine may have filled it
+        cached, at = _ivl_cache.get(exchange, ({}, 0.0))
+        if _mono() - at < IVL_TTL and cached:
+            return cached
     try:
         result = await fetcher()
         _ivl_cache[exchange] = (result, _mono())
