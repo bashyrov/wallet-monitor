@@ -3458,6 +3458,7 @@ async function submitAddWallet(e) {
     body.api_secret = form.api_secret.value.trim();
     const pp = form.api_passphrase?.value?.trim();
     if (pp) body.api_passphrase = pp;
+    body.purpose = 'portfolio';   // portfolio-only by default; promote via /profile if needed for screener
   } else if (S.walletType === 'chain') {
     body.type_value = form.elements['chain_type'].value;
     body.address = form.chain_address.value.trim();
@@ -3473,12 +3474,14 @@ async function submitAddWallet(e) {
   }
   const btn = document.getElementById('btn-submit-wallet');
   btn.disabled = true;
+  const prevTxt = btn.textContent;
+  if (S.walletType === 'exchange') btn.textContent = 'Validating with ' + (body.type_value.charAt(0).toUpperCase()+body.type_value.slice(1)) + '…';
   try {
     const w = await api.post('/wallets', body);
     S.wallets.unshift(w);
     renderAll();
     closeAddWalletModal();
-    toast(`Added "${w.name}"`, 'success', 'Wallet connected successfully');
+    toast(`Added "${w.name}"`, 'success', 'Key validated and saved');
   } catch(e) {
     let msg = e.message;
     try {
@@ -3495,7 +3498,7 @@ async function submitAddWallet(e) {
       msg = detail || msg;
     } catch {}
     errEl.textContent = msg; errEl.classList.add('show');
-  } finally { btn.disabled = false; }
+  } finally { btn.disabled = false; btn.textContent = prevTxt; }
 }
 
 // ═══════════════════════════════════════════════════
