@@ -17,7 +17,7 @@ def upgrade():
     # SQLite-friendly: add nullable then backfill then don't alter NOT NULL (SQLite can't easily).
     op.add_column('wallets', sa.Column('purpose', sa.String(), nullable=False, server_default='portfolio'))
     # Backfill: exchange wallets with can_trade=true → 'screener'
-    op.execute("UPDATE wallets SET purpose='screener' WHERE wallet_type='exchange' AND can_trade=1")
+    op.execute("UPDATE wallets SET purpose='screener' WHERE wallet_type='exchange' AND can_trade=true")
 
 
 def downgrade():
