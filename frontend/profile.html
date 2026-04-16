@@ -608,17 +608,15 @@
             <div class="k-grid">
               <label class="k-field">
                 <span class="k-lbl">Exchange</span>
-                <select class="k-input" id="k-ex">
-                  <option value="">Select exchange…</option>
-                  <option value="binance">Binance · Futures (trading supported)</option>
-                  <option value="bybit">Bybit · Linear (trading supported)</option>
-                  <option value="okx">OKX</option>
-                  <option value="gate">Gate</option>
-                  <option value="kucoin">KuCoin</option>
-                  <option value="mexc">MEXC</option>
-                  <option value="bitget">Bitget</option>
-                  <option value="backpack">Backpack</option>
-                </select>
+                <div class="k-dd" id="k-ex-dd">
+                  <input type="hidden" id="k-ex" value="">
+                  <button type="button" class="k-dd-btn" onclick="kExToggle(event)" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="k-dd-dot" id="k-ex-dot" style="background:var(--border)"></span>
+                    <span class="k-dd-text" id="k-ex-text">Select exchange…</span>
+                    <svg class="k-dd-chev" width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
+                  </button>
+                  <div class="k-dd-menu" role="listbox"></div>
+                </div>
               </label>
               <label class="k-field">
                 <span class="k-lbl">Label</span>
@@ -718,6 +716,87 @@
     .k-msg.ok{background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.3);color:var(--green);}
     body.light .k-row{background:#F7F7F7;}
     @media (max-width:640px) { .k-grid{grid-template-columns:1fr;} }
+
+    /* ── Custom Exchange dropdown ─────────────────────────────────────── */
+    .k-dd { position:relative; }
+    .k-dd-btn {
+      width:100%; display:flex; align-items:center; gap:9px;
+      background:var(--surface2); border:1px solid var(--border); border-radius:7px;
+      padding:9px 11px; color:var(--text); font-family:Inter,sans-serif; font-size:13px; font-weight:500;
+      cursor:pointer; outline:none; text-align:left;
+      transition:border-color .15s, background .15s, box-shadow .15s;
+    }
+    .k-dd-btn:hover { border-color:var(--border2); background:var(--surface3); }
+    .k-dd.open .k-dd-btn { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.12); }
+    .k-dd-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .k-dd-text { flex:1; color:var(--text); }
+    .k-dd-text.is-placeholder { color:var(--text3); }
+    .k-dd-chev { color:var(--text3); transition:transform .18s; flex-shrink:0; }
+    .k-dd.open .k-dd-chev { transform:rotate(180deg); color:var(--text); }
+    .k-dd-menu {
+      position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:50;
+      background:var(--surface); border:1px solid var(--border); border-radius:9px;
+      box-shadow:0 14px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02);
+      padding:4px; max-height:320px; overflow-y:auto;
+      opacity:0; transform:translateY(-4px) scale(0.98); pointer-events:none;
+      transition:opacity .14s, transform .16s cubic-bezier(.16,1,.3,1);
+      display:flex; flex-direction:column; gap:2px;
+    }
+    .k-dd.open .k-dd-menu { opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+    .k-dd-item {
+      display:flex; align-items:center; gap:10px;
+      padding:9px 11px; border-radius:7px; cursor:pointer;
+      background:transparent; border:none; text-align:left; width:100%;
+      color:var(--text); font-family:inherit; font-size:12.5px; font-weight:500; letter-spacing:-0.01em;
+      transition:background .1s;
+    }
+    .k-dd-item:hover { background:var(--surface2); }
+    .k-dd-item.is-active { background:rgba(26,255,171,0.06); }
+    .k-dd-item .k-dd-dot2 { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .k-dd-item .k-dd-name { flex:1; }
+    .k-dd-item .k-dd-tag {
+      font-size:9.5px; padding:2px 6px; border-radius:4px; font-weight:700; letter-spacing:0.04em;
+      color:var(--yellow); background:rgba(229,192,123,0.1); border:1px solid rgba(229,192,123,0.3);
+    }
+    .k-dd-item .k-dd-check { color:var(--green); opacity:0; }
+    .k-dd-item.is-active .k-dd-check { opacity:1; }
+    body.light .k-dd-menu { background:#FFFFFF; box-shadow:0 10px 28px rgba(0,0,0,0.12); }
+    body.light .k-dd-item:hover { background:#F4F4F4; }
+    body.light .k-dd-item.is-active { background:#F0F7F3; }
+
+    /* ── Reusable confirm modal ───────────────────────────────────────── */
+    .k-confirm-backdrop {
+      position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter:blur(4px);
+      display:flex; align-items:center; justify-content:center; z-index:500;
+      opacity:0; pointer-events:none; transition:opacity .15s;
+    }
+    .k-confirm-backdrop.open { opacity:1; pointer-events:auto; }
+    .k-confirm-box {
+      width:min(420px, calc(100vw - 28px));
+      background:var(--surface); border:1px solid var(--border); border-radius:12px;
+      box-shadow:0 24px 68px rgba(0,0,0,0.6);
+      transform:translateY(8px) scale(0.98); transition:transform .16s cubic-bezier(.16,1,.3,1);
+      overflow:hidden;
+    }
+    .k-confirm-backdrop.open .k-confirm-box { transform:translateY(0) scale(1); }
+    .k-confirm-hdr { padding:16px 18px 4px; }
+    .k-confirm-hdr .ic {
+      width:40px; height:40px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center;
+      background:rgba(229,192,123,0.1); color:var(--yellow); border:1px solid rgba(229,192,123,0.3); margin-bottom:10px;
+    }
+    .k-confirm-hdr.danger .ic { background:rgba(248,113,113,0.1); color:var(--red); border-color:rgba(248,113,113,0.3); }
+    .k-confirm-title { font-size:15px; font-weight:700; letter-spacing:-0.01em; margin:0 0 4px; color:var(--text); }
+    .k-confirm-msg { padding:0 18px 14px; font-size:13px; color:var(--text2); line-height:1.55; }
+    .k-confirm-msg b { color:var(--text); font-weight:600; }
+    .k-confirm-actions { display:flex; justify-content:flex-end; gap:8px; padding:12px 18px 18px; background:var(--surface2); border-top:1px solid var(--border); }
+    .k-confirm-actions .k-btn { min-width:90px; }
+    .k-btn-danger { background:var(--red); color:#140000; }
+    .k-btn-danger:hover { box-shadow:0 0 16px rgba(248,113,113,0.35); }
+
+    /* ── Edit modal ──────────────────────────────────────────────────── */
+    .k-edit-body { padding:16px 18px; }
+    .k-edit-note { background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:9px 11px; color:var(--text3); font-size:11px; margin-bottom:12px; line-height:1.5; }
+    .k-edit-note b { color:var(--text2); }
   </style>
 
   <!-- Danger Zone -->
@@ -859,7 +938,13 @@ function _tgPollLink(){
 }
 
 async function tgUnlink(){
-  if (!confirm('Unlink Telegram? Alerts will stop being delivered.')) return;
+  const ok = await kConfirm({
+    title: 'Unlink Telegram?',
+    message: 'Alerts will stop being delivered. You can re-link any time by tapping <b>Link Telegram</b> again.',
+    okText: 'Unlink',
+    danger: true,
+  });
+  if (!ok) return;
   try {
     const r = await Auth.apiFetch('/auth/me/tg-link', { method: 'DELETE' });
     if (!r.ok && r.status !== 204) throw new Error();
@@ -1099,7 +1184,75 @@ function kSwitch(el){ kSwitchTo(el.dataset.tab); }
 function kSwitchTo(tab){
   document.querySelectorAll('.k-tab').forEach(t => t.classList.toggle('is-active', t.dataset.tab === tab));
   document.querySelectorAll('.k-pane').forEach(p => p.classList.toggle('is-active', p.id === 'k-pane-' + tab));
+  if (tab === 'add') kBuildExchangeDd();
 }
+
+// ── Custom exchange dropdown ──
+const _K_EX_ORDER = ['binance','bybit','okx','gate','kucoin','mexc','bitget','backpack'];
+function kBuildExchangeDd(){
+  const menu = document.querySelector('#k-ex-dd .k-dd-menu');
+  if (!menu || menu.dataset.built) return;
+  menu.dataset.built = '1';
+  menu.innerHTML = _K_EX_ORDER.map(ex => `
+    <button type="button" class="k-dd-item" data-v="${ex}" onclick="kExPick(this)">
+      <span class="k-dd-dot2" style="background:${_K_EX_COLOR[ex]||'#9B9FAB'}"></span>
+      <span class="k-dd-name">${_K_EX_LABEL[ex]}</span>
+      ${_K_TRADABLE.has(ex) ? '<span class="k-dd-tag">TRADING</span>' : ''}
+      <svg class="k-dd-check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
+    </button>`).join('');
+}
+
+function kExToggle(ev){
+  ev && ev.stopPropagation();
+  kBuildExchangeDd();
+  const dd = document.getElementById('k-ex-dd');
+  const open = !dd.classList.contains('open');
+  dd.classList.toggle('open', open);
+  dd.querySelector('.k-dd-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) setTimeout(() => document.addEventListener('click', _kExOutside), 0);
+}
+function _kExOutside(e){
+  const dd = document.getElementById('k-ex-dd');
+  if (!dd || dd.contains(e.target)) return;
+  dd.classList.remove('open');
+  document.removeEventListener('click', _kExOutside);
+}
+function kExPick(btn){
+  const v = btn.dataset.v;
+  const dd = document.getElementById('k-ex-dd');
+  document.getElementById('k-ex').value = v;
+  dd.querySelectorAll('.k-dd-item').forEach(x => x.classList.toggle('is-active', x.dataset.v === v));
+  const txt  = document.getElementById('k-ex-text'); txt.textContent = _K_EX_LABEL[v]; txt.classList.remove('is-placeholder');
+  const dot  = document.getElementById('k-ex-dot'); dot.style.background = _K_EX_COLOR[v] || 'var(--border)';
+  dd.classList.remove('open');
+  document.removeEventListener('click', _kExOutside);
+  // passphrase + trading-support hints
+  const pWrap = document.getElementById('k-passphrase-wrap');
+  if (pWrap) pWrap.style.display = _K_PASSPHRASE_EX.has(v) ? 'flex' : 'none';
+  const canTradeHint = document.getElementById('k-purpose-screener')?.closest('.k-field');
+  if (canTradeHint) canTradeHint.style.opacity = _K_TRADABLE.has(v) ? '1' : '0.55';
+}
+
+// ── Reusable confirm modal ──
+let _kConfirmResolve = null;
+function kConfirm({title, message, okText='OK', cancelText='Cancel', danger=false} = {}){
+  return new Promise(resolve => {
+    _kConfirmResolve = resolve;
+    document.getElementById('k-confirm-title').textContent = title || 'Confirm';
+    document.getElementById('k-confirm-msg').innerHTML = message || '';
+    const hdr = document.getElementById('k-confirm-hdr');
+    hdr.classList.toggle('danger', !!danger);
+    const okBtn = document.getElementById('k-confirm-ok');
+    okBtn.textContent = okText;
+    okBtn.className = 'k-btn ' + (danger ? 'k-btn-danger' : 'k-btn-primary');
+    const cancelBtn = document.querySelector('#k-confirm-backdrop .k-btn-ghost');
+    if (cancelBtn) cancelBtn.textContent = cancelText;
+    document.getElementById('k-confirm-backdrop').classList.add('open');
+  });
+}
+function kConfirmOk(){ const r = _kConfirmResolve; _kConfirmResolve = null; document.getElementById('k-confirm-backdrop').classList.remove('open'); if (r) r(true); }
+function kConfirmCancel(){ const r = _kConfirmResolve; _kConfirmResolve = null; document.getElementById('k-confirm-backdrop').classList.remove('open'); if (r) r(false); }
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { kConfirmCancel(); kEditClose(); } });
 
 async function kLoad(){
   try {
@@ -1142,6 +1295,9 @@ function kRender(){
         ${tradable ? `<button class="k-act trade ${purpose==='screener'?'is-on':''}" title="${purpose==='screener'?'Switch to Portfolio (read-only)':'Switch to Screener (trading)'}" onclick="kToggleTrade(${w.id}, ${purpose==='screener'?'true':'false'})">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
         </button>` : ''}
+        <button class="k-act" title="Edit key" onclick="kEdit(${w.id})">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/></svg>
+        </button>
         <button class="k-act danger" title="Delete key" onclick="kDelete(${w.id}, '${_kEsc(w.name).replace(/'/g, "\\'")}')">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 5h10M6 5V3.5a1 1 0 011-1h2a1 1 0 011 1V5m-4 0v8a1 1 0 001 1h2a1 1 0 001-1V5"/></svg>
         </button>
@@ -1152,24 +1308,7 @@ function kRender(){
 
 function _kEsc(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-// Show/hide passphrase field on exchange change
-document.addEventListener('change', (e) => {
-  if (e.target && e.target.id === 'k-ex') {
-    const wrap = document.getElementById('k-passphrase-wrap');
-    if (wrap) wrap.style.display = _K_PASSPHRASE_EX.has(e.target.value) ? 'flex' : 'none';
-    const canTradeHint = document.getElementById('k-can-trade')?.closest('.k-field');
-    if (canTradeHint) canTradeHint.style.opacity = _K_TRADABLE.has(e.target.value) ? '1' : '0.6';
-  }
-  // Enforce "at least one purpose selected" — auto-flip the other checkbox
-  if (e.target && (e.target.id === 'k-can-read' || e.target.id === 'k-can-trade')) {
-    const read = document.getElementById('k-can-read');
-    const trade = document.getElementById('k-can-trade');
-    if (!read.checked && !trade.checked) {
-      const other = e.target.id === 'k-can-read' ? trade : read;
-      other.checked = true;
-    }
-  }
-});
+// (Exchange dropdown + passphrase visibility is handled by kExPick above)
 
 async function kSubmit(){
   const ex   = document.getElementById('k-ex').value;
@@ -1226,17 +1365,34 @@ async function kSubmit(){
 async function kToggleTrade(id, currentlyOn){
   const w = _kWallets.find(x => x.id === id);
   if (!w) return;
-  if (!currentlyOn && !confirm(`Enable LIVE TRADING on "${w.name}"?\n\nThe API key must have Futures trading permission (not withdrawal).`)) return;
+  if (!currentlyOn) {
+    const ok = await kConfirm({
+      title: 'Switch to Screener (trading)?',
+      message: `<b>${_kEsc(w.name)}</b> will be promoted to the Screener. This key must have <b>Futures trading</b> permission (not withdrawal). Only one Screener key per exchange is allowed — if you already have one for ${_K_EX_LABEL[w.type_value]||w.type_value}, you'll need to remove it first.`,
+      okText: 'Switch to Screener',
+    });
+    if (!ok) return;
+  }
   try {
     const r = await Auth.apiFetch('/trade/wallets/' + id, { method: 'PATCH', body: JSON.stringify({ can_trade: !currentlyOn }) });
-    if (!r.ok) throw new Error();
-    w.can_trade = !currentlyOn;
+    if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || 'Toggle failed'); }
+    const j = await r.json();
+    w.purpose = j.purpose;
+    w.can_trade = j.can_trade;
     kRender();
-  } catch { alert('Failed to toggle trading'); }
+  } catch (e) {
+    kConfirm({ title: 'Could not switch', message: _kEsc(e.message || 'Unknown error'), okText: 'OK', cancelText: '' });
+  }
 }
 
 async function kDelete(id, name){
-  if (!confirm(`Delete API key "${name}"? This cannot be undone.`)) return;
+  const ok = await kConfirm({
+    title: 'Delete API key?',
+    message: `"<b>${_kEsc(name)}</b>" will be permanently removed. Any alerts or active screener trading tied to it will stop working. This cannot be undone.`,
+    okText: 'Delete',
+    danger: true,
+  });
+  if (!ok) return;
   try {
     const r = await Auth.apiFetch('/wallets/' + id, { method: 'DELETE' });
     if (r.ok || r.status === 204) {
@@ -1245,6 +1401,68 @@ async function kDelete(id, name){
       kRender();
     }
   } catch {}
+}
+
+// ── Edit modal ──
+let _kEditId = null;
+async function kEdit(id){
+  const w = _kWallets.find(x => x.id === id);
+  if (!w) return;
+  _kEditId = id;
+  document.getElementById('k-edit-title').textContent = 'Edit · ' + (_K_EX_LABEL[w.type_value] || w.type_value);
+  document.getElementById('k-edit-name').value = w.name;
+  document.getElementById('k-edit-apikey').value = '';
+  document.getElementById('k-edit-apisec').value = '';
+  const passWrap = document.getElementById('k-edit-passphrase-wrap');
+  if (passWrap) {
+    passWrap.style.display = _K_PASSPHRASE_EX.has(w.type_value) ? 'flex' : 'none';
+    document.getElementById('k-edit-apipass').value = '';
+  }
+  document.getElementById('k-edit-msg').style.display = 'none';
+  document.getElementById('k-edit-backdrop').classList.add('open');
+}
+function kEditClose(){
+  document.getElementById('k-edit-backdrop').classList.remove('open');
+  _kEditId = null;
+}
+async function kEditSubmit(){
+  if (!_kEditId) return;
+  const w = _kWallets.find(x => x.id === _kEditId);
+  if (!w) return;
+  const name = document.getElementById('k-edit-name').value.trim();
+  const apiKey = document.getElementById('k-edit-apikey').value.trim();
+  const apiSec = document.getElementById('k-edit-apisec').value.trim();
+  const pass = document.getElementById('k-edit-apipass')?.value?.trim() || '';
+  const msg = document.getElementById('k-edit-msg');
+  msg.style.display = 'none';
+  if (name.length < 6) { msg.className = 'k-msg err'; msg.textContent = 'Label must be at least 6 characters'; msg.style.display = 'block'; return; }
+  if ((apiKey && !apiSec) || (!apiKey && apiSec)) { msg.className = 'k-msg err'; msg.textContent = 'Provide both API key and secret to rotate'; msg.style.display = 'block'; return; }
+
+  const btn = document.getElementById('k-edit-submit');
+  btn.disabled = true; const prev = btn.textContent; btn.textContent = apiKey ? 'Validating & saving…' : 'Saving…';
+  try {
+    const body = { name };
+    if (apiKey) { body.api_key = apiKey; body.api_secret = apiSec; }
+    if (pass) body.api_passphrase = pass;
+    const r = await Auth.apiFetch('/wallets/' + _kEditId, { method: 'PUT', body: JSON.stringify(body) });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const detail = typeof j.detail === 'string' ? j.detail : 'Save failed';
+      throw new Error(detail);
+    }
+    // If creds rotated and purpose is screener, re-validate by calling /trade/status probe (indirectly via balance)
+    msg.className = 'k-msg ok';
+    msg.textContent = apiKey ? 'Credentials rotated and saved ✓' : 'Saved ✓';
+    msg.style.display = 'block';
+    await kLoad();
+    setTimeout(kEditClose, 700);
+  } catch (e) {
+    msg.className = 'k-msg err';
+    msg.textContent = e.message || 'Save failed';
+    msg.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
 }
 
 kLoad();
@@ -1272,5 +1490,63 @@ kLoad();
     Profile
   </a>
 </nav>
+
+<!-- Reusable confirm modal -->
+<div class="k-confirm-backdrop" id="k-confirm-backdrop" onclick="if(event.target===this) kConfirmCancel()">
+  <div class="k-confirm-box" role="dialog" aria-modal="true">
+    <div class="k-confirm-hdr" id="k-confirm-hdr">
+      <span class="ic" id="k-confirm-ic">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l6 11H2L8 2z"/><path d="M8 7v3"/><circle cx="8" cy="12.2" r="0.6" fill="currentColor"/></svg>
+      </span>
+      <h3 class="k-confirm-title" id="k-confirm-title">Confirm</h3>
+    </div>
+    <div class="k-confirm-msg" id="k-confirm-msg"></div>
+    <div class="k-confirm-actions">
+      <button type="button" class="k-btn k-btn-ghost" onclick="kConfirmCancel()">Cancel</button>
+      <button type="button" class="k-btn k-btn-primary" id="k-confirm-ok" onclick="kConfirmOk()">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit key modal -->
+<div class="k-confirm-backdrop" id="k-edit-backdrop" onclick="if(event.target===this) kEditClose()">
+  <div class="k-confirm-box" role="dialog" aria-modal="true">
+    <div class="k-confirm-hdr">
+      <span class="ic"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/></svg></span>
+      <h3 class="k-confirm-title" id="k-edit-title">Edit API Key</h3>
+    </div>
+    <div class="k-edit-body">
+      <div class="k-edit-note">
+        Leave key/secret empty to keep them unchanged — only the <b>label</b> updates.
+        Paste new values to rotate credentials (they'll be re-validated against the exchange).
+      </div>
+      <form id="k-edit-form" onsubmit="event.preventDefault(); kEditSubmit()">
+        <div class="k-grid">
+          <label class="k-field" style="grid-column:1/-1">
+            <span class="k-lbl">Label</span>
+            <input class="k-input" id="k-edit-name" minlength="6" required>
+          </label>
+          <label class="k-field" style="grid-column:1/-1">
+            <span class="k-lbl">New API Key <span style="color:var(--text3);font-weight:400">(optional)</span></span>
+            <input class="k-input mono" id="k-edit-apikey" placeholder="Leave empty to keep current" autocomplete="off">
+          </label>
+          <label class="k-field" style="grid-column:1/-1">
+            <span class="k-lbl">New API Secret <span style="color:var(--text3);font-weight:400">(optional)</span></span>
+            <input class="k-input mono" id="k-edit-apisec" type="password" placeholder="Leave empty to keep current" autocomplete="off">
+          </label>
+          <label class="k-field" style="grid-column:1/-1" id="k-edit-passphrase-wrap">
+            <span class="k-lbl">New Passphrase <span style="color:var(--text3);font-weight:400">(optional · OKX/KuCoin/Bitget)</span></span>
+            <input class="k-input mono" id="k-edit-apipass" placeholder="Leave empty to keep current" autocomplete="off">
+          </label>
+        </div>
+        <div class="k-msg" id="k-edit-msg" style="display:none;margin-top:10px"></div>
+      </form>
+    </div>
+    <div class="k-confirm-actions">
+      <button type="button" class="k-btn k-btn-ghost" onclick="kEditClose()">Cancel</button>
+      <button type="button" class="k-btn k-btn-primary" id="k-edit-submit" onclick="kEditSubmit()">Save changes</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
