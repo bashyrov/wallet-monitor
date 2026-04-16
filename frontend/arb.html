@@ -1097,7 +1097,7 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
       <div class="acc-keyinfo" id="acc-keyinfo">
         <span class="pill ro" title="Read-only keys control Balances / Positions / Orders visibility"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
         <span class="pill tr" title="Trading keys place real orders"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
-        <a href="/app" class="pill" style="text-decoration:none;color:var(--text2)" title="Manage API keys">Keys ⚙</a>
+        <button type="button" class="pill" style="text-decoration:none;color:var(--text2);background:none;cursor:pointer;font-family:inherit" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
       </div>
     </div>
     <div class="acc-body">
@@ -1204,7 +1204,7 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
           <span class="trade-beta">BETA</span>
           Live Trading
           <span style="flex:1"></span>
-          <a href="/wallets?trade=1" class="trade-keys-link" title="Manage API keys">Keys ⚙</a>
+          <button type="button" class="trade-keys-link" style="background:none;cursor:pointer;font-family:inherit" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
         </div>
 
         <!-- Per-leg trade panels: long (buy) and short (sell) -->
@@ -3229,6 +3229,70 @@ async function refreshTradePositions(){
     }).join('');
   } catch {}
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  KEYS POPUP — opens from "Keys ⚙" in the trading card and account toolbar
+// ═══════════════════════════════════════════════════════════════════════
+async function openKeysPopup(){
+  const bd = document.getElementById('keys-pop-backdrop');
+  bd.classList.add('open');
+  await _renderKeysPop();
+}
+function closeKeysPopup(){
+  document.getElementById('keys-pop-backdrop')?.classList.remove('open');
+}
+
+async function _renderKeysPop(){
+  const body = document.getElementById('keys-pop-body');
+  if (!body) return;
+  body.innerHTML = '<div class="keys-pop-empty"><span class="spinner"></span> Loading keys…</div>';
+  try {
+    const r = await Auth.apiFetch('/wallets');
+    if (!r.ok) throw new Error();
+    const all = await r.json();
+    const legs = [
+      { side:'long',  exch: LONG,  label: EX_LABEL[LONG]  || LONG  },
+      { side:'short', exch: SHORT, label: EX_LABEL[SHORT] || SHORT },
+    ];
+    body.innerHTML = legs.map(leg => {
+      const keys = all.filter(w => w.wallet_type === 'exchange' && !w.is_archived && (w.type_value||'').toLowerCase() === leg.exch);
+      const hasTrade = keys.some(k => k.purpose === 'screener' || k.purpose === 'both');
+      return `
+        <div class="kp-leg">
+          <div class="kp-leg-hdr">
+            <span class="kp-leg-badge ${leg.side}">${leg.side.toUpperCase()}</span>
+            <span class="kp-leg-ex">${leg.label}</span>
+            <span class="kp-leg-status ${hasTrade ? 'ok' : 'missing'}">${hasTrade ? 'Trade key ✓' : 'No trade key'}</span>
+          </div>
+          <div class="kp-leg-body">
+            ${keys.length ? keys.map(k => `
+              <div class="kp-key-row">
+                <span class="kp-key-name">${_htmlEsc(k.name)}</span>
+                <span class="kp-key-mask">${_htmlEsc(k.display_info)}</span>
+                <span class="kp-key-pills">
+                  ${k.purpose === 'both'
+                    ? '<span class="kp-pill p">PORTFOLIO</span><span class="kp-pill s">SCREENER</span>'
+                    : k.purpose === 'screener'
+                      ? '<span class="kp-pill s">SCREENER</span>'
+                      : '<span class="kp-pill p">PORTFOLIO</span>'}
+                </span>
+              </div>`).join('')
+              : '<div class="kp-empty">No API key yet for ' + leg.label + '.</div>'}
+            <a class="kp-add" href="/profile#keys-card" target="_blank" rel="noopener">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 2v8M2 6h8"/></svg>
+              Add ${leg.label} key
+            </a>
+          </div>
+        </div>`;
+    }).join('');
+  } catch {
+    body.innerHTML = '<div class="keys-pop-empty">Could not load keys. Try again.</div>';
+  }
+}
+
+function _htmlEsc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeKeysPopup(); });
 </script>
 
 <!-- Mobile bottom navigation -->
@@ -3254,6 +3318,60 @@ async function refreshTradePositions(){
     Profile
   </a>
 </nav>
+
+<!-- ── API Keys popup (opens from trading card's "Keys ⚙") ── -->
+<div class="keys-pop-backdrop" id="keys-pop-backdrop" onclick="if(event.target===this) closeKeysPopup()">
+  <div class="keys-pop" role="dialog" aria-modal="true">
+    <div class="keys-pop-hdr">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="9" r="3"/><path d="M8 9h7M12 9v3M14 9v2"/></svg>
+      <span class="keys-pop-title">API Keys for this pair</span>
+      <span class="keys-pop-spacer"></span>
+      <a class="keys-pop-link" href="/profile#keys-card" target="_blank" rel="noopener">All keys ↗</a>
+      <button class="keys-pop-close" onclick="closeKeysPopup()" aria-label="Close">×</button>
+    </div>
+    <div class="keys-pop-body" id="keys-pop-body">
+      <div class="keys-pop-empty"><span class="spinner"></span> Loading…</div>
+    </div>
+  </div>
+</div>
+
+<style>
+.keys-pop-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.58);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;z-index:600;opacity:0;pointer-events:none;transition:opacity .14s;}
+.keys-pop-backdrop.open{opacity:1;pointer-events:auto;}
+.keys-pop{width:min(560px,calc(100vw - 28px));max-height:min(80vh,680px);background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 24px 68px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;transform:translateY(8px) scale(0.98);transition:transform .16s cubic-bezier(.16,1,.3,1);}
+.keys-pop-backdrop.open .keys-pop{transform:translateY(0) scale(1);}
+.keys-pop-hdr{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface2);}
+.keys-pop-title{font-size:14px;font-weight:700;letter-spacing:-0.01em;color:var(--text);}
+.keys-pop-spacer{flex:1}
+.keys-pop-link{font-size:11px;color:var(--text3);text-decoration:none;padding:4px 9px;border-radius:6px;border:1px solid var(--border);transition:color .15s,border-color .15s;}
+.keys-pop-link:hover{color:var(--green);border-color:rgba(26,255,171,0.35);}
+.keys-pop-close{width:28px;height:28px;border-radius:7px;background:transparent;border:1px solid var(--border);color:var(--text2);cursor:pointer;font-family:inherit;font-size:16px;line-height:1;}
+.keys-pop-close:hover{color:var(--red);border-color:var(--red);}
+.keys-pop-body{flex:1;overflow-y:auto;padding:14px 16px;}
+.keys-pop-empty{padding:36px 18px;text-align:center;color:var(--text3);font-size:12.5px;}
+.kp-leg{margin-bottom:14px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);}
+.kp-leg:last-child{margin-bottom:0;}
+.kp-leg-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);}
+.kp-leg-badge{font-size:9px;font-weight:800;padding:2px 7px;border-radius:4px;letter-spacing:0.05em;}
+.kp-leg-badge.long{color:var(--green);background:rgba(26,255,171,0.1);border:1px solid rgba(26,255,171,0.35);}
+.kp-leg-badge.short{color:var(--red);background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.35);}
+.kp-leg-ex{font-family:Inter,sans-serif;font-size:12.5px;font-weight:700;color:var(--text);flex:1;}
+.kp-leg-status{font-size:10px;padding:2px 7px;border-radius:999px;font-weight:600;letter-spacing:0.02em;}
+.kp-leg-status.ok{color:var(--green);background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.28);}
+.kp-leg-status.missing{color:var(--text3);background:var(--surface3);border:1px solid var(--border);}
+.kp-leg-body{padding:10px 12px;}
+.kp-key-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:5px;background:var(--surface2);}
+.kp-key-row:last-child{margin-bottom:0;}
+.kp-key-name{flex:1;font-size:12px;color:var(--text);font-weight:500;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kp-key-mask{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text3);}
+.kp-key-pills{display:flex;gap:4px;}
+.kp-pill{font-size:9.5px;padding:1px 6px;border-radius:4px;font-weight:700;letter-spacing:0.04em;}
+.kp-pill.p{background:rgba(6,182,212,0.14);color:var(--teal);border:1px solid rgba(6,182,212,0.35);}
+.kp-pill.s{background:rgba(229,192,123,0.12);color:var(--yellow);border:1px solid rgba(229,192,123,0.35);}
+.kp-add{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:7px;background:var(--surface3);border:1px solid var(--border);color:var(--text);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s,background .15s;margin-top:6px;}
+.kp-add:hover{color:var(--green);border-color:rgba(26,255,171,0.4);background:rgba(26,255,171,0.06);}
+.kp-empty{padding:10px 2px;font-size:11.5px;color:var(--text3);}
+</style>
 
 </body>
 </html>
