@@ -178,6 +178,23 @@ body {
 }
 .lp-filter-input:focus { border-color: var(--green); }
 .lp-filter-input::placeholder { color: var(--text3); font-family: inherit; }
+.vol-quick { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+.vol-chip {
+  -webkit-appearance: none; appearance: none;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text3); font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 4px 9px; border-radius: 6px; cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.vol-chip:hover { color: var(--text); border-color: var(--border2); background: var(--surface3); }
+.vol-chip.is-active {
+  color: var(--green); border-color: var(--green);
+  background: rgba(26,255,171,0.08);
+}
+body.light .vol-chip { background: #F7F7F7; border-color: #D9D9D9; }
+body.light .vol-chip:hover { background: #EDEDED; }
+body.light .vol-chip.is-active { background: #F0F7F3; }
 .lp-toggle {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 10px; border-radius: 8px;
@@ -878,6 +895,17 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
           <div class="lp-filter-label">Min gross funding %</div>
           <input class="lp-filter-input" id="f-min-gross" type="number" min="0" step="0.001" placeholder="0%">
         </div>
+        <div class="lp-filter-group">
+          <div class="lp-filter-label">Min 24h volume (USDT)</div>
+          <div class="vol-quick">
+            <button class="vol-chip" data-v="0"      onclick="setMinVol(0, this)">Any</button>
+            <button class="vol-chip" data-v="100000" onclick="setMinVol(100000, this)">100K</button>
+            <button class="vol-chip" data-v="1000000" onclick="setMinVol(1000000, this)">1M</button>
+            <button class="vol-chip" data-v="10000000" onclick="setMinVol(10000000, this)">10M</button>
+            <button class="vol-chip" data-v="100000000" onclick="setMinVol(100000000, this)">100M</button>
+          </div>
+          <input class="lp-filter-input" id="f-min-vol" type="number" min="0" step="10000" placeholder="e.g. 500000" oninput="applyArb()">
+        </div>
         <div class="lp-toggle" id="f-valid-toggle" onclick="toggleValidOnly()">
           <div class="lp-toggle-dot" id="f-valid-dot" style="opacity:.4"></div>
           Valid price only
@@ -986,6 +1014,17 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min gross funding %</div>
             <input class="lp-filter-input" id="f-min-gross-mob" type="number" min="0" step="0.001" placeholder="0%" oninput="document.getElementById('f-min-gross').value=this.value;applyArb()">
+          </div>
+          <div class="lp-filter-group">
+            <div class="lp-filter-label">Min 24h volume (USDT)</div>
+            <div class="vol-quick">
+              <button class="vol-chip" data-v="0"         onclick="setMinVol(0, this)">Any</button>
+              <button class="vol-chip" data-v="100000"    onclick="setMinVol(100000, this)">100K</button>
+              <button class="vol-chip" data-v="1000000"   onclick="setMinVol(1000000, this)">1M</button>
+              <button class="vol-chip" data-v="10000000"  onclick="setMinVol(10000000, this)">10M</button>
+              <button class="vol-chip" data-v="100000000" onclick="setMinVol(100000000, this)">100M</button>
+            </div>
+            <input class="lp-filter-input" id="f-min-vol-mob" type="number" min="0" step="10000" placeholder="e.g. 500000" oninput="document.getElementById('f-min-vol').value=this.value;applyArb()">
           </div>
           <div class="lp-toggle" id="f-valid-toggle-mob" onclick="toggleValidOnly()">
             <div class="lp-toggle-dot" id="f-valid-dot-mob" style="opacity:.4"></div>
@@ -1558,10 +1597,23 @@ function sortFRows(keepPage = false) {
 }
 
 // ── arbitrage filter + sort ────────────────────────────────────────────────────
+function setMinVol(v, btn){
+  const desk = document.getElementById('f-min-vol');
+  const mob  = document.getElementById('f-min-vol-mob');
+  const val = v > 0 ? String(v) : '';
+  if (desk) desk.value = val;
+  if (mob)  mob.value  = val;
+  document.querySelectorAll('.vol-chip').forEach(el => {
+    el.classList.toggle('is-active', Number(el.dataset.v) === Number(v));
+  });
+  applyArb();
+}
+
 function applyArb(keepPage = false) {
   const q = document.getElementById('search').value.trim().toUpperCase();
   const minNet   = parseFloat(document.getElementById('f-min-net').value)   || -Infinity;
   const minGross = parseFloat(document.getElementById('f-min-gross').value) || 0;
+  const minVol   = parseFloat(document.getElementById('f-min-vol').value)   || 0;
 
   _filteredArb = _arbRows.filter(r => {
     if (_exDisabled.has(r.long_exchange) || _exDisabled.has(r.short_exchange)) return false;
@@ -1569,6 +1621,10 @@ function applyArb(keepPage = false) {
     if (q && !r.symbol.includes(q)) return false;
     if (r.net_profit < minNet)   return false;
     if (r.gross_funding < minGross) return false;
+    if (minVol > 0) {
+      const vMin = Math.min(r.long_volume || 0, r.short_volume || 0);
+      if (vMin < minVol) return false;
+    }
     if (_validOnly && !r.valid_price) return false;
     return true;
   });
@@ -2099,6 +2155,9 @@ document.getElementById('search').addEventListener('input', () => { _mode === 'f
 document.getElementById('f-min-apr').addEventListener('input', () => applyFilter());
 document.getElementById('f-min-net').addEventListener('input', () => applyArb());
 document.getElementById('f-min-gross').addEventListener('input', () => applyArb());
+document.getElementById('f-min-vol')?.addEventListener('input', () => applyArb());
+// Mark "Any" chip active on load
+document.querySelectorAll('.vol-chip[data-v="0"]').forEach(el => el.classList.add('is-active'));
 
 // Init cross-only dot state
 ['f-cross-dot','f-cross-dot-mob'].forEach(id => { const el = document.getElementById(id); if (el) el.style.opacity = _crossOnly ? '1' : '0.4'; });
