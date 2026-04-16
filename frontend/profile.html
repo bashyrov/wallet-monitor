@@ -637,23 +637,25 @@
                 <input class="k-input mono" id="k-apipass" placeholder="Passphrase" autocomplete="off">
               </label>
               <div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px">
-                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600">Purpose · at least one required</div>
-                <label class="k-field k-check">
-                  <input type="checkbox" id="k-can-read" checked>
+                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600">Where to use this key</div>
+                <label class="k-field k-check k-purpose-opt" data-purpose="portfolio">
+                  <input type="radio" name="k-purpose" value="portfolio" id="k-purpose-portfolio" checked>
                   <div>
-                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Read-only <span style="color:var(--text3);font-weight:400">(balance check)</span></div>
+                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Portfolio <span style="color:var(--text3);font-weight:400">(read-only)</span></div>
                     <div style="font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">
-                      Key is used to fetch balances, positions and orders only. Safe — no trading permission needed on the key side.
+                      Used to fetch balances, positions and transactions. Key must have <b>Read</b> permission; withdrawal must be off.
+                      Multiple keys per exchange are fine.
                     </div>
                   </div>
                 </label>
-                <label class="k-field k-check">
-                  <input type="checkbox" id="k-can-trade">
+                <label class="k-field k-check k-purpose-opt" data-purpose="screener">
+                  <input type="radio" name="k-purpose" value="screener" id="k-purpose-screener">
                   <div>
-                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Live trading</div>
+                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Screener <span style="color:var(--text3);font-weight:400">(trading)</span></div>
                     <div style="font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">
-                      Allows this key to place real orders. Key must have <b style="color:var(--yellow)">Futures trading</b> permission
-                      and <b style="color:var(--red)">NO withdrawal</b>. Supported today: Binance, Bybit.
+                      Used by the arbitrage screener to place real orders. Key must have <b style="color:var(--yellow)">Futures trading</b>
+                      and <b style="color:var(--red)">NO withdrawal</b>. Only <b>one key per exchange</b> — the new key replaces the old one for trading.
+                      Supported: Binance, Bybit.
                     </div>
                   </div>
                 </label>
@@ -1126,18 +1128,18 @@ function kRender(){
     const color = _K_EX_COLOR[w.type_value] || '#9B9FAB';
     const label = _K_EX_LABEL[w.type_value] || w.type_value;
     const tradable = _K_TRADABLE.has(w.type_value);
-    const pillTrade = w.can_trade
-      ? '<span class="k-pill tr" title="Live trading enabled"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>TRADE</span>'
-      : '';
+    const purpose = w.purpose || (w.can_trade ? 'screener' : 'portfolio');
+    const purposePill = purpose === 'screener'
+      ? '<span class="k-pill tr" title="Used by the Screener for trading"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
+      : '<span class="k-pill ro" title="Read-only portfolio key"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span>';
     return `<div class="k-row">
       <span class="k-ex-dot" style="background:${color}"></span>
       <span class="k-ex">${label}</span>
       <span class="k-name">${_kEsc(w.name)}</span>
       <span class="k-masked">${_kEsc(w.display_info)}</span>
-      <span class="k-pill ro">READ</span>
-      ${pillTrade}
+      ${purposePill}
       <div class="k-actions-inline">
-        ${tradable ? `<button class="k-act trade ${w.can_trade?'is-on':''}" title="${w.can_trade?'Disable trading':'Enable trading'}" onclick="kToggleTrade(${w.id}, ${w.can_trade?'true':'false'})">
+        ${tradable ? `<button class="k-act trade ${purpose==='screener'?'is-on':''}" title="${purpose==='screener'?'Switch to Portfolio (read-only)':'Switch to Screener (trading)'}" onclick="kToggleTrade(${w.id}, ${purpose==='screener'?'true':'false'})">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
         </button>` : ''}
         <button class="k-act danger" title="Delete key" onclick="kDelete(${w.id}, '${_kEsc(w.name).replace(/'/g, "\\'")}')">
@@ -1175,43 +1177,43 @@ async function kSubmit(){
   const apiKey    = document.getElementById('k-apikey').value.trim();
   const apiSecret = document.getElementById('k-apisec').value.trim();
   const pass = document.getElementById('k-apipass')?.value?.trim() || '';
-  const wantRead  = document.getElementById('k-can-read').checked;
-  const wantTrade = document.getElementById('k-can-trade').checked;
+  const purpose = (document.querySelector('input[name="k-purpose"]:checked')?.value) || 'portfolio';
   const msg  = document.getElementById('k-msg');
   msg.style.display = 'none';
 
   if (!ex || !name || !apiKey || !apiSecret) { msg.className = 'k-msg err'; msg.textContent = 'Fill exchange, label, key and secret'; msg.style.display = 'block'; return; }
   if (name.length < 6) { msg.className = 'k-msg err'; msg.textContent = 'Label must be at least 6 characters'; msg.style.display = 'block'; return; }
-  if (!wantRead && !wantTrade) { msg.className = 'k-msg err'; msg.textContent = 'Select at least one purpose: Read-only or Live trading'; msg.style.display = 'block'; return; }
   if (_K_PASSPHRASE_EX.has(ex) && !pass) { msg.className = 'k-msg err'; msg.textContent = _K_EX_LABEL[ex] + ' requires a passphrase'; msg.style.display = 'block'; return; }
-  if (wantTrade && !_K_TRADABLE.has(ex)) { msg.className = 'k-msg err'; msg.textContent = 'Trading not yet supported on ' + _K_EX_LABEL[ex] + '. Key saved as read-only.'; msg.style.display = 'block'; }
+  if (purpose === 'screener' && !_K_TRADABLE.has(ex)) { msg.className = 'k-msg err'; msg.textContent = 'Screener trading not yet supported on ' + _K_EX_LABEL[ex]; msg.style.display = 'block'; return; }
 
   const btn = document.getElementById('k-submit');
-  btn.disabled = true; const oldText = btn.textContent; btn.textContent = 'Saving…';
+  btn.disabled = true; const oldText = btn.textContent;
+  btn.textContent = 'Validating with ' + (_K_EX_LABEL[ex] || ex) + '…';
 
   try {
     const body = {
       name,
       wallet_type: 'exchange',
       type_value: ex,
-      credentials: _K_PASSPHRASE_EX.has(ex) ? { api_key: apiKey, api_secret: apiSecret, api_passphrase: pass } : { api_key: apiKey, api_secret: apiSecret },
+      purpose,
+      api_key: apiKey,
+      api_secret: apiSecret,
     };
+    if (_K_PASSPHRASE_EX.has(ex)) body.api_passphrase = pass;
     const r = await Auth.apiFetch('/wallets', { method: 'POST', body: JSON.stringify(body) });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
-      throw new Error(err.detail || 'Save failed');
-    }
-    const w = await r.json();
-    if (wantTrade && _K_TRADABLE.has(ex)) {
-      await Auth.apiFetch('/trade/wallets/' + w.id, { method: 'PATCH', body: JSON.stringify({ can_trade: true }) });
+      const detail = typeof err.detail === 'string' ? err.detail : (Array.isArray(err.detail) ? err.detail.map(x=>x.msg).join(', ') : 'Save failed');
+      throw new Error(detail);
     }
     msg.className = 'k-msg ok';
-    msg.textContent = 'Saved ✓';
+    msg.textContent = purpose === 'screener' ? 'Key validated and saved — ready for trading ✓' : 'Key validated and saved ✓';
     msg.style.display = 'block';
     document.getElementById('k-form').reset();
+    document.querySelector('input[name="k-purpose"][value="portfolio"]').checked = true;
     document.getElementById('k-passphrase-wrap').style.display = 'none';
     await kLoad();
-    setTimeout(() => kSwitchTo('list'), 600);
+    setTimeout(() => kSwitchTo('list'), 700);
   } catch (e) {
     msg.className = 'k-msg err';
     msg.textContent = e.message || 'Save failed';

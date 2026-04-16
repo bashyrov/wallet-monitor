@@ -192,7 +192,7 @@ async def close_order(
         raise HTTPException(502, f"Exchange rejected close: {e}")
 
 
-# ── Enable/disable trading on a wallet ────────────────────────────────────────
+# ── Enable/disable trading on a wallet (switch purpose) ──────────────────────
 class ToggleIn(BaseModel):
     can_trade: bool
 
@@ -204,13 +204,34 @@ def toggle_can_trade(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    from backend.db.models import Wallet as W
     w = db.query(Wallet).filter(Wallet.id == wallet_id, Wallet.user_id == user.id).first()
     if not w:
         raise HTTPException(404, "Wallet not found")
     if w.wallet_type != "exchange":
         raise HTTPException(400, "Trading can only be enabled on exchange wallets")
-    if body.can_trade and w.type_value not in SUPPORTED_EXCHANGES:
-        raise HTTPException(400, f"{w.type_value} trading is not supported yet")
-    w.can_trade = body.can_trade
+    if body.can_trade:
+        if w.type_value not in SUPPORTED_EXCHANGES:
+            raise HTTPException(400, f"{w.type_value} trading is not supported yet")
+        # Enforce uniqueness — one screener wallet per exchange per user
+        dup = (
+            db.query(W)
+            .filter(
+                W.user_id == user.id,
+                W.wallet_type == "exchange",
+                W.type_value == w.type_value,
+                W.purpose == "screener",
+                W.id != w.id,
+                W.is_archived == False,  # noqa: E712
+            )
+            .first()
+        )
+        if dup:
+            raise HTTPException(409, f"A screener key for {w.type_value} already exists (wallet id={dup.id}). Remove it first.")
+        w.purpose = "screener"
+        w.can_trade = True
+    else:
+        w.purpose = "portfolio"
+        w.can_trade = False
     db.commit()
-    return {"id": w.id, "can_trade": w.can_trade}
+    return {"id": w.id, "can_trade": w.can_trade, "purpose": w.purpose}

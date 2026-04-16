@@ -17,12 +17,14 @@ logger = logging.getLogger("avalant.trade")
 
 
 def _find_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
+    """Return the user's screener-purpose wallet for an exchange (at most one by design)."""
     return (
         db.query(Wallet)
         .filter(
             Wallet.user_id == user_id,
             Wallet.wallet_type == "exchange",
             Wallet.type_value == exchange.lower(),
+            Wallet.purpose == "screener",
             Wallet.is_archived == False,  # noqa: E712
         )
         .order_by(Wallet.id.desc())
@@ -33,7 +35,7 @@ def _find_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
 def _leg_status(wallet: Wallet | None) -> str:
     if wallet is None:
         return "missing"
-    if not wallet.can_trade:
+    if wallet.purpose != "screener":
         return "disabled"
     return "ok"
 
@@ -87,8 +89,8 @@ async def place_open_order(
     w = db.query(Wallet).filter(Wallet.id == wallet_id, Wallet.user_id == user_id).first()
     if not w:
         raise ValueError("Wallet not found")
-    if not w.can_trade:
-        raise ValueError("Trading not enabled on this wallet")
+    if w.purpose != "screener":
+        raise ValueError("This wallet is configured for Portfolio (read-only). Create a separate Screener key to trade.")
     ex = (w.type_value or "").lower()
     if ex not in SUPPORTED_EXCHANGES:
         raise ValueError(f"{ex} not supported yet")
@@ -127,8 +129,8 @@ async def close_position(
     w = db.query(Wallet).filter(Wallet.id == wallet_id, Wallet.user_id == user_id).first()
     if not w:
         raise ValueError("Wallet not found")
-    if not w.can_trade:
-        raise ValueError("Trading not enabled on this wallet")
+    if w.purpose != "screener":
+        raise ValueError("This wallet is configured for Portfolio (read-only). Create a separate Screener key to trade.")
     ex = w.type_value
     if ex not in SUPPORTED_EXCHANGES:
         raise ValueError(f"{ex} not supported yet")
@@ -144,7 +146,7 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
         .filter(
             Wallet.user_id == user_id,
             Wallet.wallet_type == "exchange",
-            Wallet.can_trade == True,   # noqa: E712
+            Wallet.purpose == "screener",
             Wallet.is_archived == False,  # noqa: E712
             Wallet.type_value.in_(list(SUPPORTED_EXCHANGES)),
         )

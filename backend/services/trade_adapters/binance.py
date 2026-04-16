@@ -129,6 +129,38 @@ class BinanceAdapter:
 
 
     @classmethod
+    async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:
+        """Return {can_read: bool, can_trade: bool, balance_usdt: float, error: str|None}.
+        Raises no exceptions."""
+        out = {"can_read": False, "can_trade": False, "balance_usdt": None, "error": None}
+        # 1) read test via balance
+        try:
+            bal = await cls.fetch_balance(creds)
+            out["can_read"] = True
+            out["balance_usdt"] = float(bal.get("usdt") or 0)
+        except Exception as e:
+            msg = str(e)
+            if "-2014" in msg or "Invalid API-key" in msg:
+                out["error"] = "Invalid API key"
+            elif "-2015" in msg or "permissions for action" in msg:
+                out["error"] = "API key rejected by Binance (check key/IP whitelist/permissions)"
+            elif "-1022" in msg or "Signature" in msg:
+                out["error"] = "Signature mismatch — API secret is wrong"
+            else:
+                out["error"] = f"Binance rejected the key: {msg[:180]}"
+            return out
+        # 2) trade permission probe via /fapi/v2/account.canTrade
+        if need_trade:
+            try:
+                acct = await cls._signed(creds, "GET", "/fapi/v2/account")
+                out["can_trade"] = bool(acct.get("canTrade"))
+                if not out["can_trade"]:
+                    out["error"] = "Key has no Futures trading permission"
+            except Exception as e:
+                out["error"] = f"Trade-permission probe failed: {str(e)[:180]}"
+        return out
+
+    @classmethod
     async def get_public_max_leverage(cls, symbol: str) -> int:
         # Binance's leverageBracket endpoint requires auth (user-specific).
         # Public exchangeInfo doesn't expose max leverage directly. Use 125 — the

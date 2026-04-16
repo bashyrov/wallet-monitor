@@ -99,6 +99,25 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "ba
             from backend.domain.errors import WalletLimitReached
             raise WalletLimitReached(limit)
 
+    purpose = body.purpose if body.wallet_type == "exchange" else "portfolio"
+
+    # Screener purpose: one key per exchange per user
+    if purpose == "screener" and body.wallet_type == "exchange":
+        existing = (
+            db.query(Wallet)
+            .filter(
+                Wallet.user_id == user_id,
+                Wallet.wallet_type == "exchange",
+                Wallet.type_value == body.type_value,
+                Wallet.purpose == "screener",
+                Wallet.is_archived == False,  # noqa: E712
+            )
+            .first()
+        )
+        if existing:
+            from backend.domain.errors import DuplicateScreenerKey
+            raise DuplicateScreenerKey(body.type_value, existing.id)
+
     if body.wallet_type == "exchange" or (body.wallet_type == "perpdex" and body.type_value == "aster"):
         raw_creds = {
             "api_key": body.api_key.strip(),
@@ -115,6 +134,8 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "ba
         type_value=body.type_value,
         credentials=encrypt_credentials(raw_creds),
         user_id=user_id,
+        purpose=purpose,
+        can_trade=(purpose == "screener"),
     )
     db.add(wallet)
     db.commit()

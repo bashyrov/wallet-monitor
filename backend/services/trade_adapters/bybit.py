@@ -130,6 +130,41 @@ class BybitAdapter:
         return {"order_id": str(r.get("orderId", "")), "closed_qty": p["quantity"], "realized_pnl_usd": p.get("unrealized_pnl_usd", 0)}
 
     @classmethod
+    async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:
+        """Return {can_read, can_trade, balance_usdt, error}. Never raises."""
+        out = {"can_read": False, "can_trade": False, "balance_usdt": None, "error": None}
+        # 1) balance = read test
+        try:
+            bal = await cls.fetch_balance(creds)
+            out["can_read"] = True
+            out["balance_usdt"] = float(bal.get("usdt") or 0)
+        except Exception as e:
+            msg = str(e)
+            if "10003" in msg or "10004" in msg or "API key is invalid" in msg:
+                out["error"] = "Invalid API key"
+            elif "10005" in msg or "permission" in msg.lower():
+                out["error"] = "Key permissions insufficient"
+            elif "10002" in msg or "sign" in msg.lower():
+                out["error"] = "Signature mismatch — API secret is wrong"
+            else:
+                out["error"] = f"Bybit rejected the key: {msg[:180]}"
+            return out
+        # 2) trade permissions via /v5/user/query-api
+        if need_trade:
+            try:
+                info = await cls._signed(creds, "GET", "/v5/user/query-api", {})
+                perms = info.get("permissions") or {}
+                contract = perms.get("ContractTrade") or []
+                # A trade-enabled key has "Order" or "Position" inside ContractTrade
+                if any(p in ("Order", "Position") for p in contract):
+                    out["can_trade"] = True
+                else:
+                    out["error"] = "Key has no Contract Trade permission (enable Order/Position on Bybit)"
+            except Exception as e:
+                out["error"] = f"Trade-permission probe failed: {str(e)[:180]}"
+        return out
+
+    @classmethod
     async def get_public_max_leverage(cls, symbol: str) -> int:
         sym = cls._symbol(symbol)
         try:
