@@ -49,7 +49,11 @@ async def positions(
 
 @router.get("/supported")
 def supported_exchanges():
-    return sorted(SUPPORTED_EXCHANGES)
+    from backend.services.trade_adapters import TRADE_SUPPORTED
+    return {
+        "trade": sorted(TRADE_SUPPORTED),
+        "read_only": sorted(SUPPORTED_EXCHANGES - TRADE_SUPPORTED),
+    }
 
 
 @router.get("/leverage-limits")
@@ -211,8 +215,9 @@ def toggle_can_trade(
     if w.wallet_type != "exchange":
         raise HTTPException(400, "Trading can only be enabled on exchange wallets")
     if body.can_trade:
-        if w.type_value not in SUPPORTED_EXCHANGES:
-            raise HTTPException(400, f"{w.type_value} trading is not supported yet")
+        from backend.services.trade_adapters import TRADE_SUPPORTED
+        if w.type_value not in TRADE_SUPPORTED:
+            raise HTTPException(400, f"Trading on {w.type_value} is not yet supported.")
         # Only one trading-eligible (screener|both) key per exchange per user
         dup = (
             db.query(W)

@@ -87,9 +87,14 @@ async def create_wallet(
 
         # ── Live-validate the key against the exchange before saving ──
         if body.wallet_type == "exchange":
-            from backend.services.trade_adapters import ADAPTERS, SUPPORTED_EXCHANGES
+            from backend.services.trade_adapters import ADAPTERS, TRADE_SUPPORTED
             adapter = ADAPTERS.get(body.type_value)
-            need_trade = (body.purpose == "screener")
+            need_trade = body.purpose in ("screener", "both")
+            if need_trade and body.type_value not in TRADE_SUPPORTED:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Screener trading on {body.type_value} is not yet supported. Add this key for Portfolio only."
+                )
             if adapter is not None and hasattr(adapter, "validate_key"):
                 creds = {"api_key": body.api_key.strip(), "api_secret": body.api_secret.strip()}
                 if body.api_passphrase:
@@ -99,8 +104,6 @@ async def create_wallet(
                     raise HTTPException(status_code=400, detail=result.get("error") or "Key validation failed")
                 if need_trade and not result.get("can_trade"):
                     raise HTTPException(status_code=400, detail=result.get("error") or "Key has no trading permission")
-            elif need_trade and body.type_value not in SUPPORTED_EXCHANGES:
-                raise HTTPException(status_code=400, detail=f"Screener trading not yet supported on {body.type_value}")
     elif body.wallet_type in ("chain", "perpdex"):
         if not body.address:
             raise HTTPException(status_code=422, detail="address is required for chain/perpdex wallets")
