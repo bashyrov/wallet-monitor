@@ -18,10 +18,11 @@ app-navbar::after {
   pointer-events: none;
 }
 .brand {
-  display: flex; align-items: center;
+  display: inline-flex; align-items: center; justify-self: start;
   font-size: 18px; font-weight: 800; letter-spacing: -0.7px; line-height: 1;
   color: #E6E8E3; text-decoration: none; user-select: none; flex-shrink: 0;
   font-family: 'Inter', system-ui, sans-serif;
+  width: max-content;
 }
 .brand:hover { opacity: 0.85; }
 .brand-cursor {

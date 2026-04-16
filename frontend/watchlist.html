@@ -35,6 +35,17 @@ button { font-family:inherit; }
   padding:12px 2px 24px; border-bottom:1px solid var(--border); margin-bottom:28px;
 }
 .wl-title-wrap { display:flex; flex-direction:column; gap:6px; flex:1; min-width:280px; }
+.wl-back {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 10px; border-radius:7px;
+  background:var(--surface2); border:1px solid var(--border); color:var(--text3);
+  font-size:11.5px; font-weight:500; letter-spacing:-0.01em;
+  width:max-content; text-decoration:none;
+  transition:color .15s, border-color .15s, background .15s, transform .15s;
+}
+.wl-back:hover { color:var(--green); border-color:rgba(26,255,171,0.35); background:rgba(26,255,171,0.06); transform:translateX(-2px); }
+.wl-back svg { transition:transform .15s; }
+.wl-back:hover svg { transform:translateX(-2px); }
 .wl-title { display:flex; align-items:center; gap:12px; font-size:26px; font-weight:800; letter-spacing:-0.02em; }
 .wl-title .wl-icon-lg {
   width:34px; height:34px; border-radius:10px;
@@ -328,6 +339,10 @@ body.light .bottom-nav { background:rgba(255,255,255,0.92); }
   <!-- ── Hero ── -->
   <section class="wl-hero">
     <div class="wl-title-wrap">
+      <a href="/screener?mode=arb" class="wl-back" title="Back to Screener">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>
+        Back to Screener
+      </a>
       <div class="wl-title">
         <span class="wl-icon-lg">
           <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
