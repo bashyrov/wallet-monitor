@@ -79,6 +79,12 @@ def create_wallet(
     if body.wallet_type == "exchange" or (body.wallet_type == "perpdex" and body.type_value == "aster"):
         if not body.api_key or not body.api_secret:
             raise HTTPException(status_code=422, detail="api_key and api_secret are required")
+        # Enforce passphrase for exchanges that declare needs_passphrase
+        if body.wallet_type == "exchange":
+            from backend.providers.exchanges import EXCHANGE_PROVIDERS
+            prov = EXCHANGE_PROVIDERS.get(body.type_value)
+            if prov is not None and getattr(prov, "needs_passphrase", False) and not body.api_passphrase:
+                raise HTTPException(status_code=422, detail=f"{body.type_value} requires api_passphrase")
     elif body.wallet_type in ("chain", "perpdex"):
         if not body.address:
             raise HTTPException(status_code=422, detail="address is required for chain/perpdex wallets")

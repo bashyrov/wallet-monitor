@@ -173,13 +173,24 @@ async def _fetch_price_history(exchange: str, symbol: str, limit: int = 100) -> 
     return []
 
 
+_ORDERBOOK_EX = {
+    "binance","bybit","okx","gate","kucoin","mexc","bitget",
+    "aster","hyperliquid","bingx","whitebit",
+}
+
+
 @router.get("/orderbook")
 async def get_orderbook(
-    symbol: str = Query(...),
-    exchange: str = Query(...),
-    limit: int = Query(20),
+    symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),
+    exchange: str = Query(..., min_length=2, max_length=24),
+    limit: int = Query(20, ge=1, le=100),
     _=Depends(get_current_user),
 ):
+    from fastapi import HTTPException
+    exchange = exchange.lower()
+    symbol = symbol.upper()
+    if exchange not in _ORDERBOOK_EX:
+        raise HTTPException(400, f"unsupported exchange for orderbook: {exchange}")
     try:
         c = _arb_http  # reuse persistent client with keepalive
         if exchange == "binance":

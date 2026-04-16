@@ -73,16 +73,40 @@ async def place_open_order(
     wallet_id: int, symbol: str, side: str, quantity: float,
     leverage: int, margin_mode: str,
 ) -> dict:
+    # Normalise inputs
+    symbol = (symbol or "").strip().upper()
+    if not symbol or not symbol.isalnum() or len(symbol) > 16:
+        raise ValueError(f"Invalid symbol: {symbol!r}")
+    if side not in ("buy", "sell"):
+        raise ValueError(f"Invalid side: {side!r}")
+    if margin_mode not in ("isolated", "cross"):
+        raise ValueError(f"Invalid margin_mode: {margin_mode!r}")
+    if quantity <= 0:
+        raise ValueError("quantity must be > 0")
+
     w = db.query(Wallet).filter(Wallet.id == wallet_id, Wallet.user_id == user_id).first()
     if not w:
         raise ValueError("Wallet not found")
     if not w.can_trade:
         raise ValueError("Trading not enabled on this wallet")
-    ex = w.type_value
+    ex = (w.type_value or "").lower()
     if ex not in SUPPORTED_EXCHANGES:
         raise ValueError(f"{ex} not supported yet")
 
     adapter = ADAPTERS[ex]
+
+    # Clamp leverage to the exchange's real public max so we don't push the user
+    # into an order that will be rejected post-signing.
+    try:
+        if hasattr(adapter, "get_public_max_leverage"):
+            max_lev = await adapter.get_public_max_leverage(symbol)
+            if max_lev and leverage > max_lev:
+                raise ValueError(f"Leverage {leverage}× exceeds {ex} max {max_lev}× for {symbol}")
+    except ValueError:
+        raise
+    except Exception as exc:
+        logger.info("max-leverage probe failed %s/%s: %s", ex, symbol, exc)
+
     creds = decrypt_credentials(w.credentials or {})
 
     try:

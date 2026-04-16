@@ -131,10 +131,17 @@ class _UserPatch(_BM):
     tg_username: str | None = None
 
 
+import re as _re
+_TG_USERNAME_RE = _re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")  # 5-32, must start with letter
+
+
 @router.patch("/me", response_model=UserOut)
 def patch_me(body: _UserPatch, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if body.tg_username is not None:
         tg = body.tg_username.strip().lstrip("@") or None
+        if tg is not None and not _TG_USERNAME_RE.match(tg):
+            from fastapi import HTTPException
+            raise HTTPException(400, "tg_username must be 5-32 chars, start with a letter, letters/digits/underscore only")
         # If username changed, invalidate the previous chat link
         if tg != current_user.tg_username:
             current_user.tg_chat_id = None

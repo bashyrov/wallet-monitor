@@ -1,12 +1,34 @@
 """Alpha features — paper trading, slippage, health, replay, correlation, anomaly, backtest, watchlist."""
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_current_user, get_db
 from backend.db.models import User, WatchlistItem
+
+_SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,16}$")
+_KNOWN_EX = {
+    "binance", "bybit", "okx", "gate", "kucoin", "mexc", "bitget",
+    "hyperliquid", "aster", "ethereal", "whitebit", "bingx", "lighter", "paradex",
+}
+
+
+def _norm_symbol(v):
+    s = str(v or "").strip().upper()
+    if not _SYMBOL_RE.match(s):
+        raise ValueError("symbol must be 1-16 alphanumeric uppercase")
+    return s
+
+
+def _norm_exchange(v):
+    s = str(v or "").strip().lower()
+    if s not in _KNOWN_EX:
+        raise ValueError(f"unknown exchange: {v!r}")
+    return s
 from backend.services import (
     alpha_service,
     anomaly_service,
@@ -39,6 +61,14 @@ class OpenPositionIn(BaseModel):
     short_exchange: str
     size_usd: float = Field(..., gt=10, le=1_000_000)
 
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _sym(cls, v): return _norm_symbol(v)
+
+    @field_validator("long_exchange", "short_exchange", mode="before")
+    @classmethod
+    def _ex(cls, v): return _norm_exchange(v)
+
 
 @router.get("/paper/positions")
 async def paper_list(
@@ -60,6 +90,8 @@ async def paper_open(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if body.long_exchange == body.short_exchange:
+        raise HTTPException(400, "long_exchange and short_exchange must differ")
     try:
         return await paper_service.open_position(
             db, user.id, body.symbol, body.long_exchange, body.short_exchange, body.size_usd
@@ -172,7 +204,15 @@ class WatchlistIn(BaseModel):
     symbol: str
     long_exchange: str
     short_exchange: str
-    note: str | None = None
+    note: str | None = Field(None, max_length=200)
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _sym(cls, v): return _norm_symbol(v)
+
+    @field_validator("long_exchange", "short_exchange", mode="before")
+    @classmethod
+    def _ex(cls, v): return _norm_exchange(v)
 
 
 @router.get("/watchlist")
@@ -191,9 +231,24 @@ def watchlist_add(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if body.long_exchange == body.short_exchange:
+        raise HTTPException(400, "long_exchange and short_exchange must differ")
+    # Dedup — no DB unique constraint today, enforce at service level
+    dup = (
+        db.query(WatchlistItem)
+        .filter(
+            WatchlistItem.user_id == user.id,
+            WatchlistItem.symbol == body.symbol,
+            WatchlistItem.long_exchange == body.long_exchange,
+            WatchlistItem.short_exchange == body.short_exchange,
+        )
+        .first()
+    )
+    if dup:
+        return {"id": dup.id, "duplicate": True}
     item = WatchlistItem(
         user_id=user.id,
-        symbol=body.symbol.upper(),
+        symbol=body.symbol,
         long_exchange=body.long_exchange,
         short_exchange=body.short_exchange,
         note=body.note,

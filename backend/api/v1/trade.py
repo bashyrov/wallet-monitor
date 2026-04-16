@@ -2,10 +2,20 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
+
+_SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,16}$")
+
+
+def _vsym(v):
+    s = str(v or "").strip().upper()
+    if not _SYMBOL_RE.match(s):
+        raise ValueError("symbol must be 1-16 alphanumeric uppercase")
+    return s
 
 from backend.api.deps import get_current_user, get_db
 from backend.db.models import User, Wallet
@@ -19,22 +29,22 @@ logger = logging.getLogger("avalant.trade")
 # ── Read ──────────────────────────────────────────────────────────────────────
 @router.get("/status")
 async def pair_status(
-    symbol: str = Query(...),
-    long_ex: str = Query(...),
-    short_ex: str = Query(...),
+    symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),
+    long_ex: str = Query(..., min_length=2, max_length=24),
+    short_ex: str = Query(..., min_length=2, max_length=24),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return await trade_service.get_pair_status(db, user.id, symbol, long_ex.lower(), short_ex.lower())
+    return await trade_service.get_pair_status(db, user.id, symbol.upper(), long_ex.lower(), short_ex.lower())
 
 
 @router.get("/positions")
 async def positions(
-    symbol: str | None = Query(None),
+    symbol: str | None = Query(None, pattern=r"^[A-Za-z0-9]{1,16}$"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return await trade_service.list_user_positions(db, user.id, symbol)
+    return await trade_service.list_user_positions(db, user.id, symbol.upper() if symbol else None)
 
 
 @router.get("/supported")
@@ -79,13 +89,17 @@ async def leverage_limits(
 class OpenArbIn(BaseModel):
     symbol: str
     long_wallet_id: int
-    long_quantity: float = Field(..., gt=0)
+    long_quantity: float = Field(..., gt=0, le=1_000_000)
     long_leverage: int = Field(3, ge=1, le=125)
     long_margin_mode: str = Field("isolated", pattern="^(isolated|cross)$")
     short_wallet_id: int
-    short_quantity: float = Field(..., gt=0)
+    short_quantity: float = Field(..., gt=0, le=1_000_000)
     short_leverage: int = Field(3, ge=1, le=125)
     short_margin_mode: str = Field("isolated", pattern="^(isolated|cross)$")
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _v(cls, v): return _vsym(v)
 
 
 @router.post("/open-arb")
@@ -98,6 +112,8 @@ async def open_arb(
     Returns per-leg success/error so the client can show exactly which side
     landed if one fails."""
     import asyncio
+    if body.long_wallet_id == body.short_wallet_id:
+        raise HTTPException(400, "long_wallet_id and short_wallet_id must differ")
 
     async def _one(leg: str, wid: int, qty: float, lev: int, mode: str, side: str):
         try:
@@ -124,9 +140,13 @@ class OpenOrderIn(BaseModel):
     wallet_id: int
     symbol: str
     side: str = Field(..., pattern="^(buy|sell)$")
-    quantity: float = Field(..., gt=0)
+    quantity: float = Field(..., gt=0, le=1_000_000)
     leverage: int = Field(3, ge=1, le=125)
     margin_mode: str = Field("isolated", pattern="^(isolated|cross)$")
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _v(cls, v): return _vsym(v)
 
 
 @router.post("/open")
@@ -150,7 +170,11 @@ async def open_order(
 class CloseIn(BaseModel):
     wallet_id: int
     symbol: str
-    side: str | None = None
+    side: str | None = Field(None, pattern="^(buy|sell)$")
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _v(cls, v): return _vsym(v)
 
 
 @router.post("/close")
