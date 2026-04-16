@@ -363,17 +363,59 @@ body.light #alert-tg-note{background:#FBF6EA;border-color:#D9C58E;}
 .alert-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;font-weight:600;}
 .alert-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:100%;transition:border-color .15s,background .15s,box-shadow .15s;}
 .alert-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,255,171,0.12);}
-/* select variant — custom chevron, no native arrow */
-select.alert-input{
-  -webkit-appearance:none; -moz-appearance:none; appearance:none;
-  font-family:Inter,sans-serif; font-size:12px; font-weight:500;
-  padding:8px 30px 8px 12px; cursor:pointer; letter-spacing:-0.01em;
-  background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="%239B9FAB" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>');
-  background-repeat:no-repeat; background-position:right 10px center;
+/* ── Custom Direction dropdown ── */
+.al-dd { position:relative; }
+.al-dd-btn {
+  width:100%; display:flex; align-items:center; gap:8px;
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  padding:8px 10px 8px 10px; color:var(--text);
+  font-family:Inter,sans-serif; font-size:12px; font-weight:500; letter-spacing:-0.01em;
+  cursor:pointer; outline:none; text-align:left;
+  transition:border-color .15s, background .15s, box-shadow .15s;
 }
-select.alert-input:hover{border-color:var(--border2);background-color:var(--surface2);}
-select.alert-input option{background:var(--surface);color:var(--text);padding:8px;font-family:Inter,sans-serif;}
-body.light select.alert-input option{background:#FFFFFF;color:#000;}
+.al-dd-btn:hover { border-color:var(--border2); background:var(--surface2); }
+.al-dd.open .al-dd-btn { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.12); }
+.al-dd-ic {
+  width:20px; height:20px; border-radius:5px; flex-shrink:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px;
+}
+.al-dd-ic-any   { background:rgba(155,159,171,0.14); color:var(--text2); }
+.al-dd-ic-above { background:rgba(26,255,171,0.12);  color:var(--green); }
+.al-dd-ic-below { background:rgba(248,113,113,0.12); color:var(--red);   }
+.al-dd-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); }
+.al-dd-chev { color:var(--text3); transition:transform .18s; flex-shrink:0; }
+.al-dd.open .al-dd-chev { transform:rotate(180deg); color:var(--text); }
+
+.al-dd-menu {
+  position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:50;
+  background:var(--surface); border:1px solid var(--border); border-radius:9px;
+  box-shadow:0 14px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02);
+  padding:4px;
+  opacity:0; transform:translateY(-4px) scale(0.98); pointer-events:none;
+  transition:opacity .15s, transform .16s cubic-bezier(.16,1,.3,1);
+  display:flex; flex-direction:column; gap:2px;
+}
+.al-dd.open .al-dd-menu { opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+.al-dd-item {
+  display:flex; align-items:flex-start; gap:10px;
+  padding:9px 10px; border-radius:7px; cursor:pointer;
+  background:transparent; border:none; text-align:left; width:100%;
+  color:var(--text); font-family:inherit;
+  transition:background .12s;
+}
+.al-dd-item:hover { background:var(--surface2); }
+.al-dd-item.is-active { background:rgba(26,255,171,0.06); }
+.al-dd-item-body { flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.al-dd-item-title { font-size:12.5px; font-weight:600; letter-spacing:-0.01em; }
+.al-dd-item-sub { font-size:10.5px; color:var(--text3); line-height:1.35; }
+.al-dd-item-sub b { color:var(--text2); font-weight:600; }
+.al-dd-check { color:var(--green); opacity:0; margin-top:4px; transition:opacity .12s; flex-shrink:0; }
+.al-dd-item.is-active .al-dd-check { opacity:1; }
+
+body.light .al-dd-menu { background:#FFFFFF; box-shadow:0 10px 28px rgba(0,0,0,0.12); }
+body.light .al-dd-item:hover { background:#F4F4F4; }
+body.light .al-dd-item.is-active { background:#F0F7F3; }
 .alert-submit-btn{background:rgba(26,255,171,.12);color:var(--green);border:1px solid rgba(26,255,171,.3);border-radius:6px;padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;letter-spacing:.02em;transition:background .15s,border-color .15s;display:inline-flex;align-items:center;gap:5px;height:34px;}
 .alert-submit-btn:hover:not(:disabled){background:rgba(26,255,171,.2);border-color:var(--green);}
 .alert-submit-btn:disabled{background:var(--surface3);color:var(--text3);border-color:var(--border);cursor:not-allowed;opacity:.6;}
@@ -1000,11 +1042,40 @@ body.light .bnav-item.active{color:#000;}
         </div>
         <div>
           <div class="alert-lbl">Direction</div>
-          <select id="al-direction" class="alert-input">
-            <option value="any">Any (±threshold)</option>
-            <option value="above">Above +threshold</option>
-            <option value="below">Below −threshold</option>
-          </select>
+          <div class="al-dd" id="al-dir-dd">
+            <input type="hidden" id="al-direction" value="any">
+            <button type="button" class="al-dd-btn" onclick="alDirToggle(event)" aria-haspopup="listbox" aria-expanded="false">
+              <span class="al-dd-ic al-dd-ic-any">±</span>
+              <span class="al-dd-text" id="al-dir-text">Any · crosses ±threshold</span>
+              <svg class="al-dd-chev" width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
+            </button>
+            <div class="al-dd-menu" role="listbox">
+              <button type="button" class="al-dd-item is-active" data-v="any" onclick="alDirPick(this)">
+                <span class="al-dd-ic al-dd-ic-any">±</span>
+                <span class="al-dd-item-body">
+                  <span class="al-dd-item-title">Any</span>
+                  <span class="al-dd-item-sub">fires above <b>+</b> or below <b>−</b> threshold</span>
+                </span>
+                <svg class="al-dd-check" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
+              </button>
+              <button type="button" class="al-dd-item" data-v="above" onclick="alDirPick(this)">
+                <span class="al-dd-ic al-dd-ic-above">↑</span>
+                <span class="al-dd-item-body">
+                  <span class="al-dd-item-title">Above <span class="mono" style="color:var(--green)">+</span></span>
+                  <span class="al-dd-item-sub">only when spread ≥ <b>+</b>threshold</span>
+                </span>
+                <svg class="al-dd-check" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
+              </button>
+              <button type="button" class="al-dd-item" data-v="below" onclick="alDirPick(this)">
+                <span class="al-dd-ic al-dd-ic-below">↓</span>
+                <span class="al-dd-item-body">
+                  <span class="al-dd-item-title">Below <span class="mono" style="color:var(--red)">−</span></span>
+                  <span class="al-dd-item-sub">only when spread ≤ <b>−</b>threshold</span>
+                </span>
+                <svg class="al-dd-check" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
         <div class="alert-form-full">
           <button id="al-submit" class="alert-submit-btn" onclick="createAlert()" disabled title="Set Telegram username in profile first">
@@ -2036,6 +2107,40 @@ function renderAlertList(){
     <button class="alert-item-del" onclick="deleteAlert(${a.id})" title="Delete">×</button>
   </div>`).join('');
 }
+// ── Custom Direction dropdown ──
+const _alDirLabels = {
+  any:   { text: 'Any · crosses ±threshold', ic: 'al-dd-ic-any',   sym: '±' },
+  above: { text: 'Above · spread ≥ +threshold', ic: 'al-dd-ic-above', sym: '↑' },
+  below: { text: 'Below · spread ≤ −threshold', ic: 'al-dd-ic-below', sym: '↓' },
+};
+function alDirToggle(ev){
+  ev && ev.stopPropagation();
+  const dd = document.getElementById('al-dir-dd');
+  const open = !dd.classList.contains('open');
+  dd.classList.toggle('open', open);
+  dd.querySelector('.al-dd-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) setTimeout(() => document.addEventListener('click', _alDirOutside, { once:false }), 0);
+}
+function _alDirOutside(e){
+  const dd = document.getElementById('al-dir-dd');
+  if (!dd) return;
+  if (!dd.contains(e.target)) { dd.classList.remove('open'); document.removeEventListener('click', _alDirOutside); }
+}
+function alDirPick(btn){
+  const v = btn.dataset.v;
+  const dd = document.getElementById('al-dir-dd');
+  document.getElementById('al-direction').value = v;
+  dd.querySelectorAll('.al-dd-item').forEach(x => x.classList.toggle('is-active', x.dataset.v === v));
+  const meta = _alDirLabels[v];
+  const btnEl = dd.querySelector('.al-dd-btn');
+  btnEl.querySelector('.al-dd-text').textContent = meta.text;
+  const icEl = btnEl.querySelector('.al-dd-ic');
+  icEl.className = 'al-dd-ic ' + meta.ic;
+  icEl.textContent = meta.sym;
+  dd.classList.remove('open');
+  document.removeEventListener('click', _alDirOutside);
+}
+
 async function createAlert(){
   if(!_hasTgUsername){_toast('Set Telegram username in your profile first');return;}
   const thresholdRaw=document.getElementById('al-threshold').value;
