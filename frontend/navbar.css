@@ -81,3 +81,7 @@ button.nav-lnk { background: none; cursor: pointer; }
   box-shadow: 0 0 16px rgba(26,255,171,0.35);
 }
 .btn-sm { padding: 0 10px; height: 28px; font-size: 12px; }
+.nav-lnk-icon { padding: 5px 8px; color: #9B9FAB; }
+.nav-lnk-icon:hover { color: #E5C07B; background: rgba(229,192,123,0.08); border-color: rgba(229,192,123,0.18); }
+.nav-lnk-icon:hover svg { opacity: 1; }
+.nav-lnk-icon.active { color: #E5C07B; background: rgba(229,192,123,0.1); border-color: rgba(229,192,123,0.22); }

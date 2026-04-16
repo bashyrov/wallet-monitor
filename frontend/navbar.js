@@ -39,7 +39,7 @@ const _NAV_SET = {
   profile:  ['app', 'archive', 'screener', 'watchlist', 'pricing'],
   index:    ['app', 'archive', 'screener', 'watchlist', 'pricing'],
   pricing:  ['app', 'archive', 'screener', 'watchlist', 'pricing'], // Portfolio+Archive hidden until auth
-  arb:      ['app', 'watchlist', 'pricing'],
+  arb:      ['app', 'pricing'],
   watchlist:['app', 'archive', 'screener', 'watchlist', 'pricing'],
   login:    [],
   register: [],
@@ -82,12 +82,12 @@ function _rightHtml(page) {
       return _avatarBtn();
     case 'arb':
       return `
+        <a href="/watchlist" class="nav-lnk nav-lnk-icon" title="Watchlist" aria-label="Watchlist">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z"/></svg>
+        </a>
         <button class="nav-lnk" onclick="openAlertModal&&openAlertModal()" title="Alerts">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
           Alerts
-        </button>
-        <button class="nav-lnk" onclick="toggleFullscreen&&toggleFullscreen()" title="Fullscreen">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5"/></svg>
         </button>
         ${_avatarBtn()}`;
     case 'index':
