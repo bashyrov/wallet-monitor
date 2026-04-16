@@ -117,10 +117,18 @@ body.light .alert-block .alert-add{color:var(--green);background:#F0F7F3;border-
 body.light .alert-block:hover{background:#F4F4F4;}
 
 /* ── Main 3-column ── */
-.main{display:flex;flex:0 0 auto;overflow:hidden;height:52vh;min-height:420px;max-height:600px;}
+/* ── Workspace layout ──
+   .workspace = horizontal row (fills all remaining viewport height)
+      .left-stack (flex:1, vertical)
+         .main.top-row (charts + books, fixed-ish height)
+         .acc-block    (positions / orders / pnl / balances, fills the rest)
+      .col-info        (right column, full workspace height) */
+.workspace{flex:1;display:flex;overflow:hidden;min-height:0;}
+.left-stack{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
+.main{display:flex;flex:0 0 auto;overflow:hidden;height:52vh;min-height:420px;max-height:600px;border-bottom:1px solid var(--border);}
 
 /* ── Bottom account block (Positions / Orders / P&L / Balances) ── */
-.acc-block{flex:1;display:flex;flex-direction:column;border-top:1px solid var(--border);background:var(--surface);min-height:280px;overflow:hidden;}
+.acc-block{flex:1;display:flex;flex-direction:column;background:var(--surface);min-height:260px;overflow:hidden;}
 .acc-tabs{display:flex;align-items:center;gap:2px;padding:0 12px;height:38px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface2);}
 .acc-tab{padding:0 14px;height:100%;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;letter-spacing:-0.01em;user-select:none;}
 .acc-tab:hover{color:var(--text2);}
@@ -270,7 +278,7 @@ body.light .acc-table thead th{background:#F0F0F0;}
 .hist-row span:first-child{text-align:left;color:var(--text3);font-size:8.5px;}
 
 /* ── RIGHT: overview / calc ── */
-.col-info{flex:1;display:flex;flex-direction:column;min-width:180px;overflow:hidden;min-height:0;}
+.col-info{flex:0 0 320px;display:flex;flex-direction:column;min-width:260px;max-width:360px;overflow:hidden;min-height:0;border-left:1px solid var(--border);}
 .col-info-title{padding:7px 10px;font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);background:var(--surface2);flex-shrink:0;}
 .info-content{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
 .info-card{background:var(--surface);border:1px solid var(--border);border-radius:7px;overflow:hidden;flex-shrink:0;}
@@ -551,9 +559,11 @@ body.light .bnav-item.active{color:#000;}
   .alert-block .ib-label{flex-shrink:0;}
   .ib-back-link{min-width:100%;border-left:none;border-top:1px solid var(--border);height:48px;font-size:18px;}
 
-  /* Main: stack vertically, let body scroll */
-  .main{flex-direction:column;overflow:visible;height:auto;min-height:0;flex:none;}
-  .col-left,.col-books,.col-info{width:100%;min-width:0;border-right:none;border-bottom:1px solid var(--border);}
+  /* Workspace: stack vertically, let body scroll */
+  .workspace{flex-direction:column;overflow:visible;min-height:0;}
+  .left-stack{flex:none;}
+  .main{flex-direction:column;overflow:visible;height:auto;min-height:0;flex:none;max-height:none;border-bottom:none;}
+  .col-left,.col-books,.col-info{width:100%;min-width:0;border-right:none;border-left:none;border-bottom:1px solid var(--border);}
   .col-left{max-height:none;}
   .tab-pane.active{min-height:520px;}
   .spread-section{flex:0 0 auto;height:320px;}
@@ -563,7 +573,7 @@ body.light .bnav-item.active{color:#000;}
   .col-books{height:auto;}
   .books-row{flex:0 0 auto;height:460px;}
   /* Right P&L panel → full width */
-  .col-info{min-width:0;}
+  .col-info{flex:none;max-width:none;min-width:0;}
   .info-content{max-height:none;overflow-y:visible;}
   /* Modal */
   .alert-box{width:calc(100vw - 24px);max-height:85vh;}
@@ -805,7 +815,9 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 </div>
 
 <!-- Main -->
-<div class="main">
+<div class="workspace">
+<div class="left-stack">
+<div class="main top-row">
 
   <!-- LEFT: Chart / Overview / Info tabs -->
   <div class="col-left">
@@ -1034,6 +1046,76 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 
   </div>
 
+  </div><!-- /top-row -->
+
+  <!-- ── Account / Positions block (Positions / Orders / P&L / Balances) ── -->
+  <section class="acc-block" id="acc-block">
+    <div class="acc-tabs" role="tablist">
+      <div class="acc-tab is-active" data-pane="positions" onclick="accSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
+      <div class="acc-tab" data-pane="orders"   onclick="accSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
+      <div class="acc-tab" data-pane="pnl"      onclick="accSwitch(this)" role="tab">P&amp;L</div>
+      <div class="acc-tab" data-pane="balances" onclick="accSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
+      <span class="acc-spacer"></span>
+      <div class="acc-keyinfo" id="acc-keyinfo">
+        <span class="pill ro" title="Read-only keys control Balances / Positions / Orders visibility"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
+        <span class="pill tr" title="Trading keys place real orders"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
+        <a href="/app" class="pill" style="text-decoration:none;color:var(--text2)" title="Manage API keys">Keys ⚙</a>
+      </div>
+    </div>
+    <div class="acc-body">
+      <div class="acc-pane is-active" id="acc-pane-positions">
+        <table class="acc-table">
+          <thead><tr><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Funding P&amp;L</th><th class="num">uPnL</th><th class="num">uPnL %</th><th></th></tr></thead>
+          <tbody id="acc-positions-body"></tbody>
+        </table>
+        <div class="acc-empty" id="acc-positions-empty">
+          <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg></div>
+          <h4>No open positions</h4>
+          <p>Connect a read-only API key to see exchange positions here, or open a new position from the trading panel on the right.</p>
+          <a href="/app" class="acc-empty-cta">Manage API keys</a>
+        </div>
+      </div>
+      <div class="acc-pane" id="acc-pane-orders">
+        <table class="acc-table">
+          <thead><tr><th>Time</th><th>Symbol</th><th>Exchange</th><th>Side</th><th>Type</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Fee</th><th>Status</th></tr></thead>
+          <tbody id="acc-orders-body"></tbody>
+        </table>
+        <div class="acc-empty" id="acc-orders-empty">
+          <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v10H3z"/><path d="M3 6h10M3 9h10M3 12h6"/></svg></div>
+          <h4>No orders</h4>
+          <p>Order history across your exchange keys will appear here.</p>
+        </div>
+      </div>
+      <div class="acc-pane" id="acc-pane-pnl">
+        <div class="acc-sum-grid">
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Unrealized P&amp;L</div><div class="acc-sum-val" id="acc-upnl">$0.00</div></div>
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Realized (24h)</div><div class="acc-sum-val" id="acc-realized-24h">$0.00</div></div>
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Funding (24h)</div><div class="acc-sum-val" id="acc-funding-24h">$0.00</div></div>
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Fees (24h)</div><div class="acc-sum-val neg" id="acc-fees-24h">$0.00</div></div>
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Open positions</div><div class="acc-sum-val" id="acc-pos-count">0</div></div>
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Net equity</div><div class="acc-sum-val" id="acc-net-equity">$0.00</div></div>
+        </div>
+        <div class="acc-empty" id="acc-pnl-empty">
+          <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13L6 9l3 3 5-5"/><path d="M10 4h4v4"/></svg></div>
+          <h4>No P&amp;L data yet</h4>
+          <p>P&amp;L summary aggregates realized, funding, and unrealized across all your exchange keys for the selected window.</p>
+        </div>
+      </div>
+      <div class="acc-pane" id="acc-pane-balances">
+        <table class="acc-table">
+          <thead><tr><th>Exchange</th><th>Wallet</th><th>Key type</th><th class="num">Available USDT</th><th class="num">Locked</th><th class="num">Equity</th></tr></thead>
+          <tbody id="acc-balances-body"></tbody>
+        </table>
+        <div class="acc-empty" id="acc-balances-empty">
+          <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 6v4M6 8h4"/></svg></div>
+          <h4>No balance data</h4>
+          <p>Add a read-only or trading API key in <a href="/app" style="color:var(--green)">Portfolio</a> and it'll show up here with live equity.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  </div><!-- /left-stack -->
+
   <!-- RIGHT: P&L -->
   <div class="col-info">
     <div class="col-info-title">P&L Overview</div>
@@ -1191,123 +1273,6 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
   </div>
 
 </div>
-
-<!-- ── Account / Positions block (stretches full width under charts) ── -->
-<section class="acc-block" id="acc-block">
-  <div class="acc-tabs" role="tablist">
-    <div class="acc-tab is-active" data-pane="positions" onclick="accSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
-    <div class="acc-tab" data-pane="orders"   onclick="accSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
-    <div class="acc-tab" data-pane="pnl"      onclick="accSwitch(this)" role="tab">P&amp;L</div>
-    <div class="acc-tab" data-pane="balances" onclick="accSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
-    <span class="acc-spacer"></span>
-    <div class="acc-keyinfo" id="acc-keyinfo">
-      <span class="pill ro" title="Read-only keys control Balances / Positions / Orders visibility"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
-      <span class="pill tr" title="Trading keys place real orders"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
-      <a href="/app" class="pill" style="text-decoration:none;color:var(--text2)" title="Manage API keys">Keys ⚙</a>
-    </div>
-  </div>
-
-  <div class="acc-body">
-    <!-- ── POSITIONS ── -->
-    <div class="acc-pane is-active" id="acc-pane-positions">
-      <table class="acc-table">
-        <thead>
-          <tr>
-            <th>Symbol</th>
-            <th>Exchange</th>
-            <th>Side</th>
-            <th class="num">Size</th>
-            <th class="num">Entry</th>
-            <th class="num">Mark</th>
-            <th class="num">Funding P&amp;L</th>
-            <th class="num">uPnL</th>
-            <th class="num">uPnL %</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="acc-positions-body"></tbody>
-      </table>
-      <div class="acc-empty" id="acc-positions-empty">
-        <div class="acc-empty-icon">
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg>
-        </div>
-        <h4>No open positions</h4>
-        <p>Connect a read-only API key to see existing exchange positions here, or open a new position from the trading panel on the right.</p>
-        <a href="/app" class="acc-empty-cta">Manage API keys</a>
-      </div>
-    </div>
-
-    <!-- ── ORDER HISTORY ── -->
-    <div class="acc-pane" id="acc-pane-orders">
-      <table class="acc-table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Symbol</th>
-            <th>Exchange</th>
-            <th>Side</th>
-            <th>Type</th>
-            <th class="num">Qty</th>
-            <th class="num">Price</th>
-            <th class="num">Fee</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="acc-orders-body"></tbody>
-      </table>
-      <div class="acc-empty" id="acc-orders-empty">
-        <div class="acc-empty-icon">
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v10H3z"/><path d="M3 6h10M3 9h10M3 12h6"/></svg>
-        </div>
-        <h4>No orders</h4>
-        <p>Order history across your exchange keys will appear here.</p>
-      </div>
-    </div>
-
-    <!-- ── P&L SUMMARY ── -->
-    <div class="acc-pane" id="acc-pane-pnl">
-      <div class="acc-sum-grid">
-        <div class="acc-sum-card"><div class="acc-sum-lbl">Unrealized P&amp;L</div><div class="acc-sum-val" id="acc-upnl">$0.00</div></div>
-        <div class="acc-sum-card"><div class="acc-sum-lbl">Realized (24h)</div><div class="acc-sum-val" id="acc-realized-24h">$0.00</div></div>
-        <div class="acc-sum-card"><div class="acc-sum-lbl">Funding (24h)</div><div class="acc-sum-val" id="acc-funding-24h">$0.00</div></div>
-        <div class="acc-sum-card"><div class="acc-sum-lbl">Fees (24h)</div><div class="acc-sum-val neg" id="acc-fees-24h">$0.00</div></div>
-        <div class="acc-sum-card"><div class="acc-sum-lbl">Open positions</div><div class="acc-sum-val" id="acc-pos-count">0</div></div>
-        <div class="acc-sum-card"><div class="acc-sum-lbl">Net equity</div><div class="acc-sum-val" id="acc-net-equity">$0.00</div></div>
-      </div>
-      <div class="acc-empty" id="acc-pnl-empty">
-        <div class="acc-empty-icon">
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13L6 9l3 3 5-5"/><path d="M10 4h4v4"/></svg>
-        </div>
-        <h4>No P&amp;L data yet</h4>
-        <p>P&amp;L summary aggregates realized, funding, and unrealized across all your exchange keys for the selected window.</p>
-      </div>
-    </div>
-
-    <!-- ── BALANCES ── -->
-    <div class="acc-pane" id="acc-pane-balances">
-      <table class="acc-table">
-        <thead>
-          <tr>
-            <th>Exchange</th>
-            <th>Wallet</th>
-            <th>Key type</th>
-            <th class="num">Available USDT</th>
-            <th class="num">Locked</th>
-            <th class="num">Equity</th>
-          </tr>
-        </thead>
-        <tbody id="acc-balances-body"></tbody>
-      </table>
-      <div class="acc-empty" id="acc-balances-empty">
-        <div class="acc-empty-icon">
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 6v4M6 8h4"/></svg>
-        </div>
-        <h4>No balance data</h4>
-        <p>Add a read-only or trading API key in <a href="/app" style="color:var(--green)">Portfolio</a> and it'll show up here with live equity.</p>
-      </div>
-    </div>
-  </div>
-</section>
 
 <!-- Navigate modal -->
 <div class="nav-modal" id="nav-modal">
