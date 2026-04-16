@@ -561,17 +561,36 @@ body.light .bnav-item.active{color:#000;}
 
 /* ── Watchlist star button in hero ── */
 .wl-star-btn {
-  width:28px; height:28px; border-radius:7px;
-  background:var(--surface2); border:1px solid var(--border); color:var(--text3);
+  width:30px; height:30px; padding:0; margin:0;
+  border-radius:8px;
+  background: rgba(229,192,123,0.06);
+  border:1px solid rgba(229,192,123,0.28);
+  color: var(--yellow);
   display:inline-flex; align-items:center; justify-content:center;
-  cursor:pointer; transition:color .15s, background .15s, border-color .15s, transform .15s;
+  cursor:pointer; outline:none;
+  transition:color .15s, background .15s, border-color .15s, transform .18s, box-shadow .2s;
   font-family:inherit; flex-shrink:0;
+  -webkit-appearance:none; appearance:none;
 }
-.wl-star-btn:hover { color:var(--yellow); background:var(--surface3); border-color:rgba(229,192,123,0.35); transform:scale(1.06); }
-.wl-star-btn.on { color:var(--yellow); background:rgba(229,192,123,0.1); border-color:rgba(229,192,123,0.45); }
-.wl-star-btn.on svg { fill:var(--yellow); }
+.wl-star-btn svg { opacity:0.85; transition:opacity .15s, fill .15s; }
+.wl-star-btn:hover {
+  background: rgba(229,192,123,0.14);
+  border-color: var(--yellow);
+  transform: scale(1.06);
+  box-shadow: 0 0 12px rgba(229,192,123,0.25);
+}
+.wl-star-btn:hover svg { opacity:1; }
+.wl-star-btn.on {
+  background: linear-gradient(135deg, rgba(229,192,123,0.22), rgba(229,192,123,0.1));
+  border-color: var(--yellow);
+  color: var(--yellow);
+  box-shadow: 0 0 12px rgba(229,192,123,0.22);
+}
+.wl-star-btn.on svg { fill: var(--yellow); stroke: var(--yellow); opacity:1; }
 @keyframes wl-star-pop { 0%{transform:scale(1)} 50%{transform:scale(1.28)} 100%{transform:scale(1)} }
 .wl-star-btn.pop { animation:wl-star-pop .32s cubic-bezier(.34,1.56,.64,1); }
+body.light .wl-star-btn { background: rgba(229,192,123,0.08); border-color: rgba(107,80,17,0.35); color: var(--yellow); }
+body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 </style>
 </head>
 <body>
