@@ -133,6 +133,9 @@
     .icon-btn:hover { background: var(--green-dim); border-color: rgba(26,255,171,0.2); color: var(--green); }
     .icon-btn.danger { color: var(--text3); }
     .icon-btn.danger:hover { background: var(--red-dim); border-color: rgba(248,113,113,0.2); color: var(--red); }
+    .icon-btn.trade-toggle-btn { color: var(--text3); }
+    .icon-btn.trade-toggle-btn:hover { background: rgba(229,192,123,0.1); border-color: rgba(229,192,123,0.35); color: var(--yellow); }
+    .icon-btn.trade-toggle-btn.is-on { color: var(--yellow); border-color: var(--yellow); background: rgba(229,192,123,0.15); box-shadow: 0 0 10px rgba(229,192,123,0.2); }
     .icon-btn.active { background: var(--green-dim); border-color: rgba(26,255,171,0.25); color: var(--green); }
 
     /* ── TOOLTIPS ── */
@@ -1186,10 +1189,10 @@
 
     /* ── RESULT CARD ENTRANCE ── */
     @keyframes cardIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to   { opacity: 1; transform: translateY(0); }
+      from { opacity: 0; }
+      to   { opacity: 1; }
     }
-    .result-card, .agg-block { animation: cardIn 0.28s cubic-bezier(0.16,1,0.3,1) both; }
+    .result-card, .agg-block { animation: cardIn 0.2s ease both; }
 
     /* ── FLOATING EMPTY ICON ── */
     @keyframes floatIcon {
@@ -1271,7 +1274,7 @@
       from { box-shadow: none; }
       to   { box-shadow: inset 0 0 60px rgba(26,255,171,0.04); }
     }
-    .agg-block { animation: aggGlow 0.6s ease both, cardIn 0.28s cubic-bezier(0.16,1,0.3,1) both; }
+    .agg-block { animation: cardIn 0.2s ease both; }
 
     /* ── STAGGER HELPERS (set via JS style) ── */
     /* .wallet-row uses animation-delay set inline */
@@ -2046,6 +2049,7 @@
 <script src="/navbar.js"></script>
 <script src="/auth.js"></script>
 <script src="/toast.js"></script>
+<script src="/confirm.js"></script>
 <script src="/theme.js"></script>
 <script>
 (function() {
@@ -2328,6 +2332,9 @@ function walletRow(w, idx = 0) {
       ${tagPills ? `<div class="wallet-tags">${tagPills}</div>` : ''}
     </div>
     <div class="wallet-actions">
+      ${isExchange ? `<button class="icon-btn has-tip trade-toggle-btn ${w.can_trade?'is-on':''}" data-tip="${w.can_trade?'Trading ENABLED — click to disable':'Enable live trading'}" onclick="toggleCanTrade(${w.id},${w.can_trade?'true':'false'})" aria-label="Toggle trading">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
+      </button>` : ''}
       ${isExchange ? `<button class="icon-btn has-tip" data-tip="Addresses" onclick="toggleAddrPanel(event,${w.id})">◈</button>` : ''}
       <button class="icon-btn has-tip" data-tip="Tags" onclick="openTagDrop(event,${w.id})">⊕</button>
       <button class="icon-btn has-tip" data-tip="Edit" onclick="openEditWalletModal(${w.id})">✎</button>
@@ -3004,6 +3011,34 @@ async function _doDelWallet(id, name) {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
+async function toggleCanTrade(id, currentlyOn) {
+  const TRADABLE = ['binance', 'bybit'];
+  const w = S.wallets.find(x => x.id === id);
+  if (!w) return;
+  if (!currentlyOn && !TRADABLE.includes(w.type_value)) {
+    toast(`Live trading not yet supported on ${w.type_value}`, 'warn');
+    return;
+  }
+  if (!currentlyOn) {
+    const ok = await Confirm.ask({
+      title: `Enable LIVE TRADING on "${w.name}"?`,
+      message: `This allows Avalant to place real orders using your API key.<br><br>• Make sure the key has <b>Futures trading</b> permission<br>• <b>Withdrawals</b> must be DISABLED on the key<br>• IP-whitelist the server if possible`,
+      okText: 'Enable trading',
+    });
+    if (!ok) return;
+  }
+  try {
+    const res = await api.patch('/trade/wallets/' + id, { can_trade: !currentlyOn });
+    w.can_trade = !!res.can_trade;
+    toast(w.can_trade ? 'Trading enabled' : 'Trading disabled', 'success');
+    renderWallets();
+  } catch (e) {
+    let msg = e.message;
+    try { msg = JSON.parse(msg).detail || msg; } catch {}
+    toast('Error: ' + msg, 'error');
+  }
+}
+
 async function archiveWallet(id, name) {
   try {
     const row = document.getElementById('wr-' + id);
@@ -3429,6 +3464,7 @@ async function submitAddWallet(e) {
     body.api_secret = form.api_secret.value.trim();
     const pp = form.api_passphrase?.value?.trim();
     if (pp) body.api_passphrase = pp;
+    body.purpose = 'portfolio';   // portfolio-only by default; promote via /profile if needed for screener
   } else if (S.walletType === 'chain') {
     body.type_value = form.elements['chain_type'].value;
     body.address = form.chain_address.value.trim();
@@ -3444,12 +3480,14 @@ async function submitAddWallet(e) {
   }
   const btn = document.getElementById('btn-submit-wallet');
   btn.disabled = true;
+  const prevTxt = btn.textContent;
+  if (S.walletType === 'exchange') btn.textContent = 'Validating with ' + (body.type_value.charAt(0).toUpperCase()+body.type_value.slice(1)) + '…';
   try {
     const w = await api.post('/wallets', body);
     S.wallets.unshift(w);
     renderAll();
     closeAddWalletModal();
-    toast(`Added "${w.name}"`, 'success', 'Wallet connected successfully');
+    toast(`Added "${w.name}"`, 'success', 'Key validated and saved');
   } catch(e) {
     let msg = e.message;
     try {
@@ -3466,7 +3504,7 @@ async function submitAddWallet(e) {
       msg = detail || msg;
     } catch {}
     errEl.textContent = msg; errEl.classList.add('show');
-  } finally { btn.disabled = false; }
+  } finally { btn.disabled = false; btn.textContent = prevTxt; }
 }
 
 // ═══════════════════════════════════════════════════

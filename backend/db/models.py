@@ -31,6 +31,7 @@ class User(Base):
 
     tg_username = Column(String, nullable=True)
     tg_chat_id = Column(Integer, nullable=True)   # filled after user runs /start to the bot
+    tg_id = Column(Integer, nullable=True, index=True, unique=True)  # Telegram numeric user id (from widget / bot update)
 
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")
@@ -45,6 +46,8 @@ class Wallet(Base):
     type_value = Column(String, nullable=False)    # binance | tron | hyperliquid
     credentials = Column(JSON, nullable=True)      # encrypted {api_key, api_secret, ...} or {address}
     is_archived = Column(Boolean, nullable=False, default=False)
+    can_trade = Column(Boolean, nullable=False, default=False)  # legacy — mirrors purpose='screener'
+    purpose = Column(String, nullable=False, default="portfolio")  # 'portfolio' (read-only) | 'screener' (trading)
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
@@ -199,6 +202,20 @@ class AnomalyEvent(Base):
     mean_pct = Column(Float, nullable=False)
     std_pct = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+
+
+class TgLinkToken(Base):
+    """Short-lived one-use token for linking Telegram to an Avalant user.
+    Issued when the logged-in user clicks "Link Telegram" on /profile; consumed
+    by the bot when the user taps /start link-<token>. Stored hashed at rest."""
+    __tablename__ = "tg_link_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class WatchlistItem(Base):

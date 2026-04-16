@@ -50,11 +50,18 @@ const Auth = (() => {
     return isLoggedIn() && !!user?.is_admin;
   }
 
-  /** If already logged in, redirect away from login/register pages. */
+  /** If already logged in, redirect away from login/register pages.
+   *  Validates the token is still accepted by the backend first —
+   *  prevents a redirect loop when the HttpOnly session cookie has
+   *  expired but the localStorage token is still present. */
   function redirectIfAuthed(redirectTo = '/app') {
-    if (isLoggedIn()) {
-      window.location.replace(redirectTo);
-    }
+    if (!isLoggedIn()) return;
+    fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + getToken() } })
+      .then(r => {
+        if (r.ok) window.location.replace(redirectTo);
+        else      clearSession();   // stale token — stay on login
+      })
+      .catch(() => {});   // network error — don't redirect, don't clear
   }
 
   /** Logout: clear session + clear server cookie + redirect. */

@@ -30,12 +30,71 @@ async def arbitrage_opportunities(_=Depends(get_current_user)):
     return await get_arbitrage_opportunities()
 
 
+@router.get("/pair")
+async def pair_opp(
+    symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),
+    long_ex: str = Query(..., min_length=2, max_length=24),
+    short_ex: str = Query(..., min_length=2, max_length=24),
+    _=Depends(get_current_user),
+):
+    """Lightweight per-pair arb data. Fetches only the 2 needed exchanges
+    instead of all 12 — returns the same _opp shape the /arb page needs.
+    Falls back to cached full arb result if warm."""
+    sym = symbol.upper()
+    long_ex = long_ex.lower()
+    short_ex = short_ex.lower()
+
+    # Try cached full arb result first (free if < 10s old)
+    from backend.services.arbitrage_service import _arb_result_cache, _ARB_CACHE_TTL
+    import time as _t
+    if _arb_result_cache["data"] and _t.time() - _arb_result_cache["ts"] < _ARB_CACHE_TTL:
+        for o in _arb_result_cache["data"].get("opportunities", []):
+            if o["symbol"] == sym and o["long_exchange"] == long_ex and o["short_exchange"] == short_ex:
+                return {"source": "cache", "opp": o}
+
+    # Cache miss — fetch only the 2 exchanges via get_cached_rates (read from _cache, zero HTTP)
+    from backend.services.arbitrage_service import get_cached_rates, EXCHANGE_FEES
+    rates = get_cached_rates()
+    r_long  = rates.get(f"{long_ex}:{sym}")
+    r_short = rates.get(f"{short_ex}:{sym}")
+    if r_long and r_short:
+        rate_l = r_long["rate"] * (8.0 / r_long.get("interval_h", 8))
+        rate_s = r_short["rate"] * (8.0 / r_short.get("interval_h", 8))
+        gross = rate_s - rate_l
+        fee_l = EXCHANGE_FEES.get(long_ex, 0.0005)
+        fee_s = EXCHANGE_FEES.get(short_ex, 0.0005)
+        total_fees = 2.0 * (fee_l + fee_s)
+        p_l = r_long.get("price", 0)
+        p_s = r_short.get("price", 0)
+        spread = (p_s - p_l) / p_l if p_l > 0 else 0.0
+        net = gross + spread - total_fees
+        return {"source": "rates", "opp": {
+            "symbol": sym, "long_exchange": long_ex, "short_exchange": short_ex,
+            "long_rate": round(rate_l * 100, 6), "short_rate": round(rate_s * 100, 6),
+            "long_price": p_l, "short_price": p_s,
+            "long_volume": 0, "short_volume": 0,
+            "long_interval_h": r_long.get("interval_h", 8),
+            "short_interval_h": r_short.get("interval_h", 8),
+            "gross_funding": round(gross * 100, 6),
+            "price_spread": round(spread * 100, 4),
+            "fee_long": round(fee_l * 100, 4), "fee_short": round(fee_s * 100, 4),
+            "total_fees": round(total_fees * 100, 4),
+            "net_profit": round(net * 100, 6),
+            "gross_apr": round(gross * (8760/8) * 100, 4),
+            "net_apr": round(net * (8760/8) * 100, 4),
+            "valid_price": p_l <= p_s,
+        }}
+
+    return {"source": "empty", "opp": None}
+
+
 # ── Funding history per exchange/symbol ────────────────────────────────────────
 
 async def _fetch_history_for(exchange: str, symbol: str, limit: int = 90) -> list[dict]:
     """Fetch historical funding rates for a symbol on a given exchange."""
     try:
-        async with httpx.AsyncClient(timeout=10) as c:
+        c = _arb_http  # reuse persistent pool
+        if True:
             if exchange == "binance":
                 sym = symbol + "USDT"
                 r = await c.get(f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={sym}&limit={limit}")
@@ -110,7 +169,8 @@ async def _fetch_history_for(exchange: str, symbol: str, limit: int = 90) -> lis
 async def _fetch_price_history(exchange: str, symbol: str, limit: int = 100) -> list[dict]:
     """Fetch OHLCV 1h candles → list of {ts, open, high, low, close}."""
     try:
-        async with httpx.AsyncClient(timeout=10) as c:
+        c = _arb_http  # reuse persistent pool
+        if True:
             if exchange == "binance":
                 sym = symbol + "USDT"
                 r = await c.get(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}&interval=1h&limit={limit}")
@@ -173,13 +233,24 @@ async def _fetch_price_history(exchange: str, symbol: str, limit: int = 100) -> 
     return []
 
 
+_ORDERBOOK_EX = {
+    "binance","bybit","okx","gate","kucoin","mexc","bitget",
+    "aster","hyperliquid","bingx","whitebit",
+}
+
+
 @router.get("/orderbook")
 async def get_orderbook(
-    symbol: str = Query(...),
-    exchange: str = Query(...),
-    limit: int = Query(20),
+    symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),
+    exchange: str = Query(..., min_length=2, max_length=24),
+    limit: int = Query(20, ge=1, le=100),
     _=Depends(get_current_user),
 ):
+    from fastapi import HTTPException
+    exchange = exchange.lower()
+    symbol = symbol.upper()
+    if exchange not in _ORDERBOOK_EX:
+        raise HTTPException(400, f"unsupported exchange for orderbook: {exchange}")
     try:
         c = _arb_http  # reuse persistent client with keepalive
         if exchange == "binance":
@@ -271,7 +342,8 @@ async def all_exchanges_funding(
 async def _fetch_open_interest(exchange: str, symbol: str) -> dict | None:
     """Fetch open interest for a symbol on a given exchange."""
     try:
-        async with httpx.AsyncClient(timeout=8) as c:
+        c = _arb_http  # reuse persistent pool
+        if True:
             if exchange == "binance":
                 r = await c.get(f"https://fapi.binance.com/fapi/v1/openInterest?symbol={symbol}USDT")
                 d = r.json()
@@ -426,16 +498,16 @@ async def _broadcast_loop() -> None:
                 logger.debug("Screener funding WS: pushed to %d clients", len(_funding_clients))
         except Exception as exc:
             logger.warning("Screener funding broadcast error: %s", exc)
-        if _arb_clients:
-            try:
-                from backend.services.alpha_service import score_opportunities
-                data = await get_arbitrage_opportunities()
-                # annotate with alpha_score so watchlist / consumers don't need a second round-trip
-                score_opportunities(data.get("opportunities", []))
+        # Always compute arb too — keeps the result cache warm for REST /pair consumers
+        try:
+            from backend.services.alpha_service import score_opportunities
+            data = await get_arbitrage_opportunities()
+            score_opportunities(data.get("opportunities", []))
+            if _arb_clients:
                 await _push(_arb_clients, json.dumps(data))
                 logger.debug("Screener arb WS: pushed to %d clients", len(_arb_clients))
-            except Exception as exc:
-                logger.warning("Screener arb broadcast error: %s", exc)
+        except Exception as exc:
+            logger.warning("Screener arb broadcast error: %s", exc)
 
 
 def start_screener_broadcaster() -> None:

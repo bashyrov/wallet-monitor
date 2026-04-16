@@ -56,3 +56,21 @@ class ProviderUnavailable(DomainError):
         super().__init__(f"Provider {provider!r} unavailable: {reason}")
         self.provider = provider
         self.reason = reason
+
+
+class DuplicateScreenerKey(DomainError):
+    """User already has a screener-eligible key for this exchange."""
+    def __init__(self, exchange: str, existing_id: int):
+        super().__init__(
+            f"A screener-eligible key for {exchange} already exists. "
+            f"Delete the existing one or switch it to Portfolio before adding another."
+        )
+        self.exchange = exchange
+        self.existing_id = existing_id
+
+
+class KeyValidationFailed(DomainError):
+    """API key failed live validation against the exchange."""
+    def __init__(self, reason: str):
+        super().__init__(f"API key validation failed: {reason}")
+        self.reason = reason

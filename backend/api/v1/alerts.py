@@ -1,10 +1,11 @@
 """Arbitrage spread alerts CRUD."""
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_user
@@ -13,13 +14,36 @@ from backend.db.models import ArbAlert, User
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 logger = logging.getLogger("avalant.alerts")
 
+_SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,16}$")
+# Limited to exchanges the screener tracks (same set used by arb service).
+_KNOWN_EX = {
+    "binance", "bybit", "okx", "gate", "kucoin", "mexc", "bitget",
+    "hyperliquid", "aster", "ethereal", "whitebit", "bingx", "lighter", "paradex",
+}
+
 
 class AlertCreate(BaseModel):
     symbol: str
     long_exchange: str
     short_exchange: str
-    threshold: float        # spread % to trigger
-    direction: str = "any"  # any | above | below
+    threshold: float = Field(..., gt=0, le=50)  # spread % to trigger; 0 < x <= 50
+    direction: str = Field("any", pattern="^(any|above|below)$")
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _sym(cls, v):
+        s = str(v or "").strip().upper()
+        if not _SYMBOL_RE.match(s):
+            raise ValueError("symbol must be 1-16 alphanumeric uppercase")
+        return s
+
+    @field_validator("long_exchange", "short_exchange", mode="before")
+    @classmethod
+    def _ex(cls, v):
+        s = str(v or "").strip().lower()
+        if s not in _KNOWN_EX:
+            raise ValueError(f"unknown exchange: {v!r}")
+        return s
 
 
 class AlertOut(BaseModel):
@@ -43,13 +67,13 @@ def list_alerts(current_user: User = Depends(get_current_user), db: Session = De
 
 @router.post("", response_model=AlertOut, status_code=201)
 def create_alert(body: AlertCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if body.direction not in ("any", "above", "below"):
-        raise HTTPException(400, "direction must be any|above|below")
+    if body.long_exchange == body.short_exchange:
+        raise HTTPException(400, "long_exchange and short_exchange must differ")
     alert = ArbAlert(
         user_id=current_user.id,
-        symbol=body.symbol.upper(),
-        long_exchange=body.long_exchange.lower(),
-        short_exchange=body.short_exchange.lower(),
+        symbol=body.symbol,
+        long_exchange=body.long_exchange,
+        short_exchange=body.short_exchange,
         threshold=body.threshold,
         direction=body.direction,
     )
@@ -62,12 +86,14 @@ def create_alert(body: AlertCreate, current_user: User = Depends(get_current_use
 
 @router.patch("/{alert_id}", response_model=AlertOut)
 def update_alert(alert_id: int, body: AlertCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if body.long_exchange == body.short_exchange:
+        raise HTTPException(400, "long_exchange and short_exchange must differ")
     alert = db.query(ArbAlert).filter(ArbAlert.id == alert_id, ArbAlert.user_id == current_user.id).first()
     if not alert:
         raise HTTPException(404, "Alert not found")
-    alert.symbol = body.symbol.upper()
-    alert.long_exchange = body.long_exchange.lower()
-    alert.short_exchange = body.short_exchange.lower()
+    alert.symbol = body.symbol
+    alert.long_exchange = body.long_exchange
+    alert.short_exchange = body.short_exchange
     alert.threshold = body.threshold
     alert.direction = body.direction
     db.commit()

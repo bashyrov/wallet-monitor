@@ -30,6 +30,9 @@ class WalletCreate(BaseModel):
     name: str = Field(..., min_length=6)
     wallet_type: Literal["exchange", "chain", "perpdex"]
     type_value: str
+    # 'portfolio' = read-only balance/positions, 'screener' = trading,
+    # 'both' = the same key serves both purposes. (exchange wallets only)
+    purpose: Literal["portfolio", "screener", "both"] = "portfolio"
     # exchange fields
     api_key: str | None = None
     api_secret: str | None = None
@@ -67,6 +70,8 @@ class WalletOut(BaseModel):
     type_value: str
     display_info: str  # masked api_key or address
     is_archived: bool = False
+    can_trade: bool = False
+    purpose: str = "portfolio"
     created_at: datetime
     tags: list[TagOut] = []
     addresses: list[WalletAddressOut] = []

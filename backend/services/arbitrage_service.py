@@ -29,7 +29,7 @@ _http = httpx.AsyncClient(
 
 # ── Price/rate cache ───────────────────────────────────────────────────────────
 _cache: dict[str, tuple[list, float]] = {}
-CACHE_TTL = 6.0  # seconds — slightly longer than broadcast interval to avoid double-fetching
+CACHE_TTL = 30.0  # seconds — WS broadcaster refreshes every 5s keeping it hot; longer TTL avoids thundering herd on REST
 
 # ── Interval cache ─────────────────────────────────────────────────────────────
 _ivl_cache: dict[str, tuple[dict[str, float], float]] = {}
@@ -918,7 +918,15 @@ def _fee(exchange: str) -> float:
     return EXCHANGE_FEES.get(exchange, _DEFAULT_FEE)
 
 
+_arb_result_cache: dict = {"data": None, "ts": 0.0}
+_ARB_CACHE_TTL = 10.0
+
+
 async def get_arbitrage_opportunities() -> dict:
+    now = time.time()
+    if _arb_result_cache["data"] and now - _arb_result_cache["ts"] < _ARB_CACHE_TTL:
+        return _arb_result_cache["data"]
+
     data = await get_funding_data()
     rows = data["rows"]
 
@@ -979,12 +987,15 @@ async def get_arbitrage_opportunities() -> dict:
 
     opportunities.sort(key=lambda x: x["net_profit"], reverse=True)
 
-    return {
+    result = {
         "ts": data["ts"],
         "exchanges": list(FETCHERS.keys()),
         "fees": {ex: round(f * 100, 4) for ex, f in EXCHANGE_FEES.items()},
         "opportunities": opportunities,
     }
+    _arb_result_cache["data"] = result
+    _arb_result_cache["ts"] = time.time()
+    return result
 
 
 def get_cached_rates() -> dict[str, dict]:

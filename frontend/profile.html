@@ -452,29 +452,6 @@
     </div>
   </div>
 
-  <!-- Stats -->
-  <div class="stats-grid" id="stats-grid">
-    <div class="stat-card">
-      <div class="stat-icon" style="background:var(--green-dim)">📊</div>
-      <div class="stat-num" id="stat-total" style="color:var(--green)">—</div>
-      <div class="stat-label">Total Wallets</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon" style="background:var(--yellow-dim)">🏦</div>
-      <div class="stat-num" id="stat-ex" style="color:var(--yellow)">—</div>
-      <div class="stat-label">Exchanges</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon" style="background:var(--teal-dim)">⛓</div>
-      <div class="stat-num" id="stat-ch" style="color:var(--teal)">—</div>
-      <div class="stat-label">Chain Wallets</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon" style="background:var(--purple-dim)">📈</div>
-      <div class="stat-num" id="stat-px" style="color:var(--purple)">—</div>
-      <div class="stat-label">Perp DEXes</div>
-    </div>
-  </div>
 
   <!-- Balance History Chart -->
   <div class="section-card" style="margin-bottom:20px;animation-delay:0.28s" id="history-card">
@@ -542,23 +519,27 @@
       <div class="section-body">
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Receive spread alerts on Telegram when your arbitrage thresholds trigger.</div>
 
-        <!-- Step 1: username -->
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin:10px 0 6px;font-weight:600">Step 1 · Your Telegram @username</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span style="color:var(--text3);font-size:13px">@</span>
-          <input id="tg-input" type="text" placeholder="your_username" style="background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:7px 10px;color:var(--text);font-family:JetBrains Mono,monospace;font-size:13px;outline:none;flex:1;transition:border-color .15s" onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border2)'">
-          <button onclick="saveTgUsername()" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:7px 16px;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap">Save</button>
+        <div id="tg-linked-view" style="display:none">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(26,255,171,0.06);border:1px solid rgba(26,255,171,0.28);border-radius:8px">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--green)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
+            <div style="flex:1;font-size:13px">
+              <div style="font-weight:600;color:var(--text);margin-bottom:2px">Linked to <span id="tg-linked-name" class="mono" style="color:var(--green)">—</span></div>
+              <div style="font-size:11px;color:var(--text3)">Alerts delivered to this Telegram account</div>
+            </div>
+            <button onclick="tgUnlink()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);padding:6px 12px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:11.5px" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border2)'">Unlink</button>
+          </div>
         </div>
-        <div id="tg-msg" style="font-size:11px;color:var(--green);margin-top:6px;display:none">Saved ✓</div>
 
-        <!-- Step 2: start the bot -->
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin:16px 0 6px;font-weight:600">Step 2 · Start the bot</div>
-        <a id="tg-bot-link" href="https://t.me/avalant_bot?start=link" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:8px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:13px;text-decoration:none;font-weight:600;transition:border-color .15s, background .15s">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="color:#229ED9"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg>
-          Open @avalant_bot → press <b>Start</b>
-        </a>
-        <div id="tg-link-hint" style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5">
-          After pressing Start in Telegram, your account links automatically and the status badge here turns green. Refresh the page if needed.
+        <div id="tg-unlinked-view">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin:10px 0 6px;font-weight:600">Connect in 1 tap — no username needed</div>
+          <button id="tg-link-btn" onclick="tgStartLink()" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:9px;background:linear-gradient(135deg,#229ED9,#1A8BC3);border:none;color:white;font-size:13.5px;font-weight:700;cursor:pointer;text-decoration:none;letter-spacing:-0.01em;transition:box-shadow .15s,transform .1s">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg>
+            Link Telegram
+          </button>
+          <div id="tg-link-hint" style="font-size:11.5px;color:var(--text3);margin-top:10px;line-height:1.5">
+            Opens <b>@avalant_bot</b> with a one-time code. Just tap <b>Start</b> in Telegram — no username to type. Your account links automatically.
+          </div>
+          <div id="tg-link-err" style="display:none;font-size:11px;color:var(--red);margin-top:8px"></div>
         </div>
       </div>
     </div>
@@ -569,18 +550,235 @@
       body.light .tg-status-on { background: #F0F7F3; color: var(--green); border-color: var(--green); }
     </style>
 
-    <!-- Wallet breakdown -->
-    <div class="section-card">
-      <div class="section-head">
-        <span class="section-title">Wallet Breakdown</span>
-        <a href="/app" style="font-size:12px;color:var(--green);text-decoration:none;">View all →</a>
-      </div>
-      <div class="section-body" id="wallet-breakdown">
-        <div style="color:var(--text4);font-size:13px;padding:8px 0">Loading...</div>
+  </div>
+
+  <!-- API Keys -->
+  <div class="section-card" id="keys-card" style="margin-bottom:20px">
+    <div class="section-head">
+      <span class="section-title">API Keys</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:10.5px;color:var(--text3)">Manage read-only and trading keys per exchange</span>
       </div>
     </div>
-
+    <div class="section-body" style="padding:0">
+      <div class="k-tabs">
+        <button class="k-tab is-active" data-tab="list" onclick="kSwitch(this)">My Keys <span class="k-count" id="k-count">0</span></button>
+        <button class="k-tab" data-tab="add" onclick="kSwitch(this)">+ Add Key</button>
+      </div>
+      <div class="k-panes">
+        <div class="k-pane is-active" id="k-pane-list">
+          <div class="k-list" id="k-list"><div class="k-empty"><span class="spinner"></span></div></div>
+        </div>
+        <div class="k-pane" id="k-pane-add">
+          <form id="k-form" onsubmit="event.preventDefault();kSubmit()">
+            <div class="k-type-tabs">
+              <button type="button" class="k-type-tab is-active" data-type="exchange" onclick="kPickType(this)">Exchange <span class="k-type-tab-sub">CEX · API key</span></button>
+              <button type="button" class="k-type-tab" data-type="perpdex" onclick="kPickType(this)">Perp DEX <span class="k-type-tab-sub">on-chain · address</span></button>
+            </div>
+            <div class="k-grid">
+              <label class="k-field">
+                <span class="k-lbl" id="k-ex-lbl">Exchange</span>
+                <div class="k-dd" id="k-ex-dd">
+                  <input type="hidden" id="k-ex" value="">
+                  <button type="button" class="k-dd-btn" onclick="kExToggle(event)" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="k-dd-dot" id="k-ex-dot" style="background:var(--border)"></span>
+                    <span class="k-dd-text" id="k-ex-text">Select exchange…</span>
+                    <svg class="k-dd-chev" width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
+                  </button>
+                  <div class="k-dd-menu" role="listbox"></div>
+                </div>
+              </label>
+              <label class="k-field">
+                <span class="k-lbl">Label</span>
+                <input class="k-input" id="k-name" placeholder="e.g. Binance Main" minlength="6" required>
+              </label>
+              <label class="k-field" style="grid-column:1/-1">
+                <span class="k-lbl">API Key</span>
+                <input class="k-input mono" id="k-apikey" placeholder="Public key from exchange" required autocomplete="off">
+              </label>
+              <label class="k-field" style="grid-column:1/-1">
+                <span class="k-lbl">API Secret</span>
+                <input class="k-input mono" id="k-apisec" type="password" placeholder="Secret" required autocomplete="off">
+              </label>
+              <label class="k-field" style="grid-column:1/-1" id="k-passphrase-wrap" style="display:none">
+                <span class="k-lbl">Passphrase <span style="color:var(--text3);font-weight:400">(OKX, KuCoin, Bitget)</span></span>
+                <input class="k-input mono" id="k-apipass" placeholder="Passphrase" autocomplete="off">
+              </label>
+              <label class="k-field k-perp-field" style="grid-column:1/-1;display:none" id="k-address-wrap">
+                <span class="k-lbl">Wallet address</span>
+                <input class="k-input mono" id="k-address" placeholder="0x… or T…" autocomplete="off">
+              </label>
+              <div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px">
+                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600">Where to use this key · pick one or both</div>
+                <label class="k-field k-check">
+                  <input type="checkbox" id="k-for-portfolio" checked>
+                  <div>
+                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Portfolio <span style="color:var(--text3);font-weight:400">(read balances &amp; positions)</span></div>
+                    <div style="font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">
+                      Shown on the Portfolio page. Needs only <b>Read</b> permission. Safe — no trading access required.
+                    </div>
+                  </div>
+                </label>
+                <label class="k-field k-check">
+                  <input type="checkbox" id="k-for-screener">
+                  <div>
+                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Screener <span style="color:var(--text3);font-weight:400">(place real orders)</span></div>
+                    <div style="font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">
+                      Used by the arbitrage screener. Key needs <b style="color:var(--yellow)">Futures trading</b>
+                      and <b style="color:var(--red)">NO withdrawal</b>. Only <b>one trading-eligible key per exchange</b>.
+                      Supported: Binance, Bybit.
+                    </div>
+                  </div>
+                </label>
+                <div id="k-purpose-err" style="display:none;color:var(--red);font-size:11px;padding:4px 2px 0">Pick at least one usage.</div>
+              </div>
+            </div>
+            <div class="k-actions">
+              <button type="button" class="k-btn k-btn-ghost" onclick="kSwitchTo('list')">Cancel</button>
+              <button type="submit" class="k-btn k-btn-primary" id="k-submit">Save key</button>
+            </div>
+            <div class="k-msg" id="k-msg" style="display:none"></div>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
+  <style>
+    .k-tabs{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--surface2);}
+    .k-tab{-webkit-appearance:none;appearance:none;background:none;border:none;padding:11px 16px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--text3);cursor:pointer;letter-spacing:-0.01em;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;display:inline-flex;align-items:center;gap:7px;}
+    .k-tab:hover{color:var(--text2);}
+    .k-tab.is-active{color:var(--text);border-bottom-color:var(--green);}
+    .k-tab .k-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:16px;padding:0 5px;background:var(--surface3);border-radius:999px;color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;}
+    .k-tab.is-active .k-count{background:rgba(26,255,171,0.12);color:var(--green);}
+    .k-pane{display:none;padding:16px;}
+    .k-pane.is-active{display:block;}
+    .k-list{display:flex;flex-direction:column;gap:8px;}
+    .k-empty{padding:36px 18px;text-align:center;color:var(--text3);font-size:12.5px;}
+    .k-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);transition:border-color .15s;}
+    .k-row:hover{border-color:var(--border2);}
+    .k-row .k-ex-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+    .k-row .k-ex{font-family:Inter,sans-serif;font-weight:700;font-size:12px;min-width:80px;color:var(--text);letter-spacing:-0.01em;}
+    .k-row .k-name{flex:1;font-size:12.5px;color:var(--text);font-family:Inter,sans-serif;font-weight:500;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;}
+    .k-row .k-masked{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text3);min-width:96px;}
+    .k-row .k-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:700;letter-spacing:0.04em;border:1px solid;}
+    .k-pill.ro{color:var(--teal);border-color:rgba(6,182,212,0.35);background:rgba(6,182,212,0.06);}
+    .k-pill.tr{color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.08);}
+    .k-pill.archived{color:var(--text3);border-color:var(--border);background:var(--surface3);}
+    .k-row .k-actions-inline{display:flex;gap:4px;margin-left:auto;}
+    .k-row .k-act{-webkit-appearance:none;appearance:none;width:28px;height:28px;border-radius:7px;background:var(--surface3);border:1px solid var(--border);color:var(--text3);cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s,background .15s;display:inline-flex;align-items:center;justify-content:center;}
+    .k-row .k-act:hover{color:var(--text);}
+    .k-row .k-act.trade.is-on{color:var(--yellow);border-color:var(--yellow);background:rgba(229,192,123,0.1);}
+    .k-row .k-act.trade:hover:not(.is-on){color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.08);}
+    .k-row .k-act.danger:hover{color:var(--red);border-color:var(--red);background:rgba(248,113,113,0.08);}
+    .k-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .k-field{display:flex;flex-direction:column;gap:5px;}
+    .k-field.k-check{flex-direction:row;gap:10px;align-items:flex-start;background:var(--surface2);padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;}
+    .k-field.k-check input[type=checkbox]{margin-top:1px;width:16px;height:16px;accent-color:var(--green);flex-shrink:0;}
+    .k-lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600;}
+    .k-input{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text);font-family:Inter,sans-serif;font-size:13px;outline:none;transition:border-color .15s,box-shadow .15s;width:100%;}
+    .k-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,255,171,0.12);}
+    .k-input.mono{font-family:'JetBrains Mono',monospace;font-size:12px;}
+    .k-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;}
+    .k-btn{padding:9px 16px;border-radius:7px;font-family:inherit;font-weight:700;font-size:12.5px;cursor:pointer;border:1px solid transparent;letter-spacing:-0.01em;transition:box-shadow .15s, background .15s, color .15s;}
+    .k-btn-ghost{background:transparent;border-color:var(--border);color:var(--text2);}
+    .k-btn-ghost:hover{color:var(--text);border-color:var(--border2);}
+    .k-btn-primary{background:var(--green);color:#09090b;}
+    .k-btn-primary:hover{box-shadow:0 0 16px rgba(26,255,171,0.3);}
+    .k-btn-primary:disabled{opacity:0.55;cursor:not-allowed;}
+    .k-msg{margin-top:10px;padding:8px 12px;border-radius:7px;font-size:12px;}
+    .k-msg.err{background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);color:var(--red);}
+    .k-msg.ok{background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.3);color:var(--green);}
+    body.light .k-row{background:#F7F7F7;}
+    @media (max-width:640px) { .k-grid{grid-template-columns:1fr;} }
+
+    /* ── Wallet-type tabs (Exchange / Perp DEX) ───────────────────────── */
+    .k-type-tabs { display:flex; gap:6px; margin-bottom:14px; background:var(--surface2); border:1px solid var(--border); border-radius:9px; padding:4px; }
+    .k-type-tab { flex:1; background:none; border:none; cursor:pointer; padding:9px 12px; border-radius:7px; color:var(--text3); font-family:inherit; font-size:12.5px; font-weight:700; letter-spacing:-0.01em; display:flex; flex-direction:column; align-items:center; gap:2px; transition:background .15s,color .15s; }
+    .k-type-tab:hover { color:var(--text2); }
+    .k-type-tab.is-active { background:var(--surface); color:var(--text); box-shadow:0 1px 0 rgba(0,0,0,0.2); }
+    .k-type-tab-sub { font-size:10px; font-weight:500; color:var(--text3); letter-spacing:0; }
+
+    /* ── Custom Exchange dropdown ─────────────────────────────────────── */
+    .k-dd { position:relative; }
+    .k-dd-btn {
+      width:100%; display:flex; align-items:center; gap:9px;
+      background:var(--surface2); border:1px solid var(--border); border-radius:7px;
+      padding:9px 11px; color:var(--text); font-family:Inter,sans-serif; font-size:13px; font-weight:500;
+      cursor:pointer; outline:none; text-align:left;
+      transition:border-color .15s, background .15s, box-shadow .15s;
+    }
+    .k-dd-btn:hover { border-color:var(--border2); background:var(--surface3); }
+    .k-dd.open .k-dd-btn { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.12); }
+    .k-dd-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .k-dd-text { flex:1; color:var(--text); }
+    .k-dd-text.is-placeholder { color:var(--text3); }
+    .k-dd-chev { color:var(--text3); transition:transform .18s; flex-shrink:0; }
+    .k-dd.open .k-dd-chev { transform:rotate(180deg); color:var(--text); }
+    .k-dd-menu {
+      position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:50;
+      background:var(--surface); border:1px solid var(--border); border-radius:9px;
+      box-shadow:0 14px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02);
+      padding:4px; max-height:320px; overflow-y:auto;
+      opacity:0; transform:translateY(-4px) scale(0.98); pointer-events:none;
+      transition:opacity .14s, transform .16s cubic-bezier(.16,1,.3,1);
+      display:flex; flex-direction:column; gap:2px;
+    }
+    .k-dd.open .k-dd-menu { opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+    .k-dd-item {
+      display:flex; align-items:center; gap:10px;
+      padding:9px 11px; border-radius:7px; cursor:pointer;
+      background:transparent; border:none; text-align:left; width:100%;
+      color:var(--text); font-family:inherit; font-size:12.5px; font-weight:500; letter-spacing:-0.01em;
+      transition:background .1s;
+    }
+    .k-dd-item:hover { background:var(--surface2); }
+    .k-dd-item.is-active { background:rgba(26,255,171,0.06); }
+    .k-dd-item .k-dd-dot2 { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .k-dd-item .k-dd-name { flex:1; }
+    .k-dd-item .k-dd-tag {
+      font-size:9.5px; padding:2px 6px; border-radius:4px; font-weight:700; letter-spacing:0.04em;
+      color:var(--yellow); background:rgba(229,192,123,0.1); border:1px solid rgba(229,192,123,0.3);
+    }
+    .k-dd-item .k-dd-check { color:var(--green); opacity:0; }
+    .k-dd-item.is-active .k-dd-check { opacity:1; }
+    body.light .k-dd-menu { background:#FFFFFF; box-shadow:0 10px 28px rgba(0,0,0,0.12); }
+    body.light .k-dd-item:hover { background:#F4F4F4; }
+    body.light .k-dd-item.is-active { background:#F0F7F3; }
+
+    /* ── Reusable confirm modal ───────────────────────────────────────── */
+    .k-confirm-backdrop {
+      position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter:blur(4px);
+      display:flex; align-items:center; justify-content:center; z-index:500;
+      opacity:0; pointer-events:none; transition:opacity .15s;
+    }
+    .k-confirm-backdrop.open { opacity:1; pointer-events:auto; }
+    .k-confirm-box {
+      width:min(420px, calc(100vw - 28px));
+      background:var(--surface); border:1px solid var(--border); border-radius:12px;
+      box-shadow:0 24px 68px rgba(0,0,0,0.6);
+      transform:translateY(8px) scale(0.98); transition:transform .16s cubic-bezier(.16,1,.3,1);
+      overflow:hidden;
+    }
+    .k-confirm-backdrop.open .k-confirm-box { transform:translateY(0) scale(1); }
+    .k-confirm-hdr { padding:16px 18px 4px; }
+    .k-confirm-hdr .ic {
+      width:40px; height:40px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center;
+      background:rgba(229,192,123,0.1); color:var(--yellow); border:1px solid rgba(229,192,123,0.3); margin-bottom:10px;
+    }
+    .k-confirm-hdr.danger .ic { background:rgba(248,113,113,0.1); color:var(--red); border-color:rgba(248,113,113,0.3); }
+    .k-confirm-title { font-size:15px; font-weight:700; letter-spacing:-0.01em; margin:0 0 4px; color:var(--text); }
+    .k-confirm-msg { padding:0 18px 14px; font-size:13px; color:var(--text2); line-height:1.55; }
+    .k-confirm-msg b { color:var(--text); font-weight:600; }
+    .k-confirm-actions { display:flex; justify-content:flex-end; gap:8px; padding:12px 18px 18px; background:var(--surface2); border-top:1px solid var(--border); }
+    .k-confirm-actions .k-btn { min-width:90px; }
+    .k-btn-danger { background:var(--red); color:#140000; }
+    .k-btn-danger:hover { box-shadow:0 0 16px rgba(248,113,113,0.35); }
+
+    /* ── Edit modal ──────────────────────────────────────────────────── */
+    .k-edit-body { padding:16px 18px; }
+    .k-edit-note { background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:9px 11px; color:var(--text3); font-size:11px; margin-bottom:12px; line-height:1.5; }
+    .k-edit-note b { color:var(--text2); }
+  </style>
 
   <!-- Danger Zone -->
   <div class="section-card" style="animation-delay:0.3s">
@@ -615,6 +813,7 @@
 <script src="/navbar.js"></script>
 <script src="/auth.js"></script>
 <script src="/toast.js"></script>
+<script src="/confirm.js"></script>
 <script src="/theme.js"></script>
 <script>
 (function() {
@@ -657,23 +856,82 @@ Auth.requireAuth('/login');
         joinedEl.textContent = 'Member since ' + d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       }
       _renderPlanCard(me);
-      // Pre-fill TG username + linked status
-      if (me.tg_username) {
-        const inp = document.getElementById('tg-input');
-        if (inp) inp.value = me.tg_username;
-        const botLink = document.getElementById('tg-bot-link');
-        if (botLink) botLink.href = `https://t.me/avalant_bot?start=${encodeURIComponent(me.tg_username)}`;
-      }
-      _updateTgStatus(me.tg_linked);
+      _updateTgStatus(me.tg_linked, me.tg_username);
     }
   } catch(e) {}
 })();
 
-function _updateTgStatus(linked){
+function _updateTgStatus(linked, username){
   const el = document.getElementById('tg-status');
-  if (!el) return;
-  if (linked) { el.textContent = 'Linked ✓'; el.className = 'tg-status tg-status-on'; }
-  else        { el.textContent = 'Not linked'; el.className = 'tg-status tg-status-off'; }
+  if (el) {
+    if (linked) { el.textContent = 'Linked ✓'; el.className = 'tg-status tg-status-on'; }
+    else        { el.textContent = 'Not linked'; el.className = 'tg-status tg-status-off'; }
+  }
+  const linkedView   = document.getElementById('tg-linked-view');
+  const unlinkedView = document.getElementById('tg-unlinked-view');
+  if (linkedView)   linkedView.style.display   = linked ? 'block' : 'none';
+  if (unlinkedView) unlinkedView.style.display = linked ? 'none'  : 'block';
+  if (linked) {
+    const n = document.getElementById('tg-linked-name');
+    if (n) n.textContent = username ? ('@' + username) : 'Telegram';
+  }
+}
+
+async function tgStartLink(){
+  const btn = document.getElementById('tg-link-btn');
+  const err = document.getElementById('tg-link-err');
+  err.style.display = 'none';
+  const prev = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span>Generating link…</span>';
+  try {
+    const r = await Auth.apiFetch('/auth/me/tg-link-token', { method: 'POST' });
+    if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || 'Failed to create link'); }
+    const j = await r.json();
+    // Open in new tab
+    window.open(j.deep_link, '_blank', 'noopener');
+    // Poll /auth/me for up to 3 min to detect successful link
+    _tgPollLink();
+  } catch (e) {
+    err.textContent = e.message || 'Failed';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = prev;
+  }
+}
+
+let _tgPollTimer = null;
+function _tgPollLink(){
+  if (_tgPollTimer) clearInterval(_tgPollTimer);
+  const started = Date.now();
+  _tgPollTimer = setInterval(async () => {
+    if (Date.now() - started > 180000) { clearInterval(_tgPollTimer); _tgPollTimer = null; return; }
+    try {
+      const r = await Auth.apiFetch('/auth/me');
+      if (!r.ok) return;
+      const me = await r.json();
+      if (me.tg_linked) {
+        clearInterval(_tgPollTimer); _tgPollTimer = null;
+        _updateTgStatus(true, me.tg_username);
+      }
+    } catch {}
+  }, 3000);
+}
+
+async function tgUnlink(){
+  const ok = await kConfirm({
+    title: 'Unlink Telegram?',
+    message: 'Alerts will stop being delivered. You can re-link any time by tapping <b>Link Telegram</b> again.',
+    okText: 'Unlink',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const r = await Auth.apiFetch('/auth/me/tg-link', { method: 'DELETE' });
+    if (!r.ok && r.status !== 204) throw new Error();
+    _updateTgStatus(false, null);
+  } catch {}
 }
 
 async function saveTgUsername() {
@@ -736,34 +994,12 @@ async function loadProfile() {
     const wallets = await (await fetch('/api/wallets', { headers })).json();
 
     const total = wallets.length;
-    const ex = wallets.filter(w => w.wallet_type === 'exchange').length;
-    const ch = wallets.filter(w => w.wallet_type === 'chain').length;
-    const px = wallets.filter(w => w.wallet_type === 'perpdex').length;
-
-    // Animate stat counters
-    animNum('stat-total', total);
-    animNum('stat-ex', ex);
-    animNum('stat-ch', ch);
-    animNum('stat-px', px);
 
     // Plan usage bar
     const planLimit = window._planLimit != null ? window._planLimit : null;
     const pct = planLimit ? Math.min((total / planLimit) * 100, 100) : 0;
-    document.getElementById('limit-bar').style.width = pct + '%';
-    document.getElementById('limit-val').textContent = planLimit ? `${total} / ${planLimit}` : `${total} / ∞`;
-
-    // Breakdown
-    const bEl = document.getElementById('wallet-breakdown');
-    if (!total) {
-      bEl.innerHTML = `<div style="color:var(--text4);font-size:13px;padding:8px 0">No wallets yet. <a href="/app" style="color:var(--green);text-decoration:none">Add one →</a></div>`;
-    } else {
-      const rows = [
-        ex ? `<div class="wallet-type-row"><span class="wt-dot" style="background:#E5C07B"></span><span class="wt-name">Exchanges</span><span class="wt-count">${ex}</span></div>` : '',
-        ch ? `<div class="wallet-type-row"><span class="wt-dot" style="background:#06B6D4"></span><span class="wt-name">Chain wallets</span><span class="wt-count">${ch}</span></div>` : '',
-        px ? `<div class="wallet-type-row"><span class="wt-dot" style="background:#925BD6"></span><span class="wt-name">Perp DEXes</span><span class="wt-count">${px}</span></div>` : '',
-      ].filter(Boolean).join('');
-      bEl.innerHTML = rows;
-    }
+    const lb = document.getElementById('limit-bar'); if (lb) lb.style.width = pct + '%';
+    const lv = document.getElementById('limit-val'); if (lv) lv.textContent = planLimit ? `${total} / ${planLimit}` : `${total} / ∞`;
   } catch(e) {
     console.error(e);
   }
@@ -894,6 +1130,395 @@ loadProfile();
     root.style.setProperty('--cy', '-9999px');
   });
 })();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  API KEYS CARD
+// ═══════════════════════════════════════════════════════════════════════
+const _K_EX_LABEL = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', backpack:'Backpack' };
+const _K_EX_COLOR = { binance:'#F0B90B', bybit:'#F0842D', okx:'#8BC6FF', gate:'#17C684', kucoin:'#09BA86', mexc:'#17D854', bitget:'#00D2C8', backpack:'#64B4FF' };
+const _K_PASSPHRASE_EX = new Set(['okx','kucoin','bitget']);
+const _K_TRADABLE = new Set(['binance','bybit']);
+let _kWallets = [];
+
+function kSwitch(el){ kSwitchTo(el.dataset.tab); }
+function kSwitchTo(tab){
+  document.querySelectorAll('.k-tab').forEach(t => t.classList.toggle('is-active', t.dataset.tab === tab));
+  document.querySelectorAll('.k-pane').forEach(p => p.classList.toggle('is-active', p.id === 'k-pane-' + tab));
+  if (tab === 'add') kBuildExchangeDd();
+}
+
+// ── Wallet-type tabs + custom dropdown ──
+let _K_TYPE = 'exchange';  // 'exchange' | 'perpdex'
+const _K_EX_ORDER = ['binance','bybit','okx','gate','kucoin','mexc','bitget','backpack'];
+const _K_PERP_ORDER = ['hyperliquid','aster','lighter','ethereal','paradex'];
+const _K_PERP_LABEL = { hyperliquid:'Hyperliquid', aster:'Aster', lighter:'Lighter', ethereal:'Ethereal', paradex:'Paradex' };
+const _K_PERP_COLOR = { hyperliquid:'#64B4FF', aster:'#8A63D2', lighter:'#A8B3CF', ethereal:'#C864C8', paradex:'#F27BA5' };
+const _K_PERP_NEEDS_KEY = new Set(['aster']);  // Aster uses api_key+secret; others use address
+
+function kPickType(btn){
+  _K_TYPE = btn.dataset.type;
+  document.querySelectorAll('.k-type-tab').forEach(t => t.classList.toggle('is-active', t === btn));
+  // Reset dropdown + fields
+  document.getElementById('k-ex').value = '';
+  const lbl = document.getElementById('k-ex-lbl'); if (lbl) lbl.textContent = _K_TYPE === 'perpdex' ? 'Perp DEX' : 'Exchange';
+  const txt = document.getElementById('k-ex-text'); if (txt) { txt.textContent = _K_TYPE === 'perpdex' ? 'Select Perp DEX…' : 'Select exchange…'; txt.classList.add('is-placeholder'); }
+  const dot = document.getElementById('k-ex-dot'); if (dot) dot.style.background = 'var(--border)';
+  // Rebuild menu
+  const menu = document.querySelector('#k-ex-dd .k-dd-menu');
+  if (menu) { menu.dataset.built = ''; menu.innerHTML = ''; kBuildExchangeDd(); }
+  _kUpdateFieldVisibility();
+}
+
+function kBuildExchangeDd(){
+  const menu = document.querySelector('#k-ex-dd .k-dd-menu');
+  if (!menu || menu.dataset.built) return;
+  menu.dataset.built = '1';
+  const items = _K_TYPE === 'perpdex'
+    ? _K_PERP_ORDER.map(ex => ({v:ex, label:_K_PERP_LABEL[ex], color:_K_PERP_COLOR[ex], tag:null}))
+    : _K_EX_ORDER.map(ex => ({v:ex, label:_K_EX_LABEL[ex], color:_K_EX_COLOR[ex], tag:_K_TRADABLE.has(ex) ? 'TRADING' : null}));
+  menu.innerHTML = items.map(it => `
+    <button type="button" class="k-dd-item" data-v="${it.v}" onclick="kExPick(this)">
+      <span class="k-dd-dot2" style="background:${it.color||'#9B9FAB'}"></span>
+      <span class="k-dd-name">${it.label}</span>
+      ${it.tag ? `<span class="k-dd-tag">${it.tag}</span>` : ''}
+      <svg class="k-dd-check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
+    </button>`).join('');
+}
+
+function _kUpdateFieldVisibility(){
+  const v = document.getElementById('k-ex').value;
+  const apiKeyLbl  = document.getElementById('k-apikey')?.closest('.k-field');
+  const apiSecLbl  = document.getElementById('k-apisec')?.closest('.k-field');
+  const passphrase = document.getElementById('k-passphrase-wrap');
+  const addrWrap   = document.getElementById('k-address-wrap');
+  const purposeRow = document.getElementById('k-purpose-err')?.parentElement;
+
+  if (_K_TYPE === 'perpdex') {
+    const needsKey = v && _K_PERP_NEEDS_KEY.has(v);
+    if (apiKeyLbl) apiKeyLbl.style.display = needsKey ? 'flex' : 'none';
+    if (apiSecLbl) apiSecLbl.style.display = needsKey ? 'flex' : 'none';
+    if (passphrase) passphrase.style.display = 'none';
+    if (addrWrap) addrWrap.style.display = (v && !needsKey) ? 'flex' : 'none';
+    if (purposeRow) purposeRow.style.display = 'none';   // purpose doesn't apply to perpdex
+    document.getElementById('k-apikey').required = !!needsKey;
+    document.getElementById('k-apisec').required = !!needsKey;
+    document.getElementById('k-address').required = !!v && !needsKey;
+  } else {
+    if (apiKeyLbl) apiKeyLbl.style.display = 'flex';
+    if (apiSecLbl) apiSecLbl.style.display = 'flex';
+    if (passphrase) passphrase.style.display = (v && _K_PASSPHRASE_EX.has(v)) ? 'flex' : 'none';
+    if (addrWrap) addrWrap.style.display = 'none';
+    if (purposeRow) purposeRow.style.display = 'flex';
+    document.getElementById('k-apikey').required = true;
+    document.getElementById('k-apisec').required = true;
+    document.getElementById('k-address').required = false;
+  }
+}
+
+function kExToggle(ev){
+  ev && ev.stopPropagation();
+  kBuildExchangeDd();
+  const dd = document.getElementById('k-ex-dd');
+  const open = !dd.classList.contains('open');
+  dd.classList.toggle('open', open);
+  dd.querySelector('.k-dd-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) setTimeout(() => document.addEventListener('click', _kExOutside), 0);
+}
+function _kExOutside(e){
+  const dd = document.getElementById('k-ex-dd');
+  if (!dd || dd.contains(e.target)) return;
+  dd.classList.remove('open');
+  document.removeEventListener('click', _kExOutside);
+}
+function kExPick(btn){
+  const v = btn.dataset.v;
+  const dd = document.getElementById('k-ex-dd');
+  document.getElementById('k-ex').value = v;
+  dd.querySelectorAll('.k-dd-item').forEach(x => x.classList.toggle('is-active', x.dataset.v === v));
+  const label = _K_TYPE === 'perpdex' ? _K_PERP_LABEL[v] : _K_EX_LABEL[v];
+  const color = _K_TYPE === 'perpdex' ? _K_PERP_COLOR[v] : _K_EX_COLOR[v];
+  const txt  = document.getElementById('k-ex-text'); txt.textContent = label || v; txt.classList.remove('is-placeholder');
+  const dot  = document.getElementById('k-ex-dot'); dot.style.background = color || 'var(--border)';
+  dd.classList.remove('open');
+  document.removeEventListener('click', _kExOutside);
+  _kUpdateFieldVisibility();
+  const canTradeHint = document.getElementById('k-for-screener')?.closest('.k-field');
+  if (canTradeHint) canTradeHint.style.opacity = (_K_TYPE==='exchange' && _K_TRADABLE.has(v)) ? '1' : '0.55';
+}
+
+// ── Reusable confirm modal ──
+let _kConfirmResolve = null;
+function kConfirm({title, message, okText='OK', cancelText='Cancel', danger=false} = {}){
+  return new Promise(resolve => {
+    _kConfirmResolve = resolve;
+    document.getElementById('k-confirm-title').textContent = title || 'Confirm';
+    document.getElementById('k-confirm-msg').innerHTML = message || '';
+    const hdr = document.getElementById('k-confirm-hdr');
+    hdr.classList.toggle('danger', !!danger);
+    const okBtn = document.getElementById('k-confirm-ok');
+    okBtn.textContent = okText;
+    okBtn.className = 'k-btn ' + (danger ? 'k-btn-danger' : 'k-btn-primary');
+    const cancelBtn = document.querySelector('#k-confirm-backdrop .k-btn-ghost');
+    if (cancelBtn) cancelBtn.textContent = cancelText;
+    document.getElementById('k-confirm-backdrop').classList.add('open');
+  });
+}
+function kConfirmOk(){ const r = _kConfirmResolve; _kConfirmResolve = null; document.getElementById('k-confirm-backdrop').classList.remove('open'); if (r) r(true); }
+function kConfirmCancel(){ const r = _kConfirmResolve; _kConfirmResolve = null; document.getElementById('k-confirm-backdrop').classList.remove('open'); if (r) r(false); }
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { kConfirmCancel(); kEditClose(); } });
+
+async function kLoad(){
+  try {
+    const r = await Auth.apiFetch('/wallets');
+    if (!r.ok) throw new Error();
+    const rows = await r.json();
+    _kWallets = rows.filter(w => (w.wallet_type === 'exchange' || w.wallet_type === 'perpdex') && !w.is_archived);
+    document.getElementById('k-count').textContent = _kWallets.length;
+    kRender();
+  } catch {
+    document.getElementById('k-list').innerHTML = '<div class="k-empty">Failed to load keys</div>';
+  }
+}
+
+function kRender(){
+  const list = document.getElementById('k-list');
+  if (!_kWallets.length) {
+    list.innerHTML = `<div class="k-empty">
+      <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:6px">No API keys yet</div>
+      <div>Add a Binance or Bybit key to enable live trading, or any supported exchange for read-only balances.</div>
+      <button class="k-btn k-btn-primary" style="margin-top:14px" onclick="kSwitchTo('add')">+ Add your first key</button>
+    </div>`;
+    return;
+  }
+  list.innerHTML = _kWallets.map(w => {
+    const isPerp = w.wallet_type === 'perpdex';
+    const color = (isPerp ? _K_PERP_COLOR[w.type_value] : _K_EX_COLOR[w.type_value]) || '#9B9FAB';
+    const label = (isPerp ? _K_PERP_LABEL[w.type_value] : _K_EX_LABEL[w.type_value]) || w.type_value;
+    const tradable = !isPerp && _K_TRADABLE.has(w.type_value);
+    const purpose = w.purpose || (w.can_trade ? 'screener' : 'portfolio');
+    const purposePill = purpose === 'both'
+      ? '<span class="k-pill ro" title="Portfolio + Screener"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span><span class="k-pill tr" title="Portfolio + Screener"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
+      : purpose === 'screener'
+        ? '<span class="k-pill tr" title="Used by the Screener for trading"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
+        : '<span class="k-pill ro" title="Read-only portfolio key"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span>';
+    return `<div class="k-row">
+      <span class="k-ex-dot" style="background:${color}"></span>
+      <span class="k-ex">${label}</span>
+      <span class="k-name">${_kEsc(w.name)}</span>
+      <span class="k-masked">${_kEsc(w.display_info)}</span>
+      ${purposePill}
+      <div class="k-actions-inline">
+        ${tradable ? `<button class="k-act trade ${(purpose==='screener'||purpose==='both')?'is-on':''}" title="${(purpose==='screener'||purpose==='both')?'Disable Screener on this key':'Also enable for Screener (trading)'}" onclick="kToggleTrade(${w.id}, ${(purpose==='screener'||purpose==='both')?'true':'false'})">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
+        </button>` : ''}
+        <button class="k-act" title="Edit key" onclick="kEdit(${w.id})">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/></svg>
+        </button>
+        <button class="k-act danger" title="Delete key" onclick="kDelete(${w.id}, '${_kEsc(w.name).replace(/'/g, "\\'")}')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 5h10M6 5V3.5a1 1 0 011-1h2a1 1 0 011 1V5m-4 0v8a1 1 0 001 1h2a1 1 0 001-1V5"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _kEsc(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// (Exchange dropdown + passphrase visibility is handled by kExPick above)
+
+async function kSubmit(){
+  const ex   = document.getElementById('k-ex').value;
+  const name = document.getElementById('k-name').value.trim();
+  const apiKey    = document.getElementById('k-apikey').value.trim();
+  const apiSecret = document.getElementById('k-apisec').value.trim();
+  const pass = document.getElementById('k-apipass')?.value?.trim() || '';
+  const address = document.getElementById('k-address')?.value?.trim() || '';
+  const forPortfolio = document.getElementById('k-for-portfolio').checked;
+  const forScreener  = document.getElementById('k-for-screener').checked;
+  const purpose = forPortfolio && forScreener ? 'both' : (forScreener ? 'screener' : 'portfolio');
+  const msg  = document.getElementById('k-msg');
+  msg.style.display = 'none';
+  const purposeErr = document.getElementById('k-purpose-err');
+  if (purposeErr) purposeErr.style.display = 'none';
+
+  const isPerp = _K_TYPE === 'perpdex';
+  const perpNeedsKey = isPerp && _K_PERP_NEEDS_KEY.has(ex);
+
+  if (!ex || !name) { msg.className='k-msg err'; msg.textContent='Fill ' + (isPerp?'perp DEX':'exchange') + ' and label'; msg.style.display='block'; return; }
+  if (name.length < 6) { msg.className='k-msg err'; msg.textContent='Label must be at least 6 characters'; msg.style.display='block'; return; }
+  if (isPerp) {
+    if (perpNeedsKey) {
+      if (!apiKey || !apiSecret) { msg.className='k-msg err'; msg.textContent='Aster requires API key + secret'; msg.style.display='block'; return; }
+    } else {
+      if (!address) { msg.className='k-msg err'; msg.textContent='Wallet address required'; msg.style.display='block'; return; }
+    }
+  } else {
+    if (!apiKey || !apiSecret) { msg.className='k-msg err'; msg.textContent='API key and secret required'; msg.style.display='block'; return; }
+    if (!forPortfolio && !forScreener) { if (purposeErr) purposeErr.style.display='block'; return; }
+    if (_K_PASSPHRASE_EX.has(ex) && !pass) { msg.className='k-msg err'; msg.textContent=_K_EX_LABEL[ex] + ' requires a passphrase'; msg.style.display='block'; return; }
+    if (forScreener && !_K_TRADABLE.has(ex)) { msg.className='k-msg err'; msg.textContent='Screener trading not yet supported on ' + _K_EX_LABEL[ex]; msg.style.display='block'; return; }
+  }
+
+  const btn = document.getElementById('k-submit');
+  btn.disabled = true; const oldText = btn.textContent;
+  btn.textContent = 'Validating with ' + (_K_EX_LABEL[ex] || ex) + '…';
+
+  try {
+    const body = {
+      name,
+      wallet_type: isPerp ? 'perpdex' : 'exchange',
+      type_value: ex,
+      purpose: isPerp ? 'portfolio' : purpose,
+    };
+    if (isPerp) {
+      if (perpNeedsKey) { body.api_key = apiKey; body.api_secret = apiSecret; }
+      else              { body.address = address; }
+    } else {
+      body.api_key = apiKey;
+      body.api_secret = apiSecret;
+      if (_K_PASSPHRASE_EX.has(ex)) body.api_passphrase = pass;
+    }
+    const r = await Auth.apiFetch('/wallets', { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      const detail = typeof err.detail === 'string' ? err.detail : (Array.isArray(err.detail) ? err.detail.map(x=>x.msg).join(', ') : 'Save failed');
+      throw new Error(detail);
+    }
+    msg.className = 'k-msg ok';
+    msg.textContent = forScreener ? 'Key validated and saved — ready for trading ✓' : 'Key validated and saved ✓';
+    msg.style.display = 'block';
+    document.getElementById('k-form').reset();
+    document.getElementById('k-for-portfolio').checked = true;
+    document.getElementById('k-for-screener').checked = false;
+    document.getElementById('k-passphrase-wrap').style.display = 'none';
+    // Reset exchange dropdown UI
+    const txt = document.getElementById('k-ex-text'); if (txt) { txt.textContent = 'Select exchange…'; txt.classList.add('is-placeholder'); }
+    const dot = document.getElementById('k-ex-dot'); if (dot) dot.style.background = 'var(--border)';
+    document.querySelectorAll('#k-ex-dd .k-dd-item.is-active').forEach(el => el.classList.remove('is-active'));
+    await kLoad();
+    setTimeout(() => kSwitchTo('list'), 700);
+  } catch (e) {
+    msg.className = 'k-msg err';
+    msg.textContent = e.message || 'Save failed';
+    msg.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = oldText;
+  }
+}
+
+async function kToggleTrade(id, currentlyOn){
+  const w = _kWallets.find(x => x.id === id);
+  if (!w) return;
+  const exLabel = _K_EX_LABEL[w.type_value] || w.type_value;
+  if (!currentlyOn) {
+    const ok = await kConfirm({
+      title: 'Enable this key for Screener?',
+      message: `<b>${_kEsc(w.name)}</b> will also be used by the Screener for placing real orders. The API key must have <b>Futures trading</b> permission (not withdrawal). Only one trading-eligible key per exchange is allowed — if you already have one for ${exLabel}, switch it off first.`,
+      okText: 'Enable trading',
+    });
+    if (!ok) return;
+  } else {
+    const ok = await kConfirm({
+      title: 'Disable Screener on this key?',
+      message: `<b>${_kEsc(w.name)}</b> will stay active for Portfolio only. Any open screener trading on it will stop being managed by Avalant (existing positions on the exchange stay open).`,
+      okText: 'Disable trading',
+      danger: true,
+    });
+    if (!ok) return;
+  }
+  try {
+    const r = await Auth.apiFetch('/trade/wallets/' + id, { method: 'PATCH', body: JSON.stringify({ can_trade: !currentlyOn }) });
+    if (!r.ok) { const j = await r.json().catch(()=>({})); throw new Error(j.detail || 'Toggle failed'); }
+    const j = await r.json();
+    w.purpose = j.purpose;
+    w.can_trade = j.can_trade;
+    kRender();
+  } catch (e) {
+    kConfirm({ title: 'Could not switch', message: _kEsc(e.message || 'Unknown error'), okText: 'OK', cancelText: '' });
+  }
+}
+
+async function kDelete(id, name){
+  const ok = await kConfirm({
+    title: 'Delete API key?',
+    message: `"<b>${_kEsc(name)}</b>" will be permanently removed. Any alerts or active screener trading tied to it will stop working. This cannot be undone.`,
+    okText: 'Delete',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const r = await Auth.apiFetch('/wallets/' + id, { method: 'DELETE' });
+    if (r.ok || r.status === 204) {
+      _kWallets = _kWallets.filter(w => w.id !== id);
+      document.getElementById('k-count').textContent = _kWallets.length;
+      kRender();
+    }
+  } catch {}
+}
+
+// ── Edit modal ──
+let _kEditId = null;
+async function kEdit(id){
+  const w = _kWallets.find(x => x.id === id);
+  if (!w) return;
+  _kEditId = id;
+  document.getElementById('k-edit-title').textContent = 'Edit · ' + (_K_EX_LABEL[w.type_value] || w.type_value);
+  document.getElementById('k-edit-name').value = w.name;
+  document.getElementById('k-edit-apikey').value = '';
+  document.getElementById('k-edit-apisec').value = '';
+  const passWrap = document.getElementById('k-edit-passphrase-wrap');
+  if (passWrap) {
+    passWrap.style.display = _K_PASSPHRASE_EX.has(w.type_value) ? 'flex' : 'none';
+    document.getElementById('k-edit-apipass').value = '';
+  }
+  document.getElementById('k-edit-msg').style.display = 'none';
+  document.getElementById('k-edit-backdrop').classList.add('open');
+}
+function kEditClose(){
+  document.getElementById('k-edit-backdrop').classList.remove('open');
+  _kEditId = null;
+}
+async function kEditSubmit(){
+  if (!_kEditId) return;
+  const w = _kWallets.find(x => x.id === _kEditId);
+  if (!w) return;
+  const name = document.getElementById('k-edit-name').value.trim();
+  const apiKey = document.getElementById('k-edit-apikey').value.trim();
+  const apiSec = document.getElementById('k-edit-apisec').value.trim();
+  const pass = document.getElementById('k-edit-apipass')?.value?.trim() || '';
+  const msg = document.getElementById('k-edit-msg');
+  msg.style.display = 'none';
+  if (name.length < 6) { msg.className = 'k-msg err'; msg.textContent = 'Label must be at least 6 characters'; msg.style.display = 'block'; return; }
+  if ((apiKey && !apiSec) || (!apiKey && apiSec)) { msg.className = 'k-msg err'; msg.textContent = 'Provide both API key and secret to rotate'; msg.style.display = 'block'; return; }
+
+  const btn = document.getElementById('k-edit-submit');
+  btn.disabled = true; const prev = btn.textContent; btn.textContent = apiKey ? 'Validating & saving…' : 'Saving…';
+  try {
+    const body = { name };
+    if (apiKey) { body.api_key = apiKey; body.api_secret = apiSec; }
+    if (pass) body.api_passphrase = pass;
+    const r = await Auth.apiFetch('/wallets/' + _kEditId, { method: 'PUT', body: JSON.stringify(body) });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const detail = typeof j.detail === 'string' ? j.detail : 'Save failed';
+      throw new Error(detail);
+    }
+    // If creds rotated and purpose is screener, re-validate by calling /trade/status probe (indirectly via balance)
+    msg.className = 'k-msg ok';
+    msg.textContent = apiKey ? 'Credentials rotated and saved ✓' : 'Saved ✓';
+    msg.style.display = 'block';
+    await kLoad();
+    setTimeout(kEditClose, 700);
+  } catch (e) {
+    msg.className = 'k-msg err';
+    msg.textContent = e.message || 'Save failed';
+    msg.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+kLoad();
 </script>
 
 <nav class="bottom-nav">
@@ -918,5 +1543,63 @@ loadProfile();
     Profile
   </a>
 </nav>
+
+<!-- Reusable confirm modal -->
+<div class="k-confirm-backdrop" id="k-confirm-backdrop" onclick="if(event.target===this) kConfirmCancel()">
+  <div class="k-confirm-box" role="dialog" aria-modal="true">
+    <div class="k-confirm-hdr" id="k-confirm-hdr">
+      <span class="ic" id="k-confirm-ic">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l6 11H2L8 2z"/><path d="M8 7v3"/><circle cx="8" cy="12.2" r="0.6" fill="currentColor"/></svg>
+      </span>
+      <h3 class="k-confirm-title" id="k-confirm-title">Confirm</h3>
+    </div>
+    <div class="k-confirm-msg" id="k-confirm-msg"></div>
+    <div class="k-confirm-actions">
+      <button type="button" class="k-btn k-btn-ghost" onclick="kConfirmCancel()">Cancel</button>
+      <button type="button" class="k-btn k-btn-primary" id="k-confirm-ok" onclick="kConfirmOk()">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit key modal -->
+<div class="k-confirm-backdrop" id="k-edit-backdrop" onclick="if(event.target===this) kEditClose()">
+  <div class="k-confirm-box" role="dialog" aria-modal="true">
+    <div class="k-confirm-hdr">
+      <span class="ic"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/></svg></span>
+      <h3 class="k-confirm-title" id="k-edit-title">Edit API Key</h3>
+    </div>
+    <div class="k-edit-body">
+      <div class="k-edit-note">
+        Leave key/secret empty to keep them unchanged — only the <b>label</b> updates.
+        Paste new values to rotate credentials (they'll be re-validated against the exchange).
+      </div>
+      <form id="k-edit-form" onsubmit="event.preventDefault(); kEditSubmit()">
+        <div class="k-grid">
+          <label class="k-field" style="grid-column:1/-1">
+            <span class="k-lbl">Label</span>
+            <input class="k-input" id="k-edit-name" minlength="6" required>
+          </label>
+          <label class="k-field" style="grid-column:1/-1">
+            <span class="k-lbl">New API Key <span style="color:var(--text3);font-weight:400">(optional)</span></span>
+            <input class="k-input mono" id="k-edit-apikey" placeholder="Leave empty to keep current" autocomplete="off">
+          </label>
+          <label class="k-field" style="grid-column:1/-1">
+            <span class="k-lbl">New API Secret <span style="color:var(--text3);font-weight:400">(optional)</span></span>
+            <input class="k-input mono" id="k-edit-apisec" type="password" placeholder="Leave empty to keep current" autocomplete="off">
+          </label>
+          <label class="k-field" style="grid-column:1/-1" id="k-edit-passphrase-wrap">
+            <span class="k-lbl">New Passphrase <span style="color:var(--text3);font-weight:400">(optional · OKX/KuCoin/Bitget)</span></span>
+            <input class="k-input mono" id="k-edit-apipass" placeholder="Leave empty to keep current" autocomplete="off">
+          </label>
+        </div>
+        <div class="k-msg" id="k-edit-msg" style="display:none;margin-top:10px"></div>
+      </form>
+    </div>
+    <div class="k-confirm-actions">
+      <button type="button" class="k-btn k-btn-ghost" onclick="kEditClose()">Cancel</button>
+      <button type="button" class="k-btn k-btn-primary" id="k-edit-submit" onclick="kEditSubmit()">Save changes</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

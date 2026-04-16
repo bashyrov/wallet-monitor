@@ -131,10 +131,65 @@ class _UserPatch(_BM):
     tg_username: str | None = None
 
 
+# ── Telegram login widget ────────────────────────────────────────────────────
+class _TgWidgetAuth(_BM):
+    id: int
+    auth_date: int
+    hash: str
+    first_name: str | None = None
+    last_name: str | None = None
+    username: str | None = None
+    photo_url: str | None = None
+
+
+@router.post("/tg-login", response_model=Token)
+def tg_login(body: _TgWidgetAuth, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Accept Telegram Login Widget payload, verify HMAC signature, issue JWT."""
+    from backend.services.tg_auth_service import login_via_widget
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    _check_rate_limit(ip)
+    try:
+        user, token, created = login_via_widget(db, body.model_dump(exclude_none=True))
+    except ValueError as e:
+        _record_attempt(ip)
+        logger.info("TG login rejected from %s: %s", ip, e)
+        raise HTTPException(401, "Telegram authentication failed")
+    response.set_cookie("session", token, httponly=True, secure=False, samesite="lax", max_age=60*60*24*30)
+    logger.info("TG login: user_id=%s created=%s tg_id=%s", user.id, created, user.tg_id)
+    return Token(access_token=token, token_type="bearer")
+
+
+# ── One-time link token for profile ──────────────────────────────────────────
+@router.post("/me/tg-link-token")
+def tg_link_token(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Generate a short-lived single-use link token. Returns the bot deep link
+    the user should tap to bind their Telegram chat to this Avalant account."""
+    from backend.services.tg_auth_service import issue_link_token
+    return issue_link_token(db, current_user.id)
+
+
+@router.delete("/me/tg-link", status_code=204)
+def tg_unlink(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Clear Telegram link on the user row. Does not prevent logging back in
+    via widget — tg_id can be re-attached."""
+    current_user.tg_chat_id = None
+    current_user.tg_id = None
+    current_user.tg_username = None
+    db.commit()
+    return Response(status_code=204)
+
+
+import re as _re
+_TG_USERNAME_RE = _re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")  # 5-32, must start with letter
+
+
 @router.patch("/me", response_model=UserOut)
 def patch_me(body: _UserPatch, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if body.tg_username is not None:
         tg = body.tg_username.strip().lstrip("@") or None
+        if tg is not None and not _TG_USERNAME_RE.match(tg):
+            from fastapi import HTTPException
+            raise HTTPException(400, "tg_username must be 5-32 chars, start with a letter, letters/digits/underscore only")
         # If username changed, invalidate the previous chat link
         if tg != current_user.tg_username:
             current_user.tg_chat_id = None

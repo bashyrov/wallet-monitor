@@ -71,7 +71,7 @@ def get_all_addresses(
 
 
 @router.post("", response_model=WalletOut, status_code=201)
-def create_wallet(
+async def create_wallet(
     body: WalletCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -79,6 +79,31 @@ def create_wallet(
     if body.wallet_type == "exchange" or (body.wallet_type == "perpdex" and body.type_value == "aster"):
         if not body.api_key or not body.api_secret:
             raise HTTPException(status_code=422, detail="api_key and api_secret are required")
+        if body.wallet_type == "exchange":
+            from backend.providers.exchanges import EXCHANGE_PROVIDERS
+            prov = EXCHANGE_PROVIDERS.get(body.type_value)
+            if prov is not None and getattr(prov, "needs_passphrase", False) and not body.api_passphrase:
+                raise HTTPException(status_code=422, detail=f"{body.type_value} requires api_passphrase")
+
+        # ── Live-validate the key against the exchange before saving ──
+        if body.wallet_type == "exchange":
+            from backend.services.trade_adapters import ADAPTERS, TRADE_SUPPORTED
+            adapter = ADAPTERS.get(body.type_value)
+            need_trade = body.purpose in ("screener", "both")
+            if need_trade and body.type_value not in TRADE_SUPPORTED:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Screener trading on {body.type_value} is not yet supported. Add this key for Portfolio only."
+                )
+            if adapter is not None and hasattr(adapter, "validate_key"):
+                creds = {"api_key": body.api_key.strip(), "api_secret": body.api_secret.strip()}
+                if body.api_passphrase:
+                    creds["api_passphrase"] = body.api_passphrase.strip()
+                result = await adapter.validate_key(creds, need_trade=need_trade)
+                if not result.get("can_read"):
+                    raise HTTPException(status_code=400, detail=result.get("error") or "Key validation failed")
+                if need_trade and not result.get("can_trade"):
+                    raise HTTPException(status_code=400, detail=result.get("error") or "Key has no trading permission")
     elif body.wallet_type in ("chain", "perpdex"):
         if not body.address:
             raise HTTPException(status_code=422, detail="address is required for chain/perpdex wallets")
@@ -89,6 +114,11 @@ def create_wallet(
         return svc.create_wallet(db, body, current_user.id, plan=getattr(current_user, 'plan', 'basic'))
     except WalletLimitReached as e:
         raise HTTPException(status_code=402, detail=str(e))
+    except Exception as e:
+        from backend.domain.errors import DuplicateScreenerKey
+        if isinstance(e, DuplicateScreenerKey):
+            raise HTTPException(status_code=409, detail=str(e))
+        raise
 
 
 @router.get("/archived", response_model=list[WalletOut])
