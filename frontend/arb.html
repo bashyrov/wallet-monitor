@@ -2571,41 +2571,16 @@ async function deleteAlert(id){
 async function init(){
   if(!SYM||!LONG||!SHORT)return;
   renderTopBar();
-  // Critical path: WS + books start immediately (non-blocking); single REST for _opp
+  // Critical path: WS + books start immediately (non-blocking);
+  // lightweight /pair endpoint fetches only 2 exchanges (not all 12).
   connectWs();
   startBooks();
-  // Fetch only the arbitrage opportunities list to populate the hero block.
-  // History charts (price/funding) are lazy-loaded when their tabs are opened.
   (async () => {
     try {
-      const r = await Auth.apiFetch('/screener/arbitrage');
+      const r = await Auth.apiFetch(`/screener/pair?symbol=${SYM}&long_ex=${LONG}&short_ex=${SHORT}`);
       if (!r.ok) return;
       const d = await r.json();
-      _opp = (d.opportunities||[]).find(o => o.symbol===SYM && o.long_exchange===LONG && o.short_exchange===SHORT);
-      if (_opp) { renderTopBar(); return; }
-      // Fallback when pair is unprofitable / not in opportunities
-      const r2 = await Auth.apiFetch(`/screener/all-exchanges-funding?symbol=${SYM}`);
-      if (!r2.ok) return;
-      const d2 = await r2.json();
-      const L = (d2.rates||[]).find(x => x.exchange===LONG);
-      const S = (d2.rates||[]).find(x => x.exchange===SHORT);
-      if (L && S) {
-        const rate_l = L.rate*(8/L.interval_h), rate_s = S.rate*(8/S.interval_h);
-        const gross = rate_s - rate_l;
-        const spread = L.price>0 ? (S.price - L.price)/L.price : 0;
-        _opp = {
-          symbol:SYM, long_exchange:LONG, short_exchange:SHORT,
-          long_rate:rate_l*100, short_rate:rate_s*100,
-          long_price:L.price, short_price:S.price,
-          long_volume:L.volume_usd||0, short_volume:S.volume_usd||0,
-          long_interval_h:L.interval_h, short_interval_h:S.interval_h,
-          gross_funding:gross*100, price_spread:spread*100,
-          fee_long:0.04, fee_short:0.04, total_fees:0.16,
-          net_profit:(gross+spread-0.0016)*100,
-          next_ts_long:L.next_ts, next_ts_short:S.next_ts,
-        };
-        renderTopBar();
-      }
+      if (d.opp) { _opp = d.opp; renderTopBar(); }
     } catch {}
   })();
   // Alerts count in topbar — lightweight, non-critical
