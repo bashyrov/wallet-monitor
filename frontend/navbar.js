@@ -322,7 +322,14 @@ customElements.define('app-navbar', AppNavbar);
   }
 
   async function _nbDeleteAlert(id, btn){
-    if (!confirm('Delete this alert?')) return;
+    if (window.Confirm) {
+      const ok = await window.Confirm.ask({
+        title: 'Delete alert?',
+        message: 'This alert will stop triggering Telegram notifications.',
+        okText: 'Delete', danger: true,
+      });
+      if (!ok) return;
+    }
     try {
       const r = await Auth.apiFetch(`/alerts/${id}`, { method:'DELETE' });
       if (!r.ok) throw new Error();

@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="/auth.js"></script>
 <script src="/toast.js"></script>
+<script src="/confirm.js"></script>
 <script src="/theme.js"></script>
 <link rel="stylesheet" href="/navbar.css">
 <script src="/navbar.js" defer></script>
@@ -2407,8 +2408,8 @@ function navGo(){
   const sym=(document.getElementById('nav-symbol').value||'').toUpperCase().replace('USDT','');
   const le=document.getElementById('nav-long').value;
   const se=document.getElementById('nav-short').value;
-  if(!sym){alert('Enter symbol');return;}
-  if(le===se){alert('Long and short must differ');return;}
+  if(!sym){Confirm.tell({title:'Missing symbol', message:'Enter a symbol first.', okText:'OK'});return;}
+  if(le===se){Confirm.tell({title:'Same exchange', message:'Long and short must differ.', okText:'OK'});return;}
   location.href=`/arb?symbol=${sym}&long=${le}&short=${se}`;
 }
 document.getElementById('nav-modal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeNavModal();});
@@ -3079,10 +3080,16 @@ async function tradeOpenArb(){
   const notionalL = (L.qty * L.last).toFixed(2);
   const notionalS = (S.qty * S.last).toFixed(2);
   const msg =
-    `Place REAL arb positions on both exchanges?\n\n` +
-    `LONG  ${L.qty.toFixed(4)} ${SYM}  ≈ ${notionalL} USDT · ${L.leverage}× ${L.margin}  on ${EX_LABEL[LONG]||LONG}\n` +
-    `SHORT ${S.qty.toFixed(4)} ${SYM}  ≈ ${notionalS} USDT · ${S.leverage}× ${S.margin}  on ${EX_LABEL[SHORT]||SHORT}`;
-  if (!confirm(msg)) return;
+    `<div style="display:flex;flex-direction:column;gap:8px">` +
+    `<div><b style="color:var(--green)">LONG</b> ${L.qty.toFixed(4)} ${SYM} ≈ <b>${notionalL} USDT</b> · ${L.leverage}× ${L.margin} on <b>${EX_LABEL[LONG]||LONG}</b></div>` +
+    `<div><b style="color:var(--red)">SHORT</b> ${S.qty.toFixed(4)} ${SYM} ≈ <b>${notionalS} USDT</b> · ${S.leverage}× ${S.margin} on <b>${EX_LABEL[SHORT]||SHORT}</b></div>` +
+    `</div>`;
+  const ok = await Confirm.ask({
+    title: 'Place REAL arb positions on both exchanges?',
+    message: msg,
+    okText: 'Open both legs',
+  });
+  if (!ok) return;
 
   _tradeInflight.arb = true;
   const btn = document.getElementById('trade-arb-btn');
@@ -3149,7 +3156,13 @@ async function tradeOpen(leg){
   const sideText = leg === 'long' ? 'LONG' : 'SHORT';
   const exText = leg === 'long' ? (EX_LABEL[LONG] || LONG) : (EX_LABEL[SHORT] || SHORT);
   const notional = (t.qty * t.last).toFixed(2);
-  if (!confirm(`Place REAL ${sideText} order on ${exText}?\n\n${t.qty.toFixed(4)} ${SYM} · ~${notional} USDT · ${t.leverage}× ${t.margin}`)) return;
+  const sideColor = leg === 'long' ? 'var(--green)' : 'var(--red)';
+  const ok = await Confirm.ask({
+    title: `Place REAL ${sideText} order on ${exText}?`,
+    message: `<div><b style="color:${sideColor}">${sideText}</b> ${t.qty.toFixed(4)} <b>${SYM}</b> ≈ <b>${notional} USDT</b><br>Leverage: <b>${t.leverage}×</b> · Margin: <b>${t.margin}</b></div>`,
+    okText: `Open ${sideText}`,
+  });
+  if (!ok) return;
 
   _tradeInflight[leg] = true;
   const btn = document.getElementById('trade-submit-' + leg);
@@ -3191,7 +3204,13 @@ async function _reloadTradeStatus(){
 }
 
 async function tradeClose(wid, posId){
-  if (!confirm('Close this position at market?')) return;
+  const ok = await Confirm.ask({
+    title: 'Close this position?',
+    message: 'The position will be closed at market with a reduce-only order.',
+    okText: 'Close at market',
+    danger: true,
+  });
+  if (!ok) return;
   try {
     const r = await Auth.apiFetch('/trade/close', {
       method: 'POST',

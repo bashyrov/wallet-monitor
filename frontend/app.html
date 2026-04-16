@@ -2049,6 +2049,7 @@
 <script src="/navbar.js"></script>
 <script src="/auth.js"></script>
 <script src="/toast.js"></script>
+<script src="/confirm.js"></script>
 <script src="/theme.js"></script>
 <script>
 (function() {
@@ -3019,7 +3020,12 @@ async function toggleCanTrade(id, currentlyOn) {
     return;
   }
   if (!currentlyOn) {
-    if (!confirm(`Enable LIVE TRADING on "${w.name}"?\n\nThis allows Avalant to place real orders using your API key.\n\n• Make sure the key has Futures trading permission\n• Withdrawals must be DISABLED on the key\n• IP whitelist the server if possible`)) return;
+    const ok = await Confirm.ask({
+      title: `Enable LIVE TRADING on "${w.name}"?`,
+      message: `This allows Avalant to place real orders using your API key.<br><br>• Make sure the key has <b>Futures trading</b> permission<br>• <b>Withdrawals</b> must be DISABLED on the key<br>• IP-whitelist the server if possible`,
+      okText: 'Enable trading',
+    });
+    if (!ok) return;
   }
   try {
     const res = await api.patch('/trade/wallets/' + id, { can_trade: !currentlyOn });
