@@ -553,6 +553,7 @@ a.ex-badge:hover { filter: brightness(1.3); }
   font-size: 13px; font-family: var(--mono); color: var(--text3);
   min-width: 64px; text-align: center;
 }
+@media (max-width: 768px) { .pg-size-wrap { display: none !important; } }
 
 .mob-search-input {
   width: 100%; background: var(--surface); border: 1px solid var(--border);
@@ -1756,7 +1757,7 @@ function fmtExRate(ex, rate_pct, symbol) {
 // ── pager helper ───────────────────────────────────────────────────────────────
 const _pgSizes = [10, 15, 25, 50];
 function _pgSizeBtns() {
-  return `<div style="display:flex;gap:4px;align-items:center">
+  return `<div class="pg-size-wrap" style="display:flex;gap:4px;align-items:center">
     <span style="font-size:11px;color:var(--text3);margin-right:2px">Rows:</span>
     ${_pgSizes.map(n => `<button class="pager-btn${PAGE_SIZE===n?' pager-btn-active':''}" style="padding:4px 9px;font-size:12px" onclick="setPageSize(${n})">${n}</button>`).join('')}
   </div>`;
