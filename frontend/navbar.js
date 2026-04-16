@@ -105,8 +105,9 @@ function _rightHtml(page) {
         <a href="/watchlist" class="nav-lnk nav-lnk-icon" title="Watchlist" aria-label="Watchlist">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z"/></svg>
         </a>
-        <button class="nav-lnk nav-lnk-bell" onclick="openAlertModal&&openAlertModal()" title="Alerts (this pair)" aria-label="Alerts">
+        <button class="nav-lnk nav-lnk-bell" onclick="openAlertsPopover(event)" title="All alerts" aria-label="Alerts">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+          <span class="nav-dot" id="nb-alerts-dot" style="display:none"></span>
         </button>
         ${_avatarBtn()}`;
     case 'index':
