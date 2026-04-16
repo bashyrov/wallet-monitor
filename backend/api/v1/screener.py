@@ -428,7 +428,10 @@ async def _broadcast_loop() -> None:
             logger.warning("Screener funding broadcast error: %s", exc)
         if _arb_clients:
             try:
+                from backend.services.alpha_service import score_opportunities
                 data = await get_arbitrage_opportunities()
+                # annotate with alpha_score so watchlist / consumers don't need a second round-trip
+                score_opportunities(data.get("opportunities", []))
                 await _push(_arb_clients, json.dumps(data))
                 logger.debug("Screener arb WS: pushed to %d clients", len(_arb_clients))
             except Exception as exc:
