@@ -712,9 +712,34 @@ body.light .bnav-item.active { color: #000; }
 .td-actions { display: flex; gap: 6px; align-items: center; }
 .act-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: transparent; border: 1px solid var(--border); color: var(--text3); cursor: pointer; transition: all .15s; font-family: inherit; }
 .act-btn:hover { color: var(--green); border-color: var(--green); background: rgba(26,255,171,.06); }
-.star-btn { color: var(--text3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 5px; transition: all .15s; }
-.star-btn:hover { color: var(--yellow); background: var(--surface3); }
-.star-btn.on { color: var(--yellow); }
+.star-btn {
+  -webkit-appearance: none; appearance: none;
+  margin: 0; padding: 0;
+  width: 26px; height: 26px; border-radius: 7px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text3);
+  cursor: pointer; outline: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: inherit;
+  transition: color .15s, background .15s, border-color .15s, transform .15s, box-shadow .2s;
+}
+.star-btn svg { display: block; }
+.star-btn:hover {
+  color: var(--yellow);
+  background: rgba(229,192,123,0.1);
+  border-color: rgba(229,192,123,0.4);
+  transform: scale(1.08);
+}
+.star-btn.on {
+  color: var(--yellow);
+  background: rgba(229,192,123,0.14);
+  border-color: var(--yellow);
+  box-shadow: 0 0 10px rgba(229,192,123,0.25);
+}
+.star-btn.on svg { fill: var(--yellow); }
+body.light .star-btn { border-color: #D9D9D9; }
+body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
 .wl-count-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; background: rgba(229,192,123,.08); border: 1px solid rgba(229,192,123,.22); color: var(--yellow); font-family: var(--mono); font-size: 10px; font-weight: 700; margin-left: 6px; }
 
 /* ── LIVE OPS SIDEBAR ── */
