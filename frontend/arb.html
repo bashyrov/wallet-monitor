@@ -125,10 +125,10 @@ body.light .alert-block:hover{background:#F4F4F4;}
       .col-info        (right column, full workspace height) */
 .workspace{flex:1;display:flex;overflow:hidden;min-height:0;}
 .left-stack{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
-.main{display:flex;flex:0 0 auto;overflow:hidden;height:52vh;min-height:420px;max-height:600px;border-bottom:1px solid var(--border);}
+.main{display:flex;flex:1;overflow:hidden;min-height:360px;border-bottom:1px solid var(--border);}
 
 /* ── Bottom account block (Positions / Orders / P&L / Balances) ── */
-.acc-block{flex:1;display:flex;flex-direction:column;background:var(--surface);min-height:260px;overflow:hidden;}
+.acc-block{flex:0 0 auto;display:flex;flex-direction:column;background:var(--surface);height:300px;min-height:220px;overflow:hidden;}
 .acc-tabs{display:flex;align-items:center;gap:2px;padding:0 12px;height:38px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface2);}
 .acc-tab{padding:0 14px;height:100%;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;letter-spacing:-0.01em;user-select:none;}
 .acc-tab:hover{color:var(--text2);}
