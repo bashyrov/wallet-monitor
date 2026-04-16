@@ -183,21 +183,61 @@ button { font-family:inherit; }
 }
 .wl-input:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.12); }
 
-.wl-sort {
-  background:var(--surface); border:1px solid var(--border); color:var(--text);
-  font-family:inherit; font-size:12.5px; padding:7px 10px; border-radius:8px; outline:none;
+/* Sort select — custom appearance with sort icon + chevron */
+.wl-sort-wrap { position:relative; display:inline-block; }
+.wl-sort-wrap::before {
+  content:''; position:absolute; left:10px; top:50%; transform:translateY(-50%);
+  width:14px; height:14px; pointer-events:none;
+  background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="%239B9FAB" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h8M5 8h6M6 11h4"/></svg>');
+  background-repeat:no-repeat;
 }
+.wl-sort-wrap::after {
+  content:''; position:absolute; right:12px; top:50%; transform:translateY(-50%);
+  width:10px; height:6px; pointer-events:none;
+  background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="%239B9FAB" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>');
+  background-repeat:no-repeat;
+  transition:transform .18s;
+}
+.wl-sort-wrap:hover::after { transform:translateY(-50%) translateY(1px); }
+.wl-sort {
+  -webkit-appearance:none; -moz-appearance:none; appearance:none;
+  background:var(--surface); border:1px solid var(--border); color:var(--text);
+  font-family:inherit; font-size:12.5px; font-weight:500;
+  padding:9px 30px 9px 32px; border-radius:10px; outline:none;
+  cursor:pointer; letter-spacing:-0.01em; line-height:1;
+  transition:border-color .15s, box-shadow .15s, background .15s;
+  min-width:180px;
+}
+.wl-sort:hover { border-color:var(--border2); background:var(--surface2); }
+.wl-sort:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.12); }
+.wl-sort option { background:var(--surface); color:var(--text); padding:8px; }
+body.light .wl-sort option { background:#FFFFFF; color:#000; }
 
+/* Filter chips — richer look */
 .wl-chip {
   display:inline-flex; align-items:center; gap:6px;
-  padding:5px 10px; border-radius:999px;
+  padding:8px 12px; border-radius:10px;
   background:var(--surface); border:1px solid var(--border);
-  font-size:11.5px; font-weight:500; color:var(--text2);
-  cursor:pointer; transition:all .15s;
+  font-size:12px; font-weight:500; color:var(--text2);
+  cursor:pointer; transition:all .18s cubic-bezier(.16,1,.3,1);
+  letter-spacing:-0.01em; line-height:1;
+  user-select:none;
 }
-.wl-chip:hover { color:var(--text); border-color:var(--border2); }
-.wl-chip.active { color:var(--green); border-color:var(--green); background:rgba(26,255,171,0.08); }
-.wl-chip .wl-chip-dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+.wl-chip:hover { color:var(--text); border-color:var(--border2); background:var(--surface2); transform:translateY(-1px); }
+.wl-chip.active {
+  color:var(--green); border-color:var(--green); background:rgba(26,255,171,0.08);
+  box-shadow:0 0 0 3px rgba(26,255,171,0.08);
+}
+.wl-chip.active.filter-neg { color:var(--red); border-color:var(--red); background:rgba(248,113,113,0.08); box-shadow:0 0 0 3px rgba(248,113,113,0.08); }
+.wl-chip .wl-chip-dot { width:6px; height:6px; border-radius:50%; background:currentColor; box-shadow:0 0 6px currentColor; }
+.wl-chip .wl-chip-count {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:18px; height:16px; padding:0 5px; margin-left:2px;
+  background:var(--surface3); border-radius:999px;
+  font-family:var(--mono); font-size:10px; font-weight:700;
+  color:var(--text3);
+}
+.wl-chip.active .wl-chip-count { background:currentColor; color:var(--surface); }
 
 /* Empty state */
 .wl-empty {
@@ -307,18 +347,20 @@ body.light .bottom-nav { background:rgba(255,255,255,0.92); }
   <div class="wl-toolbar">
     <div class="wl-toolbar-left">
       <input id="wl-search" class="wl-input" placeholder="Search symbol or exchange…" oninput="filterRender()">
-      <span class="wl-chip" id="wl-chip-all" onclick="setViewFilter('all')">All</span>
-      <span class="wl-chip" id="wl-chip-pos" onclick="setViewFilter('pos')"><span class="wl-chip-dot" style="background:var(--green)"></span>Profitable</span>
-      <span class="wl-chip" id="wl-chip-neg" onclick="setViewFilter('neg')"><span class="wl-chip-dot" style="background:var(--red)"></span>Unprofitable</span>
+      <span class="wl-chip" id="wl-chip-all" onclick="setViewFilter('all')">All<span class="wl-chip-count" id="wl-chip-count-all">0</span></span>
+      <span class="wl-chip" id="wl-chip-pos" onclick="setViewFilter('pos')"><span class="wl-chip-dot" style="background:var(--green)"></span>Profitable<span class="wl-chip-count" id="wl-chip-count-pos">0</span></span>
+      <span class="wl-chip filter-neg" id="wl-chip-neg" onclick="setViewFilter('neg')"><span class="wl-chip-dot" style="background:var(--red)"></span>Unprofitable<span class="wl-chip-count" id="wl-chip-count-neg">0</span></span>
     </div>
     <div class="wl-toolbar-right">
-      <select id="wl-sort" class="wl-sort" onchange="filterRender()">
-        <option value="alpha">Sort · Alpha desc</option>
-        <option value="net">Sort · Net % desc</option>
-        <option value="net-asc">Sort · Net % asc</option>
-        <option value="sym">Sort · Symbol A-Z</option>
-        <option value="added">Sort · Recently added</option>
-      </select>
+      <div class="wl-sort-wrap">
+        <select id="wl-sort" class="wl-sort" onchange="filterRender()">
+          <option value="alpha">Alpha · high → low</option>
+          <option value="net">Net % · high → low</option>
+          <option value="net-asc">Net % · low → high</option>
+          <option value="sym">Symbol · A → Z</option>
+          <option value="added">Recently added</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -653,7 +695,8 @@ function filterRender(){
 function updateKpis(){
   const kpis = document.getElementById('wl-kpis');
   const count = _wl.length;
-  if (!count) { kpis.innerHTML = ''; return; }
+  // chip counts always update (even when zero)
+  document.getElementById('wl-chip-count-all').textContent = count;
   let pos = 0, neg = 0, sumAlpha = 0, aN = 0, bestNet = -Infinity, bestPair = null;
   for (const w of _wl) {
     const o = _live.get(_key(w.symbol,w.long_exchange,w.short_exchange));
@@ -662,6 +705,9 @@ function updateKpis(){
     if (o.alpha_score != null) { sumAlpha += o.alpha_score; aN++; }
     if ((o.net_profit||0) > bestNet) { bestNet = o.net_profit||0; bestPair = w; }
   }
+  document.getElementById('wl-chip-count-pos').textContent = pos;
+  document.getElementById('wl-chip-count-neg').textContent = neg;
+  if (!count) { kpis.innerHTML = ''; return; }
   const avgAlpha = aN ? (sumAlpha / aN) : 0;
   kpis.innerHTML = `
     <div class="kpi accent"><div class="kpi-lbl">Watching</div><div class="kpi-val">${count}</div></div>
