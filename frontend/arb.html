@@ -1043,22 +1043,14 @@ body.light .bnav-item.active{color:#000;}
         <div>
           <div class="alert-lbl">Direction</div>
           <div class="al-dd" id="al-dir-dd">
-            <input type="hidden" id="al-direction" value="any">
+            <input type="hidden" id="al-direction" value="above">
             <button type="button" class="al-dd-btn" onclick="alDirToggle(event)" aria-haspopup="listbox" aria-expanded="false">
-              <span class="al-dd-ic al-dd-ic-any">±</span>
-              <span class="al-dd-text" id="al-dir-text">Any · crosses ±threshold</span>
+              <span class="al-dd-ic al-dd-ic-above">↑</span>
+              <span class="al-dd-text" id="al-dir-text">Above · spread ≥ +threshold</span>
               <svg class="al-dd-chev" width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
             </button>
             <div class="al-dd-menu" role="listbox">
-              <button type="button" class="al-dd-item is-active" data-v="any" onclick="alDirPick(this)">
-                <span class="al-dd-ic al-dd-ic-any">±</span>
-                <span class="al-dd-item-body">
-                  <span class="al-dd-item-title">Any</span>
-                  <span class="al-dd-item-sub">fires above <b>+</b> or below <b>−</b> threshold</span>
-                </span>
-                <svg class="al-dd-check" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
-              </button>
-              <button type="button" class="al-dd-item" data-v="above" onclick="alDirPick(this)">
+              <button type="button" class="al-dd-item is-active" data-v="above" onclick="alDirPick(this)">
                 <span class="al-dd-ic al-dd-ic-above">↑</span>
                 <span class="al-dd-item-body">
                   <span class="al-dd-item-title">Above <span class="mono" style="color:var(--green)">+</span></span>
@@ -2109,7 +2101,6 @@ function renderAlertList(){
 }
 // ── Custom Direction dropdown ──
 const _alDirLabels = {
-  any:   { text: 'Any · crosses ±threshold', ic: 'al-dd-ic-any',   sym: '±' },
   above: { text: 'Above · spread ≥ +threshold', ic: 'al-dd-ic-above', sym: '↑' },
   below: { text: 'Below · spread ≤ −threshold', ic: 'al-dd-ic-below', sym: '↓' },
 };
