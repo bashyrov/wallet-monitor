@@ -67,6 +67,7 @@ class WalletOut(BaseModel):
     type_value: str
     display_info: str  # masked api_key or address
     is_archived: bool = False
+    can_trade: bool = False
     created_at: datetime
     tags: list[TagOut] = []
     addresses: list[WalletAddressOut] = []

@@ -133,6 +133,9 @@
     .icon-btn:hover { background: var(--green-dim); border-color: rgba(26,255,171,0.2); color: var(--green); }
     .icon-btn.danger { color: var(--text3); }
     .icon-btn.danger:hover { background: var(--red-dim); border-color: rgba(248,113,113,0.2); color: var(--red); }
+    .icon-btn.trade-toggle-btn { color: var(--text3); }
+    .icon-btn.trade-toggle-btn:hover { background: rgba(229,192,123,0.1); border-color: rgba(229,192,123,0.35); color: var(--yellow); }
+    .icon-btn.trade-toggle-btn.is-on { color: var(--yellow); border-color: var(--yellow); background: rgba(229,192,123,0.15); box-shadow: 0 0 10px rgba(229,192,123,0.2); }
     .icon-btn.active { background: var(--green-dim); border-color: rgba(26,255,171,0.25); color: var(--green); }
 
     /* ── TOOLTIPS ── */
@@ -2328,6 +2331,9 @@ function walletRow(w, idx = 0) {
       ${tagPills ? `<div class="wallet-tags">${tagPills}</div>` : ''}
     </div>
     <div class="wallet-actions">
+      ${isExchange ? `<button class="icon-btn has-tip trade-toggle-btn ${w.can_trade?'is-on':''}" data-tip="${w.can_trade?'Trading ENABLED — click to disable':'Enable live trading'}" onclick="toggleCanTrade(${w.id},${w.can_trade?'true':'false'})" aria-label="Toggle trading">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
+      </button>` : ''}
       ${isExchange ? `<button class="icon-btn has-tip" data-tip="Addresses" onclick="toggleAddrPanel(event,${w.id})">◈</button>` : ''}
       <button class="icon-btn has-tip" data-tip="Tags" onclick="openTagDrop(event,${w.id})">⊕</button>
       <button class="icon-btn has-tip" data-tip="Edit" onclick="openEditWalletModal(${w.id})">✎</button>
@@ -3002,6 +3008,29 @@ async function _doDelWallet(id, name) {
     renderAll();
     toast(`Deleted "${name}"`, 'success', 'Wallet removed permanently');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function toggleCanTrade(id, currentlyOn) {
+  const TRADABLE = ['binance', 'bybit'];
+  const w = S.wallets.find(x => x.id === id);
+  if (!w) return;
+  if (!currentlyOn && !TRADABLE.includes(w.type_value)) {
+    toast(`Live trading not yet supported on ${w.type_value}`, 'warn');
+    return;
+  }
+  if (!currentlyOn) {
+    if (!confirm(`Enable LIVE TRADING on "${w.name}"?\n\nThis allows Avalant to place real orders using your API key.\n\n• Make sure the key has Futures trading permission\n• Withdrawals must be DISABLED on the key\n• IP whitelist the server if possible`)) return;
+  }
+  try {
+    const res = await api.patch('/trade/wallets/' + id, { can_trade: !currentlyOn });
+    w.can_trade = !!res.can_trade;
+    toast(w.can_trade ? 'Trading enabled' : 'Trading disabled', 'success');
+    renderWallets();
+  } catch (e) {
+    let msg = e.message;
+    try { msg = JSON.parse(msg).detail || msg; } catch {}
+    toast('Error: ' + msg, 'error');
+  }
 }
 
 async function archiveWallet(id, name) {

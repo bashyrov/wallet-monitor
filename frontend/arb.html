@@ -559,6 +559,88 @@ body.light .bnav-item.active{color:#000;}
   #pane-entryexit .chart-controls>span[style*='margin-left:auto']{margin-left:0!important;width:100%;justify-content:space-between;}
 }
 
+/* ── Live Trading card ── */
+.trade-card { display:flex; flex-direction:column; }
+.trade-beta { font-size:8px; font-weight:800; padding:2px 5px; border-radius:3px; background:linear-gradient(135deg,var(--yellow),#B8912F); color:#1a1500; letter-spacing:0.04em; }
+.trade-keys-link { font-size:10px; color:var(--text3); text-decoration:none; padding:2px 7px; border-radius:4px; border:1px solid var(--border); text-transform:none; letter-spacing:0; font-weight:500; transition:color .15s, border-color .15s; }
+.trade-keys-link:hover { color:var(--green); border-color:rgba(26,255,171,0.35); }
+
+.trade-leg { border-bottom:1px solid var(--border); }
+.trade-leg:last-of-type { border-bottom:none; }
+.trade-leg-head { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--surface2); border-bottom:1px solid var(--border); }
+.trade-leg-badge { font-size:9px; font-weight:800; padding:2px 7px; border-radius:4px; letter-spacing:0.05em; }
+.trade-leg-badge.trade-leg-long { color:var(--green); background:rgba(26,255,171,0.1); border:1px solid rgba(26,255,171,0.35); }
+.trade-leg-badge.trade-leg-short { color:var(--red); background:rgba(248,113,113,0.1); border:1px solid rgba(248,113,113,0.35); }
+.trade-leg-ex { font-family:'Inter',sans-serif; font-size:12px; font-weight:700; letter-spacing:-0.01em; flex:1; text-transform:none; color:var(--text); }
+.trade-leg-status { font-size:10px; padding:2px 7px; border-radius:999px; font-weight:600; letter-spacing:0.02em; }
+.trade-leg-status.ok { color:var(--green); background:rgba(26,255,171,0.08); border:1px solid rgba(26,255,171,0.28); }
+.trade-leg-status.missing { color:var(--text3); background:var(--surface3); border:1px solid var(--border); }
+.trade-leg-status.disabled { color:var(--yellow); background:rgba(229,192,123,0.08); border:1px solid rgba(229,192,123,0.3); }
+
+.trade-leg-body { padding:10px; display:flex; flex-direction:column; gap:9px; }
+
+.trade-tabs { display:flex; gap:3px; padding:3px; background:var(--surface2); border-radius:7px; }
+.trade-tab { flex:1; -webkit-appearance:none; appearance:none; background:none; border:none; padding:6px 10px; border-radius:5px; color:var(--text3); font-size:11.5px; font-weight:600; cursor:pointer; letter-spacing:-0.01em; transition:background .15s, color .15s; font-family:inherit; }
+.trade-tab:hover { color:var(--text); }
+.trade-tab.is-active { background:var(--surface); color:var(--text); }
+
+.trade-row { display:flex; gap:6px; align-items:center; }
+.trade-dd { display:flex; gap:3px; flex:1; background:var(--surface2); border-radius:6px; padding:2px; border:1px solid var(--border); }
+.trade-dd-chip { flex:1; font-size:10.5px; font-weight:600; letter-spacing:-0.01em; text-align:center; padding:5px 8px; border-radius:4px; cursor:pointer; color:var(--text3); transition:background .15s, color .15s; }
+.trade-dd-chip:hover { color:var(--text); }
+.trade-dd-chip.is-active { background:var(--surface); color:var(--text); box-shadow:0 1px 0 rgba(0,0,0,.2); }
+
+.trade-lev { display:inline-flex; align-items:center; background:var(--surface2); border:1px solid var(--border); border-radius:6px; height:28px; overflow:hidden; }
+.trade-lev-btn { -webkit-appearance:none; appearance:none; background:none; border:none; width:26px; height:100%; color:var(--text2); cursor:pointer; font-size:14px; font-weight:700; font-family:inherit; transition:background .15s, color .15s; }
+.trade-lev-btn:hover { background:var(--surface3); color:var(--text); }
+.trade-lev-val { font-family:'JetBrains Mono',monospace; font-size:11.5px; font-weight:700; padding:0 6px; color:var(--yellow); min-width:32px; text-align:center; letter-spacing:-0.02em; }
+
+.trade-price-row { display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--text3); border-top:1px dashed var(--border); padding-top:7px; }
+.trade-price-row .trade-lbl { font-weight:500; text-transform:uppercase; letter-spacing:0.05em; }
+.trade-price-row .mono { font-size:11px; color:var(--text); font-weight:600; }
+.trade-spacer { flex:1; }
+
+.trade-size-row { display:flex; gap:4px; }
+.trade-size-input { flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:8px 10px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; outline:none; transition:border-color .15s, box-shadow .15s; }
+.trade-size-input:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.1); }
+.trade-unit-toggle { display:flex; background:var(--surface2); border:1px solid var(--border); border-radius:6px; overflow:hidden; flex-shrink:0; }
+.trade-unit { -webkit-appearance:none; appearance:none; background:none; border:none; padding:6px 9px; color:var(--text3); font-size:10.5px; font-weight:700; cursor:pointer; font-family:inherit; transition:background .15s, color .15s; letter-spacing:0.02em; }
+.trade-unit.is-active { background:var(--surface3); color:var(--text); }
+
+.trade-slider-wrap { display:flex; flex-direction:column; gap:4px; }
+.trade-slider { -webkit-appearance:none; appearance:none; width:100%; height:3px; background:var(--surface3); border-radius:999px; outline:none; }
+.trade-slider::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--green); cursor:pointer; box-shadow:0 0 0 3px rgba(26,255,171,0.15); transition:transform .1s; }
+.trade-slider::-webkit-slider-thumb:hover { transform:scale(1.1); }
+.trade-slider::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--green); cursor:pointer; border:none; }
+.trade-slider-ticks { display:flex; justify-content:space-between; }
+.trade-tick { -webkit-appearance:none; appearance:none; background:none; border:none; color:var(--text3); font-size:10px; font-family:'JetBrains Mono',monospace; font-weight:600; cursor:pointer; padding:2px 4px; border-radius:3px; transition:color .12s, background .12s; }
+.trade-tick:hover { color:var(--text); background:var(--surface3); }
+
+.trade-info-rows { display:flex; flex-direction:column; gap:3px; padding-top:5px; border-top:1px dashed var(--border); }
+.trade-info-row { display:flex; justify-content:space-between; font-size:10.5px; color:var(--text3); }
+.trade-info-row .mono { color:var(--text); font-weight:600; font-size:11px; }
+
+.trade-submit { -webkit-appearance:none; appearance:none; border:none; border-radius:7px; padding:9px 12px; font-family:inherit; font-weight:700; font-size:12.5px; cursor:pointer; letter-spacing:-0.01em; transition:box-shadow .15s, opacity .15s, transform .1s; }
+.trade-submit:not(:disabled):hover { transform:translateY(-1px); }
+.trade-submit:disabled { opacity:0.45; cursor:not-allowed; }
+.trade-long-btn { background:var(--green); color:#09090b; }
+.trade-long-btn:not(:disabled):hover { box-shadow:0 0 18px rgba(26,255,171,0.28); }
+.trade-short-btn { background:var(--red); color:#1a0000; }
+.trade-short-btn:not(:disabled):hover { box-shadow:0 0 18px rgba(248,113,113,0.28); }
+
+.trade-positions { border-top:1px solid var(--border); padding:10px; }
+.trade-positions-title { font-size:9px; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px; }
+.trade-position-row { display:flex; align-items:center; gap:6px; padding:7px 8px; border-radius:6px; background:var(--surface2); margin-bottom:5px; font-size:11px; }
+.trade-position-row .side-long { color:var(--green); font-weight:700; }
+.trade-position-row .side-short { color:var(--red); font-weight:700; }
+.trade-position-row .pos-qty { font-family:'JetBrains Mono',monospace; color:var(--text2); flex:1; }
+.trade-position-row .pos-pnl { font-family:'JetBrains Mono',monospace; font-weight:700; }
+.trade-position-row .pos-close { background:transparent; border:1px solid var(--border); color:var(--text3); font-size:10px; padding:3px 8px; border-radius:4px; cursor:pointer; font-family:inherit; }
+.trade-position-row .pos-close:hover { color:var(--red); border-color:var(--red); }
+
+body.light .trade-tab.is-active, body.light .trade-dd-chip.is-active { background:#FFFFFF; }
+body.light .trade-position-row { background:#F7F7F7; }
+
 /* ── Watchlist star button in hero ── */
 .wl-star-btn {
   width:30px; height:30px; padding:0; margin:0;
@@ -935,65 +1017,128 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
         </div>
       </div>
 
-      <!-- ── Executable Spread (real orderbook VWAP) ── -->
-      <div class="info-card" id="xspread-card">
-        <div class="info-card-title">Executable Spread <span style="color:var(--text3);font-weight:400;text-transform:none;margin-left:4px">· live orderbook</span></div>
-        <div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px">
-          <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Trade size (USD)</div>
-            <input id="xs-size" class="calc-input" type="number" value="1000" step="100" oninput="xsDebounce()"></div>
-        </div>
-        <div class="calc-grid" style="grid-template-columns:1fr 1fr">
-          <div class="calc-cell"><div class="calc-lbl">Quoted</div><div class="calc-val" id="xs-quoted">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">Executable</div><div class="calc-val pos" id="xs-exec">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">Slippage</div><div class="calc-val neg" id="xs-slip">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">Net (after fees)</div><div class="calc-val" id="xs-net">—</div></div>
-        </div>
-        <div style="padding:6px 10px;display:flex;flex-direction:column;gap:4px">
-          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">
-            <span>Quoted</span>
-            <div style="flex:1;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden"><div id="xs-bar-q" style="height:100%;background:rgba(229,192,123,0.45);width:0%;transition:width .3s"></div></div>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">
-            <span>Exec&nbsp;&nbsp;</span>
-            <div style="flex:1;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden"><div id="xs-bar-e" style="height:100%;background:var(--green);width:0%;transition:width .3s"></div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Paper Trading ── -->
-      <div class="info-card" id="paper-card">
+      <!-- ── LIVE TRADING (two legs) ── -->
+      <div class="info-card trade-card" id="trade-card">
         <div class="info-card-title" style="display:flex;align-items:center;gap:6px">
-          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);animation:ws-pulse 1.6s ease-in-out infinite"></span>
-          Paper Trading
+          <span class="trade-beta">BETA</span>
+          Live Trading
+          <span style="flex:1"></span>
+          <a href="/wallets?trade=1" class="trade-keys-link" title="Manage API keys">Keys ⚙</a>
         </div>
-        <div style="padding:8px 10px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
-          <div style="text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Total P&L</div><div class="mono" id="pt-total" style="font-size:13px;font-weight:700">$0.00</div></div>
-          <div style="text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Open</div><div class="mono" id="pt-open" style="font-size:13px;font-weight:700">0</div></div>
-          <div style="text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Win rate</div><div class="mono" id="pt-wr" style="font-size:13px;font-weight:700">—</div></div>
-        </div>
-        <div style="padding:6px 10px 8px;display:flex;gap:6px;align-items:flex-end">
-          <div style="flex:1"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Size USD</div>
-            <input id="pt-size" class="calc-input" type="number" value="1000" step="100"></div>
-          <button onclick="paperOpen()" class="nav-btn" style="height:28px;padding:0 12px;background:var(--green);color:#09090b;border-color:var(--green);font-weight:700">Open</button>
-        </div>
-        <div id="pt-list" style="padding:4px 10px 10px;display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto"></div>
-      </div>
 
-      <!-- ── Quick Backtest ── -->
-      <div class="info-card" id="bt-card">
-        <div class="info-card-title">Backtest · funding only</div>
-        <div style="padding:8px 10px;display:flex;gap:6px;flex-wrap:wrap">
-          <div style="flex:1;min-width:70px"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Days</div>
-            <select id="bt-days" class="nav-sel" onchange="runBacktest()"><option value="1">1</option><option value="7" selected>7</option><option value="14">14</option><option value="30">30</option></select></div>
-          <div style="flex:1.2;min-width:80px"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Size USD</div>
-            <input id="bt-size" class="calc-input" type="number" value="1000" step="100"></div>
-          <button onclick="runBacktest()" style="margin-top:14px;height:28px;padding:0 12px;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer;font-family:inherit">Run</button>
+        <!-- Per-leg trade panels: long (buy) and short (sell) -->
+        <div class="trade-leg" data-side="long" id="trade-leg-long">
+          <div class="trade-leg-head">
+            <span class="trade-leg-badge trade-leg-long">LONG</span>
+            <span class="trade-leg-ex" id="trade-leg-long-ex">—</span>
+            <span class="trade-leg-status" id="trade-leg-long-status"></span>
+          </div>
+          <div class="trade-leg-body">
+            <div class="trade-tabs">
+              <button class="trade-tab is-active" data-leg="long" data-tab="open" onclick="tradeSwitchTab(this)">Open</button>
+              <button class="trade-tab" data-leg="long" data-tab="close" onclick="tradeSwitchTab(this)">Close</button>
+            </div>
+            <div class="trade-row">
+              <div class="trade-dd" data-leg="long">
+                <span class="trade-dd-chip is-active" data-v="isolated" onclick="tradeSetMargin(this)">Isolated</span>
+                <span class="trade-dd-chip" data-v="cross" onclick="tradeSetMargin(this)">Cross</span>
+              </div>
+              <div class="trade-lev">
+                <button class="trade-lev-btn" onclick="tradeLevStep(event, 'long', -1)">−</button>
+                <span class="trade-lev-val" id="trade-lev-val-long">3×</span>
+                <button class="trade-lev-btn" onclick="tradeLevStep(event, 'long', 1)">+</button>
+              </div>
+            </div>
+            <div class="trade-price-row">
+              <span class="trade-lbl">Last</span>
+              <span class="trade-last mono" id="trade-last-long">—</span>
+              <span class="trade-spacer"></span>
+              <span class="trade-lbl">Balance</span>
+              <span class="trade-bal mono" id="trade-bal-long">— USDT</span>
+            </div>
+            <div class="trade-size-row">
+              <input class="trade-size-input" id="trade-size-long" type="number" placeholder="Size" oninput="tradeSizeInput('long')">
+              <div class="trade-unit-toggle" data-leg="long">
+                <button class="trade-unit is-active" data-v="token" data-leg="long" onclick="tradeSetUnit(this)" id="trade-unit-tok-long">TOK</button>
+                <button class="trade-unit" data-v="usdt" data-leg="long" onclick="tradeSetUnit(this)" id="trade-unit-usd-long">USDT</button>
+              </div>
+            </div>
+            <div class="trade-slider-wrap">
+              <input type="range" class="trade-slider" min="0" max="100" step="1" value="0" id="trade-slider-long" oninput="tradeSlide('long', this.value)">
+              <div class="trade-slider-ticks">
+                <button class="trade-tick" onclick="tradeSlide('long', 0)">0</button>
+                <button class="trade-tick" onclick="tradeSlide('long', 25)">25</button>
+                <button class="trade-tick" onclick="tradeSlide('long', 50)">50</button>
+                <button class="trade-tick" onclick="tradeSlide('long', 75)">75</button>
+                <button class="trade-tick" onclick="tradeSlide('long', 100)">100</button>
+              </div>
+            </div>
+            <div class="trade-info-rows">
+              <div class="trade-info-row"><span>Position Value</span><span class="mono" id="trade-posval-long">0.00 USDT</span></div>
+              <div class="trade-info-row"><span>Margin Used</span><span class="mono" id="trade-margin-long">0.00 USDT</span></div>
+            </div>
+            <button class="trade-submit trade-long-btn" id="trade-submit-long" onclick="tradeOpen('long')" disabled>Open Long · —</button>
+          </div>
         </div>
-        <div class="calc-grid" style="grid-template-columns:1fr 1fr">
-          <div class="calc-cell"><div class="calc-lbl">Net P&L</div><div class="calc-val" id="bt-net">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">Net %</div><div class="calc-val" id="bt-pct">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">APR</div><div class="calc-val" id="bt-apr">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">Fees</div><div class="calc-val neg" id="bt-fees">—</div></div>
+
+        <div class="trade-leg" data-side="short" id="trade-leg-short">
+          <div class="trade-leg-head">
+            <span class="trade-leg-badge trade-leg-short">SHORT</span>
+            <span class="trade-leg-ex" id="trade-leg-short-ex">—</span>
+            <span class="trade-leg-status" id="trade-leg-short-status"></span>
+          </div>
+          <div class="trade-leg-body">
+            <div class="trade-tabs">
+              <button class="trade-tab is-active" data-leg="short" data-tab="open" onclick="tradeSwitchTab(this)">Open</button>
+              <button class="trade-tab" data-leg="short" data-tab="close" onclick="tradeSwitchTab(this)">Close</button>
+            </div>
+            <div class="trade-row">
+              <div class="trade-dd" data-leg="short">
+                <span class="trade-dd-chip is-active" data-v="isolated" onclick="tradeSetMargin(this)">Isolated</span>
+                <span class="trade-dd-chip" data-v="cross" onclick="tradeSetMargin(this)">Cross</span>
+              </div>
+              <div class="trade-lev">
+                <button class="trade-lev-btn" onclick="tradeLevStep(event, 'short', -1)">−</button>
+                <span class="trade-lev-val" id="trade-lev-val-short">3×</span>
+                <button class="trade-lev-btn" onclick="tradeLevStep(event, 'short', 1)">+</button>
+              </div>
+            </div>
+            <div class="trade-price-row">
+              <span class="trade-lbl">Last</span>
+              <span class="trade-last mono" id="trade-last-short">—</span>
+              <span class="trade-spacer"></span>
+              <span class="trade-lbl">Balance</span>
+              <span class="trade-bal mono" id="trade-bal-short">— USDT</span>
+            </div>
+            <div class="trade-size-row">
+              <input class="trade-size-input" id="trade-size-short" type="number" placeholder="Size" oninput="tradeSizeInput('short')">
+              <div class="trade-unit-toggle" data-leg="short">
+                <button class="trade-unit is-active" data-v="token" data-leg="short" onclick="tradeSetUnit(this)" id="trade-unit-tok-short">TOK</button>
+                <button class="trade-unit" data-v="usdt" data-leg="short" onclick="tradeSetUnit(this)" id="trade-unit-usd-short">USDT</button>
+              </div>
+            </div>
+            <div class="trade-slider-wrap">
+              <input type="range" class="trade-slider" min="0" max="100" step="1" value="0" id="trade-slider-short" oninput="tradeSlide('short', this.value)">
+              <div class="trade-slider-ticks">
+                <button class="trade-tick" onclick="tradeSlide('short', 0)">0</button>
+                <button class="trade-tick" onclick="tradeSlide('short', 25)">25</button>
+                <button class="trade-tick" onclick="tradeSlide('short', 50)">50</button>
+                <button class="trade-tick" onclick="tradeSlide('short', 75)">75</button>
+                <button class="trade-tick" onclick="tradeSlide('short', 100)">100</button>
+              </div>
+            </div>
+            <div class="trade-info-rows">
+              <div class="trade-info-row"><span>Position Value</span><span class="mono" id="trade-posval-short">0.00 USDT</span></div>
+              <div class="trade-info-row"><span>Margin Used</span><span class="mono" id="trade-margin-short">0.00 USDT</span></div>
+            </div>
+            <button class="trade-submit trade-short-btn" id="trade-submit-short" onclick="tradeOpen('short')" disabled>Open Short · —</button>
+          </div>
+        </div>
+
+        <!-- Active positions (on this pair, both legs) -->
+        <div class="trade-positions" id="trade-positions" style="display:none">
+          <div class="trade-positions-title">Open positions</div>
+          <div id="trade-positions-list"></div>
         </div>
       </div>
     </div>
@@ -2404,7 +2549,7 @@ async function loadAnomalyFlag(){
 }
 
 // Kick off alpha features after init
-setTimeout(()=>{loadAlphaBadge();loadAnomalyFlag();loadPaperStats();loadPaperList();xsUpdate();initArbWatch();_ptTimer=setInterval(()=>{loadPaperStats();loadPaperList();},5000);},1200);
+setTimeout(()=>{loadAlphaBadge();loadAnomalyFlag();initArbWatch();initTradePanel();},1200);
 
 // ── Watchlist star on infobar ──
 let _wlArbId=null;
@@ -2431,6 +2576,205 @@ async function toggleArbWatch(){
       const j=await r.json();_wlArbId=j.id;btn.classList.add('on');_toast('Added to watchlist');
     }
   }catch{_toast('Watchlist action failed');}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LIVE TRADING PANEL
+// ═══════════════════════════════════════════════════════════════════════
+const LEVELS = [1, 2, 3, 5, 10, 20, 25, 50, 75, 100, 125];
+const _trade = {
+  long:  { leverage: 3, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
+  short: { leverage: 3, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
+};
+let _tradePosTimer = null;
+
+async function initTradePanel(){
+  setT('trade-leg-long-ex',  EX_LABEL[LONG]  || LONG);
+  setT('trade-leg-short-ex', EX_LABEL[SHORT] || SHORT);
+  _trade.long.last  = _opp?.long_price  || 0;
+  _trade.short.last = _opp?.short_price || 0;
+  setT('trade-last-long',  _trade.long.last  ? '$' + Number(_trade.long.last).toFixed(4)  : '—');
+  setT('trade-last-short', _trade.short.last ? '$' + Number(_trade.short.last).toFixed(4) : '—');
+  _renderLev('long'); _renderLev('short');
+  _renderSubmit('long'); _renderSubmit('short');
+
+  try {
+    const r = await Auth.apiFetch('/trade/status?symbol=' + SYM + '&long_ex=' + LONG + '&short_ex=' + SHORT);
+    if (r.ok) _applyTradeStatus(await r.json());
+  } catch {}
+
+  refreshTradePositions();
+  _tradePosTimer = setInterval(refreshTradePositions, 8000);
+}
+
+function _applyTradeStatus(s){
+  ['long','short'].forEach(side => {
+    const info = s[side] || {};
+    _trade[side].walletId  = info.wallet_id || null;
+    _trade[side].keyStatus = info.status    || 'missing';   // ok | disabled | missing
+    _trade[side].balance   = info.balance_usdt || 0;
+    const st = document.getElementById(`trade-leg-${side}-status`);
+    if (st) {
+      if (info.status === 'ok')       { st.textContent = 'Keys · OK';       st.className = 'trade-leg-status ok'; }
+      else if (info.status === 'disabled') { st.textContent = 'Trade disabled'; st.className = 'trade-leg-status disabled'; }
+      else                            { st.textContent = 'No trade key';    st.className = 'trade-leg-status missing'; }
+    }
+    const bal = document.getElementById(`trade-bal-${side}`);
+    if (bal) bal.textContent = (info.balance_usdt != null) ? (Number(info.balance_usdt).toFixed(2) + ' USDT') : '— USDT';
+  });
+  _renderSubmit('long'); _renderSubmit('short');
+}
+
+function tradeSwitchTab(btn){
+  const leg = btn.dataset.leg;
+  document.querySelectorAll(`.trade-tab[data-leg="${leg}"]`).forEach(b => b.classList.toggle('is-active', b === btn));
+}
+
+function tradeSetMargin(el){
+  const leg = el.parentElement.dataset.leg;
+  _trade[leg].margin = el.dataset.v;
+  el.parentElement.querySelectorAll('.trade-dd-chip').forEach(c => c.classList.toggle('is-active', c === el));
+}
+
+function tradeSetUnit(el){
+  const leg = el.dataset.leg;
+  _trade[leg].unit = el.dataset.v;
+  document.querySelectorAll(`.trade-unit[data-leg="${leg}"]`).forEach(b => b.classList.toggle('is-active', b === el));
+  // refresh input placeholder
+  const inp = document.getElementById('trade-size-' + leg);
+  inp.placeholder = _trade[leg].unit === 'token' ? `Size in ${SYM}` : 'Size in USDT';
+}
+
+function tradeLevStep(ev, leg, dir){
+  ev.preventDefault(); ev.stopPropagation();
+  const cur = _trade[leg].leverage;
+  let idx = LEVELS.indexOf(cur);
+  if (idx < 0) idx = 2;
+  idx = Math.max(0, Math.min(LEVELS.length - 1, idx + dir));
+  _trade[leg].leverage = LEVELS[idx];
+  _renderLev(leg);
+  tradeRecalc(leg);
+}
+
+function _renderLev(leg){
+  const el = document.getElementById('trade-lev-val-' + leg);
+  if (el) el.textContent = _trade[leg].leverage + '×';
+}
+
+function tradeSlide(leg, pct){
+  document.getElementById('trade-slider-' + leg).value = pct;
+  const t = _trade[leg];
+  if (!t.balance || !t.last) { tradeRecalc(leg); return; }
+  // Usable notional = balance × leverage × (pct/100)
+  const notional = t.balance * t.leverage * (pct / 100);
+  const qtyTok = t.last > 0 ? notional / t.last : 0;
+  const inp = document.getElementById('trade-size-' + leg);
+  if (t.unit === 'token') inp.value = qtyTok > 0 ? qtyTok.toFixed(4) : '';
+  else                    inp.value = notional > 0 ? notional.toFixed(2) : '';
+  t.qty = qtyTok;
+  tradeRecalc(leg);
+}
+
+function tradeSizeInput(leg){
+  const t = _trade[leg];
+  const v = parseFloat(document.getElementById('trade-size-' + leg).value) || 0;
+  if (t.unit === 'token') t.qty = v;
+  else                    t.qty = t.last > 0 ? v / t.last : 0;
+  tradeRecalc(leg);
+}
+
+function tradeRecalc(leg){
+  const t = _trade[leg];
+  const posVal = t.qty * t.last;
+  const margin = t.leverage > 0 ? posVal / t.leverage : 0;
+  setT('trade-posval-' + leg, posVal.toFixed(2) + ' USDT');
+  setT('trade-margin-' + leg, margin.toFixed(2) + ' USDT');
+  _renderSubmit(leg);
+}
+
+function _renderSubmit(leg){
+  const btn = document.getElementById('trade-submit-' + leg);
+  if (!btn) return;
+  const t = _trade[leg];
+  const ok = t.keyStatus === 'ok' && t.qty > 0 && t.last > 0 && t.balance > 0;
+  btn.disabled = !ok;
+  const actionText = leg === 'long' ? 'Open Long' : 'Open Short';
+  if (t.keyStatus === 'missing')  { btn.textContent = actionText + ' · add API key'; return; }
+  if (t.keyStatus === 'disabled') { btn.textContent = actionText + ' · enable trading'; return; }
+  if (!t.qty) { btn.textContent = actionText + ' · enter size'; return; }
+  btn.textContent = `${actionText} · ${t.qty.toFixed(4)} ${SYM}`;
+}
+
+async function tradeOpen(leg){
+  const t = _trade[leg];
+  if (!t.qty || t.qty <= 0) { _toast('Enter size first'); return; }
+  if (!t.walletId)          { _toast('Set an API key with trade permission'); return; }
+  // Basic confirm
+  const sideText = leg === 'long' ? 'LONG' : 'SHORT';
+  const exText = leg === 'long' ? (EX_LABEL[LONG] || LONG) : (EX_LABEL[SHORT] || SHORT);
+  const notional = (t.qty * t.last).toFixed(2);
+  if (!confirm(`Place REAL ${sideText} order on ${exText}?\n\n${t.qty.toFixed(4)} ${SYM} · ~${notional} USDT · ${t.leverage}× ${t.margin}`)) return;
+
+  const btn = document.getElementById('trade-submit-' + leg);
+  btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Submitting…';
+  try {
+    const r = await Auth.apiFetch('/trade/open', {
+      method: 'POST',
+      body: JSON.stringify({
+        wallet_id: t.walletId,
+        symbol: SYM,
+        side: leg === 'long' ? 'buy' : 'sell',
+        quantity: t.qty,
+        leverage: t.leverage,
+        margin_mode: t.margin,
+      }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || 'Order failed');
+    _toast(`${sideText} order placed · ${body.order_id || 'OK'}`);
+    refreshTradePositions();
+  } catch (e) {
+    _toast('Order failed: ' + (e.message || 'unknown'));
+  } finally {
+    btn.textContent = prev; _renderSubmit(leg);
+  }
+}
+
+async function tradeClose(wid, posId){
+  if (!confirm('Close this position at market?')) return;
+  try {
+    const r = await Auth.apiFetch('/trade/close', {
+      method: 'POST',
+      body: JSON.stringify({ wallet_id: wid, position_id: posId, symbol: SYM }),
+    });
+    if (!r.ok) throw new Error();
+    _toast('Position closed');
+    refreshTradePositions();
+  } catch { _toast('Close failed'); }
+}
+
+async function refreshTradePositions(){
+  try {
+    const r = await Auth.apiFetch('/trade/positions?symbol=' + SYM);
+    if (!r.ok) return;
+    const rows = await r.json();
+    const wrap = document.getElementById('trade-positions');
+    const list = document.getElementById('trade-positions-list');
+    if (!rows.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    list.innerHTML = rows.map(p => {
+      const pnlCls = p.unrealized_pnl_usd >= 0 ? 'pos' : 'neg';
+      const sideCls = p.side === 'buy' ? 'side-long' : 'side-short';
+      return `
+        <div class="trade-position-row">
+          <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
+          <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
+          <span class="pos-qty">${Number(p.quantity).toFixed(4)} ${SYM}</span>
+          <span class="pos-pnl ${pnlCls}">${p.unrealized_pnl_usd >= 0 ? '+' : ''}${Number(p.unrealized_pnl_usd).toFixed(2)}</span>
+          <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id}')">Close</button>
+        </div>`;
+    }).join('');
+  } catch {}
 }
 </script>
 

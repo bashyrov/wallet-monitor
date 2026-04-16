@@ -45,6 +45,7 @@ class Wallet(Base):
     type_value = Column(String, nullable=False)    # binance | tron | hyperliquid
     credentials = Column(JSON, nullable=True)      # encrypted {api_key, api_secret, ...} or {address}
     is_archived = Column(Boolean, nullable=False, default=False)
+    can_trade = Column(Boolean, nullable=False, default=False)  # user-enabled for real order placement
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
