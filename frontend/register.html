@@ -430,6 +430,16 @@ async function handleRegister(e) {
   script.dataset.requestAccess = 'write';
   host.innerHTML = '';
   host.appendChild(script);
+
+  setTimeout(() => {
+    if (!host.querySelector('iframe')) {
+      host.innerHTML = `
+        <div style="text-align:center;font-size:11.5px;line-height:1.55;color:var(--text3)">
+          <div style="color:var(--text2);margin-bottom:4px">Telegram login not available on this domain</div>
+          <div>Ask the admin to run <code style="color:var(--text);background:var(--surface2);padding:1px 5px;border-radius:3px">/setdomain</code> for <b>@avalant_bot</b> in BotFather.</div>
+        </div>`;
+    }
+  }, 6000);
 })();
 
 async function onTelegramAuth(user){
