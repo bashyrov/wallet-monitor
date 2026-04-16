@@ -1162,11 +1162,14 @@ function renderTopBar(){
   document.getElementById('stt-dot-long').className=`tt-dot dot-${LONG}`;
   document.getElementById('stt-dot-short').className=`tt-dot dot-${SHORT}`;
   const r=_opp; if(!r) return;
-  const lrCls=r.long_rate>0?'pos':r.long_rate<0?'neg':'neu';
-  const srCls=r.short_rate>0?'pos':r.short_rate<0?'neg':'neu';
-  setH('fund-long-rate',`<span class="${lrCls}">${sign(r.long_rate)}${r.long_rate.toFixed(4)}%</span>`);
-  setH('fund-short-rate',`<span class="${srCls}">${sign(r.short_rate)}${r.short_rate.toFixed(4)}%</span>`);
-  const lIvl=r.long_interval_h||r.interval_h||'?', sIvl=r.short_interval_h||r.interval_h||'?';
+  const lIvl=r.long_interval_h||r.interval_h||8, sIvl=r.short_interval_h||r.interval_h||8;
+  // Denormalise to native per-interval rate (opportunity stores 8h-normalised rates)
+  const lRateNative = r.long_rate  * (lIvl / 8);
+  const sRateNative = r.short_rate * (sIvl / 8);
+  const lrCls=lRateNative>0?'pos':lRateNative<0?'neg':'neu';
+  const srCls=sRateNative>0?'pos':sRateNative<0?'neg':'neu';
+  setH('fund-long-rate', `<span class="${lrCls}" title="Per ${lIvl}h tick (native)">${sign(lRateNative)}${lRateNative.toFixed(4)}%</span>`);
+  setH('fund-short-rate',`<span class="${srCls}" title="Per ${sIvl}h tick (native)">${sign(sRateNative)}${sRateNative.toFixed(4)}%</span>`);
   setT('fund-long-ivl',`/ ${lIvl}h /`); setT('fund-short-ivl',`/ ${sIvl}h /`);
   setT('fund-long-cd',fmtCD(r.next_ts_long)); setT('fund-short-cd',fmtCD(r.next_ts_short));
   setT('vol-long-val',fmtV(r.long_volume)+' USDT'); setT('vol-short-val',fmtV(r.short_volume)+' USDT');
