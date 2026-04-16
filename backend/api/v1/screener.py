@@ -35,7 +35,8 @@ async def arbitrage_opportunities(_=Depends(get_current_user)):
 async def _fetch_history_for(exchange: str, symbol: str, limit: int = 90) -> list[dict]:
     """Fetch historical funding rates for a symbol on a given exchange."""
     try:
-        async with httpx.AsyncClient(timeout=10) as c:
+        c = _arb_http  # reuse persistent pool
+        if True:
             if exchange == "binance":
                 sym = symbol + "USDT"
                 r = await c.get(f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={sym}&limit={limit}")
@@ -110,7 +111,8 @@ async def _fetch_history_for(exchange: str, symbol: str, limit: int = 90) -> lis
 async def _fetch_price_history(exchange: str, symbol: str, limit: int = 100) -> list[dict]:
     """Fetch OHLCV 1h candles → list of {ts, open, high, low, close}."""
     try:
-        async with httpx.AsyncClient(timeout=10) as c:
+        c = _arb_http  # reuse persistent pool
+        if True:
             if exchange == "binance":
                 sym = symbol + "USDT"
                 r = await c.get(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}&interval=1h&limit={limit}")
@@ -282,7 +284,8 @@ async def all_exchanges_funding(
 async def _fetch_open_interest(exchange: str, symbol: str) -> dict | None:
     """Fetch open interest for a symbol on a given exchange."""
     try:
-        async with httpx.AsyncClient(timeout=8) as c:
+        c = _arb_http  # reuse persistent pool
+        if True:
             if exchange == "binance":
                 r = await c.get(f"https://fapi.binance.com/fapi/v1/openInterest?symbol={symbol}USDT")
                 d = r.json()
