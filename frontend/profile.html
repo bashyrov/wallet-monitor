@@ -452,29 +452,6 @@
     </div>
   </div>
 
-  <!-- Stats -->
-  <div class="stats-grid" id="stats-grid">
-    <div class="stat-card">
-      <div class="stat-icon" style="background:var(--green-dim)">📊</div>
-      <div class="stat-num" id="stat-total" style="color:var(--green)">—</div>
-      <div class="stat-label">Total Wallets</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon" style="background:var(--yellow-dim)">🏦</div>
-      <div class="stat-num" id="stat-ex" style="color:var(--yellow)">—</div>
-      <div class="stat-label">Exchanges</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon" style="background:var(--teal-dim)">⛓</div>
-      <div class="stat-num" id="stat-ch" style="color:var(--teal)">—</div>
-      <div class="stat-label">Chain Wallets</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon" style="background:var(--purple-dim)">📈</div>
-      <div class="stat-num" id="stat-px" style="color:var(--purple)">—</div>
-      <div class="stat-label">Perp DEXes</div>
-    </div>
-  </div>
 
   <!-- Balance History Chart -->
   <div class="section-card" style="margin-bottom:20px;animation-delay:0.28s" id="history-card">
@@ -1012,15 +989,6 @@ async function loadProfile() {
     const wallets = await (await fetch('/api/wallets', { headers })).json();
 
     const total = wallets.length;
-    const ex = wallets.filter(w => w.wallet_type === 'exchange').length;
-    const ch = wallets.filter(w => w.wallet_type === 'chain').length;
-    const px = wallets.filter(w => w.wallet_type === 'perpdex').length;
-
-    // Animate stat counters
-    animNum('stat-total', total);
-    animNum('stat-ex', ex);
-    animNum('stat-ch', ch);
-    animNum('stat-px', px);
 
     // Plan usage bar
     const planLimit = window._planLimit != null ? window._planLimit : null;
