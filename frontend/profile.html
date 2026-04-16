@@ -635,28 +635,28 @@
                 <input class="k-input mono" id="k-apipass" placeholder="Passphrase" autocomplete="off">
               </label>
               <div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px">
-                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600">Where to use this key</div>
-                <label class="k-field k-check k-purpose-opt" data-purpose="portfolio">
-                  <input type="radio" name="k-purpose" value="portfolio" id="k-purpose-portfolio" checked>
+                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600">Where to use this key · pick one or both</div>
+                <label class="k-field k-check">
+                  <input type="checkbox" id="k-for-portfolio" checked>
                   <div>
-                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Portfolio <span style="color:var(--text3);font-weight:400">(read-only)</span></div>
+                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Portfolio <span style="color:var(--text3);font-weight:400">(read balances &amp; positions)</span></div>
                     <div style="font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">
-                      Used to fetch balances, positions and transactions. Key must have <b>Read</b> permission; withdrawal must be off.
-                      Multiple keys per exchange are fine.
+                      Shown on the Portfolio page. Needs only <b>Read</b> permission. Safe — no trading access required.
                     </div>
                   </div>
                 </label>
-                <label class="k-field k-check k-purpose-opt" data-purpose="screener">
-                  <input type="radio" name="k-purpose" value="screener" id="k-purpose-screener">
+                <label class="k-field k-check">
+                  <input type="checkbox" id="k-for-screener">
                   <div>
-                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Screener <span style="color:var(--text3);font-weight:400">(trading)</span></div>
+                    <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Screener <span style="color:var(--text3);font-weight:400">(place real orders)</span></div>
                     <div style="font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">
-                      Used by the arbitrage screener to place real orders. Key must have <b style="color:var(--yellow)">Futures trading</b>
-                      and <b style="color:var(--red)">NO withdrawal</b>. Only <b>one key per exchange</b> — the new key replaces the old one for trading.
+                      Used by the arbitrage screener. Key needs <b style="color:var(--yellow)">Futures trading</b>
+                      and <b style="color:var(--red)">NO withdrawal</b>. Only <b>one trading-eligible key per exchange</b>.
                       Supported: Binance, Bybit.
                     </div>
                   </div>
                 </label>
+                <div id="k-purpose-err" style="display:none;color:var(--red);font-size:11px;padding:4px 2px 0">Pick at least one usage.</div>
               </div>
             </div>
             <div class="k-actions">
@@ -1282,9 +1282,11 @@ function kRender(){
     const label = _K_EX_LABEL[w.type_value] || w.type_value;
     const tradable = _K_TRADABLE.has(w.type_value);
     const purpose = w.purpose || (w.can_trade ? 'screener' : 'portfolio');
-    const purposePill = purpose === 'screener'
-      ? '<span class="k-pill tr" title="Used by the Screener for trading"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
-      : '<span class="k-pill ro" title="Read-only portfolio key"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span>';
+    const purposePill = purpose === 'both'
+      ? '<span class="k-pill ro" title="Portfolio + Screener"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span><span class="k-pill tr" title="Portfolio + Screener"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
+      : purpose === 'screener'
+        ? '<span class="k-pill tr" title="Used by the Screener for trading"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
+        : '<span class="k-pill ro" title="Read-only portfolio key"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span>';
     return `<div class="k-row">
       <span class="k-ex-dot" style="background:${color}"></span>
       <span class="k-ex">${label}</span>
@@ -1292,7 +1294,7 @@ function kRender(){
       <span class="k-masked">${_kEsc(w.display_info)}</span>
       ${purposePill}
       <div class="k-actions-inline">
-        ${tradable ? `<button class="k-act trade ${purpose==='screener'?'is-on':''}" title="${purpose==='screener'?'Switch to Portfolio (read-only)':'Switch to Screener (trading)'}" onclick="kToggleTrade(${w.id}, ${purpose==='screener'?'true':'false'})">
+        ${tradable ? `<button class="k-act trade ${(purpose==='screener'||purpose==='both')?'is-on':''}" title="${(purpose==='screener'||purpose==='both')?'Disable Screener on this key':'Also enable for Screener (trading)'}" onclick="kToggleTrade(${w.id}, ${(purpose==='screener'||purpose==='both')?'true':'false'})">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
         </button>` : ''}
         <button class="k-act" title="Edit key" onclick="kEdit(${w.id})">
@@ -1316,14 +1318,19 @@ async function kSubmit(){
   const apiKey    = document.getElementById('k-apikey').value.trim();
   const apiSecret = document.getElementById('k-apisec').value.trim();
   const pass = document.getElementById('k-apipass')?.value?.trim() || '';
-  const purpose = (document.querySelector('input[name="k-purpose"]:checked')?.value) || 'portfolio';
+  const forPortfolio = document.getElementById('k-for-portfolio').checked;
+  const forScreener  = document.getElementById('k-for-screener').checked;
+  const purpose = forPortfolio && forScreener ? 'both' : (forScreener ? 'screener' : 'portfolio');
   const msg  = document.getElementById('k-msg');
   msg.style.display = 'none';
+  const purposeErr = document.getElementById('k-purpose-err');
+  if (purposeErr) purposeErr.style.display = 'none';
 
   if (!ex || !name || !apiKey || !apiSecret) { msg.className = 'k-msg err'; msg.textContent = 'Fill exchange, label, key and secret'; msg.style.display = 'block'; return; }
   if (name.length < 6) { msg.className = 'k-msg err'; msg.textContent = 'Label must be at least 6 characters'; msg.style.display = 'block'; return; }
+  if (!forPortfolio && !forScreener) { if (purposeErr) purposeErr.style.display = 'block'; return; }
   if (_K_PASSPHRASE_EX.has(ex) && !pass) { msg.className = 'k-msg err'; msg.textContent = _K_EX_LABEL[ex] + ' requires a passphrase'; msg.style.display = 'block'; return; }
-  if (purpose === 'screener' && !_K_TRADABLE.has(ex)) { msg.className = 'k-msg err'; msg.textContent = 'Screener trading not yet supported on ' + _K_EX_LABEL[ex]; msg.style.display = 'block'; return; }
+  if (forScreener && !_K_TRADABLE.has(ex)) { msg.className = 'k-msg err'; msg.textContent = 'Screener trading not yet supported on ' + _K_EX_LABEL[ex]; msg.style.display = 'block'; return; }
 
   const btn = document.getElementById('k-submit');
   btn.disabled = true; const oldText = btn.textContent;
@@ -1346,11 +1353,16 @@ async function kSubmit(){
       throw new Error(detail);
     }
     msg.className = 'k-msg ok';
-    msg.textContent = purpose === 'screener' ? 'Key validated and saved — ready for trading ✓' : 'Key validated and saved ✓';
+    msg.textContent = forScreener ? 'Key validated and saved — ready for trading ✓' : 'Key validated and saved ✓';
     msg.style.display = 'block';
     document.getElementById('k-form').reset();
-    document.querySelector('input[name="k-purpose"][value="portfolio"]').checked = true;
+    document.getElementById('k-for-portfolio').checked = true;
+    document.getElementById('k-for-screener').checked = false;
     document.getElementById('k-passphrase-wrap').style.display = 'none';
+    // Reset exchange dropdown UI
+    const txt = document.getElementById('k-ex-text'); if (txt) { txt.textContent = 'Select exchange…'; txt.classList.add('is-placeholder'); }
+    const dot = document.getElementById('k-ex-dot'); if (dot) dot.style.background = 'var(--border)';
+    document.querySelectorAll('#k-ex-dd .k-dd-item.is-active').forEach(el => el.classList.remove('is-active'));
     await kLoad();
     setTimeout(() => kSwitchTo('list'), 700);
   } catch (e) {
@@ -1365,11 +1377,20 @@ async function kSubmit(){
 async function kToggleTrade(id, currentlyOn){
   const w = _kWallets.find(x => x.id === id);
   if (!w) return;
+  const exLabel = _K_EX_LABEL[w.type_value] || w.type_value;
   if (!currentlyOn) {
     const ok = await kConfirm({
-      title: 'Switch to Screener (trading)?',
-      message: `<b>${_kEsc(w.name)}</b> will be promoted to the Screener. This key must have <b>Futures trading</b> permission (not withdrawal). Only one Screener key per exchange is allowed — if you already have one for ${_K_EX_LABEL[w.type_value]||w.type_value}, you'll need to remove it first.`,
-      okText: 'Switch to Screener',
+      title: 'Enable this key for Screener?',
+      message: `<b>${_kEsc(w.name)}</b> will also be used by the Screener for placing real orders. The API key must have <b>Futures trading</b> permission (not withdrawal). Only one trading-eligible key per exchange is allowed — if you already have one for ${exLabel}, switch it off first.`,
+      okText: 'Enable trading',
+    });
+    if (!ok) return;
+  } else {
+    const ok = await kConfirm({
+      title: 'Disable Screener on this key?',
+      message: `<b>${_kEsc(w.name)}</b> will stay active for Portfolio only. Any open screener trading on it will stop being managed by Avalant (existing positions on the exchange stay open).`,
+      okText: 'Disable trading',
+      danger: true,
     });
     if (!ok) return;
   }

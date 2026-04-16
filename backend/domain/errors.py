@@ -59,9 +59,12 @@ class ProviderUnavailable(DomainError):
 
 
 class DuplicateScreenerKey(DomainError):
-    """User already has a screener key for this exchange."""
+    """User already has a screener-eligible key for this exchange."""
     def __init__(self, exchange: str, existing_id: int):
-        super().__init__(f"A screener key for {exchange} already exists (wallet id={existing_id}). Delete it first or switch it to portfolio.")
+        super().__init__(
+            f"A screener-eligible key for {exchange} already exists. "
+            f"Delete the existing one or switch it to Portfolio before adding another."
+        )
         self.exchange = exchange
         self.existing_id = existing_id
 

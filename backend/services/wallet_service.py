@@ -101,15 +101,15 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "ba
 
     purpose = body.purpose if body.wallet_type == "exchange" else "portfolio"
 
-    # Screener purpose: one key per exchange per user
-    if purpose == "screener" and body.wallet_type == "exchange":
+    # Screener / both: only one trading-eligible key per exchange per user
+    if purpose in ("screener", "both") and body.wallet_type == "exchange":
         existing = (
             db.query(Wallet)
             .filter(
                 Wallet.user_id == user_id,
                 Wallet.wallet_type == "exchange",
                 Wallet.type_value == body.type_value,
-                Wallet.purpose == "screener",
+                Wallet.purpose.in_(("screener", "both")),
                 Wallet.is_archived == False,  # noqa: E712
             )
             .first()
@@ -135,7 +135,7 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "ba
         credentials=encrypt_credentials(raw_creds),
         user_id=user_id,
         purpose=purpose,
-        can_trade=(purpose == "screener"),
+        can_trade=(purpose in ("screener", "both")),
     )
     db.add(wallet)
     db.commit()

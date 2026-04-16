@@ -213,24 +213,27 @@ def toggle_can_trade(
     if body.can_trade:
         if w.type_value not in SUPPORTED_EXCHANGES:
             raise HTTPException(400, f"{w.type_value} trading is not supported yet")
-        # Enforce uniqueness — one screener wallet per exchange per user
+        # Only one trading-eligible (screener|both) key per exchange per user
         dup = (
             db.query(W)
             .filter(
                 W.user_id == user.id,
                 W.wallet_type == "exchange",
                 W.type_value == w.type_value,
-                W.purpose == "screener",
+                W.purpose.in_(("screener", "both")),
                 W.id != w.id,
                 W.is_archived == False,  # noqa: E712
             )
             .first()
         )
         if dup:
-            raise HTTPException(409, f"A screener key for {w.type_value} already exists (wallet id={dup.id}). Remove it first.")
-        w.purpose = "screener"
+            raise HTTPException(409, f"A screener-eligible key for {w.type_value} already exists. Switch it off first.")
+        # If it was 'portfolio' before, preserve the portfolio role too → 'both'.
+        # If it was already 'screener' (or 'both'), nothing to do.
+        w.purpose = "both" if w.purpose == "portfolio" else ("both" if w.purpose == "both" else "screener")
         w.can_trade = True
     else:
+        # Flipping screener off: if key was 'both', keep portfolio; else plain portfolio
         w.purpose = "portfolio"
         w.can_trade = False
     db.commit()
