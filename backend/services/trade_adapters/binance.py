@@ -128,6 +128,15 @@ class BinanceAdapter:
         return out
 
 
+    @classmethod
+    async def get_public_max_leverage(cls, symbol: str) -> int:
+        # Binance's leverageBracket endpoint requires auth (user-specific).
+        # Public exchangeInfo doesn't expose max leverage directly. Use 125 — the
+        # platform's ceiling; per-symbol overrides for low-liquidity contracts
+        # can be layered on later from a static map.
+        return 125
+
+
 def _round_qty(q: float) -> str:
     # Coarse rounding; exchange enforces its own stepSize which we don't fetch here
     # 6 decimals covers most USDT-M perpetuals; big-qty contracts will trim further

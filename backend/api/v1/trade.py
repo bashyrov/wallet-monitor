@@ -42,6 +42,83 @@ def supported_exchanges():
     return sorted(SUPPORTED_EXCHANGES)
 
 
+@router.get("/leverage-limits")
+async def leverage_limits(
+    symbol: str = Query(...),
+    long_ex: str = Query(...),
+    short_ex: str = Query(...),
+    _: User = Depends(get_current_user),
+):
+    """Public-only max leverage per leg — no API key required. Used by the
+    trading panel to cap the leverage stepper so users can't pick a value
+    the exchange will reject."""
+    import asyncio
+    from backend.services.trade_adapters import ADAPTERS, SUPPORTED_EXCHANGES
+
+    async def _probe(ex: str) -> int | None:
+        if ex not in SUPPORTED_EXCHANGES:
+            return None
+        adapter = ADAPTERS[ex]
+        if not hasattr(adapter, "get_public_max_leverage"):
+            return None
+        try:
+            return await adapter.get_public_max_leverage(symbol)
+        except Exception:
+            return None
+
+    long_max, short_max = await asyncio.gather(
+        _probe(long_ex.lower()), _probe(short_ex.lower()),
+    )
+    return {
+        "symbol": symbol,
+        "long":  {"exchange": long_ex.lower(),  "max_leverage": long_max},
+        "short": {"exchange": short_ex.lower(), "max_leverage": short_max},
+    }
+
+
+class OpenArbIn(BaseModel):
+    symbol: str
+    long_wallet_id: int
+    long_quantity: float = Field(..., gt=0)
+    long_leverage: int = Field(3, ge=1, le=125)
+    long_margin_mode: str = Field("isolated", pattern="^(isolated|cross)$")
+    short_wallet_id: int
+    short_quantity: float = Field(..., gt=0)
+    short_leverage: int = Field(3, ge=1, le=125)
+    short_margin_mode: str = Field("isolated", pattern="^(isolated|cross)$")
+
+
+@router.post("/open-arb")
+async def open_arb(
+    body: OpenArbIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fires both legs (long on long_wallet, short on short_wallet) in parallel.
+    Returns per-leg success/error so the client can show exactly which side
+    landed if one fails."""
+    import asyncio
+
+    async def _one(leg: str, wid: int, qty: float, lev: int, mode: str, side: str):
+        try:
+            r = await trade_service.place_open_order(
+                db, user.id, wid, body.symbol, side, qty, lev, mode,
+            )
+            return {"leg": leg, "ok": True, **r}
+        except Exception as e:
+            logger.warning("open-arb %s failed: %s", leg, e)
+            return {"leg": leg, "ok": False, "error": str(e)}
+
+    long_res, short_res = await asyncio.gather(
+        _one("long",  body.long_wallet_id,  body.long_quantity,
+             body.long_leverage,  body.long_margin_mode,  "buy"),
+        _one("short", body.short_wallet_id, body.short_quantity,
+             body.short_leverage, body.short_margin_mode, "sell"),
+    )
+    return {"long": long_res, "short": short_res,
+            "fully_filled": long_res["ok"] and short_res["ok"]}
+
+
 # ── Write ─────────────────────────────────────────────────────────────────────
 class OpenOrderIn(BaseModel):
     wallet_id: int

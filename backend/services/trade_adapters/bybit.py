@@ -130,6 +130,21 @@ class BybitAdapter:
         return {"order_id": str(r.get("orderId", "")), "closed_qty": p["quantity"], "realized_pnl_usd": p.get("unrealized_pnl_usd", 0)}
 
     @classmethod
+    async def get_public_max_leverage(cls, symbol: str) -> int:
+        sym = cls._symbol(symbol)
+        try:
+            async with httpx.AsyncClient(timeout=5) as c:
+                r = await c.get(f"{BASE}/v5/market/instruments-info?category=linear&symbol={sym}")
+                items = (r.json().get("result") or {}).get("list") or []
+                if items:
+                    ml = items[0].get("leverageFilter", {}).get("maxLeverage")
+                    if ml:
+                        return int(float(ml))
+        except Exception:
+            pass
+        return 100
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         params = {"category": "linear"}
         if symbol:

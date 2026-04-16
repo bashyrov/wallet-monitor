@@ -685,6 +685,20 @@ body.light .bnav-item.active{color:#000;}
 .trade-short-btn { background:var(--red); color:#1a0000; }
 .trade-short-btn:not(:disabled):hover { box-shadow:0 0 18px rgba(248,113,113,0.28); }
 
+.trade-arb-btn {
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  margin:0 10px 10px; padding:10px 14px;
+  border-radius:9px; cursor:pointer; font-family:inherit; font-weight:700; font-size:12.5px;
+  letter-spacing:-0.01em;
+  background:linear-gradient(135deg, rgba(26,255,171,0.18) 0%, rgba(248,113,113,0.18) 100%);
+  border:1px solid var(--border2);
+  color:var(--text);
+  transition:box-shadow .18s, transform .1s, border-color .15s, opacity .15s;
+}
+.trade-arb-btn:not(:disabled):hover { transform:translateY(-1px); border-color:var(--yellow); box-shadow:0 0 18px rgba(229,192,123,0.18); }
+.trade-arb-btn:disabled { opacity:0.45; cursor:not-allowed; }
+.trade-arb-ic { font-size:15px; color:var(--yellow); }
+
 .trade-positions { border-top:1px solid var(--border); padding:10px; }
 .trade-positions-title { font-size:9px; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px; }
 .trade-position-row { display:flex; align-items:center; gap:6px; padding:7px 8px; border-radius:6px; background:var(--surface2); margin-bottom:5px; font-size:11px; }
@@ -1231,6 +1245,12 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
             <button class="trade-submit trade-long-btn" id="trade-submit-long" onclick="tradeOpen('long')" disabled>Open Long · —</button>
           </div>
         </div>
+
+        <!-- Simultaneous two-leg open — fires long+short in parallel -->
+        <button type="button" class="trade-arb-btn" id="trade-arb-btn" onclick="tradeOpenArb()" disabled>
+          <span class="trade-arb-ic">⇄</span>
+          <span class="trade-arb-text" id="trade-arb-text">Open Both · add trade keys</span>
+        </button>
 
         <div class="trade-leg" data-side="short" id="trade-leg-short">
           <div class="trade-leg-head">
@@ -2871,8 +2891,8 @@ async function toggleArbWatch(){
 // ═══════════════════════════════════════════════════════════════════════
 const LEVELS = [1, 2, 3, 5, 10, 20, 25, 50, 75, 100, 125];
 const _trade = {
-  long:  { leverage: 3, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
-  short: { leverage: 3, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
+  long:  { leverage: 3, maxLeverage: 125, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
+  short: { leverage: 3, maxLeverage: 125, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
 };
 let _tradePosTimer = null;
 
@@ -2889,6 +2909,22 @@ async function initTradePanel(){
   try {
     const r = await Auth.apiFetch('/trade/status?symbol=' + SYM + '&long_ex=' + LONG + '&short_ex=' + SHORT);
     if (r.ok) _applyTradeStatus(await r.json());
+  } catch {}
+
+  // Fetch public max leverage per exchange so the stepper can't exceed it
+  try {
+    const r = await Auth.apiFetch('/trade/leverage-limits?symbol=' + SYM + '&long_ex=' + LONG + '&short_ex=' + SHORT);
+    if (r.ok) {
+      const d = await r.json();
+      if (d.long  && d.long.max_leverage)  _trade.long.maxLeverage  = d.long.max_leverage;
+      if (d.short && d.short.max_leverage) _trade.short.maxLeverage = d.short.max_leverage;
+      // Clamp current choice
+      if (_trade.long.leverage  > _trade.long.maxLeverage)  { _trade.long.leverage  = _trade.long.maxLeverage;  _renderLev('long');  tradeRecalc('long'); }
+      if (_trade.short.leverage > _trade.short.maxLeverage) { _trade.short.leverage = _trade.short.maxLeverage; _renderLev('short'); tradeRecalc('short'); }
+      // Visual hint next to leverage value
+      _setLevHint('long',  _trade.long.maxLeverage);
+      _setLevHint('short', _trade.short.maxLeverage);
+    }
   } catch {}
 
   refreshTradePositions();
@@ -2935,13 +2971,25 @@ function tradeSetUnit(el){
 
 function tradeLevStep(ev, leg, dir){
   ev.preventDefault(); ev.stopPropagation();
+  const max = _trade[leg].maxLeverage || 125;
   const cur = _trade[leg].leverage;
   let idx = LEVELS.indexOf(cur);
   if (idx < 0) idx = 2;
   idx = Math.max(0, Math.min(LEVELS.length - 1, idx + dir));
-  _trade[leg].leverage = LEVELS[idx];
+  let next = LEVELS[idx];
+  if (next > max) {
+    next = max;
+    _toast && _toast(`Max leverage on ${EX_LABEL[leg==='long'?LONG:SHORT]||''}: ${max}×`);
+  }
+  _trade[leg].leverage = next;
   _renderLev(leg);
   tradeRecalc(leg);
+}
+
+function _setLevHint(leg, max){
+  const el = document.getElementById('trade-lev-val-' + leg);
+  if (!el) return;
+  el.title = `Max on exchange: ${max}×`;
 }
 
 function _renderLev(leg){
@@ -2987,10 +3035,62 @@ function _renderSubmit(leg){
   const ok = t.keyStatus === 'ok' && t.qty > 0 && t.last > 0 && t.balance > 0;
   btn.disabled = !ok;
   const actionText = leg === 'long' ? 'Open Long' : 'Open Short';
-  if (t.keyStatus === 'missing')  { btn.textContent = actionText + ' · add API key'; return; }
-  if (t.keyStatus === 'disabled') { btn.textContent = actionText + ' · enable trading'; return; }
-  if (!t.qty) { btn.textContent = actionText + ' · enter size'; return; }
-  btn.textContent = `${actionText} · ${t.qty.toFixed(4)} ${SYM}`;
+  if (t.keyStatus === 'missing')  { btn.textContent = actionText + ' · add API key'; }
+  else if (t.keyStatus === 'disabled') { btn.textContent = actionText + ' · enable trading'; }
+  else if (!t.qty) { btn.textContent = actionText + ' · enter size'; }
+  else { btn.textContent = `${actionText} · ${t.qty.toFixed(4)} ${SYM}`; }
+  _renderArbBtn();
+}
+
+function _renderArbBtn(){
+  const btn = document.getElementById('trade-arb-btn');
+  const txt = document.getElementById('trade-arb-text');
+  if (!btn || !txt) return;
+  const L = _trade.long, S = _trade.short;
+  const bothKeysOk = L.keyStatus === 'ok' && S.keyStatus === 'ok';
+  const bothQty    = L.qty > 0 && S.qty > 0;
+  const enabled    = bothKeysOk && bothQty;
+  btn.disabled = !enabled;
+  if (!bothKeysOk) { txt.textContent = 'Open Both · need trade keys on both exchanges'; return; }
+  if (!bothQty)    { txt.textContent = 'Open Both · enter size on both legs'; return; }
+  txt.textContent = `Open Both · ${L.qty.toFixed(4)} long on ${EX_LABEL[LONG]||LONG} / ${S.qty.toFixed(4)} short on ${EX_LABEL[SHORT]||SHORT}`;
+}
+
+async function tradeOpenArb(){
+  const L = _trade.long, S = _trade.short;
+  if (L.qty <= 0 || S.qty <= 0) { _toast('Enter size on both legs'); return; }
+  if (!L.walletId || !S.walletId) { _toast('Trading keys missing on one of the exchanges'); return; }
+  const notionalL = (L.qty * L.last).toFixed(2);
+  const notionalS = (S.qty * S.last).toFixed(2);
+  const msg =
+    `Place REAL arb positions on both exchanges?\n\n` +
+    `LONG  ${L.qty.toFixed(4)} ${SYM}  ≈ ${notionalL} USDT · ${L.leverage}× ${L.margin}  on ${EX_LABEL[LONG]||LONG}\n` +
+    `SHORT ${S.qty.toFixed(4)} ${SYM}  ≈ ${notionalS} USDT · ${S.leverage}× ${S.margin}  on ${EX_LABEL[SHORT]||SHORT}`;
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById('trade-arb-btn');
+  const txt = document.getElementById('trade-arb-text');
+  const prev = txt.textContent;
+  btn.disabled = true; txt.textContent = 'Submitting both legs…';
+  try {
+    const r = await Auth.apiFetch('/trade/open-arb', {
+      method: 'POST',
+      body: JSON.stringify({
+        symbol: SYM,
+        long_wallet_id:  L.walletId, long_quantity:  L.qty, long_leverage:  L.leverage, long_margin_mode:  L.margin,
+        short_wallet_id: S.walletId, short_quantity: S.qty, short_leverage: S.leverage, short_margin_mode: S.margin,
+      }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || 'Request failed');
+    if (body.fully_filled) _toast('Both legs filled ✓', 'success');
+    else if (body.long?.ok && !body.short?.ok)  _toast('Long filled; SHORT failed: ' + (body.short.error||''));
+    else if (body.short?.ok && !body.long?.ok)  _toast('Short filled; LONG failed: '  + (body.long.error ||''));
+    else _toast('Both legs failed');
+    refreshTradePositions();
+    if (typeof accLoadPositions === 'function') accLoadPositions();
+  } catch (e) { _toast('Order failed: ' + (e.message||'unknown')); }
+  finally { txt.textContent = prev; _renderArbBtn(); }
 }
 
 async function tradeOpen(leg){
