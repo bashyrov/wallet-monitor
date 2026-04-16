@@ -582,6 +582,126 @@
 
   </div>
 
+  <!-- API Keys -->
+  <div class="section-card" id="keys-card" style="margin-bottom:20px">
+    <div class="section-head">
+      <span class="section-title">API Keys</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:10.5px;color:var(--text3)">Manage read-only and trading keys per exchange</span>
+      </div>
+    </div>
+    <div class="section-body" style="padding:0">
+      <div class="k-tabs">
+        <button class="k-tab is-active" data-tab="list" onclick="kSwitch(this)">My Keys <span class="k-count" id="k-count">0</span></button>
+        <button class="k-tab" data-tab="add" onclick="kSwitch(this)">+ Add Key</button>
+      </div>
+      <div class="k-panes">
+        <div class="k-pane is-active" id="k-pane-list">
+          <div class="k-list" id="k-list"><div class="k-empty"><span class="spinner"></span></div></div>
+        </div>
+        <div class="k-pane" id="k-pane-add">
+          <form id="k-form" onsubmit="event.preventDefault();kSubmit()">
+            <div class="k-grid">
+              <label class="k-field">
+                <span class="k-lbl">Exchange</span>
+                <select class="k-input" id="k-ex">
+                  <option value="">Select exchange…</option>
+                  <option value="binance">Binance · Futures (trading supported)</option>
+                  <option value="bybit">Bybit · Linear (trading supported)</option>
+                  <option value="okx">OKX</option>
+                  <option value="gate">Gate</option>
+                  <option value="kucoin">KuCoin</option>
+                  <option value="mexc">MEXC</option>
+                  <option value="bitget">Bitget</option>
+                  <option value="backpack">Backpack</option>
+                </select>
+              </label>
+              <label class="k-field">
+                <span class="k-lbl">Label</span>
+                <input class="k-input" id="k-name" placeholder="e.g. Binance Main" minlength="6" required>
+              </label>
+              <label class="k-field" style="grid-column:1/-1">
+                <span class="k-lbl">API Key</span>
+                <input class="k-input mono" id="k-apikey" placeholder="Public key from exchange" required autocomplete="off">
+              </label>
+              <label class="k-field" style="grid-column:1/-1">
+                <span class="k-lbl">API Secret</span>
+                <input class="k-input mono" id="k-apisec" type="password" placeholder="Secret" required autocomplete="off">
+              </label>
+              <label class="k-field" style="grid-column:1/-1" id="k-passphrase-wrap" style="display:none">
+                <span class="k-lbl">Passphrase <span style="color:var(--text3);font-weight:400">(OKX, KuCoin, Bitget)</span></span>
+                <input class="k-input mono" id="k-apipass" placeholder="Passphrase" autocomplete="off">
+              </label>
+              <label class="k-field k-check" style="grid-column:1/-1">
+                <input type="checkbox" id="k-can-trade">
+                <div>
+                  <div style="font-weight:600;font-size:12px;color:var(--text);letter-spacing:-0.01em">Enable live trading</div>
+                  <div style="font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">
+                    Allows this key to place real orders. The key must have <b style="color:var(--yellow)">Futures trading</b> permission
+                    and <b style="color:var(--red)">NO withdrawal</b> permission. Supported today: Binance, Bybit. Leave off to use as read-only for balances and positions.
+                  </div>
+                </div>
+              </label>
+            </div>
+            <div class="k-actions">
+              <button type="button" class="k-btn k-btn-ghost" onclick="kSwitchTo('list')">Cancel</button>
+              <button type="submit" class="k-btn k-btn-primary" id="k-submit">Save key</button>
+            </div>
+            <div class="k-msg" id="k-msg" style="display:none"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  <style>
+    .k-tabs{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--surface2);}
+    .k-tab{-webkit-appearance:none;appearance:none;background:none;border:none;padding:11px 16px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--text3);cursor:pointer;letter-spacing:-0.01em;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;display:inline-flex;align-items:center;gap:7px;}
+    .k-tab:hover{color:var(--text2);}
+    .k-tab.is-active{color:var(--text);border-bottom-color:var(--green);}
+    .k-tab .k-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:16px;padding:0 5px;background:var(--surface3);border-radius:999px;color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;}
+    .k-tab.is-active .k-count{background:rgba(26,255,171,0.12);color:var(--green);}
+    .k-pane{display:none;padding:16px;}
+    .k-pane.is-active{display:block;}
+    .k-list{display:flex;flex-direction:column;gap:8px;}
+    .k-empty{padding:36px 18px;text-align:center;color:var(--text3);font-size:12.5px;}
+    .k-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);transition:border-color .15s;}
+    .k-row:hover{border-color:var(--border2);}
+    .k-row .k-ex-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+    .k-row .k-ex{font-family:Inter,sans-serif;font-weight:700;font-size:12px;min-width:80px;color:var(--text);letter-spacing:-0.01em;}
+    .k-row .k-name{flex:1;font-size:12.5px;color:var(--text);font-family:Inter,sans-serif;font-weight:500;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;}
+    .k-row .k-masked{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text3);min-width:96px;}
+    .k-row .k-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:700;letter-spacing:0.04em;border:1px solid;}
+    .k-pill.ro{color:var(--teal);border-color:rgba(6,182,212,0.35);background:rgba(6,182,212,0.06);}
+    .k-pill.tr{color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.08);}
+    .k-pill.archived{color:var(--text3);border-color:var(--border);background:var(--surface3);}
+    .k-row .k-actions-inline{display:flex;gap:4px;margin-left:auto;}
+    .k-row .k-act{-webkit-appearance:none;appearance:none;width:28px;height:28px;border-radius:7px;background:var(--surface3);border:1px solid var(--border);color:var(--text3);cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s,background .15s;display:inline-flex;align-items:center;justify-content:center;}
+    .k-row .k-act:hover{color:var(--text);}
+    .k-row .k-act.trade.is-on{color:var(--yellow);border-color:var(--yellow);background:rgba(229,192,123,0.1);}
+    .k-row .k-act.trade:hover:not(.is-on){color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.08);}
+    .k-row .k-act.danger:hover{color:var(--red);border-color:var(--red);background:rgba(248,113,113,0.08);}
+    .k-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .k-field{display:flex;flex-direction:column;gap:5px;}
+    .k-field.k-check{flex-direction:row;gap:10px;align-items:flex-start;background:var(--surface2);padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;}
+    .k-field.k-check input[type=checkbox]{margin-top:1px;width:16px;height:16px;accent-color:var(--green);flex-shrink:0;}
+    .k-lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600;}
+    .k-input{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text);font-family:Inter,sans-serif;font-size:13px;outline:none;transition:border-color .15s,box-shadow .15s;width:100%;}
+    .k-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,255,171,0.12);}
+    .k-input.mono{font-family:'JetBrains Mono',monospace;font-size:12px;}
+    .k-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;}
+    .k-btn{padding:9px 16px;border-radius:7px;font-family:inherit;font-weight:700;font-size:12.5px;cursor:pointer;border:1px solid transparent;letter-spacing:-0.01em;transition:box-shadow .15s, background .15s, color .15s;}
+    .k-btn-ghost{background:transparent;border-color:var(--border);color:var(--text2);}
+    .k-btn-ghost:hover{color:var(--text);border-color:var(--border2);}
+    .k-btn-primary{background:var(--green);color:#09090b;}
+    .k-btn-primary:hover{box-shadow:0 0 16px rgba(26,255,171,0.3);}
+    .k-btn-primary:disabled{opacity:0.55;cursor:not-allowed;}
+    .k-msg{margin-top:10px;padding:8px 12px;border-radius:7px;font-size:12px;}
+    .k-msg.err{background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);color:var(--red);}
+    .k-msg.ok{background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.3);color:var(--green);}
+    body.light .k-row{background:#F7F7F7;}
+    @media (max-width:640px) { .k-grid{grid-template-columns:1fr;} }
+  </style>
+
   <!-- Danger Zone -->
   <div class="section-card" style="animation-delay:0.3s">
     <div class="section-head">
@@ -894,6 +1014,159 @@ loadProfile();
     root.style.setProperty('--cy', '-9999px');
   });
 })();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  API KEYS CARD
+// ═══════════════════════════════════════════════════════════════════════
+const _K_EX_LABEL = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', backpack:'Backpack' };
+const _K_EX_COLOR = { binance:'#F0B90B', bybit:'#F0842D', okx:'#8BC6FF', gate:'#17C684', kucoin:'#09BA86', mexc:'#17D854', bitget:'#00D2C8', backpack:'#64B4FF' };
+const _K_PASSPHRASE_EX = new Set(['okx','kucoin','bitget']);
+const _K_TRADABLE = new Set(['binance','bybit']);
+let _kWallets = [];
+
+function kSwitch(el){ kSwitchTo(el.dataset.tab); }
+function kSwitchTo(tab){
+  document.querySelectorAll('.k-tab').forEach(t => t.classList.toggle('is-active', t.dataset.tab === tab));
+  document.querySelectorAll('.k-pane').forEach(p => p.classList.toggle('is-active', p.id === 'k-pane-' + tab));
+}
+
+async function kLoad(){
+  try {
+    const r = await Auth.apiFetch('/wallets');
+    if (!r.ok) throw new Error();
+    const rows = await r.json();
+    _kWallets = rows.filter(w => w.wallet_type === 'exchange' && !w.is_archived);
+    document.getElementById('k-count').textContent = _kWallets.length;
+    kRender();
+  } catch {
+    document.getElementById('k-list').innerHTML = '<div class="k-empty">Failed to load keys</div>';
+  }
+}
+
+function kRender(){
+  const list = document.getElementById('k-list');
+  if (!_kWallets.length) {
+    list.innerHTML = `<div class="k-empty">
+      <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:6px">No API keys yet</div>
+      <div>Add a Binance or Bybit key to enable live trading, or any supported exchange for read-only balances.</div>
+      <button class="k-btn k-btn-primary" style="margin-top:14px" onclick="kSwitchTo('add')">+ Add your first key</button>
+    </div>`;
+    return;
+  }
+  list.innerHTML = _kWallets.map(w => {
+    const color = _K_EX_COLOR[w.type_value] || '#9B9FAB';
+    const label = _K_EX_LABEL[w.type_value] || w.type_value;
+    const tradable = _K_TRADABLE.has(w.type_value);
+    const pillTrade = w.can_trade
+      ? '<span class="k-pill tr" title="Live trading enabled"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>TRADE</span>'
+      : '';
+    return `<div class="k-row">
+      <span class="k-ex-dot" style="background:${color}"></span>
+      <span class="k-ex">${label}</span>
+      <span class="k-name">${_kEsc(w.name)}</span>
+      <span class="k-masked">${_kEsc(w.display_info)}</span>
+      <span class="k-pill ro">READ</span>
+      ${pillTrade}
+      <div class="k-actions-inline">
+        ${tradable ? `<button class="k-act trade ${w.can_trade?'is-on':''}" title="${w.can_trade?'Disable trading':'Enable trading'}" onclick="kToggleTrade(${w.id}, ${w.can_trade?'true':'false'})">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
+        </button>` : ''}
+        <button class="k-act danger" title="Delete key" onclick="kDelete(${w.id}, '${_kEsc(w.name).replace(/'/g, "\\'")}')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 5h10M6 5V3.5a1 1 0 011-1h2a1 1 0 011 1V5m-4 0v8a1 1 0 001 1h2a1 1 0 001-1V5"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _kEsc(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Show/hide passphrase field on exchange change
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'k-ex') {
+    const wrap = document.getElementById('k-passphrase-wrap');
+    if (wrap) wrap.style.display = _K_PASSPHRASE_EX.has(e.target.value) ? 'flex' : 'none';
+    // Gate can_trade checkbox visually on supported exchanges only (but still allow toggle)
+    const canTradeHint = document.getElementById('k-can-trade')?.closest('.k-field');
+    if (canTradeHint) canTradeHint.style.opacity = _K_TRADABLE.has(e.target.value) ? '1' : '0.6';
+  }
+});
+
+async function kSubmit(){
+  const ex   = document.getElementById('k-ex').value;
+  const name = document.getElementById('k-name').value.trim();
+  const apiKey    = document.getElementById('k-apikey').value.trim();
+  const apiSecret = document.getElementById('k-apisec').value.trim();
+  const pass = document.getElementById('k-apipass')?.value?.trim() || '';
+  const wantTrade = document.getElementById('k-can-trade').checked;
+  const msg  = document.getElementById('k-msg');
+  msg.style.display = 'none';
+
+  if (!ex || !name || !apiKey || !apiSecret) { msg.className = 'k-msg err'; msg.textContent = 'Fill exchange, label, key and secret'; msg.style.display = 'block'; return; }
+  if (name.length < 6) { msg.className = 'k-msg err'; msg.textContent = 'Label must be at least 6 characters'; msg.style.display = 'block'; return; }
+  if (_K_PASSPHRASE_EX.has(ex) && !pass) { msg.className = 'k-msg err'; msg.textContent = _K_EX_LABEL[ex] + ' requires a passphrase'; msg.style.display = 'block'; return; }
+  if (wantTrade && !_K_TRADABLE.has(ex)) { msg.className = 'k-msg err'; msg.textContent = 'Trading not yet supported on ' + _K_EX_LABEL[ex] + '. Key saved as read-only.'; msg.style.display = 'block'; }
+
+  const btn = document.getElementById('k-submit');
+  btn.disabled = true; const oldText = btn.textContent; btn.textContent = 'Saving…';
+
+  try {
+    const body = {
+      name,
+      wallet_type: 'exchange',
+      type_value: ex,
+      credentials: _K_PASSPHRASE_EX.has(ex) ? { api_key: apiKey, api_secret: apiSecret, api_passphrase: pass } : { api_key: apiKey, api_secret: apiSecret },
+    };
+    const r = await Auth.apiFetch('/wallets', { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Save failed');
+    }
+    const w = await r.json();
+    if (wantTrade && _K_TRADABLE.has(ex)) {
+      await Auth.apiFetch('/trade/wallets/' + w.id, { method: 'PATCH', body: JSON.stringify({ can_trade: true }) });
+    }
+    msg.className = 'k-msg ok';
+    msg.textContent = 'Saved ✓';
+    msg.style.display = 'block';
+    document.getElementById('k-form').reset();
+    document.getElementById('k-passphrase-wrap').style.display = 'none';
+    await kLoad();
+    setTimeout(() => kSwitchTo('list'), 600);
+  } catch (e) {
+    msg.className = 'k-msg err';
+    msg.textContent = e.message || 'Save failed';
+    msg.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = oldText;
+  }
+}
+
+async function kToggleTrade(id, currentlyOn){
+  const w = _kWallets.find(x => x.id === id);
+  if (!w) return;
+  if (!currentlyOn && !confirm(`Enable LIVE TRADING on "${w.name}"?\n\nThe API key must have Futures trading permission (not withdrawal).`)) return;
+  try {
+    const r = await Auth.apiFetch('/trade/wallets/' + id, { method: 'PATCH', body: JSON.stringify({ can_trade: !currentlyOn }) });
+    if (!r.ok) throw new Error();
+    w.can_trade = !currentlyOn;
+    kRender();
+  } catch { alert('Failed to toggle trading'); }
+}
+
+async function kDelete(id, name){
+  if (!confirm(`Delete API key "${name}"? This cannot be undone.`)) return;
+  try {
+    const r = await Auth.apiFetch('/wallets/' + id, { method: 'DELETE' });
+    if (r.ok || r.status === 204) {
+      _kWallets = _kWallets.filter(w => w.id !== id);
+      document.getElementById('k-count').textContent = _kWallets.length;
+      kRender();
+    }
+  } catch {}
+}
+
+kLoad();
 </script>
 
 <nav class="bottom-nav">
