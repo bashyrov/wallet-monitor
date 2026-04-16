@@ -30,6 +30,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tg_username = Column(String, nullable=True)
+    tg_chat_id = Column(Integer, nullable=True)   # filled after user runs /start to the bot
 
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")

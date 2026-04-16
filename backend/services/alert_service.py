@@ -75,17 +75,17 @@ async def _check_alerts() -> None:
 
             if triggered:
                 user = db.query(User).filter(User.id == alert.user_id).first()
-                tg = user.tg_username if user else None
-                if not tg:
+                chat_id = user.tg_chat_id if user else None
+                if not chat_id:
+                    logger.debug("Alert %d skip: user %s has not linked TG chat yet", alert.id, alert.user_id)
                     continue
                 direction_arrow = "▲" if spread_pct >= 0 else "▼"
                 msg = (
                     f"<b>🚨 Arb Alert: {alert.symbol}</b>\n"
                     f"Long: <b>{alert.long_exchange}</b>  Short: <b>{alert.short_exchange}</b>\n"
-                    f"Spread: <b>{direction_arrow} {spread_pct:+.4f}%</b> (threshold ±{alert.threshold}%)\n"
-                    f"<a href='https://t.me/{tg}'>Open Avalant</a>"
+                    f"Spread: <b>{direction_arrow} {spread_pct:+.4f}%</b> (threshold ±{alert.threshold}%)"
                 )
-                await _send_tg(f"@{tg}", msg)
+                await _send_tg(str(chat_id), msg)
                 alert.last_triggered_at = now
                 db.commit()
                 logger.info("Alert triggered id=%d for user %d spread=%.4f%%", alert.id, alert.user_id, spread_pct)

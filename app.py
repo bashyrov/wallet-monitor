@@ -85,6 +85,9 @@ async def lifespan(app: FastAPI):
     from backend.services.alert_service import start_alert_service, stop_alert_service
     start_alert_service()
 
+    from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
+    start_tg_bot()
+
     import asyncio
     from backend.services.health_service import health_loop
     from backend.services.replay_service import snapshot_loop
@@ -103,6 +106,7 @@ async def lifespan(app: FastAPI):
     stop_price_loop()
     stop_screener_broadcaster()
     stop_alert_service()
+    stop_tg_bot()
     logger.info("Avalant shutting down")
 
 

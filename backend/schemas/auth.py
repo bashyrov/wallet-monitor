@@ -44,12 +44,13 @@ class UserOut(BaseModel):
     plan_expires_at: Optional[datetime] = None
     wallet_limit: Optional[int] = None   # None = unlimited; computed from plan
     tg_username: Optional[str] = None
+    tg_linked: bool = False          # True if tg_chat_id is set (user ran /start)
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
     @model_validator(mode="after")
-    def _fill_wallet_limit(self) -> "UserOut":
+    def _fill_derived(self) -> "UserOut":
         from backend.plans import wallet_limit
         self.wallet_limit = wallet_limit(self.plan)
         return self
