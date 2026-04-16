@@ -230,6 +230,9 @@ customElements.define('app-navbar', AppNavbar);
 .nb-alert-toggle::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--text3,#676B7E);transition:transform .16s,background .15s;}
 .nb-alert-toggle.on{background:rgba(26,255,171,0.2);}
 .nb-alert-toggle.on::after{transform:translateX(14px);background:var(--green,#1AFFAB);}
+.nb-alert-del{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:none;background:transparent;color:var(--text3,#676B7E);border-radius:5px;cursor:pointer;flex-shrink:0;transition:color .12s,background .12s;opacity:0;font-family:inherit;}
+.nb-alert-row:hover .nb-alert-del{opacity:1;}
+.nb-alert-del:hover{color:var(--red,#F87171);background:rgba(248,113,113,0.08);}
 .nb-alerts-empty{padding:28px 16px;text-align:center;color:var(--text3,#676B7E);font-size:12.5px;}
 .nb-alerts-empty-icon{margin:0 auto 10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:var(--surface2,#17171C);color:var(--text3,#676B7E);}
 .nb-alerts-empty .nb-hint{color:var(--text2,#9B9FAB);font-size:11.5px;margin-top:4px;}
@@ -299,11 +302,14 @@ customElements.define('app-navbar', AppNavbar);
     body.innerHTML = rows.map(a => {
       const arrow = a.direction==='above' ? '≥' : a.direction==='below' ? '≤' : '±';
       return `
-      <a class="nb-alert-row" href="/arb?symbol=${a.symbol}&long=${a.long_exchange}&short=${a.short_exchange}" target="_blank">
+      <a class="nb-alert-row" href="/arb?symbol=${a.symbol}&long=${a.long_exchange}&short=${a.short_exchange}" target="_blank" data-alert-id="${a.id}">
         <span class="nb-alert-sym">${a.symbol}</span>
         <span class="nb-alert-pair">${EX_LABEL[a.long_exchange]||a.long_exchange} → ${EX_LABEL[a.short_exchange]||a.short_exchange}</span>
         <span class="nb-alert-thr">${arrow}${(a.threshold).toFixed(3)}%</span>
-        <span class="nb-alert-toggle ${a.enabled?'on':''}" onclick="event.preventDefault();event.stopPropagation();_nbToggleAlert(${a.id},this)"></span>
+        <span class="nb-alert-toggle ${a.enabled?'on':''}" title="Enable/disable" onclick="event.preventDefault();event.stopPropagation();_nbToggleAlert(${a.id},this)"></span>
+        <button class="nb-alert-del" title="Delete alert" onclick="event.preventDefault();event.stopPropagation();_nbDeleteAlert(${a.id},this)">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 5h10M6 5V3.5a1 1 0 011-1h2a1 1 0 011 1V5m-4 0v8a1 1 0 001 1h2a1 1 0 001-1V5"/></svg>
+        </button>
       </a>`;
     }).join('');
   }
@@ -315,8 +321,29 @@ customElements.define('app-navbar', AppNavbar);
     } catch {}
   }
 
+  async function _nbDeleteAlert(id, btn){
+    if (!confirm('Delete this alert?')) return;
+    try {
+      const r = await Auth.apiFetch(`/alerts/${id}`, { method:'DELETE' });
+      if (!r.ok) throw new Error();
+      // remove row + update count
+      const row = btn.closest('.nb-alert-row');
+      if (row) row.remove();
+      const cnt = _pop?.querySelector('#nb-alerts-count');
+      if (cnt) cnt.textContent = Math.max(0, parseInt(cnt.textContent||'0') - 1);
+      // refresh bell dot
+      window.refreshAlertsDot?.();
+      // if empty now, render empty state
+      const body = _pop?.querySelector('#nb-alerts-body');
+      if (body && !body.querySelector('.nb-alert-row')) renderPop([]);
+    } catch {
+      if (window.toast) toast('Failed to delete', 'error');
+    }
+  }
+
   window.openAlertsPopover = openAlertsPopover;
   window._nbToggleAlert = _nbToggleAlert;
+  window._nbDeleteAlert = _nbDeleteAlert;
 
   // Alerts count dot next to bell — lightweight badge
   window.refreshAlertsDot = async function(){
