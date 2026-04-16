@@ -998,11 +998,6 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
           <span class="info-val" id="b-net" style="font-size:13px">—</span>
         </div>
       </div>
-      <div class="info-card" id="oi-card">
-        <div class="info-card-title">Open Interest</div>
-        <div class="info-row"><span class="info-lbl" id="oi-card-long-lbl">Long</span><span class="info-val neu" id="oi-card-long">—</span></div>
-        <div class="info-row"><span class="info-lbl" id="oi-card-short-lbl">Short</span><span class="info-val neu" id="oi-card-short">—</span></div>
-      </div>
       <div class="info-card">
         <div class="info-card-title">Calculator</div>
         <div style="padding:8px 10px;display:flex;flex-direction:column;gap:5px">
@@ -2381,11 +2376,8 @@ async function init(){
   if(histRes?.ok){const d=await histRes.json();_longHist=d.long_history||[];_shortHist=d.short_history||[];renderFundChart();buildHistTable();renderOverviewTables();}
   connectWs();
   startBooks();
-  loadOI();
   // Fetch alerts once to show count in top bar
   Auth.apiFetch('/alerts').then(r=>r.ok?r.json():[]).then(a=>{_alerts=a||[];_refreshAlertCount();}).catch(()=>{});
-  // Refresh OI every 2 min
-  setInterval(loadOI, 120000);
 }
 window.addEventListener('resize',()=>{if(_spreadBuilt)renderSpreadChart();if(_fundBuilt)renderFundChart();if(_eeHist.length>1)renderEntryExitChart();});
 init();
