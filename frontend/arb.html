@@ -13,7 +13,8 @@
 <script src="/theme.js"></script>
 <link rel="stylesheet" href="/navbar.css">
 <script src="/navbar.js" defer></script>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" defer></script>
 <style>
 :root {
   --bg:      #0B0B0E;
@@ -860,6 +861,24 @@ html.no-auth .trade-card > *:not(.auth-lock) {
   pointer-events: none !important;
   user-select: none;
 }
+
+/* ── Skeleton loader — while _opp is null on first paint ── */
+@keyframes avShimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+body.arb-loading .val,
+body.arb-loading .hero-sym,
+body.arb-loading #tb-net-val,
+body.arb-loading #tb-spread-val,
+body.arb-loading .metric-big .metric-big-val {
+  color: transparent !important;
+  background: linear-gradient(90deg, var(--surface2) 0%, var(--surface3) 50%, var(--surface2) 100%);
+  background-size: 200% 100%;
+  animation: avShimmer 1.2s linear infinite;
+  border-radius: 4px;
+  min-width: 28px;
+  display: inline-block;
+}
+body.arb-loading .hero-sym { min-width: 78px; height: 18px; }
+body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
 </style>
 
 <!-- Navbar (shared) -->
@@ -1562,6 +1581,19 @@ if(!SYM||!LONG||!SHORT) document.querySelector('.main').innerHTML='<div style="p
 let _opp=null, _longPrices=[], _shortPrices=[], _longHist=[], _shortHist=[];
 let _tf='1h', _infoPeriodH=1, _spreadBuilt=false, _fundBuilt=false;
 
+// ── sessionStorage snapshot cache for instant paint on return ──
+const _SS_KEY=`arb:${SYM}|${LONG}|${SHORT}`;
+const _SS_TTL=30_000;   // 30s
+function _ssLoad(){
+  try{
+    const raw=sessionStorage.getItem(_SS_KEY); if(!raw) return null;
+    const j=JSON.parse(raw);
+    if(Date.now()-j.ts>_SS_TTL) return null;
+    return j.opp;
+  }catch{return null;}
+}
+function _ssSave(o){try{sessionStorage.setItem(_SS_KEY,JSON.stringify({ts:Date.now(),opp:o}));}catch{}}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const setH=(id,html)=>{const e=document.getElementById(id);if(e)e.innerHTML=html;};
 const setT=(id,txt)=>{const e=document.getElementById(id);if(e)e.textContent=txt;};
@@ -1612,6 +1644,8 @@ function renderTopBar(){
   document.getElementById('stt-dot-long').className=`tt-dot dot-${LONG}`;
   document.getElementById('stt-dot-short').className=`tt-dot dot-${SHORT}`;
   const r=_opp; if(!r) return;
+  // First data paint — drop the skeleton shimmer.
+  document.body.classList.remove('arb-loading');
   const lIvl=r.long_interval_h||r.interval_h||8, sIvl=r.short_interval_h||r.interval_h||8;
   // Denormalise to native per-interval rate (opportunity stores 8h-normalised rates)
   const lRateNative = r.long_rate  * (lIvl / 8);
@@ -2285,7 +2319,7 @@ function connectWs(){
         : (data.opportunities || []);
       const opp = pool.find(o=>o.symbol===SYM&&o.long_exchange===LONG&&o.short_exchange===SHORT);
       if(!opp)return;
-      _opp=opp; renderTopBar();
+      _opp=opp; _ssSave(opp); renderTopBar();
       if(_lastNextTsLong!==null&&opp.next_ts_long&&opp.next_ts_long!==_lastNextTsLong){
         histPrependRow(_lastNextTsLong,_prevLongRate,_prevShortRate);
         if(_prevLongRate!=null) _longHist.unshift({ts:_lastNextTsLong,rate:_prevLongRate});
@@ -2784,6 +2818,12 @@ async function init(){
   if(!SYM||!LONG||!SHORT)return;
   // Before wiring anything up, confirm both legs are currently enabled by admin.
   if (!(await _assertExchangesEnabled())) return;
+
+  // Instant paint from sessionStorage snapshot if one is still fresh —
+  // swap-direction / page-return lands on previous state in <50ms.
+  const cached = typeof _ssLoad === 'function' ? _ssLoad() : null;
+  if (cached) { _opp = cached; renderTopBar(); }
+
   renderTopBar();
   // Critical path: WS + books start immediately (non-blocking);
   // lightweight /pair endpoint fetches only 2 exchanges (not all 12).
@@ -2794,7 +2834,11 @@ async function init(){
       const r = await Auth.apiFetch(`/screener/pair?symbol=${SYM}&long_ex=${LONG}&short_ex=${SHORT}`);
       if (!r.ok) return;
       const d = await r.json();
-      if (d.opp) { _opp = d.opp; renderTopBar(); }
+      if (d.opp) {
+        _opp = d.opp;
+        if (typeof _ssSave === 'function') _ssSave(d.opp);
+        renderTopBar();
+      }
     } catch {}
   })();
   // Alerts count in topbar — lightweight, non-critical

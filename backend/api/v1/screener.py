@@ -16,6 +16,18 @@ from backend.services.auth_service import decode_token
 router = APIRouter(prefix="/screener", tags=["screener"])
 logger = logging.getLogger("avalant.screener")
 
+# ── TTL caches for hot /arb page endpoints ─────────────────────────────────────
+# key → (value, ts). `time() - ts < TTL` means cache hit.
+_ob_cache: dict[tuple[str, str, int], tuple[dict, float]] = {}
+_ph_cache: dict[tuple[str, str, str], tuple[dict, float]] = {}   # (symbol, long, short) → arb-price-history
+_fh_cache: dict[tuple[str, str, str], tuple[dict, float]] = {}   # (symbol, long, short) → arb-history
+_oi_cache: dict[tuple[str, str, str], tuple[dict, float]] = {}   # (symbol, long, short) → open-interest
+
+_OB_TTL  = 0.5      # orderbook: 500ms
+_PH_TTL  = 30.0     # price-history (1h candles): 30s
+_FH_TTL  = 30.0     # funding-history: 30s
+_OI_TTL  = 60.0     # open-interest: 60s
+
 # ── REST endpoints ─────────────────────────────────────────────────────────────
 
 @router.get("/funding")
@@ -127,7 +139,7 @@ async def pair_opp(
 async def _fetch_history_for(exchange: str, symbol: str, limit: int = 90) -> list[dict]:
     """Fetch historical funding rates for a symbol on a given exchange."""
     try:
-        c = _arb_http  # reuse persistent pool
+        c = _arb_http  # reuse persistent client with keepalive
         if True:
             if exchange == "binance":
                 sym = symbol + "USDT"
@@ -203,7 +215,7 @@ async def _fetch_history_for(exchange: str, symbol: str, limit: int = 90) -> lis
 async def _fetch_price_history(exchange: str, symbol: str, limit: int = 100) -> list[dict]:
     """Fetch OHLCV 1h candles → list of {ts, open, high, low, close}."""
     try:
-        c = _arb_http  # reuse persistent pool
+        c = _arb_http
         if True:
             if exchange == "binance":
                 sym = symbol + "USDT"
@@ -332,17 +344,23 @@ async def arb_price_history(
     long_ex: str = Query(...),
     short_ex: str = Query(...),
 ):
+    key = (symbol, long_ex, short_ex)
+    hit = _ph_cache.get(key)
+    if hit and time.time() - hit[1] < _PH_TTL:
+        return hit[0]
     long_prices, short_prices = await asyncio.gather(
         _fetch_price_history(long_ex, symbol),
         _fetch_price_history(short_ex, symbol),
     )
-    return {
+    out = {
         "symbol": symbol,
         "long_exchange": long_ex,
         "short_exchange": short_ex,
         "long_prices": long_prices,
         "short_prices": short_prices,
     }
+    _ph_cache[key] = (out, time.time())
+    return out
 
 
 @router.get("/all-exchanges-funding")
@@ -361,7 +379,7 @@ async def all_exchanges_funding(
 async def _fetch_open_interest(exchange: str, symbol: str) -> dict | None:
     """Fetch open interest for a symbol on a given exchange."""
     try:
-        c = _arb_http  # reuse persistent pool
+        c = _arb_http
         if True:
             if exchange == "binance":
                 r = await c.get(f"https://fapi.binance.com/fapi/v1/openInterest?symbol={symbol}USDT")
@@ -436,18 +454,21 @@ async def open_interest(
     short_ex: str = Query(...),
 ):
     """Open interest for long and short exchange for a pair."""
+    key = (symbol, long_ex, short_ex)
+    hit = _oi_cache.get(key)
+    if hit and time.time() - hit[1] < _OI_TTL:
+        return hit[0]
     results = await asyncio.gather(
         _fetch_open_interest(long_ex, symbol),
         _fetch_open_interest(short_ex, symbol),
         return_exceptions=True,
     )
-    out = {}
+    out_map = {}
     for ex, res in zip([long_ex, short_ex], results):
-        if isinstance(res, dict):
-            out[ex] = res
-        else:
-            out[ex] = None
-    return {"symbol": symbol, "open_interest": out}
+        out_map[ex] = res if isinstance(res, dict) else None
+    out = {"symbol": symbol, "open_interest": out_map}
+    _oi_cache[key] = (out, time.time())
+    return out
 
 
 @router.get("/arb-history")
@@ -456,11 +477,15 @@ async def arb_history(
     long_ex: str = Query(...),
     short_ex: str = Query(...),
 ):
+    key = (symbol, long_ex, short_ex)
+    hit = _fh_cache.get(key)
+    if hit and time.time() - hit[1] < _FH_TTL:
+        return hit[0]
     long_hist, short_hist = await asyncio.gather(
         _fetch_history_for(long_ex, symbol),
         _fetch_history_for(short_ex, symbol),
     )
-    return {
+    out = {
         "symbol": symbol,
         "long_exchange": long_ex,
         "short_exchange": short_ex,
@@ -469,6 +494,8 @@ async def arb_history(
         "long_history": long_hist,
         "short_history": short_hist,
     }
+    _fh_cache[key] = (out, time.time())
+    return out
 
 
 # ── WebSocket: live funding rates ──────────────────────────────────────────────
@@ -673,11 +700,78 @@ def _build_arb_diff(curr: dict) -> dict | None:
     return payload
 
 
+HOT_PAIRS_WARMUP_INTERVAL = 300  # seconds — every 5 min
+HOT_PAIRS_COUNT = 20
+
+
+async def _warm_hot_pair(symbol: str, long_ex: str, short_ex: str) -> None:
+    """Populate _ph_cache, _fh_cache, _oi_cache for one pair."""
+    key = (symbol, long_ex, short_ex)
+    try:
+        if not _ph_cache.get(key) or time.time() - _ph_cache[key][1] > _PH_TTL / 2:
+            long_p, short_p = await asyncio.gather(
+                _fetch_price_history(long_ex, symbol),
+                _fetch_price_history(short_ex, symbol),
+            )
+            _ph_cache[key] = ({
+                "symbol": symbol, "long_exchange": long_ex, "short_exchange": short_ex,
+                "long_prices": long_p, "short_prices": short_p,
+            }, time.time())
+        if not _fh_cache.get(key) or time.time() - _fh_cache[key][1] > _FH_TTL / 2:
+            long_h, short_h = await asyncio.gather(
+                _fetch_history_for(long_ex, symbol),
+                _fetch_history_for(short_ex, symbol),
+            )
+            _fh_cache[key] = ({
+                "symbol": symbol, "long_exchange": long_ex, "short_exchange": short_ex,
+                "long_fee": EXCHANGE_FEES.get(long_ex, 0.0006),
+                "short_fee": EXCHANGE_FEES.get(short_ex, 0.0006),
+                "long_history": long_h, "short_history": short_h,
+            }, time.time())
+        if not _oi_cache.get(key) or time.time() - _oi_cache[key][1] > _OI_TTL / 2:
+            oi_l, oi_s = await asyncio.gather(
+                _fetch_open_interest(long_ex, symbol),
+                _fetch_open_interest(short_ex, symbol),
+                return_exceptions=True,
+            )
+            _oi_cache[key] = ({
+                "symbol": symbol,
+                "open_interest": {
+                    long_ex:  oi_l if isinstance(oi_l, dict) else None,
+                    short_ex: oi_s if isinstance(oi_s, dict) else None,
+                },
+            }, time.time())
+    except Exception as exc:
+        logger.debug("Hot-pair warmup %s %s>%s failed: %s", symbol, long_ex, short_ex, exc)
+
+
+async def _warm_hot_pairs_loop() -> None:
+    """Periodically pre-warm per-pair caches for the top-N arb opportunities."""
+    while True:
+        try:
+            data = await get_arbitrage_opportunities()
+            opps = data.get("opportunities", [])[:HOT_PAIRS_COUNT]
+            if opps:
+                # run 4 in parallel to avoid hammering
+                sem = asyncio.Semaphore(4)
+                async def _one(o):
+                    async with sem:
+                        await _warm_hot_pair(o["symbol"], o["long_exchange"], o["short_exchange"])
+                await asyncio.gather(*(_one(o) for o in opps), return_exceptions=True)
+                logger.debug("Hot-pairs warmup: %d pairs primed", len(opps))
+        except Exception as exc:
+            logger.warning("Hot-pairs warmup loop error: %s", exc)
+        await asyncio.sleep(HOT_PAIRS_WARMUP_INTERVAL)
+
+
 async def _broadcast_loop() -> None:
     """Push cached data to WS clients on THIS worker every BROADCAST_INTERVAL.
     Runs on every worker — each one reads from the shared file cache populated
     by the refresh loop (which runs on only one worker via file lock)."""
     from backend.services.arbitrage_service import _arb_result_cache, _read_file_cache
+    # Pre-warm per-pair caches for top opportunities (price-history,
+    # funding-history, OI). First visitor to any hot pair hits warm cache.
+    asyncio.create_task(_warm_hot_pairs_loop())
 
     while True:
         await asyncio.sleep(BROADCAST_INTERVAL)
