@@ -703,6 +703,77 @@ body.light .bnav-item.active { color: #000; }
     padding-bottom: 88px;
   }
 }
+
+/* ── ALPHA MODE ── */
+#section-alpha .alpha-bar-wrap { position: relative; height: 16px; min-width: 80px; background: var(--surface2); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+#section-alpha .alpha-bar-fill { position: absolute; inset: 0; right: auto; border-radius: 4px 0 0 4px; transition: width .3s; }
+#section-alpha .alpha-bar-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--text); text-shadow: 0 1px 2px rgba(0,0,0,.5); letter-spacing: -.02em; }
+.td-rank { font-family: var(--mono); font-weight: 700; color: var(--text2); width: 36px; }
+.td-actions { display: flex; gap: 6px; align-items: center; }
+.act-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: transparent; border: 1px solid var(--border); color: var(--text3); cursor: pointer; transition: all .15s; font-family: inherit; }
+.act-btn:hover { color: var(--green); border-color: var(--green); background: rgba(26,255,171,.06); }
+.star-btn { color: var(--text3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 5px; transition: all .15s; }
+.star-btn:hover { color: var(--yellow); background: var(--surface3); }
+.star-btn.on { color: var(--yellow); }
+.wl-count-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; background: rgba(229,192,123,.08); border: 1px solid rgba(229,192,123,.22); color: var(--yellow); font-family: var(--mono); font-size: 10px; font-weight: 700; margin-left: 6px; }
+
+/* ── LIVE OPS SIDEBAR ── */
+.lo-fab {
+  position: fixed; right: 20px; bottom: 20px; z-index: 250;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--green);
+  color: var(--green); font-weight: 700; font-size: 13px; cursor: pointer;
+  box-shadow: 0 8px 24px rgba(26,255,171,.2);
+  font-family: inherit; transition: transform .15s;
+}
+.lo-fab:hover { transform: translateY(-2px); }
+.lo-fab .lo-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: ws-pulse 1.6s ease-in-out infinite; }
+.lo-sidebar {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 92vw; z-index: 400;
+  background: var(--surface); border-left: 1px solid var(--border);
+  transform: translateX(100%); transition: transform .28s cubic-bezier(.16,1,.3,1);
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: -10px 0 40px rgba(0,0,0,.5);
+}
+.lo-sidebar.open { transform: translateX(0); }
+.lo-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 350; }
+.lo-backdrop.open { opacity: 1; pointer-events: auto; }
+.lo-hdr { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.lo-hdr-title { font-size: 14px; font-weight: 700; flex: 1; letter-spacing: -.01em; }
+.lo-close { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid var(--border); border-radius: 7px; color: var(--text2); cursor: pointer; font-family: inherit; font-size: 16px; }
+.lo-close:hover { color: var(--red); border-color: var(--red); }
+.lo-body { flex: 1; overflow-y: auto; padding: 14px 16px 80px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.lo-section { margin-bottom: 22px; }
+.lo-section-title { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+.lo-section-title .lo-spinner { width: 10px; height: 10px; border: 1.5px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: spin .7s linear infinite; }
+.health-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; font-family: var(--mono); }
+.health-row:hover { background: var(--surface2); }
+.health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.health-dot.healthy { background: var(--green); }
+.health-dot.degraded { background: var(--yellow); }
+.health-dot.down { background: var(--red); }
+.health-name { flex: 1; font-family: inherit; font-weight: 600; color: var(--text); font-size: 12px; }
+.health-lat { color: var(--text2); }
+.health-rate { color: var(--text3); min-width: 36px; text-align: right; }
+.anom-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 7px; border: 1px solid var(--border); margin-bottom: 6px; background: var(--surface2); cursor: pointer; transition: border-color .15s; }
+.anom-row:hover { border-color: var(--yellow); }
+.anom-sym { font-family: var(--mono); font-weight: 700; font-size: 12px; min-width: 50px; }
+.anom-pair { font-size: 10px; color: var(--text3); flex: 1; }
+.anom-spread { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.anom-z { font-family: var(--mono); font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(229,192,123,.12); color: var(--yellow); border: 1px solid rgba(229,192,123,.3); }
+.lb-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 7px; cursor: pointer; transition: background .15s; }
+.lb-row:hover { background: var(--surface2); }
+.lb-rank { font-family: var(--mono); font-size: 10px; color: var(--text3); width: 20px; }
+.lb-sym { font-family: var(--mono); font-weight: 700; font-size: 12px; min-width: 60px; }
+.lb-pair { font-size: 10px; color: var(--text3); flex: 1; }
+.lb-alpha { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--green); }
+
+@media (max-width: 768px) {
+  .lo-sidebar { width: 100%; max-width: 100%; bottom: 0; top: auto; height: 80vh; transform: translateY(100%); border-radius: 16px 16px 0 0; border-left: none; border-top: 1px solid var(--border); }
+  .lo-sidebar.open { transform: translateY(0); }
+  .lo-fab { bottom: 96px; }
+}
 </style>
 </head>
 <body>
@@ -805,6 +876,7 @@ body.light .bnav-item.active { color: #000; }
     <div class="mode-tabs">
       <button class="mode-tab active" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
       <button class="mode-tab" id="tab-arb" onclick="switchMode('arb')">Arbitrage</button>
+      <button class="mode-tab" id="tab-alpha" onclick="switchMode('alpha')">Alpha <span class="wl-count-badge" id="wl-count-badge" style="display:none">★ <span id="wl-count">0</span></span></button>
     </div>
 
     <!-- ── STATS (desktop only) ── -->
@@ -956,10 +1028,61 @@ body.light .bnav-item.active { color: #000; }
       <div class="pager" id="pager-arb"></div>
     </div>
 
+    <!-- ── ALPHA SECTION ── -->
+    <div id="section-alpha" style="display:none">
+      <div class="table-wrap">
+        <table id="tbl-alpha">
+          <thead>
+            <tr>
+              <th data-tip="Alpha rank by score">#</th>
+              <th data-tip="Token">Token</th>
+              <th data-tip="Long / Short exchanges">Pair</th>
+              <th data-tip="Composite alpha score 0-100 (funding + spread + liquidity + stability)">Alpha Score</th>
+              <th data-tip="Net profit per 8h after fees">Net /8h</th>
+              <th data-tip="Combined 24h volume (min of two)">Volume</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-alpha"><tr><td colspan="7" class="empty-msg"><span class="spinner"></span>Loading alpha…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-alpha"></div>
+      <div class="pager" id="pager-alpha"></div>
+    </div>
+
   </div><!-- /main-content -->
 </div><!-- /screener-layout -->
 
 <div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:200" id="toast-wrap"></div>
+
+<!-- Live Ops sidebar -->
+<button class="lo-fab" id="lo-fab" onclick="toggleLiveOps()">
+  <span class="lo-pulse"></span>
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5L9.6 6l4.5.4-3.4 3 1 4.4L8 11.6 4.3 13.8l1-4.4-3.4-3L6.4 6z"/></svg>
+  Alpha
+</button>
+<div class="lo-backdrop" id="lo-backdrop" onclick="toggleLiveOps(false)"></div>
+<aside class="lo-sidebar" id="lo-sidebar">
+  <div class="lo-hdr">
+    <span class="lo-pulse" style="width:8px;height:8px;border-radius:50%;background:var(--green);animation:ws-pulse 1.6s ease-in-out infinite"></span>
+    <span class="lo-hdr-title">Live Ops</span>
+    <button class="lo-close" onclick="toggleLiveOps(false)">×</button>
+  </div>
+  <div class="lo-body">
+    <div class="lo-section">
+      <div class="lo-section-title">Exchange Health <span class="lo-spinner" id="lo-health-spin" style="display:none"></span></div>
+      <div id="lo-health-list"><div style="color:var(--text3);font-size:11px">Loading…</div></div>
+    </div>
+    <div class="lo-section">
+      <div class="lo-section-title">Anomalies (24h)</div>
+      <div id="lo-anom-list"><div style="color:var(--text3);font-size:11px">Loading…</div></div>
+    </div>
+    <div class="lo-section">
+      <div class="lo-section-title">Leaderboard (24h)</div>
+      <div id="lo-lb-list"><div style="color:var(--text3);font-size:11px">Loading…</div></div>
+    </div>
+  </div>
+</aside>
 
 <nav class="bottom-nav" id="bottom-nav">
   <a href="/app" class="bnav-item" id="bnav-app">
@@ -1033,7 +1156,7 @@ function symbolLink(symbol, exchange) {
 }
 
 // ── state ──────────────────────────────────────────────────────────────────────
-let _mode = (new URLSearchParams(location.search).get('mode') === 'arb') ? 'arb' : 'funding';
+let _mode = (() => { const m = new URLSearchParams(location.search).get('mode'); return (m === 'arb' || m === 'alpha') ? m : 'funding'; })();
 let _rows = [];           // funding rows
 let _arbRows = [];        // arbitrage opportunities
 let _filtered = [];
@@ -1217,15 +1340,18 @@ function switchMode(mode) {
   _mode = mode;
   document.getElementById('tab-funding').classList.toggle('active', mode === 'funding');
   document.getElementById('tab-arb').classList.toggle('active', mode === 'arb');
+  document.getElementById('tab-alpha').classList.toggle('active', mode === 'alpha');
   document.getElementById('section-funding').style.display      = mode === 'funding' ? '' : 'none';
   document.getElementById('section-arb').style.display          = mode === 'arb'     ? '' : 'none';
+  document.getElementById('section-alpha').style.display        = mode === 'alpha'   ? '' : 'none';
   document.getElementById('lp-filters-funding').style.display   = mode === 'funding' ? '' : 'none';
-  document.getElementById('lp-filters-arb').style.display       = mode === 'arb'     ? '' : 'none';
+  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha') ? '' : 'none';
   const mf = document.getElementById('mob-filters-funding'); if (mf) mf.style.display = mode === 'funding' ? '' : 'none';
-  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = mode === 'arb'     ? '' : 'none';
+  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha') ? '' : 'none';
   document.getElementById('mobile-sort-funding').style.display  = mode === 'funding' ? '' : 'none';
   document.getElementById('mobile-sort-arb').style.display      = mode === 'arb'     ? '' : 'none';
   if (mode === 'arb' && !_arbRows.length) loadArb();
+  else if (mode === 'alpha') loadAlpha();
   else if (mode === 'funding') applyFilter();
   else applyArb();
 }
@@ -1978,7 +2104,204 @@ setInterval(tickCountdowns, 1000);
     }
   } catch (_) {}
   connectWs();
+  loadWatchlist();
+  startLiveOpsPollers();
 })();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ALPHA MODE · LIVE OPS SIDEBAR · WATCHLIST
+// ═══════════════════════════════════════════════════════════════════════
+let _alphaRows = [];
+let _watchlist = {};     // key = "SYM|LONG>SHORT" → id
+let _loOpen = false;
+let _loTimers = {};
+
+function _wlKey(sym, l, s) { return `${sym}|${l}>${s}`; }
+function _isWatched(sym, l, s) { return !!_watchlist[_wlKey(sym, l, s)]; }
+
+async function loadWatchlist() {
+  try {
+    const r = await Auth.apiFetch('/screener/watchlist');
+    if (!r.ok) return;
+    const rows = await r.json();
+    _watchlist = {};
+    for (const x of rows) _watchlist[_wlKey(x.symbol, x.long_exchange, x.short_exchange)] = x.id;
+    _updateWlBadge();
+    renderAllStars();
+  } catch (_) {}
+}
+
+function _updateWlBadge() {
+  const n = Object.keys(_watchlist).length;
+  const badge = document.getElementById('wl-count-badge');
+  const cnt = document.getElementById('wl-count');
+  if (!badge || !cnt) return;
+  cnt.textContent = n;
+  badge.style.display = n > 0 ? '' : 'none';
+}
+
+async function toggleWatch(ev, sym, l, s) {
+  ev.stopPropagation(); ev.preventDefault();
+  const key = _wlKey(sym, l, s);
+  const id = _watchlist[key];
+  try {
+    if (id) {
+      const r = await Auth.apiFetch(`/screener/watchlist/${id}`, { method: 'DELETE' });
+      if (r.ok) { delete _watchlist[key]; toast('Removed from watchlist', 'info'); }
+    } else {
+      const r = await Auth.apiFetch('/screener/watchlist', { method: 'POST',
+        body: JSON.stringify({ symbol: sym, long_exchange: l, short_exchange: s }) });
+      if (r.ok) { const j = await r.json(); _watchlist[key] = j.id; toast('Added to watchlist', 'success'); }
+    }
+    _updateWlBadge();
+    renderAllStars();
+  } catch (e) { toast('Watchlist failed', 'error'); }
+}
+
+function renderAllStars() {
+  document.querySelectorAll('[data-wl-key]').forEach(el => {
+    const on = !!_watchlist[el.dataset.wlKey];
+    el.classList.toggle('on', on);
+    el.innerHTML = on
+      ? '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5L9.7 6l4.8.4-3.7 3.3 1.1 4.8L8 11.9 4.1 14.5l1.1-4.8L1.5 6.4 6.3 6z"/></svg>'
+      : '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35"><path d="M8 1.5L9.7 6l4.8.4-3.7 3.3 1.1 4.8L8 11.9 4.1 14.5l1.1-4.8L1.5 6.4 6.3 6z"/></svg>';
+  });
+}
+
+function _starBtn(sym, l, s) {
+  const key = _wlKey(sym, l, s);
+  const on = !!_watchlist[key];
+  const svg = on
+    ? '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5L9.7 6l4.8.4-3.7 3.3 1.1 4.8L8 11.9 4.1 14.5l1.1-4.8L1.5 6.4 6.3 6z"/></svg>'
+    : '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35"><path d="M8 1.5L9.7 6l4.8.4-3.7 3.3 1.1 4.8L8 11.9 4.1 14.5l1.1-4.8L1.5 6.4 6.3 6z"/></svg>';
+  return `<button class="star-btn ${on ? 'on' : ''}" data-wl-key="${key}" title="Watchlist" onclick="toggleWatch(event, '${sym}', '${l}', '${s}')">${svg}</button>`;
+}
+
+function _alphaColor(score) {
+  // 0..40=red, 40..70=yellow, 70..100=green
+  const s = Math.max(0, Math.min(100, score));
+  if (s < 40) { const t = s / 40; return `rgba(248,113,113,${0.55 + t * 0.3})`; }
+  if (s < 70) { return 'rgba(229,192,123,0.72)'; }
+  return `rgba(26,255,171,${0.55 + (s - 70) / 30 * 0.35})`;
+}
+
+async function loadAlpha() {
+  const tbody = document.getElementById('tbody-alpha');
+  try {
+    const r = await Auth.apiFetch('/screener/alpha');
+    if (!r.ok) throw new Error('http');
+    const data = await r.json();
+    _alphaRows = (data.opportunities || []).slice(0, 120);
+    renderAlpha();
+  } catch (_) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Failed to load alpha</td></tr>';
+  }
+}
+
+function renderAlpha() {
+  const tbody = document.getElementById('tbody-alpha');
+  const cards = document.getElementById('cards-alpha');
+  if (!tbody) return;
+  if (!_alphaRows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">No opportunities</td></tr>';
+    if (cards) cards.innerHTML = '';
+    return;
+  }
+  const fmt = (n, d = 4) => (n == null ? '—' : Number(n).toFixed(d));
+  const fmtVol = (v) => { if (!v) return '—'; if (v > 1e9) return (v / 1e9).toFixed(2) + 'B'; if (v > 1e6) return (v / 1e6).toFixed(2) + 'M'; return (v / 1e3).toFixed(1) + 'K'; };
+
+  tbody.innerHTML = _alphaRows.map((o, i) => {
+    const score = o.alpha_score || 0;
+    const color = _alphaColor(score);
+    const vol = Math.min(o.long_volume || 0, o.short_volume || 0);
+    const netClass = (o.net_profit || 0) > 0 ? 'rate-pos' : 'rate-neg';
+    return `
+    <tr>
+      <td class="td-rank">${o.alpha_rank || (i+1)}</td>
+      <td><span class="sym-badge mono">${o.symbol}</span></td>
+      <td><span class="ex-pill" style="--ex-color:var(--green)">${o.long_exchange}</span><span style="color:var(--text3);margin:0 4px">→</span><span class="ex-pill" style="--ex-color:var(--red)">${o.short_exchange}</span></td>
+      <td><div class="alpha-bar-wrap" style="width:140px"><div class="alpha-bar-fill" style="width:${score}%;background:${color}"></div><div class="alpha-bar-num">${score.toFixed(1)}</div></div></td>
+      <td class="mono ${netClass}">${fmt(o.net_profit, 3)}%</td>
+      <td class="mono" style="color:var(--text2)">${fmtVol(vol)}</td>
+      <td class="td-actions">
+        ${_starBtn(o.symbol, o.long_exchange, o.short_exchange)}
+        <a class="act-btn" href="/arb?symbol=${o.symbol}&long=${o.long_exchange}&short=${o.short_exchange}" title="Open arb detail">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 9l6-6M5 3h4v4"/></svg>
+        </a>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Live Ops sidebar ──────────────────────────────────────────────────────
+function toggleLiveOps(force) {
+  _loOpen = typeof force === 'boolean' ? force : !_loOpen;
+  document.getElementById('lo-sidebar').classList.toggle('open', _loOpen);
+  document.getElementById('lo-backdrop').classList.toggle('open', _loOpen);
+  if (_loOpen) { refreshHealth(); refreshAnomalies(); refreshLeaderboard(); }
+}
+
+async function refreshHealth() {
+  try {
+    const r = await Auth.apiFetch('/screener/health?window_min=60');
+    if (!r.ok) return;
+    const rows = await r.json();
+    const el = document.getElementById('lo-health-list');
+    if (!el) return;
+    if (!rows.length) { el.innerHTML = '<div style="color:var(--text3);font-size:11px">No data yet</div>'; return; }
+    el.innerHTML = rows.map(h => `
+      <div class="health-row">
+        <span class="health-dot ${h.status}"></span>
+        <span class="health-name">${h.exchange}</span>
+        <span class="health-lat">${h.latency_p50_ms || h.last_latency_ms || '—'}ms</span>
+        <span class="health-rate">${h.success_rate_pct.toFixed(0)}%</span>
+      </div>`).join('');
+  } catch (_) {}
+}
+
+async function refreshAnomalies() {
+  try {
+    const r = await Auth.apiFetch('/screener/anomalies?hours=24&limit=10');
+    if (!r.ok) return;
+    const rows = await r.json();
+    const el = document.getElementById('lo-anom-list');
+    if (!el) return;
+    if (!rows.length) { el.innerHTML = '<div style="color:var(--text3);font-size:11px">No anomalies in last 24h</div>'; return; }
+    el.innerHTML = rows.map(a => `
+      <div class="anom-row" onclick="location.href='/arb?symbol=${a.symbol}&long=${a.long_exchange}&short=${a.short_exchange}'">
+        <span class="anom-sym">${a.symbol}</span>
+        <span class="anom-pair">${a.long_exchange}→${a.short_exchange}</span>
+        <span class="anom-spread ${a.spread_pct >= 0 ? 'rate-pos' : 'rate-neg'}">${a.spread_pct.toFixed(3)}%</span>
+        <span class="anom-z">z=${a.z_score.toFixed(1)}</span>
+      </div>`).join('');
+  } catch (_) {}
+}
+
+async function refreshLeaderboard() {
+  try {
+    const r = await Auth.apiFetch('/screener/leaderboard?hours=24&limit=10');
+    if (!r.ok) return;
+    const rows = await r.json();
+    const el = document.getElementById('lo-lb-list');
+    if (!el) return;
+    if (!rows.length) { el.innerHTML = '<div style="color:var(--text3);font-size:11px">Collecting data…</div>'; return; }
+    el.innerHTML = rows.map((l, i) => `
+      <div class="lb-row" onclick="location.href='/arb?symbol=${l.symbol}&long=${l.long_exchange}&short=${l.short_exchange}'">
+        <span class="lb-rank">${i+1}</span>
+        <span class="lb-sym">${l.symbol}</span>
+        <span class="lb-pair">${l.long_exchange}→${l.short_exchange}</span>
+        <span class="lb-alpha">${l.avg_alpha.toFixed(1)}</span>
+      </div>`).join('');
+  } catch (_) {}
+}
+
+function startLiveOpsPollers() {
+  // prime once so sidebar shows fresh data on first open
+  refreshHealth();
+  _loTimers.health = setInterval(refreshHealth, 30000);
+  _loTimers.anom = setInterval(refreshAnomalies, 60000);
+  _loTimers.lb = setInterval(refreshLeaderboard, 60000);
+}
 </script>
 
 </body>
