@@ -1131,17 +1131,32 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
           <span class="info-val" id="b-net" style="font-size:13px">—</span>
         </div>
       </div>
-      <div class="info-card">
-        <div class="info-card-title">Calculator</div>
-        <div style="padding:8px 10px;display:flex;flex-direction:column;gap:5px">
-          <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Size (USD)</div><input id="calc-size" class="calc-input" type="number" value="10000" oninput="calcUpdate()"></div>
-          <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Periods (×8h)</div><input id="calc-periods" class="calc-input" type="number" value="3" oninput="calcUpdate()"></div>
+      <div class="info-card" id="calc-card">
+        <div class="info-card-title calc-head" onclick="toggleCalc()" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none">
+          <span>Calculator</span>
+          <span style="flex:1"></span>
+          <svg id="calc-chev" width="11" height="7" viewBox="0 0 11 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="transition:transform .18s;color:var(--text3)"><path d="M1 1l4.5 5L10 1"/></svg>
         </div>
-        <div class="calc-grid">
-          <div class="calc-cell"><div class="calc-lbl">Gross</div><div class="calc-val pos" id="c-gross">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">Fees</div><div class="calc-val neg" id="c-fees">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">Net</div><div class="calc-val" id="c-net">—</div></div>
-          <div class="calc-cell"><div class="calc-lbl">APR</div><div class="calc-val" id="c-apr">—</div></div>
+        <div class="calc-body" id="calc-body" style="display:none">
+          <div style="padding:8px 10px;display:flex;flex-direction:column;gap:5px">
+            <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Size (USD)</div><input id="calc-size" class="calc-input" type="number" value="10000" oninput="calcUpdate()"></div>
+            <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Periods (×8h)</div><input id="calc-periods" class="calc-input" type="number" value="3" oninput="calcUpdate()"></div>
+            <div>
+              <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;display:flex;align-items:center;gap:6px">
+                <span>Price spread % (override)</span>
+                <button type="button" onclick="calcResetSpread()" style="margin-left:auto;background:none;border:none;color:var(--text3);font-family:inherit;font-size:9px;cursor:pointer;padding:0;text-decoration:underline" title="Use live spread">live</button>
+              </div>
+              <input id="calc-spread" class="calc-input" type="number" step="0.01" placeholder="use live if empty" oninput="calcUpdate()">
+            </div>
+          </div>
+          <div class="calc-grid">
+            <div class="calc-cell"><div class="calc-lbl">Funding</div><div class="calc-val" id="c-funding">—</div></div>
+            <div class="calc-cell"><div class="calc-lbl">Spread P&amp;L</div><div class="calc-val" id="c-spread">—</div></div>
+            <div class="calc-cell"><div class="calc-lbl">Fees</div><div class="calc-val neg" id="c-fees">—</div></div>
+            <div class="calc-cell"><div class="calc-lbl">Net</div><div class="calc-val" id="c-net">—</div></div>
+            <div class="calc-cell"><div class="calc-lbl">APR</div><div class="calc-val" id="c-apr">—</div></div>
+            <div class="calc-cell"><div class="calc-lbl">% on size</div><div class="calc-val" id="c-pct">—</div></div>
+          </div>
         </div>
       </div>
 
@@ -1466,14 +1481,48 @@ function renderOverview(){
   setH('b-net',`<span class="${r.net_profit>=0?'pos':'neg'}">${sign(r.net_profit)}${r.net_profit.toFixed(4)}%</span>`);
   calcUpdate();
 }
+function toggleCalc(){
+  const body = document.getElementById('calc-body');
+  const chev = document.getElementById('calc-chev');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+  if (open) calcUpdate();
+}
+function calcResetSpread(){
+  const el = document.getElementById('calc-spread');
+  if (el) { el.value = ''; calcUpdate(); }
+}
 function calcUpdate(){
   const r=_opp; if(!r) return;
   const size=parseFloat(document.getElementById('calc-size').value)||0;
   const periods=parseFloat(document.getElementById('calc-periods').value)||1;
-  const gross=r.gross_funding/100*size*periods, fees=r.total_fees/100*size, net=gross-fees;
-  setT('c-gross',fmtU(gross)); setT('c-fees','−'+fmtU(fees));
-  const cn=document.getElementById('c-net'); cn.textContent=(net>=0?'+':'')+fmtU(net); cn.className='calc-val '+(net>=0?'pos':'neg');
-  const ca=document.getElementById('c-apr'); ca.textContent=sign(r.net_apr)+r.net_apr.toFixed(2)+'%'; ca.className='calc-val '+(r.net_apr>=0?'pos':'neg');
+  // Spread: use override if user entered one, else live opp.price_spread
+  const spreadInput = document.getElementById('calc-spread');
+  const spreadRaw = spreadInput ? spreadInput.value : '';
+  const spreadPct = (spreadRaw !== '' && !isNaN(parseFloat(spreadRaw))) ? parseFloat(spreadRaw) : (r.price_spread||0);
+
+  // Funding compounds over periods (×8h); price spread realised once at close
+  const funding = r.gross_funding/100 * size * periods;
+  const spread  = spreadPct/100 * size;
+  const fees    = r.total_fees/100 * size;
+  const net     = funding + spread - fees;
+  const pctOnSize = size > 0 ? net / size * 100 : 0;
+
+  // Annualised: net over (periods × 8h) extrapolated to 365d
+  const hours = periods * 8;
+  const apr = size > 0 && hours > 0 ? net / size * (8760 / hours) * 100 : 0;
+
+  const setCell = (id, val, cls) => {
+    const el = document.getElementById(id); if (!el) return;
+    el.textContent = val; el.className = 'calc-val ' + cls;
+  };
+  setCell('c-funding', (funding>=0?'+':'') + fmtU(funding), funding>=0?'pos':'neg');
+  setCell('c-spread',  (spread>=0?'+':'')  + fmtU(spread),  spread>=0?'pos':'neg');
+  setCell('c-fees', '−' + fmtU(fees), 'neg');
+  setCell('c-net', (net>=0?'+':'') + fmtU(net), net>=0?'pos':'neg');
+  setCell('c-apr', (apr>=0?'+':'') + apr.toFixed(2) + '%', apr>=0?'pos':'neg');
+  setCell('c-pct', (pctOnSize>=0?'+':'') + pctOnSize.toFixed(3) + '%', pctOnSize>=0?'pos':'neg');
 }
 
 // ── Spread chart ──────────────────────────────────────────────────────────────
