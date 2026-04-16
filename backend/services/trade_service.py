@@ -111,13 +111,30 @@ async def place_open_order(
 
     creds = decrypt_credentials(w.credentials or {})
 
+    # ── Pre-flight: round qty, validate notional + balance BEFORE signing an order ──
+    if hasattr(adapter, "preflight"):
+        try:
+            pre = await adapter.preflight(creds, symbol, quantity, leverage)
+            if not pre.get("ok"):
+                raise ValueError(pre.get("reason") or "Pre-flight check failed")
+            if pre.get("qty_rounded"):
+                quantity = float(pre["qty_rounded"])
+        except ValueError:
+            raise
+        except Exception as exc:
+            logger.info("preflight unexpected error %s/%s: %s", ex, symbol, exc)
+
     try:
         await adapter.set_leverage(creds, symbol, leverage, margin_mode)
     except Exception as exc:
         logger.warning("set_leverage failed %s/%s: %s", ex, symbol, exc)
         # Non-fatal — some accounts already have the desired setup
 
-    result = await adapter.place_order(creds, symbol, side, quantity)
+    try:
+        result = await adapter.place_order(creds, symbol, side, quantity)
+    except RuntimeError as exc:
+        # Adapters surface friendly messages in RuntimeError
+        raise ValueError(str(exc))
     logger.info("Order placed: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s",
                 user_id, wallet_id, ex, symbol, side, quantity)
     return {**result, "exchange": ex, "symbol": symbol, "side": side, "quantity": quantity}

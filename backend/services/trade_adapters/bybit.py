@@ -1,15 +1,102 @@
 """Bybit v5 USDT perpetual trade adapter."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json as jsonlib
+import logging
+import math
 import time
 from typing import Any
 
 import httpx
 
 BASE = "https://api.bybit.com"
+logger = logging.getLogger("avalant.trade.bybit")
+
+_INSTR_CACHE: dict[str, tuple[dict, float]] = {}  # sym → (info, ts)
+_INSTR_TTL = 600
+_INSTR_LOCK = asyncio.Lock()
+
+
+async def _instrument_info(symbol: str) -> dict | None:
+    """Public instruments-info → qtyStep, minOrderQty, tickSize."""
+    now = time.time()
+    hit = _INSTR_CACHE.get(symbol)
+    if hit and now - hit[1] < _INSTR_TTL:
+        return hit[0]
+    async with _INSTR_LOCK:
+        hit = _INSTR_CACHE.get(symbol)
+        if hit and time.time() - hit[1] < _INSTR_TTL:
+            return hit[0]
+        try:
+            async with httpx.AsyncClient(timeout=6) as c:
+                r = await c.get(f"{BASE}/v5/market/instruments-info?category=linear&symbol={symbol}")
+                items = (r.json().get("result") or {}).get("list") or []
+                if not items:
+                    return None
+                it = items[0]
+                info = {
+                    "qtyStep":     float(it.get("lotSizeFilter", {}).get("qtyStep") or 0),
+                    "minOrderQty": float(it.get("lotSizeFilter", {}).get("minOrderQty") or 0),
+                    "minNotional": float(it.get("lotSizeFilter", {}).get("minNotionalValue") or 0),
+                    "tickSize":    float(it.get("priceFilter",   {}).get("tickSize") or 0),
+                    "status":      str(it.get("status") or ""),
+                }
+                _INSTR_CACHE[symbol] = (info, time.time())
+                return info
+        except Exception as e:
+            logger.debug("instruments-info fetch failed %s: %s", symbol, e)
+            return None
+
+
+_BYBIT_FRIENDLY = {
+    "10001": "Bad request to Bybit.",
+    "10002": "Request timeout or bad signature.",
+    "10003": "Invalid API key.",
+    "10004": "Invalid signature.",
+    "10005": "API key permissions insufficient.",
+    "10006": "Rate limit exceeded — try again in a moment.",
+    "10010": "IP not allowed — add the server IP to your key's whitelist.",
+    "110004": "Insufficient balance for margin.",
+    "110007": "Insufficient available balance.",
+    "110012": "Order quantity exceeds position limit.",
+    "110017": "Order qty below minimum.",
+    "110020": "Order qty not a multiple of lot step.",
+    "110025": "Position side not matched (hedge mode).",
+    "110043": "Leverage not modified.",
+    "110093": "Symbol is not trading right now.",
+}
+
+
+def _friendly_bybit(code: str | None, msg: str) -> str:
+    if code and code in _BYBIT_FRIENDLY:
+        return _BYBIT_FRIENDLY[code]
+    return msg or "Bybit rejected the request."
+
+
+def _split_code(s: str) -> tuple[str | None, str]:
+    import re
+    m = re.match(r"Bybit (\d+): (.*)", s)
+    if m:
+        return m.group(1), m.group(2)
+    return None, s
+
+
+def _round_qty_to_step(qty: float, step: float, min_qty: float) -> float:
+    if step > 0:
+        qty = math.floor(qty / step) * step
+    if min_qty and qty < min_qty:
+        return 0.0
+    return qty
+
+
+def _qty_str(q: float) -> str:
+    s = f"{q:.8f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".") or "0"
+    return s
 
 
 class BybitAdapter:
@@ -100,15 +187,62 @@ class BybitAdapter:
                 raise
 
     @classmethod
+    async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
+        sym = cls._symbol(symbol)
+        info = await _instrument_info(sym)
+        if not info:
+            return {"ok": False, "reason": f"{sym} is not listed on Bybit."}
+        if info.get("status") and info["status"].lower() != "trading":
+            return {"ok": False, "reason": f"{sym} is not trading ({info['status']})."}
+        step = float(info.get("qtyStep") or 0)
+        min_qty = float(info.get("minOrderQty") or 0)
+        qty_r = _round_qty_to_step(quantity, step, min_qty)
+        if qty_r <= 0:
+            return {"ok": False, "reason": f"Quantity below minimum ({min_qty} {symbol.upper()})."}
+        # Mark price for notional estimate
+        mark_price = 0
+        try:
+            async with httpx.AsyncClient(timeout=5) as c:
+                r = await c.get(f"{BASE}/v5/market/tickers?category=linear&symbol={sym}")
+                items = (r.json().get("result") or {}).get("list") or []
+                if items:
+                    mark_price = float(items[0].get("markPrice") or items[0].get("lastPrice") or 0)
+        except Exception:
+            pass
+        min_notional = float(info.get("minNotional") or 0)
+        if mark_price and min_notional and qty_r * mark_price < min_notional:
+            return {"ok": False, "reason": f"Notional below minimum (~${qty_r * mark_price:.2f} < ${min_notional:.2f})."}
+        try:
+            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
+        except RuntimeError as e:
+            code, msg = _split_code(str(e))
+            return {"ok": False, "reason": _friendly_bybit(code, msg)}
+        if mark_price and leverage > 0:
+            required = (qty_r * mark_price) / max(1, leverage)
+            if bal + 0.01 < required:
+                return {"ok": False, "reason": f"Insufficient margin: need ~${required:.2f} USDT, have ${bal:.2f}."}
+        return {"ok": True, "qty_rounded": qty_r, "step_size": step, "min_qty": min_qty, "min_notional": min_notional}
+
+    @classmethod
     async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
         sym = cls._symbol(symbol)
-        r = await cls._signed(creds, "POST", "/v5/order/create", {
-            "category": "linear",
-            "symbol": sym,
-            "side": "Buy" if side == "buy" else "Sell",
-            "orderType": "Market",
-            "qty": f"{quantity:.6f}".rstrip('0').rstrip('.') or "0",
-        })
+        info = await _instrument_info(sym) or {}
+        step = float(info.get("qtyStep") or 0)
+        min_qty = float(info.get("minOrderQty") or 0)
+        qty_r = _round_qty_to_step(quantity, step, min_qty)
+        if qty_r <= 0:
+            raise RuntimeError(f"Quantity below minimum ({min_qty} {symbol.upper()})")
+        try:
+            r = await cls._signed(creds, "POST", "/v5/order/create", {
+                "category": "linear",
+                "symbol": sym,
+                "side": "Buy" if side == "buy" else "Sell",
+                "orderType": "Market",
+                "qty": _qty_str(qty_r),
+            })
+        except RuntimeError as e:
+            code, msg = _split_code(str(e))
+            raise RuntimeError(_friendly_bybit(code, msg))
         return {"order_id": str(r.get("orderId", "")), "avg_price": 0.0}
 
     @classmethod
@@ -119,14 +253,18 @@ class BybitAdapter:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         p = positions[0]
         reduce_side = "Sell" if p["side"] == "buy" else "Buy"
-        r = await cls._signed(creds, "POST", "/v5/order/create", {
-            "category": "linear",
-            "symbol": sym,
-            "side": reduce_side,
-            "orderType": "Market",
-            "qty": f"{p['quantity']:.6f}".rstrip('0').rstrip('.') or "0",
-            "reduceOnly": True,
-        })
+        try:
+            r = await cls._signed(creds, "POST", "/v5/order/create", {
+                "category": "linear",
+                "symbol": sym,
+                "side": reduce_side,
+                "orderType": "Market",
+                "qty": _qty_str(p['quantity']),
+                "reduceOnly": True,
+            })
+        except RuntimeError as e:
+            code, msg = _split_code(str(e))
+            raise RuntimeError(_friendly_bybit(code, msg))
         return {"order_id": str(r.get("orderId", "")), "closed_qty": p["quantity"], "realized_pnl_usd": p.get("unrealized_pnl_usd", 0)}
 
     @classmethod
