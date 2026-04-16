@@ -48,47 +48,71 @@ async def _handle_update(upd: dict) -> None:
     chat = msg.get("chat") or {}
     frm  = msg.get("from") or {}
     chat_id = chat.get("id")
+    tg_id = frm.get("id")
     username = (frm.get("username") or chat.get("username") or "").strip()
     first = (frm.get("first_name") or "").strip() or "there"
 
-    if not chat_id:
+    if not chat_id or not tg_id:
         return
 
-    # Find Avalant user by tg_username (case-insensitive)
+    # Extract /start payload: "/start link-<token>" or "/start <other>"
+    parts = text.split(maxsplit=1)
+    payload = parts[1].strip() if len(parts) > 1 else ""
+
     from backend.db.base import SessionLocal
     from backend.db.models import User
 
     db = SessionLocal()
     try:
-        if username:
-            # normalise: strip possible leading @
+        # ── Preferred flow: deep-link token from profile ──
+        if payload.startswith("link-"):
+            token = payload[len("link-"):]
+            from backend.services.tg_auth_service import consume_link_token
+            uname = username.lstrip("@").lower() or None
+            user = consume_link_token(db, token, int(tg_id), int(chat_id), uname)
+            if user:
+                reply = (
+                    f"✅ <b>Linked!</b>\n\n"
+                    f"Avalant account <code>{user.username}</code> is now connected to this chat. "
+                    f"You'll receive arbitrage alerts here when your thresholds trigger."
+                )
+            else:
+                reply = (
+                    "🔒 This link has expired, been used already, or is invalid.\n\n"
+                    "Open <b>Profile → API Keys / Notifications</b> on Avalant and generate a fresh link."
+                )
+        # ── Fallback: legacy @username match ──
+        elif username:
             uname = username.lstrip("@").lower()
-            user = (
+            rows = (
                 db.query(User)
                 .filter(User.tg_username != None)  # noqa: E711
                 .all()
             )
-            match = next((u for u in user if (u.tg_username or "").lstrip("@").lower() == uname), None)
+            match = next((u for u in rows if (u.tg_username or "").lstrip("@").lower() == uname), None)
+            if match:
+                match.tg_chat_id = int(chat_id)
+                if not match.tg_id:
+                    # Claim tg_id if no collision
+                    if not db.query(User).filter(User.tg_id == int(tg_id), User.id != match.id).first():
+                        match.tg_id = int(tg_id)
+                db.commit()
+                reply = (
+                    f"✅ <b>Linked!</b>\n\n"
+                    f"Avalant account <code>{match.username}</code> is now connected to this chat."
+                )
+                logger.info("TG chat linked via username: user_id=%s chat_id=%s @%s", match.id, chat_id, uname)
+            else:
+                reply = (
+                    f"Hi {first}! 👋\n\n"
+                    f"This Telegram account isn't linked to Avalant yet.\n\n"
+                    f"➡️ Go to <b>avalant.io → Profile</b> and tap "
+                    f"<b>Link Telegram</b>. Then press Start here again — done."
+                )
         else:
-            match = None
-
-        if match:
-            match.tg_chat_id = chat_id
-            db.commit()
-            reply = (
-                f"✅ <b>Linked!</b>\n\n"
-                f"Avalant account <code>{match.username}</code> is now connected to this chat. "
-                f"You'll receive arbitrage alerts here when your thresholds trigger."
-            )
-            logger.info("TG chat linked: user_id=%s chat_id=%s @%s", match.id, chat_id, uname)
-        else:
-            uname_display = f"@{uname}" if uname else "(no username)"
             reply = (
                 f"Hi {first}! 👋\n\n"
-                f"I don't see an Avalant account with Telegram {uname_display} yet.\n\n"
-                f"➡️ Open your Avalant profile, set <b>Telegram username</b> to "
-                f"<code>{uname}</code>, then send /start again.\n\n"
-                f"(Make sure you have a public @username in Telegram Settings → Username.)"
+                f"Open <b>Profile</b> on Avalant and tap <b>Link Telegram</b> to generate a one-time link."
             )
     except Exception as exc:
         logger.warning("TG handle /start error: %s", exc)

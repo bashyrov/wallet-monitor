@@ -62,5 +62,6 @@ class Settings(BaseSettings):
 
     # Telegram alerts bot token (BotFather)
     TG_BOT_TOKEN: str | None = None
+    TG_BOT_USERNAME: str = "avalant_bot"    # used for deep links + login widget
 
 settings = Settings()
