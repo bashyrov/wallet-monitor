@@ -420,6 +420,11 @@ async function handleRegister(e) {
 (function(){
   const host = document.getElementById('tg-login-btn');
   if (!host) return;
+  const h = window.location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0') {
+    host.innerHTML = `<div style="text-align:center;font-size:11px;line-height:1.5;color:var(--text3)">Telegram login is only available on a public domain.</div>`;
+    return;
+  }
   const script = document.createElement('script');
   script.async = true;
   script.src = 'https://telegram.org/js/telegram-widget.js?22';
@@ -430,14 +435,9 @@ async function handleRegister(e) {
   script.dataset.requestAccess = 'write';
   host.innerHTML = '';
   host.appendChild(script);
-
   setTimeout(() => {
     if (!host.querySelector('iframe')) {
-      host.innerHTML = `
-        <div style="text-align:center;font-size:11.5px;line-height:1.55;color:var(--text3)">
-          <div style="color:var(--text2);margin-bottom:4px">Telegram login not available on this domain</div>
-          <div>Ask the admin to run <code style="color:var(--text);background:var(--surface2);padding:1px 5px;border-radius:3px">/setdomain</code> for <b>@avalant_bot</b> in BotFather.</div>
-        </div>`;
+      host.innerHTML = `<div style="text-align:center;font-size:11px;line-height:1.5;color:var(--text3)">Telegram login not available on this domain. Run <code>/setdomain</code> in BotFather.</div>`;
     }
   }, 6000);
 })();
