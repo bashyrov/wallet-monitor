@@ -1780,7 +1780,10 @@ function renderArb() {
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       <td>${fmtApr(r.net_apr)}</td>
       <td class="td-status">${validBadge}</td>
-      <td><a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page">↗</a></td>
+      <td style="display:flex;gap:4px;align-items:center">
+        ${_starBtn(r.symbol, r.long_exchange, r.short_exchange)}
+        <a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page">↗</a>
+      </td>
     </tr>`;
   }).join('');
   renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');

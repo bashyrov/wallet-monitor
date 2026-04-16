@@ -18,26 +18,29 @@ const _ICONS = {
   archive:   `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>`,
   screener:  `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6h9M1.5 3h9M1.5 9h5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>`,
   pricing:   `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h3.8l5 5-3.8 3.8-5-5V1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.9" fill="currentColor"/></svg>`,
+  watchlist: `<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><defs><linearGradient id="wl-g-${Math.random().toString(36).slice(2,7)}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="currentColor"/><stop offset="1" stop-color="currentColor" stop-opacity="0.55"/></linearGradient></defs><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/></svg>`,
   login:     `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2H10a1 1 0 011 1v6a1 1 0 01-1 1H8M5 9l3-3-3-3M1 6h7" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 
 // All standard nav links
 const _ALL_LINKS = [
-  { id: 'app',      href: '/app',      label: 'Portfolio', icon: _ICONS.portfolio, authOnly: false },
-  { id: 'archive',  href: '/archive',  label: 'Archive',   icon: _ICONS.archive,   authOnly: false },
-  { id: 'screener', href: '/screener', label: 'Screener',  icon: _ICONS.screener,  authOnly: false },
-  { id: 'pricing',  href: '/pricing',  label: 'Pricing',   icon: _ICONS.pricing,   authOnly: false },
+  { id: 'app',       href: '/app',       label: 'Portfolio', icon: _ICONS.portfolio, authOnly: false },
+  { id: 'archive',   href: '/archive',   label: 'Archive',   icon: _ICONS.archive,   authOnly: false },
+  { id: 'screener',  href: '/screener',  label: 'Screener',  icon: _ICONS.screener,  authOnly: false },
+  { id: 'watchlist', href: '/watchlist', label: 'Watchlist', icon: _ICONS.watchlist, authOnly: false },
+  { id: 'pricing',   href: '/pricing',   label: 'Pricing',   icon: _ICONS.pricing,   authOnly: false },
 ];
 
 // Links shown per page variant
 const _NAV_SET = {
-  app:      ['app', 'archive', 'screener', 'pricing'],
-  screener: ['app', 'archive', 'screener', 'pricing'],
-  archive:  ['app', 'archive', 'screener', 'pricing'],
-  profile:  ['app', 'archive', 'screener', 'pricing'],
-  index:    ['app', 'archive', 'screener', 'pricing'],
-  pricing:  ['app', 'archive', 'screener', 'pricing'], // Portfolio+Archive hidden until auth
-  arb:      ['app', 'pricing'],
+  app:      ['app', 'archive', 'screener', 'watchlist', 'pricing'],
+  screener: ['app', 'archive', 'screener', 'watchlist', 'pricing'],
+  archive:  ['app', 'archive', 'screener', 'watchlist', 'pricing'],
+  profile:  ['app', 'archive', 'screener', 'watchlist', 'pricing'],
+  index:    ['app', 'archive', 'screener', 'watchlist', 'pricing'],
+  pricing:  ['app', 'archive', 'screener', 'watchlist', 'pricing'], // Portfolio+Archive hidden until auth
+  arb:      ['app', 'watchlist', 'pricing'],
+  watchlist:['app', 'archive', 'screener', 'watchlist', 'pricing'],
   login:    [],
   register: [],
   checkout: ['app', 'pricing'],
@@ -49,6 +52,7 @@ const _ACTIVE = {
   screener: 'screener',
   archive:  'archive',
   pricing:  'pricing',
+  watchlist:'watchlist',
   profile:  null,
   index:    null,
   login:    null,
@@ -74,6 +78,7 @@ function _rightHtml(page) {
     case 'archive':
     case 'profile':
     case 'checkout':
+    case 'watchlist':
       return _avatarBtn();
     case 'arb':
       return `

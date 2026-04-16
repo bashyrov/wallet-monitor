@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>Watchlist · avalant_</title>
+<link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+<link rel="icon" type="image/png" sizes="48x48" href="/avalant_favicon-48.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/auth.js"></script>
+<script src="/toast.js"></script>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/navbar.css">
+<script src="/navbar.js" defer></script>
+<style>
+:root {
+  --bg:#0E0E11; --surface:#131217; --surface2:#17171C; --surface3:#202028;
+  --border:#22222A; --border2:#3A3A50;
+  --text:#E6E8E3; --text2:#9B9FAB; --text3:#676B7E;
+  --green:#1AFFAB; --red:#F87171; --yellow:#E5C07B; --teal:#06B6D4; --purple:#925BD6;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+* { box-sizing:border-box; }
+html,body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+.mono { font-family:var(--mono); }
+a { color:inherit; text-decoration:none; }
+button { font-family:inherit; }
+
+.page { max-width:1520px; margin:0 auto; padding:28px 24px 120px; }
+
+/* ── Hero header ─────────────────────────────────────────── */
+.wl-hero {
+  display:flex; flex-wrap:wrap; align-items:flex-end; gap:16px;
+  padding:12px 2px 24px; border-bottom:1px solid var(--border); margin-bottom:28px;
+}
+.wl-title-wrap { display:flex; flex-direction:column; gap:6px; flex:1; min-width:280px; }
+.wl-title { display:flex; align-items:center; gap:12px; font-size:26px; font-weight:800; letter-spacing:-0.02em; }
+.wl-title .wl-icon-lg {
+  width:34px; height:34px; border-radius:10px;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg, rgba(26,255,171,0.18), rgba(6,182,212,0.14));
+  border:1px solid rgba(26,255,171,0.35);
+  color:var(--green);
+  box-shadow:0 0 24px rgba(26,255,171,0.12);
+}
+.wl-sub { color:var(--text3); font-size:13px; letter-spacing:-0.01em; }
+.wl-sub .accent { color:var(--green); font-family:var(--mono); font-weight:600; }
+
+.wl-kpis { display:flex; gap:10px; flex-wrap:wrap; }
+.kpi {
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:10px 14px; min-width:120px; display:flex; flex-direction:column; gap:3px;
+}
+.kpi-lbl { font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text3); font-weight:600; }
+.kpi-val { font-family:var(--mono); font-size:18px; font-weight:700; letter-spacing:-0.02em; }
+.kpi.accent { border-color:rgba(26,255,171,0.35); background:linear-gradient(135deg,rgba(26,255,171,0.06),transparent); }
+.kpi.accent .kpi-val { color:var(--green); }
+.kpi.warn .kpi-val { color:var(--yellow); }
+.kpi.danger .kpi-val { color:var(--red); }
+
+/* ── Grid ────────────────────────────────────────────────── */
+.wl-grid {
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));
+  gap:14px;
+}
+
+/* ── Card ────────────────────────────────────────────────── */
+.wl-card {
+  position:relative; background:var(--surface);
+  border:1px solid var(--border); border-radius:14px;
+  padding:14px 14px 12px; overflow:hidden;
+  transition:transform .22s cubic-bezier(.16,1,.3,1), border-color .18s, box-shadow .22s;
+  display:flex; flex-direction:column; gap:10px; cursor:pointer;
+  min-height:178px;
+}
+.wl-card::before {
+  content:''; position:absolute; inset:0;
+  background:radial-gradient(80% 120% at 100% 0%, rgba(26,255,171,0.10), transparent 60%);
+  opacity:0; transition:opacity .2s; pointer-events:none;
+}
+.wl-card:hover { transform:translateY(-2px); border-color:var(--border2); box-shadow:0 12px 28px rgba(0,0,0,0.35); }
+.wl-card:hover::before { opacity:1; }
+
+.wl-card.pos { border-left:2px solid var(--green); }
+.wl-card.neg { border-left:2px solid var(--red); }
+
+.wl-card-hdr { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.wl-card-sym { font-family:var(--mono); font-size:22px; font-weight:700; letter-spacing:-0.02em; line-height:1; }
+.wl-card-sym .usdt { color:var(--text3); font-weight:500; font-size:14px; margin-left:3px; }
+
+.alpha-ring {
+  position:relative; width:42px; height:42px; flex-shrink:0;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.alpha-ring svg { transform:rotate(-90deg); }
+.alpha-ring-bg { fill:none; stroke:var(--surface3); stroke-width:3.5; }
+.alpha-ring-fg { fill:none; stroke-width:3.5; stroke-linecap:round; transition:stroke-dashoffset .5s cubic-bezier(.16,1,.3,1); }
+.alpha-ring-val { position:absolute; font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:-0.02em; }
+.alpha-ring.hi .alpha-ring-fg { stroke:var(--green); }
+.alpha-ring.hi .alpha-ring-val { color:var(--green); }
+.alpha-ring.md .alpha-ring-fg { stroke:var(--yellow); }
+.alpha-ring.md .alpha-ring-val { color:var(--yellow); }
+.alpha-ring.lo .alpha-ring-fg { stroke:var(--red); }
+.alpha-ring.lo .alpha-ring-val { color:var(--red); }
+
+.wl-card-pair { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.wl-pill {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:3px 8px; border-radius:999px;
+  background:var(--surface2); border:1px solid var(--border);
+  font-size:10.5px; font-weight:600; letter-spacing:0.01em;
+  color:var(--text2);
+}
+.wl-pill .wl-pill-dot { width:6px; height:6px; border-radius:50%; }
+.wl-pill.long  { border-color:rgba(26,255,171,0.28); color:var(--green); }
+.wl-pill.long .wl-pill-dot { background:var(--green); box-shadow:0 0 6px var(--green); }
+.wl-pill.short { border-color:rgba(248,113,113,0.28); color:var(--red); }
+.wl-pill.short .wl-pill-dot { background:var(--red); box-shadow:0 0 6px var(--red); }
+.wl-arrow { color:var(--text3); font-size:11px; }
+
+.wl-live {
+  display:flex; align-items:baseline; gap:8px; margin-top:2px;
+}
+.wl-live-big {
+  font-family:var(--mono); font-size:28px; font-weight:700; letter-spacing:-0.03em; line-height:1;
+  display:inline-flex; align-items:baseline; gap:4px;
+  transition:color .3s;
+}
+.wl-live-big.pos { color:var(--green); }
+.wl-live-big.neg { color:var(--red); }
+.wl-live-big.neu { color:var(--text); }
+.wl-live-sub { font-family:var(--mono); font-size:11px; color:var(--text3); }
+.wl-live .pulse {
+  display:inline-block; width:6px; height:6px; border-radius:50%;
+  background:var(--green); margin-left:6px;
+  animation:wl-pulse 1.6s ease-in-out infinite;
+}
+@keyframes wl-pulse { 0%,100%{opacity:.35} 50%{opacity:1} }
+
+.wl-meta { display:flex; gap:12px; font-size:10.5px; color:var(--text3); flex-wrap:wrap; }
+.wl-meta .m { display:inline-flex; align-items:center; gap:4px; }
+.wl-meta .m .v { color:var(--text2); font-family:var(--mono); font-weight:600; }
+.wl-meta .m .v.pos { color:var(--green); }
+.wl-meta .m .v.neg { color:var(--red); }
+
+.wl-spark { height:34px; margin:0 -4px; }
+.wl-spark svg { width:100%; height:100%; display:block; }
+
+.wl-flash { animation:wl-flash 0.6s ease-out; }
+@keyframes wl-flash {
+  0%   { background-color:rgba(26,255,171,0.08); }
+  100% { background-color:transparent; }
+}
+
+.wl-actions {
+  position:absolute; top:10px; right:10px;
+  display:flex; gap:4px; opacity:0; transition:opacity .18s;
+}
+.wl-card:hover .wl-actions { opacity:1; }
+.wl-action {
+  width:26px; height:26px; border-radius:7px;
+  background:var(--surface2); border:1px solid var(--border); color:var(--text3);
+  display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+  transition:color .15s, border-color .15s, background .15s;
+}
+.wl-action:hover { color:var(--text); border-color:var(--border2); }
+.wl-action.danger:hover { color:var(--red); border-color:var(--red); background:rgba(248,113,113,0.08); }
+
+/* Toolbar: filter/sort */
+.wl-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+.wl-toolbar-left, .wl-toolbar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.wl-input {
+  background:var(--surface); border:1px solid var(--border); color:var(--text);
+  font-family:inherit; font-size:13px; padding:8px 12px 8px 32px; border-radius:9px;
+  width:220px; outline:none; transition:border-color .15s, box-shadow .15s;
+  background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="%239B9FAB" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="M11 11l3 3"/></svg>');
+  background-repeat:no-repeat; background-position:10px 50%;
+}
+.wl-input:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.12); }
+
+.wl-sort {
+  background:var(--surface); border:1px solid var(--border); color:var(--text);
+  font-family:inherit; font-size:12.5px; padding:7px 10px; border-radius:8px; outline:none;
+}
+
+.wl-chip {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 10px; border-radius:999px;
+  background:var(--surface); border:1px solid var(--border);
+  font-size:11.5px; font-weight:500; color:var(--text2);
+  cursor:pointer; transition:all .15s;
+}
+.wl-chip:hover { color:var(--text); border-color:var(--border2); }
+.wl-chip.active { color:var(--green); border-color:var(--green); background:rgba(26,255,171,0.08); }
+.wl-chip .wl-chip-dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+
+/* Empty state */
+.wl-empty {
+  text-align:center; padding:80px 24px;
+  border:1px dashed var(--border); border-radius:16px;
+  color:var(--text2); background:radial-gradient(50% 80% at 50% 0%, rgba(26,255,171,0.04), transparent);
+}
+.wl-empty-icon {
+  width:64px; height:64px; margin:0 auto 18px;
+  border-radius:16px; display:inline-flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg, rgba(26,255,171,0.15), rgba(6,182,212,0.08));
+  color:var(--green); border:1px solid rgba(26,255,171,0.25);
+}
+.wl-empty h2 { font-size:18px; font-weight:700; margin:0 0 6px; color:var(--text); letter-spacing:-0.01em; }
+.wl-empty p { font-size:13.5px; margin:0 auto 18px; max-width:460px; line-height:1.5; }
+.wl-empty .wl-cta {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:9px 16px; border-radius:9px;
+  background:var(--green); color:#09090B; font-weight:700; font-size:13px;
+  text-decoration:none; transition:box-shadow .15s, transform .15s;
+}
+.wl-empty .wl-cta:hover { box-shadow:0 0 20px rgba(26,255,171,0.35); transform:translateY(-1px); }
+
+/* Skeleton */
+.wl-skel {
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:14px; min-height:178px; position:relative; overflow:hidden;
+}
+.wl-skel::after {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
+  animation:wl-shimmer 1.4s linear infinite;
+}
+@keyframes wl-shimmer { from{transform:translateX(-100%)} to{transform:translateX(100%)} }
+
+.wl-best-badge {
+  position:absolute; top:-8px; right:14px;
+  padding:3px 8px; border-radius:999px;
+  background:linear-gradient(135deg, var(--green), var(--teal));
+  color:#09090B; font-size:10px; font-weight:800; letter-spacing:0.02em;
+  display:inline-flex; align-items:center; gap:4px;
+  box-shadow:0 4px 14px rgba(26,255,171,0.25);
+}
+
+/* Mobile */
+@media (max-width:640px) {
+  .wl-hero { padding:8px 0 18px; }
+  .wl-title { font-size:22px; }
+  .wl-kpis { width:100%; }
+  .kpi { flex:1 1 calc(50% - 10px); min-width:0; }
+  .wl-input { width:100%; }
+  .wl-toolbar-left, .wl-toolbar-right { flex:1; }
+  .wl-grid { grid-template-columns:1fr; }
+  .bottom-nav-spacer { height:88px; }
+}
+.bottom-nav-spacer { display:none; }
+@media (max-width:768px) { .bottom-nav-spacer { display:block; height:88px; } }
+
+/* Bottom nav (mobile) */
+.bottom-nav {
+  display:none; position:fixed; left:12px; right:12px; bottom:12px; z-index:200;
+  background:rgba(19,18,23,0.78); backdrop-filter:blur(20px);
+  border:1px solid var(--border); border-radius:16px;
+  padding:8px 4px; height:64px; justify-content:space-around; align-items:center;
+}
+@media (max-width:768px) { .bottom-nav { display:flex; } }
+.bnav-item {
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+  font-size:10px; color:var(--text3); text-decoration:none; padding:6px 4px;
+  border-radius:10px; transition:color .15s, background .15s;
+}
+.bnav-item.active { color:var(--green); background:rgba(26,255,171,0.08); }
+
+/* Light theme overrides */
+body.light .wl-card { background:#FFFFFF; border-color:#E2E2E2; }
+body.light .wl-card:hover { box-shadow:0 10px 24px rgba(0,0,0,0.08); }
+body.light .wl-skel { background:#F7F7F7; border-color:#E2E2E2; }
+body.light .kpi { background:#F7F7F7; border-color:#E2E2E2; }
+body.light .wl-input, body.light .wl-sort, body.light .wl-chip { background:#FFFFFF; border-color:#D9D9D9; }
+body.light .bottom-nav { background:rgba(255,255,255,0.92); }
+</style>
+</head>
+<body>
+<script>Auth.requireAuth();</script>
+<header class="topbar"><app-navbar page="watchlist"></app-navbar></header>
+
+<main class="page">
+  <!-- ── Hero ── -->
+  <section class="wl-hero">
+    <div class="wl-title-wrap">
+      <div class="wl-title">
+        <span class="wl-icon-lg">
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1.5L9.85 5.25L14 5.85L11 8.85L11.7 13L8 11L4.3 13L5 8.85L2 5.85L6.15 5.25Z" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span>Watchlist</span>
+      </div>
+      <div class="wl-sub">
+        <span class="accent" id="wl-count">0</span> saved pairs · live arbitrage tracking · auto-refresh every 5s
+      </div>
+    </div>
+    <div class="wl-kpis" id="wl-kpis"></div>
+  </section>
+
+  <!-- ── Toolbar ── -->
+  <div class="wl-toolbar">
+    <div class="wl-toolbar-left">
+      <input id="wl-search" class="wl-input" placeholder="Search symbol or exchange…" oninput="filterRender()">
+      <span class="wl-chip" id="wl-chip-all" onclick="setViewFilter('all')">All</span>
+      <span class="wl-chip" id="wl-chip-pos" onclick="setViewFilter('pos')"><span class="wl-chip-dot" style="background:var(--green)"></span>Profitable</span>
+      <span class="wl-chip" id="wl-chip-neg" onclick="setViewFilter('neg')"><span class="wl-chip-dot" style="background:var(--red)"></span>Unprofitable</span>
+    </div>
+    <div class="wl-toolbar-right">
+      <select id="wl-sort" class="wl-sort" onchange="filterRender()">
+        <option value="alpha">Sort · Alpha desc</option>
+        <option value="net">Sort · Net % desc</option>
+        <option value="net-asc">Sort · Net % asc</option>
+        <option value="sym">Sort · Symbol A-Z</option>
+        <option value="added">Sort · Recently added</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ── Grid ── -->
+  <div class="wl-grid" id="wl-grid">
+    <!-- Skeleton placeholders -->
+    <div class="wl-skel"></div><div class="wl-skel"></div><div class="wl-skel"></div>
+    <div class="wl-skel"></div><div class="wl-skel"></div><div class="wl-skel"></div>
+  </div>
+</main>
+
+<div class="bottom-nav-spacer"></div>
+
+<!-- Mobile bottom nav -->
+<nav class="bottom-nav" id="bottom-nav">
+  <a href="/app" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
+    Portfolio
+  </a>
+  <a href="/screener" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M3 5h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Screener
+  </a>
+  <a href="/watchlist" class="bnav-item active">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2L12.3 7.1L18 7.9L14 11.9L15 18L10 15L5 18L6 11.9L2 7.9L7.7 7.1z"/></svg>
+    Watchlist
+  </a>
+  <a href="/pricing" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
+    Pricing
+  </a>
+  <a href="/profile" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5"/></svg>
+    Profile
+  </a>
+</nav>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────
+let _wl = [];          // raw watchlist rows from /screener/watchlist
+let _live = new Map(); // key → latest opportunity payload
+let _sparks = new Map();// key → [net, net, ...] last N points for sparkline
+let _prevNet = new Map();// key → previous net (for flash + pulse)
+let _view = 'all';
+let _ws = null;
+const SPARK_LEN = 36;
+
+const EX_LABEL={binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate',kucoin:'KuCoin',mexc:'MEXC',bitget:'Bitget',hyperliquid:'Hyperliquid',aster:'Aster',ethereal:'Ethereal',whitebit:'WhiteBIT',bingx:'BingX',lighter:'Lighter',paradex:'Paradex'};
+
+const _key = (sym,l,s) => `${sym}|${l}>${s}`;
+
+// ─────────────────────────────────────────────────────────────
+// Load watchlist
+// ─────────────────────────────────────────────────────────────
+async function loadWl(){
+  try {
+    const r = await Auth.apiFetch('/screener/watchlist');
+    if (!r.ok) throw new Error('http');
+    _wl = await r.json();
+    await primeSparklines();
+    render();
+    connectWs();
+  } catch (e) {
+    document.getElementById('wl-grid').innerHTML = '<div class="wl-empty"><h2>Failed to load</h2><p>Check your connection and reload.</p></div>';
+  }
+}
+
+async function primeSparklines(){
+  // Fetch replay history for each watched pair in parallel
+  await Promise.all(_wl.map(async w => {
+    try {
+      const r = await Auth.apiFetch(`/screener/replay?symbol=${w.symbol}&long_ex=${w.long_exchange}&short_ex=${w.short_exchange}&hours=6`);
+      if (!r.ok) return;
+      const pts = await r.json();
+      const nets = pts.map(p => p.net).slice(-SPARK_LEN);
+      _sparks.set(_key(w.symbol, w.long_exchange, w.short_exchange), nets);
+    } catch(_){}
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Live data via WS /ws/arb
+// ─────────────────────────────────────────────────────────────
+function connectWs(){
+  try { _ws && _ws.close(); } catch(_){}
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const tok = Auth.getToken();
+  _ws = new WebSocket(`${proto}://${location.host}/api/screener/ws/arb?token=${encodeURIComponent(tok)}`);
+  _ws.onmessage = ev => {
+    try {
+      const data = JSON.parse(ev.data);
+      const idx = new Map();
+      for (const o of (data.opportunities||[])) {
+        idx.set(_key(o.symbol, o.long_exchange, o.short_exchange), o);
+      }
+      for (const w of _wl) {
+        const k = _key(w.symbol, w.long_exchange, w.short_exchange);
+        const o = idx.get(k);
+        if (!o) continue;
+        // update sparkline ring
+        const arr = _sparks.get(k) || [];
+        arr.push(o.net_profit || 0);
+        while (arr.length > SPARK_LEN) arr.shift();
+        _sparks.set(k, arr);
+        _live.set(k, o);
+        updateCard(k, o);
+      }
+    } catch(_){}
+  };
+  _ws.onclose = () => setTimeout(connectWs, 4000);
+  _ws.onerror = () => { try{_ws.close();}catch(_){} };
+  // keepalive ping
+  setInterval(() => { if (_ws?.readyState === WebSocket.OPEN) _ws.send('ping'); }, 20000);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Per-card live update (no full re-render)
+// ─────────────────────────────────────────────────────────────
+function updateCard(k, o){
+  const card = document.querySelector(`[data-key="${k}"]`);
+  if (!card) return;
+  const net = o.net_profit || 0;
+  const alpha = o.alpha_score;
+  const prev = _prevNet.get(k);
+  _prevNet.set(k, net);
+
+  const bigEl = card.querySelector('.wl-live-big');
+  const subEl = card.querySelector('.wl-live-sub');
+  const metaFund = card.querySelector('.meta-fund');
+  const metaSpread = card.querySelector('.meta-spread');
+  const metaVol = card.querySelector('.meta-vol');
+  const sparkEl = card.querySelector('.wl-spark');
+  const ringFg = card.querySelector('.alpha-ring-fg');
+  const ringVal = card.querySelector('.alpha-ring-val');
+  const ring = card.querySelector('.alpha-ring');
+
+  if (bigEl) {
+    bigEl.innerHTML = `${sign(net)}${Math.abs(net).toFixed(3)}<span style="font-size:15px;color:var(--text3);margin-left:2px">%</span>`;
+    bigEl.className = 'wl-live-big ' + (net > 0 ? 'pos' : net < 0 ? 'neg' : 'neu');
+  }
+  if (subEl) {
+    subEl.textContent = `per 8h · net after fees`;
+  }
+  if (metaFund) metaFund.innerHTML = `Fund <span class="v ${o.gross_funding>0?'pos':'neg'}">${sign(o.gross_funding||0)}${(o.gross_funding||0).toFixed(3)}%</span>`;
+  if (metaSpread) metaSpread.innerHTML = `Spread <span class="v">${sign(o.price_spread||0)}${(o.price_spread||0).toFixed(3)}%</span>`;
+  if (metaVol) metaVol.innerHTML = `Vol <span class="v">${fmtVol(Math.min(o.long_volume||0, o.short_volume||0))}</span>`;
+  if (sparkEl) sparkEl.innerHTML = buildSpark(_sparks.get(k) || []);
+
+  if (alpha != null && ringFg) {
+    const score = Math.max(0, Math.min(100, alpha));
+    const circ = 2 * Math.PI * 17;
+    ringFg.setAttribute('stroke-dasharray', circ);
+    ringFg.setAttribute('stroke-dashoffset', circ * (1 - score/100));
+    if (ringVal) ringVal.textContent = score.toFixed(0);
+    if (ring) {
+      ring.classList.remove('hi','md','lo');
+      ring.classList.add(score >= 70 ? 'hi' : score >= 40 ? 'md' : 'lo');
+    }
+  }
+
+  card.classList.remove('pos','neg');
+  card.classList.add(net >= 0 ? 'pos' : 'neg');
+
+  // Flash on meaningful move
+  if (prev != null && Math.abs(net - prev) > 0.005) {
+    card.classList.remove('wl-flash');
+    void card.offsetWidth; // force reflow
+    card.classList.add('wl-flash');
+  }
+  updateKpis();
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sparkline
+// ─────────────────────────────────────────────────────────────
+function buildSpark(arr){
+  if (!arr || arr.length < 2) return '';
+  const w = 260, h = 34, pad = 2;
+  const min = Math.min(...arr), max = Math.max(...arr);
+  const range = Math.max(1e-6, max - min);
+  const dx = (w - pad*2) / (arr.length - 1);
+  const norm = v => h - pad - ((v - min) / range) * (h - pad*2);
+  const pts = arr.map((v,i) => `${pad + i*dx},${norm(v).toFixed(1)}`).join(' ');
+  const last = arr[arr.length-1];
+  const color = last >= 0 ? 'var(--green)' : 'var(--red)';
+  const fill = last >= 0 ? 'rgba(26,255,171,0.12)' : 'rgba(248,113,113,0.12)';
+  const zero = norm(0);
+  return `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="sk-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="${color}" stop-opacity="0.24"/>
+          <stop offset="1" stop-color="${color}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <polyline points="${pts} ${w-pad},${h-pad} ${pad},${h-pad}" fill="url(#sk-grad)" stroke="none"/>
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="${pad}" x2="${w-pad}" y1="${zero}" y2="${zero}" stroke="var(--border)" stroke-width="0.8" stroke-dasharray="2 3"/>
+    </svg>`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Card HTML
+// ─────────────────────────────────────────────────────────────
+function cardHtml(w){
+  const k = _key(w.symbol, w.long_exchange, w.short_exchange);
+  const o = _live.get(k) || {};
+  const net = o.net_profit || 0;
+  const alpha = o.alpha_score || 0;
+  const score = Math.max(0, Math.min(100, alpha));
+  const circ = 2 * Math.PI * 17;
+  const offset = circ * (1 - score/100);
+  const aCls = score >= 70 ? 'hi' : score >= 40 ? 'md' : 'lo';
+  const pairCls = net >= 0 ? 'pos' : 'neg';
+  const spark = buildSpark(_sparks.get(k) || []);
+  return `
+    <div class="wl-card ${pairCls}" data-key="${k}" onclick="openArb('${w.symbol}','${w.long_exchange}','${w.short_exchange}')">
+      <div class="wl-actions">
+        <button class="wl-action" title="Open arb detail" onclick="event.stopPropagation();openArb('${w.symbol}','${w.long_exchange}','${w.short_exchange}')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 12l8-8M6 4h6v6"/></svg>
+        </button>
+        <button class="wl-action danger" title="Remove" onclick="event.stopPropagation();removeItem(${w.id})">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+      </div>
+
+      <div class="wl-card-hdr">
+        <div>
+          <div class="wl-card-sym">${w.symbol}<span class="usdt">USDT</span></div>
+          <div class="wl-card-pair" style="margin-top:6px">
+            <span class="wl-pill long"><span class="wl-pill-dot"></span>${EX_LABEL[w.long_exchange]||w.long_exchange}</span>
+            <span class="wl-arrow">→</span>
+            <span class="wl-pill short"><span class="wl-pill-dot"></span>${EX_LABEL[w.short_exchange]||w.short_exchange}</span>
+          </div>
+        </div>
+        <div class="alpha-ring ${aCls}" title="Alpha score ${score.toFixed(1)}">
+          <svg width="42" height="42">
+            <circle class="alpha-ring-bg" cx="21" cy="21" r="17"/>
+            <circle class="alpha-ring-fg" cx="21" cy="21" r="17" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
+          </svg>
+          <span class="alpha-ring-val">${score.toFixed(0)}</span>
+        </div>
+      </div>
+
+      <div class="wl-live">
+        <span class="wl-live-big ${net>0?'pos':net<0?'neg':'neu'}">${sign(net)}${Math.abs(net).toFixed(3)}<span style="font-size:15px;color:var(--text3);margin-left:2px">%</span></span>
+        <span class="wl-live-sub">per 8h · net after fees<span class="pulse"></span></span>
+      </div>
+
+      <div class="wl-spark">${spark}</div>
+
+      <div class="wl-meta">
+        <span class="m meta-fund">Fund <span class="v ${(o.gross_funding||0)>0?'pos':'neg'}">${sign(o.gross_funding||0)}${(o.gross_funding||0).toFixed(3)}%</span></span>
+        <span class="m meta-spread">Spread <span class="v">${sign(o.price_spread||0)}${(o.price_spread||0).toFixed(3)}%</span></span>
+        <span class="m meta-vol">Vol <span class="v">${fmtVol(Math.min(o.long_volume||0, o.short_volume||0))}</span></span>
+      </div>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Render full grid
+// ─────────────────────────────────────────────────────────────
+function render(){
+  document.getElementById('wl-count').textContent = _wl.length;
+  const grid = document.getElementById('wl-grid');
+  if (!_wl.length) {
+    grid.innerHTML = `
+      <div class="wl-empty" style="grid-column:1/-1">
+        <div class="wl-empty-icon">
+          <svg width="28" height="28" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1.5L9.85 5.25L14 5.85L11 8.85L11.7 13L8 11L4.3 13L5 8.85L2 5.85L6.15 5.25Z" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2>No pairs in watchlist yet</h2>
+        <p>Save pairs from the <a href="/screener" style="color:var(--green);font-weight:600">Screener</a> to track spreads live. Each card shows alpha score, net P&L per 8h, and a 6h sparkline.</p>
+        <a class="wl-cta" href="/screener?mode=arb">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h10M8 3v10"/></svg>
+          Find pairs to watch
+        </a>
+      </div>`;
+    updateKpis();
+    return;
+  }
+  filterRender();
+}
+
+function filterRender(){
+  const q = (document.getElementById('wl-search').value || '').toLowerCase();
+  const sortBy = document.getElementById('wl-sort').value;
+  let items = [..._wl];
+  // filter chip
+  ['all','pos','neg'].forEach(v => document.getElementById('wl-chip-'+v).classList.toggle('active', _view===v));
+  items = items.filter(w => {
+    if (_view === 'pos' || _view === 'neg') {
+      const o = _live.get(_key(w.symbol,w.long_exchange,w.short_exchange));
+      if (!o) return false;
+      if (_view === 'pos' && (o.net_profit||0) <= 0) return false;
+      if (_view === 'neg' && (o.net_profit||0) >= 0) return false;
+    }
+    if (!q) return true;
+    return (w.symbol+' '+w.long_exchange+' '+w.short_exchange).toLowerCase().includes(q);
+  });
+  // sort
+  items.sort((a,b) => {
+    const oa = _live.get(_key(a.symbol,a.long_exchange,a.short_exchange)) || {};
+    const ob = _live.get(_key(b.symbol,b.long_exchange,b.short_exchange)) || {};
+    if (sortBy === 'net')    return (ob.net_profit||0) - (oa.net_profit||0);
+    if (sortBy === 'net-asc')return (oa.net_profit||0) - (ob.net_profit||0);
+    if (sortBy === 'sym')    return a.symbol.localeCompare(b.symbol);
+    if (sortBy === 'added')  return b.id - a.id;
+    return (ob.alpha_score||0) - (oa.alpha_score||0);
+  });
+  // mark best (top by alpha in current filter)
+  const grid = document.getElementById('wl-grid');
+  if (!items.length) {
+    grid.innerHTML = `<div class="wl-empty" style="grid-column:1/-1"><h2>No matches</h2><p>Try clearing the search or switching filter.</p></div>`;
+    return;
+  }
+  const best = items[0];
+  grid.innerHTML = items.map((w,i) => {
+    const html = cardHtml(w);
+    if (w === best && sortBy === 'alpha' && (_live.get(_key(w.symbol,w.long_exchange,w.short_exchange))?.alpha_score || 0) >= 70) {
+      return html.replace('<div class="wl-actions">', '<div class="wl-best-badge">★ TOP ALPHA</div><div class="wl-actions">');
+    }
+    return html;
+  }).join('');
+  updateKpis();
+}
+
+function updateKpis(){
+  const kpis = document.getElementById('wl-kpis');
+  const count = _wl.length;
+  if (!count) { kpis.innerHTML = ''; return; }
+  let pos = 0, neg = 0, sumAlpha = 0, aN = 0, bestNet = -Infinity, bestPair = null;
+  for (const w of _wl) {
+    const o = _live.get(_key(w.symbol,w.long_exchange,w.short_exchange));
+    if (!o) continue;
+    if ((o.net_profit||0) > 0) pos++; else neg++;
+    if (o.alpha_score != null) { sumAlpha += o.alpha_score; aN++; }
+    if ((o.net_profit||0) > bestNet) { bestNet = o.net_profit||0; bestPair = w; }
+  }
+  const avgAlpha = aN ? (sumAlpha / aN) : 0;
+  kpis.innerHTML = `
+    <div class="kpi accent"><div class="kpi-lbl">Watching</div><div class="kpi-val">${count}</div></div>
+    <div class="kpi"><div class="kpi-lbl">Avg Alpha</div><div class="kpi-val">${avgAlpha.toFixed(1)}</div></div>
+    <div class="kpi ${pos>=neg?'accent':'warn'}"><div class="kpi-lbl">Profitable</div><div class="kpi-val">${pos}<span style="color:var(--text3);font-size:13px;font-weight:500"> / ${count}</span></div></div>
+    <div class="kpi ${bestNet>0?'accent':'danger'}"><div class="kpi-lbl">Best Net /8h</div><div class="kpi-val">${bestPair?`${sign(bestNet)}${bestNet.toFixed(3)}%`:'—'}</div></div>`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Actions
+// ─────────────────────────────────────────────────────────────
+function openArb(sym, l, s){
+  window.open(`/arb?symbol=${sym}&long=${l}&short=${s}`, '_blank');
+}
+
+async function removeItem(id){
+  try {
+    const r = await Auth.apiFetch(`/screener/watchlist/${id}`, { method:'DELETE' });
+    if (!r.ok) throw new Error();
+    _wl = _wl.filter(x => x.id !== id);
+    toast('Removed from watchlist', 'info');
+    render();
+  } catch { toast('Failed to remove', 'error'); }
+}
+
+function setViewFilter(v){ _view = v; filterRender(); }
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+const sign = v => v >= 0 ? '+' : '';
+function fmtVol(v){
+  if (!v) return '0';
+  if (v >= 1e9) return (v/1e9).toFixed(2)+'B';
+  if (v >= 1e6) return (v/1e6).toFixed(2)+'M';
+  if (v >= 1e3) return (v/1e3).toFixed(1)+'K';
+  return (+v).toFixed(0);
+}
+
+// Initial chip state
+document.getElementById('wl-chip-all').classList.add('active');
+
+// Kick off
+loadWl();
+</script>
+</body>
+</html>

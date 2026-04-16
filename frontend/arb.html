@@ -505,6 +505,20 @@ body.light .bnav-item.active{color:#000;}
   /* Size input + unit toggle on Entry/Exit controls: full row */
   #pane-entryexit .chart-controls>span[style*='margin-left:auto']{margin-left:0!important;width:100%;justify-content:space-between;}
 }
+
+/* ── Watchlist star button in hero ── */
+.wl-star-btn {
+  width:28px; height:28px; border-radius:7px;
+  background:var(--surface2); border:1px solid var(--border); color:var(--text3);
+  display:inline-flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:color .15s, background .15s, border-color .15s, transform .15s;
+  font-family:inherit; flex-shrink:0;
+}
+.wl-star-btn:hover { color:var(--yellow); background:var(--surface3); border-color:rgba(229,192,123,0.35); transform:scale(1.06); }
+.wl-star-btn.on { color:var(--yellow); background:rgba(229,192,123,0.1); border-color:rgba(229,192,123,0.45); }
+.wl-star-btn.on svg { fill:var(--yellow); }
+@keyframes wl-star-pop { 0%{transform:scale(1)} 50%{transform:scale(1.28)} 100%{transform:scale(1)} }
+.wl-star-btn.pop { animation:wl-star-pop .32s cubic-bezier(.34,1.56,.64,1); }
 </style>
 </head>
 <body>
@@ -517,6 +531,9 @@ body.light .bnav-item.active{color:#000;}
 <div class="infobar">
   <!-- Hero: symbol + exchanges -->
   <div class="hero-block">
+    <button class="wl-star-btn" id="wl-star" onclick="toggleArbWatch()" title="Add to watchlist" aria-label="Toggle watchlist">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.5L9.85 5.25L14 5.85L11 8.85L11.7 13L8 11L4.3 13L5 8.85L2 5.85L6.15 5.25Z"/></svg>
+    </button>
     <span class="hero-sym" id="h-symbol" onclick="openSymbolPopover(this)" title="Change symbol">—</span>
     <span class="live-dot"></span>
     <div class="hero-exs">
@@ -2258,7 +2275,34 @@ async function loadAnomalyFlag(){
 }
 
 // Kick off alpha features after init
-setTimeout(()=>{loadAlphaBadge();loadAnomalyFlag();loadPaperStats();loadPaperList();xsUpdate();_ptTimer=setInterval(()=>{loadPaperStats();loadPaperList();},5000);},1200);
+setTimeout(()=>{loadAlphaBadge();loadAnomalyFlag();loadPaperStats();loadPaperList();xsUpdate();initArbWatch();_ptTimer=setInterval(()=>{loadPaperStats();loadPaperList();},5000);},1200);
+
+// ── Watchlist star on infobar ──
+let _wlArbId=null;
+async function initArbWatch(){
+  try{
+    const r=await Auth.apiFetch('/screener/watchlist');
+    if(!r.ok)return;
+    const rows=await r.json();
+    const hit=rows.find(x=>x.symbol===SYM&&x.long_exchange===LONG&&x.short_exchange===SHORT);
+    if(hit){_wlArbId=hit.id;document.getElementById('wl-star')?.classList.add('on');}
+  }catch(_){}
+}
+async function toggleArbWatch(){
+  const btn=document.getElementById('wl-star');if(!btn)return;
+  btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),320);
+  try{
+    if(_wlArbId){
+      const r=await Auth.apiFetch(`/screener/watchlist/${_wlArbId}`,{method:'DELETE'});
+      if(!r.ok)throw new Error();
+      _wlArbId=null;btn.classList.remove('on');_toast('Removed from watchlist');
+    }else{
+      const r=await Auth.apiFetch('/screener/watchlist',{method:'POST',body:JSON.stringify({symbol:SYM,long_exchange:LONG,short_exchange:SHORT})});
+      if(!r.ok)throw new Error();
+      const j=await r.json();_wlArbId=j.id;btn.classList.add('on');_toast('Added to watchlist');
+    }
+  }catch{_toast('Watchlist action failed');}
+}
 </script>
 
 <!-- Mobile bottom navigation -->
