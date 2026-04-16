@@ -30,6 +30,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tg_username = Column(String, nullable=True)
+    tg_chat_id = Column(Integer, nullable=True)   # filled after user runs /start to the bot
 
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")
@@ -128,3 +129,86 @@ class Tag(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # NULL = system tag
 
     wallets = relationship("Wallet", secondary=wallet_tags, back_populates="tags", lazy="joined")
+
+
+class PaperPosition(Base):
+    """Simulated arb position with live P&L tracking."""
+    __tablename__ = "paper_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol = Column(String, nullable=False)
+    long_exchange = Column(String, nullable=False)
+    short_exchange = Column(String, nullable=False)
+    size_usd = Column(Float, nullable=False)
+    entry_long_price = Column(Float, nullable=False)
+    entry_short_price = Column(Float, nullable=False)
+    entry_spread_pct = Column(Float, nullable=False)
+    entry_fees_usd = Column(Float, nullable=False, default=0.0)
+    accrued_funding_usd = Column(Float, nullable=False, default=0.0)
+    status = Column(String, nullable=False, default="open")  # open | closed
+    opened_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    closed_at = Column(DateTime, nullable=True)
+    exit_spread_pct = Column(Float, nullable=True)
+    realized_pnl_usd = Column(Float, nullable=True)
+    last_updated = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class OpportunitySnapshot(Base):
+    """Minute-granularity snapshots of arb opportunities for historical replay + correlation."""
+    __tablename__ = "opportunity_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String, nullable=False, index=True)
+    long_exchange = Column(String, nullable=False)
+    short_exchange = Column(String, nullable=False)
+    gross_funding = Column(Float, nullable=False)
+    price_spread = Column(Float, nullable=False)
+    net_profit = Column(Float, nullable=False)
+    long_rate = Column(Float, nullable=False)
+    short_rate = Column(Float, nullable=False)
+    long_volume = Column(Float, nullable=False, default=0.0)
+    short_volume = Column(Float, nullable=False, default=0.0)
+    alpha_score = Column(Float, nullable=True)
+    snapshot_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+
+
+class ExchangeHealth(Base):
+    """Rolling latency + availability measurements per exchange."""
+    __tablename__ = "exchange_health"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exchange = Column(String, nullable=False, index=True)
+    ts = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    latency_ms = Column(Integer, nullable=False)
+    ok = Column(Boolean, nullable=False)
+    error = Column(String, nullable=True)
+
+
+class AnomalyEvent(Base):
+    """Detected spread anomaly (z-score outlier)."""
+    __tablename__ = "anomaly_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    symbol = Column(String, nullable=False)
+    long_exchange = Column(String, nullable=False)
+    short_exchange = Column(String, nullable=False)
+    spread_pct = Column(Float, nullable=False)
+    z_score = Column(Float, nullable=False)
+    mean_pct = Column(Float, nullable=False)
+    std_pct = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+
+
+class WatchlistItem(Base):
+    """User's saved pair for quick access."""
+    __tablename__ = "watchlist_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol = Column(String, nullable=False)
+    long_exchange = Column(String, nullable=False)
+    short_exchange = Column(String, nullable=False)
+    note = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

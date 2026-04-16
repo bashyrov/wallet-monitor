@@ -119,7 +119,9 @@ def logout(response: Response):
 
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
-    return current_user
+    out = UserOut.model_validate(current_user)
+    out.tg_linked = bool(current_user.tg_chat_id)
+    return out
 
 
 from pydantic import BaseModel as _BM
@@ -133,7 +135,12 @@ class _UserPatch(_BM):
 def patch_me(body: _UserPatch, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if body.tg_username is not None:
         tg = body.tg_username.strip().lstrip("@") or None
+        # If username changed, invalidate the previous chat link
+        if tg != current_user.tg_username:
+            current_user.tg_chat_id = None
         current_user.tg_username = tg
         db.commit()
         db.refresh(current_user)
-    return current_user
+    out = UserOut.model_validate(current_user)
+    out.tg_linked = bool(current_user.tg_chat_id)
+    return out

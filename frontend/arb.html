@@ -361,8 +361,61 @@ body.light #alert-tg-note{background:#FBF6EA;border-color:#D9C58E;}
 .alert-form{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;}
 .alert-form-full{display:flex;align-items:flex-end;}
 .alert-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;font-weight:600;}
-.alert-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:100%;transition:border-color .15s,background .15s;}
-.alert-input:focus{border-color:var(--green);}
+.alert-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:100%;transition:border-color .15s,background .15s,box-shadow .15s;}
+.alert-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(26,255,171,0.12);}
+/* ── Custom Direction dropdown ── */
+.al-dd { position:relative; }
+.al-dd-btn {
+  width:100%; display:flex; align-items:center; gap:8px;
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  padding:8px 10px 8px 10px; color:var(--text);
+  font-family:Inter,sans-serif; font-size:12px; font-weight:500; letter-spacing:-0.01em;
+  cursor:pointer; outline:none; text-align:left;
+  transition:border-color .15s, background .15s, box-shadow .15s;
+}
+.al-dd-btn:hover { border-color:var(--border2); background:var(--surface2); }
+.al-dd.open .al-dd-btn { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.12); }
+.al-dd-ic {
+  width:20px; height:20px; border-radius:5px; flex-shrink:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px;
+}
+.al-dd-ic-any   { background:rgba(155,159,171,0.14); color:var(--text2); }
+.al-dd-ic-above { background:rgba(26,255,171,0.12);  color:var(--green); }
+.al-dd-ic-below { background:rgba(248,113,113,0.12); color:var(--red);   }
+.al-dd-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); }
+.al-dd-chev { color:var(--text3); transition:transform .18s; flex-shrink:0; }
+.al-dd.open .al-dd-chev { transform:rotate(180deg); color:var(--text); }
+
+.al-dd-menu {
+  position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:50;
+  background:var(--surface); border:1px solid var(--border); border-radius:9px;
+  box-shadow:0 14px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02);
+  padding:4px;
+  opacity:0; transform:translateY(-4px) scale(0.98); pointer-events:none;
+  transition:opacity .15s, transform .16s cubic-bezier(.16,1,.3,1);
+  display:flex; flex-direction:column; gap:2px;
+}
+.al-dd.open .al-dd-menu { opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+.al-dd-item {
+  display:flex; align-items:flex-start; gap:10px;
+  padding:9px 10px; border-radius:7px; cursor:pointer;
+  background:transparent; border:none; text-align:left; width:100%;
+  color:var(--text); font-family:inherit;
+  transition:background .12s;
+}
+.al-dd-item:hover { background:var(--surface2); }
+.al-dd-item.is-active { background:rgba(26,255,171,0.06); }
+.al-dd-item-body { flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.al-dd-item-title { font-size:12.5px; font-weight:600; letter-spacing:-0.01em; }
+.al-dd-item-sub { font-size:10.5px; color:var(--text3); line-height:1.35; }
+.al-dd-item-sub b { color:var(--text2); font-weight:600; }
+.al-dd-check { color:var(--green); opacity:0; margin-top:4px; transition:opacity .12s; flex-shrink:0; }
+.al-dd-item.is-active .al-dd-check { opacity:1; }
+
+body.light .al-dd-menu { background:#FFFFFF; box-shadow:0 10px 28px rgba(0,0,0,0.12); }
+body.light .al-dd-item:hover { background:#F4F4F4; }
+body.light .al-dd-item.is-active { background:#F0F7F3; }
 .alert-submit-btn{background:rgba(26,255,171,.12);color:var(--green);border:1px solid rgba(26,255,171,.3);border-radius:6px;padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;letter-spacing:.02em;transition:background .15s,border-color .15s;display:inline-flex;align-items:center;gap:5px;height:34px;}
 .alert-submit-btn:hover:not(:disabled){background:rgba(26,255,171,.2);border-color:var(--green);}
 .alert-submit-btn:disabled{background:var(--surface3);color:var(--text3);border-color:var(--border);cursor:not-allowed;opacity:.6;}
@@ -505,6 +558,39 @@ body.light .bnav-item.active{color:#000;}
   /* Size input + unit toggle on Entry/Exit controls: full row */
   #pane-entryexit .chart-controls>span[style*='margin-left:auto']{margin-left:0!important;width:100%;justify-content:space-between;}
 }
+
+/* ── Watchlist star button in hero ── */
+.wl-star-btn {
+  width:30px; height:30px; padding:0; margin:0;
+  border-radius:8px;
+  background: rgba(229,192,123,0.06);
+  border:1px solid rgba(229,192,123,0.28);
+  color: var(--yellow);
+  display:inline-flex; align-items:center; justify-content:center;
+  cursor:pointer; outline:none;
+  transition:color .15s, background .15s, border-color .15s, transform .18s, box-shadow .2s;
+  font-family:inherit; flex-shrink:0;
+  -webkit-appearance:none; appearance:none;
+}
+.wl-star-btn svg { opacity:0.85; transition:opacity .15s, fill .15s; }
+.wl-star-btn:hover {
+  background: rgba(229,192,123,0.14);
+  border-color: var(--yellow);
+  transform: scale(1.06);
+  box-shadow: 0 0 12px rgba(229,192,123,0.25);
+}
+.wl-star-btn:hover svg { opacity:1; }
+.wl-star-btn.on {
+  background: linear-gradient(135deg, rgba(229,192,123,0.22), rgba(229,192,123,0.1));
+  border-color: var(--yellow);
+  color: var(--yellow);
+  box-shadow: 0 0 12px rgba(229,192,123,0.22);
+}
+.wl-star-btn.on svg { fill: var(--yellow); stroke: var(--yellow); opacity:1; }
+@keyframes wl-star-pop { 0%{transform:scale(1)} 50%{transform:scale(1.28)} 100%{transform:scale(1)} }
+.wl-star-btn.pop { animation:wl-star-pop .32s cubic-bezier(.34,1.56,.64,1); }
+body.light .wl-star-btn { background: rgba(229,192,123,0.08); border-color: rgba(107,80,17,0.35); color: var(--yellow); }
+body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 </style>
 </head>
 <body>
@@ -517,6 +603,9 @@ body.light .bnav-item.active{color:#000;}
 <div class="infobar">
   <!-- Hero: symbol + exchanges -->
   <div class="hero-block">
+    <button class="wl-star-btn" id="wl-star" onclick="toggleArbWatch()" title="Add to watchlist" aria-label="Toggle watchlist">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.5L9.85 5.25L14 5.85L11 8.85L11.7 13L8 11L4.3 13L5 8.85L2 5.85L6.15 5.25Z"/></svg>
+    </button>
     <span class="hero-sym" id="h-symbol" onclick="openSymbolPopover(this)" title="Change symbol">—</span>
     <span class="live-dot"></span>
     <div class="hero-exs">
@@ -845,6 +934,68 @@ body.light .bnav-item.active{color:#000;}
           <div class="calc-cell"><div class="calc-lbl">APR</div><div class="calc-val" id="c-apr">—</div></div>
         </div>
       </div>
+
+      <!-- ── Executable Spread (real orderbook VWAP) ── -->
+      <div class="info-card" id="xspread-card">
+        <div class="info-card-title">Executable Spread <span style="color:var(--text3);font-weight:400;text-transform:none;margin-left:4px">· live orderbook</span></div>
+        <div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px">
+          <div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Trade size (USD)</div>
+            <input id="xs-size" class="calc-input" type="number" value="1000" step="100" oninput="xsDebounce()"></div>
+        </div>
+        <div class="calc-grid" style="grid-template-columns:1fr 1fr">
+          <div class="calc-cell"><div class="calc-lbl">Quoted</div><div class="calc-val" id="xs-quoted">—</div></div>
+          <div class="calc-cell"><div class="calc-lbl">Executable</div><div class="calc-val pos" id="xs-exec">—</div></div>
+          <div class="calc-cell"><div class="calc-lbl">Slippage</div><div class="calc-val neg" id="xs-slip">—</div></div>
+          <div class="calc-cell"><div class="calc-lbl">Net (after fees)</div><div class="calc-val" id="xs-net">—</div></div>
+        </div>
+        <div style="padding:6px 10px;display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">
+            <span>Quoted</span>
+            <div style="flex:1;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden"><div id="xs-bar-q" style="height:100%;background:rgba(229,192,123,0.45);width:0%;transition:width .3s"></div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">
+            <span>Exec&nbsp;&nbsp;</span>
+            <div style="flex:1;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden"><div id="xs-bar-e" style="height:100%;background:var(--green);width:0%;transition:width .3s"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Paper Trading ── -->
+      <div class="info-card" id="paper-card">
+        <div class="info-card-title" style="display:flex;align-items:center;gap:6px">
+          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);animation:ws-pulse 1.6s ease-in-out infinite"></span>
+          Paper Trading
+        </div>
+        <div style="padding:8px 10px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+          <div style="text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Total P&L</div><div class="mono" id="pt-total" style="font-size:13px;font-weight:700">$0.00</div></div>
+          <div style="text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Open</div><div class="mono" id="pt-open" style="font-size:13px;font-weight:700">0</div></div>
+          <div style="text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Win rate</div><div class="mono" id="pt-wr" style="font-size:13px;font-weight:700">—</div></div>
+        </div>
+        <div style="padding:6px 10px 8px;display:flex;gap:6px;align-items:flex-end">
+          <div style="flex:1"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Size USD</div>
+            <input id="pt-size" class="calc-input" type="number" value="1000" step="100"></div>
+          <button onclick="paperOpen()" class="nav-btn" style="height:28px;padding:0 12px;background:var(--green);color:#09090b;border-color:var(--green);font-weight:700">Open</button>
+        </div>
+        <div id="pt-list" style="padding:4px 10px 10px;display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto"></div>
+      </div>
+
+      <!-- ── Quick Backtest ── -->
+      <div class="info-card" id="bt-card">
+        <div class="info-card-title">Backtest · funding only</div>
+        <div style="padding:8px 10px;display:flex;gap:6px;flex-wrap:wrap">
+          <div style="flex:1;min-width:70px"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Days</div>
+            <select id="bt-days" class="nav-sel" onchange="runBacktest()"><option value="1">1</option><option value="7" selected>7</option><option value="14">14</option><option value="30">30</option></select></div>
+          <div style="flex:1.2;min-width:80px"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Size USD</div>
+            <input id="bt-size" class="calc-input" type="number" value="1000" step="100"></div>
+          <button onclick="runBacktest()" style="margin-top:14px;height:28px;padding:0 12px;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer;font-family:inherit">Run</button>
+        </div>
+        <div class="calc-grid" style="grid-template-columns:1fr 1fr">
+          <div class="calc-cell"><div class="calc-lbl">Net P&L</div><div class="calc-val" id="bt-net">—</div></div>
+          <div class="calc-cell"><div class="calc-lbl">Net %</div><div class="calc-val" id="bt-pct">—</div></div>
+          <div class="calc-cell"><div class="calc-lbl">APR</div><div class="calc-val" id="bt-apr">—</div></div>
+          <div class="calc-cell"><div class="calc-lbl">Fees</div><div class="calc-val neg" id="bt-fees">—</div></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -910,11 +1061,32 @@ body.light .bnav-item.active{color:#000;}
         </div>
         <div>
           <div class="alert-lbl">Direction</div>
-          <select id="al-direction" class="alert-input">
-            <option value="any">Any (±threshold)</option>
-            <option value="above">Above +threshold</option>
-            <option value="below">Below −threshold</option>
-          </select>
+          <div class="al-dd" id="al-dir-dd">
+            <input type="hidden" id="al-direction" value="above">
+            <button type="button" class="al-dd-btn" onclick="alDirToggle(event)" aria-haspopup="listbox" aria-expanded="false">
+              <span class="al-dd-ic al-dd-ic-above">↑</span>
+              <span class="al-dd-text" id="al-dir-text">Above · spread ≥ +threshold</span>
+              <svg class="al-dd-chev" width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
+            </button>
+            <div class="al-dd-menu" role="listbox">
+              <button type="button" class="al-dd-item is-active" data-v="above" onclick="alDirPick(this)">
+                <span class="al-dd-ic al-dd-ic-above">↑</span>
+                <span class="al-dd-item-body">
+                  <span class="al-dd-item-title">Above <span class="mono" style="color:var(--green)">+</span></span>
+                  <span class="al-dd-item-sub">only when spread ≥ <b>+</b>threshold</span>
+                </span>
+                <svg class="al-dd-check" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
+              </button>
+              <button type="button" class="al-dd-item" data-v="below" onclick="alDirPick(this)">
+                <span class="al-dd-ic al-dd-ic-below">↓</span>
+                <span class="al-dd-item-body">
+                  <span class="al-dd-item-title">Below <span class="mono" style="color:var(--red)">−</span></span>
+                  <span class="al-dd-item-sub">only when spread ≤ <b>−</b>threshold</span>
+                </span>
+                <svg class="al-dd-check" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5L6.5 12L13 5"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
         <div class="alert-form-full">
           <button id="al-submit" class="alert-submit-btn" onclick="createAlert()" disabled title="Set Telegram username in profile first">
@@ -990,11 +1162,14 @@ function renderTopBar(){
   document.getElementById('stt-dot-long').className=`tt-dot dot-${LONG}`;
   document.getElementById('stt-dot-short').className=`tt-dot dot-${SHORT}`;
   const r=_opp; if(!r) return;
-  const lrCls=r.long_rate>0?'pos':r.long_rate<0?'neg':'neu';
-  const srCls=r.short_rate>0?'pos':r.short_rate<0?'neg':'neu';
-  setH('fund-long-rate',`<span class="${lrCls}">${sign(r.long_rate)}${r.long_rate.toFixed(4)}%</span>`);
-  setH('fund-short-rate',`<span class="${srCls}">${sign(r.short_rate)}${r.short_rate.toFixed(4)}%</span>`);
-  const lIvl=r.long_interval_h||r.interval_h||'?', sIvl=r.short_interval_h||r.interval_h||'?';
+  const lIvl=r.long_interval_h||r.interval_h||8, sIvl=r.short_interval_h||r.interval_h||8;
+  // Denormalise to native per-interval rate (opportunity stores 8h-normalised rates)
+  const lRateNative = r.long_rate  * (lIvl / 8);
+  const sRateNative = r.short_rate * (sIvl / 8);
+  const lrCls=lRateNative>0?'pos':lRateNative<0?'neg':'neu';
+  const srCls=sRateNative>0?'pos':sRateNative<0?'neg':'neu';
+  setH('fund-long-rate', `<span class="${lrCls}" title="Per ${lIvl}h tick (native)">${sign(lRateNative)}${lRateNative.toFixed(4)}%</span>`);
+  setH('fund-short-rate',`<span class="${srCls}" title="Per ${sIvl}h tick (native)">${sign(sRateNative)}${sRateNative.toFixed(4)}%</span>`);
   setT('fund-long-ivl',`/ ${lIvl}h /`); setT('fund-short-ivl',`/ ${sIvl}h /`);
   setT('fund-long-cd',fmtCD(r.next_ts_long)); setT('fund-short-cd',fmtCD(r.next_ts_short));
   setT('vol-long-val',fmtV(r.long_volume)+' USDT'); setT('vol-short-val',fmtV(r.short_volume)+' USDT');
@@ -1946,6 +2121,39 @@ function renderAlertList(){
     <button class="alert-item-del" onclick="deleteAlert(${a.id})" title="Delete">×</button>
   </div>`).join('');
 }
+// ── Custom Direction dropdown ──
+const _alDirLabels = {
+  above: { text: 'Above · spread ≥ +threshold', ic: 'al-dd-ic-above', sym: '↑' },
+  below: { text: 'Below · spread ≤ −threshold', ic: 'al-dd-ic-below', sym: '↓' },
+};
+function alDirToggle(ev){
+  ev && ev.stopPropagation();
+  const dd = document.getElementById('al-dir-dd');
+  const open = !dd.classList.contains('open');
+  dd.classList.toggle('open', open);
+  dd.querySelector('.al-dd-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) setTimeout(() => document.addEventListener('click', _alDirOutside, { once:false }), 0);
+}
+function _alDirOutside(e){
+  const dd = document.getElementById('al-dir-dd');
+  if (!dd) return;
+  if (!dd.contains(e.target)) { dd.classList.remove('open'); document.removeEventListener('click', _alDirOutside); }
+}
+function alDirPick(btn){
+  const v = btn.dataset.v;
+  const dd = document.getElementById('al-dir-dd');
+  document.getElementById('al-direction').value = v;
+  dd.querySelectorAll('.al-dd-item').forEach(x => x.classList.toggle('is-active', x.dataset.v === v));
+  const meta = _alDirLabels[v];
+  const btnEl = dd.querySelector('.al-dd-btn');
+  btnEl.querySelector('.al-dd-text').textContent = meta.text;
+  const icEl = btnEl.querySelector('.al-dd-ic');
+  icEl.className = 'al-dd-ic ' + meta.ic;
+  icEl.textContent = meta.sym;
+  dd.classList.remove('open');
+  document.removeEventListener('click', _alDirOutside);
+}
+
 async function createAlert(){
   if(!_hasTgUsername){_toast('Set Telegram username in your profile first');return;}
   const thresholdRaw=document.getElementById('al-threshold').value;
@@ -2036,6 +2244,194 @@ async function init(){
 }
 window.addEventListener('resize',()=>{if(_spreadBuilt)renderSpreadChart();if(_fundBuilt)renderFundChart();if(_eeHist.length>1)renderEntryExitChart();});
 init();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ALPHA FEATURES · slippage calc · paper trading · backtest · alpha badge
+// ═══════════════════════════════════════════════════════════════════════
+let _xsTimer=null;
+function xsDebounce(){clearTimeout(_xsTimer);_xsTimer=setTimeout(xsUpdate,350);}
+
+async function xsUpdate(){
+  const size=parseFloat(document.getElementById('xs-size').value)||0;
+  if(size<=10) return;
+  try{
+    const r=await Auth.apiFetch(`/screener/executable-spread?symbol=${SYMBOL}&long_ex=${LONG}&short_ex=${SHORT}&size_usd=${size}`);
+    if(!r.ok) return;
+    const d=await r.json();
+    const f=(v,dp=3)=>v==null?'—':Number(v).toFixed(dp)+'%';
+    document.getElementById('xs-quoted').textContent=f(d.quoted_spread_pct);
+    document.getElementById('xs-exec').textContent=f(d.executable_spread_pct);
+    document.getElementById('xs-slip').textContent=f(d.slippage_pct);
+    const net=d.net_spread_pct;
+    const netEl=document.getElementById('xs-net');
+    netEl.textContent=f(net);
+    netEl.className='calc-val '+(net>0?'pos':'neg');
+    const mx=Math.max(Math.abs(d.quoted_spread_pct||0),Math.abs(d.executable_spread_pct||0),0.05);
+    document.getElementById('xs-bar-q').style.width=Math.min(100,Math.abs(d.quoted_spread_pct||0)/mx*100)+'%';
+    document.getElementById('xs-bar-e').style.width=Math.min(100,Math.abs(d.executable_spread_pct||0)/mx*100)+'%';
+  }catch(_){}
+}
+
+// ── Paper Trading ──
+let _ptTimer=null;
+async function loadPaperStats(){
+  try{
+    const r=await Auth.apiFetch('/screener/paper/stats');
+    if(!r.ok) return;
+    const s=await r.json();
+    const totalEl=document.getElementById('pt-total');
+    totalEl.textContent='$'+(s.total_pnl_usd||0).toFixed(2);
+    totalEl.style.color=(s.total_pnl_usd||0)>0?'var(--green)':(s.total_pnl_usd||0)<0?'var(--red)':'var(--text)';
+    document.getElementById('pt-open').textContent=s.open_count||0;
+    document.getElementById('pt-wr').textContent=(s.closed_count||0)>0?s.win_rate_pct.toFixed(0)+'%':'—';
+  }catch(_){}
+}
+async function loadPaperList(){
+  try{
+    const r=await Auth.apiFetch('/screener/paper/positions?status=open');
+    if(!r.ok) return;
+    const rows=await r.json();
+    // Filter to current pair only
+    const mine=rows.filter(p=>p.symbol===SYMBOL&&p.long_exchange===LONG&&p.short_exchange===SHORT);
+    const el=document.getElementById('pt-list');
+    if(!mine.length){el.innerHTML='<div style="color:var(--text3);font-size:11px;padding:6px 2px">No open positions for this pair</div>';return;}
+    el.innerHTML=mine.map(p=>{
+      const netCls=p.net_pnl_usd>0?'pos':'neg';
+      return `
+      <div style="border:1px solid var(--border);border-radius:7px;padding:8px;display:flex;flex-direction:column;gap:4px;background:var(--surface2)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="mono" style="font-size:11px;color:var(--text2)">$${p.size_usd.toFixed(0)} · entry ${p.entry_spread_pct.toFixed(3)}%</span>
+          <span class="mono ${netCls}" style="font-weight:700;font-size:13px">${p.net_pnl_usd>0?'+':''}$${p.net_pnl_usd.toFixed(2)}</span>
+        </div>
+        <div style="display:flex;gap:10px;font-size:10px;color:var(--text3)">
+          <span>Price P&L <span class="mono" style="color:var(--text2)">${p.price_pnl_usd>0?'+':''}$${p.price_pnl_usd.toFixed(2)}</span></span>
+          <span>Funding <span class="mono" style="color:var(--text2)">${p.funding_pnl_usd>0?'+':''}$${p.funding_pnl_usd.toFixed(2)}</span></span>
+          <span style="margin-left:auto">spread ${p.current_spread_pct.toFixed(3)}%</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:2px">
+          <button onclick="paperClose(${p.id})" style="flex:1;height:22px;padding:0 8px;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:5px;cursor:pointer;font-family:inherit;font-size:11px">Close</button>
+          <button onclick="paperDelete(${p.id})" style="height:22px;padding:0 8px;background:transparent;border:1px solid var(--border);color:var(--red);border-radius:5px;cursor:pointer;font-family:inherit;font-size:11px">×</button>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(_){}
+}
+async function paperOpen(){
+  const size=parseFloat(document.getElementById('pt-size').value)||0;
+  if(size<10){_toast('Size must be ≥ $10');return;}
+  try{
+    const r=await Auth.apiFetch('/screener/paper/positions',{method:'POST',body:JSON.stringify({symbol:SYMBOL,long_exchange:LONG,short_exchange:SHORT,size_usd:size})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));_toast(e.detail||'Failed to open');return;}
+    _toast('Position opened');
+    loadPaperStats();loadPaperList();
+  }catch(_){_toast('Failed to open');}
+}
+async function paperClose(id){
+  try{
+    const r=await Auth.apiFetch(`/screener/paper/positions/${id}/close`,{method:'POST'});
+    if(!r.ok) return;
+    const j=await r.json();
+    _toast(`Closed · realized ${j.realized_pnl_usd>0?'+':''}$${j.realized_pnl_usd.toFixed(2)}`);
+    loadPaperStats();loadPaperList();
+  }catch(_){}
+}
+async function paperDelete(id){
+  try{
+    const r=await Auth.apiFetch(`/screener/paper/positions/${id}`,{method:'DELETE'});
+    if(r.ok){loadPaperStats();loadPaperList();}
+  }catch(_){}
+}
+
+// ── Backtest ──
+async function runBacktest(){
+  const days=parseInt(document.getElementById('bt-days').value)||7;
+  const size=parseFloat(document.getElementById('bt-size').value)||1000;
+  try{
+    const r=await Auth.apiFetch(`/screener/backtest?symbol=${SYMBOL}&long_ex=${LONG}&short_ex=${SHORT}&days=${days}&size_usd=${size}`);
+    if(!r.ok) return;
+    const d=await r.json();
+    if(d.error){_toast(d.error);return;}
+    const netEl=document.getElementById('bt-net');
+    netEl.textContent='$'+d.net_pnl_usd.toFixed(2);
+    netEl.className='calc-val '+(d.net_pnl_usd>0?'pos':'neg');
+    document.getElementById('bt-pct').textContent=d.net_pnl_pct.toFixed(3)+'%';
+    document.getElementById('bt-pct').className='calc-val '+(d.net_pnl_pct>0?'pos':'neg');
+    document.getElementById('bt-apr').textContent=d.annualized_apr_pct.toFixed(1)+'%';
+    document.getElementById('bt-apr').className='calc-val '+(d.annualized_apr_pct>0?'pos':'neg');
+    document.getElementById('bt-fees').textContent='$'+d.round_trip_fees_usd.toFixed(2);
+  }catch(_){}
+}
+
+// ── Alpha score badge + anomaly flag ──
+async function loadAlphaBadge(){
+  try{
+    const r=await Auth.apiFetch('/screener/alpha');
+    if(!r.ok) return;
+    const d=await r.json();
+    const mine=(d.opportunities||[]).find(o=>o.symbol===SYMBOL&&o.long_exchange===LONG&&o.short_exchange===SHORT);
+    if(!mine) return;
+    const score=mine.alpha_score||0;
+    const rank=mine.alpha_rank||'—';
+    const color=score<40?'var(--red)':score<70?'var(--yellow)':'var(--green)';
+    const hero=document.querySelector('.hero-block');
+    if(hero&&!document.getElementById('alpha-pill')){
+      const pill=document.createElement('div');
+      pill.id='alpha-pill';
+      pill.title=`Alpha rank #${rank} of ${d.opportunities.length}`;
+      pill.style.cssText=`display:inline-flex;align-items:center;gap:4px;padding:3px 8px;margin-left:8px;border-radius:999px;background:${color}22;border:1px solid ${color};color:${color};font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.02em`;
+      pill.innerHTML=`<span style="opacity:.7">α</span>${score.toFixed(0)}`;
+      hero.appendChild(pill);
+    }
+  }catch(_){}
+}
+async function loadAnomalyFlag(){
+  try{
+    const r=await Auth.apiFetch('/screener/anomalies?hours=1&limit=50');
+    if(!r.ok) return;
+    const rows=await r.json();
+    const hit=rows.find(a=>a.symbol===SYMBOL&&a.long_exchange===LONG&&a.short_exchange===SHORT);
+    if(!hit) return;
+    const hero=document.querySelector('.hero-block');
+    if(hero&&!document.getElementById('anom-flag')){
+      const flag=document.createElement('div');
+      flag.id='anom-flag';
+      flag.title=`z-score ${hit.z_score.toFixed(1)} at ${hit.created_at}`;
+      flag.style.cssText=`display:inline-flex;align-items:center;gap:4px;padding:3px 8px;margin-left:6px;border-radius:999px;background:rgba(229,192,123,.12);border:1px solid var(--yellow);color:var(--yellow);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;animation:ws-pulse 1.6s ease-in-out infinite`;
+      flag.innerHTML='⚡ ANOMALY';
+      hero.appendChild(flag);
+    }
+  }catch(_){}
+}
+
+// Kick off alpha features after init
+setTimeout(()=>{loadAlphaBadge();loadAnomalyFlag();loadPaperStats();loadPaperList();xsUpdate();initArbWatch();_ptTimer=setInterval(()=>{loadPaperStats();loadPaperList();},5000);},1200);
+
+// ── Watchlist star on infobar ──
+let _wlArbId=null;
+async function initArbWatch(){
+  try{
+    const r=await Auth.apiFetch('/screener/watchlist');
+    if(!r.ok)return;
+    const rows=await r.json();
+    const hit=rows.find(x=>x.symbol===SYM&&x.long_exchange===LONG&&x.short_exchange===SHORT);
+    if(hit){_wlArbId=hit.id;document.getElementById('wl-star')?.classList.add('on');}
+  }catch(_){}
+}
+async function toggleArbWatch(){
+  const btn=document.getElementById('wl-star');if(!btn)return;
+  btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),320);
+  try{
+    if(_wlArbId){
+      const r=await Auth.apiFetch(`/screener/watchlist/${_wlArbId}`,{method:'DELETE'});
+      if(!r.ok)throw new Error();
+      _wlArbId=null;btn.classList.remove('on');_toast('Removed from watchlist');
+    }else{
+      const r=await Auth.apiFetch('/screener/watchlist',{method:'POST',body:JSON.stringify({symbol:SYM,long_exchange:LONG,short_exchange:SHORT})});
+      if(!r.ok)throw new Error();
+      const j=await r.json();_wlArbId=j.id;btn.classList.add('on');_toast('Added to watchlist');
+    }
+  }catch{_toast('Watchlist action failed');}
+}
 </script>
 
 <!-- Mobile bottom navigation -->
@@ -2044,13 +2440,13 @@ init();
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
     Portfolio
   </a>
-  <a href="/archive" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="7" width="16" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 7l2.5-4h11L18 7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    Archive
-  </a>
   <a href="/screener?mode=arb" class="bnav-item active">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M3 5h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Screener
+  </a>
+  <a href="/watchlist" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M10 2L12.3 7.1L18 7.9L14 11.9L15 18L10 15L5 18L6 11.9L2 7.9L7.7 7.1z"/></svg>
+    Watchlist
   </a>
   <a href="/pricing" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>

@@ -18,10 +18,11 @@ app-navbar::after {
   pointer-events: none;
 }
 .brand {
-  display: flex; align-items: center;
+  display: inline-flex; align-items: center; justify-self: start;
   font-size: 18px; font-weight: 800; letter-spacing: -0.7px; line-height: 1;
   color: #E6E8E3; text-decoration: none; user-select: none; flex-shrink: 0;
   font-family: 'Inter', system-ui, sans-serif;
+  width: max-content;
 }
 .brand:hover { opacity: 0.85; }
 .brand-cursor {
@@ -81,3 +82,19 @@ button.nav-lnk { background: none; cursor: pointer; }
   box-shadow: 0 0 16px rgba(26,255,171,0.35);
 }
 .btn-sm { padding: 0 10px; height: 28px; font-size: 12px; }
+.nav-lnk-icon { padding: 5px 8px; color: #9B9FAB; position: relative; }
+.nav-lnk-icon:hover { color: #E5C07B; background: rgba(229,192,123,0.08); border-color: rgba(229,192,123,0.18); }
+.nav-lnk-icon:hover svg { opacity: 1; }
+.nav-lnk-icon.active { color: #E5C07B; background: rgba(229,192,123,0.1); border-color: rgba(229,192,123,0.22); }
+
+.nav-lnk-bell { padding: 5px 8px; position: relative; color: #9B9FAB; background: none; cursor: pointer; }
+.nav-lnk-bell:hover { color: #1AFFAB; background: rgba(26,255,171,0.08); border-color: rgba(26,255,171,0.14); }
+.nav-lnk-bell:hover svg { opacity: 1; }
+.nav-dot {
+  position: absolute; top: 4px; right: 4px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #1AFFAB;
+  box-shadow: 0 0 0 2px var(--bg, #0E0E11);
+  animation: nb-dot-pulse 1.8s ease-in-out infinite;
+}
+@keyframes nb-dot-pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }

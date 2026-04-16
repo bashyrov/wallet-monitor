@@ -85,11 +85,28 @@ async def lifespan(app: FastAPI):
     from backend.services.alert_service import start_alert_service, stop_alert_service
     start_alert_service()
 
+    from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
+    start_tg_bot()
+
+    import asyncio
+    from backend.services.health_service import health_loop
+    from backend.services.replay_service import snapshot_loop
+    from backend.services.anomaly_service import anomaly_loop
+    _alpha_tasks = [
+        asyncio.create_task(health_loop(interval_s=60)),
+        asyncio.create_task(snapshot_loop(interval_s=60)),
+        asyncio.create_task(anomaly_loop(interval_s=120)),
+    ]
+    logger.info("Alpha loops started (health, snapshot, anomaly)")
+
     yield
 
+    for t in _alpha_tasks:
+        t.cancel()
     stop_price_loop()
     stop_screener_broadcaster()
     stop_alert_service()
+    stop_tg_bot()
     logger.info("Avalant shutting down")
 
 
@@ -140,7 +157,7 @@ from backend.db.base import get_db
 from fastapi import Depends
 import os
 
-_AUTH_PAGES  = {"app", "profile", "archive", "screener", "arb"}
+_AUTH_PAGES  = {"app", "profile", "archive", "screener", "arb", "watchlist"}
 _ADMIN_PAGES = {"admin", "admin-user"}
 
 @app.get("/{page:path}", include_in_schema=False)
