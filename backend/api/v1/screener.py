@@ -459,7 +459,7 @@ async def arb_history(
 _funding_clients: set[WebSocket] = set()
 _arb_clients: set[WebSocket] = set()
 _broadcaster_task: asyncio.Task | None = None
-BROADCAST_INTERVAL = 5  # seconds
+BROADCAST_INTERVAL = 10  # seconds — 10s is enough for screener; reduces CPU pressure 2×
 
 
 async def _push(clients: set[WebSocket], msg: str) -> None:

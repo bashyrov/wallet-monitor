@@ -922,16 +922,9 @@ _arb_result_cache: dict = {"data": None, "ts": 0.0}
 _ARB_CACHE_TTL = 10.0
 
 
-async def get_arbitrage_opportunities() -> dict:
-    now = time.time()
-    if _arb_result_cache["data"] and now - _arb_result_cache["ts"] < _ARB_CACHE_TTL:
-        return _arb_result_cache["data"]
-
-    data = await get_funding_data()
-    rows = data["rows"]
-
+def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
+    """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free."""
     _ARB_EXCLUDE = {"kraken"}
-
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
         if r["exchange"] in _ARB_EXCLUDE:
@@ -986,13 +979,24 @@ async def get_arbitrage_opportunities() -> dict:
                 })
 
     opportunities.sort(key=lambda x: x["net_profit"], reverse=True)
-
-    result = {
-        "ts": data["ts"],
+    return {
+        "ts": ts,
         "exchanges": list(FETCHERS.keys()),
         "fees": {ex: round(f * 100, 4) for ex, f in EXCHANGE_FEES.items()},
         "opportunities": opportunities,
     }
+
+
+async def get_arbitrage_opportunities() -> dict:
+    now = time.time()
+    if _arb_result_cache["data"] and now - _arb_result_cache["ts"] < _ARB_CACHE_TTL:
+        return _arb_result_cache["data"]
+
+    data = await get_funding_data()
+    # Run CPU-heavy computation in a thread pool so the event loop stays
+    # responsive for HTTP/WS during the 1-2s crunch.
+    import asyncio
+    result = await asyncio.to_thread(_compute_arb_sync, data["rows"], data["ts"])
     _arb_result_cache["data"] = result
     _arb_result_cache["ts"] = time.time()
     return result
