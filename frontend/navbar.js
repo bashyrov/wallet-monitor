@@ -364,5 +364,9 @@ customElements.define('app-navbar', AppNavbar);
       dot.style.display = n > 0 ? 'inline-block' : 'none';
     } catch {}
   };
-  document.addEventListener('DOMContentLoaded', () => setTimeout(() => window.refreshAlertsDot?.(), 800));
+  document.addEventListener('DOMContentLoaded', () => {
+    const p = window.location.pathname;
+    if (p === '/login' || p === '/register' || p === '/') return;
+    setTimeout(() => window.refreshAlertsDot?.(), 800);
+  });
 })();

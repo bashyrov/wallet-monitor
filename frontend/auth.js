@@ -79,7 +79,11 @@ const Auth = (() => {
     const resp = await fetch('/api' + path, { ...opts, headers });
     if (resp.status === 401) {
       clearSession();
-      window.location.replace('/login');
+      // Don't redirect if already on login/register — prevents reload loop
+      const p = window.location.pathname;
+      if (p !== '/login' && p !== '/register') {
+        window.location.replace('/login');
+      }
       throw new Error('Session expired');
     }
     return resp;
