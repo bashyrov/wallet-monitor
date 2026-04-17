@@ -53,15 +53,24 @@ const Auth = (() => {
   /** If already logged in, redirect away from login/register pages.
    *  Validates the token is still accepted by the backend first —
    *  prevents a redirect loop when the HttpOnly session cookie has
-   *  expired but the localStorage token is still present. */
+   *  expired but the localStorage token is still present.
+   *  Hides <body> during the check to prevent form flash ("jump"). */
   function redirectIfAuthed(redirectTo = '/app') {
     if (!isLoggedIn()) return;
+    // Hide body while checking — prevents the form from flashing before redirect
+    document.documentElement.style.visibility = 'hidden';
     fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + getToken() } })
       .then(r => {
-        if (r.ok) window.location.replace(redirectTo);
-        else      clearSession();   // stale token — stay on login
+        if (r.ok) {
+          window.location.replace(redirectTo);
+        } else {
+          clearSession();
+          document.documentElement.style.visibility = '';
+        }
       })
-      .catch(() => {});   // network error — don't redirect, don't clear
+      .catch(() => {
+        document.documentElement.style.visibility = '';
+      });
   }
 
   /** Logout: clear session + clear server cookie + redirect. */
