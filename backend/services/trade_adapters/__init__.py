@@ -11,32 +11,54 @@ Credentials dict is already decrypted before being passed in.
 """
 from .binance import BinanceAdapter
 from .bybit import BybitAdapter
+from .okx import OKXAdapter
+from .gate import GateAdapter
+from .mexc import MexcAdapter
+from .kucoin import KuCoinAdapter
+from .bitget import BitgetAdapter
+from .bingx import BingxAdapter
+from .whitebit import WhitebitAdapter
+from .backpack import BackpackAdapter
+from .hyperliquid import HyperliquidAdapter
+from .aster import AsterAdapter
+from .ethereal import EtherealAdapter
 from .readonly import make_readonly_adapter
 
-# ── Trading-capable adapters ────────────────────────────────────────────────
-TRADE_SUPPORTED: set[str] = {"binance", "bybit"}
-
-# ── Read-only adapters for every other exchange/perp DEX we track ───────────
-# Uses existing balance providers to validate keys; trading path raises.
-_READONLY = {
-    # CEX
-    "okx":      "OKX",
-    "gate":     "Gate",
-    "kucoin":   "KuCoin",
-    "mexc":     "MEXC",
-    "bitget":   "Bitget",
-    "backpack": "Backpack",
-    # Perp DEX (these use the exchange provider registry via their own type,
-    # so they work when type_value matches. For perpdex the wallet_type column
-    # will be 'perpdex' — handled in trade_service filter separately.)
+# ── All exchanges/DEXes with full trade adapters ────────────────────────────
+TRADE_SUPPORTED: set[str] = {
+    # CEX (8)
+    "binance", "bybit", "okx", "gate", "mexc", "kucoin", "bitget", "backpack",
+    # BingX + WhiteBIT
+    "bingx", "whitebit",
+    # Perp DEX (3) — require private key / API wallet
+    "hyperliquid", "aster", "ethereal",
 }
 
 ADAPTERS: dict[str, type] = {
-    "binance": BinanceAdapter,
-    "bybit":   BybitAdapter,
+    # CEX
+    "binance":      BinanceAdapter,
+    "bybit":        BybitAdapter,
+    "okx":          OKXAdapter,
+    "gate":         GateAdapter,
+    "mexc":         MexcAdapter,
+    "kucoin":       KuCoinAdapter,
+    "bitget":       BitgetAdapter,
+    "bingx":        BingxAdapter,
+    "whitebit":     WhitebitAdapter,
+    "backpack":     BackpackAdapter,
+    # Perp DEX
+    "hyperliquid":  HyperliquidAdapter,
+    "aster":        AsterAdapter,
+    "ethereal":     EtherealAdapter,
+}
+
+# ── Read-only: exchanges without trade adapters (Lighter, Paradex) ──────────
+_READONLY = {
+    "lighter":  "Lighter",
+    "paradex":  "Paradex",
 }
 for _key, _label in _READONLY.items():
     ADAPTERS[_key] = make_readonly_adapter(_key, _label)
 
-SUPPORTED_EXCHANGES = set(ADAPTERS.keys())  # covers both trading + read-only
+SUPPORTED_EXCHANGES = set(ADAPTERS.keys())
 

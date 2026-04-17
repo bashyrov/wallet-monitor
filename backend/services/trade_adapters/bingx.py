@@ -1,0 +1,272 @@
+"""BingX USDT-M Perpetual Swap trade adapter."""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import logging
+import math
+import time
+import urllib.parse
+from typing import Any
+
+import httpx
+
+BASE = "https://open-api.bingx.com"
+logger = logging.getLogger("avalant.trade.bingx")
+
+# ── Instrument cache ──
+_EX_INFO_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
+_EX_INFO_TTL = 600
+_EX_INFO_LOCK = asyncio.Lock()
+
+
+async def _exchange_info() -> dict[str, dict]:
+    """Return {symbol: {quantityPrecision, minQty, stepSize, tickSize}}."""
+    now = time.time()
+    if _EX_INFO_CACHE["data"] and now - _EX_INFO_CACHE["ts"] < _EX_INFO_TTL:
+        return _EX_INFO_CACHE["data"]
+    async with _EX_INFO_LOCK:
+        if _EX_INFO_CACHE["data"] and time.time() - _EX_INFO_CACHE["ts"] < _EX_INFO_TTL:
+            return _EX_INFO_CACHE["data"]
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get(f"{BASE}/openApi/swap/v2/quote/contracts")
+                body = r.json()
+        except Exception as e:
+            logger.warning("BingX exchangeInfo failed: %s", e)
+            return _EX_INFO_CACHE["data"] or {}
+        out: dict[str, dict] = {}
+        for s in body.get("data", []):
+            sym = s.get("symbol")
+            if not sym:
+                continue
+            out[sym] = {
+                "quantityPrecision": int(s.get("quantityPrecision", 2) or 2),
+                "pricePrecision": int(s.get("pricePrecision", 2) or 2),
+                "minQty": float(s.get("minTradeQuantity") or s.get("tradeMinQuantity") or 0),
+                "stepSize": float(s.get("stepSize") or 0),
+                "tickSize": float(s.get("tickSize") or 0),
+            }
+        _EX_INFO_CACHE["data"] = out
+        _EX_INFO_CACHE["ts"] = time.time()
+        return out
+
+
+_FRIENDLY = {
+    "100001": "Signature mismatch — check API secret.",
+    "100202": "Insufficient margin.",
+    "100400": "Invalid parameter.",
+    "100410": "Symbol not listed on BingX Futures.",
+    "100421": "Leverage value not allowed.",
+    "100500": "Internal server error on BingX.",
+    "80001":  "Invalid API key.",
+    "80012":  "API key has no trade permission.",
+}
+
+
+def _friendly_error(code: str | None, msg: str) -> str:
+    if code and code in _FRIENDLY:
+        return _FRIENDLY[code]
+    return msg or "BingX rejected the request."
+
+
+def _round_qty(qty: float, step: float | None, prec: int) -> float:
+    if step and step > 0:
+        return math.floor(qty / step) * step
+    factor = 10 ** prec
+    return math.floor(qty * factor) / factor
+
+
+def _qty_str(qty: float, prec: int) -> str:
+    s = f"{qty:.{max(prec, 0)}f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".") or "0"
+    return s
+
+
+class BingxAdapter:
+    @staticmethod
+    def _sign(params: dict, secret: str) -> str:
+        sorted_qs = urllib.parse.urlencode(sorted(params.items()), doseq=True)
+        return hmac.new(secret.encode(), sorted_qs.encode(), hashlib.sha256).hexdigest()
+
+    @classmethod
+    async def _req(cls, creds: dict, method: str, path: str, params: dict | None = None) -> Any:
+        params = dict(params or {})
+        params["timestamp"] = int(time.time() * 1000)
+        sig = cls._sign(params, creds["api_secret"])
+        params["signature"] = sig
+        headers = {"X-BX-APIKEY": creds["api_key"]}
+        url = BASE + path
+        async with httpx.AsyncClient(timeout=10) as c:
+            if method == "GET":
+                r = await c.get(url, params=params, headers=headers)
+            else:
+                r = await c.post(url, params=params, headers=headers)
+            body = r.json()
+            code = str(body.get("code", 0))
+            if code != "0" and r.status_code >= 400 or code not in ("0", "200"):
+                msg = str(body.get("msg") or r.text)
+                raise RuntimeError(f"BingX {r.status_code} {code}: {msg}")
+            return body.get("data", body)
+
+    @staticmethod
+    def _symbol(s: str) -> str:
+        return s.upper() + "-USDT"
+
+    # ── Balance ──
+    @classmethod
+    async def fetch_balance(cls, creds: dict) -> dict:
+        data = await cls._req(creds, "GET", "/openApi/swap/v2/user/balance")
+        bal = data.get("balance", data) if isinstance(data, dict) else {}
+        return {"usdt": float(bal.get("availableMargin") or bal.get("equity") or 0)}
+
+    # ── Leverage + margin mode ──
+    @classmethod
+    async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
+        sym = cls._symbol(symbol)
+        try:
+            await cls._req(creds, "POST", "/openApi/swap/v2/trade/marginType", {
+                "symbol": sym,
+                "marginType": "ISOLATED" if margin_mode == "isolated" else "CROSSED",
+            })
+        except RuntimeError:
+            pass  # already set
+        try:
+            await cls._req(creds, "POST", "/openApi/swap/v2/trade/leverage", {
+                "symbol": sym, "side": "BOTH", "leverage": int(leverage),
+            })
+        except RuntimeError as e:
+            raise RuntimeError(_friendly_error(*_split_code(e)))
+
+    # ── Preflight ──
+    @classmethod
+    async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
+        sym = cls._symbol(symbol)
+        info = (await _exchange_info()).get(sym)
+        if not info:
+            return {"ok": False, "reason": f"Symbol {sym} not listed on BingX Futures."}
+        prec = info.get("quantityPrecision", 2)
+        step = info.get("stepSize") or 0
+        min_qty = info.get("minQty") or 0
+        qty_r = _round_qty(quantity, step, prec)
+        if qty_r <= 0 or qty_r < min_qty:
+            return {"ok": False, "reason": f"Quantity below minimum ({min_qty} {symbol.upper()})."}
+        try:
+            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
+        except RuntimeError as e:
+            return {"ok": False, "reason": _friendly_error(*_split_code(e))}
+        return {"ok": True, "qty_rounded": qty_r, "precision": prec,
+                "min_qty": min_qty, "step_size": step}
+
+    # ── Place order ──
+    @classmethod
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+        sym = cls._symbol(symbol)
+        info = (await _exchange_info()).get(sym) or {}
+        prec = info.get("quantityPrecision", 2)
+        step = info.get("stepSize") or 0
+        qty_r = _round_qty(quantity, step, prec)
+        qty_s = _qty_str(qty_r, prec)
+        try:
+            r = await cls._req(creds, "POST", "/openApi/swap/v2/trade/order", {
+                "symbol": sym,
+                "type": "MARKET",
+                "side": "BUY" if side == "buy" else "SELL",
+                "quantity": qty_s,
+            })
+        except RuntimeError as e:
+            raise RuntimeError(_friendly_error(*_split_code(e)))
+        order = r if isinstance(r, dict) else {}
+        return {"order_id": str(order.get("orderId", "")), "avg_price": float(order.get("avgPrice", 0) or 0)}
+
+    # ── Close position ──
+    @classmethod
+    async def close_position(cls, creds: dict, symbol: str, side: str) -> dict:
+        sym = cls._symbol(symbol)
+        positions = await cls._req(creds, "GET", "/openApi/swap/v2/user/positions", {"symbol": sym})
+        pos_list = positions if isinstance(positions, list) else []
+        target = None
+        for p in pos_list:
+            amt = float(p.get("positionAmt") or p.get("availableAmt") or 0)
+            if amt != 0:
+                target = p
+                break
+        if not target:
+            return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
+        amt = float(target.get("positionAmt") or target.get("availableAmt") or 0)
+        reduce_side = "SELL" if amt > 0 else "BUY"
+        info = (await _exchange_info()).get(sym) or {}
+        prec = info.get("quantityPrecision", 2)
+        qty_s = _qty_str(abs(amt), prec)
+        try:
+            r = await cls._req(creds, "POST", "/openApi/swap/v2/trade/order", {
+                "symbol": sym,
+                "type": "MARKET",
+                "side": reduce_side,
+                "quantity": qty_s,
+                "reduceOnly": "true",
+            })
+        except RuntimeError as e:
+            raise RuntimeError(_friendly_error(*_split_code(e)))
+        return {"order_id": str((r or {}).get("orderId", "")), "closed_qty": abs(amt), "realized_pnl_usd": 0.0}
+
+    # ── Positions ──
+    @classmethod
+    async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
+        params = {"symbol": cls._symbol(symbol)} if symbol else {}
+        data = await cls._req(creds, "GET", "/openApi/swap/v2/user/positions", params or None)
+        pos_list = data if isinstance(data, list) else []
+        out = []
+        for p in pos_list:
+            amt = float(p.get("positionAmt") or 0)
+            if amt == 0:
+                continue
+            sym_raw = str(p.get("symbol", ""))
+            out.append({
+                "exchange": "bingx",
+                "symbol": sym_raw.replace("-USDT", ""),
+                "side": "buy" if amt > 0 else "sell",
+                "quantity": abs(amt),
+                "entry_price": float(p.get("avgPrice") or 0),
+                "mark_price": float(p.get("markPrice") or 0),
+                "unrealized_pnl_usd": float(p.get("unrealizedProfit") or 0),
+                "leverage": int(float(p.get("leverage") or 1)),
+                "position_id": sym_raw,
+            })
+        return out
+
+    # ── Validate key ──
+    @classmethod
+    async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:
+        out = {"can_read": False, "can_trade": False, "balance_usdt": None, "error": None}
+        try:
+            bal = await cls.fetch_balance(creds)
+            out["can_read"] = True
+            out["balance_usdt"] = float(bal.get("usdt") or 0)
+        except Exception as e:
+            msg = str(e)
+            if "80001" in msg:
+                out["error"] = "Invalid API key"
+            elif "100001" in msg or "Signature" in msg:
+                out["error"] = "Signature mismatch — API secret is wrong"
+            else:
+                out["error"] = f"BingX rejected the key: {msg[:180]}"
+            return out
+        if need_trade:
+            out["can_trade"] = True  # BingX doesn't have a separate trade permission check
+        return out
+
+    @classmethod
+    async def get_public_max_leverage(cls, symbol: str) -> int:
+        return 150
+
+
+def _split_code(exc: Exception) -> tuple[str | None, str]:
+    import re
+    s = str(exc)
+    m = re.match(r"BingX \d+ (\d+)?: (.*)", s)
+    if m:
+        return m.group(1) or None, m.group(2) or s
+    return None, s
