@@ -263,24 +263,65 @@ def consume_link_token(db: Session, token: str, tg_id: int, tg_chat_id: int,
 
 
 # ── Login-by-Bot tokens (no auth required) ───────────────────────────────────
-# In-memory store for pending login results: token_hash → {jwt, user_id, ts}
-# Cleaned up after 5 minutes. NOT in DB — ephemeral by design.
-_login_results: dict[str, dict] = {}
+# File-based store — works across multiple uvicorn workers (separate processes).
+# Token status written to /tmp/avalant_cache/login_<hash>.json
 _LOGIN_TOKEN_TTL = 300  # 5 min
+_LOGIN_DIR = "/tmp/avalant_cache"
+
+
+def _login_path(token_hash: str) -> str:
+    import os
+    os.makedirs(_LOGIN_DIR, exist_ok=True)
+    return os.path.join(_LOGIN_DIR, f"login_{token_hash}.json")
+
+
+def _write_login(token_hash: str, data: dict) -> None:
+    import json as _json, os, tempfile
+    os.makedirs(_LOGIN_DIR, exist_ok=True)
+    path = _login_path(token_hash)
+    try:
+        fd, tmp = tempfile.mkstemp(dir=_LOGIN_DIR, suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            _json.dump(data, f)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _read_login(token_hash: str) -> dict | None:
+    import json as _json, os
+    path = _login_path(token_hash)
+    try:
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            return _json.load(f)
+    except Exception:
+        return None
+
+
+def _delete_login(token_hash: str) -> None:
+    import os
+    try:
+        os.remove(_login_path(token_hash))
+    except Exception:
+        pass
 
 
 def issue_login_token(db: Session) -> dict[str, Any]:
-    """Generate a token for unauthenticated login-by-bot flow.
-    Returns {token, deep_link, expires_in_sec}. No user_id needed — the bot
-    will resolve the user from tg_id when they press Start."""
     raw = secrets.token_urlsafe(24)
     h = _hash_token(raw)
-    _login_results[h] = {"status": "pending", "ts": time.time()}
-    # Prune old entries
+    _write_login(h, {"status": "pending", "ts": time.time()})
+
+    # Prune old login files
+    import os, glob
     now = time.time()
-    stale = [k for k, v in _login_results.items() if now - v["ts"] > _LOGIN_TOKEN_TTL]
-    for k in stale:
-        _login_results.pop(k, None)
+    for f in glob.glob(os.path.join(_LOGIN_DIR, "login_*.json")):
+        try:
+            if now - os.path.getmtime(f) > _LOGIN_TOKEN_TTL * 2:
+                os.remove(f)
+        except Exception:
+            pass
 
     bot_username = settings.TG_BOT_USERNAME or "avalant_bot"
     return {
@@ -292,18 +333,14 @@ def issue_login_token(db: Session) -> dict[str, Any]:
 
 def consume_login_token(db: Session, token: str, tg_id: int, tg_chat_id: int,
                         tg_username: str | None, first_name: str | None) -> str | None:
-    """Called by the bot when it sees /start auth-<token>.
-    Finds or creates user by tg_id, mints JWT, stores in _login_results.
-    Returns the bot reply message or None."""
     h = _hash_token(token)
-    entry = _login_results.get(h)
+    entry = _read_login(h)
     if not entry or entry.get("status") != "pending":
         return None
-    if time.time() - entry["ts"] > _LOGIN_TOKEN_TTL:
-        _login_results.pop(h, None)
+    if time.time() - entry.get("ts", 0) > _LOGIN_TOKEN_TTL:
+        _delete_login(h)
         return None
 
-    # Find or create user
     payload = {
         "tg_id": tg_id,
         "username": tg_username,
@@ -311,10 +348,9 @@ def consume_login_token(db: Session, token: str, tg_id: int, tg_chat_id: int,
     }
     user, created = find_or_create_user_from_widget(db, payload)
     if user.is_blocked:
-        _login_results[h] = {"status": "blocked", "ts": entry["ts"]}
+        _write_login(h, {"status": "blocked", "ts": entry["ts"]})
         return "Your account is blocked."
 
-    # Set chat_id if missing
     if not user.tg_chat_id:
         user.tg_chat_id = tg_chat_id
     if not user.tg_id:
@@ -324,30 +360,28 @@ def consume_login_token(db: Session, token: str, tg_id: int, tg_chat_id: int,
     db.commit()
 
     jwt = create_token(user.id)
-    _login_results[h] = {
+    _write_login(h, {
         "status": "ok",
         "jwt": jwt,
         "user_id": user.id,
         "username": user.username,
         "ts": entry["ts"],
-    }
+    })
     action = "created" if created else "logged in"
     logger.info("TG login-by-bot: user_id=%s %s tg_id=%s", user.id, action, tg_id)
     return f"✅ {action.title()}! You can close this chat and return to Avalant."
 
 
 def check_login_token(token: str) -> dict:
-    """Poll endpoint: returns {status: pending|ok|expired, jwt?, user?}."""
     h = _hash_token(token)
-    entry = _login_results.get(h)
+    entry = _read_login(h)
     if not entry:
         return {"status": "expired"}
-    if time.time() - entry["ts"] > _LOGIN_TOKEN_TTL:
-        _login_results.pop(h, None)
+    if time.time() - entry.get("ts", 0) > _LOGIN_TOKEN_TTL:
+        _delete_login(h)
         return {"status": "expired"}
     if entry.get("status") == "ok":
-        # One-time read — remove after delivery
-        _login_results.pop(h, None)
+        _delete_login(h)  # one-time read
         return {
             "status": "ok",
             "access_token": entry["jwt"],
