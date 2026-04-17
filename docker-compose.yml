@@ -35,6 +35,10 @@ services:
       # Optional — price cache (top-100 CMC → Gate prices, every 30 min)
       CMC_API_KEY: ${CMC_API_KEY:-}
 
+      # Optional — Telegram bot (alerts + login widget + profile linking)
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}
+      TG_BOT_USERNAME: ${TG_BOT_USERNAME:-avalant_bot}
+
       # Optional — EVM / chain providers
       ANKR_KEY: ${ANKR_KEY:-}
       TRON_KEY: ${TRON_KEY:-}
