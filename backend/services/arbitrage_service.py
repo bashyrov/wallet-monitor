@@ -865,7 +865,52 @@ async def _get_rows(exchange: str) -> list[dict]:
         return cached_rows
 
 
+_FILE_CACHE_DIR = "/tmp/avalant_cache"
+
+
+def _write_file_cache(name: str, data: dict) -> None:
+    """Atomically write JSON to a file so other workers can read it."""
+    import json as _json, os, tempfile
+    os.makedirs(_FILE_CACHE_DIR, exist_ok=True)
+    path = os.path.join(_FILE_CACHE_DIR, name)
+    try:
+        fd, tmp = tempfile.mkstemp(dir=_FILE_CACHE_DIR, suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            _json.dump(data, f)
+        os.replace(tmp, path)  # atomic on POSIX
+    except Exception:
+        pass
+
+
+def _read_file_cache(name: str, max_age: float = 60.0) -> dict | None:
+    """Read JSON from file cache. Returns None if missing or stale."""
+    import json as _json, os
+    path = os.path.join(_FILE_CACHE_DIR, name)
+    try:
+        if not os.path.exists(path):
+            return None
+        age = time.time() - os.path.getmtime(path)
+        if age > max_age:
+            return None
+        with open(path) as f:
+            return _json.load(f)
+    except Exception:
+        return None
+
+
 async def get_funding_data() -> dict:
+    # Fast path: if ALL per-exchange caches are warm, gather returns instantly.
+    # If ANY are stale → full refetch. Before that, try file cache written by
+    # the broadcaster worker (avoids 20-30s fetch on non-broadcaster workers).
+    any_stale = any(
+        (time.time() - _cache.get(ex, ([], 0))[1]) > CACHE_TTL
+        for ex in FETCHERS
+    )
+    if any_stale:
+        fc = _read_file_cache("funding.json", max_age=CACHE_TTL * 2)
+        if fc and fc.get("rows"):
+            return fc
+
     results = await asyncio.gather(
         *(_get_rows(ex) for ex in FETCHERS),
         return_exceptions=True,
@@ -888,11 +933,14 @@ async def get_funding_data() -> dict:
 
     all_rows.sort(key=lambda r: abs(r["apr"]), reverse=True)
 
-    return {
+    out = {
         "ts": int(time.time()),
         "exchanges": list(FETCHERS.keys()),
         "rows": all_rows,
     }
+    # Write to file cache so other workers can read without refetching
+    _write_file_cache("funding.json", out)
+    return out
 
 
 # ── Fee config (taker, as fraction) ───────────────────────────────────────────
@@ -992,6 +1040,13 @@ async def get_arbitrage_opportunities() -> dict:
     if _arb_result_cache["data"] and now - _arb_result_cache["ts"] < _ARB_CACHE_TTL:
         return _arb_result_cache["data"]
 
+    # File cache fallback (written by broadcaster worker)
+    fc = _read_file_cache("arbitrage.json", max_age=_ARB_CACHE_TTL * 3)
+    if fc and fc.get("opportunities"):
+        _arb_result_cache["data"] = fc
+        _arb_result_cache["ts"] = now
+        return fc
+
     data = await get_funding_data()
     # Run CPU-heavy computation in a thread pool so the event loop stays
     # responsive for HTTP/WS during the 1-2s crunch.
@@ -999,6 +1054,7 @@ async def get_arbitrage_opportunities() -> dict:
     result = await asyncio.to_thread(_compute_arb_sync, data["rows"], data["ts"])
     _arb_result_cache["data"] = result
     _arb_result_cache["ts"] = time.time()
+    _write_file_cache("arbitrage.json", result)
     return result
 
 
