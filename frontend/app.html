@@ -2632,8 +2632,7 @@ function renderResults() {
   if (!aggregated) {
     const partialCards = results.map((r, i) => {
       const typeClass = `t-${r.wallet_type}`;
-      const delay = `animation-delay:${(i + 1) * 60}ms`;
-      if (r.error) return `<div class="result-card has-error ${typeClass}" style="${delay};border-color:rgba(248,113,113,0.25)">
+      if (r.error) return `<div class="result-card has-error ${typeClass}" style="border-color:rgba(248,113,113,0.25)">
         <div class="result-card-head">
           <span class="result-wallet-name">${esc(r.wallet_name)}</span>
           <span class="result-badge">${esc(r.type_value)}</span>
@@ -2645,7 +2644,7 @@ function renderResults() {
       const rowsHtml = rows.length
         ? `<div class="result-rows">${rows.map(([k,v]) => `<div class="result-row"><div class="r-asset">${k}</div><div class="r-amt">${fAmt(v)}</div>${r.usd_values && r.usd_values[k] ? `<div class="r-usd">${fUSD(r.usd_values[k])}</div>` : ''}</div>`).join('')}</div>`
         : `<div class="no-balance" style="color:var(--text4);font-size:11px">No balance</div>`;
-      return `<div class="result-card ${typeClass}" style="${delay}">
+      return `<div class="result-card ${typeClass}">
         <div class="result-card-head">
           <span class="result-wallet-name">${esc(r.wallet_name)}</span>
           <span class="result-badge">${esc(r.type_value)}</span>
@@ -2654,7 +2653,7 @@ function renderResults() {
         ${rowsHtml}
       </div>`;
     }).join('');
-    el.innerHTML = `<div class="results-section-label">Loaded so far</div><div class="result-cards">${partialCards}</div>`;
+    el.innerHTML = `<div class="agg-block" style="min-height:80px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">Calculating totals…</div><div class="result-cards">${partialCards}</div>`;
     return;
   }
 
@@ -2694,8 +2693,7 @@ function renderResults() {
 
   const cards = results.map((r, i) => {
     const typeClass = `t-${r.wallet_type}`;
-    const delay = `animation-delay:${(i + 1) * 60}ms`;
-    if (r.error) return `<div class="result-card has-error ${typeClass}" style="${delay};border-color:rgba(248,113,113,0.25)">
+    if (r.error) return `<div class="result-card has-error ${typeClass}" style="border-color:rgba(248,113,113,0.25)">`;
       <div class="result-card-head">
         <span class="result-wallet-name">${esc(r.wallet_name)}</span>
         <span class="result-badge">${esc(r.type_value)}</span>
@@ -2737,7 +2735,7 @@ function renderResults() {
       </div>`;
     }
 
-    return `<div class="result-card ${typeClass}" style="${delay}">
+    return `<div class="result-card ${typeClass}">
       <div class="result-card-head">
         <span class="result-wallet-name">${esc(r.wallet_name)}</span>
         <span class="result-badge">${esc(r.type_value)}</span>
