@@ -260,3 +260,101 @@ def consume_link_token(db: Session, token: str, tg_id: int, tg_chat_id: int,
     db.refresh(user)
     logger.info("TG linked via token: user_id=%s tg_id=%s chat=%s", user.id, tg_id, tg_chat_id)
     return user
+
+
+# ── Login-by-Bot tokens (no auth required) ───────────────────────────────────
+# In-memory store for pending login results: token_hash → {jwt, user_id, ts}
+# Cleaned up after 5 minutes. NOT in DB — ephemeral by design.
+_login_results: dict[str, dict] = {}
+_LOGIN_TOKEN_TTL = 300  # 5 min
+
+
+def issue_login_token(db: Session) -> dict[str, Any]:
+    """Generate a token for unauthenticated login-by-bot flow.
+    Returns {token, deep_link, expires_in_sec}. No user_id needed — the bot
+    will resolve the user from tg_id when they press Start."""
+    raw = secrets.token_urlsafe(24)
+    h = _hash_token(raw)
+    _login_results[h] = {"status": "pending", "ts": time.time()}
+    # Prune old entries
+    now = time.time()
+    stale = [k for k, v in _login_results.items() if now - v["ts"] > _LOGIN_TOKEN_TTL]
+    for k in stale:
+        _login_results.pop(k, None)
+
+    bot_username = settings.TG_BOT_USERNAME or "avalant_bot"
+    return {
+        "token": raw,
+        "deep_link": f"https://t.me/{bot_username}?start=auth-{raw}",
+        "expires_in_sec": _LOGIN_TOKEN_TTL,
+    }
+
+
+def consume_login_token(db: Session, token: str, tg_id: int, tg_chat_id: int,
+                        tg_username: str | None, first_name: str | None) -> str | None:
+    """Called by the bot when it sees /start auth-<token>.
+    Finds or creates user by tg_id, mints JWT, stores in _login_results.
+    Returns the bot reply message or None."""
+    h = _hash_token(token)
+    entry = _login_results.get(h)
+    if not entry or entry.get("status") != "pending":
+        return None
+    if time.time() - entry["ts"] > _LOGIN_TOKEN_TTL:
+        _login_results.pop(h, None)
+        return None
+
+    # Find or create user
+    payload = {
+        "tg_id": tg_id,
+        "username": tg_username,
+        "first_name": first_name or "",
+    }
+    user, created = find_or_create_user_from_widget(db, payload)
+    if user.is_blocked:
+        _login_results[h] = {"status": "blocked", "ts": entry["ts"]}
+        return "Your account is blocked."
+
+    # Set chat_id if missing
+    if not user.tg_chat_id:
+        user.tg_chat_id = tg_chat_id
+    if not user.tg_id:
+        user.tg_id = tg_id
+    if tg_username and not user.tg_username:
+        user.tg_username = tg_username
+    db.commit()
+
+    jwt = create_token(user.id)
+    _login_results[h] = {
+        "status": "ok",
+        "jwt": jwt,
+        "user_id": user.id,
+        "username": user.username,
+        "ts": entry["ts"],
+    }
+    action = "created" if created else "logged in"
+    logger.info("TG login-by-bot: user_id=%s %s tg_id=%s", user.id, action, tg_id)
+    return f"✅ {action.title()}! You can close this chat and return to Avalant."
+
+
+def check_login_token(token: str) -> dict:
+    """Poll endpoint: returns {status: pending|ok|expired, jwt?, user?}."""
+    h = _hash_token(token)
+    entry = _login_results.get(h)
+    if not entry:
+        return {"status": "expired"}
+    if time.time() - entry["ts"] > _LOGIN_TOKEN_TTL:
+        _login_results.pop(h, None)
+        return {"status": "expired"}
+    if entry.get("status") == "ok":
+        # One-time read — remove after delivery
+        _login_results.pop(h, None)
+        return {
+            "status": "ok",
+            "access_token": entry["jwt"],
+            "user_id": entry["user_id"],
+            "username": entry.get("username"),
+        }
+    return {"status": entry.get("status", "pending")}
+    db.refresh(user)
+    logger.info("TG linked via token: user_id=%s tg_id=%s chat=%s", user.id, tg_id, tg_chat_id)
+    return user

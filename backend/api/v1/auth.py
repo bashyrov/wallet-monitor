@@ -3,7 +3,7 @@ import time
 from collections import defaultdict
 from threading import Lock
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -160,6 +160,25 @@ def tg_login(body: _TgWidgetAuth, request: Request, response: Response, db: Sess
 
 
 # ── One-time link token for profile ──────────────────────────────────────────
+# ── Login-by-Bot (no auth required) ──────────────────────────────────────────
+@router.post("/tg-bot-login")
+def tg_bot_login_start(db: Session = Depends(get_db)):
+    """Generate a one-time token for login via bot. Returns deep_link to open."""
+    from backend.services.tg_auth_service import issue_login_token
+    return issue_login_token(db)
+
+
+@router.get("/tg-bot-login")
+def tg_bot_login_check(token: str = Query(...), response: Response = None):
+    """Poll: has the user pressed Start in the bot yet?"""
+    from backend.services.tg_auth_service import check_login_token
+    result = check_login_token(token)
+    if result.get("status") == "ok" and result.get("access_token"):
+        response.set_cookie("session", result["access_token"],
+                            httponly=True, secure=False, samesite="lax", max_age=60*60*24*30)
+    return result
+
+
 @router.post("/me/tg-link-token")
 def tg_link_token(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Generate a short-lived single-use link token. Returns the bot deep link

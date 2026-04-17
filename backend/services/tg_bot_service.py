@@ -64,8 +64,16 @@ async def _handle_update(upd: dict) -> None:
 
     db = SessionLocal()
     try:
+        # ── Login-by-bot flow (no auth required) ──
+        if payload.startswith("auth-"):
+            token = payload[len("auth-"):]
+            from backend.services.tg_auth_service import consume_login_token
+            uname = username.lstrip("@").lower() or None
+            reply = consume_login_token(db, token, int(tg_id), int(chat_id), uname, first)
+            if not reply:
+                reply = "🔒 This login link has expired or was already used. Generate a new one from the login page."
         # ── Preferred flow: deep-link token from profile ──
-        if payload.startswith("link-"):
+        elif payload.startswith("link-"):
             token = payload[len("link-"):]
             from backend.services.tg_auth_service import consume_link_token
             uname = username.lstrip("@").lower() or None
