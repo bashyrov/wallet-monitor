@@ -88,16 +88,24 @@ async def lifespan(app: FastAPI):
     from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
     start_tg_bot()
 
-    import asyncio
-    from backend.services.health_service import health_loop
-    from backend.services.replay_service import snapshot_loop
-    from backend.services.anomaly_service import anomaly_loop
-    _alpha_tasks = [
-        asyncio.create_task(health_loop(interval_s=60)),
-        asyncio.create_task(snapshot_loop(interval_s=60)),
-        asyncio.create_task(anomaly_loop(interval_s=120)),
-    ]
-    logger.info("Alpha loops started (health, snapshot, anomaly)")
+    import asyncio, fcntl
+    _alpha_tasks = []
+    # Background loops should only run on ONE worker — use file lock
+    _alpha_lock_fd = None
+    try:
+        _alpha_lock_fd = open("/tmp/avalant_alpha.lock", "w")
+        fcntl.flock(_alpha_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        from backend.services.health_service import health_loop
+        from backend.services.replay_service import snapshot_loop
+        from backend.services.anomaly_service import anomaly_loop
+        _alpha_tasks = [
+            asyncio.create_task(health_loop(interval_s=60)),
+            asyncio.create_task(snapshot_loop(interval_s=60)),
+            asyncio.create_task(anomaly_loop(interval_s=120)),
+        ]
+        logger.info("Alpha loops started (health, snapshot, anomaly)")
+    except (IOError, OSError):
+        logger.info("Alpha loops: another worker holds lock — skipping")
 
     yield
 

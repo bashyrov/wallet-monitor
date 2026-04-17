@@ -511,9 +511,21 @@ async def _broadcast_loop() -> None:
 
 
 def start_screener_broadcaster() -> None:
-    global _broadcaster_task
+    """Start broadcaster on this worker — but only if no other worker is already
+    broadcasting (file lock prevents duplicates across uvicorn workers)."""
+    import fcntl
+    global _broadcaster_task, _broadcast_lock_fd
+    lock_path = "/tmp/avalant_broadcaster.lock"
+    try:
+        _broadcast_lock_fd = open(lock_path, "w")
+        fcntl.flock(_broadcast_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        logger.info("Screener broadcaster: another worker holds the lock — skipping")
+        return
     _broadcaster_task = asyncio.create_task(_broadcast_loop())
-    logger.info("Screener broadcaster started")
+    logger.info("Screener broadcaster started (this worker holds the lock)")
+
+_broadcast_lock_fd = None
 
 
 def stop_screener_broadcaster() -> None:
