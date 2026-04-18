@@ -474,48 +474,54 @@ async def _fetch_hyperliquid() -> list[dict]:
 
 
 # ── OKX Linear SWAP ───────────────────────────────────────────────────────────
-async def _fetch_okx_funding_rates(inst_ids: list[str]) -> dict[str, dict]:
-    """
-    Fetch per-symbol funding rates from OKX (500 requests).
-    Cached separately for OKX_FR_TTL (5 min) — rates only change every 8h.
-    """
-    global _okx_fr_cache
-    cached, at = _okx_fr_cache
-    if _mono() - at < OKX_FR_TTL and cached:
-        return cached
+_okx_fr_refresh_inflight = False
 
-    sem = asyncio.Semaphore(50)
 
-    async def _one(inst_id: str) -> tuple[str, dict]:
-        async with sem:
-            try:
-                r = await _http.get(
-                    f"https://www.okx.com/api/v5/public/funding-rate?instId={inst_id}"
-                )
-                if r.status_code != 200:
+async def _refresh_okx_funding_rates(inst_ids: list[str]) -> None:
+    """Background: fetch per-symbol funding rates (500 req). Caller does NOT await
+    this — price-path must stay fast. After completion, _okx_fr_cache is updated."""
+    global _okx_fr_cache, _okx_fr_refresh_inflight
+    if _okx_fr_refresh_inflight:
+        return
+    _okx_fr_refresh_inflight = True
+    try:
+        sem = asyncio.Semaphore(50)
+
+        async def _one(inst_id: str) -> tuple[str, dict]:
+            async with sem:
+                try:
+                    r = await _http.get(
+                        f"https://www.okx.com/api/v5/public/funding-rate?instId={inst_id}"
+                    )
+                    if r.status_code != 200:
+                        return inst_id, {}
+                    d = (r.json().get("data") or [{}])[0]
+                    rate = float(d.get("fundingRate") or 0)
+                    next_ts = int(d.get("nextFundingTime") or 0) // 1000
+                    prev_ms = int(d.get("prevFundingTime") or 0)
+                    curr_ms = int(d.get("fundingTime") or 0)
+                    interval_h = None
+                    if prev_ms > 0 and curr_ms > prev_ms:
+                        interval_h = round((curr_ms - prev_ms) / 3_600_000, 2)
+                    return inst_id, {"rate": rate, "next_ts": next_ts, "interval_h": interval_h}
+                except Exception:
                     return inst_id, {}
-                d = (r.json().get("data") or [{}])[0]
-                rate = float(d.get("fundingRate") or 0)
-                next_ts = int(d.get("nextFundingTime") or 0) // 1000
-                # derive interval from timestamps (more reliable than instruments field)
-                prev_ms = int(d.get("prevFundingTime") or 0)
-                curr_ms = int(d.get("fundingTime") or 0)
-                interval_h = None
-                if prev_ms > 0 and curr_ms > prev_ms:
-                    interval_h = round((curr_ms - prev_ms) / 3_600_000, 2)
-                return inst_id, {
-                    "rate": rate,
-                    "next_ts": next_ts,
-                    "interval_h": interval_h,
-                }
-            except Exception:
-                return inst_id, {}
 
-    results = await asyncio.gather(*[_one(i) for i in inst_ids])
-    fr_map = dict(results)
-    _okx_fr_cache = (fr_map, _mono())
-    logger.debug("OKX funding rates refreshed (%d symbols)", len(fr_map))
-    return fr_map
+        results = await asyncio.gather(*[_one(i) for i in inst_ids])
+        fr_map = dict(results)
+        _okx_fr_cache = (fr_map, _mono())
+        logger.info("OKX funding rates refreshed (%d symbols)", len(fr_map))
+    finally:
+        _okx_fr_refresh_inflight = False
+
+
+async def _fetch_okx_funding_rates(inst_ids: list[str]) -> dict[str, dict]:
+    """Return cached funding rates immediately. Trigger background refresh if
+    cache expired. NEVER blocks the caller on 500 HTTP requests."""
+    cached, at = _okx_fr_cache
+    if _mono() - at >= OKX_FR_TTL or not cached:
+        asyncio.create_task(_refresh_okx_funding_rates(inst_ids))
+    return cached or {}
 
 
 async def _fetch_okx() -> list[dict]:
