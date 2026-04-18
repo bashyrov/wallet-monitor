@@ -1180,12 +1180,7 @@
     }
     .tpd { width: 5px; height: 5px; border-radius: 50%; }
 
-    /* ── WALLET ROW ENTRANCE ── */
-    @keyframes rowIn {
-      from { opacity: 0; transform: translateX(-10px); }
-      to   { opacity: 1; transform: translateX(0); }
-    }
-    .wallet-row { animation: rowIn 0.22s cubic-bezier(0.16,1,0.3,1) both; }
+    /* Wallet rows appear without animation — smooth hover/select transitions only */
 
     /* ── RESULT CARD ENTRANCE ── */
     @keyframes cardIn {
@@ -2336,11 +2331,10 @@ function walletRow(w, idx = 0) {
     return `<span class="tag-pill" style="background:${t.color}14;color:${t.color};border:1px solid ${t.color}30">${esc(t.name)}</span>`;
   }).join('');
   const isExchange = w.wallet_type === 'exchange';
-  const delay = `animation-delay:${idx * 30}ms`;
   const addrCount = (w.addresses || []).length;
   const addrBtnTitle = `Addresses${addrCount ? ' (' + addrCount + ')' : ''}`;
 
-  return `<div class="wallet-row${ck?' selected':''}" id="wr-${w.id}" style="${delay}">
+  return `<div class="wallet-row${ck?' selected':''}" id="wr-${w.id}">
     <input type="checkbox" ${ck?'checked':''} onchange="toggleW(${w.id},this.checked)">
     <div class="wallet-body">
       <div class="wallet-name">${esc(w.name)}</div>
