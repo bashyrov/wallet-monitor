@@ -24,6 +24,7 @@ class WSAdapter:
     url: str = ""
     ping_interval: float = 20.0
     decompress_gzip: bool = False  # set True for exchanges that gzip WS frames (BingX)
+    subscribe_delay: float = 0.0   # seconds between subscribe frames (exchanges with rate limits)
 
     def __init__(self, update_cb):
         """update_cb(exchange: str, symbol: str, bids, asks) writes to _book_cache."""
@@ -84,8 +85,10 @@ class WSAdapter:
         frames = self.build_subscribe(sorted(self._symbols))
         if isinstance(frames, dict):
             frames = [frames]
-        for f in frames:
+        for i, f in enumerate(frames):
             await self._ws.send(json.dumps(f))
+            if self.subscribe_delay > 0 and i < len(frames) - 1:
+                await asyncio.sleep(self.subscribe_delay)
 
     async def _heartbeat_loop(self, ws, interval: float = 15.0) -> None:
         frame = self.heartbeat_frame()

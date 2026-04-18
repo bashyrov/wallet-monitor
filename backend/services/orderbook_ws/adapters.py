@@ -47,6 +47,7 @@ class BinanceWS(WSAdapter):
 class BybitWS(WSAdapter):
     name = "bybit"
     url = "wss://stream.bybit.com/v5/public/linear"
+    subscribe_delay = 0.1  # Bybit accepts up to 10 topics/frame but pauses help on resubscribe bursts
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -305,6 +306,7 @@ class KuCoinWS(WSAdapter):
     # url is set dynamically from /api/v1/bullet-public
     url = ""
     ping_interval = 18.0
+    subscribe_delay = 0.4  # KuCoin rate-limits subscribes to ~3/sec per connection
 
     async def _get_token(self) -> tuple[str, str, float]:
         """Return (endpoint, token, ping_interval_s) from bullet-public."""
@@ -389,7 +391,8 @@ class KuCoinWS(WSAdapter):
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                logger.warning("kucoin WS error: %s (retry in %.1fs)", exc, backoff)
+                detail = str(exc) or type(exc).__name__
+                logger.warning("kucoin WS error: %s (retry in %.1fs)", detail, backoff)
                 self._ws = None
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 1.8, 30.0)
