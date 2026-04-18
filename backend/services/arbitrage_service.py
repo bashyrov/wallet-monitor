@@ -851,15 +851,21 @@ FETCHERS: dict[str, object] = {
 }
 
 
+_FETCHER_TIMEOUT = 5.0  # bound per-exchange fetch so one slow API can't stall the gather
+
+
 async def _get_rows(exchange: str) -> list[dict]:
     cached_rows, cached_at = _cache.get(exchange, ([], 0.0))
     if _mono() - cached_at < CACHE_TTL and cached_rows:
         return cached_rows
     try:
-        rows = await FETCHERS[exchange]()
+        rows = await asyncio.wait_for(FETCHERS[exchange](), timeout=_FETCHER_TIMEOUT)
         _cache[exchange] = (rows, _mono())
         logger.debug("Screener %s: %d contracts", exchange, len(rows))
         return rows
+    except asyncio.TimeoutError:
+        logger.warning("Screener %s fetch timeout (>%ss) — using cached", exchange, _FETCHER_TIMEOUT)
+        return cached_rows
     except Exception as exc:
         logger.warning("Screener %s fetch failed: %s", exchange, exc)
         return cached_rows
