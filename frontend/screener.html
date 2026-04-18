@@ -796,6 +796,43 @@ body.light .bnav-item.active { color: #000; }
 }
 
 /* ── ALPHA MODE ── */
+.alpha-intro {
+  margin: 0 0 18px;
+  padding: 18px 22px 20px;
+  background: linear-gradient(145deg, var(--surface) 0%, #0F0E13 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  position: relative; overflow: hidden;
+}
+.alpha-intro::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(26,255,171,0.35), transparent);
+}
+.alpha-intro-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.alpha-intro-eyebrow {
+  display: inline-flex; align-items: center; padding: 3px 9px;
+  background: rgba(26,255,171,0.08); border: 1px solid rgba(26,255,171,0.22);
+  color: var(--green); font-size: 11px; font-weight: 700;
+  letter-spacing: .4px; border-radius: 99px; font-family: var(--mono);
+}
+.alpha-intro-title { font-size: 16px; font-weight: 700; letter-spacing: -.3px; color: var(--text); }
+.alpha-intro-body p { font-size: 13px; color: var(--text2); line-height: 1.6; margin: 0 0 12px; }
+.alpha-intro-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+@media (max-width: 760px) { .alpha-intro-grid { grid-template-columns: 1fr 1fr; } }
+.alpha-intro-cell {
+  padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.alpha-intro-cell-h {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 3px;
+}
+.ai-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.alpha-intro-cell-p { font-size: 11.5px; color: var(--text3); line-height: 1.5; }
+.alpha-intro-note {
+  font-size: 11.5px; color: var(--text3); font-family: var(--mono); letter-spacing: .1px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+}
 #section-alpha .alpha-bar-wrap { position: relative; height: 16px; min-width: 80px; background: var(--surface2); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
 #section-alpha .alpha-bar-fill { position: absolute; inset: 0; right: auto; border-radius: 4px 0 0 4px; transition: width .3s; }
 #section-alpha .alpha-bar-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--text); text-shadow: 0 1px 2px rgba(0,0,0,.5); letter-spacing: -.02em; }
@@ -946,7 +983,7 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       </div>
 
       <!-- Funding Filters -->
-      <div class="lp-section" id="lp-filters-funding">
+      <div class="lp-section" id="lp-filters-funding" style="display:none">
         <div class="lp-title">Funding filters</div>
         <div class="lp-filter-group">
           <div class="lp-filter-label">Min |APR|</div>
@@ -959,7 +996,7 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       </div>
 
       <!-- Arbitrage Filters -->
-      <div class="lp-section" id="lp-filters-arb" style="display:none">
+      <div class="lp-section" id="lp-filters-arb">
         <div class="lp-title">Arbitrage filters</div>
         <div class="lp-filter-group">
           <div class="lp-filter-label">Min net profit %</div>
@@ -1001,8 +1038,8 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
 
     <!-- ── MODE TABS + WS status ── -->
     <div class="mode-tabs">
-      <button class="mode-tab active" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
-      <button class="mode-tab" id="tab-arb" onclick="switchMode('arb')">Arbitrage</button>
+      <button class="mode-tab active" id="tab-arb" onclick="switchMode('arb')">Arbitrage</button>
+      <button class="mode-tab" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
       <button class="mode-tab" id="tab-alpha" onclick="switchMode('alpha')">Alpha <span class="wl-count-badge" id="wl-count-badge" style="display:none">★ <span id="wl-count">0</span></span></button>
     </div>
 
@@ -1068,7 +1105,7 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
         </div>
 
         <!-- Funding filters -->
-        <div id="mob-filters-funding">
+        <div id="mob-filters-funding" style="display:none">
           <div class="lp-title" style="margin-bottom:8px">Funding filters</div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min |APR|</div>
@@ -1081,7 +1118,7 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
         </div>
 
         <!-- Arbitrage filters -->
-        <div id="mob-filters-arb" style="display:none">
+        <div id="mob-filters-arb">
           <div class="lp-title" style="margin-bottom:8px">Arbitrage filters</div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min net profit %</div>
@@ -1112,17 +1149,17 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
     </div>
 
     <!-- ── MOBILE SORT BAR ── -->
-    <div class="mobile-sort" id="mobile-sort-funding">
+    <div class="mobile-sort" id="mobile-sort-funding" style="display:none">
       <div class="mobile-sort-label">Sort by</div>
       <div class="mobile-sort-chips" id="sort-chips-funding"></div>
     </div>
-    <div class="mobile-sort" id="mobile-sort-arb" style="display:none">
+    <div class="mobile-sort" id="mobile-sort-arb">
       <div class="mobile-sort-label">Sort by</div>
       <div class="mobile-sort-chips" id="sort-chips-arb"></div>
     </div>
 
     <!-- ── FUNDING SECTION ── -->
-    <div id="section-funding">
+    <div id="section-funding" style="display:none">
       <div class="table-wrap">
         <table id="tbl-funding">
           <thead>
@@ -1144,7 +1181,7 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
     </div>
 
     <!-- ── ARBITRAGE SECTION ── -->
-    <div id="section-arb" style="display:none">
+    <div id="section-arb">
       <div class="table-wrap">
         <table id="tbl-arb">
           <thead>
@@ -1170,6 +1207,34 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
 
     <!-- ── ALPHA SECTION ── -->
     <div id="section-alpha" style="display:none">
+      <div class="alpha-intro">
+        <div class="alpha-intro-head">
+          <div class="alpha-intro-eyebrow">◈ Alpha</div>
+          <div class="alpha-intro-title">A single score for how good the arb actually is</div>
+        </div>
+        <div class="alpha-intro-body">
+          <p>Alpha merges the four signals that decide whether a spread is worth trading into one ranked number (0-100):</p>
+          <div class="alpha-intro-grid">
+            <div class="alpha-intro-cell">
+              <div class="alpha-intro-cell-h"><span class="ai-dot" style="background:#1AFFAB"></span>Funding</div>
+              <div class="alpha-intro-cell-p">How wide is the net funding per 8h after fees</div>
+            </div>
+            <div class="alpha-intro-cell">
+              <div class="alpha-intro-cell-h"><span class="ai-dot" style="background:#06B6D4"></span>Spread</div>
+              <div class="alpha-intro-cell-p">How tight the mark prices are across the two venues</div>
+            </div>
+            <div class="alpha-intro-cell">
+              <div class="alpha-intro-cell-h"><span class="ai-dot" style="background:#E5C07B"></span>Liquidity</div>
+              <div class="alpha-intro-cell-p">Combined 24h volume and orderbook depth on both sides</div>
+            </div>
+            <div class="alpha-intro-cell">
+              <div class="alpha-intro-cell-h"><span class="ai-dot" style="background:#925BD6"></span>Stability</div>
+              <div class="alpha-intro-cell-p">How long the opportunity has persisted — one-tick anomalies score lower</div>
+            </div>
+          </div>
+          <div class="alpha-intro-note">Scores refresh in sync with the arb feed (3&nbsp;s). Star a pair to pin it to your watchlist — the count shows on the Alpha tab.</div>
+        </div>
+      </div>
       <div class="table-wrap">
         <table id="tbl-alpha">
           <thead>
@@ -1297,7 +1362,7 @@ function symbolLink(symbol, exchange) {
 }
 
 // ── state ──────────────────────────────────────────────────────────────────────
-let _mode = (() => { const m = new URLSearchParams(location.search).get('mode'); return (m === 'arb' || m === 'alpha') ? m : 'funding'; })();
+let _mode = (() => { const m = new URLSearchParams(location.search).get('mode'); return (m === 'funding' || m === 'alpha') ? m : 'arb'; })();
 let _rows = [];           // funding rows
 let _arbRows = [];        // arbitrage opportunities
 let _filtered = [];

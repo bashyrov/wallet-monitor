@@ -208,16 +208,20 @@
     <div class="t-line"><span class="prompt">❯</span> <span class="cursor"></span></div>
   </div>
 
-  <p class="tagline">Looks like this address isn't tracked.<br>Head back and check your portfolio.</p>
+  <p class="tagline">This page isn't on our ticker.<br>Head to the Screener or your Portfolio.</p>
 
   <div class="cta-row">
-    <a href="/" class="btn-home">
-      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1.5 6L6.5 1.5L11.5 6V11.5H8.5V8H4.5V11.5H1.5V6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-      Home
+    <a href="/screener" class="btn-home">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 6.5h9M2 3h9M2 10h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      Open Screener
+    </a>
+    <a href="/app" class="btn-back">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1.5" y="7" width="2.5" height="4.5" rx=".6" fill="currentColor" opacity=".5"/><rect x="5.2" y="4.2" width="2.5" height="7.3" rx=".6" fill="currentColor" opacity=".75"/><rect x="9" y="1.5" width="2.5" height="10" rx=".6" fill="currentColor"/></svg>
+      Portfolio
     </a>
     <button class="btn-back" onclick="history.length>1?history.back():location.href='/'">
       <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8 2L3 6.5L8 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Go back
+      Back
     </button>
   </div>
 </div>
