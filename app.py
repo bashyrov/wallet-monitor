@@ -88,9 +88,6 @@ async def lifespan(app: FastAPI):
     from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
     start_tg_bot()
 
-    from backend.services.orderbook_cache import start_prewarm, stop_prewarm
-    start_prewarm()
-
     import asyncio, fcntl
     _alpha_tasks = []
     # Background loops should only run on ONE worker — use file lock
@@ -118,7 +115,6 @@ async def lifespan(app: FastAPI):
     stop_screener_broadcaster()
     stop_alert_service()
     stop_tg_bot()
-    stop_prewarm()
     logger.info("Avalant shutting down")
 
 
