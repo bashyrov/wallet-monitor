@@ -143,6 +143,42 @@ app.add_middleware(
 )
 
 
+# ── Maintenance mode ──────────────────────────────────────────────────────────
+# Enable by creating the flag file (no restart needed):
+#   touch /tmp/avalant_maintenance
+# Disable:
+#   rm /tmp/avalant_maintenance
+# When active: every HTML request returns frontend/maintenance.html (503).
+# Static assets still serve (so the maintenance page renders), and /api/health
+# still works (so uptime monitors don't flap).
+import os as _os
+_MAINT_FLAG = "/tmp/avalant_maintenance"
+_MAINT_BYPASS_PREFIXES = ("/api/health", "/avalant_favicon", "/favicon.ico",
+                          "/avalant-logo", "/og-image",
+                          "/navbar.css", "/navbar.js", "/auth.js", "/theme.js",
+                          "/toast.js")
+
+@app.middleware("http")
+async def maintenance_gate(request: Request, call_next) -> Response:
+    if _os.path.exists(_MAINT_FLAG):
+        path = request.url.path
+        # Allow monitor hits + static assets needed by the maintenance page
+        allow = path in ("/maintenance", "/maintenance.html") or \
+                path.startswith(_MAINT_BYPASS_PREFIXES)
+        if not allow:
+            from fastapi.responses import FileResponse as _FR
+            return _FR(
+                "frontend/maintenance.html",
+                status_code=503,
+                media_type="text/html",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Retry-After": "600",
+                },
+            )
+    return await call_next(request)
+
+
 # ── Security headers ──────────────────────────────────────────────────────────
 @app.middleware("http")
 async def security_headers(request: Request, call_next) -> Response:

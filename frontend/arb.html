@@ -504,6 +504,7 @@ body.light .alert-toast-icon-wrap{background:#FBECEC;}
 .alert-item-info{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;}
 .alert-item-pair{font-weight:700;font-family:var(--mono);font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .alert-item-meta{color:var(--text3);font-size:10px;display:flex;gap:6px;align-items:center;}
+.alert-item-scope{display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.22);color:var(--green);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.3px;margin-left:6px;}
 .alert-item-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--text3);opacity:.6;}
 .alert-item-del{background:none;border:none;color:var(--text3);cursor:pointer;padding:5px 7px;border-radius:5px;font-size:13px;line-height:1;transition:background .15s,color .15s;}
 .alert-item-del:hover{color:var(--red);background:rgba(248,113,113,.1);}
@@ -1422,6 +1423,12 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
               </button>
             </div>
           </div>
+        </div>
+        <div class="alert-form-full">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);cursor:pointer;margin-bottom:10px;user-select:none">
+            <input type="checkbox" id="al-any-ex" style="width:16px;height:16px;accent-color:var(--green);cursor:pointer">
+            <span>Trigger on <b>any exchange pair</b> for this token (not just <span id="al-current-pair" class="mono" style="color:var(--text)"></span>)</span>
+          </label>
         </div>
         <div class="alert-form-full">
           <button id="al-submit" class="alert-submit-btn" onclick="createAlert()" disabled title="Set Telegram username in profile first">
@@ -2451,6 +2458,7 @@ async function openAlertModal(){
   setT('alert-pair-sym',SYM+'USDT');
   setT('alert-pair-long',EX_LABEL[LONG]||LONG);
   setT('alert-pair-short',EX_LABEL[SHORT]||SHORT);
+  setT('al-current-pair',(EX_LABEL[LONG]||LONG)+' → '+(EX_LABEL[SHORT]||SHORT));
   const dl=document.getElementById('alert-pair-dot-long'); if(dl) dl.style.background=EX_COLOR[LONG]||'#888';
   const ds=document.getElementById('alert-pair-dot-short'); if(ds) ds.style.background=EX_COLOR[SHORT]||'#888';
   await loadAlerts();
@@ -2490,7 +2498,13 @@ async function loadAlerts(){
 }
 function renderAlertList(){
   const list=document.getElementById('alert-list');
-  const mine=_alerts.filter(a=>a.symbol===SYM&&a.long_exchange===LONG&&a.short_exchange===SHORT);
+  // Show alerts for THIS exact pair + any-exchange alerts on THIS symbol
+  const mine=_alerts.filter(a =>
+    a.symbol===SYM && (
+      (a.long_exchange===LONG && a.short_exchange===SHORT) ||
+      (a.long_exchange==='*'   && a.short_exchange==='*')
+    )
+  );
   if(!mine.length){
     list.innerHTML=`<div class="alert-empty">
       <div class="alert-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg></div>
@@ -2499,14 +2513,20 @@ function renderAlertList(){
     return;
   }
   const dirLabel={any:'Any side',above:'Above +',below:'Below −'};
-  list.innerHTML=mine.map(a=>`<div class="alert-item" data-id="${a.id}">
-    <div class="alert-item-info">
-      <span class="alert-item-pair">±${a.threshold}% threshold</span>
-      <span class="alert-item-meta">${dirLabel[a.direction]||a.direction}<span class="sep"></span>${a.enabled?'active':'paused'}</span>
-    </div>
-    <button class="alert-item-toggle ${a.enabled?'enabled':''}" onclick="toggleAlert(${a.id})">${a.enabled?'ON':'OFF'}</button>
-    <button class="alert-item-del" onclick="deleteAlert(${a.id})" title="Delete">×</button>
-  </div>`).join('');
+  list.innerHTML=mine.map(a=>{
+    const isAny = a.long_exchange==='*' && a.short_exchange==='*';
+    const scopeBadge = isAny
+      ? '<span class="alert-item-scope">🔭 Any pair</span>'
+      : '';
+    return `<div class="alert-item" data-id="${a.id}">
+      <div class="alert-item-info">
+        <span class="alert-item-pair">±${a.threshold}% threshold ${scopeBadge}</span>
+        <span class="alert-item-meta">${dirLabel[a.direction]||a.direction}<span class="sep"></span>${a.enabled?'active':'paused'}</span>
+      </div>
+      <button class="alert-item-toggle ${a.enabled?'enabled':''}" onclick="toggleAlert(${a.id})">${a.enabled?'ON':'OFF'}</button>
+      <button class="alert-item-del" onclick="deleteAlert(${a.id})" title="Delete">×</button>
+    </div>`;
+  }).join('');
 }
 // ── Custom Direction dropdown ──
 const _alDirLabels = {
@@ -2547,10 +2567,15 @@ async function createAlert(){
   const threshold=parseFloat(thresholdRaw);
   if(!isFinite(threshold)||threshold<=0){_toast('Threshold must be a positive number');return;}
   const direction=document.getElementById('al-direction').value;
+  const anyEx=document.getElementById('al-any-ex')?.checked;
   const btn=document.getElementById('al-submit');
   if(btn) btn.disabled=true;
   try{
-    const res=await Auth.apiFetch('/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:SYM,long_exchange:LONG,short_exchange:SHORT,threshold,direction})});
+    const url = anyEx ? '/alerts/token' : '/alerts';
+    const body = anyEx
+      ? {symbol:SYM, threshold, direction}
+      : {symbol:SYM, long_exchange:LONG, short_exchange:SHORT, threshold, direction};
+    const res=await Auth.apiFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok){
       let msg='Failed to create alert';
       try{const e=await res.json(); msg=e.detail||msg;}catch{}
@@ -2558,7 +2583,8 @@ async function createAlert(){
       return;
     }
     const dirTxt={any:'±',above:'+',below:'−'}[direction]||'±';
-    _toast('Alert created',true,`<span class="mono">${SYM}</span> · ${EX_LABEL[LONG]||LONG} / ${EX_LABEL[SHORT]||SHORT} · trigger at <span class="mono">${dirTxt}${threshold}%</span>`);
+    const scope = anyEx ? 'any exchange pair' : `${EX_LABEL[LONG]||LONG} / ${EX_LABEL[SHORT]||SHORT}`;
+    _toast('Alert created',true,`<span class="mono">${SYM}</span> · ${scope} · trigger at <span class="mono">${dirTxt}${threshold}%</span>`);
     await loadAlerts();
   }catch(err){
     _toast('Network error — please try again');

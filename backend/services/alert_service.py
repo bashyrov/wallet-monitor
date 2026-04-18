@@ -25,21 +25,53 @@ async def _send_tg(chat_id: str, text: str) -> None:
         logger.warning("Telegram send failed for %s: %s", chat_id, exc)
 
 
+_ANY = "*"  # stored value meaning "match any exchange"
+
+
 async def _get_spread(symbol: str, long_ex: str, short_ex: str) -> float | None:
-    """Return current spread % = (short_fr - long_fr) if available from cached screener data."""
+    """Spread % = (short_fr - long_fr) for a specific pair. 8h-normalised."""
     try:
         from backend.services.arbitrage_service import get_cached_rates
         rates = get_cached_rates()
-        key_long = f"{long_ex}:{symbol}"
-        key_short = f"{short_ex}:{symbol}"
-        r_long = rates.get(key_long)
-        r_short = rates.get(key_short)
+        r_long = rates.get(f"{long_ex}:{symbol}")
+        r_short = rates.get(f"{short_ex}:{symbol}")
         if r_long is None or r_short is None:
             return None
-        # Annualize to 8h equivalent for consistent comparison
         fr_long = r_long["rate"] / r_long.get("interval_h", 8) * 8
         fr_short = r_short["rate"] / r_short.get("interval_h", 8) * 8
         return fr_short - fr_long
+    except Exception:
+        return None
+
+
+async def _best_pair_for_symbol(symbol: str) -> tuple[str, str, float] | None:
+    """Scan every cross-exchange pair for `symbol` and return the one with the
+    largest absolute 8h-normalised spread. Returns (long_ex, short_ex, spread)
+    or None if fewer than 2 exchanges quote the symbol.
+    """
+    try:
+        from backend.services.arbitrage_service import get_cached_rates
+        rates = get_cached_rates()
+        # Collect all {exchange -> rate/interval} entries for this symbol
+        by_ex: dict[str, float] = {}
+        for key, v in rates.items():
+            ex, sym = key.split(":", 1)
+            if sym != symbol:
+                continue
+            by_ex[ex] = v["rate"] / v.get("interval_h", 8) * 8
+
+        if len(by_ex) < 2:
+            return None
+
+        best = None   # (long_ex, short_ex, spread)
+        for long_ex, fr_long in by_ex.items():
+            for short_ex, fr_short in by_ex.items():
+                if long_ex == short_ex:
+                    continue
+                spread = fr_short - fr_long
+                if best is None or abs(spread) > abs(best[2]):
+                    best = (long_ex, short_ex, spread)
+        return best
     except Exception:
         return None
 
@@ -54,14 +86,25 @@ async def _check_alerts() -> None:
     try:
         alerts = db.query(ArbAlert).filter(ArbAlert.enabled == True).all()  # noqa: E712
         now = datetime.utcnow()
+        base = settings.APP_BASE_URL.rstrip("/") if hasattr(settings, "APP_BASE_URL") else "https://avalant.xyz"
         for alert in alerts:
-            # Cooldown check
             if alert.last_triggered_at and (now - alert.last_triggered_at) < _COOLDOWN:
                 continue
 
-            spread = await _get_spread(alert.symbol, alert.long_exchange, alert.short_exchange)
-            if spread is None:
-                continue
+            # Resolve which pair to alert on
+            long_ex = alert.long_exchange
+            short_ex = alert.short_exchange
+            is_any = (long_ex in ("", _ANY) or short_ex in ("", _ANY))
+
+            if is_any:
+                best = await _best_pair_for_symbol(alert.symbol)
+                if not best:
+                    continue
+                long_ex, short_ex, spread = best
+            else:
+                spread = await _get_spread(alert.symbol, long_ex, short_ex)
+                if spread is None:
+                    continue
 
             spread_pct = spread * 100
 
@@ -80,15 +123,22 @@ async def _check_alerts() -> None:
                     logger.debug("Alert %d skip: user %s has not linked TG chat yet", alert.id, alert.user_id)
                     continue
                 direction_arrow = "▲" if spread_pct >= 0 else "▼"
+                link = f"{base}/arb?symbol={alert.symbol}&long={long_ex}&short={short_ex}"
+                title = f"🚨 Arb Alert: {alert.symbol}"
+                scope = "any exchange" if is_any else "tracked pair"
                 msg = (
-                    f"<b>🚨 Arb Alert: {alert.symbol}</b>\n"
-                    f"Long: <b>{alert.long_exchange}</b>  Short: <b>{alert.short_exchange}</b>\n"
-                    f"Spread: <b>{direction_arrow} {spread_pct:+.4f}%</b> (threshold ±{alert.threshold}%)"
+                    f"<b>{title}</b>\n"
+                    f"Best pair now: <b>{long_ex}</b> → <b>{short_ex}</b>\n"
+                    f"Spread: <b>{direction_arrow} {spread_pct:+.4f}%</b> (threshold ±{alert.threshold}%, {scope})\n"
+                    f"<a href=\"{link}\">Open arbitrage details →</a>"
                 )
                 await _send_tg(str(chat_id), msg)
                 alert.last_triggered_at = now
                 db.commit()
-                logger.info("Alert triggered id=%d for user %d spread=%.4f%%", alert.id, alert.user_id, spread_pct)
+                logger.info(
+                    "Alert triggered id=%d user=%d sym=%s pair=%s→%s spread=%.4f%%",
+                    alert.id, alert.user_id, alert.symbol, long_ex, short_ex, spread_pct,
+                )
     except Exception as exc:
         logger.error("Alert check error: %s", exc)
     finally:

@@ -41,6 +41,8 @@ class AlertCreate(BaseModel):
     @classmethod
     def _ex(cls, v):
         s = str(v or "").strip().lower()
+        if s in ("*", "any", ""):
+            return "*"   # "any exchange" marker — alert fires on any pair of this symbol
         if s not in _KNOWN_EX:
             raise ValueError(f"unknown exchange: {v!r}")
         return s
@@ -67,7 +69,8 @@ def list_alerts(current_user: User = Depends(get_current_user), db: Session = De
 
 @router.post("", response_model=AlertOut, status_code=201)
 def create_alert(body: AlertCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if body.long_exchange == body.short_exchange:
+    # Allow both to be "*" (any-exchange); otherwise they must differ
+    if body.long_exchange != "*" and body.short_exchange != "*" and body.long_exchange == body.short_exchange:
         raise HTTPException(400, "long_exchange and short_exchange must differ")
     alert = ArbAlert(
         user_id=current_user.id,
@@ -86,7 +89,7 @@ def create_alert(body: AlertCreate, current_user: User = Depends(get_current_use
 
 @router.patch("/{alert_id}", response_model=AlertOut)
 def update_alert(alert_id: int, body: AlertCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if body.long_exchange == body.short_exchange:
+    if body.long_exchange != "*" and body.short_exchange != "*" and body.long_exchange == body.short_exchange:
         raise HTTPException(400, "long_exchange and short_exchange must differ")
     alert = db.query(ArbAlert).filter(ArbAlert.id == alert_id, ArbAlert.user_id == current_user.id).first()
     if not alert:
@@ -109,6 +112,52 @@ def toggle_alert(alert_id: int, current_user: User = Depends(get_current_user), 
     alert.enabled = not alert.enabled
     db.commit()
     db.refresh(alert)
+    return alert
+
+
+class TokenAlertCreate(BaseModel):
+    """Shortcut to create a 'fires on any exchange pair' alert for a symbol."""
+    symbol: str
+    threshold: float = Field(..., gt=0, le=50)
+    direction: str = Field("any", pattern="^(any|above|below)$")
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _sym(cls, v):
+        s = str(v or "").strip().upper()
+        if not _SYMBOL_RE.match(s):
+            raise ValueError("symbol must be 1-16 alphanumeric uppercase")
+        return s
+
+
+@router.post("/token", response_model=AlertOut, status_code=201)
+def create_token_alert(
+    body: TokenAlertCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """One-shot: alert fires whenever ANY exchange pair for this symbol
+    crosses the threshold spread. Replaces any existing any-exchange alert
+    on the same symbol for this user."""
+    # Remove previous any-exchange alert for same symbol
+    db.query(ArbAlert).filter(
+        ArbAlert.user_id == current_user.id,
+        ArbAlert.symbol == body.symbol,
+        ArbAlert.long_exchange == "*",
+        ArbAlert.short_exchange == "*",
+    ).delete(synchronize_session=False)
+    alert = ArbAlert(
+        user_id=current_user.id,
+        symbol=body.symbol,
+        long_exchange="*",
+        short_exchange="*",
+        threshold=body.threshold,
+        direction=body.direction,
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+    logger.info("Token alert created id=%d by user %d for %s", alert.id, current_user.id, body.symbol)
     return alert
 
 

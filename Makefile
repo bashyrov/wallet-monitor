@@ -1,4 +1,4 @@
-.PHONY: up down restart logs backup restore ssl-init
+.PHONY: up down restart logs backup restore ssl-init maintenance-on maintenance-off
 
 DOMAIN ?= yourdomain.com
 EMAIL  ?= your@email.com
@@ -50,3 +50,14 @@ ssl-init:
 
 restart-nginx:
 	docker compose restart nginx
+
+# ── Maintenance mode ──────────────────────────────────────────────────────────
+# Activates the maintenance page without restarting the app — the middleware
+# watches for /tmp/avalant_maintenance INSIDE the container.
+maintenance-on:
+	docker compose exec app touch /tmp/avalant_maintenance
+	@echo "✓ Maintenance mode ON — site returns the maintenance page."
+
+maintenance-off:
+	docker compose exec app rm -f /tmp/avalant_maintenance
+	@echo "✓ Maintenance mode OFF."
