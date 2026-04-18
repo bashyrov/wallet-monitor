@@ -1895,9 +1895,12 @@ function renderBook(d,side){
   }
   _midPrev[side]=midPrice;
   setT(`book-${side}-price`,fmtBookP(midPrice));
-  // Update live spread
-  if(side==='long') _liveMidLong=midPrice;
-  if(side==='short') _liveMidShort=midPrice;
+  // Live spread uses raw top-of-book (not grouped), so it reacts to every tick
+  const rawBestBid=rawBids[0]?.[0]||0;
+  const rawBestAsk=rawAsks[0]?.[0]||0;
+  const rawMid=(rawBestBid&&rawBestAsk)?(rawBestBid+rawBestAsk)/2:(rawBestBid||rawBestAsk||0);
+  if(side==='long') _liveMidLong=rawMid;
+  if(side==='short') _liveMidShort=rawMid;
   updateLiveSpread();
   sampleEntryExit();
 }
