@@ -470,26 +470,28 @@ async def _refresh_loop() -> None:
 
 
 async def _broadcast_loop() -> None:
-    """Push cached data to WS clients every BROADCAST_INTERVAL. Never awaits
-    HTTP fetches — reads whatever the refresh loop has in memory/file cache."""
-    asyncio.create_task(_warmup())
-    asyncio.create_task(_refresh_loop())
-    from backend.services.arbitrage_service import _arb_result_cache, _read_file_cache, CACHE_TTL as _FUND_TTL
+    """Push cached data to WS clients on THIS worker every BROADCAST_INTERVAL.
+    Runs on every worker — each one reads from the shared file cache populated
+    by the refresh loop (which runs on only one worker via file lock)."""
+    from backend.services.arbitrage_service import _arb_result_cache, _read_file_cache
 
     while True:
         await asyncio.sleep(BROADCAST_INTERVAL)
-        # Funding payload — read cache only
+        # Funding payload
         try:
             if _funding_clients:
-                fd = await get_funding_data()
-                await _push(_funding_clients, json.dumps(fd))
+                fd = _read_file_cache("funding.json", max_age=60)
+                if not fd:
+                    fd = await get_funding_data()
+                if fd:
+                    await _push(_funding_clients, json.dumps(fd))
         except Exception as exc:
             logger.debug("Funding push skipped: %s", exc)
-        # Arb payload — read cache only
+        # Arb payload — file cache first, memory fallback
         try:
-            data = _arb_result_cache.get("data")
+            data = _read_file_cache("arbitrage.json", max_age=60)
             if not data:
-                data = _read_file_cache("arbitrage.json", max_age=60)
+                data = _arb_result_cache.get("data")
             if data and _arb_clients:
                 await _push(_arb_clients, json.dumps(data))
         except Exception as exc:
@@ -497,28 +499,35 @@ async def _broadcast_loop() -> None:
 
 
 def start_screener_broadcaster() -> None:
-    """Start broadcaster on this worker — but only if no other worker is already
-    broadcasting (file lock prevents duplicates across uvicorn workers)."""
+    """Start broadcaster on EVERY worker. Only one worker (lock-holder) also
+    runs the refresh loop which writes funding.json + arbitrage.json; every
+    other worker reads those files and pushes to its own local WS clients."""
     import fcntl
-    global _broadcaster_task, _broadcast_lock_fd
-    lock_path = "/tmp/avalant_broadcaster.lock"
-    try:
-        _broadcast_lock_fd = open(lock_path, "w")
-        fcntl.flock(_broadcast_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except (IOError, OSError):
-        logger.info("Screener broadcaster: another worker holds the lock — skipping")
-        return
+    global _broadcaster_task, _refresh_task, _refresh_lock_fd
     _broadcaster_task = asyncio.create_task(_broadcast_loop())
-    logger.info("Screener broadcaster started (this worker holds the lock)")
 
-_broadcast_lock_fd = None
+    try:
+        _refresh_lock_fd = open("/tmp/avalant_refresh.lock", "w")
+        fcntl.flock(_refresh_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        logger.info("Screener refresh: another worker holds the lock — broadcaster-only")
+        return
+    asyncio.create_task(_warmup())
+    _refresh_task = asyncio.create_task(_refresh_loop())
+    logger.info("Screener refresh loop started (this worker drives recompute)")
+
+
+_refresh_lock_fd = None
+_refresh_task: asyncio.Task | None = None
 
 
 def stop_screener_broadcaster() -> None:
-    global _broadcaster_task
-    if _broadcaster_task:
-        _broadcaster_task.cancel()
-        _broadcaster_task = None
+    global _broadcaster_task, _refresh_task
+    for t in (_broadcaster_task, _refresh_task):
+        if t:
+            t.cancel()
+    _broadcaster_task = None
+    _refresh_task = None
 
 
 async def _ws_handler(websocket: WebSocket, clients: set[WebSocket], token: str,
