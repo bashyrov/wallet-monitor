@@ -1055,13 +1055,9 @@
 
 <!-- ═══ HERO ═══════════════════════════════════════════ -->
 <section class="hero">
-  <div class="hero-badge">
+  <div class="hero-badge" id="hero-badge">
     <span class="hero-badge-dot"></span>
-    Two products
-    <span class="sep">·</span>
-    One platform
-    <span class="sep">·</span>
-    Built for traders
+    <span id="hero-kicker"><b style="color:var(--text)">Spotted:</b>&nbsp;<b style="color:#34D399">▲ +12.74%</b>&nbsp;<span style="color:var(--text3)">HYPE · HL→OKX · now</span></span>
   </div>
 
   <h1 class="hero-h1">
@@ -1919,6 +1915,39 @@ function buildTicker() {
   }).join('');
 }
 
+// ─── HERO badge kicker — rotating "Spotted" signal ───
+const SPOT_POOL = [
+  { sym: 'HYPE',  route: 'HL → OKX',        rate: 12.74 },
+  { sym: 'TAO',   route: 'MEXC → Binance',  rate: 5.90 },
+  { sym: 'BTC',   route: 'Binance → Bybit', rate: 0.41 },
+  { sym: 'SOL',   route: 'KuCoin → OKX',    rate: 3.12 },
+  { sym: 'ETH',   route: 'Gate → MEXC',     rate: 1.88 },
+  { sym: 'SUI',   route: 'HL → Binance',    rate: 4.22 },
+  { sym: 'RAVE',  route: 'Bybit → MEXC',    rate: 17.18 },
+  { sym: 'MEMES', route: 'Gate → MEXC',     rate: 8.47 },
+  { sym: 'NEAR',  route: 'Bybit → Gate',    rate: 2.14 },
+  { sym: 'AVAX',  route: 'WhiteBIT → OKX',  rate: 1.73 },
+];
+let spotIdx = 0;
+function tickKicker() {
+  const k = document.getElementById('hero-kicker');
+  if (!k) return;
+  const s = SPOT_POOL[spotIdx % SPOT_POOL.length];
+  spotIdx++;
+  // jitter a bit so the number changes every tick
+  const r    = s.rate + (Math.random() - 0.5) * 0.25;
+  const cls  = r >= 0 ? '#34D399' : '#F87171';
+  const sign = r >= 0 ? '+' : '';
+  const arr  = r >= 0 ? '▲' : '▼';
+  // fade transition
+  k.style.transition = 'opacity .25s';
+  k.style.opacity = '0';
+  setTimeout(() => {
+    k.innerHTML = `<b style="color:var(--text)">Spotted:</b>&nbsp;<b style="color:${cls}">${arr} ${sign}${r.toFixed(2)}%</b>&nbsp;<span style="color:var(--text3)">${s.sym} · ${s.route} · now</span>`;
+    k.style.opacity = '1';
+  }, 260);
+}
+
 // ─── ORDER BOOK mid live tick ───
 function tickBookMid() {
   const mbMid = document.getElementById('mb-mid');
@@ -1932,6 +1961,7 @@ function tickBookMid() {
 // Start animations
 window.addEventListener('load', () => {
   buildTicker();
+  setInterval(tickKicker, 3200);
   setInterval(tickBookMid, 2500);
   // Hero stats
   fetch('/api/providers').then(r => r.ok ? r.json() : null).then(data => {
