@@ -29,7 +29,8 @@ class WSAdapter:
     def __init__(self, update_cb):
         """update_cb(exchange: str, symbol: str, bids, asks) writes to _book_cache."""
         self._update_cb = update_cb
-        self._symbols: set[str] = set()
+        self._symbols: set[str] = set()        # everything we want subscribed
+        self._subscribed: set[str] = set()     # already sent a subscribe frame for
         self._task: asyncio.Task | None = None
         self._ws = None
         self._stop = False
@@ -71,24 +72,22 @@ class WSAdapter:
         if not new:
             return
         self._symbols |= new
-        asyncio.create_task(self._resubscribe())
+        if self._ws:
+            asyncio.create_task(self._send_subscribe(only=new))
 
-    async def _resubscribe(self) -> None:
-        if not self._ws:
+    async def _send_subscribe(self, only: set[str] | None = None) -> None:
+        """Subscribe. If `only` given, send only for those symbols (delta)."""
+        syms = sorted(only) if only else sorted(self._symbols - self._subscribed)
+        if not syms:
             return
-        try:
-            await self._send_subscribe()
-        except Exception as exc:
-            logger.warning("%s resubscribe error: %s", self.name, exc)
-
-    async def _send_subscribe(self) -> None:
-        frames = self.build_subscribe(sorted(self._symbols))
+        frames = self.build_subscribe(syms)
         if isinstance(frames, dict):
             frames = [frames]
         for i, f in enumerate(frames):
             await self._ws.send(json.dumps(f))
             if self.subscribe_delay > 0 and i < len(frames) - 1:
                 await asyncio.sleep(self.subscribe_delay)
+        self._subscribed.update(syms)
 
     async def _heartbeat_loop(self, ws, interval: float = 15.0) -> None:
         frame = self.heartbeat_frame()
@@ -117,6 +116,8 @@ class WSAdapter:
                 ) as ws:
                     self._ws = ws
                     backoff = 1.0
+                    # Fresh connection — re-subscribe to everything we want
+                    self._subscribed.clear()
                     if self._symbols:
                         await self._send_subscribe()
                     if self.heartbeat_frame() is not None:

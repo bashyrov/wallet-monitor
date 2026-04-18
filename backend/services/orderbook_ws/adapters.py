@@ -372,6 +372,7 @@ class KuCoinWS(WSAdapter):
                 ) as ws:
                     self._ws = ws
                     backoff = 1.0
+                    self._subscribed.clear()
                     if self._symbols:
                         await self._send_subscribe()
                     hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s * 0.8))
