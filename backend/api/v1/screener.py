@@ -434,24 +434,39 @@ async def _warmup() -> None:
     logger.info("Screener interval cache warmed up")
 
 
-_REFRESH_INTERVAL = 4  # how often the background fetch loop kicks a fresh arb recompute
+_REFRESH_INTERVAL = 4.0  # recompute + push cadence (seconds)
 
 
 async def _refresh_loop() -> None:
-    """Continuously refresh funding + arb cache. Runs independently of broadcast
-    so a slow exchange (e.g. rate-limited KuCoin) never stalls WS pushes."""
+    """Recompute arb result from the current funding _cache every 4s.
+    Funding fetches run as fire-and-forget background tasks so slow exchanges
+    can't stall the recompute — arb always works off whatever rows are cached
+    (the fetches update _cache asynchronously)."""
     from backend.services.alpha_service import score_opportunities
+    from backend.services.arbitrage_service import (
+        FETCHERS, _cache, _arb_result_cache, _compute_arb_sync,
+        _write_file_cache, get_funding_data,
+    )
     while True:
+        started = asyncio.get_event_loop().time()
+        # Kick background funding refresh — never await
+        asyncio.create_task(get_funding_data())
+        # Recompute arb from current _cache rows (no await on exchanges)
         try:
-            await get_funding_data()
-        except Exception as exc:
-            logger.warning("Refresh funding error: %s", exc)
-        try:
-            data = await get_arbitrage_opportunities(force=True)
-            score_opportunities(data.get("opportunities", []))
+            rows = []
+            for ex in FETCHERS:
+                cached_rows, _ts = _cache.get(ex, ([], 0.0))
+                rows.extend(cached_rows)
+            if rows:
+                result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
+                _arb_result_cache["data"] = result
+                _arb_result_cache["ts"] = time.time()
+                _write_file_cache("arbitrage.json", result)
+                score_opportunities(result.get("opportunities", []))
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)
-        await asyncio.sleep(_REFRESH_INTERVAL)
+        elapsed = asyncio.get_event_loop().time() - started
+        await asyncio.sleep(max(0.1, _REFRESH_INTERVAL - elapsed))
 
 
 async def _broadcast_loop() -> None:
