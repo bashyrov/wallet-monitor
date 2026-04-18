@@ -99,6 +99,7 @@ class WSAdapter:
             pass
 
     async def _run(self) -> None:
+        import random
         backoff = 1.0
         while not self._stop:
             hb_task: asyncio.Task | None = None
@@ -108,6 +109,7 @@ class WSAdapter:
                     ping_interval=self.ping_interval,
                     ping_timeout=self.ping_interval,
                     close_timeout=3,
+                    open_timeout=20,      # allow slow exchanges to complete TLS + WS handshake
                     max_size=4 * 1024 * 1024,
                 ) as ws:
                     self._ws = ws
@@ -149,9 +151,11 @@ class WSAdapter:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                logger.warning("%s WS error: %s (retry in %.1fs)", self.name, exc, backoff)
+                jitter = random.uniform(0, 1.0)
+                wait = backoff + jitter
+                logger.warning("%s WS error: %s (retry in %.1fs)", self.name, exc, wait)
                 self._ws = None
-                await asyncio.sleep(backoff)
+                await asyncio.sleep(wait)
                 backoff = min(backoff * 1.8, 30.0)
             finally:
                 if hb_task and not hb_task.done():

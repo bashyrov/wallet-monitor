@@ -172,6 +172,14 @@ class AsterWS(BinanceWS):
     name = "aster"
     url = "wss://fstream.asterdex.com/ws"
 
+    def build_subscribe(self, symbols):
+        # Aster rejects large single-frame subscribes under load — chunk by 5
+        frames = []
+        for i in range(0, len(symbols), 5):
+            params = [f"{s.lower()}usdt@depth20@100ms" for s in symbols[i:i + 5]]
+            frames.append({"method": "SUBSCRIBE", "params": params, "id": i + 1})
+        return frames
+
 
 # ── Gate.io Futures USDT ──────────────────────────────────────────────────────
 class GateWS(WSAdapter):
