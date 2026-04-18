@@ -1529,6 +1529,16 @@ const _connectArb = _makeWs({
   onMessage: (data) => {
     _arbRows = data.opportunities || [];
     applyArb(true);  // keepPage — не сбрасывать страницу при обновлении данных
+    // If arb tab is active, update "Updated at" from arb ts (4s cadence)
+    if (_mode === 'arb' && data.ts) {
+      const ts = new Date(data.ts * 1000).toLocaleTimeString();
+      const bar = document.getElementById('stats-bar');
+      if (bar) {
+        const items = bar.querySelectorAll('.stat-item');
+        if (items.length >= 3) items[2].innerHTML = `Updated at <b>${ts}</b>`;
+        else bar.innerHTML = `<div class="stat-item"><b>${(data.opportunities||[]).length}</b> opportunities</div><div class="stat-item">Updated at <b>${ts}</b></div>`;
+      }
+    }
   },
 });
 
