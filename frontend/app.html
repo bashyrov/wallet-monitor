@@ -2704,7 +2704,7 @@ function renderResults() {
 
   const cards = results.map((r, i) => {
     const typeClass = `t-${r.wallet_type}`;
-    if (r.error) return `<div class="result-card has-error ${typeClass}" style="border-color:rgba(248,113,113,0.25)">`;
+    if (r.error) return `<div class="result-card has-error ${typeClass}" style="border-color:rgba(248,113,113,0.25)">
       <div class="result-card-head">
         <span class="result-wallet-name">${esc(r.wallet_name)}</span>
         <span class="result-badge">${esc(r.type_value)}</span>
