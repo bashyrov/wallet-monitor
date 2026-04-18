@@ -434,35 +434,51 @@ async def _warmup() -> None:
     logger.info("Screener interval cache warmed up")
 
 
-async def _broadcast_loop() -> None:
-    """Keep funding cache hot every BROADCAST_INTERVAL seconds.
+_REFRESH_INTERVAL = 4  # how often the background fetch loop kicks a fresh arb recompute
 
-    Timeouts on the fetch/compute step ensure a slow exchange (e.g. KuCoin
-    rate-limited) can't freeze the loop and stall downstream WS pushes.
-    """
-    # Kick off slow interval warmup in background — don't block the loop
+
+async def _refresh_loop() -> None:
+    """Continuously refresh funding + arb cache. Runs independently of broadcast
+    so a slow exchange (e.g. rate-limited KuCoin) never stalls WS pushes."""
+    from backend.services.alpha_service import score_opportunities
+    while True:
+        try:
+            await get_funding_data()
+        except Exception as exc:
+            logger.warning("Refresh funding error: %s", exc)
+        try:
+            data = await get_arbitrage_opportunities()
+            score_opportunities(data.get("opportunities", []))
+        except Exception as exc:
+            logger.warning("Refresh arb error: %s", exc)
+        await asyncio.sleep(_REFRESH_INTERVAL)
+
+
+async def _broadcast_loop() -> None:
+    """Push cached data to WS clients every BROADCAST_INTERVAL. Never awaits
+    HTTP fetches — reads whatever the refresh loop has in memory/file cache."""
     asyncio.create_task(_warmup())
+    asyncio.create_task(_refresh_loop())
+    from backend.services.arbitrage_service import _arb_result_cache, _read_file_cache, CACHE_TTL as _FUND_TTL
 
     while True:
         await asyncio.sleep(BROADCAST_INTERVAL)
+        # Funding payload — read cache only
         try:
-            data = await asyncio.wait_for(get_funding_data(), timeout=BROADCAST_INTERVAL * 0.75)
             if _funding_clients:
-                await _push(_funding_clients, json.dumps(data))
-        except asyncio.TimeoutError:
-            logger.warning("Screener funding broadcast timeout — will retry next tick")
+                fd = await get_funding_data()
+                await _push(_funding_clients, json.dumps(fd))
         except Exception as exc:
-            logger.warning("Screener funding broadcast error: %s", exc)
+            logger.debug("Funding push skipped: %s", exc)
+        # Arb payload — read cache only
         try:
-            from backend.services.alpha_service import score_opportunities
-            data = await asyncio.wait_for(get_arbitrage_opportunities(), timeout=BROADCAST_INTERVAL * 0.75)
-            score_opportunities(data.get("opportunities", []))
-            if _arb_clients:
+            data = _arb_result_cache.get("data")
+            if not data:
+                data = _read_file_cache("arbitrage.json", max_age=60)
+            if data and _arb_clients:
                 await _push(_arb_clients, json.dumps(data))
-        except asyncio.TimeoutError:
-            logger.warning("Screener arb broadcast timeout — will retry next tick")
         except Exception as exc:
-            logger.warning("Screener arb broadcast error: %s", exc)
+            logger.debug("Arb push skipped: %s", exc)
 
 
 def start_screener_broadcaster() -> None:
