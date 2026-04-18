@@ -247,62 +247,13 @@ async def get_orderbook(
     _=Depends(get_current_user),
 ):
     from fastapi import HTTPException
+    from backend.services.orderbook_cache import get_cached_orderbook
+
     exchange = exchange.lower()
     symbol = symbol.upper()
     if exchange not in _ORDERBOOK_EX:
         raise HTTPException(400, f"unsupported exchange for orderbook: {exchange}")
-    try:
-        c = _arb_http  # reuse persistent client with keepalive
-        if exchange == "binance":
-            r = await c.get(f"https://fapi.binance.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit}")
-            d = r.json()
-            return {"bids": [[float(x[0]), float(x[1])] for x in d["bids"]], "asks": [[float(x[0]), float(x[1])] for x in d["asks"]]}
-        elif exchange == "bybit":
-            r = await c.get(f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={symbol}USDT&limit={limit}")
-            d = r.json().get("result", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("b",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("a",[])]}
-        elif exchange == "okx":
-            r = await c.get(f"https://www.okx.com/api/v5/market/books?instId={symbol}-USDT-SWAP&sz={limit}")
-            d = (r.json().get("data") or [{}])[0]
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("asks",[])]}
-        elif exchange == "gate":
-            r = await c.get(f"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract={symbol}_USDT&limit={limit}")
-            d = r.json()
-            return {"bids": [[float(x["p"]), float(x["s"])] for x in d.get("bids",[])], "asks": [[float(x["p"]), float(x["s"])] for x in d.get("asks",[])]}
-        elif exchange == "kucoin":
-            # KuCoin Futures only supports depth20 / depth100 endpoints
-            sym = ("XBT" if symbol == "BTC" else symbol) + "USDTM"
-            depth = 100 if limit > 20 else 20
-            r = await c.get(f"https://api-futures.kucoin.com/api/v1/level2/depth{depth}?symbol={sym}")
-            d = r.json().get("data", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("asks",[])]}
-        elif exchange == "mexc":
-            r = await c.get(f"https://contract.mexc.com/api/v1/contract/depth/{symbol}_USDT?limit={limit}")
-            d = r.json().get("data", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("asks",[])]}
-        elif exchange == "bitget":
-            r = await c.get(f"https://api.bitget.com/api/v2/mix/market/merge-depth?symbol={symbol}USDT&productType=USDT-FUTURES&limit={limit}")
-            d = r.json().get("data", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("asks",[])]}
-        elif exchange == "aster":
-            r = await c.get(f"https://fapi.asterdex.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit}")
-            d = r.json()
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("asks",[])]}
-        elif exchange == "hyperliquid":
-            r = await c.post("https://api.hyperliquid.xyz/info", json={"type":"l2Book","coin":symbol}, headers={"Content-Type":"application/json"})
-            d = r.json().get("levels", [[],[]])
-            return {"bids": [[float(x["px"]), float(x["sz"])] for x in d[0]], "asks": [[float(x["px"]), float(x["sz"])] for x in d[1]]}
-        elif exchange == "bingx":
-            r = await c.get(f"https://open-api.bingx.com/openApi/swap/v2/quote/depth?symbol={symbol}-USDT&limit={limit}")
-            d = r.json().get("data", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("asks",[])]}
-        elif exchange == "whitebit":
-            r = await c.get(f"https://whitebit.com/api/v4/public/orderbook/{symbol}_PERP?limit={limit}&level=2")
-            d = r.json()
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids",[])], "asks": [[float(x[0]), float(x[1])] for x in d.get("asks",[])]}
-    except Exception as exc:
-        logger.warning("Orderbook %s/%s failed: %s", exchange, symbol, exc)
-    return {"bids": [], "asks": []}
+    return await get_cached_orderbook(exchange, symbol, limit)
 
 
 @router.get("/arb-price-history")
