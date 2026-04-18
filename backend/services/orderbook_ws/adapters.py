@@ -362,9 +362,13 @@ class KuCoinWS(WSAdapter):
                 if not endpoint or not token:
                     raise RuntimeError("kucoin bullet-public returned empty token")
                 url = f"{endpoint}?token={token}&connectId={uuid.uuid4()}"
+                # KuCoin does NOT respond to RFC-6455 control-frame pings —
+                # only the app-level {"type":"ping"} JSON heartbeat. Disable
+                # the websockets client's protocol ping so it doesn't fire a
+                # ping_timeout and close the connection.
                 async with websockets.connect(
-                    url, ping_interval=ping_s, ping_timeout=ping_s,
-                    close_timeout=3, max_size=4 * 1024 * 1024,
+                    url, ping_interval=None, ping_timeout=None,
+                    open_timeout=20, close_timeout=3, max_size=4 * 1024 * 1024,
                 ) as ws:
                     self._ws = ws
                     backoff = 1.0
