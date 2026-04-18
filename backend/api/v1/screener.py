@@ -410,7 +410,7 @@ async def arb_history(
 _funding_clients: set[WebSocket] = set()
 _arb_clients: set[WebSocket] = set()
 _broadcaster_task: asyncio.Task | None = None
-BROADCAST_INTERVAL = 4  # seconds — full arb list refresh every 4s
+BROADCAST_INTERVAL = 3  # seconds — full arb list refresh every 3s
 
 
 async def _push(clients: set[WebSocket], msg: str) -> None:
@@ -434,7 +434,7 @@ async def _warmup() -> None:
     logger.info("Screener interval cache warmed up")
 
 
-_REFRESH_INTERVAL = 4.0  # recompute + push cadence (seconds)
+_REFRESH_INTERVAL = 3.0  # recompute + push cadence (seconds)
 
 
 async def _refresh_loop() -> None:

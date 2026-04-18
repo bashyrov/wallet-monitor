@@ -396,6 +396,21 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
 }
 .btn-refresh:hover { border-color: var(--green); color: var(--green); }
 
+.throttle-sel {
+  padding: 6px 10px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text2); font-size: 12px; font-family: inherit;
+  cursor: pointer; transition: all .15s;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%239B9FAB' stroke-width='1.3' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat; background-position: right 8px center;
+  padding-right: 26px;
+}
+.throttle-sel:hover { border-color: var(--green); color: var(--text); }
+.throttle-sel:focus { outline: none; border-color: var(--green); }
+.throttle-sel.paused { color: #E5C07B; border-color: #E5C07B; }
+.throttle-sel.throttled { color: var(--green); }
+
 /* ── STATS ── */
 .stats-bar {
   display: flex; align-items: center; gap: 20px; padding: 10px 16px;
@@ -937,6 +952,13 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
     <div class="stats-bar stats-bar-desktop">
       <div id="stats-bar"></div>
       <div class="stats-ws-block" style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <select id="throttle-sel" class="throttle-sel" onchange="setThrottle(this.value)" title="Data refresh cadence">
+          <option value="live">Live · 3s</option>
+          <option value="10">10s</option>
+          <option value="30">30s</option>
+          <option value="60">1m</option>
+          <option value="pause">Paused</option>
+        </select>
         <span class="refresh-info" style="display:flex;align-items:center;gap:6px">
           <span class="ws-dot" id="ws-dot"></span>
           <span id="ws-status">Connecting…</span>
@@ -949,6 +971,13 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
     <div class="stats-bar stats-bar-mobile">
       <div id="stats-bar-mob" style="display:flex;align-items:center;gap:12px;flex-shrink:0"></div>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <select id="throttle-sel-mob" class="throttle-sel" onchange="setThrottle(this.value)" title="Data refresh cadence">
+          <option value="live">Live</option>
+          <option value="10">10s</option>
+          <option value="30">30s</option>
+          <option value="60">1m</option>
+          <option value="pause">Paused</option>
+        </select>
         <span class="refresh-info" style="display:flex;align-items:center;gap:6px">
           <span class="ws-dot" id="ws-dot-mob"></span>
           <span id="ws-status-mob">Connecting…</span>
@@ -1490,6 +1519,58 @@ function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) 
   return connect;
 }
 
+// ── Throttle control (user-configurable refresh cadence) ─────────────────────
+let _throttle = localStorage.getItem('screener-throttle') || 'live';   // 'live'|'10'|'30'|'60'|'pause'
+let _pendingFunding = null;  // latest unrendered funding payload
+let _pendingArb = null;      // latest unrendered arb payload
+let _throttleTimer = null;
+
+function setThrottle(mode) {
+  _throttle = mode;
+  localStorage.setItem('screener-throttle', mode);
+  ['throttle-sel','throttle-sel-mob'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.value = mode;
+      el.classList.toggle('paused', mode === 'pause');
+      el.classList.toggle('throttled', mode !== 'live' && mode !== 'pause');
+    }
+  });
+  clearInterval(_throttleTimer); _throttleTimer = null;
+  if (mode === 'live' || mode === 'pause') {
+    // In live mode: apply as soon as WS arrives. In pause: don't apply at all.
+    if (mode === 'live') flushPending();
+    return;
+  }
+  const ms = parseInt(mode) * 1000;
+  _throttleTimer = setInterval(flushPending, ms);
+}
+
+function flushPending() {
+  if (_pendingFunding) {
+    const d = _pendingFunding; _pendingFunding = null;
+    _rows = d.rows || [];
+    renderStats(d);
+    applyFilter(true);
+  }
+  if (_pendingArb) {
+    const d = _pendingArb; _pendingArb = null;
+    _arbRows = d.opportunities || [];
+    applyArb(true);
+    if (_mode === 'arb' && d.ts) {
+      const ts = new Date(d.ts * 1000).toLocaleTimeString();
+      const bar = document.getElementById('stats-bar');
+      if (bar) {
+        const items = bar.querySelectorAll('.stat-item');
+        if (items.length >= 3) items[2].innerHTML = `Updated at <b>${ts}</b>`;
+      }
+    }
+  }
+}
+
+// Apply pending on load (in case user reloaded with a saved throttle pref)
+window.addEventListener('load', () => setThrottle(_throttle));
+
 // ── Funding WebSocket ──────────────────────────────────────────────────────────
 const _retryF      = { val: 0 };
 const _pingF       = { val: null };
@@ -1500,9 +1581,8 @@ const _connectFunding = _makeWs({
   retryRef: _retryF, pingRef: _pingF, retryTimerRef: _retryTimerF,
   onOpen: () => setWsStatus('live'),
   onMessage: (data) => {
-    _rows = data.rows || [];
-    renderStats(data);
-    applyFilter(true);  // keepPage — не сбрасывать страницу при обновлении данных
+    _pendingFunding = data;
+    if (_throttle === 'live') flushPending();
   },
 });
 
@@ -1527,18 +1607,8 @@ const _connectArb = _makeWs({
   path: 'arb',
   retryRef: _retryA, pingRef: _pingA, retryTimerRef: _retryTimerA,
   onMessage: (data) => {
-    _arbRows = data.opportunities || [];
-    applyArb(true);  // keepPage — не сбрасывать страницу при обновлении данных
-    // If arb tab is active, update "Updated at" from arb ts (4s cadence)
-    if (_mode === 'arb' && data.ts) {
-      const ts = new Date(data.ts * 1000).toLocaleTimeString();
-      const bar = document.getElementById('stats-bar');
-      if (bar) {
-        const items = bar.querySelectorAll('.stat-item');
-        if (items.length >= 3) items[2].innerHTML = `Updated at <b>${ts}</b>`;
-        else bar.innerHTML = `<div class="stat-item"><b>${(data.opportunities||[]).length}</b> opportunities</div><div class="stat-item">Updated at <b>${ts}</b></div>`;
-      }
-    }
+    _pendingArb = data;
+    if (_throttle === 'live') flushPending();
   },
 });
 
