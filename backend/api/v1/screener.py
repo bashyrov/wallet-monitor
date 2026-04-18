@@ -447,10 +447,21 @@ async def _refresh_loop() -> None:
         FETCHERS, _cache, _arb_result_cache, _compute_arb_sync,
         _write_file_cache, get_funding_data,
     )
+    _fetch_lock = asyncio.Lock()
+    async def _single_fetch():
+        if _fetch_lock.locked():
+            return  # previous fetch still running — skip
+        async with _fetch_lock:
+            try:
+                await get_funding_data()
+            except Exception as exc:
+                logger.warning("Background funding fetch: %s", exc)
+
     while True:
         started = asyncio.get_event_loop().time()
-        # Kick background funding refresh — never await
-        asyncio.create_task(get_funding_data())
+        # Kick background funding refresh — never await. Lock ensures only one
+        # get_funding_data runs at a time (prevents pool exhaustion / duplicates).
+        asyncio.create_task(_single_fetch())
         # Recompute arb from current _cache rows (no await on exchanges)
         try:
             rows = []

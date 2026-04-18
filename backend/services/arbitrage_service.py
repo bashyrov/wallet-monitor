@@ -851,7 +851,7 @@ FETCHERS: dict[str, object] = {
 }
 
 
-_FETCHER_TIMEOUT = 5.0  # bound per-exchange fetch so one slow API can't stall the gather
+_FETCHER_TIMEOUT = 10.0  # bound per-exchange fetch so one slow API can't stall the gather
 
 
 async def _get_rows(exchange: str) -> list[dict]:
