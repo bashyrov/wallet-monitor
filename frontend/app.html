@@ -1193,6 +1193,18 @@
       to   { opacity: 1; }
     }
     .result-card, .agg-block { animation: cardIn 0.2s ease both; }
+    /* Streaming state: no replay animation, reserved min-height so cards don't jump */
+    .result-cards.streaming .result-card { animation: none; }
+    .result-card.pending { min-height: 72px; opacity: .55; }
+    .result-card.pending::after {
+      content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--green), transparent);
+      animation: pend-slide 1.2s linear infinite; opacity: .5;
+    }
+    .result-card { position: relative; }
+    @keyframes pend-slide {
+      0% { transform: translateX(-30%); } 100% { transform: translateX(30%); }
+    }
 
     /* ── FLOATING EMPTY ICON ── */
     @keyframes floatIcon {
@@ -2639,32 +2651,72 @@ function renderResults() {
   };
   const isStable = k => STABLES.has(k.toUpperCase().replace('.','_'));
 
-  // Partial streaming state — show wallet cards only, no aggregated block yet
+  // ── Partial streaming state ──
+  // Render stable skeleton (one card per expected wallet) on first pass, then
+  // update cards in place as results arrive. Prevents layout shift + avoids
+  // replaying cardIn animation on every re-render.
+  const renderCardBody = (r) => {
+    const typeClass = `t-${r.wallet_type}`;
+    if (r.error) return {
+      cls: `result-card has-error ${typeClass}`,
+      html: `<div class="result-card-head">
+        <span class="result-wallet-name">${esc(r.wallet_name)}</span>
+        <span class="result-badge">${esc(r.type_value)}</span>
+      </div>
+      <div class="result-error"><div class="result-error-icon">!</div><span class="result-error-text">${esc(r.error)}</span></div>`,
+    };
+    const rows = Object.entries(r.totals || {});
+    const walletUsd = parseFloat(r.usd_total || 0);
+    const rowsHtml = rows.length
+      ? `<div class="result-rows">${rows.map(([k,v]) => `<div class="result-row"><div class="r-asset">${k}</div><div class="r-amt">${fAmt(v)}</div>${r.usd_values && r.usd_values[k] ? `<div class="r-usd">${fUSD(r.usd_values[k])}</div>` : ''}</div>`).join('')}</div>`
+      : `<div class="no-balance" style="color:var(--text4);font-size:11px">No balance</div>`;
+    return {
+      cls: `result-card ${typeClass}`,
+      html: `<div class="result-card-head">
+        <span class="result-wallet-name">${esc(r.wallet_name)}</span>
+        <span class="result-badge">${esc(r.type_value)}</span>
+        ${walletUsd > 0 ? `<span class="wallet-usd-total">${fUSD(r.usd_total)}</span>` : ''}
+      </div>
+      ${rowsHtml}`,
+    };
+  };
+
   if (!aggregated) {
-    const partialCards = results.map((r, i) => {
-      const typeClass = `t-${r.wallet_type}`;
-      if (r.error) return `<div class="result-card has-error ${typeClass}" style="border-color:rgba(248,113,113,0.25)">
-        <div class="result-card-head">
-          <span class="result-wallet-name">${esc(r.wallet_name)}</span>
-          <span class="result-badge">${esc(r.type_value)}</span>
-        </div>
-        <div class="result-error"><div class="result-error-icon">!</div><span class="result-error-text">${esc(r.error)}</span></div>
-      </div>`;
-      const rows = Object.entries(r.totals || {});
-      const walletUsd = parseFloat(r.usd_total || 0);
-      const rowsHtml = rows.length
-        ? `<div class="result-rows">${rows.map(([k,v]) => `<div class="result-row"><div class="r-asset">${k}</div><div class="r-amt">${fAmt(v)}</div>${r.usd_values && r.usd_values[k] ? `<div class="r-usd">${fUSD(r.usd_values[k])}</div>` : ''}</div>`).join('')}</div>`
-        : `<div class="no-balance" style="color:var(--text4);font-size:11px">No balance</div>`;
-      return `<div class="result-card ${typeClass}">
-        <div class="result-card-head">
-          <span class="result-wallet-name">${esc(r.wallet_name)}</span>
-          <span class="result-badge">${esc(r.type_value)}</span>
-          ${walletUsd > 0 ? `<span class="wallet-usd-total">${fUSD(r.usd_total)}</span>` : ''}
-        </div>
-        ${rowsHtml}
-      </div>`;
-    }).join('');
-    el.innerHTML = `<div class="agg-block" style="min-height:80px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">Calculating totals…</div><div class="result-cards">${partialCards}</div>`;
+    // Expected wallets = those we started the check for (selected or all non-archived)
+    const ids = [...S.selected];
+    const expected = ids.length
+      ? S.wallets.filter(w => ids.includes(w.id))
+      : S.wallets.filter(w => !w.is_archived);
+    const resultMap = new Map(results.map(r => [r.wallet_id, r]));
+
+    const existingContainer = el.querySelector('.result-cards.streaming');
+    if (!existingContainer) {
+      // First render: build stable skeleton
+      const cardsHtml = expected.map(w => {
+        const r = resultMap.get(w.id);
+        if (r) {
+          const b = renderCardBody(r);
+          return `<div class="${b.cls}" data-wid="${w.id}">${b.html}</div>`;
+        }
+        return `<div class="result-card pending t-${w.wallet_type}" data-wid="${w.id}">
+          <div class="result-card-head">
+            <span class="result-wallet-name">${esc(w.name)}</span>
+            <span class="result-badge">${esc(w.type_value)}</span>
+          </div>
+          <div class="no-balance" style="color:var(--text4);font-size:11px">Loading…</div>
+        </div>`;
+      }).join('');
+      el.innerHTML = `<div class="agg-block" style="min-height:80px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">Calculating totals…</div><div class="result-cards streaming">${cardsHtml}</div>`;
+    } else {
+      // Subsequent partial updates: only swap the specific card that just arrived
+      for (const r of results) {
+        const card = existingContainer.querySelector(`[data-wid="${r.wallet_id}"]`);
+        if (!card || !card.classList.contains('pending')) continue;
+        const b = renderCardBody(r);
+        card.className = b.cls;
+        card.innerHTML = b.html;
+      }
+    }
     return;
   }
 
