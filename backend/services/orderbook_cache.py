@@ -280,22 +280,37 @@ async def _prewarm_start_poller(exchange: str, symbol: str, limit: int = 50) -> 
 
 async def _prewarm_hotlist_loop() -> None:
     from backend.services.arbitrage_service import get_arbitrage_opportunities
+    from backend.services.orderbook_ws import is_ws_supported, start_ws_manager
     while True:
         try:
             data = await get_arbitrage_opportunities()
             opps = data.get("opportunities", [])[:PREWARM_TOP_N]
-            touched: set[str] = set()
+            # Group pairs by exchange so each WS adapter gets one subscribe call
+            ws_subs: dict[str, set[str]] = {}
+            rest_pairs: set[tuple[str, str]] = set()
             for o in opps:
+                sym = o["symbol"]
                 for ex in (o.get("long_exchange"), o.get("short_exchange")):
                     if not ex:
                         continue
-                    key = f"{ex}:{o['symbol']}"
-                    if key in touched:
-                        continue
-                    touched.add(key)
-                    await _prewarm_start_poller(ex, o["symbol"])
-            logger.info("orderbook prewarm hot-list: %d pairs (%d opps)",
-                        len(touched), len(opps))
+                    if is_ws_supported(ex):
+                        ws_subs.setdefault(ex, set()).add(sym)
+                    else:
+                        rest_pairs.add((ex, sym))
+
+            # WS: ensure each adapter is running with the current symbol set
+            mgr = start_ws_manager()
+            for ex, syms in ws_subs.items():
+                mgr.subscribe(ex, list(syms))
+
+            # REST: spawn pollers for exchanges without WS support (perp DEX + slow CEX)
+            for ex, sym in rest_pairs:
+                await _prewarm_start_poller(ex, sym)
+
+            logger.info(
+                "orderbook prewarm: ws=%s rest_pairs=%d (%d opps)",
+                {ex: len(s) for ex, s in ws_subs.items()}, len(rest_pairs), len(opps),
+            )
         except Exception as exc:
             logger.warning("prewarm hot-list error: %s", exc)
         await asyncio.sleep(PREWARM_HOTLIST_S)
@@ -351,6 +366,8 @@ def stop_prewarm() -> None:
             t.cancel()
     _prewarm_hotlist_task = None
     _prewarm_dump_task = None
+    from backend.services.orderbook_ws import stop_ws_manager
+    stop_ws_manager()
     if _prewarm_lock_fd:
         try: _prewarm_lock_fd.close()
         except Exception: pass

@@ -1,0 +1,81 @@
+"""WebSocket orderbook manager.
+
+Starts one WSAdapter instance per supported exchange on the owner worker.
+Updates go into _book_cache (shared with REST pollers) so readers don't care
+about the source. The owner worker also periodically dumps the cache to
+/tmp/avalant_cache/books.json so other workers can read it.
+
+Exchanges without WS support (perp DEXes, slow CEX) keep using the REST
+poller path in orderbook_cache.py. Callers use is_ws_supported(ex) to decide.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+
+from .adapters import ADAPTERS
+from .base import WSAdapter
+
+logger = logging.getLogger("avalant.ws")
+
+
+def is_ws_supported(exchange: str) -> bool:
+    return exchange.lower() in ADAPTERS
+
+
+class WSManager:
+    def __init__(self):
+        self._adapters: dict[str, WSAdapter] = {}
+
+    def _update_cb(self, exchange: str, symbol: str, bids: list, asks: list) -> None:
+        """Called by each adapter on every incoming book update."""
+        from backend.services.orderbook_cache import _book_cache
+        key = f"{exchange}:{symbol}"
+        entry = _book_cache.setdefault(key, {})
+        entry["data"] = {"bids": bids, "asks": asks}
+        entry["ts"] = time.time()
+        # keep last_request fresh so file-dumper includes it
+        if "last_request" not in entry or time.time() - entry.get("last_request", 0) > 5:
+            entry["last_request"] = time.time()
+
+    def subscribe(self, exchange: str, symbols: list[str]) -> None:
+        """Ensure an adapter for `exchange` is running and subscribed to `symbols`."""
+        ex = exchange.lower()
+        cls = ADAPTERS.get(ex)
+        if not cls:
+            return
+        adapter = self._adapters.get(ex)
+        if not adapter:
+            adapter = cls(self._update_cb)
+            self._adapters[ex] = adapter
+            adapter.start(symbols)
+        else:
+            adapter.add_symbols(symbols)
+
+    def stop_all(self) -> None:
+        for a in self._adapters.values():
+            a.stop()
+        self._adapters.clear()
+
+
+_manager: WSManager | None = None
+
+
+def start_ws_manager() -> WSManager:
+    global _manager
+    if _manager is None:
+        _manager = WSManager()
+        logger.info("WS manager started (supported: %s)", ", ".join(ADAPTERS))
+    return _manager
+
+
+def stop_ws_manager() -> None:
+    global _manager
+    if _manager:
+        _manager.stop_all()
+        _manager = None
+
+
+def get_manager() -> WSManager | None:
+    return _manager
