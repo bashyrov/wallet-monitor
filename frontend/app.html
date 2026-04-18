@@ -2109,6 +2109,7 @@ function _authHeaders(extra = {}) {
 }
 function _handleUnauth(r) {
   if (r.status === 401) { Auth.logout('/login'); throw new Error('Session expired'); }
+  if (r.status === 403) { throw new Error('Access denied — your account may be blocked'); }
 }
 
 const api = {
@@ -2154,6 +2155,7 @@ async function init() {
     const av = document.getElementById('nav-avatar');
     if (av) av.textContent = (u.username || u.email || 'U')[0].toUpperCase();
   }
+  let loadFailed = false;
   try {
     const [wallets, tags, options, meRes] = await Promise.all([
       api.get('/wallets'), api.get('/tags'), api.get('/wallets/options'),
@@ -2165,12 +2167,21 @@ async function init() {
       const PLAN_LIMITS = { basic: 4, pro: 30, platinum: 70, enterprise: null, unlim: null };
       const lim = PLAN_LIMITS[me.plan];
       if (lim != null) FREE_WALLET_LIMIT = lim;
-      else FREE_WALLET_LIMIT = Infinity; // enterprise / unlim
+      else FREE_WALLET_LIMIT = Infinity;
     }
     populateSelects();
-    renderAll();
     loadAddressBook();
-  } catch(e) { toast('Failed to load: ' + e.message, 'error'); }
+  } catch (e) {
+    loadFailed = true;
+    toast('Failed to load: ' + e.message, 'error');
+  } finally {
+    if (loadFailed) {
+      const list = document.getElementById('wallet-list');
+      if (list) list.innerHTML = `<div class="empty"><span class="empty-icon">⚠</span>Failed to load wallets.<br><button class="btn" style="margin-top:10px" onclick="init()">Retry</button></div>`;
+    } else {
+      try { renderAll(); } catch (_) {}
+    }
+  }
 }
 
 async function loadAddressBook() {
