@@ -172,3 +172,84 @@ def cache_stats() -> dict:
         "active_pollers": sum(1 for t in _pollers.values() if not t.done()),
         "keys": list(_book_cache.keys()),
     }
+
+
+def top_levels(exchange: str, symbol: str) -> tuple[float, float] | None:
+    """Synchronous accessor: return (best_bid, best_ask) from cache, or None.
+    Safe to call from threads — dict reads are atomic in CPython.
+    """
+    key = f"{exchange.lower()}:{symbol.upper()}"
+    entry = _book_cache.get(key)
+    if not entry:
+        return None
+    data = entry.get("data")
+    if not data:
+        return None
+    bids = data.get("bids") or []
+    asks = data.get("asks") or []
+    if not bids or not asks:
+        return None
+    try:
+        return (float(bids[0][0]), float(asks[0][0]))
+    except (ValueError, IndexError, TypeError):
+        return None
+
+
+async def prewarm(exchange: str, symbol: str, limit: int = 50) -> None:
+    """Start/keep poller alive for this pair without waiting for data.
+    Used by the top-arb prewarmer; fire-and-forget."""
+    exchange = exchange.lower()
+    symbol = symbol.upper()
+    key = f"{exchange}:{symbol}"
+    async with _lock:
+        entry = _book_cache.setdefault(key, {})
+        entry["last_request"] = time.time()
+        task = _pollers.get(key)
+        if not task or task.done():
+            _pollers[key] = asyncio.create_task(_poll_loop(key, exchange, symbol, limit))
+
+
+# ── Background prewarm: keep top arb pairs' books hot ─────────────────────────
+PREWARM_INTERVAL = 15.0      # refresh the hot-set every 15s
+PREWARM_TOP_N    = 80        # how many opportunities to keep warm
+_prewarm_task: asyncio.Task | None = None
+
+
+async def _prewarm_loop() -> None:
+    from backend.services.arbitrage_service import get_arbitrage_opportunities
+    logger.info("orderbook prewarm loop started (top=%d, interval=%.0fs)",
+                PREWARM_TOP_N, PREWARM_INTERVAL)
+    while True:
+        try:
+            data = await get_arbitrage_opportunities()
+            opps = data.get("opportunities", [])[:PREWARM_TOP_N]
+            seen: set[str] = set()
+            for o in opps:
+                for ex in (o.get("long_exchange"), o.get("short_exchange")):
+                    if not ex:
+                        continue
+                    key = f"{ex}:{o['symbol']}"
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    await prewarm(ex, o["symbol"])
+            if opps:
+                logger.debug("orderbook prewarm: %d pairs touched (%d opps)",
+                             len(seen), len(opps))
+        except Exception as exc:
+            logger.warning("orderbook prewarm error: %s", exc)
+        await asyncio.sleep(PREWARM_INTERVAL)
+
+
+def start_prewarm() -> None:
+    global _prewarm_task
+    if _prewarm_task and not _prewarm_task.done():
+        return
+    _prewarm_task = asyncio.create_task(_prewarm_loop())
+
+
+def stop_prewarm() -> None:
+    global _prewarm_task
+    if _prewarm_task:
+        _prewarm_task.cancel()
+        _prewarm_task = None

@@ -971,7 +971,12 @@ _ARB_CACHE_TTL = 10.0
 
 
 def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
-    """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free."""
+    """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free.
+    Only returns opportunities with net_profit > 0. In/Out percentages come from
+    the live orderbook cache when available, else are None.
+    """
+    from backend.services.orderbook_cache import top_levels
+
     _ARB_EXCLUDE = {"kraken"}
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
@@ -1001,6 +1006,18 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                 p_s = short_e["price"]
                 price_spread = (p_s - p_l) / p_l if p_l > 0 else 0.0
                 net = gross + price_spread - total_fees
+                if net <= 0:
+                    continue
+                # Live In/Out from cached orderbooks (None if not yet warm)
+                in_pct = out_pct = None
+                lv_l = top_levels(long_e["exchange"], symbol)
+                lv_s = top_levels(short_e["exchange"], symbol)
+                if lv_l and lv_s:
+                    bid_l, ask_l = lv_l
+                    bid_s, ask_s = lv_s
+                    if ask_l > 0 and ask_s > 0:
+                        in_pct  = round((bid_s - ask_l) / ask_l * 100, 4)
+                        out_pct = round((bid_l - ask_s) / ask_s * 100, 4)
                 opportunities.append({
                     "symbol": symbol,
                     "long_exchange":  long_e["exchange"],
@@ -1024,6 +1041,8 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                     "next_ts_short":  short_e.get("next_ts", 0),
                     "long_interval_h":  long_e.get("interval_h"),
                     "short_interval_h": short_e.get("interval_h"),
+                    "in_pct":  in_pct,
+                    "out_pct": out_pct,
                 })
 
     opportunities.sort(key=lambda x: x["net_profit"], reverse=True)
