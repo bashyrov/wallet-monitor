@@ -435,28 +435,32 @@ async def _warmup() -> None:
 
 
 async def _broadcast_loop() -> None:
-    """Keep funding cache hot every BROADCAST_INTERVAL seconds."""
+    """Keep funding cache hot every BROADCAST_INTERVAL seconds.
+
+    Timeouts on the fetch/compute step ensure a slow exchange (e.g. KuCoin
+    rate-limited) can't freeze the loop and stall downstream WS pushes.
+    """
     # Kick off slow interval warmup in background — don't block the loop
     asyncio.create_task(_warmup())
 
     while True:
         await asyncio.sleep(BROADCAST_INTERVAL)
         try:
-            # Always fetch — keeps HTTP cache hot even with no WS clients
-            data = await get_funding_data()
+            data = await asyncio.wait_for(get_funding_data(), timeout=BROADCAST_INTERVAL * 0.75)
             if _funding_clients:
                 await _push(_funding_clients, json.dumps(data))
-                logger.debug("Screener funding WS: pushed to %d clients", len(_funding_clients))
+        except asyncio.TimeoutError:
+            logger.warning("Screener funding broadcast timeout — will retry next tick")
         except Exception as exc:
             logger.warning("Screener funding broadcast error: %s", exc)
-        # Always compute arb too — keeps the result cache warm for REST /pair consumers
         try:
             from backend.services.alpha_service import score_opportunities
-            data = await get_arbitrage_opportunities()
+            data = await asyncio.wait_for(get_arbitrage_opportunities(), timeout=BROADCAST_INTERVAL * 0.75)
             score_opportunities(data.get("opportunities", []))
             if _arb_clients:
                 await _push(_arb_clients, json.dumps(data))
-                logger.debug("Screener arb WS: pushed to %d clients", len(_arb_clients))
+        except asyncio.TimeoutError:
+            logger.warning("Screener arb broadcast timeout — will retry next tick")
         except Exception as exc:
             logger.warning("Screener arb broadcast error: %s", exc)
 

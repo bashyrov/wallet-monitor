@@ -29,7 +29,7 @@ _http = httpx.AsyncClient(
 
 # ── Price/rate cache ───────────────────────────────────────────────────────────
 _cache: dict[str, tuple[list, float]] = {}
-CACHE_TTL = 8.0  # seconds — keeps funding prices fresh for 4s broadcast cycle
+CACHE_TTL = 15.0  # seconds — balances price freshness against exchange rate limits
 
 # ── Interval cache ─────────────────────────────────────────────────────────────
 _ivl_cache: dict[str, tuple[dict[str, float], float]] = {}
