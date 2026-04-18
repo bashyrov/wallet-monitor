@@ -105,6 +105,183 @@
       to   { transform: translate(30px, -40px) scale(1.08); }
     }
 
+    /* ═══════════════════════════════════════════════ */
+    /* ─── FINTECH TICKER TAPE ─── */
+    /* ═══════════════════════════════════════════════ */
+    .ticker-tape {
+      position: relative; z-index: 50;
+      height: 40px;
+      overflow: hidden;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: rgba(11,11,14,0.85);
+      backdrop-filter: blur(8px);
+      mask-image: linear-gradient(90deg, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%);
+      -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 60px, #000 calc(100% - 60px), transparent 100%);
+    }
+    .ticker-track {
+      display: flex; gap: 32px; padding: 0 24px;
+      align-items: center; height: 100%;
+      animation: tickerScroll 55s linear infinite;
+      white-space: nowrap;
+      width: max-content;
+    }
+    @keyframes tickerScroll {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+    .ticker-item {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 12px;
+      color: var(--text2); letter-spacing: .2px;
+    }
+    .ticker-item .tk-sym { color: var(--text); font-weight: 600; letter-spacing: .4px; }
+    .ticker-item .tk-price { color: var(--text); font-variant-numeric: tabular-nums; }
+    .ticker-item .tk-chg { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ticker-item .tk-chg.pos { color: #34D399; }
+    .ticker-item .tk-chg.neg { color: var(--red); }
+    .ticker-item .tk-chg svg { flex-shrink: 0; }
+    .ticker-divider { color: var(--text4); }
+
+    /* ─── HERO MARKET PULSE ─── */
+    .market-pulse {
+      display: inline-flex; align-items: stretch;
+      margin: 28px auto 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--s1);
+      box-shadow: 0 0 0 1px var(--border), 0 8px 32px rgba(0,0,0,0.35);
+      opacity: 0; animation: fadeUp .7s .55s ease forwards;
+    }
+    .pulse-cell {
+      padding: 12px 18px;
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 4px;
+      min-width: 120px;
+    }
+    .pulse-cell:last-child { border-right: none; }
+    .pulse-cell-head {
+      display: flex; align-items: center; gap: 6px;
+      font-family: var(--mono); font-size: 10.5px;
+      color: var(--text3); text-transform: uppercase; letter-spacing: .8px;
+    }
+    .pulse-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; animation: pulse 2s infinite; }
+    .pulse-cell-val {
+      font-family: var(--mono); font-size: 15px; font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .pulse-cell-sub {
+      font-family: var(--mono); font-size: 10.5px;
+      display: inline-flex; align-items: center; gap: 2px;
+      font-weight: 600;
+    }
+    .pulse-cell-sub.pos { color: #34D399; }
+    .pulse-cell-sub.neg { color: var(--red); }
+
+    /* ─── VOLUME BARS (inside screener rows) ─── */
+    .vol-bar {
+      height: 2px; background: rgba(52,211,153,0.25); border-radius: 1px;
+      margin-top: 3px; position: relative; overflow: hidden;
+    }
+    .vol-bar::after {
+      content: ''; position: absolute; inset: 0;
+      background: #34D399;
+      width: var(--vol, 50%);
+      transition: width .4s ease;
+    }
+    .vol-bar.neg { background: rgba(248,113,113,0.2); }
+    .vol-bar.neg::after { background: var(--red); }
+
+    /* ─── MINI ORDER BOOK (in Screener mockup) ─── */
+    .mini-book {
+      margin-top: 10px; padding: 10px 12px 4px;
+      border-top: 1px solid var(--border);
+      background: rgba(14,14,17,0.4);
+    }
+    .mini-book-head {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 9.5px; color: var(--text3); text-transform: uppercase; letter-spacing: .8px;
+      font-weight: 600; margin-bottom: 6px;
+    }
+    .mini-book-head .mb-live {
+      display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono);
+      color: var(--green); font-size: 9.5px;
+    }
+    .mini-book-head .mb-live .d { width: 4px; height: 4px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    .mini-book-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
+      font-family: var(--mono); font-size: 10px;
+    }
+    .mini-book-side { display: flex; flex-direction: column; gap: 1px; }
+    .mini-book-row {
+      display: flex; justify-content: space-between;
+      padding: 2px 6px; border-radius: 3px;
+      position: relative; overflow: hidden;
+    }
+    .mini-book-row::before {
+      content: ''; position: absolute; inset: 0; opacity: .22;
+      z-index: 0;
+    }
+    .mini-book-row.ask::before { background: var(--red); transform-origin: right; transform: scaleX(var(--fill, 0.3)); }
+    .mini-book-row.bid::before { background: #34D399; transform-origin: left; transform: scaleX(var(--fill, 0.3)); }
+    .mini-book-row > span { position: relative; z-index: 1; }
+    .mini-book-row.ask .price { color: var(--red); }
+    .mini-book-row.bid .price { color: #34D399; }
+    .mini-book-row .size { color: var(--text2); }
+    .mini-book-mid {
+      grid-column: 1 / -1;
+      text-align: center; padding: 4px 0;
+      font-family: var(--mono); font-size: 11px; color: var(--green);
+      font-weight: 600; letter-spacing: .3px;
+      border-top: 1px solid rgba(34,34,42,0.5);
+      border-bottom: 1px solid rgba(34,34,42,0.5);
+      margin: 2px 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .mini-book-mid .mid-arrow { font-size: 9px; margin-right: 3px; }
+
+    /* ─── PORTFOLIO SPARKLINE ─── */
+    .pf-sparkline {
+      margin-top: 10px; height: 56px;
+      position: relative;
+      border-top: 1px solid var(--border); padding-top: 8px;
+    }
+    .pf-sparkline svg { width: 100%; height: 100%; display: block; }
+    .pf-spark-label {
+      position: absolute; top: 10px; left: 0;
+      font-size: 9.5px; color: var(--text3); text-transform: uppercase; letter-spacing: .8px;
+      font-family: var(--mono); font-weight: 600;
+    }
+    .pf-spark-range {
+      position: absolute; top: 10px; right: 0;
+      font-size: 9.5px; color: var(--text3); font-family: var(--mono); letter-spacing: .4px;
+    }
+
+    /* ─── ARROW INDICATORS in rate cells ─── */
+    .rate-arrow {
+      display: inline-block;
+      font-size: 9px; vertical-align: middle; margin-right: 2px;
+      opacity: .75;
+    }
+
+    /* ─── TERMINAL prompt accents ─── */
+    .term-accent {
+      font-family: var(--mono); color: var(--green); font-size: 13px;
+      opacity: .6; letter-spacing: .3px;
+    }
+    .term-accent::before { content: '> '; color: var(--green); opacity: .8; }
+
+    @media (max-width: 768px) {
+      .ticker-tape { height: 36px; }
+      .ticker-track { animation-duration: 40s; }
+      .market-pulse { display: grid; grid-template-columns: 1fr 1fr; border-radius: 10px; }
+      .pulse-cell { border-right: none; border-bottom: 1px solid var(--border); min-width: 0; padding: 10px 14px; }
+      .pulse-cell:nth-child(2n) { border-right: none; }
+      .pulse-cell:nth-last-child(-n+2) { border-bottom: none; }
+      .pulse-cell:nth-child(odd) { border-right: 1px solid var(--border); }
+    }
+
     /* ─── BUTTONS ─── */
     .btn {
       display: inline-flex; align-items: center; gap: 6px;
@@ -710,6 +887,11 @@
 
 <header class="topbar"><app-navbar page="index"></app-navbar></header>
 
+<!-- ═══ TICKER TAPE ═══════════════════════════════════ -->
+<div class="ticker-tape" aria-hidden="true">
+  <div class="ticker-track" id="ticker-track"></div>
+</div>
+
 <div class="free-banner" id="free-banner">
   <span class="free-banner-dot"></span>
   <span class="free-banner-text">Free forever — no card needed</span>
@@ -775,6 +957,30 @@
     <div class="stat-item"><span class="stat-num">4k+</span><div class="stat-label">Contracts</div></div>
     <div class="stat-item"><span class="stat-num">∞</span><div class="stat-label">API Keys</div></div>
   </div>
+
+  <!-- Market pulse row — live-ish 4-asset snapshot -->
+  <div class="market-pulse" id="market-pulse">
+    <div class="pulse-cell">
+      <div class="pulse-cell-head"><span class="pulse-dot" style="background:#F0B90B"></span>BTC / 24h</div>
+      <div class="pulse-cell-val" id="mp-btc">$76,234</div>
+      <div class="pulse-cell-sub pos" id="mp-btc-chg">▲ +2.14%</div>
+    </div>
+    <div class="pulse-cell">
+      <div class="pulse-cell-head"><span class="pulse-dot" style="background:#627EEA"></span>ETH / 24h</div>
+      <div class="pulse-cell-val" id="mp-eth">$2,354</div>
+      <div class="pulse-cell-sub pos" id="mp-eth-chg">▲ +1.87%</div>
+    </div>
+    <div class="pulse-cell">
+      <div class="pulse-cell-head"><span class="pulse-dot" style="background:var(--green)"></span>Best arb /8h</div>
+      <div class="pulse-cell-val" id="mp-arb" style="color:var(--green)">+12.74%</div>
+      <div class="pulse-cell-sub pos">HYPE · HL→OKX</div>
+    </div>
+    <div class="pulse-cell">
+      <div class="pulse-cell-head"><span class="pulse-dot" style="background:var(--teal)"></span>Watching</div>
+      <div class="pulse-cell-val" id="mp-contracts">4 341</div>
+      <div class="pulse-cell-sub" style="color:var(--text3)">contracts · 11 ex</div>
+    </div>
+  </div>
 </section>
 
 <!-- ═══ PRODUCT SPLIT ══════════════════════════════════ -->
@@ -809,32 +1015,53 @@
           <div class="pm-sc-row" id="rowA">
             <div class="pm-sc-sym">BTC</div>
             <div class="pm-sc-ex"><span class="pm-sc-exdot" style="background:#F0B90B"></span>Binance <span style="color:var(--text4)">→</span> <span class="pm-sc-exdot" style="background:#F7931A"></span>Bybit</div>
-            <div class="pm-sc-rate pos" id="rA-rate">+0.0412%</div>
+            <div><div class="pm-sc-rate pos" id="rA-rate">▲ +0.0412%</div><div class="vol-bar" style="--vol:36%"></div></div>
             <div class="pm-sc-rate pos" id="rA-apr">+18.1%</div>
           </div>
           <div class="pm-sc-row" id="rowB">
             <div class="pm-sc-sym">HYPE</div>
             <div class="pm-sc-ex"><span class="pm-sc-exdot" style="background:#1AFFAB"></span>Hyperliquid <span style="color:var(--text4)">→</span> <span class="pm-sc-exdot" style="background:#0ECB81"></span>OKX</div>
-            <div class="pm-sc-rate pos" id="rB-rate">+0.1240%</div>
+            <div><div class="pm-sc-rate pos" id="rB-rate">▲ +0.1240%</div><div class="vol-bar" style="--vol:92%"></div></div>
             <div class="pm-sc-rate pos" id="rB-apr">+54.3%</div>
           </div>
           <div class="pm-sc-row" id="rowC">
             <div class="pm-sc-sym">ETH</div>
             <div class="pm-sc-ex"><span class="pm-sc-exdot" style="background:#2354E6"></span>Gate <span style="color:var(--text4)">→</span> <span class="pm-sc-exdot" style="background:#00B897"></span>MEXC</div>
-            <div class="pm-sc-rate pos" id="rC-rate">+0.0312%</div>
+            <div><div class="pm-sc-rate pos" id="rC-rate">▲ +0.0312%</div><div class="vol-bar" style="--vol:28%"></div></div>
             <div class="pm-sc-rate pos" id="rC-apr">+13.7%</div>
           </div>
           <div class="pm-sc-row" id="rowD">
             <div class="pm-sc-sym">SOL</div>
             <div class="pm-sc-ex"><span class="pm-sc-exdot" style="background:#1DA2B4"></span>KuCoin <span style="color:var(--text4)">→</span> <span class="pm-sc-exdot" style="background:#F0B90B"></span>Binance</div>
-            <div class="pm-sc-rate neg" id="rD-rate">-0.0085%</div>
+            <div><div class="pm-sc-rate neg" id="rD-rate">▼ -0.0085%</div><div class="vol-bar neg" style="--vol:12%"></div></div>
             <div class="pm-sc-rate neg" id="rD-apr">-3.7%</div>
           </div>
           <div class="pm-sc-row" id="rowE">
             <div class="pm-sc-sym">DOGE</div>
             <div class="pm-sc-ex"><span class="pm-sc-exdot" style="background:#00F0FF"></span>Bitget <span style="color:var(--text4)">→</span> <span class="pm-sc-exdot" style="background:#1DB8F2"></span>BingX</div>
-            <div class="pm-sc-rate neu" id="rE-rate">+0.0100%</div>
+            <div><div class="pm-sc-rate neu" id="rE-rate">▲ +0.0100%</div><div class="vol-bar" style="--vol:18%"></div></div>
             <div class="pm-sc-rate neu" id="rE-apr">+4.4%</div>
+          </div>
+        </div>
+
+        <!-- Mini orderbook (HYPE pair snapshot) -->
+        <div class="mini-book">
+          <div class="mini-book-head">
+            <span>HYPE · Orderbook</span>
+            <span class="mb-live"><span class="d"></span>stream · 150ms</span>
+          </div>
+          <div class="mini-book-grid">
+            <div class="mini-book-side">
+              <div class="mini-book-row ask" style="--fill:.85"><span class="price">34.142</span><span class="size">284.2</span></div>
+              <div class="mini-book-row ask" style="--fill:.58"><span class="price">34.138</span><span class="size">140.1</span></div>
+              <div class="mini-book-row ask" style="--fill:.32"><span class="price">34.135</span><span class="size">78.4</span></div>
+            </div>
+            <div class="mini-book-side">
+              <div class="mini-book-row bid" style="--fill:.42"><span class="price">34.131</span><span class="size">96.8</span></div>
+              <div class="mini-book-row bid" style="--fill:.71"><span class="price">34.128</span><span class="size">214.0</span></div>
+              <div class="mini-book-row bid" style="--fill:.96"><span class="price">34.124</span><span class="size">332.5</span></div>
+            </div>
+            <div class="mini-book-mid" id="mb-mid"><span class="mid-arrow">▲</span>34.133 <span style="color:var(--text3);font-size:9.5px;margin-left:6px">spread 0.009</span></div>
           </div>
         </div>
       </div>
@@ -905,6 +1132,30 @@
             <div class="pm-pf-tag"><span class="dot" style="background:#06B6D4"></span>CEX</div>
             <div class="pm-pf-tag"><span class="dot" style="background:#925BD6"></span>Perps</div>
             <div class="pm-pf-tag"><span class="dot" style="background:#E5C07B"></span>Cold</div>
+          </div>
+
+          <!-- 30-day sparkline -->
+          <div class="pf-sparkline">
+            <div class="pf-spark-label">30d history</div>
+            <div class="pf-spark-range">+8.42%</div>
+            <svg viewBox="0 0 400 56" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="sparkFill" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#1AFFAB" stop-opacity="0.22"/>
+                  <stop offset="100%" stop-color="#1AFFAB" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path id="pf-spark-fill"
+                d="M0,40 L20,38 L40,36 L60,33 L80,34 L100,30 L120,28 L140,32 L160,26 L180,24 L200,28 L220,22 L240,20 L260,24 L280,18 L300,15 L320,20 L340,14 L360,12 L380,10 L400,8 L400,56 L0,56 Z"
+                fill="url(#sparkFill)"/>
+              <path id="pf-spark-line"
+                d="M0,40 L20,38 L40,36 L60,33 L80,34 L100,30 L120,28 L140,32 L160,26 L180,24 L200,28 L220,22 L240,20 L260,24 L280,18 L300,15 L320,20 L340,14 L360,12 L380,10 L400,8"
+                fill="none" stroke="#1AFFAB" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                style="filter: drop-shadow(0 0 4px rgba(26,255,171,0.4));"/>
+              <circle cx="400" cy="8" r="3" fill="#1AFFAB" style="filter: drop-shadow(0 0 6px rgba(26,255,171,0.7));">
+                <animate attributeName="r" values="3;4.5;3" dur="1.8s" repeatCount="indefinite"/>
+              </circle>
+            </svg>
           </div>
         </div>
       </div>
@@ -1198,10 +1449,11 @@ function liveTick() {
     const row = document.getElementById('row' + String.fromCharCode(65 + i));
     if (el) {
       const sign = v >= 0 ? '+' : '';
-      el.textContent = sign + v.toFixed(4) + '%';
+      const arrow = v >= 0 ? '▲' : '▼';
+      el.textContent = arrow + ' ' + sign + v.toFixed(4) + '%';
     }
     if (elA) {
-      const apr = v * 3 * 365 * 100 / 100;
+      const apr = v * 3 * 365;
       const sign = apr >= 0 ? '+' : '';
       elA.textContent = sign + apr.toFixed(1) + '%';
     }
@@ -1211,8 +1463,87 @@ function liveTick() {
   });
 }
 
+// ─── TICKER TAPE ───
+const TICKER_SYMBOLS = [
+  {sym:'BTC',   price:76234.50, chg:2.14,  color:'#F0B90B'},
+  {sym:'ETH',   price:2354.18,  chg:1.87,  color:'#627EEA'},
+  {sym:'SOL',   price:158.42,   chg:-0.63, color:'#9945FF'},
+  {sym:'BNB',   price:612.35,   chg:0.92,  color:'#F0B90B'},
+  {sym:'XRP',   price:2.184,    chg:3.41,  color:'#25A3DD'},
+  {sym:'DOGE',  price:0.3712,   chg:-1.22, color:'#C2A633'},
+  {sym:'HYPE',  price:34.133,   chg:8.74,  color:'#1AFFAB'},
+  {sym:'AVAX',  price:42.18,    chg:1.03,  color:'#E84142'},
+  {sym:'LINK',  price:22.34,    chg:-0.41, color:'#2A5ADA'},
+  {sym:'TRX',   price:0.2831,   chg:2.18,  color:'#C2A633'},
+  {sym:'ADA',   price:1.08,     chg:-2.14, color:'#0D3D5A'},
+  {sym:'NEAR',  price:6.32,     chg:4.12,  color:'#00EC97'},
+  {sym:'ARB',   price:0.845,    chg:-0.85, color:'#28A0F0'},
+  {sym:'OP',    price:2.14,     chg:1.41,  color:'#FF0420'},
+  {sym:'SUI',   price:4.72,     chg:6.23,  color:'#4DA2FF'},
+  {sym:'TON',   price:5.82,     chg:-0.32, color:'#0088CC'},
+];
+
+function formatPrice(p) {
+  if (p >= 1000) return '$' + p.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  if (p >= 1)    return '$' + p.toFixed(2);
+  if (p >= 0.01) return '$' + p.toFixed(3);
+  return '$' + p.toFixed(4);
+}
+
+function buildTicker() {
+  const track = document.getElementById('ticker-track');
+  if (!track) return;
+  // Duplicate list for seamless scroll
+  const items = [...TICKER_SYMBOLS, ...TICKER_SYMBOLS];
+  track.innerHTML = items.map((t, i) => {
+    const chgCls = t.chg >= 0 ? 'pos' : 'neg';
+    const arrow  = t.chg >= 0 ? '▲' : '▼';
+    const sign   = t.chg >= 0 ? '+' : '';
+    const div = (i < items.length - 1) ? '<span class="ticker-divider">·</span>' : '';
+    return `<span class="ticker-item">
+      <span class="tk-sym" style="color:${t.color}">${t.sym}</span>
+      <span class="tk-price">${formatPrice(t.price)}</span>
+      <span class="tk-chg ${chgCls}">${arrow} ${sign}${t.chg.toFixed(2)}%</span>
+    </span>${div}`;
+  }).join('');
+}
+
+// ─── MARKET PULSE live tick ───
+function tickMarketPulse() {
+  const jitter = () => (Math.random() - 0.5) * 0.1;
+  const btc = TICKER_SYMBOLS[0];
+  const eth = TICKER_SYMBOLS[1];
+  btc.chg = Math.max(-9.9, Math.min(9.9, btc.chg + jitter()));
+  eth.chg = Math.max(-9.9, Math.min(9.9, eth.chg + jitter()));
+  const arb = 12.74 + (Math.random() - 0.5) * 0.3;
+
+  const fmt = (el, v, pos) => {
+    if (!el) return;
+    const cls = v >= 0 ? 'pos' : 'neg';
+    const arrow = v >= 0 ? '▲' : '▼';
+    const sign = v >= 0 ? '+' : '';
+    el.className = `pulse-cell-sub ${cls}`;
+    el.textContent = `${arrow} ${sign}${v.toFixed(2)}%`;
+  };
+  fmt(document.getElementById('mp-btc-chg'), btc.chg);
+  fmt(document.getElementById('mp-eth-chg'), eth.chg);
+  const arbEl = document.getElementById('mp-arb');
+  if (arbEl) arbEl.textContent = (arb >= 0 ? '+' : '') + arb.toFixed(2) + '%';
+
+  // Also update order book mid
+  const mbMid = document.getElementById('mb-mid');
+  if (mbMid) {
+    const base = 34.133;
+    const nv = base + (Math.random() - 0.5) * 0.04;
+    const up = nv > 34.133;
+    mbMid.innerHTML = `<span class="mid-arrow" style="color:${up?'#34D399':'#F87171'}">${up?'▲':'▼'}</span>${nv.toFixed(3)} <span style="color:var(--text3);font-size:9.5px;margin-left:6px">spread 0.00${Math.floor(Math.random()*5)+6}</span>`;
+  }
+}
+
 // Start animations
 window.addEventListener('load', () => {
+  buildTicker();
+  setInterval(tickMarketPulse, 2500);
   // Hero stats
   fetch('/api/providers').then(r => r.ok ? r.json() : null).then(data => {
     const ex  = data ? data.exchanges  : 11;
