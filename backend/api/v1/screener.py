@@ -447,7 +447,7 @@ async def _refresh_loop() -> None:
         except Exception as exc:
             logger.warning("Refresh funding error: %s", exc)
         try:
-            data = await get_arbitrage_opportunities()
+            data = await get_arbitrage_opportunities(force=True)
             score_opportunities(data.get("opportunities", []))
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)

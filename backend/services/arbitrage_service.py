@@ -1060,17 +1060,19 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
     }
 
 
-async def get_arbitrage_opportunities() -> dict:
+async def get_arbitrage_opportunities(force: bool = False) -> dict:
     now = time.time()
-    if _arb_result_cache["data"] and now - _arb_result_cache["ts"] < _ARB_CACHE_TTL:
+    if not force and _arb_result_cache["data"] and now - _arb_result_cache["ts"] < _ARB_CACHE_TTL:
         return _arb_result_cache["data"]
 
-    # File cache fallback (written by broadcaster worker)
-    fc = _read_file_cache("arbitrage.json", max_age=_ARB_CACHE_TTL * 3)
-    if fc and fc.get("opportunities"):
-        _arb_result_cache["data"] = fc
-        _arb_result_cache["ts"] = now
-        return fc
+    # File cache fallback (written by broadcaster worker) — skipped on forced
+    # recompute so the refresh loop always writes fresh data.
+    if not force:
+        fc = _read_file_cache("arbitrage.json", max_age=_ARB_CACHE_TTL * 3)
+        if fc and fc.get("opportunities"):
+            _arb_result_cache["data"] = fc
+            _arb_result_cache["ts"] = now
+            return fc
 
     data = await get_funding_data()
     # Run CPU-heavy computation in a thread pool so the event loop stays
