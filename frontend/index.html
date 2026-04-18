@@ -347,6 +347,11 @@
       color: var(--text4); font-weight: 500; font-style: italic;
       margin: 0 8px; letter-spacing: -1px;
     }
+    .hero-h1 .h1-tail {
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -2px;
+    }
     @keyframes shimmer { to { background-position: 200% center; } }
 
     .hero-sub {
@@ -380,6 +385,69 @@
       color: var(--green); display: block; font-variant-numeric: tabular-nums;
     }
     .stat-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+    .stat-sub {
+      font-size: 9.5px; color: var(--text4);
+      font-family: var(--mono); margin-top: 4px;
+      letter-spacing: .4px;
+    }
+
+    /* ─── HERO SPOTTED (live signal chips row) ─── */
+    .hero-spotted {
+      display: flex; align-items: center; gap: 14px;
+      margin: 28px auto 36px;
+      max-width: 820px;
+      opacity: 0; animation: fadeUp .7s .5s ease forwards;
+    }
+    .spotted-label {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 10.5px; font-family: var(--mono);
+      color: var(--text3); text-transform: uppercase; letter-spacing: 1.2px;
+      font-weight: 600; white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .spotted-live-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 7px rgba(26,255,171,0.75);
+      animation: pulse 2s infinite;
+    }
+    .spotted-track {
+      display: flex; gap: 8px;
+      overflow: hidden; flex: 1;
+      position: relative;
+      mask-image: linear-gradient(90deg, transparent 0, #000 40px, #000 calc(100% - 40px), transparent);
+    }
+    .spotted-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 11px;
+      background: var(--s1); border: 1px solid var(--border);
+      border-radius: 99px;
+      font-family: var(--mono); font-size: 11.5px;
+      white-space: nowrap; flex-shrink: 0;
+      color: var(--text2);
+      transition: border-color .2s, background .2s;
+      animation: chipIn .45s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .spotted-chip.fresh {
+      border-color: rgba(26,255,171,0.35);
+      background: rgba(26,255,171,0.06);
+      box-shadow: 0 0 14px rgba(26,255,171,0.1);
+    }
+    .spotted-chip .sp-sym { color: var(--text); font-weight: 700; }
+    .spotted-chip .sp-route { color: var(--text3); font-size: 10.5px; }
+    .spotted-chip .sp-rate { font-weight: 600; }
+    .spotted-chip .sp-rate.pos { color: #34D399; }
+    .spotted-chip .sp-rate.neg { color: var(--red); }
+    .spotted-chip .sp-time { color: var(--text4); font-size: 10px; letter-spacing: .2px; }
+    @keyframes chipIn {
+      from { opacity: 0; transform: translateX(-20px) scale(.94); }
+      to   { opacity: 1; transform: translateX(0) scale(1); }
+    }
+
+    @media (max-width: 768px) {
+      .hero-spotted { flex-direction: column; align-items: flex-start; gap: 10px; margin: 20px 0 28px; }
+      .spotted-track { width: 100%; }
+    }
 
     /* ═══════════════════════════════════════════════ */
     /* ─── PRODUCT SPLIT ─── */
@@ -1055,24 +1123,21 @@
 
 <!-- ═══ HERO ═══════════════════════════════════════════ -->
 <section class="hero">
-  <div class="hero-badge">
+  <div class="hero-badge" id="hero-badge">
     <span class="hero-badge-dot"></span>
-    Two products
-    <span class="sep">·</span>
-    One platform
-    <span class="sep">·</span>
-    Built for traders
+    <span id="hero-kicker"><b style="color:var(--text)">Spotted:</b>&nbsp;<b style="color:#34D399">+12.74%</b>&nbsp;<span style="color:var(--text3)">HYPE · HL→OKX · 23s ago</span></span>
   </div>
 
   <h1 class="hero-h1">
-    <span class="gradient">Screener</span><span class="amp">&amp;</span><span class="gradient">Portfolio</span><br>
-    for serious crypto traders.
+    <span class="gradient">Every edge.</span><br>
+    <span class="gradient">Every wallet.</span>
+    <span class="h1-tail">on one screen.</span>
   </h1>
 
   <p class="hero-sub">
-    The trading edge and the treasury view, connected to the same data.
-    Realtime funding-rate arbitrage across 11 exchanges — plus a multi-source
-    portfolio dashboard that reads all your wallets in parallel.
+    Scan <strong>4&nbsp;341 funding contracts</strong> in realtime.
+    Track <strong>every balance</strong> you own across 25+ exchanges and chains.
+    Same platform. Same alerts. Same millisecond-tight pipes.
   </p>
 
   <div class="hero-actions">
@@ -1086,12 +1151,21 @@
     </a>
   </div>
 
+  <!-- Live "spotted" mini chips — makes the hero move -->
+  <div class="hero-spotted">
+    <div class="spotted-label">
+      <span class="spotted-live-dot"></span>
+      Recent signals
+    </div>
+    <div class="spotted-track" id="spotted-track"></div>
+  </div>
+
   <div class="hero-stats">
-    <div class="stat-item"><span class="stat-num" id="cnt-ex">0</span><div class="stat-label">Exchanges</div></div>
-    <div class="stat-item"><span class="stat-num" id="cnt-ch">0</span><div class="stat-label">Chains</div></div>
-    <div class="stat-item"><span class="stat-num" id="cnt-dex">0</span><div class="stat-label">Perp DEXes</div></div>
-    <div class="stat-item"><span class="stat-num">4k+</span><div class="stat-label">Contracts</div></div>
-    <div class="stat-item"><span class="stat-num">∞</span><div class="stat-label">API Keys</div></div>
+    <div class="stat-item"><span class="stat-num" id="cnt-ex">0</span><div class="stat-label">Exchanges</div><div class="stat-sub">live WS feed</div></div>
+    <div class="stat-item"><span class="stat-num" id="cnt-ch">0</span><div class="stat-label">Chains</div><div class="stat-sub">EVM &amp; L2</div></div>
+    <div class="stat-item"><span class="stat-num" id="cnt-dex">0</span><div class="stat-label">Perp DEXes</div><div class="stat-sub">funding + books</div></div>
+    <div class="stat-item"><span class="stat-num">4k+</span><div class="stat-label">Contracts</div><div class="stat-sub">3s push cycle</div></div>
+    <div class="stat-item"><span class="stat-num">∞</span><div class="stat-label">API Keys</div><div class="stat-sub">encrypted · RO</div></div>
   </div>
 
 </section>
@@ -1929,9 +2003,79 @@ function tickBookMid() {
   mbMid.innerHTML = `<span class="mid-arrow" style="color:${up?'#34D399':'#F87171'}">${up?'▲':'▼'}</span>${nv.toFixed(3)} <span style="color:var(--text3);font-size:9.5px;margin-left:6px">spread 0.00${Math.floor(Math.random()*5)+6}</span>`;
 }
 
+// ─── HERO "spotted" live signals ───
+const SPOT_POOL = [
+  { sym: 'HYPE',  route: 'HL → OKX',       rate: 12.74 },
+  { sym: 'BTC',   route: 'Binance → Bybit',rate: 0.41 },
+  { sym: 'SOL',   route: 'KuCoin → OKX',   rate: 3.12 },
+  { sym: 'ETH',   route: 'Gate → MEXC',    rate: 1.88 },
+  { sym: 'SUI',   route: 'HL → Binance',   rate: 4.22 },
+  { sym: 'DOGE',  route: 'Bitget → BingX', rate: 0.68 },
+  { sym: 'NEAR',  route: 'Bybit → Gate',   rate: 2.14 },
+  { sym: 'TAO',   route: 'MEXC → Binance', rate: 5.92 },
+  { sym: 'ARB',   route: 'KuCoin → Bybit', rate: -0.85 },
+  { sym: 'AVAX',  route: 'WhiteBIT → OKX', rate: 1.73 },
+  { sym: 'RAVE',  route: 'Bybit → MEXC',   rate: 17.18 },
+  { sym: 'MEMES', route: 'Gate → MEXC',    rate: 8.47 },
+];
+
+function renderSpottedChip(s, i, fresh = false) {
+  const cls  = s.rate >= 0 ? 'pos' : 'neg';
+  const sign = s.rate >= 0 ? '+' : '';
+  const arr  = s.rate >= 0 ? '▲' : '▼';
+  const ago  = i === 0 ? 'now' : (3 + i * 11) + 's ago';
+  return `
+    <span class="spotted-chip${fresh ? ' fresh' : ''}">
+      <span class="sp-sym">${s.sym}</span>
+      <span class="sp-rate ${cls}">${arr} ${sign}${s.rate.toFixed(2)}%</span>
+      <span class="sp-route">${s.route}</span>
+      <span class="sp-time">· ${ago}</span>
+    </span>
+  `;
+}
+
+function initSpotted() {
+  const track = document.getElementById('spotted-track');
+  if (!track) return;
+  const initial = SPOT_POOL.slice(0, 5);
+  track.innerHTML = initial.map((s, i) => renderSpottedChip(s, i, i === 0)).join('');
+}
+
+let spotIdx = 5;
+function tickSpotted() {
+  const track = document.getElementById('spotted-track');
+  if (!track) return;
+  const next = SPOT_POOL[spotIdx % SPOT_POOL.length];
+  // small jitter on the rate so it feels live
+  const sig = {
+    sym: next.sym,
+    route: next.route,
+    rate: next.rate + (Math.random() - 0.5) * 0.2,
+  };
+  spotIdx++;
+  // prepend new, drop oldest
+  const chips = track.querySelectorAll('.spotted-chip');
+  if (chips.length >= 6 && chips[chips.length - 1]) {
+    chips[chips.length - 1].remove();
+  }
+  // mark previously-fresh as stale
+  track.querySelectorAll('.spotted-chip.fresh').forEach(c => c.classList.remove('fresh'));
+  track.insertAdjacentHTML('afterbegin', renderSpottedChip(sig, 0, true));
+  // update kicker too
+  const kicker = document.getElementById('hero-kicker');
+  if (kicker) {
+    const cls  = sig.rate >= 0 ? '#34D399' : '#F87171';
+    const sign = sig.rate >= 0 ? '+' : '';
+    const arr  = sig.rate >= 0 ? '▲' : '▼';
+    kicker.innerHTML = `<b style="color:var(--text)">Spotted:</b>&nbsp;<b style="color:${cls}">${arr} ${sign}${sig.rate.toFixed(2)}%</b>&nbsp;<span style="color:var(--text3)">${sig.sym} · ${sig.route} · now</span>`;
+  }
+}
+
 // Start animations
 window.addEventListener('load', () => {
   buildTicker();
+  initSpotted();
+  setInterval(tickSpotted, 3400);
   setInterval(tickBookMid, 2500);
   // Hero stats
   fetch('/api/providers').then(r => r.ok ? r.json() : null).then(data => {
