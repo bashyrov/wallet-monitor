@@ -1,7 +1,11 @@
 """Per-exchange WS adapter implementations."""
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
+
+import httpx
 
 from .base import WSAdapter
 
@@ -163,10 +167,240 @@ class BingXWS(WSAdapter):
         return token, bids, asks
 
 
+# ── Aster (Binance-compatible) ────────────────────────────────────────────────
+class AsterWS(BinanceWS):
+    name = "aster"
+    url = "wss://fstream.asterdex.com/ws"
+
+
+# ── Gate.io Futures USDT ──────────────────────────────────────────────────────
+class GateWS(WSAdapter):
+    name = "gate"
+    url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+
+    def build_subscribe(self, symbols):
+        import time as _t
+        frames = []
+        for s in symbols:
+            frames.append({
+                "time": int(_t.time()),
+                "channel": "futures.order_book",
+                "event": "subscribe",
+                "payload": [f"{s}_USDT", "10", "0"],
+            })
+        return frames
+
+    def parse_message(self, msg):
+        if msg.get("channel") != "futures.order_book":
+            return None
+        if msg.get("event") != "all":
+            return None
+        result = msg.get("result") or {}
+        contract = result.get("contract") or result.get("s") or ""
+        if not contract.endswith("_USDT"):
+            return None
+        token = contract[:-5]
+        raw_bids = [[x["p"], x["s"]] for x in result.get("bids", [])]
+        raw_asks = [[x["p"], x["s"]] for x in result.get("asks", [])]
+        bids, asks = _to_book(raw_bids, raw_asks)
+        return token, bids, asks
+
+
+# ── MEXC Futures ──────────────────────────────────────────────────────────────
+class MEXCWS(WSAdapter):
+    name = "mexc"
+    url = "wss://contract.mexc.com/edge"
+
+    def build_subscribe(self, symbols):
+        return [
+            {"method": "sub.depth.full", "param": {"symbol": f"{s}_USDT", "limit": 20}}
+            for s in symbols
+        ]
+
+    def heartbeat_frame(self):
+        # MEXC needs an app-level ping every 15s
+        return '{"method":"ping"}'
+
+    def parse_message(self, msg):
+        if msg.get("channel") in ("pong", "rs.sub.depth.full"):
+            return None
+        if msg.get("channel") != "push.depth.full":
+            return None
+        data = msg.get("data") or {}
+        sym = msg.get("symbol") or ""
+        if not sym.endswith("_USDT"):
+            return None
+        token = sym[:-5]
+        # MEXC uses [price, quantity, contract_count]
+        raw_bids = [[x[0], x[1]] for x in data.get("bids", [])]
+        raw_asks = [[x[0], x[1]] for x in data.get("asks", [])]
+        bids, asks = _to_book(raw_bids, raw_asks)
+        return token, bids, asks
+
+
+# ── Whitebit Perp ─────────────────────────────────────────────────────────────
+class WhitebitWS(WSAdapter):
+    name = "whitebit"
+    url = "wss://api.whitebit.com/ws"
+
+    def build_subscribe(self, symbols):
+        # multi=True so successive subscribes accumulate; first clears any prior
+        return [
+            {"id": i + 1, "method": "depth_subscribe",
+             "params": [f"{s}_PERP", 20, "0", i > 0]}
+            for i, s in enumerate(symbols)
+        ]
+
+    def parse_message(self, msg):
+        if msg.get("method") != "depth_update":
+            return None
+        params = msg.get("params") or []
+        if len(params) < 3:
+            return None
+        payload = params[1] if not params[0] else params[1]
+        market = params[2] if len(params) > 2 else ""
+        if not isinstance(market, str) or not market.endswith("_PERP"):
+            return None
+        token = market[:-5]
+        bids, asks = _to_book(payload.get("bids"), payload.get("asks"))
+        return token, bids, asks
+
+
+# ── Hyperliquid ───────────────────────────────────────────────────────────────
+class HyperliquidWS(WSAdapter):
+    name = "hyperliquid"
+    url = "wss://api.hyperliquid.xyz/ws"
+
+    def build_subscribe(self, symbols):
+        return [
+            {"method": "subscribe", "subscription": {"type": "l2Book", "coin": s}}
+            for s in symbols
+        ]
+
+    def parse_message(self, msg):
+        if msg.get("channel") != "l2Book":
+            return None
+        data = msg.get("data") or {}
+        coin = data.get("coin")
+        if not coin:
+            return None
+        levels = data.get("levels") or [[], []]
+        bids_raw = [[x["px"], x["sz"]] for x in levels[0]]
+        asks_raw = [[x["px"], x["sz"]] for x in levels[1]]
+        bids, asks = _to_book(bids_raw, asks_raw)
+        return coin, bids, asks
+
+
+# ── KuCoin Futures (requires dynamic token) ──────────────────────────────────
+class KuCoinWS(WSAdapter):
+    name = "kucoin"
+    # url is set dynamically from /api/v1/bullet-public
+    url = ""
+    ping_interval = 18.0
+
+    async def _get_token(self) -> tuple[str, str, float]:
+        """Return (endpoint, token, ping_interval_s) from bullet-public."""
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post("https://api-futures.kucoin.com/api/v1/bullet-public")
+            r.raise_for_status()
+            d = r.json().get("data") or {}
+            servers = d.get("instanceServers") or [{}]
+            s = servers[0]
+            return s.get("endpoint", ""), d.get("token", ""), (s.get("pingInterval") or 18000) / 1000.0
+
+    def build_subscribe(self, symbols):
+        frames = []
+        for s in symbols:
+            sym_k = ("XBT" if s == "BTC" else s) + "USDTM"
+            frames.append({
+                "id": str(uuid.uuid4()),
+                "type": "subscribe",
+                "topic": f"/contractMarket/level2Depth50:{sym_k}",
+                "response": True,
+            })
+        return frames
+
+    def heartbeat_frame(self):
+        return '{"id":"ping","type":"ping"}'
+
+    def parse_message(self, msg):
+        if msg.get("type") in ("welcome", "ack", "pong"):
+            return None
+        if msg.get("type") != "message":
+            return None
+        topic = msg.get("topic", "")
+        if not topic.startswith("/contractMarket/level2Depth50:"):
+            return None
+        sym_k = topic.split(":", 1)[1]  # e.g. XBTUSDTM
+        if not sym_k.endswith("USDTM"):
+            return None
+        base = sym_k[:-5]
+        token_sym = "BTC" if base == "XBT" else base
+        data = msg.get("data") or {}
+        bids, asks = _to_book(data.get("bids"), data.get("asks"))
+        return token_sym, bids, asks
+
+    async def _run(self) -> None:
+        # Override to fetch token before each connection
+        import websockets
+        import json as _json
+        backoff = 1.0
+        while not self._stop:
+            hb_task = None
+            try:
+                endpoint, token, ping_s = await self._get_token()
+                if not endpoint or not token:
+                    raise RuntimeError("kucoin bullet-public returned empty token")
+                url = f"{endpoint}?token={token}&connectId={uuid.uuid4()}"
+                async with websockets.connect(
+                    url, ping_interval=ping_s, ping_timeout=ping_s,
+                    close_timeout=3, max_size=4 * 1024 * 1024,
+                ) as ws:
+                    self._ws = ws
+                    backoff = 1.0
+                    if self._symbols:
+                        await self._send_subscribe()
+                    hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s * 0.8))
+                    logger.info("kucoin WS connected (%d symbols)", len(self._symbols))
+                    async for raw in ws:
+                        if self._stop:
+                            break
+                        try:
+                            msg = _json.loads(raw)
+                        except Exception:
+                            continue
+                        parsed = None
+                        try:
+                            parsed = self.parse_message(msg)
+                        except Exception:
+                            continue
+                        if parsed:
+                            sym, b, a = parsed
+                            if b or a:
+                                self._update_cb(self.name, sym, b, a)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("kucoin WS error: %s (retry in %.1fs)", exc, backoff)
+                self._ws = None
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 1.8, 30.0)
+            finally:
+                if hb_task and not hb_task.done():
+                    hb_task.cancel()
+        self._ws = None
+
+
 ADAPTERS: dict[str, type[WSAdapter]] = {
-    "binance": BinanceWS,
-    "bybit":   BybitWS,
-    "okx":     OKXWS,
-    "bitget":  BitgetWS,
-    "bingx":   BingXWS,
+    "binance":     BinanceWS,
+    "bybit":       BybitWS,
+    "okx":         OKXWS,
+    "bitget":      BitgetWS,
+    "bingx":       BingXWS,
+    "aster":       AsterWS,
+    "gate":        GateWS,
+    "mexc":        MEXCWS,
+    "whitebit":    WhitebitWS,
+    "hyperliquid": HyperliquidWS,
+    "kucoin":      KuCoinWS,
 }

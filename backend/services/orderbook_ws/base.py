@@ -87,9 +87,21 @@ class WSAdapter:
         for f in frames:
             await self._ws.send(json.dumps(f))
 
+    async def _heartbeat_loop(self, ws, interval: float = 15.0) -> None:
+        frame = self.heartbeat_frame()
+        if frame is None:
+            return
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                await ws.send(frame)
+        except Exception:
+            pass
+
     async def _run(self) -> None:
         backoff = 1.0
         while not self._stop:
+            hb_task: asyncio.Task | None = None
             try:
                 async with websockets.connect(
                     self.url,
@@ -102,6 +114,8 @@ class WSAdapter:
                     backoff = 1.0
                     if self._symbols:
                         await self._send_subscribe()
+                    if self.heartbeat_frame() is not None:
+                        hb_task = asyncio.create_task(self._heartbeat_loop(ws))
                     logger.info("%s WS connected (%d symbols)", self.name, len(self._symbols))
                     async for raw in ws:
                         if self._stop:
@@ -139,5 +153,8 @@ class WSAdapter:
                 self._ws = None
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 1.8, 30.0)
+            finally:
+                if hb_task and not hb_task.done():
+                    hb_task.cancel()
         self._ws = None
         logger.info("%s WS stopped", self.name)

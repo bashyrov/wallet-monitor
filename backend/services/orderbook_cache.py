@@ -194,7 +194,7 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     key = f"{exchange}:{symbol}"
     now = time.time()
 
-    # 1. Local memory — fastest
+    # 1. Local memory — fastest (WS pushes land here directly)
     entry = _book_cache.get(key)
     if entry and entry.get("data") and now - entry.get("ts", 0) < STALE_FALLBACK:
         entry["last_request"] = now
@@ -205,7 +205,22 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     if fd:
         return fd
 
-    # 3. Cold-start local poller (pair outside top-N, or owner warming up)
+    # 3. WS-capable exchange but not yet streaming this symbol → subscribe + wait
+    from backend.services.orderbook_ws import is_ws_supported, get_manager
+    if is_ws_supported(exchange):
+        mgr = get_manager()
+        if mgr:
+            mgr.subscribe(exchange, [symbol])
+        deadline = now + FIRST_WAIT
+        while time.time() < deadline:
+            await asyncio.sleep(0.05)
+            e = _book_cache.get(key) or {}
+            if e.get("data"):
+                e["last_request"] = time.time()
+                return e["data"]
+        return {"bids": [], "asks": []}
+
+    # 4. Cold-start REST poller (only reached for non-WS exchanges: perp DEX etc.)
     async with _lock:
         entry = _book_cache.setdefault(key, {})
         entry["last_request"] = now

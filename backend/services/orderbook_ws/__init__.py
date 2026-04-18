@@ -10,6 +10,6 @@ Adapters implemented: Binance, Bybit, OKX, Bitget, BingX. Everything else
 """
 from __future__ import annotations
 
-from .manager import WSManager, start_ws_manager, stop_ws_manager, is_ws_supported
+from .manager import WSManager, start_ws_manager, stop_ws_manager, is_ws_supported, get_manager
 
-__all__ = ["WSManager", "start_ws_manager", "stop_ws_manager", "is_ws_supported"]
+__all__ = ["WSManager", "start_ws_manager", "stop_ws_manager", "is_ws_supported", "get_manager"]

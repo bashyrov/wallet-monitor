@@ -1019,16 +1019,24 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                 fee_l = _fee(long_e["exchange"])
                 fee_s = _fee(short_e["exchange"])
                 total_fees = 2.0 * (fee_l + fee_s)
-                p_l = long_e["price"]
-                p_s = short_e["price"]
+                # Prefer live mid-price from WS orderbook cache; fall back to
+                # funding endpoint's price if WS book isn't warm yet.
+                lv_l = top_levels(long_e["exchange"], symbol)
+                lv_s = top_levels(short_e["exchange"], symbol)
+                if lv_l:
+                    p_l = (lv_l[0] + lv_l[1]) / 2
+                else:
+                    p_l = long_e["price"]
+                if lv_s:
+                    p_s = (lv_s[0] + lv_s[1]) / 2
+                else:
+                    p_s = short_e["price"]
                 price_spread = (p_s - p_l) / p_l if p_l > 0 else 0.0
                 net = gross + price_spread - total_fees
                 if net <= 0:
                     continue
-                # Live In/Out from cached orderbooks (None if not yet warm)
+                # Live In/Out from orderbook top-of-book
                 in_pct = out_pct = None
-                lv_l = top_levels(long_e["exchange"], symbol)
-                lv_s = top_levels(short_e["exchange"], symbol)
                 if lv_l and lv_s:
                     bid_l, ask_l = lv_l
                     bid_s, ask_s = lv_s
