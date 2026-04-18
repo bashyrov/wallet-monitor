@@ -13,16 +13,87 @@ _task: asyncio.Task | None = None
 _CHECK_INTERVAL = 60.0   # seconds between checks
 _COOLDOWN = timedelta(hours=1)  # don't re-trigger the same alert within 1h
 
+# Observability — simple running counters, readable from the admin panel or logs.
+_counters = {
+    "tg_sent_ok":      0,
+    "tg_attempt":      0,
+    "tg_retry":        0,
+    "tg_failed_final": 0,    # gave up after max retries
+    "tg_rate_limited": 0,    # 429 from Telegram
+}
 
-async def _send_tg(chat_id: str, text: str) -> None:
+
+def alert_service_counters() -> dict:
+    """Expose a copy of the running counters for monitoring."""
+    return dict(_counters)
+
+
+async def _send_tg(chat_id: str, text: str, *, max_retries: int = 3) -> bool:
+    """POST sendMessage with exponential backoff.
+    Returns True on success, False if we gave up after max_retries.
+
+    Backoff: 1s, 2s, 4s (plus 0-0.4s jitter) between attempts.
+    If Telegram returns 429 we honour its Retry-After header (up to 30s).
+    """
     if not settings.TG_BOT_TOKEN:
-        return
+        logger.error("TG_BOT_TOKEN not set — alert not sent to chat %s", chat_id)
+        return False
+
+    import random
     url = f"https://api.telegram.org/bot{settings.TG_BOT_TOKEN}/sendMessage"
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
-    except Exception as exc:
-        logger.warning("Telegram send failed for %s: %s", chat_id, exc)
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": False}
+    wait = 1.0
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        for attempt in range(max_retries + 1):
+            _counters["tg_attempt"] += 1
+            try:
+                r = await client.post(url, json=payload)
+                if r.status_code == 200:
+                    body = r.json()
+                    if body.get("ok"):
+                        if attempt > 0:
+                            logger.info("TG sent OK for %s after %d retries", chat_id, attempt)
+                        _counters["tg_sent_ok"] += 1
+                        return True
+                    # ok:false — log description, don't retry (likely bad payload / chat)
+                    logger.error("TG sendMessage rejected for %s: %s", chat_id, body.get("description"))
+                    _counters["tg_failed_final"] += 1
+                    return False
+                if r.status_code == 429:
+                    _counters["tg_rate_limited"] += 1
+                    retry_after = 0
+                    try:
+                        retry_after = int(r.json().get("parameters", {}).get("retry_after", 0))
+                    except Exception:
+                        pass
+                    wait = min(max(retry_after, wait * 2), 30.0)
+                    logger.warning("TG 429 for %s — retry %d/%d in %.1fs", chat_id, attempt + 1, max_retries, wait)
+                elif 500 <= r.status_code < 600:
+                    logger.warning("TG %d for %s — retry %d/%d in %.1fs", r.status_code, chat_id, attempt + 1, max_retries, wait)
+                else:
+                    # 4xx non-recoverable (bad chat, blocked by user, bad token)
+                    logger.error("TG %d (non-retryable) for %s: %s", r.status_code, chat_id, r.text[:160])
+                    _counters["tg_failed_final"] += 1
+                    return False
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+                logger.warning("TG transport error for %s (%s): retry %d/%d in %.1fs",
+                               chat_id, type(exc).__name__, attempt + 1, max_retries, wait)
+            except Exception as exc:
+                # Unknown failure — log at ERROR so it doesn't hide in the noise
+                logger.error("TG unexpected error for %s: %s: %s", chat_id, type(exc).__name__, exc)
+                _counters["tg_failed_final"] += 1
+                return False
+
+            if attempt >= max_retries:
+                break
+            _counters["tg_retry"] += 1
+            await asyncio.sleep(wait + random.uniform(0, 0.4))
+            wait = min(wait * 2, 8.0)
+
+    logger.error("TG sendMessage gave up for %s after %d retries", chat_id, max_retries)
+    _counters["tg_failed_final"] += 1
+    return False
 
 
 _ANY = "*"  # stored value meaning "match any exchange"
@@ -132,13 +203,20 @@ async def _check_alerts() -> None:
                     f"Spread: <b>{direction_arrow} {spread_pct:+.4f}%</b> (threshold ±{alert.threshold}%, {scope})\n"
                     f"<a href=\"{link}\">Open arbitrage details →</a>"
                 )
-                await _send_tg(str(chat_id), msg)
-                alert.last_triggered_at = now
-                db.commit()
-                logger.info(
-                    "Alert triggered id=%d user=%d sym=%s pair=%s→%s spread=%.4f%%",
-                    alert.id, alert.user_id, alert.symbol, long_ex, short_ex, spread_pct,
-                )
+                ok = await _send_tg(str(chat_id), msg)
+                if ok:
+                    alert.last_triggered_at = now
+                    db.commit()
+                    logger.info(
+                        "Alert triggered id=%d user=%d sym=%s pair=%s→%s spread=%.4f%%",
+                        alert.id, alert.user_id, alert.symbol, long_ex, short_ex, spread_pct,
+                    )
+                else:
+                    # Don't consume the cooldown — try again next cycle
+                    logger.error(
+                        "Alert %d delivery FAILED — will retry next cycle (user=%d sym=%s)",
+                        alert.id, alert.user_id, alert.symbol,
+                    )
     except Exception as exc:
         logger.error("Alert check error: %s", exc)
     finally:
