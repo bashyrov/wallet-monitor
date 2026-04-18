@@ -29,7 +29,7 @@ _http = httpx.AsyncClient(
 
 # ── Price/rate cache ───────────────────────────────────────────────────────────
 _cache: dict[str, tuple[list, float]] = {}
-CACHE_TTL = 30.0  # seconds — WS broadcaster refreshes every 5s keeping it hot; longer TTL avoids thundering herd on REST
+CACHE_TTL = 8.0  # seconds — keeps funding prices fresh for 4s broadcast cycle
 
 # ── Interval cache ─────────────────────────────────────────────────────────────
 _ivl_cache: dict[str, tuple[dict[str, float], float]] = {}
@@ -967,7 +967,7 @@ def _fee(exchange: str) -> float:
 
 
 _arb_result_cache: dict = {"data": None, "ts": 0.0}
-_ARB_CACHE_TTL = 10.0
+_ARB_CACHE_TTL = 3.5
 
 
 def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
