@@ -867,7 +867,7 @@ async def _get_rows(exchange: str) -> list[dict]:
         logger.warning("Screener %s fetch timeout (>%ss) — using cached", exchange, _FETCHER_TIMEOUT)
         return cached_rows
     except Exception as exc:
-        logger.warning("Screener %s fetch failed: %s", exchange, exc)
+        logger.warning("Screener %s fetch failed: %s: %r", exchange, type(exc).__name__, exc)
         return cached_rows
 
 
