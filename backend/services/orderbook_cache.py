@@ -22,7 +22,17 @@ import logging
 import os
 import time
 
-from backend.services.arbitrage_service import _http as _arb_http
+import httpx
+
+# Dedicated httpx pool for orderbook polling so it doesn't compete with funding
+# fetchers for connection slots.
+_arb_http = httpx.AsyncClient(
+    timeout=httpx.Timeout(connect=3.0, read=4.0, write=3.0, pool=1.0),
+    headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
+    follow_redirects=True,
+    limits=httpx.Limits(max_connections=300, max_keepalive_connections=80, keepalive_expiry=30),
+    http2=False,
+)
 
 logger = logging.getLogger("avalant.orderbook")
 
