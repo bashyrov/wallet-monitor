@@ -2193,6 +2193,17 @@ function updateLiveSpread(){
   setH('tb-live-spread',`<span class="${cls}">${sign(sp)}${sp.toFixed(4)}%</span>`);
 }
 
+// Price spread in P&L refreshes every 3s from live orderbook mids (fresh ≤500ms),
+// not every 10s from WS broadcast. Keeps number responsive without visual churn.
+setInterval(()=>{
+  if(!_liveMidLong||!_liveMidShort) return;
+  const sp=(_liveMidShort-_liveMidLong)/_liveMidLong*100;
+  const cls=sp<=0?'pos':'neg';
+  setH('b-spread',`<span class="${cls}">${sign(sp)}${sp.toFixed(4)}%</span>`);
+  if(_opp) _opp.price_spread=sp;
+  calcUpdate();
+},3000);
+
 // ── Open Interest ─────────────────────────────────────────────────────────────
 async function loadOI(){
   setT('oi-long-ex',EX_LABEL[LONG]||LONG); setT('oi-short-ex',EX_LABEL[SHORT]||SHORT);
