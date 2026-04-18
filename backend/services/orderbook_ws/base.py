@@ -31,6 +31,7 @@ class WSAdapter:
         self._update_cb = update_cb
         self._symbols: set[str] = set()        # everything we want subscribed
         self._subscribed: set[str] = set()     # already sent a subscribe frame for
+        self._sub_lock = asyncio.Lock()        # serialize concurrent _send_subscribe calls
         self._task: asyncio.Task | None = None
         self._ws = None
         self._stop = False
@@ -77,17 +78,25 @@ class WSAdapter:
 
     async def _send_subscribe(self, only: set[str] | None = None) -> None:
         """Subscribe. If `only` given, send only for those symbols (delta)."""
-        syms = sorted(only) if only else sorted(self._symbols - self._subscribed)
-        if not syms:
-            return
-        frames = self.build_subscribe(syms)
-        if isinstance(frames, dict):
-            frames = [frames]
-        for i, f in enumerate(frames):
-            await self._ws.send(json.dumps(f))
-            if self.subscribe_delay > 0 and i < len(frames) - 1:
-                await asyncio.sleep(self.subscribe_delay)
-        self._subscribed.update(syms)
+        async with self._sub_lock:
+            if not self._ws:
+                return
+            syms = sorted(only) if only else sorted(self._symbols - self._subscribed)
+            if not syms:
+                return
+            frames = self.build_subscribe(syms)
+            if isinstance(frames, dict):
+                frames = [frames]
+            for i, f in enumerate(frames):
+                if not self._ws:
+                    return  # connection dropped mid-subscribe
+                try:
+                    await self._ws.send(json.dumps(f))
+                except Exception:
+                    return  # socket died — let _run reconnect handle it
+                if self.subscribe_delay > 0 and i < len(frames) - 1:
+                    await asyncio.sleep(self.subscribe_delay)
+            self._subscribed.update(syms)
 
     async def _heartbeat_loop(self, ws, interval: float = 15.0) -> None:
         frame = self.heartbeat_frame()
