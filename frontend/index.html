@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Avalant — Screener &amp; Portfolio for serious crypto traders</title>
-  <meta name="description" content="Two products, one platform. A realtime funding-rate & arbitrage Screener plus a multi-source Portfolio dashboard — both talking to the same 11 exchanges and 13 chains. Self-hosted.">
+  <meta name="description" content="Two products, one platform. A realtime funding-rate & arbitrage Screener plus a multi-source Portfolio dashboard — both talking to the same 11 exchanges and 13 chains.">
   <meta name="keywords" content="crypto arbitrage, funding rate screener, cross-exchange arb, crypto portfolio tracker, wallet aggregator, binance screener, hyperliquid tracker">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://avalant.xyz/">
@@ -1061,7 +1061,7 @@
     <span class="sep">·</span>
     One platform
     <span class="sep">·</span>
-    Self-hosted
+    Built for traders
   </div>
 
   <h1 class="hero-h1">
@@ -1360,7 +1360,7 @@
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="11" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7a4 4 0 018 0v3" stroke="currentColor" stroke-width="1.6"/></svg>
         </div>
         <div class="why-h3">Private by construction</div>
-        <div class="why-p">Self-host on your own box. API keys live Fernet-encrypted in your DB. Nothing leaves the server except the calls you authorize.</div>
+        <div class="why-p">API keys live Fernet-encrypted with a per-instance master key. We call the exchanges you authorize — nothing else. No analytics trackers, no data brokers, no key export.</div>
       </div>
       <div class="why-card reveal" style="transition-delay:.16s">
         <div class="why-ico">
@@ -1477,10 +1477,10 @@
     <div class="security-inner">
       <div class="security-text reveal">
         <div class="section-eyebrow">Security &amp; trust</div>
-        <h2 class="section-h2">Your keys, <br>your server, <br>your rules.</h2>
+        <h2 class="section-h2">Encrypted by default. <br>Minimum scope. <br>Zero telemetry.</h2>
         <p class="section-sub" style="margin-top:16px;max-width:460px;color:var(--text2);font-size:15px;line-height:1.65">
-          Most &ldquo;portfolio trackers&rdquo; push your API keys through their cloud and log every request.
-          Avalant is built to run on a box <em>you control</em> — credentials stay encrypted in your own DB, and every call leaves <em>your</em> IP.
+          Most &ldquo;portfolio trackers&rdquo; happily log every balance request and shop your API keys around to partners.
+          Avalant treats credentials as the liability they are — encrypted end-to-end in our database, accessed only by the worker servicing <em>your</em> check.
         </p>
       </div>
 
@@ -1494,18 +1494,18 @@
             <div class="security-title">Fernet + PBKDF2</div>
             <span class="security-tag">AT-REST</span>
           </div>
-          <div class="security-desc">API keys encrypted with <span class="security-mono">SHA-256 · 260k iter</span>. Only you can decrypt — your <span class="security-mono">ENCRYPTION_KEY</span> never leaves the box.</div>
+          <div class="security-desc">API keys encrypted with <span class="security-mono">SHA-256 · 260k iter</span>. The master key lives only in the runtime env — never in the DB, never in a log, never shipped off-box.</div>
         </div>
 
         <div class="security-cell">
           <div class="security-cell-top">
             <div class="security-ico">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8h12M8 2v12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"/></svg>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"/><path d="M8 4v4l2.5 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
             </div>
-            <div class="security-title">Self-hosted</div>
-            <span class="security-tag">OPEN</span>
+            <div class="security-title">Masked in the API</div>
+            <span class="security-tag">NO ECHO</span>
           </div>
-          <div class="security-desc">Docker Compose, one command. Open source. Deploy to your VPS, home server or localhost. No third-party backend, ever.</div>
+          <div class="security-desc">Credentials are <strong>never</strong> returned through our API or shown in the UI. You see <span class="security-mono">abcd****wxyz</span>; the plaintext only ever decrypts at call-time.</div>
         </div>
 
         <div class="security-cell">
@@ -1626,8 +1626,8 @@
         </summary>
         <div class="faq-body">
           Every credential you paste is immediately encrypted with <strong>Fernet (AES-128-CBC + HMAC-SHA256)</strong>.
-          The Fernet key is derived from your <code>ENCRYPTION_KEY</code> env variable via PBKDF2-HMAC-SHA256 with 260&nbsp;000 iterations.
-          The plaintext key never touches disk — only the encrypted blob lives in your Postgres. API responses always mask keys to <code>abcd****wxyz</code>.
+          The Fernet key is derived via <strong>PBKDF2-HMAC-SHA256 with 260&nbsp;000 iterations</strong> from a master key that lives only in our server's runtime env — it isn't written to disk, logs or the database.
+          Only the encrypted blob is ever stored. API responses always mask keys to <code>abcd****wxyz</code>.
         </div>
       </details>
 
@@ -1685,11 +1685,11 @@
       <details class="faq-item reveal">
         <summary class="faq-summary">
           <span class="faq-n">06</span>
-          <span class="faq-q">Can I self-host the whole thing?</span>
+          <span class="faq-q">Do you log my balance checks or share data?</span>
           <span class="faq-plus">+</span>
         </summary>
         <div class="faq-body">
-          Yes — that's the default. <code>git clone</code>, <code>cp .env.sample .env</code>, <code>docker compose up -d</code>. Postgres, FastAPI backend, Nginx with Let's Encrypt. Detailed deployment docs in the repo. Zero vendor lock-in.
+          We store only what the product needs to work — your wallet list, encrypted credentials and a balance snapshot used for PnL vs the previous check. No third-party analytics, no ad networks, no data brokers. Nothing about your holdings ever leaves our infrastructure.
         </div>
       </details>
 
@@ -1736,7 +1736,7 @@
           <span class="faq-plus">+</span>
         </summary>
         <div class="faq-body">
-          GitHub issues, the Telegram community, or directly through the app's support button. We read everything. Feature requests that match the product vision usually ship within a release cycle.
+          Our Telegram community channel and the in-app support button. We read everything. Feature requests that match the product vision usually ship within a release cycle.
         </div>
       </details>
 
