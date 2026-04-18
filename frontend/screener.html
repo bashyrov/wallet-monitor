@@ -388,7 +388,13 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
 }
 .ws-dot.live { background: var(--green); animation: ws-pulse 2s ease-in-out infinite; }
 .ws-dot.error { background: var(--red); }
+.ws-dot.tick { animation: ws-tick .5s ease-out; }
 @keyframes ws-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+@keyframes ws-tick {
+  0% { box-shadow: 0 0 0 0 rgba(26,255,171,.9); transform: scale(1); }
+  50% { box-shadow: 0 0 0 6px rgba(26,255,171,0); transform: scale(1.5); }
+  100% { box-shadow: 0 0 0 0 rgba(26,255,171,0); transform: scale(1); }
+}
 .btn-refresh {
   padding: 7px 12px; background: transparent;
   border: 1px solid var(--border); border-radius: 8px;
@@ -953,7 +959,8 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       <div id="stats-bar"></div>
       <div class="stats-ws-block" style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
         <select id="throttle-sel" class="throttle-sel" onchange="setThrottle(this.value)" title="Data refresh cadence">
-          <option value="live">Live · 3s</option>
+          <option value="live">Live</option>
+          <option value="3">3s</option>
           <option value="10">10s</option>
           <option value="30">30s</option>
           <option value="60">1m</option>
@@ -973,6 +980,7 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
         <select id="throttle-sel-mob" class="throttle-sel" onchange="setThrottle(this.value)" title="Data refresh cadence">
           <option value="live">Live</option>
+          <option value="3">3s</option>
           <option value="10">10s</option>
           <option value="30">30s</option>
           <option value="60">1m</option>
@@ -1547,11 +1555,13 @@ function setThrottle(mode) {
 }
 
 function flushPending() {
+  let applied = false;
   if (_pendingFunding) {
     const d = _pendingFunding; _pendingFunding = null;
     _rows = d.rows || [];
     renderStats(d);
     applyFilter(true);
+    applied = true;
   }
   if (_pendingArb) {
     const d = _pendingArb; _pendingArb = null;
@@ -1565,6 +1575,16 @@ function flushPending() {
         if (items.length >= 3) items[2].innerHTML = `Updated at <b>${ts}</b>`;
       }
     }
+    applied = true;
+  }
+  if (applied) {
+    ['ws-dot','ws-dot-mob'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el || !el.classList.contains('live')) return;
+      el.classList.remove('tick');
+      void el.offsetWidth; // restart animation
+      el.classList.add('tick');
+    });
   }
 }
 
