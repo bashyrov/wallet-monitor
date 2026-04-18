@@ -31,7 +31,7 @@
   --mono: 'JetBrains Mono', monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;overflow:hidden;}
+html,body{height:100%;overflow:hidden;max-width:100%;}
 body{background:var(--bg);color:var(--text);font-family:Inter,sans-serif;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
 
 /* ── Navbar ── */
@@ -545,7 +545,7 @@ body.light .bnav-item.active{color:#000;}
   body{padding-bottom:88px;}
 }
 @media (max-width: 900px){
-  html,body{overflow:auto;}
+  html,body{overflow:auto;overflow-x:hidden;}
   body{min-height:100vh;}
   /* Infobar: horizontal scroll with snap */
   .infobar{height:auto;min-height:64px;padding:8px 0;flex-wrap:wrap;gap:0;}

@@ -32,6 +32,7 @@
   --font:     'Inter', system-ui, -apple-system, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { overflow-x: hidden; max-width: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -818,7 +819,12 @@ body.light .bnav-item.active { color: #000; }
 .alpha-intro-title { font-size: 16px; font-weight: 700; letter-spacing: -.3px; color: var(--text); }
 .alpha-intro-body p { font-size: 13px; color: var(--text2); line-height: 1.6; margin: 0 0 12px; }
 .alpha-intro-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
-@media (max-width: 760px) { .alpha-intro-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 900px) { .alpha-intro-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .alpha-intro-grid { grid-template-columns: 1fr; } }
+@media (max-width: 700px) {
+  .alpha-intro { margin: 12px 12px 14px; padding: 14px 16px; border-radius: 12px; }
+  .alpha-intro-title { font-size: 14px; }
+}
 .alpha-intro-cell {
   padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border);
   border-radius: 8px;
@@ -879,6 +885,11 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
   color: var(--green); font-weight: 700; font-size: 13px; cursor: pointer;
   box-shadow: 0 8px 24px rgba(26,255,171,.2);
   font-family: inherit; transition: transform .15s;
+}
+/* On mobile, hide the FAB — bottom-nav occupies the same space and the
+   sidebar is still reachable via the Live Ops dropdown in the navbar. */
+@media (max-width: 768px) {
+  .lo-fab { display: none !important; }
 }
 .lo-fab:hover { transform: translateY(-2px); }
 .lo-fab .lo-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: ws-pulse 1.6s ease-in-out infinite; }
