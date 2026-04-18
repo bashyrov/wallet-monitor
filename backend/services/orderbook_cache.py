@@ -1,37 +1,54 @@
-"""Hot orderbook cache with per-(exchange,symbol) background poller.
+"""Hot orderbook cache — one owner worker polls top-N arb pairs, all workers
+read from a shared file cache.
 
-Motivation: the /arb page polls orderbook at 150ms per side. Without caching,
-every tab fires N req/s per exchange — 4 uvicorn workers × M users × 2 sides.
-Exchange rate limits kick in, latencies spike, UI shows "Collecting data…".
-
-Design: one poller task per (exchange, symbol) runs in whichever worker saw
-the request first. It fetches every POLL_INTERVAL and updates an in-memory
-cache. Clients read the cache (~µs). After IDLE_TIMEOUT with no requests, the
-poller exits. Each worker has its own cache, but load is O(unique pairs × workers)
-instead of O(viewers × req/s).
+Design:
+  • A single uvicorn worker acquires /tmp/avalant_prewarm.lock and becomes the
+    owner. It runs per-(exchange,symbol) pollers for the top-N arb opportunities
+    (refreshed every 15s). Every 500ms it dumps all fresh books to a single
+    JSON file under /tmp/avalant_cache/.
+  • All workers (including the owner) serve reads:
+        1. local in-memory _book_cache (fast — µs)
+        2. file cache shared by owner (~ms, covers top-N)
+        3. spawn a local poller (cold-start ~500ms) for pairs outside top-N
+  • Result: load is O(top_N × 2) total req/s, NOT O(workers × users). Other
+    workers do not poll unless a client asks for a non-top-N pair.
 """
 from __future__ import annotations
 
 import asyncio
+import fcntl
+import json
 import logging
+import os
 import time
 
 from backend.services.arbitrage_service import _http as _arb_http
 
 logger = logging.getLogger("avalant.orderbook")
 
-POLL_INTERVAL   = 0.30   # exchange refresh cadence (seconds)
-IDLE_TIMEOUT    = 30.0   # stop poller after this many seconds without a request
-FIRST_WAIT      = 1.8    # cold-start: wait up to this long for initial data
-STALE_FALLBACK  = 10.0   # still serve cached data if younger than this, even on error
+POLL_INTERVAL   = 0.50   # per-pair poll cadence (owner worker)
+IDLE_TIMEOUT    = 30.0   # stop poller if no requests in this window
+FIRST_WAIT      = 1.8    # max cold-start wait for first data
+STALE_FALLBACK  = 10.0   # still serve local-cache data if younger than this
+FILE_FRESH_MAX  = 5.0    # file-cache entry usable only if younger than this
+
+_CACHE_DIR   = "/tmp/avalant_cache"
+_BOOKS_FILE  = os.path.join(_CACHE_DIR, "books.json")
+_LOCK_FILE   = "/tmp/avalant_prewarm.lock"
 
 _book_cache: dict[str, dict] = {}        # key → {"data": dict, "ts": float, "last_request": float}
-_pollers: dict[str, asyncio.Task] = {}   # key → task
+_pollers: dict[str, asyncio.Task] = {}
 _lock = asyncio.Lock()
 
+# Reader-side snapshot of shared file (refreshed on demand, throttled)
+_file_memo: dict[str, dict] = {}
+_file_memo_mtime: float = 0.0
+_file_memo_last_check: float = 0.0
+_FILE_CHECK_INTERVAL = 0.1  # re-open file at most every 100ms per worker
 
+
+# ── Direct per-exchange fetch ────────────────────────────────────────────────
 async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
-    """Direct one-shot fetch from exchange. Returns {bids, asks} or None on failure."""
     c = _arb_http
     try:
         if exchange == "binance":
@@ -98,6 +115,7 @@ async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
     return None
 
 
+# ── Poller task ──────────────────────────────────────────────────────────────
 async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
     consecutive_fails = 0
     try:
@@ -117,9 +135,8 @@ async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
                 if consecutive_fails == 1 or consecutive_fails % 20 == 0:
                     logger.warning("orderbook poll empty/fail: %s (streak=%d)", key, consecutive_fails)
                 if consecutive_fails >= 20:
-                    await asyncio.sleep(3)  # backoff on persistent failure
+                    await asyncio.sleep(3)
                     continue
-
             await asyncio.sleep(POLL_INTERVAL)
     except asyncio.CancelledError:
         raise
@@ -129,18 +146,56 @@ async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
         _pollers.pop(key, None)
 
 
-async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> dict:
-    """Return {bids, asks}. Starts a background poller on first request per key.
+# ── Shared file cache (cross-worker) ─────────────────────────────────────────
+def _refresh_file_memo() -> None:
+    """Throttled: re-read books.json at most every 100ms per worker."""
+    global _file_memo, _file_memo_mtime, _file_memo_last_check
+    now = time.time()
+    if now - _file_memo_last_check < _FILE_CHECK_INTERVAL:
+        return
+    _file_memo_last_check = now
+    try:
+        st = os.stat(_BOOKS_FILE)
+        if st.st_mtime == _file_memo_mtime:
+            return
+        with open(_BOOKS_FILE, "rb") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            _file_memo = data
+            _file_memo_mtime = st.st_mtime
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
 
-    - First call (cold): waits up to FIRST_WAIT for initial data, then returns.
-    - Subsequent calls: read from memory, typically <1ms.
-    - If exchange errors but cached data < STALE_FALLBACK old, returns cached.
-    """
+
+def _file_lookup(key: str) -> dict | None:
+    _refresh_file_memo()
+    entry = _file_memo.get(key)
+    if not entry:
+        return None
+    if time.time() - entry.get("ts", 0) > FILE_FRESH_MAX:
+        return None
+    return entry.get("data")
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
+async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> dict:
     exchange = exchange.lower()
     symbol = symbol.upper()
     key = f"{exchange}:{symbol}"
     now = time.time()
 
+    # 1. Local memory — fastest
+    entry = _book_cache.get(key)
+    if entry and entry.get("data") and now - entry.get("ts", 0) < STALE_FALLBACK:
+        entry["last_request"] = now
+        return entry["data"]
+
+    # 2. Shared file cache — populated by owner worker for top-N pairs
+    fd = _file_lookup(key)
+    if fd:
+        return fd
+
+    # 3. Cold-start local poller (pair outside top-N, or owner warming up)
     async with _lock:
         entry = _book_cache.setdefault(key, {})
         entry["last_request"] = now
@@ -148,41 +203,27 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
         if not task or task.done():
             _pollers[key] = asyncio.create_task(_poll_loop(key, exchange, symbol, limit))
 
-    # Fast path: we already have data
-    data = entry.get("data")
-    ts = entry.get("ts", 0)
-    if data and now - ts < STALE_FALLBACK:
-        return data
-
-    # Cold start: poll memory until first data arrives or deadline hits
     deadline = now + FIRST_WAIT
     while time.time() < deadline:
         await asyncio.sleep(0.05)
-        entry = _book_cache.get(key) or {}
-        data = entry.get("data")
-        if data:
-            return data
-
-    return entry.get("data") or {"bids": [], "asks": []}
-
-
-def cache_stats() -> dict:
-    return {
-        "pairs_cached": len(_book_cache),
-        "active_pollers": sum(1 for t in _pollers.values() if not t.done()),
-        "keys": list(_book_cache.keys()),
-    }
+        e = _book_cache.get(key) or {}
+        if e.get("data"):
+            return e["data"]
+        fd = _file_lookup(key)
+        if fd:
+            return fd
+    return (_book_cache.get(key) or {}).get("data") or {"bids": [], "asks": []}
 
 
 def top_levels(exchange: str, symbol: str) -> tuple[float, float] | None:
-    """Synchronous accessor: return (best_bid, best_ask) from cache, or None.
-    Safe to call from threads — dict reads are atomic in CPython.
-    """
+    """Sync accessor (best_bid, best_ask). Checks local memory then file cache."""
     key = f"{exchange.lower()}:{symbol.upper()}"
+    data: dict | None = None
     entry = _book_cache.get(key)
-    if not entry:
-        return None
-    data = entry.get("data")
+    if entry:
+        data = entry.get("data")
+    if not data:
+        data = _file_lookup(key)
     if not data:
         return None
     bids = data.get("bids") or []
@@ -195,9 +236,27 @@ def top_levels(exchange: str, symbol: str) -> tuple[float, float] | None:
         return None
 
 
-async def prewarm(exchange: str, symbol: str, limit: int = 50) -> None:
-    """Start/keep poller alive for this pair without waiting for data.
-    Used by the top-arb prewarmer; fire-and-forget."""
+def cache_stats() -> dict:
+    _refresh_file_memo()
+    return {
+        "local_pairs":   len(_book_cache),
+        "active_pollers": sum(1 for t in _pollers.values() if not t.done()),
+        "file_pairs":    len(_file_memo),
+        "is_owner":      _prewarm_lock_fd is not None,
+    }
+
+
+# ── Prewarm owner loops (single worker) ──────────────────────────────────────
+PREWARM_TOP_N        = 80
+PREWARM_HOTLIST_S    = 15.0   # refresh hot list from arb result
+PREWARM_DUMP_S       = 0.5    # snapshot to file
+
+_prewarm_hotlist_task: asyncio.Task | None = None
+_prewarm_dump_task:    asyncio.Task | None = None
+_prewarm_lock_fd = None
+
+
+async def _prewarm_start_poller(exchange: str, symbol: str, limit: int = 50) -> None:
     exchange = exchange.lower()
     symbol = symbol.upper()
     key = f"{exchange}:{symbol}"
@@ -209,3 +268,80 @@ async def prewarm(exchange: str, symbol: str, limit: int = 50) -> None:
             _pollers[key] = asyncio.create_task(_poll_loop(key, exchange, symbol, limit))
 
 
+async def _prewarm_hotlist_loop() -> None:
+    from backend.services.arbitrage_service import get_arbitrage_opportunities
+    while True:
+        try:
+            data = await get_arbitrage_opportunities()
+            opps = data.get("opportunities", [])[:PREWARM_TOP_N]
+            touched: set[str] = set()
+            for o in opps:
+                for ex in (o.get("long_exchange"), o.get("short_exchange")):
+                    if not ex:
+                        continue
+                    key = f"{ex}:{o['symbol']}"
+                    if key in touched:
+                        continue
+                    touched.add(key)
+                    await _prewarm_start_poller(ex, o["symbol"])
+            logger.info("orderbook prewarm hot-list: %d pairs (%d opps)",
+                        len(touched), len(opps))
+        except Exception as exc:
+            logger.warning("prewarm hot-list error: %s", exc)
+        await asyncio.sleep(PREWARM_HOTLIST_S)
+
+
+async def _prewarm_dump_loop() -> None:
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    while True:
+        try:
+            cutoff = time.time() - FILE_FRESH_MAX
+            snapshot: dict[str, dict] = {}
+            for key, entry in list(_book_cache.items()):
+                ts = entry.get("ts", 0)
+                if ts < cutoff:
+                    continue
+                data = entry.get("data")
+                if not data:
+                    continue
+                snapshot[key] = {"data": data, "ts": ts}
+            tmp = _BOOKS_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(snapshot, f, separators=(",", ":"))
+            os.replace(tmp, _BOOKS_FILE)
+        except Exception as exc:
+            logger.warning("prewarm dump error: %s", exc)
+        await asyncio.sleep(PREWARM_DUMP_S)
+
+
+def start_prewarm() -> None:
+    """Attempt to become the prewarm owner. Only one worker wins the lock;
+    others become passive file readers with no added polling load."""
+    global _prewarm_hotlist_task, _prewarm_dump_task, _prewarm_lock_fd
+    if _prewarm_hotlist_task and not _prewarm_hotlist_task.done():
+        return
+    try:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        _prewarm_lock_fd = open(_LOCK_FILE, "w")
+        fcntl.flock(_prewarm_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        logger.info("orderbook prewarm: another worker holds the lock — file consumer only")
+        _prewarm_lock_fd = None
+        return
+    logger.info("orderbook prewarm owner started: top=%d, poll=%.1fs, dump=%.1fs",
+                PREWARM_TOP_N, POLL_INTERVAL, PREWARM_DUMP_S)
+    _prewarm_hotlist_task = asyncio.create_task(_prewarm_hotlist_loop())
+    _prewarm_dump_task = asyncio.create_task(_prewarm_dump_loop())
+
+
+def stop_prewarm() -> None:
+    global _prewarm_hotlist_task, _prewarm_dump_task, _prewarm_lock_fd
+    for t in (_prewarm_hotlist_task, _prewarm_dump_task):
+        if t and not t.done():
+            t.cancel()
+    _prewarm_hotlist_task = None
+    _prewarm_dump_task = None
+    if _prewarm_lock_fd:
+        try: _prewarm_lock_fd.close()
+        except Exception: pass
+    _prewarm_lock_fd = None
