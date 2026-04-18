@@ -905,17 +905,22 @@ def _read_file_cache(name: str, max_age: float = 60.0) -> dict | None:
 
 
 async def get_funding_data() -> dict:
-    # Fast path: if ALL per-exchange caches are warm, gather returns instantly.
-    # If ANY are stale → full refetch. Before that, try file cache written by
-    # the broadcaster worker (avoids 20-30s fetch on non-broadcaster workers).
+    # Fast path: if every per-exchange cache is still warm, skip the gather.
+    # Non-owner workers can fall back to the shared funding.json while the
+    # owner's gather runs.
+    now_m = _mono()
     any_stale = any(
-        (time.time() - _cache.get(ex, ([], 0))[1]) > CACHE_TTL
+        (now_m - _cache.get(ex, ([], 0.0))[1]) > CACHE_TTL
         for ex in FETCHERS
     )
-    if any_stale:
-        fc = _read_file_cache("funding.json", max_age=CACHE_TTL * 2)
-        if fc and fc.get("rows"):
-            return fc
+    if not any_stale:
+        # Every exchange is warm — rebuild response from cache without HTTP
+        all_rows: list[dict] = []
+        for ex in FETCHERS:
+            cached_rows, _ts = _cache.get(ex, ([], 0.0))
+            all_rows.extend(cached_rows)
+        if all_rows:
+            return {"ts": int(time.time()), "exchanges": list(FETCHERS.keys()), "rows": all_rows}
 
     results = await asyncio.gather(
         *(_get_rows(ex) for ex in FETCHERS),
