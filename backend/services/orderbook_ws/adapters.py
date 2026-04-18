@@ -308,15 +308,29 @@ class KuCoinWS(WSAdapter):
     ping_interval = 18.0
     subscribe_delay = 0.4  # KuCoin rate-limits subscribes to ~3/sec per connection
 
-    async def _get_token(self) -> tuple[str, str, float]:
-        """Return (endpoint, token, ping_interval_s) from bullet-public."""
-        async with httpx.AsyncClient(timeout=10) as c:
+    # Token cache — bullet-public tokens live >=24h per KuCoin docs. Refetching on
+    # every reconnect turned out to trip rate-limits on their REST gateway
+    # (ConnectTimeout loops). Cache it for 1h and only refresh on hard failure.
+    _cached_token: tuple[str, str, float, float] | None = None   # (endpoint, token, ping_s, fetched_at)
+    _TOKEN_TTL = 3600.0
+
+    async def _get_token(self, force: bool = False) -> tuple[str, str, float]:
+        """Return (endpoint, token, ping_interval_s). Cached for _TOKEN_TTL."""
+        import time as _t
+        cached = KuCoinWS._cached_token
+        if not force and cached and _t.time() - cached[3] < KuCoinWS._TOKEN_TTL:
+            return cached[0], cached[1], cached[2]
+        async with httpx.AsyncClient(timeout=15) as c:
             r = await c.post("https://api-futures.kucoin.com/api/v1/bullet-public")
             r.raise_for_status()
             d = r.json().get("data") or {}
             servers = d.get("instanceServers") or [{}]
             s = servers[0]
-            return s.get("endpoint", ""), d.get("token", ""), (s.get("pingInterval") or 18000) / 1000.0
+            endpoint = s.get("endpoint", "")
+            token = d.get("token", "")
+            ping_s = (s.get("pingInterval") or 18000) / 1000.0
+            KuCoinWS._cached_token = (endpoint, token, ping_s, _t.time())
+            return endpoint, token, ping_s
 
     def build_subscribe(self, symbols):
         frames = []
@@ -351,14 +365,24 @@ class KuCoinWS(WSAdapter):
         return token_sym, bids, asks
 
     async def _run(self) -> None:
-        # Override to fetch token before each connection
+        # Override to fetch token before each connection (cached)
         import websockets
         import json as _json
         backoff = 1.0
+        force_refresh_token = False
         while not self._stop:
             hb_task = None
             try:
-                endpoint, token, ping_s = await self._get_token()
+                try:
+                    endpoint, token, ping_s = await self._get_token(force=force_refresh_token)
+                except Exception as exc:
+                    # Bullet-public failed — don't spin; back off slowly and keep old token if we have one
+                    logger.warning("kucoin bullet-public failed: %s: %s", type(exc).__name__, exc)
+                    force_refresh_token = False
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 1.6, 60.0)
+                    continue
+                force_refresh_token = False
                 if not endpoint or not token:
                     raise RuntimeError("kucoin bullet-public returned empty token")
                 url = f"{endpoint}?token={token}&connectId={uuid.uuid4()}"
@@ -368,7 +392,7 @@ class KuCoinWS(WSAdapter):
                 # ping_timeout and close the connection.
                 async with websockets.connect(
                     url, ping_interval=None, ping_timeout=None,
-                    open_timeout=20, close_timeout=3, max_size=4 * 1024 * 1024,
+                    open_timeout=30, close_timeout=3, max_size=4 * 1024 * 1024,
                 ) as ws:
                     self._ws = ws
                     backoff = 1.0
@@ -396,8 +420,12 @@ class KuCoinWS(WSAdapter):
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                detail = str(exc) or type(exc).__name__
+                detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
                 logger.warning("kucoin WS error: %s (retry in %.1fs)", detail, backoff)
+                # If error suggests the connection token is stale/invalid, force fresh token next cycle
+                msg = (str(exc) or "").lower()
+                if "401" in msg or "403" in msg or "invalid" in msg or "expired" in msg or "token" in msg:
+                    force_refresh_token = True
                 self._ws = None
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 1.8, 30.0)
