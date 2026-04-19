@@ -791,7 +791,52 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 </style>
 </head>
 <body>
-<script>Auth.requireAuth();</script>
+<script>
+// Arb detail is public. User-specific sections (positions / balances / orders /
+// trade card) are locked behind IS_AUTHED — anonymous visitors see a "sign in"
+// CTA on the account + trade panels.
+const IS_AUTHED = Auth.isLoggedIn();
+if (!IS_AUTHED) document.documentElement.classList.add('no-auth');
+</script>
+
+<style>
+.auth-lock {
+  position: absolute; inset: 0;
+  display: none; align-items: center; justify-content: center; flex-direction: column;
+  gap: 10px; padding: 28px;
+  background: rgba(14, 14, 17, 0.72);
+  backdrop-filter: blur(6px);
+  z-index: 20;
+  text-align: center;
+}
+body.light .auth-lock { background: rgba(255,255,255,0.82); }
+.auth-lock-icon {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(26,255,171,0.08); border: 1px solid rgba(26,255,171,0.35);
+  color: var(--green);
+}
+.auth-lock h3 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
+.auth-lock p { margin: 0; color: var(--text3); font-size: 13px; max-width: 320px; line-height: 1.5; }
+.auth-lock-cta {
+  margin-top: 6px; padding: 8px 18px; border-radius: 8px;
+  background: var(--green); color: #0a0a0f; font-weight: 700; font-size: 13px;
+  text-decoration: none; letter-spacing: -0.005em;
+  transition: transform .15s, box-shadow .15s;
+}
+.auth-lock-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(26,255,171,0.25); }
+
+html.no-auth .acc-block,
+html.no-auth .trade-card { position: relative; }
+html.no-auth .acc-block .auth-lock,
+html.no-auth .trade-card .auth-lock { display: flex; }
+html.no-auth .acc-block > *:not(.auth-lock),
+html.no-auth .trade-card > *:not(.auth-lock) {
+  filter: blur(2px);
+  pointer-events: none !important;
+  user-select: none;
+}
+</style>
 
 <!-- Navbar (shared) -->
 <header class="topbar"><app-navbar page="arb"></app-navbar></header>
@@ -1109,6 +1154,12 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 
   <!-- ── Account / Positions block (Positions / Orders / P&L / Balances) ── -->
   <section class="acc-block" id="acc-block">
+    <div class="auth-lock">
+      <div class="auth-lock-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
+      <h3>Sign in to view positions &amp; balances</h3>
+      <p>Connect your API keys to see live positions, order history, P&amp;L, and account balances across exchanges.</p>
+      <a href="/login?next=/arb" class="auth-lock-cta">Sign in</a>
+    </div>
     <div class="acc-tabs" role="tablist">
       <div class="acc-tab is-active" data-pane="positions" onclick="accSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
       <div class="acc-tab" data-pane="orders"   onclick="accSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
@@ -1221,6 +1272,12 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 
       <!-- ── LIVE TRADING (two legs) ── -->
       <div class="info-card trade-card" id="trade-card">
+        <div class="auth-lock">
+          <div class="auth-lock-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
+          <h3>Sign in to trade</h3>
+          <p>Opening positions requires connected API keys. Create an account or log in to start trading this pair.</p>
+          <a href="/login?next=/arb" class="auth-lock-cta">Sign in</a>
+        </div>
         <div class="info-card-title" style="display:flex;align-items:center;gap:6px">
           <span class="trade-beta">BETA</span>
           Live Trading

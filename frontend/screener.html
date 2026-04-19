@@ -1336,7 +1336,9 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
 <script src="/confirm.js"></script>
 <script src="/theme.js"></script>
 <script>
-Auth.requireAuth('/login');
+// Screener is public; user-specific features (watchlist, alerts) auto-disable
+// when Auth.isLoggedIn() is false.
+const IS_AUTHED = Auth.isLoggedIn();
 
 // ── constants ──────────────────────────────────────────────────────────────────
 const EXCHANGES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx'];
@@ -1634,7 +1636,7 @@ function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) 
 
     ws.onclose = (ev) => {
       clearInterval(pingRef.val);
-      if (ev.code === 4001) { Auth.requireAuth('/login'); return; }
+      if (ev.code === 4001) { return; }
       const delay = Math.min(2000 * Math.pow(2, retryRef.val), 30000);
       retryRef.val++;
       clearTimeout(retryTimerRef.val);

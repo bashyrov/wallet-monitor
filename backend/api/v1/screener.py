@@ -19,13 +19,13 @@ logger = logging.getLogger("avalant.screener")
 # ── REST endpoints ─────────────────────────────────────────────────────────────
 
 @router.get("/funding")
-async def funding_rates(_=Depends(get_current_user)):
+async def funding_rates():
     """Funding rates across perpetual futures exchanges. Cached 30s per exchange."""
     return await get_funding_data()
 
 
 @router.get("/arbitrage")
-async def arbitrage_opportunities(_=Depends(get_current_user)):
+async def arbitrage_opportunities():
     """Cross-exchange funding arbitrage opportunities with price spread and fees."""
     return await get_arbitrage_opportunities()
 
@@ -35,7 +35,6 @@ async def pair_opp(
     symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),
     long_ex: str = Query(..., min_length=2, max_length=24),
     short_ex: str = Query(..., min_length=2, max_length=24),
-    _=Depends(get_current_user),
 ):
     """Lightweight per-pair arb data. Fetches only the 2 needed exchanges
     instead of all 12 — returns the same _opp shape the /arb page needs.
@@ -244,7 +243,6 @@ async def get_orderbook(
     symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),
     exchange: str = Query(..., min_length=2, max_length=24),
     limit: int = Query(20, ge=1, le=100),
-    _=Depends(get_current_user),
 ):
     from fastapi import HTTPException
     from backend.services.orderbook_cache import get_cached_orderbook
@@ -261,7 +259,6 @@ async def arb_price_history(
     symbol: str = Query(...),
     long_ex: str = Query(...),
     short_ex: str = Query(...),
-    _=Depends(get_current_user),
 ):
     long_prices, short_prices = await asyncio.gather(
         _fetch_price_history(long_ex, symbol),
@@ -279,7 +276,6 @@ async def arb_price_history(
 @router.get("/all-exchanges-funding")
 async def all_exchanges_funding(
     symbol: str = Query(...),
-    _=Depends(get_current_user),
 ):
     """Current funding rate for a symbol across all exchanges that list it."""
     data = await get_funding_data()
@@ -366,7 +362,6 @@ async def open_interest(
     symbol: str = Query(...),
     long_ex: str = Query(...),
     short_ex: str = Query(...),
-    _=Depends(get_current_user),
 ):
     """Open interest for long and short exchange for a pair."""
     results = await asyncio.gather(
@@ -388,7 +383,6 @@ async def arb_history(
     symbol: str = Query(...),
     long_ex: str = Query(...),
     short_ex: str = Query(...),
-    _=Depends(get_current_user),
 ):
     long_hist, short_hist = await asyncio.gather(
         _fetch_history_for(long_ex, symbol),
@@ -543,11 +537,7 @@ def stop_screener_broadcaster() -> None:
 
 async def _ws_handler(websocket: WebSocket, clients: set[WebSocket], token: str,
                       fetch_fn, label: str) -> None:
-    user_id = decode_token(token)
-    if not user_id:
-        await websocket.close(code=4001, reason="Unauthorized")
-        return
-
+    user_id = decode_token(token) if token else None
     await websocket.accept()
     clients.add(websocket)
     logger.debug("Screener %s WS connect uid=%s (total=%d)", label, user_id, len(clients))
@@ -569,10 +559,10 @@ async def _ws_handler(websocket: WebSocket, clients: set[WebSocket], token: str,
 
 
 @router.websocket("/ws/funding")
-async def funding_ws(websocket: WebSocket, token: str = Query(...)) -> None:
+async def funding_ws(websocket: WebSocket, token: str = Query("")) -> None:
     await _ws_handler(websocket, _funding_clients, token, get_funding_data, "funding")
 
 
 @router.websocket("/ws/arb")
-async def arb_ws(websocket: WebSocket, token: str = Query(...)) -> None:
+async def arb_ws(websocket: WebSocket, token: str = Query("")) -> None:
     await _ws_handler(websocket, _arb_clients, token, get_arbitrage_opportunities, "arb")
