@@ -11,13 +11,13 @@
   <link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pricing — Avalant Screener &amp; Portfolio</title>
-  <meta name="description" content="Avalant plans: full Screener + Portfolio from $65/mo. Pay monthly, quarterly, yearly or 2-year with up to 30% off. Screener-only plans save another $10.">
+  <meta name="description" content="Avalant plans: full Screener + Portfolio from $65/mo. Pay monthly, quarterly, semi-annually or yearly with up to 25% off. Screener-only plans save another $10.">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://avalant.xyz/pricing">
   <meta property="og:type"        content="website">
   <meta property="og:url"         content="https://avalant.xyz/pricing">
   <meta property="og:title"       content="Avalant Pricing — Screener &amp; Portfolio">
-  <meta property="og:description" content="Pay monthly, quarterly, yearly or for two years. Save up to 30%.">
+  <meta property="og:description" content="Pay monthly, quarterly, for six months or a full year. Save up to 25%.">
   <meta property="og:image"       content="https://avalant.xyz/og-image.jpg">
   <meta property="og:image:type"  content="image/jpeg">
   <meta property="og:image:width"  content="1200">
@@ -25,7 +25,7 @@
   <meta property="og:site_name"   content="Avalant">
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="Avalant Pricing">
-  <meta name="twitter:description" content="Pay monthly, quarterly, yearly or for two years. Save up to 30%.">
+  <meta name="twitter:description" content="Pay monthly, quarterly, for six months or a full year. Save up to 25%.">
   <meta name="twitter:image"       content="https://avalant.xyz/og-image.jpg">
   <link rel="stylesheet" href="/navbar.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -424,7 +424,7 @@
     <h1 class="hero-h1">One flat price.<br><em>Save more the longer you commit.</em></h1>
     <p class="hero-sub">
       Avalant is a single product: Screener for live arbitrage, Portfolio for every balance you own.
-      Pay monthly or lock in savings for a quarter, a year, or two.
+      Pay monthly or lock in savings for a quarter, six months, or a full year.
     </p>
   </section>
 
@@ -515,7 +515,7 @@
           <span class="faq-plus">+</span>
         </summary>
         <div class="faq-body">
-          You're charged upfront for the whole period. Monthly plans renew every 30 days; quarterly, yearly and 2-year plans renew at the end of the chosen term. Cancel anytime — you keep access until the end of the paid period.
+          You're charged upfront for the whole period. Monthly plans renew every 30 days; quarterly, six-month and annual plans renew at the end of the chosen term. Cancel anytime — you keep access until the end of the paid period.
         </div>
       </details>
       <details class="faq-item">
@@ -524,7 +524,7 @@
           <span class="faq-plus">+</span>
         </summary>
         <div class="faq-body">
-          <b>Screener + Portfolio</b> is the default and gives you both products. If you only need the Screener (no wallet tracking), pick <b>Screener only</b> — same 4 billing periods, $10/mo cheaper.
+          <b>Screener + Portfolio</b> is the default and gives you both products. If you only need the Screener (no wallet tracking), pick <b>Screener only</b> — same four billing periods, $10/mo cheaper.
         </div>
       </details>
       <details class="faq-item">
@@ -533,7 +533,7 @@
           <span class="faq-plus">+</span>
         </summary>
         <div class="faq-body">
-          Pure value. Quarterly saves <b>10%</b>, annual <b>20%</b>, 2-year <b>30%</b>. No feature differences — every plan is the full product. The longer commit only buys you a lower effective monthly rate.
+          Pure value. Quarterly saves <b>10%</b>, six months <b>18%</b>, annual <b>25%</b>. No feature differences — every plan is the full product. The longer commit only buys you a lower effective monthly rate.
         </div>
       </details>
       <details class="faq-item">
@@ -605,14 +605,14 @@
 // Durations and discounts:
 //   1 mo  → 0%
 //   3 mo  → 10% off
-//   12 mo → 20% off
-//   24 mo → 30% off
+//   6 mo  → 18% off
+//   12 mo → 25% off
 const BASE = { full: 65, screener: 55 };
 const PLANS = [
   { key: 'scout',    months: 1,  name: 'Scout',    title: 'Month-to-month', desc: 'Try the full stack, cancel any time.', discount: 0,    featured: false },
   { key: 'operator', months: 3,  name: 'Operator', title: 'Quarterly',      desc: 'Same tools, one full trading quarter.', discount: 0.10, featured: true },
-  { key: 'desk',     months: 12, name: 'Desk',     title: 'Annual',         desc: "A year's access at a desk-grade rate.", discount: 0.20, featured: false, best: false },
-  { key: 'vault',    months: 24, name: 'Vault',    title: '2 years',        desc: 'Biggest saving — lock it in now.',      discount: 0.30, featured: false, best: true  },
+  { key: 'season',   months: 6,  name: 'Season',   title: '6 months',       desc: 'Half a year at a sharper monthly rate.', discount: 0.18, featured: false },
+  { key: 'desk',     months: 12, name: 'Desk',     title: 'Annual',         desc: 'Biggest saving — lock it in for a year.', discount: 0.25, featured: false, best: true },
 ];
 
 function fmtMoney(n) {
