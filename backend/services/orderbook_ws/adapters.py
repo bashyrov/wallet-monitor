@@ -333,6 +333,24 @@ class KuCoinWS(WSAdapter):
             return endpoint, token, ping_s
 
     def build_subscribe(self, symbols):
+        # KuCoin supports comma-joined topics: "/contractMarket/level2Depth50:A,B,C"
+        # One frame covers up to BATCH symbols, staying well below the 3/sec
+        # subscribe-op rate limit even with many pairs.
+        BATCH = 10
+        frames = []
+        mapped = [("XBT" if s == "BTC" else s) + "USDTM" for s in symbols]
+        for i in range(0, len(mapped), BATCH):
+            chunk = ",".join(mapped[i:i + BATCH])
+            frames.append({
+                "id": str(uuid.uuid4()),
+                "type": "subscribe",
+                "topic": f"/contractMarket/level2Depth50:{chunk}",
+                "response": True,
+            })
+        return frames
+
+    # Keep original per-symbol format disabled (stays here for reference)
+    def _build_subscribe_single(self, symbols):
         frames = []
         for s in symbols:
             sym_k = ("XBT" if s == "BTC" else s) + "USDTM"
