@@ -30,18 +30,31 @@ async def arbitrage_opportunities():
     return await get_arbitrage_opportunities()
 
 
+_availability_cache: dict = {"data": None, "ts": 0.0}
+_AVAILABILITY_TTL = 10.0
+
+
 @router.get("/availability")
 async def availability():
     """Tiny payload: enabled exchanges + all current funding symbols. Used by
     the /arb pre-flight to confirm the selected exchange/symbol aren't admin-
-    disabled — avoids pulling the full 800KB funding blob for that check."""
+    disabled. Cached 10s per-worker so the pre-flight is always <30ms even
+    when get_funding_data itself would need to refetch upstream."""
     from backend.services import admin_settings
+
+    now = time.time()
+    if _availability_cache["data"] and now - _availability_cache["ts"] < _AVAILABILITY_TTL:
+        return _availability_cache["data"]
+
     data = await get_funding_data()
-    return {
+    result = {
         "exchanges": data.get("exchanges", []),
         "symbols": sorted({r["symbol"] for r in data.get("rows", [])}),
         "hidden_symbols": sorted(admin_settings.get_hidden_symbols()),
     }
+    _availability_cache["data"] = result
+    _availability_cache["ts"] = now
+    return result
 
 
 @router.get("/pair")
