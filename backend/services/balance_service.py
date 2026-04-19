@@ -88,20 +88,22 @@ async def _fetch_single(db_wallet: Wallet) -> tuple[BalanceResult | None, str | 
             return None, f"Unknown wallet type: {db_wallet.wallet_type}", "unknown"
 
         provider_instance = wallet_obj.provider()
-        # Hard cap per-wallet fetch — no single exchange should hold up a user
-        # for more than ~25s. Retries + slow APIs otherwise stack to minutes.
+        # Hard cap per-wallet fetch. 35s leaves room for the RetryClient
+        # to actually run 2-3 attempts (each capped at 8-10s) against a
+        # flaky upstream before we give up. 25s was too tight for the
+        # retry chain to complete on-chain providers.
         result = await asyncio.wait_for(
             provider_instance.fetch_balance(wallet=wallet_obj),
-            timeout=25.0,
+            timeout=35.0,
         )
         return result, None, None
 
     except asyncio.TimeoutError:
         logger.warning(
-            "Provider timeout for wallet %s (%s/%s): exceeded 25s",
+            "Provider timeout for wallet %s (%s/%s): exceeded 35s",
             db_wallet.id, db_wallet.wallet_type, db_wallet.type_value,
         )
-        return None, "Provider took too long (>25s) — try again later", "network"
+        return None, "Provider took too long (>35s) — try again later", "network"
     except Exception as e:
         msg = str(e)
         logger.error(

@@ -276,31 +276,40 @@ async def _rest_fallback(exchange: str, symbol: str, limit: int) -> dict | None:
     # Never request more depth from REST than the subsequent WS push will
     # deliver — otherwise the book shrinks visibly when WS catches up.
     req_limit = min(limit, _WS_DEPTH.get(exchange, limit))
+
+    async def _do():
+        try:
+            data = await _fetch_direct(exchange, symbol, req_limit)
+        except Exception:
+            data = None
+        if data and (data.get("bids") or data.get("asks")):
+            now = time.time()
+            entry = _book_cache.setdefault(key, {})
+            entry["data"] = data
+            entry["ts"] = now
+            entry["last_request"] = now
+            entry["source"] = "rest"
+            return data
+        return None
+
+    # Hold the lock only long enough to check/attach the inflight task —
+    # the await is OUTSIDE the lock so a slow exchange doesn't stall
+    # parallel fetches for every other key.
     async with _rest_fallback_inflight_lock:
         existing = _rest_fallback_inflight.get(key)
         if existing and not existing.done():
-            return await existing
-        async def _do():
-            try:
-                data = await _fetch_direct(exchange, symbol, req_limit)
-            except Exception:
-                data = None
-            if data and (data.get("bids") or data.get("asks")):
-                now = time.time()
-                entry = _book_cache.setdefault(key, {})
-                entry["data"] = data
-                entry["ts"] = now
-                entry["last_request"] = now
-                entry["source"] = "rest"
-                return data
-            return None
-        task = asyncio.create_task(_do())
-        _rest_fallback_inflight[key] = task
+            task = existing
+            owner = False
+        else:
+            task = asyncio.create_task(_do())
+            _rest_fallback_inflight[key] = task
+            owner = True
     try:
         return await task
     finally:
-        async with _rest_fallback_inflight_lock:
-            _rest_fallback_inflight.pop(key, None)
+        if owner:
+            async with _rest_fallback_inflight_lock:
+                _rest_fallback_inflight.pop(key, None)
 
 
 async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> dict:

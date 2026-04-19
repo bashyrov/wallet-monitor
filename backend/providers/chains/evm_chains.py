@@ -101,7 +101,10 @@ class EVMChainProvider(BaseChainProvider):
         }
 
         try:
-            resp = await self._client.post(url, json=payload, timeout=30)
+            # 10s per attempt — RetryClient layers on top (up to 3 retries
+            # with exp backoff), so worst case is ~25s. Previously 30s on
+            # a single attempt blew the 25s per-wallet cap.
+            resp = await self._client.post(url, json=payload, timeout=10)
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
@@ -156,7 +159,7 @@ class EVMChainProvider(BaseChainProvider):
                 "method": "eth_getBalance",
                 "params": [wallet.address, "latest"],
                 "id": 1,
-            }, timeout=20)
+            }, timeout=8)
             resp.raise_for_status()
             data = resp.json()
 
