@@ -232,6 +232,10 @@
       border-radius: 12px; overflow: hidden;
       animation: fadeUp .4s .2s ease both;
     }
+    /* Inner padding for cards whose body is just direct children (no <table> etc). */
+    .card.card-padded > *:not(.card-head) { padding-left: 18px; padding-right: 18px; }
+    .card.card-padded > *:not(.card-head):first-of-type { padding-top: 2px; }
+    .card.card-padded > *:last-child { padding-bottom: 18px; }
     .card-head {
       display: flex; align-items: center; justify-content: space-between;
       padding: 14px 18px;
@@ -872,7 +876,7 @@
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
 
         <!-- Maintenance toggle -->
-        <div class="card" style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
           <div class="card-head"><span class="card-title">Maintenance mode</span></div>
           <div style="color:var(--text3);font-size:13px;line-height:1.5">
             When on, every page except <span class="mono">/api/admin/*</span> returns a 503 maintenance screen.
@@ -888,7 +892,7 @@
         </div>
 
         <!-- Hidden symbols -->
-        <div class="card" style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
           <div class="card-head"><span class="card-title">Hidden symbols</span><span id="hid-count" style="font-size:12px;color:var(--text3)">0</span></div>
           <div style="color:var(--text3);font-size:13px;line-height:1.5">
             Drop these tokens from every funding / arb feed. Uppercase, without the quote suffix.
@@ -902,7 +906,7 @@
         </div>
 
         <!-- Disabled exchanges -->
-        <div class="card" style="display:flex;flex-direction:column;gap:12px;grid-column:1/-1">
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px;grid-column:1/-1">
           <div class="card-head"><span class="card-title">Exchange availability</span><span id="ex-count" style="font-size:12px;color:var(--text3)"></span></div>
           <div style="color:var(--text3);font-size:13px;line-height:1.5">
             Turn an exchange off to stop fetching funding rates from it (and to drop its rows from the screener + arb).
@@ -919,7 +923,22 @@
       <div class="page-sub">Disable specific providers for wallet connections — existing wallets keep working, new connections are rejected.</div>
 
       <div style="display:grid;grid-template-columns:1fr;gap:16px">
-        <div class="card" style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
+          <div class="card-head"><span class="card-title">Maintenance mode</span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            When on, every page except <span class="mono">/api/admin/*</span> returns a 503 maintenance screen.
+            File flag <span class="mono">/tmp/avalant_maintenance</span> still works as a fallback.
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle">
+              <input type="checkbox" id="pf-maint-toggle" onchange="saveMaintenance(this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="pf-maint-state" style="font-size:13px;color:var(--text2)">—</span>
+          </div>
+        </div>
+
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
           <div class="card-head"><span class="card-title">CEX exchanges</span><span id="pf-ex-count" style="font-size:12px;color:var(--text3)"></span></div>
           <div style="color:var(--text3);font-size:13px;line-height:1.5">
             Exchanges available as wallet sources (Binance, OKX, etc.). Turning one off hides it from the Add Wallet modal and rejects new API-key submissions.
@@ -927,7 +946,7 @@
           <div id="pf-ex-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px"></div>
         </div>
 
-        <div class="card" style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
           <div class="card-head"><span class="card-title">Perpetual DEXes</span><span id="pf-pd-count" style="font-size:12px;color:var(--text3)"></span></div>
           <div style="color:var(--text3);font-size:13px;line-height:1.5">
             Hyperliquid, Aster, Lighter, Ethereal, Paradex — as wallet sources. Screener-side availability is controlled in the <a href="#" onclick="showTab('screener',null);loadScreenerConfig();return false;" style="color:var(--green)">Screener tab</a>.
@@ -935,7 +954,7 @@
           <div id="pf-pd-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px"></div>
         </div>
 
-        <div class="card" style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
           <div class="card-head"><span class="card-title">Chains</span><span id="pf-ch-count" style="font-size:12px;color:var(--text3)"></span></div>
           <div style="color:var(--text3);font-size:13px;line-height:1.5">
             EVM + non-EVM networks. Disabling a chain hides it from new wallet creation.
@@ -1423,15 +1442,21 @@ async function loadScreenerConfig() {
   }
 }
 
+function _syncMaintenanceUi(on) {
+  const stateText = on ? 'ON — users see the maintenance page' : 'OFF — app serves normally';
+  for (const [tId, sId] of [['maint-toggle','maint-state'], ['pf-maint-toggle','pf-maint-state']]) {
+    const t = document.getElementById(tId);
+    const s = document.getElementById(sId);
+    if (t) t.checked = !!on;
+    if (s) s.textContent = stateText;
+  }
+}
+
 function renderScreenerConfig() {
   const c = _screenerCfg;
   if (!c) return;
 
-  // Maintenance
-  const mt = document.getElementById('maint-toggle');
-  mt.checked = !!c.maintenance_mode;
-  document.getElementById('maint-state').textContent =
-    c.maintenance_mode ? 'ON — users see the maintenance page' : 'OFF — app serves normally';
+  _syncMaintenanceUi(c.maintenance_mode);
 
   // Hidden symbols
   const hid = c.hidden_symbols || [];
@@ -1514,9 +1539,16 @@ let _pfCfg = null;
 
 async function loadPortfolioConfig() {
   try {
-    const r = await Auth.apiFetch('/admin/portfolio-config');
-    if (!r.ok) throw new Error();
-    _pfCfg = await r.json();
+    const [rp, rs] = await Promise.all([
+      Auth.apiFetch('/admin/portfolio-config'),
+      Auth.apiFetch('/admin/screener-config'),
+    ]);
+    if (!rp.ok) throw new Error();
+    _pfCfg = await rp.json();
+    if (rs.ok) {
+      _screenerCfg = await rs.json();
+      _syncMaintenanceUi(_screenerCfg.maintenance_mode);
+    }
     renderPortfolioConfig();
   } catch (e) {
     toast('Failed to load portfolio config', 'error');
