@@ -424,6 +424,9 @@ let _sparks = new Map();// key → [net, net, ...] last N points for sparkline
 let _prevNet = new Map();// key → previous net (for flash + pulse)
 let _view = 'all';
 let _ws = null;
+let _funding = {};     // "ex|sym" → funding row (for off-broadcast watchlist pairs)
+let _fees = {};        // exchange → fee % (from /screener/arbitrage)
+const _DEFAULT_FEE_PCT = 0.05; // fee in percent when unknown
 const SPARK_LEN = 36;
 
 const EX_LABEL={binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate',kucoin:'KuCoin',mexc:'MEXC',bitget:'Bitget',hyperliquid:'Hyperliquid',aster:'Aster',ethereal:'Ethereal',whitebit:'WhiteBIT',bingx:'BingX',lighter:'Lighter',paradex:'Paradex'};
@@ -438,12 +441,86 @@ async function loadWl(){
     const r = await Auth.apiFetch('/screener/watchlist');
     if (!r.ok) throw new Error('http');
     _wl = await r.json();
-    await primeSparklines();
+    await Promise.all([primeSparklines(), primeFees(), refreshFunding()]);
+    seedFromFunding();
     render();
     connectWs();
+    setInterval(async () => { await refreshFunding(); seedFromFunding(); }, 8000);
   } catch (e) {
     document.getElementById('wl-grid').innerHTML = '<div class="wl-empty"><h2>Failed to load</h2><p>Check your connection and reload.</p></div>';
   }
+}
+
+async function primeFees(){
+  try {
+    const r = await Auth.apiFetch('/screener/arbitrage');
+    if (!r.ok) return;
+    const d = await r.json();
+    _fees = d.fees || {};
+  } catch(_){}
+}
+
+async function refreshFunding(){
+  try {
+    const r = await Auth.apiFetch('/screener/funding');
+    if (!r.ok) return;
+    const d = await r.json();
+    const next = {};
+    for (const row of (d.rows || [])) {
+      next[`${row.exchange}|${row.symbol}`] = row;
+    }
+    _funding = next;
+  } catch(_){}
+}
+
+// For watchlist pairs excluded from /ws/arb (negative gross or negative net),
+// synthesise a live entry from the current funding snapshot so the card shows
+// real numbers instead of zeros. Entries from the WS broadcast always win.
+function seedFromFunding(only = null){
+  let updated = 0;
+  const source = only || _wl;
+  for (const w of source) {
+    const k = _key(w.symbol, w.long_exchange, w.short_exchange);
+    if (!only && _live.has(k)) continue;
+    const rL = _funding[`${w.long_exchange}|${w.symbol}`];
+    const rS = _funding[`${w.short_exchange}|${w.symbol}`];
+    if (!rL || !rS) continue;
+    const rateL = (rL.rate || 0) * (8.0 / (rL.interval_h || 8));
+    const rateS = (rS.rate || 0) * (8.0 / (rS.interval_h || 8));
+    const gross = rateS - rateL;
+    const feeL = (_fees[w.long_exchange]  ?? _DEFAULT_FEE_PCT) / 100;
+    const feeS = (_fees[w.short_exchange] ?? _DEFAULT_FEE_PCT) / 100;
+    const totalFees = 2 * (feeL + feeS);
+    const pL = rL.price || 0, pS = rS.price || 0;
+    const spread = pL > 0 ? (pS - pL) / pL : 0;
+    const net = gross + spread - totalFees;
+    const o = {
+      symbol: w.symbol,
+      long_exchange: w.long_exchange,
+      short_exchange: w.short_exchange,
+      long_rate: rateL * 100,
+      short_rate: rateS * 100,
+      long_price: pL,
+      short_price: pS,
+      long_volume: rL.volume_usd || 0,
+      short_volume: rS.volume_usd || 0,
+      gross_funding: gross * 100,
+      price_spread: spread * 100,
+      net_profit: net * 100,
+      next_ts_long: rL.next_ts || 0,
+      next_ts_short: rS.next_ts || 0,
+      long_interval_h: rL.interval_h,
+      short_interval_h: rS.interval_h,
+    };
+    _live.set(k, o);
+    const arr = _sparks.get(k) || [];
+    arr.push(o.net_profit);
+    while (arr.length > SPARK_LEN) arr.shift();
+    _sparks.set(k, arr);
+    updateCard(k, o);
+    updated++;
+  }
+  if (updated) updateKpis();
 }
 
 async function primeSparklines(){
@@ -474,10 +551,11 @@ function connectWs(){
       for (const o of (data.opportunities||[])) {
         idx.set(_key(o.symbol, o.long_exchange, o.short_exchange), o);
       }
+      const missing = [];
       for (const w of _wl) {
         const k = _key(w.symbol, w.long_exchange, w.short_exchange);
         const o = idx.get(k);
-        if (!o) continue;
+        if (!o) { missing.push(w); continue; }
         // update sparkline ring
         const arr = _sparks.get(k) || [];
         arr.push(o.net_profit || 0);
@@ -486,6 +564,9 @@ function connectWs(){
         _live.set(k, o);
         updateCard(k, o);
       }
+      // Pairs excluded from the arb broadcast (gross≤0 or net≤0) stay live by
+      // recomputing from the funding snapshot so the user sees actual state.
+      if (missing.length) seedFromFunding(missing);
     } catch(_){}
   };
   _ws.onclose = () => setTimeout(connectWs, 4000);
