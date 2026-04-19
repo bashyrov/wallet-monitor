@@ -3147,9 +3147,10 @@ function _applyTradeStatus(s){
     _trade[side].balance   = info.balance_usdt || 0;
     const st = document.getElementById(`trade-leg-${side}-status`);
     if (st) {
-      if (info.status === 'ok')       { st.textContent = 'Keys · OK';       st.className = 'trade-leg-status ok'; }
-      else if (info.status === 'disabled') { st.textContent = 'Trade disabled'; st.className = 'trade-leg-status disabled'; }
-      else                            { st.textContent = 'No trade key';    st.className = 'trade-leg-status missing'; }
+      if (info.status === 'ok')           { st.textContent = 'Keys · OK';       st.className = 'trade-leg-status ok'; }
+      else if (info.status === 'admin_blocked') { st.textContent = 'Trading paused by admin'; st.className = 'trade-leg-status disabled'; }
+      else if (info.status === 'disabled'){ st.textContent = 'Trade disabled';  st.className = 'trade-leg-status disabled'; }
+      else                                 { st.textContent = 'No trade key';   st.className = 'trade-leg-status missing'; }
     }
     const bal = document.getElementById(`trade-bal-${side}`);
     if (bal) bal.textContent = (info.balance_usdt != null) ? (Number(info.balance_usdt).toFixed(2) + ' USDT') : '— USDT';

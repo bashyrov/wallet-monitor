@@ -907,6 +907,17 @@
           </div>
           <div id="ex-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px"></div>
         </div>
+
+        <!-- Trade allowlist — block placing orders on specific exchanges -->
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px;grid-column:1/-1">
+          <div class="card-head"><span class="card-title">Trading availability</span><span id="tr-count" style="font-size:12px;color:var(--text3)"></span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            Turn an exchange off to stop users from opening / closing positions through our service on it. The
+            exchange still shows up on the screener, funding and portfolio — this only blocks the trade endpoints.
+            Useful when an adapter has a known bug or we're pausing a venue pending an audit.
+          </div>
+          <div id="tr-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px"></div>
+        </div>
       </div>
     </div>
 
@@ -1520,6 +1531,24 @@ function renderScreenerConfig() {
         </label>
       </div>`;
   }).join('');
+
+  // Trade allowlist (block order placement per exchange)
+  const tradeSupported = c.trade_supported_exchanges || [];
+  const tradeBlocked = new Set(c.trade_disabled_exchanges || []);
+  document.getElementById('tr-count').textContent =
+    `${tradeSupported.length - tradeBlocked.size}/${tradeSupported.length} open for trading`;
+  document.getElementById('tr-grid').innerHTML = tradeSupported.map(ex => {
+    const on = !tradeBlocked.has(ex);
+    const isDex = PERPDEX_EXCHANGES.has(ex);
+    return `
+      <div class="ex-row ${on?'':'off'}">
+        <span class="ex-name">${ex}${isDex?' <span class="ex-kind">DEX</span>':''}</span>
+        <label class="toggle">
+          <input type="checkbox" ${on?'checked':''} onchange="toggleTradeExchange('${ex}',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>`;
+  }).join('');
 }
 
 async function patchScreener(body, okMsg) {
@@ -1555,6 +1584,15 @@ async function toggleExchange(ex, enable) {
   await patchScreener(
     { disabled_exchanges: Array.from(cur).sort() },
     enable ? `${ex} enabled` : `${ex} disabled`,
+  );
+}
+
+async function toggleTradeExchange(ex, enable) {
+  const cur = new Set(_screenerCfg.trade_disabled_exchanges || []);
+  if (enable) cur.delete(ex); else cur.add(ex);
+  await patchScreener(
+    { trade_disabled_exchanges: Array.from(cur).sort() },
+    enable ? `Trading on ${ex} enabled` : `Trading on ${ex} disabled`,
   );
 }
 

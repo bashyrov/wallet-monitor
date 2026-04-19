@@ -44,11 +44,18 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
     """Per-leg trading readiness for an arb pair.
     Returns: { long: {wallet_id, status, balance_usdt}, short: {...} }
     """
+    from backend.services import admin_settings
+    trade_blocked = admin_settings.get_trade_disabled_exchanges()
     out = {"symbol": symbol, "long": {}, "short": {}}
     for leg, ex in (("long", long_ex), ("short", short_ex)):
         if ex not in SUPPORTED_EXCHANGES:
             out[leg] = {"wallet_id": None, "status": "missing", "balance_usdt": None,
                         "note": f"{ex} trading not yet supported"}
+            continue
+        if ex in trade_blocked:
+            out[leg] = {"wallet_id": None, "status": "admin_blocked",
+                        "balance_usdt": None, "exchange": ex,
+                        "note": f"Trading on {ex} is temporarily disabled by admin"}
             continue
         w = _find_wallet(db, user_id, ex)
         status = _leg_status(w)
@@ -94,6 +101,13 @@ async def place_open_order(
     ex = (w.type_value or "").lower()
     if ex not in SUPPORTED_EXCHANGES:
         raise ValueError(f"{ex} not supported yet")
+
+    # Admin-configured trade block — the exchange still serves screener /
+    # funding / portfolio, but new position opens are refused from our
+    # side (e.g. during a maintenance window or an integration audit).
+    from backend.services import admin_settings
+    if ex in admin_settings.get_trade_disabled_exchanges():
+        raise ValueError(f"Trading on {ex} is temporarily disabled by admin")
 
     adapter = ADAPTERS[ex]
 

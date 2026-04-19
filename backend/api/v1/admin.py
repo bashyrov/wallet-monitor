@@ -236,6 +236,12 @@ class ScreenerConfigIn(BaseModel):
     maintenance_mode: bool | None = None
     screener_disabled: bool | None = None
     portfolio_disabled: bool | None = None
+    trade_disabled_exchanges: list[str] | None = None
+
+
+def _trade_supported_set() -> set[str]:
+    from backend.services.trade_adapters import TRADE_SUPPORTED
+    return set(TRADE_SUPPORTED)
 
 
 @router.get("/screener-config")
@@ -247,6 +253,8 @@ def screener_config_get(_: User = Depends(get_admin_user)):
         "maintenance_mode": admin_settings.is_maintenance(),
         "screener_disabled": admin_settings.is_screener_disabled(),
         "portfolio_disabled": admin_settings.is_portfolio_disabled(),
+        "trade_disabled_exchanges": sorted(admin_settings.get_trade_disabled_exchanges()),
+        "trade_supported_exchanges": sorted(_trade_supported_set()),
     }
 
 
@@ -271,6 +279,13 @@ def screener_config_patch(
         admin_settings.set_value(admin_settings.KEY_SCREENER_DISABLED, bool(body.screener_disabled), user_id=user.id)
     if body.portfolio_disabled is not None:
         admin_settings.set_value(admin_settings.KEY_PORTFOLIO_DISABLED, bool(body.portfolio_disabled), user_id=user.id)
+    if body.trade_disabled_exchanges is not None:
+        known = _trade_supported_set()
+        cleaned = sorted({
+            str(s).strip().lower() for s in body.trade_disabled_exchanges
+            if str(s).strip().lower() in known
+        })
+        admin_settings.set_value(admin_settings.KEY_TRADE_DISABLED_EXCHANGES, cleaned, user_id=user.id)
     return screener_config_get(user)
 
 

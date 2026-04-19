@@ -26,6 +26,7 @@ KEY_DISABLED_CHAINS = "disabled_chains"
 KEY_DISABLED_PERPDEXES = "disabled_perpdexes"
 KEY_SCREENER_DISABLED = "screener_disabled"
 KEY_PORTFOLIO_DISABLED = "portfolio_disabled"
+KEY_TRADE_DISABLED_EXCHANGES = "trade_disabled_exchanges"
 
 _DEFAULTS: dict[str, Any] = {
     KEY_HIDDEN_SYMBOLS: [],
@@ -36,6 +37,7 @@ _DEFAULTS: dict[str, Any] = {
     KEY_DISABLED_PERPDEXES: [],
     KEY_SCREENER_DISABLED: False,
     KEY_PORTFOLIO_DISABLED: False,
+    KEY_TRADE_DISABLED_EXCHANGES: [],
 }
 
 
@@ -112,3 +114,10 @@ def get_disabled_chains() -> set[str]:
 
 def get_disabled_perpdexes() -> set[str]:
     return _as_lower_set(KEY_DISABLED_PERPDEXES)
+
+
+def get_trade_disabled_exchanges() -> set[str]:
+    """Exchanges where the admin has blocked users from opening new
+    positions through our service (the exchange stays visible on the
+    screener/funding/portfolio sides)."""
+    return _as_lower_set(KEY_TRADE_DISABLED_EXCHANGES)
