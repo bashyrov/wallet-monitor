@@ -168,9 +168,9 @@ def _maintenance_on() -> bool:
         return False
 
 
-_SCREENER_PATHS = ("/screener", "/arb")
+_SCREENER_PATHS = ("/screener", "/arb", "/watchlist")
 _SCREENER_API_PREFIXES = ("/api/screener/",)
-_PORTFOLIO_PATHS = ("/app", "/archive", "/profile", "/watchlist")
+_PORTFOLIO_PATHS = ("/app", "/archive", "/profile")
 _PORTFOLIO_API_PREFIXES = ("/api/wallets", "/api/portfolio", "/api/alerts", "/api/trade")
 
 
