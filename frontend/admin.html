@@ -630,6 +630,10 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M2 7h10M2 10h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Portfolio
     </a>
+    <a class="drawer-item" id="drawer-maintenance" href="#" onclick="showTab('maintenance',this);loadScreenerConfig();closeDrawer();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 3.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Maintenance
+    </a>
     <div class="drawer-sep"></div>
     <a class="drawer-item" href="/app">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 2H2a1 1 0 00-1 1v9a1 1 0 001 1h10a1 1 0 001-1V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8 1h5v5M13 1L7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -662,6 +666,10 @@
     <a class="sidebar-item" href="#" onclick="showTab('portfolio',this);loadPortfolioConfig();return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M2 7h10M2 10h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Portfolio
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('maintenance',this);loadScreenerConfig();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 3.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Maintenance
     </a>
   </aside>
 
@@ -875,38 +883,6 @@
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
 
-        <!-- Full-site maintenance -->
-        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-          <div class="card-head"><span class="card-title">Full-site maintenance</span></div>
-          <div style="color:var(--text3);font-size:13px;line-height:1.5">
-            When on, every page except <span class="mono">/api/admin/*</span> returns a 503 maintenance screen.
-            File flag <span class="mono">/tmp/avalant_maintenance</span> still works as a fallback.
-          </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <label class="toggle">
-              <input type="checkbox" id="maint-toggle" onchange="saveMaintenance(this.checked)">
-              <span class="toggle-slider"></span>
-            </label>
-            <span id="maint-state" style="font-size:13px;color:var(--text2)">—</span>
-          </div>
-        </div>
-
-        <!-- Screener section maintenance -->
-        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-          <div class="card-head"><span class="card-title">Screener section</span></div>
-          <div style="color:var(--text3);font-size:13px;line-height:1.5">
-            Turns off <span class="mono">/screener</span>, <span class="mono">/arb</span>, and all <span class="mono">/api/screener/*</span> endpoints.
-            The rest of the app (portfolio, admin) keeps running.
-          </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <label class="toggle">
-              <input type="checkbox" id="scr-disabled-toggle" onchange="saveSectionToggle('screener_disabled', this.checked)">
-              <span class="toggle-slider"></span>
-            </label>
-            <span id="scr-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
-          </div>
-        </div>
-
         <!-- Hidden symbols -->
         <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
           <div class="card-head"><span class="card-title">Hidden symbols</span><span id="hid-count" style="font-size:12px;color:var(--text3)">0</span></div>
@@ -939,50 +915,6 @@
       <div class="page-sub">Disable specific providers for wallet connections — existing wallets keep working, new connections are rejected.</div>
 
       <div style="display:grid;grid-template-columns:1fr;gap:16px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
-          <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-            <div class="card-head"><span class="card-title">Full-site maintenance</span></div>
-            <div style="color:var(--text3);font-size:13px;line-height:1.5">
-              Hard kill switch — every page returns 503 except admin API.
-            </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <label class="toggle">
-                <input type="checkbox" id="pf-maint-toggle" onchange="saveMaintenance(this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-              <span id="pf-maint-state" style="font-size:13px;color:var(--text2)">—</span>
-            </div>
-          </div>
-
-          <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-            <div class="card-head"><span class="card-title">Screener section</span></div>
-            <div style="color:var(--text3);font-size:13px;line-height:1.5">
-              Blocks <span class="mono">/screener</span>, <span class="mono">/arb</span>, and <span class="mono">/api/screener/*</span>.
-            </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <label class="toggle">
-                <input type="checkbox" id="pf-scr-disabled-toggle" onchange="saveSectionToggle('screener_disabled', this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-              <span id="pf-scr-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
-            </div>
-          </div>
-
-          <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-            <div class="card-head"><span class="card-title">Portfolio section</span></div>
-            <div style="color:var(--text3);font-size:13px;line-height:1.5">
-              Blocks <span class="mono">/app</span>, <span class="mono">/archive</span>, <span class="mono">/profile</span>, <span class="mono">/watchlist</span>, and wallet/alert APIs.
-            </div>
-            <div style="display:flex;align-items:center;gap:10px">
-              <label class="toggle">
-                <input type="checkbox" id="pf-disabled-toggle" onchange="saveSectionToggle('portfolio_disabled', this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-              <span id="pf-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
-            </div>
-          </div>
-        </div>
-
         <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
           <div class="card-head"><span class="card-title">CEX exchanges</span><span id="pf-ex-count" style="font-size:12px;color:var(--text3)"></span></div>
           <div style="color:var(--text3);font-size:13px;line-height:1.5">
@@ -1005,6 +937,59 @@
             EVM + non-EVM networks. Disabling a chain hides it from new wallet creation.
           </div>
           <div id="pf-ch-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MAINTENANCE TAB ══ -->
+    <div id="tab-maintenance" style="display:none">
+      <div class="page-title">Maintenance</div>
+      <div class="page-sub">Kill switches for the whole site or individual sections. Changes apply within ~15s. <span class="mono">/api/admin/*</span> always stays reachable.</div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
+          <div class="card-head"><span class="card-title">Full-site maintenance</span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            Hard kill switch — every page returns a 503 maintenance screen.
+            File flag <span class="mono">/tmp/avalant_maintenance</span> still works as a fallback.
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle">
+              <input type="checkbox" id="maint-toggle" onchange="saveMaintenance(this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="maint-state" style="font-size:13px;color:var(--text2)">—</span>
+          </div>
+        </div>
+
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
+          <div class="card-head"><span class="card-title">Screener section</span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            Blocks <span class="mono">/screener</span>, <span class="mono">/arb</span>, and <span class="mono">/api/screener/*</span>.
+            Portfolio and admin keep running.
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle">
+              <input type="checkbox" id="scr-disabled-toggle" onchange="saveSectionToggle('screener_disabled', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="scr-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
+          </div>
+        </div>
+
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
+          <div class="card-head"><span class="card-title">Portfolio section</span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            Blocks <span class="mono">/app</span>, <span class="mono">/archive</span>, <span class="mono">/profile</span>, <span class="mono">/watchlist</span>, and wallet/alert/trade APIs.
+            Screener keeps running.
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle">
+              <input type="checkbox" id="pf-disabled-toggle" onchange="saveSectionToggle('portfolio_disabled', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="pf-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1061,7 +1046,7 @@
 <script>
 Auth.requireAdmin('/app');
 
-const TABS = ['dashboard', 'users', 'errors', 'screener', 'portfolio'];
+const TABS = ['dashboard', 'users', 'errors', 'screener', 'portfolio', 'maintenance'];
 const PERPDEX_EXCHANGES = new Set(['hyperliquid', 'aster', 'ethereal', 'lighter', 'paradex']);
 function showTab(tab, el) {
   TABS.forEach(t => {
@@ -1487,40 +1472,19 @@ async function loadScreenerConfig() {
   }
 }
 
-function _syncTogglePair(tIds, sIds, on, onText, offText) {
-  for (const id of tIds) { const t = document.getElementById(id); if (t) t.checked = !!on; }
-  for (const id of sIds) { const s = document.getElementById(id); if (s) s.textContent = on ? onText : offText; }
+function _syncToggle(tId, sId, on, onText, offText) {
+  const t = document.getElementById(tId); if (t) t.checked = !!on;
+  const s = document.getElementById(sId); if (s) s.textContent = on ? onText : offText;
 }
 
-function _syncMaintenanceUi(on) {
-  _syncTogglePair(
-    ['maint-toggle', 'pf-maint-toggle'],
-    ['maint-state', 'pf-maint-state'],
-    on,
-    'ON — entire site is in maintenance',
-    'OFF — site serves normally',
-  );
-}
+const _syncMaintenanceUi = on => _syncToggle('maint-toggle', 'maint-state', on,
+  'ON — entire site is in maintenance', 'OFF — site serves normally');
 
-function _syncScreenerDisabledUi(on) {
-  _syncTogglePair(
-    ['scr-disabled-toggle', 'pf-scr-disabled-toggle'],
-    ['scr-disabled-state', 'pf-scr-disabled-state'],
-    on,
-    'ON — screener + /arb return 503',
-    'OFF — screener is serving',
-  );
-}
+const _syncScreenerDisabledUi = on => _syncToggle('scr-disabled-toggle', 'scr-disabled-state', on,
+  'ON — screener + /arb return 503', 'OFF — screener is serving');
 
-function _syncPortfolioDisabledUi(on) {
-  _syncTogglePair(
-    ['pf-disabled-toggle'],
-    ['pf-disabled-state'],
-    on,
-    'ON — portfolio pages + APIs return 503',
-    'OFF — portfolio is serving',
-  );
-}
+const _syncPortfolioDisabledUi = on => _syncToggle('pf-disabled-toggle', 'pf-disabled-state', on,
+  'ON — portfolio pages + APIs return 503', 'OFF — portfolio is serving');
 
 function renderScreenerConfig() {
   const c = _screenerCfg;
@@ -1616,18 +1580,9 @@ let _pfCfg = null;
 
 async function loadPortfolioConfig() {
   try {
-    const [rp, rs] = await Promise.all([
-      Auth.apiFetch('/admin/portfolio-config'),
-      Auth.apiFetch('/admin/screener-config'),
-    ]);
-    if (!rp.ok) throw new Error();
-    _pfCfg = await rp.json();
-    if (rs.ok) {
-      _screenerCfg = await rs.json();
-      _syncMaintenanceUi(_screenerCfg.maintenance_mode);
-      _syncScreenerDisabledUi(_screenerCfg.screener_disabled);
-      _syncPortfolioDisabledUi(_screenerCfg.portfolio_disabled);
-    }
+    const r = await Auth.apiFetch('/admin/portfolio-config');
+    if (!r.ok) throw new Error();
+    _pfCfg = await r.json();
     renderPortfolioConfig();
   } catch (e) {
     toast('Failed to load portfolio config', 'error');
