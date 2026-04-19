@@ -445,7 +445,7 @@ async def _refresh_loop() -> None:
     from backend.services.alpha_service import score_opportunities
     from backend.services.arbitrage_service import (
         FETCHERS, _cache, _arb_result_cache, _compute_arb_sync,
-        _write_file_cache, get_funding_data,
+        _write_file_cache, get_funding_data, _slim_arb_for_file,
     )
     _fetch_lock = asyncio.Lock()
     async def _single_fetch():
@@ -472,7 +472,7 @@ async def _refresh_loop() -> None:
                 result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
                 _arb_result_cache["data"] = result
                 _arb_result_cache["ts"] = time.time()
-                _write_file_cache("arbitrage.json", result)
+                _write_file_cache("arbitrage.json", _slim_arb_for_file(result))
                 score_opportunities(result.get("opportunities", []))
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)
