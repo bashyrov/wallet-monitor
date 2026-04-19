@@ -179,7 +179,7 @@ body.light .acc-table thead th{background:#F0F0F0;}
 @media (max-width:900px){.main{max-height:none;}.acc-block{min-height:360px;}.acc-tabs{overflow-x:auto;}}
 
 /* LEFT: tabs + charts */
-.col-left{flex:1 1 auto;min-width:320px;display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden;}
+.col-left{flex:0 0 46%;min-width:320px;display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden;}
 
 /* Tabs */
 .chart-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;}
@@ -236,10 +236,7 @@ body.light .acc-table thead th{background:#F0F0F0;}
 .info-stat-val{font-family:var(--mono);font-size:13px;font-weight:600;}
 
 /* ── CENTER: order books ── */
-/* Orderbook column is hidden on desktop — we still poll books in the
-   background to feed the Entry/Exit chart and VWAP calculator, but we
-   don't render the table here (users asked for a cleaner layout). */
-.col-books{display:none !important;}
+.col-books{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
 .books-row{flex:1;display:flex;min-height:0;overflow:hidden;}
 .book-panel{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border);overflow:hidden;position:relative;}
 .book-panel:last-child{border-right:none;}
@@ -1967,10 +1964,6 @@ async function fetchBook(exchange,side){
 }
 
 function renderBook(d,side){
-  // Orderbook column is hidden on this page (data still flows into
-  // _lastBookData for VWAP/Entry-Exit). Skip DOM work if the book table
-  // containers aren't in the page — saves 150ms × 2 legs of wasted render.
-  if (!document.getElementById('book-bids-' + side)) return;
   const rawAsks=(d.asks||[]);
   const rawBids=(d.bids||[]);
   if(!rawAsks.length&&!rawBids.length) return;
@@ -2133,12 +2126,16 @@ function _eeBucket(ts){
 
 function _eeBuildCandles(){
   const bucket=EE_BUCKET[_eeTfSec]||60;
-  // Line-series data: one point per TF bucket, value = last sample in bucket.
+  // Group ALL stored samples (~up to 20min buffer) by bucket — each candle = one TF period
   const bIn=new Map(), bOut=new Map();
   for(const p of _eeHist){
     const t=Math.floor(p.ts/bucket)*bucket;
-    bIn.set(t,{time:t, value:p.inPct});
-    bOut.set(t,{time:t, value:p.outPct});
+    const inRec=bIn.get(t);
+    if(!inRec) bIn.set(t,{time:t,open:p.inPct,high:p.inPct,low:p.inPct,close:p.inPct});
+    else{inRec.high=Math.max(inRec.high,p.inPct);inRec.low=Math.min(inRec.low,p.inPct);inRec.close=p.inPct;}
+    const outRec=bOut.get(t);
+    if(!outRec) bOut.set(t,{time:t,open:p.outPct,high:p.outPct,low:p.outPct,close:p.outPct});
+    else{outRec.high=Math.max(outRec.high,p.outPct);outRec.low=Math.min(outRec.low,p.outPct);outRec.close=p.outPct;}
   }
   const inArr=[...bIn.values()].sort((a,b)=>a.time-b.time);
   const outArr=[...bOut.values()].sort((a,b)=>a.time-b.time);
@@ -2174,8 +2171,8 @@ function _eeApplyTheme(){
     timeScale:{borderColor:c.border},
     crosshair:{vertLine:{color:c.cross},horzLine:{color:c.cross}},
   });
-  _eeInSeries.applyOptions({color:c.inUp});
-  _eeOutSeries.applyOptions({color:c.outUp});
+  _eeInSeries.applyOptions({upColor:c.inUp,downColor:c.inDown,borderUpColor:c.inUp,borderDownColor:c.inDown,wickUpColor:c.inUp,wickDownColor:c.inDown});
+  _eeOutSeries.applyOptions({upColor:c.outUp,downColor:c.outDown,borderUpColor:c.outUp,borderDownColor:c.outDown,wickUpColor:c.outUp,wickDownColor:c.outDown});
 }
 function _eeInit(){
   const el=document.getElementById('ee-chart');
@@ -2190,16 +2187,13 @@ function _eeInit(){
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:c.cross,style:2,width:1},horzLine:{color:c.cross,style:2,width:1}},
     localization:{priceFormatter:v=>(v>=0?'+':'')+v.toFixed(4)+'%'},
   });
-  // Line series for both In and Out — overlapping candlesticks on the same
-  // time/price axis made the In series look invisible when its values sat
-  // close to Out's. Two clearly-coloured lines read much faster.
-  _eeInSeries=_eeChart.addLineSeries({
-    color:c.inUp, lineWidth:2, priceLineVisible:false,
-    priceFormat:{type:'price',precision:4,minMove:0.0001}, title:'In',
+  _eeInSeries=_eeChart.addCandlestickSeries({
+    upColor:c.inUp,downColor:c.inDown,borderUpColor:c.inUp,borderDownColor:c.inDown,wickUpColor:c.inUp,wickDownColor:c.inDown,
+    priceFormat:{type:'price',precision:4,minMove:0.0001},title:'In',
   });
-  _eeOutSeries=_eeChart.addLineSeries({
-    color:c.outUp, lineWidth:2, priceLineVisible:false,
-    priceFormat:{type:'price',precision:4,minMove:0.0001}, title:'Out',
+  _eeOutSeries=_eeChart.addCandlestickSeries({
+    upColor:c.outUp,downColor:c.outDown,borderUpColor:c.outUp,borderDownColor:c.outDown,wickUpColor:c.outUp,wickDownColor:c.outDown,
+    priceFormat:{type:'price',precision:4,minMove:0.0001},title:'Out',
   });
   _eeChart.priceScale('right').applyOptions({autoScale:true});
   const ro=new ResizeObserver(()=>{if(_eeChart) _eeChart.applyOptions({width:el.clientWidth,height:el.clientHeight});});
