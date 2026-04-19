@@ -19,146 +19,40 @@ def _to_book(raw_bids, raw_asks) -> tuple[list, list]:
     return bids, asks
 
 
-# ── Binance Futures (diff-stream + REST snapshot for full depth) ─────────────
+# ── Binance Futures (partial-book snapshot) ──────────────────────────────────
+# The diff-stream + REST snapshot approach works in theory but Binance rate-
+# limits /fapi/v1/depth very aggressively when many symbols are subscribed
+# in parallel (returns 418 "I'm a teapot"). Partial-book @depth20 is stable
+# under any load and matches the level count shown on the native Binance
+# Futures UI (they cap the live book rendering around 20 rows too).
 class BinanceWS(WSAdapter):
-    """Binance's partial-book channel (@depth20) caps at 20 levels. To get the
-    full 1000-level book we subscribe to @depth@100ms (diff stream) and seed
-    the local book from the REST snapshot /fapi/v1/depth?limit=1000. Deltas
-    arrive as [price, qty] pairs, qty=0 removes the level.
-
-    Per Binance docs, the sync algorithm:
-      1. Open a WS connection and buffer diff events.
-      2. Fetch REST snapshot with lastUpdateId.
-      3. Drop any buffered event whose u < lastUpdateId.
-      4. The first event to apply must satisfy U <= lastUpdateId + 1 <= u.
-      5. Subsequent events must satisfy pu == last applied event's u.
-
-    We keep snapshot-sync simple: seed once on subscribe, drop stale events,
-    then merge. A mismatch triggers a resnapshot on the next delta.
-    """
-
     name = "binance"
     url = "wss://fstream.binance.com/ws"
     _rest_depth_url = "https://fapi.binance.com/fapi/v1/depth"
-    _snap_limit = 1000  # Binance Futures REST max
+    _snap_limit = 1000
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
-        self._books: dict[str, dict] = {}  # sym → {"bids", "asks", "lastUpdateId", "buffer", "ready"}
+        self._books: dict[str, dict] = {}
 
     def on_reconnect(self) -> None:
         self._books.clear()
 
     def build_subscribe(self, symbols):
-        params = [f"{s.lower()}usdt@depth@100ms" for s in symbols]
+        params = [f"{s.lower()}usdt@depth20@100ms" for s in symbols]
         return {"method": "SUBSCRIBE", "params": params, "id": 1}
 
-    async def _seed_snapshot(self, token: str) -> None:
-        """Fetch REST snapshot and drain any buffered deltas that came in
-        before the snapshot was ready."""
-        try:
-            async with httpx.AsyncClient(timeout=8) as c:
-                r = await c.get(f"{self._rest_depth_url}?symbol={token}USDT&limit={self._snap_limit}")
-                if r.status_code != 200:
-                    return
-                snap = r.json()
-        except Exception as exc:
-            logger.debug("%s snapshot fetch failed for %s: %s", self.name, token, exc)
-            return
-
-        last_id = int(snap.get("lastUpdateId") or 0)
-        book = self._books.setdefault(token, {"bids": {}, "asks": {}, "lastUpdateId": 0, "buffer": [], "ready": False})
-        book["bids"] = {float(p): float(q) for p, q in snap.get("bids", []) if float(q) > 0}
-        book["asks"] = {float(p): float(q) for p, q in snap.get("asks", []) if float(q) > 0}
-        book["lastUpdateId"] = last_id
-        # Drain buffered deltas in order, applying any that extend the
-        # snapshot's sequence. We don't enforce strict U == last+1 here —
-        # that check is only meaningful for the live stream, and buffered
-        # events are guaranteed in-order from the WS anyway. Skip stale
-        # ones (u < last), merge the rest, advance last to the final u.
-        for ev in book.get("buffer", []):
-            u = int(ev.get("u") or 0)
-            if u <= last_id:
-                continue
-            for p, q in ev.get("b", []):
-                fp, fq = float(p), float(q)
-                if fq == 0:
-                    book["bids"].pop(fp, None)
-                else:
-                    book["bids"][fp] = fq
-            for p, q in ev.get("a", []):
-                fp, fq = float(p), float(q)
-                if fq == 0:
-                    book["asks"].pop(fp, None)
-                else:
-                    book["asks"][fp] = fq
-            last_id = u
-        book["lastUpdateId"] = last_id
-        book["buffer"] = []
-        book["ready"] = True
-        book["_seed_scheduled"] = False
-
-    def _apply_delta(self, token: str, ev: dict) -> bool:
-        book = self._books.get(token)
-        if not book:
-            return False
-        U = int(ev.get("U") or 0)
-        u = int(ev.get("u") or 0)
-        last = int(book.get("lastUpdateId") or 0)
-        if u < last:
-            return False  # stale
-        if not book.get("ready"):
-            return False  # not seeded yet — should be buffered
-        if U > last + 1:
-            # Gap — resync from REST. Mark unready so next seed kicks in.
-            book["ready"] = False
-            return False
-        for p, q in ev.get("b", []):
-            fp, fq = float(p), float(q)
-            if fq == 0:
-                book["bids"].pop(fp, None)
-            else:
-                book["bids"][fp] = fq
-        for p, q in ev.get("a", []):
-            fp, fq = float(p), float(q)
-            if fq == 0:
-                book["asks"].pop(fp, None)
-            else:
-                book["asks"][fp] = fq
-        book["lastUpdateId"] = u
-        return True
-
     def parse_message(self, msg):
-        if not isinstance(msg, dict) or "s" not in msg or "U" not in msg:
+        if msg.get("result") is None and "params" in msg:
+            return None
+        if not isinstance(msg, dict) or "s" not in msg:
             return None
         sym = msg["s"]
         if not sym.endswith("USDT"):
             return None
         token = sym[:-4]
-        book = self._books.setdefault(token, {"bids": {}, "asks": {}, "lastUpdateId": 0, "buffer": [], "ready": False})
-
-        if not book.get("ready"):
-            # Buffer incoming deltas while we fetch the snapshot. Schedule seed
-            # on first message — idempotent thanks to "ready" flag.
-            book.setdefault("buffer", []).append(msg)
-            if not book.get("_seed_scheduled"):
-                book["_seed_scheduled"] = True
-                asyncio.create_task(self._seed_snapshot(token))
-            return None
-
-        applied = self._apply_delta(token, msg)
-        if not applied:
-            # Gap detected — kick a re-seed.
-            if not book.get("_seed_scheduled"):
-                book["_seed_scheduled"] = True
-                asyncio.create_task(self._seed_snapshot(token))
-            return None
-
-        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
-        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
-        # Clear the seed_scheduled flag once we've produced a live update
-        book["_seed_scheduled"] = False
-        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
+        bids, asks = _to_book(msg.get("b"), msg.get("a"))
+        return token, bids, asks
 
 
 # ── Bybit Linear Perp ─────────────────────────────────────────────────────────
@@ -365,7 +259,7 @@ class AsterWS(BinanceWS):
         # Aster rejects large single-frame subscribes under load — chunk by 5
         frames = []
         for i in range(0, len(symbols), 5):
-            params = [f"{s.lower()}usdt@depth@100ms" for s in symbols[i:i + 5]]
+            params = [f"{s.lower()}usdt@depth20@100ms" for s in symbols[i:i + 5]]
             frames.append({"method": "SUBSCRIBE", "params": params, "id": i + 1})
         return frames
 
