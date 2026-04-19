@@ -166,6 +166,27 @@
     .section-title { font-size: 13px; font-weight: 600; }
     .section-body { padding: 20px; }
 
+    /* Collapsible section variant — used by the API Keys card */
+    .section-card.collapsible > .section-head { cursor: pointer; user-select: none; }
+    .section-card.collapsible > .section-head .section-chev {
+      width: 12px; height: 12px; color: var(--text3);
+      transition: transform .25s cubic-bezier(.16,1,.3,1);
+    }
+    .section-card.collapsible.is-collapsed > .section-head {
+      border-bottom-color: transparent;
+    }
+    .section-card.collapsible.is-collapsed > .section-head .section-chev {
+      transform: rotate(-90deg);
+    }
+    /* Wrapper owns the height animation; inner body keeps its own padding. */
+    .section-card.collapsible > .section-body-wrap {
+      max-height: 2000px; overflow: hidden;
+      transition: max-height .35s cubic-bezier(.16,1,.3,1);
+    }
+    .section-card.collapsible.is-collapsed > .section-body-wrap {
+      max-height: 0;
+    }
+
     /* ── PLAN CARD ── */
     .plan-hero {
       display: flex; align-items: center; gap: 16px;
@@ -555,13 +576,15 @@
   </div>
 
   <!-- API Keys -->
-  <div class="section-card" id="keys-card" style="margin-bottom:20px">
-    <div class="section-head">
+  <div class="section-card collapsible is-collapsed" id="keys-card" style="margin-bottom:20px">
+    <div class="section-head" onclick="toggleKeysCard()" aria-expanded="false">
       <span class="section-title">API Keys</span>
-      <div style="display:flex;gap:6px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center">
         <span style="font-size:10.5px;color:var(--text3)">Manage read-only and trading keys per exchange</span>
+        <svg class="section-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
       </div>
     </div>
+    <div class="section-body-wrap">
     <div class="section-body" style="padding:0">
       <div class="k-tabs">
         <button class="k-tab is-active" data-tab="list" onclick="kSwitch(this)">My Keys <span class="k-count" id="k-count">0</span></button>
@@ -628,7 +651,7 @@
                     <div style="font-size:10.5px;color:var(--text3);margin-top:2px;line-height:1.45">
                       Used by the arbitrage screener. Key needs <b style="color:var(--yellow)">Futures trading</b>
                       and <b style="color:var(--red)">NO withdrawal</b>. Only <b>one trading-eligible key per exchange</b>.
-                      Supported: Binance, Bybit.
+                      Supported on every CEX we integrate plus Hyperliquid, Aster &amp; Ethereal.
                     </div>
                   </div>
                 </label>
@@ -644,6 +667,7 @@
         </div>
       </div>
     </div>
+    </div><!-- /section-body-wrap -->
   </div>
   <style>
     .k-tabs{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--surface2);}
@@ -1139,7 +1163,14 @@ loadProfile();
 const _K_EX_LABEL = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', backpack:'Backpack' };
 const _K_EX_COLOR = { binance:'#F0B90B', bybit:'#F0842D', okx:'#8BC6FF', gate:'#17C684', kucoin:'#09BA86', mexc:'#17D854', bitget:'#00D2C8', backpack:'#64B4FF' };
 const _K_PASSPHRASE_EX = new Set(['okx','kucoin','bitget']);
-const _K_TRADABLE = new Set(['binance','bybit']);
+// Matches backend TRADE_SUPPORTED: every CEX with a trade adapter plus the
+// three perp DEXes that we can place orders on (hyperliquid/aster/ethereal).
+// Keep in sync with backend/services/trade_adapters/__init__.py.
+const _K_TRADABLE = new Set([
+  'binance','bybit','okx','gate','mexc','kucoin','bitget',
+  'bingx','whitebit','backpack',
+  'hyperliquid','aster','ethereal',
+]);
 let _kWallets = [];
 
 function kSwitch(el){ kSwitchTo(el.dataset.tab); }
@@ -1269,6 +1300,31 @@ function kConfirmOk(){ const r = _kConfirmResolve; _kConfirmResolve = null; docu
 function kConfirmCancel(){ const r = _kConfirmResolve; _kConfirmResolve = null; document.getElementById('k-confirm-backdrop').classList.remove('open'); if (r) r(false); }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { kConfirmCancel(); kEditClose(); } });
 
+function toggleKeysCard(){
+  const card = document.getElementById('keys-card');
+  if (!card) return;
+  const collapsed = card.classList.toggle('is-collapsed');
+  card.querySelector('.section-head')?.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  try {
+    localStorage.setItem('keys-card-open', collapsed ? '0' : '1');
+  } catch {}
+  // Lazy-load the wallet list only when the user first opens the panel
+  if (!collapsed && !_kWallets.length) kLoad();
+}
+
+// Restore prior open/closed state on page load (default: closed)
+(function _restoreKeysCard(){
+  try {
+    if (localStorage.getItem('keys-card-open') === '1') {
+      const card = document.getElementById('keys-card');
+      if (card) {
+        card.classList.remove('is-collapsed');
+        card.querySelector('.section-head')?.setAttribute('aria-expanded', 'true');
+      }
+    }
+  } catch {}
+})();
+
 async function kLoad(){
   try {
     const r = await Auth.apiFetch('/wallets');
@@ -1287,7 +1343,7 @@ function kRender(){
   if (!_kWallets.length) {
     list.innerHTML = `<div class="k-empty">
       <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:6px">No API keys yet</div>
-      <div>Add a Binance or Bybit key to enable live trading, or any supported exchange for read-only balances.</div>
+      <div>Add any supported CEX or perp-DEX key — Portfolio (read) or Screener (trading) or both.</div>
       <button class="k-btn k-btn-primary" style="margin-top:14px" onclick="kSwitchTo('add')">+ Add your first key</button>
     </div>`;
     return;
@@ -1520,7 +1576,14 @@ async function kEditSubmit(){
   }
 }
 
-kLoad();
+// Only auto-load the keys list if the card was left open by the user.
+// Collapsed state is the default, so a fresh visitor doesn't pay for the
+// /wallets roundtrip until they actually expand the panel.
+try {
+  if (localStorage.getItem('keys-card-open') === '1') kLoad();
+} catch {
+  kLoad();
+}
 </script>
 
 <nav class="bottom-nav">

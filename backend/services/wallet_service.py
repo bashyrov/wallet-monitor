@@ -25,6 +25,9 @@ def wallet_to_out(wallet: Wallet) -> WalletOut:
         wallet_type=wallet.wallet_type,
         type_value=wallet.type_value,
         display_info=_display_info(wallet),
+        is_archived=bool(wallet.is_archived),
+        can_trade=bool(wallet.can_trade),
+        purpose=wallet.purpose or "portfolio",
         created_at=wallet.created_at,
         tags=[TagOut(id=t.id, name=t.name, color=t.color) for t in wallet.tags],
         addresses=[WalletAddressOut(id=a.id, wallet_id=a.wallet_id, name=a.name, address=a.address)
