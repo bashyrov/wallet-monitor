@@ -234,17 +234,19 @@ class ScreenerConfigIn(BaseModel):
     hidden_symbols: list[str] | None = None
     disabled_exchanges: list[str] | None = None
     maintenance_mode: bool | None = None
+    screener_disabled: bool | None = None
+    portfolio_disabled: bool | None = None
 
 
 @router.get("/screener-config")
 def screener_config_get(_: User = Depends(get_admin_user)):
-    hidden = sorted(admin_settings.get_hidden_symbols())
-    disabled = sorted(admin_settings.get_disabled_exchanges())
     return {
-        "hidden_symbols": hidden,
-        "disabled_exchanges": disabled,
+        "hidden_symbols": sorted(admin_settings.get_hidden_symbols()),
+        "disabled_exchanges": sorted(admin_settings.get_disabled_exchanges()),
         "available_exchanges": sorted(FETCHERS.keys()),
         "maintenance_mode": admin_settings.is_maintenance(),
+        "screener_disabled": admin_settings.is_screener_disabled(),
+        "portfolio_disabled": admin_settings.is_portfolio_disabled(),
     }
 
 
@@ -265,6 +267,10 @@ def screener_config_patch(
         admin_settings.set_value(admin_settings.KEY_DISABLED_EXCHANGES, cleaned_ex, user_id=user.id)
     if body.maintenance_mode is not None:
         admin_settings.set_value(admin_settings.KEY_MAINTENANCE, bool(body.maintenance_mode), user_id=user.id)
+    if body.screener_disabled is not None:
+        admin_settings.set_value(admin_settings.KEY_SCREENER_DISABLED, bool(body.screener_disabled), user_id=user.id)
+    if body.portfolio_disabled is not None:
+        admin_settings.set_value(admin_settings.KEY_PORTFOLIO_DISABLED, bool(body.portfolio_disabled), user_id=user.id)
     return screener_config_get(user)
 
 

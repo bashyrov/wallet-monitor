@@ -168,16 +168,67 @@ def _maintenance_on() -> bool:
         return False
 
 
+_SCREENER_PATHS = ("/screener", "/arb")
+_SCREENER_API_PREFIXES = ("/api/screener/",)
+_PORTFOLIO_PATHS = ("/app", "/archive", "/profile", "/watchlist")
+_PORTFOLIO_API_PREFIXES = ("/api/wallets", "/api/portfolio", "/api/alerts", "/api/trade")
+
+
+def _section_maintenance_html(section: str, title: str, body: str) -> str:
+    # Standalone inline page — no dependency on static assets so it works even
+    # during maintenance. Matches avalant visual language.
+    return f"""<!DOCTYPE html><html><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>{title} · avalant_</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel=stylesheet>
+<style>
+html,body{{margin:0;padding:0;background:#0E0E11;color:#E6E8E3;font-family:Inter,system-ui,sans-serif;height:100%;-webkit-font-smoothing:antialiased;}}
+.wrap{{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}}
+.card{{max-width:440px;width:100%;background:#131217;border:1px solid #22222A;border-radius:14px;padding:32px 28px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.45);}}
+.icon{{width:52px;height:52px;margin:0 auto 18px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:rgba(229,192,123,0.12);border:1px solid rgba(229,192,123,0.4);color:#E5C07B;}}
+.section{{display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.14em;padding:3px 9px;border-radius:5px;background:rgba(26,255,171,0.08);color:#1AFFAB;border:1px solid rgba(26,255,171,0.3);text-transform:uppercase;margin-bottom:10px;}}
+h1{{margin:0 0 10px;font-size:21px;letter-spacing:-0.01em;font-weight:700;}}
+p{{margin:0 0 22px;color:#9B9FAB;font-size:13.5px;line-height:1.55;}}
+.cta{{display:inline-block;padding:10px 22px;border-radius:9px;background:#1AFFAB;color:#0a0a0f;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:-0.005em;transition:transform .15s,box-shadow .15s;}}
+.cta:hover{{transform:translateY(-1px);box-shadow:0 6px 18px rgba(26,255,171,0.25);}}
+.brand{{margin-top:26px;font-weight:800;font-size:14px;letter-spacing:-0.02em;color:#676B7E;}}
+.brand span{{color:#1AFFAB;animation:blink 1s infinite;}}
+@keyframes blink{{50%{{opacity:0;}}}}
+</style></head><body>
+<div class=wrap><div class=card>
+  <div class=icon><svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
+  <div class=section>{section}</div>
+  <h1>{title}</h1>
+  <p>{body}</p>
+  <a class=cta href="/">Back to home</a>
+  <div class=brand>avalant<span>_</span></div>
+</div></div>
+</body></html>"""
+
+
+def _is_screener_path(path: str) -> bool:
+    return any(path == p or path.startswith(p + "/") or path.startswith(p + "?") for p in _SCREENER_PATHS) \
+        or path.startswith(_SCREENER_API_PREFIXES)
+
+
+def _is_portfolio_path(path: str) -> bool:
+    return any(path == p or path.startswith(p + "/") or path.startswith(p + "?") for p in _PORTFOLIO_PATHS) \
+        or path.startswith(_PORTFOLIO_API_PREFIXES)
+
+
 @app.middleware("http")
 async def maintenance_gate(request: Request, call_next) -> Response:
+    from fastapi.responses import FileResponse as _FR
+    from starlette.responses import HTMLResponse, JSONResponse
+    path = request.url.path
+
     if _maintenance_on():
-        path = request.url.path
         # Allow monitor hits + static assets needed by the maintenance page
         allow = path in ("/maintenance", "/maintenance.html") or \
                 path.startswith(_MAINT_BYPASS_PREFIXES) or \
                 path.startswith("/api/admin/")
         if not allow:
-            from fastapi.responses import FileResponse as _FR
             return _FR(
                 "frontend/maintenance.html",
                 status_code=503,
@@ -187,6 +238,39 @@ async def maintenance_gate(request: Request, call_next) -> Response:
                     "Retry-After": "600",
                 },
             )
+
+    # Per-section soft maintenance — /api/admin/* always stays reachable so
+    # the toggle can be flipped back off.
+    if not path.startswith("/api/admin/"):
+        try:
+            from backend.services import admin_settings
+            if admin_settings.is_screener_disabled() and _is_screener_path(path):
+                if path.startswith("/api/"):
+                    return JSONResponse({"detail": "Screener temporarily disabled"}, status_code=503)
+                return HTMLResponse(
+                    _section_maintenance_html(
+                        "Screener",
+                        "Screener temporarily unavailable",
+                        "We're doing scheduled maintenance on the screener and arbitrage pages. Funding rates and pair pages will be back shortly.",
+                    ),
+                    status_code=503,
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Retry-After": "600"},
+                )
+            if admin_settings.is_portfolio_disabled() and _is_portfolio_path(path):
+                if path.startswith("/api/"):
+                    return JSONResponse({"detail": "Portfolio temporarily disabled"}, status_code=503)
+                return HTMLResponse(
+                    _section_maintenance_html(
+                        "Portfolio",
+                        "Portfolio temporarily unavailable",
+                        "Your portfolio, balance fetches, and alerts are paused for maintenance. The screener stays available.",
+                    ),
+                    status_code=503,
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Retry-After": "600"},
+                )
+        except Exception:
+            pass
+
     return await call_next(request)
 
 

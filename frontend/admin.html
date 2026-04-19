@@ -875,9 +875,9 @@
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
 
-        <!-- Maintenance toggle -->
+        <!-- Full-site maintenance -->
         <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-          <div class="card-head"><span class="card-title">Maintenance mode</span></div>
+          <div class="card-head"><span class="card-title">Full-site maintenance</span></div>
           <div style="color:var(--text3);font-size:13px;line-height:1.5">
             When on, every page except <span class="mono">/api/admin/*</span> returns a 503 maintenance screen.
             File flag <span class="mono">/tmp/avalant_maintenance</span> still works as a fallback.
@@ -888,6 +888,22 @@
               <span class="toggle-slider"></span>
             </label>
             <span id="maint-state" style="font-size:13px;color:var(--text2)">—</span>
+          </div>
+        </div>
+
+        <!-- Screener section maintenance -->
+        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
+          <div class="card-head"><span class="card-title">Screener section</span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            Turns off <span class="mono">/screener</span>, <span class="mono">/arb</span>, and all <span class="mono">/api/screener/*</span> endpoints.
+            The rest of the app (portfolio, admin) keeps running.
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle">
+              <input type="checkbox" id="scr-disabled-toggle" onchange="saveSectionToggle('screener_disabled', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="scr-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
           </div>
         </div>
 
@@ -923,18 +939,47 @@
       <div class="page-sub">Disable specific providers for wallet connections — existing wallets keep working, new connections are rejected.</div>
 
       <div style="display:grid;grid-template-columns:1fr;gap:16px">
-        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-          <div class="card-head"><span class="card-title">Maintenance mode</span></div>
-          <div style="color:var(--text3);font-size:13px;line-height:1.5">
-            When on, every page except <span class="mono">/api/admin/*</span> returns a 503 maintenance screen.
-            File flag <span class="mono">/tmp/avalant_maintenance</span> still works as a fallback.
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+          <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
+            <div class="card-head"><span class="card-title">Full-site maintenance</span></div>
+            <div style="color:var(--text3);font-size:13px;line-height:1.5">
+              Hard kill switch — every page returns 503 except admin API.
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <label class="toggle">
+                <input type="checkbox" id="pf-maint-toggle" onchange="saveMaintenance(this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+              <span id="pf-maint-state" style="font-size:13px;color:var(--text2)">—</span>
+            </div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <label class="toggle">
-              <input type="checkbox" id="pf-maint-toggle" onchange="saveMaintenance(this.checked)">
-              <span class="toggle-slider"></span>
-            </label>
-            <span id="pf-maint-state" style="font-size:13px;color:var(--text2)">—</span>
+
+          <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
+            <div class="card-head"><span class="card-title">Screener section</span></div>
+            <div style="color:var(--text3);font-size:13px;line-height:1.5">
+              Blocks <span class="mono">/screener</span>, <span class="mono">/arb</span>, and <span class="mono">/api/screener/*</span>.
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <label class="toggle">
+                <input type="checkbox" id="pf-scr-disabled-toggle" onchange="saveSectionToggle('screener_disabled', this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+              <span id="pf-scr-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
+            </div>
+          </div>
+
+          <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
+            <div class="card-head"><span class="card-title">Portfolio section</span></div>
+            <div style="color:var(--text3);font-size:13px;line-height:1.5">
+              Blocks <span class="mono">/app</span>, <span class="mono">/archive</span>, <span class="mono">/profile</span>, <span class="mono">/watchlist</span>, and wallet/alert APIs.
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <label class="toggle">
+                <input type="checkbox" id="pf-disabled-toggle" onchange="saveSectionToggle('portfolio_disabled', this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+              <span id="pf-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
+            </div>
           </div>
         </div>
 
@@ -1442,14 +1487,39 @@ async function loadScreenerConfig() {
   }
 }
 
+function _syncTogglePair(tIds, sIds, on, onText, offText) {
+  for (const id of tIds) { const t = document.getElementById(id); if (t) t.checked = !!on; }
+  for (const id of sIds) { const s = document.getElementById(id); if (s) s.textContent = on ? onText : offText; }
+}
+
 function _syncMaintenanceUi(on) {
-  const stateText = on ? 'ON — users see the maintenance page' : 'OFF — app serves normally';
-  for (const [tId, sId] of [['maint-toggle','maint-state'], ['pf-maint-toggle','pf-maint-state']]) {
-    const t = document.getElementById(tId);
-    const s = document.getElementById(sId);
-    if (t) t.checked = !!on;
-    if (s) s.textContent = stateText;
-  }
+  _syncTogglePair(
+    ['maint-toggle', 'pf-maint-toggle'],
+    ['maint-state', 'pf-maint-state'],
+    on,
+    'ON — entire site is in maintenance',
+    'OFF — site serves normally',
+  );
+}
+
+function _syncScreenerDisabledUi(on) {
+  _syncTogglePair(
+    ['scr-disabled-toggle', 'pf-scr-disabled-toggle'],
+    ['scr-disabled-state', 'pf-scr-disabled-state'],
+    on,
+    'ON — screener + /arb return 503',
+    'OFF — screener is serving',
+  );
+}
+
+function _syncPortfolioDisabledUi(on) {
+  _syncTogglePair(
+    ['pf-disabled-toggle'],
+    ['pf-disabled-state'],
+    on,
+    'ON — portfolio pages + APIs return 503',
+    'OFF — portfolio is serving',
+  );
 }
 
 function renderScreenerConfig() {
@@ -1457,6 +1527,8 @@ function renderScreenerConfig() {
   if (!c) return;
 
   _syncMaintenanceUi(c.maintenance_mode);
+  _syncScreenerDisabledUi(c.screener_disabled);
+  _syncPortfolioDisabledUi(c.portfolio_disabled);
 
   // Hidden symbols
   const hid = c.hidden_symbols || [];
@@ -1524,8 +1596,13 @@ async function toggleExchange(ex, enable) {
 async function saveMaintenance(on) {
   await patchScreener(
     { maintenance_mode: on },
-    on ? 'Maintenance mode ON' : 'Maintenance mode OFF',
+    on ? 'Full-site maintenance ON' : 'Full-site maintenance OFF',
   );
+}
+
+async function saveSectionToggle(key, on) {
+  const label = { screener_disabled: 'Screener', portfolio_disabled: 'Portfolio' }[key] || key;
+  await patchScreener({ [key]: on }, on ? `${label} disabled` : `${label} re-enabled`);
 }
 
 document.getElementById('hid-input')?.addEventListener('keydown', e => {
@@ -1548,6 +1625,8 @@ async function loadPortfolioConfig() {
     if (rs.ok) {
       _screenerCfg = await rs.json();
       _syncMaintenanceUi(_screenerCfg.maintenance_mode);
+      _syncScreenerDisabledUi(_screenerCfg.screener_disabled);
+      _syncPortfolioDisabledUi(_screenerCfg.portfolio_disabled);
     }
     renderPortfolioConfig();
   } catch (e) {

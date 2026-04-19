@@ -24,6 +24,8 @@ KEY_MAINTENANCE = "maintenance_mode"
 KEY_DISABLED_WALLET_EXCHANGES = "disabled_wallet_exchanges"
 KEY_DISABLED_CHAINS = "disabled_chains"
 KEY_DISABLED_PERPDEXES = "disabled_perpdexes"
+KEY_SCREENER_DISABLED = "screener_disabled"
+KEY_PORTFOLIO_DISABLED = "portfolio_disabled"
 
 _DEFAULTS: dict[str, Any] = {
     KEY_HIDDEN_SYMBOLS: [],
@@ -32,6 +34,8 @@ _DEFAULTS: dict[str, Any] = {
     KEY_DISABLED_WALLET_EXCHANGES: [],
     KEY_DISABLED_CHAINS: [],
     KEY_DISABLED_PERPDEXES: [],
+    KEY_SCREENER_DISABLED: False,
+    KEY_PORTFOLIO_DISABLED: False,
 }
 
 
@@ -84,6 +88,14 @@ def get_disabled_exchanges() -> set[str]:
 
 def is_maintenance() -> bool:
     return bool(get(KEY_MAINTENANCE))
+
+
+def is_screener_disabled() -> bool:
+    return bool(get(KEY_SCREENER_DISABLED))
+
+
+def is_portfolio_disabled() -> bool:
+    return bool(get(KEY_PORTFOLIO_DISABLED))
 
 
 def _as_lower_set(key: str) -> set[str]:
