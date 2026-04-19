@@ -2684,8 +2684,70 @@ async function deleteAlert(id){
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+const EX_LABEL_MAP = {binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate.io',kucoin:'KuCoin',mexc:'MEXC',bitget:'Bitget',hyperliquid:'Hyperliquid',aster:'Aster',ethereal:'Ethereal',whitebit:'WhiteBIT',bingx:'BingX'};
+
+async function _assertExchangesEnabled(){
+  try {
+    const r = await fetch('/api/screener/funding');
+    if (!r.ok) return true;  // on error, fall through (don't lock out user)
+    const d = await r.json();
+    const enabled = new Set(d.exchanges || []);
+    const missing = [LONG, SHORT].filter(ex => !enabled.has(ex));
+    if (missing.length) {
+      _showExchangeDisabledModal(missing);
+      return false;
+    }
+    // Symbol may be admin-hidden — detect via absence from funding rows.
+    const rows = d.rows || [];
+    const symPresent = rows.some(r => r.symbol === SYM);
+    if (!symPresent) {
+      _showSymbolHiddenModal();
+      return false;
+    }
+  } catch (_) { /* same — don't block */ }
+  return true;
+}
+
+function _showSymbolHiddenModal(){
+  const html = `
+    <div id="ex-disabled-mask" style="position:fixed;inset:0;background:rgba(14,14,17,0.82);backdrop-filter:blur(6px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px">
+      <div style="max-width:440px;width:100%;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px 24px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.5)">
+        <div style="width:48px;height:48px;margin:0 auto 16px;border-radius:12px;background:rgba(229,192,123,0.12);border:1px solid rgba(229,192,123,0.4);display:flex;align-items:center;justify-content:center;color:var(--yellow)">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.5-5 6.5-5 6.5 5 6.5 5-2.5 5-6.5 5-6.5-5-6.5-5z"/><path d="M2 2l12 12"/></svg>
+        </div>
+        <h2 style="margin:0 0 8px;font-size:19px;letter-spacing:-0.01em">Token not available</h2>
+        <p style="margin:0 0 20px;color:var(--text3);font-size:13px;line-height:1.55">
+          <span style="font-family:var(--mono);color:var(--text)">${SYM}</span> is currently hidden by the administrator. It will reappear on the screener once it's unblocked.
+        </p>
+        <a href="/screener" style="display:inline-block;padding:9px 22px;border-radius:9px;background:var(--green);color:#0a0a0f;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:-0.005em">Back to screener</a>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function _showExchangeDisabledModal(missing){
+  const names = missing.map(ex => EX_LABEL_MAP[ex] || ex).join(' & ');
+  const html = `
+    <div id="ex-disabled-mask" style="position:fixed;inset:0;background:rgba(14,14,17,0.82);backdrop-filter:blur(6px);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px">
+      <div style="max-width:440px;width:100%;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px 24px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.5)">
+        <div style="width:48px;height:48px;margin:0 auto 16px;border-radius:12px;background:rgba(229,192,123,0.12);border:1px solid rgba(229,192,123,0.4);display:flex;align-items:center;justify-content:center;color:var(--yellow)">
+          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5L1.5 13.5h13L8 1.5z"/><path d="M8 6v3.5"/><circle cx="8" cy="11.7" r="0.55" fill="currentColor"/></svg>
+        </div>
+        <h2 style="margin:0 0 8px;font-size:19px;letter-spacing:-0.01em">Exchange temporarily unavailable</h2>
+        <p style="margin:0 0 20px;color:var(--text3);font-size:13px;line-height:1.55">
+          ${names} ${missing.length > 1 ? 'are' : 'is'} currently disabled by the administrator.
+          This pair cannot be viewed right now — try again later or pick another exchange.
+        </p>
+        <a href="/screener" style="display:inline-block;padding:9px 22px;border-radius:9px;background:var(--green);color:#0a0a0f;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:-0.005em">Back to screener</a>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
 async function init(){
   if(!SYM||!LONG||!SHORT)return;
+  // Before wiring anything up, confirm both legs are currently enabled by admin.
+  if (!(await _assertExchangesEnabled())) return;
   renderTopBar();
   // Critical path: WS + books start immediately (non-blocking);
   // lightweight /pair endpoint fetches only 2 exchanges (not all 12).
