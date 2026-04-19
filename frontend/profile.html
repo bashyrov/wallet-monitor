@@ -804,6 +804,23 @@
     .k-edit-body { padding:16px 18px; }
     .k-edit-note { background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:9px 11px; color:var(--text3); font-size:11px; margin-bottom:12px; line-height:1.5; }
     .k-edit-note b { color:var(--text2); }
+
+    /* Purpose selector inside the edit-key modal */
+    .k-purp-tabs { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+    .k-purp-tab {
+      display:flex; flex-direction:column; gap:3px;
+      padding:9px 10px; border-radius:8px;
+      background:var(--surface2); border:1px solid var(--border);
+      color:var(--text2); font-family:inherit; font-size:12.5px;
+      cursor:pointer; text-align:left;
+      transition:border-color .15s, background .15s, color .15s;
+    }
+    .k-purp-tab:hover { border-color:var(--border2); color:var(--text); }
+    .k-purp-tab.is-active { border-color:var(--green); color:var(--text); background:rgba(26,255,171,0.06); }
+    .k-purp-tab .k-purp-title { font-weight:600; letter-spacing:-0.01em; }
+    .k-purp-tab .k-purp-sub   { font-size:11px; color:var(--text3); line-height:1.3; }
+    .k-purp-tab.is-active .k-purp-title { color:var(--green); }
+    .k-purp-tab:disabled { opacity:0.45; cursor:not-allowed; }
   </style>
 
   <!-- Danger Zone -->
@@ -1516,6 +1533,15 @@ async function kDelete(id, name){
 
 // ── Edit modal ──
 let _kEditId = null;
+let _kEditPurpose = 'portfolio';
+
+function kEditSetPurpose(purpose, btn){
+  _kEditPurpose = purpose;
+  document.querySelectorAll('#k-edit-purpose-wrap .k-purp-tab').forEach(b => {
+    b.classList.toggle('is-active', b === btn);
+  });
+}
+
 async function kEdit(id){
   const w = _kWallets.find(x => x.id === id);
   if (!w) return;
@@ -1528,6 +1554,22 @@ async function kEdit(id){
   if (passWrap) {
     passWrap.style.display = _K_PASSPHRASE_EX.has(w.type_value) ? 'flex' : 'none';
     document.getElementById('k-edit-apipass').value = '';
+  }
+  // Purpose selector — only meaningful for exchange wallets that have a
+  // trade adapter. Hyperliquid/Lighter/Paradex are address-based (no keys
+  // at all), so the edit modal doesn't even show creds for them.
+  const purpWrap = document.getElementById('k-edit-purpose-wrap');
+  if (purpWrap) {
+    const tradable = w.wallet_type === 'exchange' && _K_TRADABLE.has(w.type_value);
+    purpWrap.style.display = (w.wallet_type === 'exchange') ? '' : 'none';
+    const current = (w.purpose || (w.can_trade ? 'screener' : 'portfolio'));
+    _kEditPurpose = current;
+    document.querySelectorAll('#k-edit-purpose-wrap .k-purp-tab').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.purpose === current);
+      // If the exchange doesn't support trading, lock out screener/both
+      const needsTrade = b.dataset.purpose !== 'portfolio';
+      b.disabled = needsTrade && !tradable;
+    });
   }
   document.getElementById('k-edit-msg').style.display = 'none';
   document.getElementById('k-edit-backdrop').classList.add('open');
@@ -1555,7 +1597,17 @@ async function kEditSubmit(){
     const body = { name };
     if (apiKey) { body.api_key = apiKey; body.api_secret = apiSec; }
     if (pass) body.api_passphrase = pass;
-    const r = await Auth.apiFetch('/wallets/' + _kEditId, { method: 'PUT', body: JSON.stringify(body) });
+    // Include the purpose whenever the modal displays the selector
+    // (exchange wallets only). Backend will reject screener/both for
+    // exchanges without a trade adapter.
+    if (w.wallet_type === 'exchange' && _kEditPurpose) {
+      body.purpose = _kEditPurpose;
+    }
+    const r = await Auth.apiFetch('/wallets/' + _kEditId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
       const detail = typeof j.detail === 'string' ? j.detail : 'Save failed';
@@ -1656,6 +1708,23 @@ try {
             <span class="k-lbl">New Passphrase <span style="color:var(--text3);font-weight:400">(optional · OKX/KuCoin/Bitget)</span></span>
             <input class="k-input mono" id="k-edit-apipass" placeholder="Leave empty to keep current" autocomplete="off">
           </label>
+          <div class="k-field" style="grid-column:1/-1" id="k-edit-purpose-wrap">
+            <span class="k-lbl">Usage</span>
+            <div class="k-purp-tabs" role="tablist" aria-label="Key usage">
+              <button type="button" class="k-purp-tab" data-purpose="portfolio" onclick="kEditSetPurpose('portfolio',this)" role="tab">
+                <span class="k-purp-title">Portfolio</span>
+                <span class="k-purp-sub">Read balances only</span>
+              </button>
+              <button type="button" class="k-purp-tab" data-purpose="screener" onclick="kEditSetPurpose('screener',this)" role="tab">
+                <span class="k-purp-title">Screener</span>
+                <span class="k-purp-sub">Open / close positions</span>
+              </button>
+              <button type="button" class="k-purp-tab" data-purpose="both" onclick="kEditSetPurpose('both',this)" role="tab">
+                <span class="k-purp-title">Both</span>
+                <span class="k-purp-sub">One key for everything</span>
+              </button>
+            </div>
+          </div>
         </div>
         <div class="k-msg" id="k-edit-msg" style="display:none;margin-top:10px"></div>
       </form>

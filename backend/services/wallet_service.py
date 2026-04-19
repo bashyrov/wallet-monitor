@@ -166,6 +166,32 @@ def update_wallet(db: Session, wallet_id: int, body: WalletUpdate, user_id: int)
         if body.address:
             creds["address"] = body.address.strip()
 
+    # Purpose switch — only for credentialed wallet types (exchange + aster),
+    # screener-eligibility is a per-exchange unique constraint so flipping to
+    # screener/both here enforces the same rule as toggle_can_trade.
+    if body.purpose is not None and wallet.wallet_type == "exchange":
+        from backend.services.trade_adapters import TRADE_SUPPORTED
+        needs_trade = body.purpose in ("screener", "both")
+        if needs_trade and wallet.type_value not in TRADE_SUPPORTED:
+            raise ValueError(f"Trading on {wallet.type_value} is not supported yet.")
+        if needs_trade:
+            dup = (
+                db.query(Wallet)
+                .filter(
+                    Wallet.user_id == user_id,
+                    Wallet.wallet_type == "exchange",
+                    Wallet.type_value == wallet.type_value,
+                    Wallet.purpose.in_(("screener", "both")),
+                    Wallet.id != wallet.id,
+                    Wallet.is_archived == False,  # noqa: E712
+                )
+                .first()
+            )
+            if dup:
+                raise ValueError(f"A screener-eligible key for {wallet.type_value} already exists. Switch it off first.")
+        wallet.purpose = body.purpose
+        wallet.can_trade = needs_trade
+
     wallet.credentials = encrypt_credentials(creds)
     db.commit()
     db.refresh(wallet)

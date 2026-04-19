@@ -179,6 +179,9 @@ def update_wallet(
         return svc.update_wallet(db, wallet_id, body, current_user.id)
     except WalletNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        # Purpose validation (unsupported trade venue / duplicate screener key)
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/{wallet_id}", status_code=204)

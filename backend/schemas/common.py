@@ -47,6 +47,7 @@ class WalletUpdate(BaseModel):
     api_secret: str | None = None
     api_passphrase: str | None = None
     address: str | None = None
+    purpose: Literal["portfolio", "screener", "both"] | None = None
 
 
 class WalletAddressCreate(BaseModel):
