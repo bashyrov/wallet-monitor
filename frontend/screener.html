@@ -1026,7 +1026,11 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
         </div>
         <div class="lp-filter-group">
           <div class="lp-filter-label">Min gross funding %</div>
-          <input class="lp-filter-input" id="f-min-gross" type="number" min="0" step="0.001" placeholder="0%">
+          <input class="lp-filter-input" id="f-min-gross" type="number" step="0.001" placeholder="any" oninput="applyArb()">
+        </div>
+        <div class="lp-filter-group">
+          <div class="lp-filter-label" title="Gross funding + price spread — positive = tailwind from either side">Min (Gross + Spread) %</div>
+          <input class="lp-filter-input" id="f-min-gs" type="number" step="0.001" placeholder="e.g. 0" oninput="applyArb()">
         </div>
         <div class="lp-filter-group">
           <div class="lp-filter-label">Min 24h volume (USDT)</div>
@@ -1148,7 +1152,11 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
           </div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min gross funding %</div>
-            <input class="lp-filter-input" id="f-min-gross-mob" type="number" min="0" step="0.001" placeholder="0%" oninput="document.getElementById('f-min-gross').value=this.value;applyArb()">
+            <input class="lp-filter-input" id="f-min-gross-mob" type="number" step="0.001" placeholder="any" oninput="document.getElementById('f-min-gross').value=this.value;applyArb()">
+          </div>
+          <div class="lp-filter-group">
+            <div class="lp-filter-label">Min (Gross + Spread) %</div>
+            <input class="lp-filter-input" id="f-min-gs-mob" type="number" step="0.001" placeholder="e.g. 0" oninput="document.getElementById('f-min-gs').value=this.value;applyArb()">
           </div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min 24h volume (USDT)</div>
@@ -1902,6 +1910,10 @@ function applyArb(keepPage = false) {
   // against the trade but the 4% price spread pays).
   const fgRaw = document.getElementById('f-min-gross').value;
   const minGross = fgRaw === '' ? -Infinity : (parseFloat(fgRaw) || -Infinity);
+  // "Gross + Spread" — income before fees. Positive means either funding
+  // or spread (or both) are on our side.
+  const gsRaw = document.getElementById('f-min-gs').value;
+  const minGS = gsRaw === '' ? -Infinity : (parseFloat(gsRaw) || -Infinity);
   const minVol   = parseFloat(document.getElementById('f-min-vol').value)   || 0;
 
   _filteredArb = _arbRows.filter(r => {
@@ -1910,6 +1922,7 @@ function applyArb(keepPage = false) {
     if (q && !r.symbol.includes(q)) return false;
     if (r.net_profit < minNet)   return false;
     if (r.gross_funding < minGross) return false;
+    if ((r.gross_funding + r.price_spread) < minGS) return false;
     if (minVol > 0) {
       const vMin = Math.min(r.long_volume || 0, r.short_volume || 0);
       if (vMin < minVol) return false;
