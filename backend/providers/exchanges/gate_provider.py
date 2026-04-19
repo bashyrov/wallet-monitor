@@ -157,23 +157,26 @@ class GateProvider(BaseWalletProvider):
             return_exceptions=True,
         )
 
-        # Spot is the only leg that raises on real auth failure; everything
-        # else can 404 for accounts that haven't opted in (unified/margin),
-        # so we tolerate individual failures.
         if isinstance(spot, Exception):
             raise spot
 
-        # Merge Unified + Margin into the "spot" bucket so the UI shows them
-        # under the same heading. These are sibling trading wallets; Gate
-        # users frequently have funds spread across all three.
+        # Gate's Unified Trading Account is a MODE, not an extra wallet.
+        # When a user is in Unified, the legacy /spot/accounts endpoint
+        # still reports the same funds — summing both double-counts. So:
+        #   · if Unified is non-empty, trust it as the single spot-side
+        #     source (it already rolls up spot + margin + cross).
+        #   · otherwise, fall back to spot (+ cross-margin if populated).
+        unified_dict = unified if not isinstance(unified, Exception) else {}
+        margin_dict  = margin  if not isinstance(margin,  Exception) else {}
+
         spot_merged: dict[str, Decimal] = defaultdict(Decimal)
-        for k, v in (spot or {}).items():
-            spot_merged[k] += v
-        if not isinstance(unified, Exception):
-            for k, v in unified.items():
+        if unified_dict:
+            for k, v in unified_dict.items():
                 spot_merged[k] += v
-        if not isinstance(margin, Exception):
-            for k, v in margin.items():
+        else:
+            for k, v in (spot or {}).items():
+                spot_merged[k] += v
+            for k, v in margin_dict.items():
                 spot_merged[k] += v
 
         futures: dict[str, Decimal] = defaultdict(Decimal)
