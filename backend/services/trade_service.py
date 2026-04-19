@@ -40,6 +40,23 @@ def _leg_status(wallet: Wallet | None) -> str:
     return "ok"
 
 
+def _find_any_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
+    """Any (non-archived) exchange wallet for this user + exchange, regardless
+    of purpose. Used for balance display when a screener key isn't configured
+    but a portfolio-only key is — the user still wants to see their balance."""
+    return (
+        db.query(Wallet)
+        .filter(
+            Wallet.user_id == user_id,
+            Wallet.wallet_type == "exchange",
+            Wallet.type_value == exchange.lower(),
+            Wallet.is_archived == False,  # noqa: E712
+        )
+        .order_by(Wallet.id.desc())
+        .first()
+    )
+
+
 async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, short_ex: str) -> dict:
     """Per-leg trading readiness for an arb pair.
     Returns: { long: {wallet_id, status, balance_usdt}, short: {...} }
@@ -53,10 +70,22 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
                         "note": f"{ex} trading not yet supported"}
             continue
         if ex in trade_blocked:
+            # Admin blocked, but still try to show balance from any key the
+            # user has so they see their funds while we figure out the pause.
+            balance = None
+            any_w = _find_any_wallet(db, user_id, ex)
+            if any_w is not None:
+                try:
+                    creds = decrypt_credentials(any_w.credentials or {})
+                    bal = await ADAPTERS[ex].fetch_balance(creds)
+                    balance = round(float(bal.get("usdt", 0) or 0), 2)
+                except Exception as exc:
+                    logger.info("Balance fetch (admin_blocked) failed for %s: %s", ex, exc)
             out[leg] = {"wallet_id": None, "status": "admin_blocked",
-                        "balance_usdt": None, "exchange": ex,
+                        "balance_usdt": balance, "exchange": ex,
                         "note": f"Trading on {ex} is temporarily disabled by admin"}
             continue
+
         w = _find_wallet(db, user_id, ex)
         status = _leg_status(w)
         balance = None
@@ -68,6 +97,23 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
             except Exception as exc:
                 logger.info("Balance fetch failed for %s wallet %s: %s", ex, w.id, exc)
                 status = "disabled"
+
+        # Even when there's no screener-eligible key, try to show the balance
+        # from any portfolio key the user has on this exchange. Trading stays
+        # gated on status == "ok"; this is just for display so the balance
+        # panel isn't blank when the user flips to an exchange they connected
+        # only for Portfolio.
+        if status in ("missing", "disabled") and balance is None:
+            any_w = _find_any_wallet(db, user_id, ex)
+            if any_w is not None and (w is None or any_w.id != w.id):
+                try:
+                    creds = decrypt_credentials(any_w.credentials or {})
+                    bal = await ADAPTERS[ex].fetch_balance(creds)
+                    balance = round(float(bal.get("usdt", 0) or 0), 2)
+                except Exception as exc:
+                    logger.info("Portfolio-fallback balance fetch failed for %s wallet %s: %s",
+                                ex, any_w.id, exc)
+
         out[leg] = {
             "wallet_id": w.id if w else None,
             "status": status,

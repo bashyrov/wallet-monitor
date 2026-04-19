@@ -3111,6 +3111,14 @@ async function initTradePanel(){
   _trade.short.last = _opp?.short_price || 0;
   setT('trade-last-long',  _trade.long.last  ? '$' + Number(_trade.long.last).toFixed(4)  : '—');
   setT('trade-last-short', _trade.short.last ? '$' + Number(_trade.short.last).toFixed(4) : '—');
+  // Placeholder while /trade/status is in flight — otherwise the user sees
+  // stale "— USDT" for a couple of seconds and assumes the balance is gone.
+  ['long', 'short'].forEach(side => {
+    const bal = document.getElementById('trade-bal-' + side);
+    if (bal) bal.textContent = 'Loading…';
+    const st = document.getElementById('trade-leg-' + side + '-status');
+    if (st) { st.textContent = '…'; st.className = 'trade-leg-status missing'; }
+  });
   _renderLev('long'); _renderLev('short');
   _renderSubmit('long'); _renderSubmit('short');
 
