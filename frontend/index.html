@@ -944,6 +944,7 @@
       font-size: 10px; font-weight: 500; letter-spacing: 0.1px;
       transition: color 0.15s, background 0.15s;
       flex: 1; max-width: 80px;
+    white-space: nowrap; min-width: 0; flex: 1 1 0; text-align: center;
     }
     .bnav-item svg { flex-shrink: 0; transition: opacity 0.15s; opacity: 0.45; }
     .bnav-item:hover { color: var(--text2); }
@@ -1045,11 +1046,6 @@
 <div class="orb orb-3"></div>
 
 <header class="topbar"><app-navbar page="index"></app-navbar></header>
-
-<!-- ═══ TICKER TAPE ═══════════════════════════════════ -->
-<div class="ticker-tape" aria-hidden="true">
-  <div class="ticker-track" id="ticker-track"></div>
-</div>
 
 <div class="free-banner" id="free-banner">
   <span class="free-banner-dot"></span>
