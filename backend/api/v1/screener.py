@@ -30,6 +30,20 @@ async def arbitrage_opportunities():
     return await get_arbitrage_opportunities()
 
 
+@router.get("/availability")
+async def availability():
+    """Tiny payload: enabled exchanges + all current funding symbols. Used by
+    the /arb pre-flight to confirm the selected exchange/symbol aren't admin-
+    disabled — avoids pulling the full 800KB funding blob for that check."""
+    from backend.services import admin_settings
+    data = await get_funding_data()
+    return {
+        "exchanges": data.get("exchanges", []),
+        "symbols": sorted({r["symbol"] for r in data.get("rows", [])}),
+        "hidden_symbols": sorted(admin_settings.get_hidden_symbols()),
+    }
+
+
 @router.get("/pair")
 async def pair_opp(
     symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),

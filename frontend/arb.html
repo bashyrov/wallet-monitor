@@ -2693,8 +2693,10 @@ const EX_LABEL_MAP = {binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate.io',k
 
 async function _assertExchangesEnabled(){
   try {
-    const r = await fetch('/api/screener/funding');
-    if (!r.ok) return true;  // on error, fall through (don't lock out user)
+    // Lightweight availability endpoint (~5KB) — replaces the 800KB funding
+    // blob we used to await here, which added ~4s to every /arb cold load.
+    const r = await fetch('/api/screener/availability');
+    if (!r.ok) return true;
     const d = await r.json();
     const enabled = new Set(d.exchanges || []);
     const missing = [LONG, SHORT].filter(ex => !enabled.has(ex));
@@ -2702,14 +2704,12 @@ async function _assertExchangesEnabled(){
       _showExchangeDisabledModal(missing);
       return false;
     }
-    // Symbol may be admin-hidden — detect via absence from funding rows.
-    const rows = d.rows || [];
-    const symPresent = rows.some(r => r.symbol === SYM);
-    if (!symPresent) {
+    const symbols = new Set(d.symbols || []);
+    if (!symbols.has(SYM)) {
       _showSymbolHiddenModal();
       return false;
     }
-  } catch (_) { /* same — don't block */ }
+  } catch (_) { /* don't block on error */ }
   return true;
 }
 
