@@ -677,7 +677,14 @@ a.ex-badge:hover { filter: brightness(1.3); }
   .mob-filters { display: block; }
   .toolbar { flex-wrap: nowrap; padding: 10px 12px; }
   .stats-bar-desktop { display: none !important; }
-  .stats-bar-mobile { display: flex !important; align-items: center; padding: 10px 12px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); flex-wrap: nowrap; gap: 12px; }
+  .stats-bar-mobile {
+    display: flex !important; flex-direction: column; align-items: stretch;
+    padding: 10px 12px; margin-top: 6px;
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+  .stats-bar-mobile > div:first-child { flex-wrap: wrap; align-items: center; }
+  .stats-bar-mobile > div:last-child { align-self: flex-end; margin-left: 0 !important; }
 }
 @media (min-width: 701px) {
   .stats-bar-mobile { display: none !important; }

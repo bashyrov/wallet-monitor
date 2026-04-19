@@ -494,22 +494,26 @@
     .pm-status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
 
     /* Screener mini table */
-    .pm-body-screener { padding: 10px 12px; min-height: 240px; }
+    .pm-body-screener { padding: 10px 12px; min-height: 240px; overflow: hidden; }
     .pm-sc-head {
-      display: grid; grid-template-columns: 1fr 1fr 90px 70px;
+      display: grid; grid-template-columns: 1fr 1.6fr 90px 70px;
       padding: 6px 8px; font-size: 9.5px; font-weight: 600;
       color: var(--text3); text-transform: uppercase; letter-spacing: 0.7px;
       border-bottom: 1px solid var(--border); margin-bottom: 2px;
     }
     .pm-sc-row {
-      display: grid; grid-template-columns: 1fr 1fr 90px 70px;
-      padding: 7px 8px; align-items: center;
+      display: grid; grid-template-columns: 1fr 1.6fr 90px 70px;
+      padding: 7px 8px; align-items: center; gap: 4px;
       border-bottom: 1px solid rgba(34,34,42,0.5);
       transition: background .15s;
+      min-width: 0;
     }
+    .pm-sc-row > * { min-width: 0; overflow: hidden; }
+    .pm-sc-row .pm-sc-rate,
+    .pm-sc-row [class*="pm-sc-rate"] { overflow: visible; white-space: nowrap; }
     .pm-sc-row:last-child { border-bottom: none; }
     .pm-sc-sym { font-family: var(--mono); font-weight: 600; font-size: 12px; color: var(--text); }
-    .pm-sc-ex { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text2); }
+    .pm-sc-ex { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .pm-sc-exdot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
     .pm-sc-rate { font-family: var(--mono); font-size: 11.5px; font-weight: 600; text-align: right; }
     .pm-sc-rate.pos { color: #34D399; }
@@ -961,6 +965,16 @@
       .product-card { padding: 24px 20px; }
       .product-title { font-size: 24px; }
       .product-mockup { margin: 0 -4px 20px; }
+      /* Screener mini-table — compact on mobile so values never overflow */
+      .pm-body-screener { padding: 8px 6px; }
+      .pm-sc-head, .pm-sc-row { grid-template-columns: 42px minmax(0,1fr) 74px 58px; padding: 6px 6px; gap: 4px; }
+      .pm-sc-sym { font-size: 11px; }
+      .pm-sc-ex { font-size: 10px; gap: 4px; }
+      .pm-sc-ex .pm-sc-exdot { width: 5px; height: 5px; }
+      .pm-sc-rate { font-size: 10.5px; }
+      /* Orderbook mini: smaller */
+      .mini-book-row { padding: 2px 4px; font-size: 9.5px; }
+      .mini-book-mid { font-size: 10px; padding: 3px 0; }
       .sources-section { padding: 48px 0; }
       .why-section { padding: 60px 0; }
       .why-card { padding: 28px 22px; }

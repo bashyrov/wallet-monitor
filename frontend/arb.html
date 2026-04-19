@@ -572,12 +572,24 @@ body.light .bnav-item.active{color:#000;}
   .spread-section{flex:0 0 auto;height:320px;}
   .fund-section{flex:0 0 auto;height:260px;}
   .overview-scroll,.info-scroll,.all-ex-scroll{max-height:none;overflow-y:visible;}
-  /* Books: keep side-by-side, compact rows */
-  .col-books{height:auto;}
-  .books-row{flex:0 0 auto;height:460px;}
+  /* Orderbooks hidden on mobile — charts above and P&L below give the signal */
+  .col-books{display:none !important;}
   /* Right P&L panel → full width */
   .col-info{flex:none;max-width:none;min-width:0;}
-  .info-content{max-height:none;overflow-y:visible;}
+  .info-content{max-height:none;overflow-y:visible;padding-bottom:120px;}
+
+  /* Account block tabs — wrap / scroll horizontally, no single-word wrapping */
+  .acc-tabs{height:auto;min-height:44px;padding:4px 8px;flex-wrap:wrap;gap:4px;overflow-x:auto;}
+  .acc-tab{white-space:nowrap;padding:0 10px;height:36px;font-size:11.5px;}
+  .acc-tab .acc-count{min-width:16px;height:14px;font-size:9.5px;}
+  .acc-spacer{display:none;}
+  .acc-keyinfo{flex-basis:100%;padding:2px 0 4px;gap:6px;flex-wrap:nowrap;overflow-x:auto;}
+  .acc-keyinfo .pill{flex-shrink:0;}
+
+  /* Trading card — ensure the Open Short / Open Long buttons aren't
+     hidden under the sticky bottom-nav */
+  .trade-card{padding-bottom:80px;}
+  .acc-block{padding-bottom:80px;}
   /* Modal */
   .alert-box{width:calc(100vw - 24px);max-height:85vh;}
   .alert-form{grid-template-columns:1fr 1fr;}

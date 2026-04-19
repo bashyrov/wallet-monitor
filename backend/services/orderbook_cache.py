@@ -301,7 +301,7 @@ def cache_stats() -> dict:
 
 # ── Prewarm owner loops (single worker) ──────────────────────────────────────
 PREWARM_TOP_N        = 80
-PREWARM_HOTLIST_S    = 15.0   # refresh hot list from arb result
+PREWARM_HOTLIST_S    = 4.0    # refresh hot list in lockstep with arb broadcast (3-4s)
 PREWARM_DUMP_S       = 0.5    # snapshot to file
 
 _prewarm_hotlist_task: asyncio.Task | None = None
