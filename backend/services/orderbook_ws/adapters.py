@@ -93,29 +93,63 @@ class BybitWS(WSAdapter):
         return token, [list(x) for x in bids], [list(x) for x in asks]
 
 
-# ── OKX Perp (books5 — top-5, pushed on change) ───────────────────────────────
+# ── OKX Perp (books — 400 levels, snapshot + deltas) ─────────────────────────
 class OKXWS(WSAdapter):
+    """OKX `books` channel: first message is a full snapshot (action='snapshot'),
+    subsequent messages are deltas (action='update') where [price, size, ...]
+    entries with size=0 remove that level. We keep a running {price → size}
+    dict per symbol and emit the top-20 levels."""
+
     name = "okx"
     url = "wss://ws.okx.com:8443/ws/v5/public"
 
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
     def build_subscribe(self, symbols):
-        args = [{"channel": "books5", "instId": f"{s}-USDT-SWAP"} for s in symbols]
-        # OKX allows large subscribe batches
+        args = [{"channel": "books", "instId": f"{s}-USDT-SWAP"} for s in symbols]
         return {"op": "subscribe", "args": args}
 
     def parse_message(self, msg):
         if msg.get("event"):
             return None
         arg = msg.get("arg", {})
-        if arg.get("channel") != "books5":
+        if arg.get("channel") != "books":
             return None
         inst = arg.get("instId", "")
         if not inst.endswith("-USDT-SWAP"):
             return None
         token = inst.split("-")[0]
-        data = (msg.get("data") or [{}])[0]
-        bids, asks = _to_book(data.get("bids"), data.get("asks"))
-        return token, bids, asks
+        data_list = msg.get("data") or []
+        if not data_list:
+            return None
+        data = data_list[0]
+        action = msg.get("action") or data.get("action") or "snapshot"
+
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}})
+        if action == "snapshot":
+            book["bids"].clear()
+            book["asks"].clear()
+
+        for side_key in ("bids", "asks"):
+            for lvl in data.get(side_key) or []:
+                try:
+                    price = float(lvl[0])
+                    size = float(lvl[1])
+                except (ValueError, IndexError, TypeError):
+                    continue
+                if size <= 0:
+                    book[side_key].pop(price, None)
+                else:
+                    book[side_key][price] = size
+
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:20]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:20]
+        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
 # ── Bitget Perp (books15 snapshot) ────────────────────────────────────────────
@@ -195,7 +229,7 @@ class GateWS(WSAdapter):
                 "time": int(_t.time()),
                 "channel": "futures.order_book",
                 "event": "subscribe",
-                "payload": [f"{s}_USDT", "10", "0"],
+                "payload": [f"{s}_USDT", "20", "0"],
             })
         return frames
 
@@ -381,7 +415,7 @@ class KuCoinWS(WSAdapter):
             return endpoint, token, ping_s
 
     def build_subscribe(self, symbols):
-        # KuCoin supports comma-joined topics: "/contractMarket/level2Depth5:A,B,C"
+        # KuCoin supports comma-joined topics: "/contractMarket/level2Depth50:A,B,C"
         # One frame covers up to BATCH symbols, staying well below the 3/sec
         # subscribe-op rate limit even with many pairs.
         BATCH = 10
@@ -392,7 +426,7 @@ class KuCoinWS(WSAdapter):
             frames.append({
                 "id": str(uuid.uuid4()),
                 "type": "subscribe",
-                "topic": f"/contractMarket/level2Depth5:{chunk}",
+                "topic": f"/contractMarket/level2Depth50:{chunk}",
                 "response": True,
             })
         return frames
@@ -405,7 +439,7 @@ class KuCoinWS(WSAdapter):
             frames.append({
                 "id": str(uuid.uuid4()),
                 "type": "subscribe",
-                "topic": f"/contractMarket/level2Depth5:{sym_k}",
+                "topic": f"/contractMarket/level2Depth50:{sym_k}",
                 "response": True,
             })
         return frames
@@ -419,7 +453,7 @@ class KuCoinWS(WSAdapter):
         if msg.get("type") != "message":
             return None
         topic = msg.get("topic", "")
-        if not topic.startswith("/contractMarket/level2Depth5:"):
+        if not topic.startswith("/contractMarket/level2Depth50:"):
             return None
         sym_k = topic.split(":", 1)[1]  # e.g. XBTUSDTM
         if not sym_k.endswith("USDTM"):
