@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from backend.api.deps import get_admin_user, get_db
 from backend.db.models import User, Wallet, Tag, ProviderErrorLog
 from backend.plans import PLAN_LIMITS, VALID_PLANS, ADMIN_ONLY_PLANS, wallet_limit
+from backend.services import admin_settings
+from backend.services.arbitrage_service import FETCHERS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -223,3 +226,43 @@ def set_plan(
         "plan_expires_at": expires,
         "wallet_limit": wallet_limit(plan),
     }
+
+
+# ═══ Screener runtime controls ════════════════════════════════════════════════
+
+class ScreenerConfigIn(BaseModel):
+    hidden_symbols: list[str] | None = None
+    disabled_exchanges: list[str] | None = None
+    maintenance_mode: bool | None = None
+
+
+@router.get("/screener-config")
+def screener_config_get(_: User = Depends(get_admin_user)):
+    hidden = sorted(admin_settings.get_hidden_symbols())
+    disabled = sorted(admin_settings.get_disabled_exchanges())
+    return {
+        "hidden_symbols": hidden,
+        "disabled_exchanges": disabled,
+        "available_exchanges": sorted(FETCHERS.keys()),
+        "maintenance_mode": admin_settings.is_maintenance(),
+    }
+
+
+@router.patch("/screener-config")
+def screener_config_patch(
+    body: ScreenerConfigIn,
+    user: User = Depends(get_admin_user),
+):
+    known_ex = set(FETCHERS.keys())
+    if body.hidden_symbols is not None:
+        cleaned = sorted({str(s).strip().upper() for s in body.hidden_symbols if str(s).strip()})
+        admin_settings.set_value(admin_settings.KEY_HIDDEN_SYMBOLS, cleaned, user_id=user.id)
+    if body.disabled_exchanges is not None:
+        cleaned_ex = sorted({
+            str(s).strip().lower() for s in body.disabled_exchanges
+            if str(s).strip().lower() in known_ex
+        })
+        admin_settings.set_value(admin_settings.KEY_DISABLED_EXCHANGES, cleaned_ex, user_id=user.id)
+    if body.maintenance_mode is not None:
+        admin_settings.set_value(admin_settings.KEY_MAINTENANCE, bool(body.maintenance_mode), user_id=user.id)
+    return screener_config_get(user)

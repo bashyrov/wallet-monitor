@@ -911,34 +911,43 @@ def _read_file_cache(name: str, max_age: float = 60.0) -> dict | None:
 
 
 async def get_funding_data() -> dict:
+    from backend.services import admin_settings
+    disabled_ex = admin_settings.get_disabled_exchanges()
+    hidden_sym = admin_settings.get_hidden_symbols()
+    enabled_ex = [ex for ex in FETCHERS if ex not in disabled_ex]
+
     # Fast path: if every per-exchange cache is still warm, skip the gather.
     # Non-owner workers can fall back to the shared funding.json while the
     # owner's gather runs.
     now_m = _mono()
     any_stale = any(
         (now_m - _cache.get(ex, ([], 0.0))[1]) > CACHE_TTL
-        for ex in FETCHERS
+        for ex in enabled_ex
     )
     if not any_stale:
-        # Every exchange is warm — rebuild response from cache without HTTP
         all_rows: list[dict] = []
-        for ex in FETCHERS:
+        for ex in enabled_ex:
             cached_rows, _ts = _cache.get(ex, ([], 0.0))
             all_rows.extend(cached_rows)
+        if hidden_sym:
+            all_rows = [r for r in all_rows if r["symbol"] not in hidden_sym]
         if all_rows:
-            return {"ts": int(time.time()), "exchanges": list(FETCHERS.keys()), "rows": all_rows}
+            return {"ts": int(time.time()), "exchanges": enabled_ex, "rows": all_rows}
 
     results = await asyncio.gather(
-        *(_get_rows(ex) for ex in FETCHERS),
+        *(_get_rows(ex) for ex in enabled_ex),
         return_exceptions=True,
     )
 
     all_rows: list[dict] = []
-    for ex, result in zip(FETCHERS.keys(), results):
+    for ex, result in zip(enabled_ex, results):
         if isinstance(result, list):
             for row in result:
                 row["apr"] = round(row["rate"] * (8760 / row["interval_h"]) * 100, 4)
             all_rows.extend(result)
+
+    if hidden_sym:
+        all_rows = [r for r in all_rows if r["symbol"] not in hidden_sym]
 
     from collections import defaultdict
     sym_exch: dict[str, set] = defaultdict(set)
@@ -952,7 +961,7 @@ async def get_funding_data() -> dict:
 
     out = {
         "ts": int(time.time()),
-        "exchanges": list(FETCHERS.keys()),
+        "exchanges": enabled_ex,
         "rows": all_rows,
     }
     # Write to file cache so other workers can read without refetching
@@ -1140,11 +1149,18 @@ def get_cached_rates() -> dict[str, dict]:
     """Return flat dict {exchange:symbol → {rate, interval_h, price}} from current cache.
     Used by the alert service to check spreads without triggering new fetches.
     """
+    from backend.services import admin_settings
+    disabled_ex = admin_settings.get_disabled_exchanges()
+    hidden_sym = admin_settings.get_hidden_symbols()
     result: dict[str, dict] = {}
     for exchange, (rows, _) in _cache.items():
+        if exchange in disabled_ex:
+            continue
         for row in rows:
-            key = f"{exchange}:{row['symbol']}"
-            result[key] = {
+            sym = row["symbol"]
+            if sym in hidden_sym:
+                continue
+            result[f"{exchange}:{sym}"] = {
                 "rate":       row.get("rate", 0.0),
                 "interval_h": row.get("interval_h", 8),
                 "price":      row.get("price", 0.0),

@@ -158,13 +158,24 @@ _MAINT_BYPASS_PREFIXES = ("/api/health", "/avalant_favicon", "/favicon.ico",
                           "/navbar.css", "/navbar.js", "/auth.js", "/theme.js",
                           "/toast.js")
 
+def _maintenance_on() -> bool:
+    if _os.path.exists(_MAINT_FLAG):
+        return True
+    try:
+        from backend.services import admin_settings
+        return admin_settings.is_maintenance()
+    except Exception:
+        return False
+
+
 @app.middleware("http")
 async def maintenance_gate(request: Request, call_next) -> Response:
-    if _os.path.exists(_MAINT_FLAG):
+    if _maintenance_on():
         path = request.url.path
         # Allow monitor hits + static assets needed by the maintenance page
         allow = path in ("/maintenance", "/maintenance.html") or \
-                path.startswith(_MAINT_BYPASS_PREFIXES)
+                path.startswith(_MAINT_BYPASS_PREFIXES) or \
+                path.startswith("/api/admin/")
         if not allow:
             from fastapi.responses import FileResponse as _FR
             return _FR(

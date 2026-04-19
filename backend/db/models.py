@@ -230,3 +230,13 @@ class WatchlistItem(Base):
     note = Column(String, nullable=True)
     initial_spread_pct = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AppSetting(Base):
+    """Global admin-tunable knobs (hidden tokens, disabled exchanges, etc.)."""
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

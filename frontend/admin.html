@@ -618,6 +618,10 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L1.5 11.5h11L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v2.5M7 10.2v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Provider Errors
     </a>
+    <a class="drawer-item" id="drawer-screener" href="#" onclick="showTab('screener',this);loadScreenerConfig();closeDrawer();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M2 3h10M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Screener
+    </a>
     <div class="drawer-sep"></div>
     <a class="drawer-item" href="/app">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 2H2a1 1 0 00-1 1v9a1 1 0 001 1h10a1 1 0 001-1V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8 1h5v5M13 1L7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -642,6 +646,10 @@
     <a class="sidebar-item" href="#" onclick="showTab('errors',this);loadErrors();return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L1.5 11.5h11L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v2.5M7 10.2v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Provider Errors
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('screener',this);loadScreenerConfig();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M2 3h10M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Screener
     </a>
   </aside>
 
@@ -848,8 +856,93 @@
       </div>
     </div>
 
+    <!-- ══ SCREENER CONTROLS TAB ══ -->
+    <div id="tab-screener" style="display:none">
+      <div class="page-title">Screener controls</div>
+      <div class="page-sub">Globally hide tokens, disable exchanges, toggle maintenance — applied to every user within 15s</div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+
+        <!-- Maintenance toggle -->
+        <div class="card" style="display:flex;flex-direction:column;gap:12px">
+          <div class="card-head"><span class="card-title">Maintenance mode</span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            When on, every page except <span class="mono">/api/admin/*</span> returns a 503 maintenance screen.
+            File flag <span class="mono">/tmp/avalant_maintenance</span> still works as a fallback.
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <label class="toggle">
+              <input type="checkbox" id="maint-toggle" onchange="saveMaintenance(this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="maint-state" style="font-size:13px;color:var(--text2)">—</span>
+          </div>
+        </div>
+
+        <!-- Hidden symbols -->
+        <div class="card" style="display:flex;flex-direction:column;gap:12px">
+          <div class="card-head"><span class="card-title">Hidden symbols</span><span id="hid-count" style="font-size:12px;color:var(--text3)">0</span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            Drop these tokens from every funding / arb feed. Uppercase, without the quote suffix.
+            E.g. <span class="mono">STOCK_CSCO</span>, <span class="mono">MEMES</span>.
+          </div>
+          <div style="display:flex;gap:8px">
+            <input id="hid-input" placeholder="SYMBOL" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-family:var(--mono);text-transform:uppercase;color:var(--text);outline:none">
+            <button class="card-action" onclick="addHidden()">Add</button>
+          </div>
+          <div id="hid-chips" style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px"></div>
+        </div>
+
+        <!-- Disabled exchanges -->
+        <div class="card" style="display:flex;flex-direction:column;gap:12px;grid-column:1/-1">
+          <div class="card-head"><span class="card-title">Exchange availability</span><span id="ex-count" style="font-size:12px;color:var(--text3)"></span></div>
+          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+            Turn an exchange off to stop fetching funding rates from it (and to drop its rows from the screener + arb).
+            Useful when an exchange misbehaves or is under maintenance itself.
+          </div>
+          <div id="ex-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px"></div>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
+
+<style>
+.toggle { position:relative; display:inline-block; width:44px; height:24px; }
+.toggle input { opacity:0; width:0; height:0; }
+.toggle-slider {
+  position:absolute; inset:0; background:var(--surface3); border:1px solid var(--border);
+  border-radius:999px; cursor:pointer; transition:.2s;
+}
+.toggle-slider::before {
+  content:""; position:absolute; width:18px; height:18px; left:2px; top:2px;
+  background:var(--text2); border-radius:50%; transition:.2s;
+}
+.toggle input:checked + .toggle-slider { background:rgba(26,255,171,0.2); border-color:var(--green); }
+.toggle input:checked + .toggle-slider::before { background:var(--green); transform:translateX(20px); }
+
+.chip-x {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:3px 8px 3px 10px; border-radius:999px;
+  background:var(--surface2); border:1px solid var(--border);
+  font-family:var(--mono); font-size:12px; color:var(--text);
+}
+.chip-x button {
+  border:none; background:transparent; color:var(--text3); cursor:pointer;
+  padding:0; line-height:1; font-size:14px;
+}
+.chip-x button:hover { color:var(--red); }
+
+.ex-row {
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:8px 10px; border-radius:8px;
+  background:var(--surface2); border:1px solid var(--border);
+  font-size:13px;
+}
+.ex-row.off { opacity:0.55; }
+.ex-row .ex-name { text-transform:capitalize; font-weight:600; }
+</style>
 
 <script src="/auth.js"></script>
 <script src="/toast.js"></script>
@@ -858,7 +951,7 @@
 <script>
 Auth.requireAdmin('/app');
 
-const TABS = ['dashboard', 'users', 'errors'];
+const TABS = ['dashboard', 'users', 'errors', 'screener'];
 function showTab(tab, el) {
   TABS.forEach(t => {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
@@ -1266,6 +1359,105 @@ async function loadErrors() {
     </tr>`;
   }).join('');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Screener controls
+// ═══════════════════════════════════════════════════════════════════════════════
+let _screenerCfg = null;
+
+async function loadScreenerConfig() {
+  try {
+    const r = await Auth.apiFetch('/admin/screener-config');
+    if (!r.ok) throw new Error();
+    _screenerCfg = await r.json();
+    renderScreenerConfig();
+  } catch (e) {
+    toast('Failed to load screener config', 'error');
+  }
+}
+
+function renderScreenerConfig() {
+  const c = _screenerCfg;
+  if (!c) return;
+
+  // Maintenance
+  const mt = document.getElementById('maint-toggle');
+  mt.checked = !!c.maintenance_mode;
+  document.getElementById('maint-state').textContent =
+    c.maintenance_mode ? 'ON — users see the maintenance page' : 'OFF — app serves normally';
+
+  // Hidden symbols
+  const hid = c.hidden_symbols || [];
+  document.getElementById('hid-count').textContent = hid.length;
+  const chips = document.getElementById('hid-chips');
+  chips.innerHTML = hid.length
+    ? hid.map(s => `<span class="chip-x"><span>${s}</span><button title="Remove" onclick="removeHidden('${s}')">×</button></span>`).join('')
+    : '<span style="color:var(--text3);font-size:12px">No tokens hidden.</span>';
+
+  // Exchanges
+  const available = c.available_exchanges || [];
+  const disabled = new Set(c.disabled_exchanges || []);
+  document.getElementById('ex-count').textContent =
+    `${available.length - disabled.size}/${available.length} enabled`;
+  document.getElementById('ex-grid').innerHTML = available.map(ex => {
+    const on = !disabled.has(ex);
+    return `
+      <div class="ex-row ${on?'':'off'}">
+        <span class="ex-name">${ex}</span>
+        <label class="toggle">
+          <input type="checkbox" ${on?'checked':''} onchange="toggleExchange('${ex}',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>`;
+  }).join('');
+}
+
+async function patchScreener(body, okMsg) {
+  const r = await Auth.apiFetch('/admin/screener-config', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { toast('Save failed', 'error'); return; }
+  _screenerCfg = await r.json();
+  renderScreenerConfig();
+  if (okMsg) toast(okMsg, 'success');
+}
+
+async function addHidden() {
+  const inp = document.getElementById('hid-input');
+  const sym = (inp.value || '').trim().toUpperCase();
+  if (!sym) return;
+  const next = Array.from(new Set([...(_screenerCfg.hidden_symbols || []), sym])).sort();
+  await patchScreener({ hidden_symbols: next }, `Hiding ${sym} globally`);
+  inp.value = '';
+  inp.focus();
+}
+
+async function removeHidden(sym) {
+  const next = (_screenerCfg.hidden_symbols || []).filter(s => s !== sym);
+  await patchScreener({ hidden_symbols: next }, `${sym} unhidden`);
+}
+
+async function toggleExchange(ex, enable) {
+  const cur = new Set(_screenerCfg.disabled_exchanges || []);
+  if (enable) cur.delete(ex); else cur.add(ex);
+  await patchScreener(
+    { disabled_exchanges: Array.from(cur).sort() },
+    enable ? `${ex} enabled` : `${ex} disabled`,
+  );
+}
+
+async function saveMaintenance(on) {
+  await patchScreener(
+    { maintenance_mode: on },
+    on ? 'Maintenance mode ON' : 'Maintenance mode OFF',
+  );
+}
+
+document.getElementById('hid-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); addHidden(); }
+});
 </script>
 
 <nav class="bottom-nav">
