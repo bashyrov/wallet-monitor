@@ -1949,8 +1949,8 @@ function renderBook(d,side){
   const groupSize=getGroupSize(refPrice,_depthGroupIdx[side]);
   updateDepthLabels(side,refPrice);
 
-  const asks=groupBookLevels(rawAsks,groupSize).sort((a,b)=>b[0]-a[0]).slice(0,20);
-  const bids=groupBookLevels(rawBids,groupSize).sort((a,b)=>b[0]-a[0]).slice(0,20);
+  const asks=groupBookLevels(rawAsks,groupSize).sort((a,b)=>b[0]-a[0]).slice(0,50);
+  const bids=groupBookLevels(rawBids,groupSize).sort((a,b)=>b[0]-a[0]).slice(0,50);
 
   const maxA=asks.length?Math.max(...asks.map(x=>x[1])):1;
   const maxB=bids.length?Math.max(...bids.map(x=>x[1])):1;

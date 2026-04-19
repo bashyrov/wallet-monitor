@@ -242,7 +242,7 @@ _ORDERBOOK_EX = {
 async def get_orderbook(
     symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),
     exchange: str = Query(..., min_length=2, max_length=24),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(200, ge=1, le=500),
 ):
     from fastapi import HTTPException
     from backend.services.orderbook_cache import get_cached_orderbook
@@ -252,6 +252,43 @@ async def get_orderbook(
     if exchange not in _ORDERBOOK_EX:
         raise HTTPException(400, f"unsupported exchange for orderbook: {exchange}")
     return await get_cached_orderbook(exchange, symbol, limit)
+
+
+@router.get("/orderbooks")
+async def get_orderbooks(
+    pairs: str = Query(..., min_length=3, max_length=256,
+                       description="Comma-separated exchange:SYMBOL pairs, e.g. binance:BTC,okx:BTC"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Batch variant of /orderbook — fetches every (exchange, symbol) pair in
+    parallel and returns them as one map. Saves a round-trip when the /arb
+    page polls both legs at 150ms intervals."""
+    from backend.services.orderbook_cache import get_cached_orderbook
+    import asyncio as _asyncio
+
+    items: list[tuple[str, str]] = []
+    for raw in pairs.split(",")[:8]:  # cap at 8 to keep the endpoint cheap
+        raw = raw.strip()
+        if not raw or ":" not in raw:
+            continue
+        ex, sym = raw.split(":", 1)
+        ex = ex.strip().lower()
+        sym = sym.strip().upper()
+        if not ex or not sym or ex not in _ORDERBOOK_EX:
+            continue
+        items.append((ex, sym))
+
+    if not items:
+        return {}
+
+    results = await _asyncio.gather(
+        *(get_cached_orderbook(ex, sym, limit) for ex, sym in items),
+        return_exceptions=True,
+    )
+    out: dict[str, dict] = {}
+    for (ex, sym), r in zip(items, results):
+        out[f"{ex}:{sym}"] = r if isinstance(r, dict) else {"bids": [], "asks": []}
+    return out
 
 
 @router.get("/arb-price-history")

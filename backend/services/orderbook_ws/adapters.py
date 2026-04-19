@@ -19,28 +19,125 @@ def _to_book(raw_bids, raw_asks) -> tuple[list, list]:
     return bids, asks
 
 
-# ── Binance Futures ───────────────────────────────────────────────────────────
+# ── Binance Futures (diff-stream + REST snapshot for full depth) ─────────────
 class BinanceWS(WSAdapter):
+    """Binance's partial-book channel (@depth20) caps at 20 levels. To get the
+    full 1000-level book we subscribe to @depth@100ms (diff stream) and seed
+    the local book from the REST snapshot /fapi/v1/depth?limit=1000. Deltas
+    arrive as [price, qty] pairs, qty=0 removes the level.
+
+    Per Binance docs, the sync algorithm:
+      1. Open a WS connection and buffer diff events.
+      2. Fetch REST snapshot with lastUpdateId.
+      3. Drop any buffered event whose u < lastUpdateId.
+      4. The first event to apply must satisfy U <= lastUpdateId + 1 <= u.
+      5. Subsequent events must satisfy pu == last applied event's u.
+
+    We keep snapshot-sync simple: seed once on subscribe, drop stale events,
+    then merge. A mismatch triggers a resnapshot on the next delta.
+    """
+
     name = "binance"
     url = "wss://fstream.binance.com/ws"
+    _rest_depth_url = "https://fapi.binance.com/fapi/v1/depth"
+    _snap_limit = 1000  # Binance Futures REST max
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict] = {}  # sym → {"bids", "asks", "lastUpdateId", "buffer", "ready"}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
 
     def build_subscribe(self, symbols):
-        # partial book 20 levels every 100ms
-        params = [f"{s.lower()}usdt@depth20@100ms" for s in symbols]
+        params = [f"{s.lower()}usdt@depth@100ms" for s in symbols]
         return {"method": "SUBSCRIBE", "params": params, "id": 1}
 
+    async def _seed_snapshot(self, token: str) -> None:
+        """Fetch REST snapshot and drain any buffered deltas that came in
+        before the snapshot was ready."""
+        try:
+            async with httpx.AsyncClient(timeout=8) as c:
+                r = await c.get(f"{self._rest_depth_url}?symbol={token}USDT&limit={self._snap_limit}")
+                if r.status_code != 200:
+                    return
+                snap = r.json()
+        except Exception as exc:
+            logger.debug("%s snapshot fetch failed for %s: %s", self.name, token, exc)
+            return
+
+        last_id = int(snap.get("lastUpdateId") or 0)
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}, "lastUpdateId": 0, "buffer": [], "ready": False})
+        book["bids"] = {float(p): float(q) for p, q in snap.get("bids", []) if float(q) > 0}
+        book["asks"] = {float(p): float(q) for p, q in snap.get("asks", []) if float(q) > 0}
+        book["lastUpdateId"] = last_id
+        # Replay buffered deltas that apply post-snapshot
+        for ev in book.get("buffer", []):
+            self._apply_delta(token, ev)
+        book["buffer"] = []
+        book["ready"] = True
+
+    def _apply_delta(self, token: str, ev: dict) -> bool:
+        book = self._books.get(token)
+        if not book:
+            return False
+        U = int(ev.get("U") or 0)
+        u = int(ev.get("u") or 0)
+        last = int(book.get("lastUpdateId") or 0)
+        if u < last:
+            return False  # stale
+        if not book.get("ready"):
+            return False  # not seeded yet — should be buffered
+        if U > last + 1:
+            # Gap — resync from REST. Mark unready so next seed kicks in.
+            book["ready"] = False
+            return False
+        for p, q in ev.get("b", []):
+            fp, fq = float(p), float(q)
+            if fq == 0:
+                book["bids"].pop(fp, None)
+            else:
+                book["bids"][fp] = fq
+        for p, q in ev.get("a", []):
+            fp, fq = float(p), float(q)
+            if fq == 0:
+                book["asks"].pop(fp, None)
+            else:
+                book["asks"][fp] = fq
+        book["lastUpdateId"] = u
+        return True
+
     def parse_message(self, msg):
-        if msg.get("result") is None and "params" in msg:
-            # subscription ack has "result": null — skip here
-            return None
-        if not isinstance(msg, dict) or "s" not in msg:
+        if not isinstance(msg, dict) or "s" not in msg or "U" not in msg:
             return None
         sym = msg["s"]
         if not sym.endswith("USDT"):
             return None
         token = sym[:-4]
-        bids, asks = _to_book(msg.get("b"), msg.get("a"))
-        return token, bids, asks
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}, "lastUpdateId": 0, "buffer": [], "ready": False})
+
+        if not book.get("ready"):
+            # Buffer incoming deltas while we fetch the snapshot. Schedule seed
+            # on first message — idempotent thanks to "ready" flag.
+            book.setdefault("buffer", []).append(msg)
+            if not book.get("_seed_scheduled"):
+                book["_seed_scheduled"] = True
+                asyncio.create_task(self._seed_snapshot(token))
+            return None
+
+        applied = self._apply_delta(token, msg)
+        if not applied:
+            # Gap detected — kick a re-seed.
+            if not book.get("_seed_scheduled"):
+                book["_seed_scheduled"] = True
+                asyncio.create_task(self._seed_snapshot(token))
+            return None
+
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
+        # Clear the seed_scheduled flag once we've produced a live update
+        book["_seed_scheduled"] = False
+        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
 # ── Bybit Linear Perp ─────────────────────────────────────────────────────────
@@ -55,18 +152,21 @@ class BybitWS(WSAdapter):
         self._books: dict[str, dict[str, dict]] = {}  # sym → {"bids": {p:q}, "asks": {p:q}}
 
     def build_subscribe(self, symbols):
-        args = [f"orderbook.50.{s}USDT" for s in symbols]
+        args = [f"orderbook.200.{s}USDT" for s in symbols]
         # Bybit limits 10 topics per subscribe frame
         frames = []
         for i in range(0, len(args), 10):
             frames.append({"op": "subscribe", "args": args[i:i + 10]})
         return frames
 
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
     def parse_message(self, msg):
         if msg.get("op") or msg.get("success") is not None:
             return None
         topic = msg.get("topic", "")
-        if not topic.startswith("orderbook.50."):
+        if not topic.startswith("orderbook.200."):
             return None
         sym_pair = topic.split(".")[-1]  # BTCUSDT
         if not sym_pair.endswith("USDT"):
@@ -88,8 +188,8 @@ class BybitWS(WSAdapter):
                     else:
                         book[key][fp] = fq
 
-        bids = sorted(((p, q) for p, q in book["bids"].items()), key=lambda x: -x[0])[:50]
-        asks = sorted(((p, q) for p, q in book["asks"].items()), key=lambda x: x[0])[:50]
+        bids = sorted(((p, q) for p, q in book["bids"].items()), key=lambda x: -x[0])[:200]
+        asks = sorted(((p, q) for p, q in book["asks"].items()), key=lambda x: x[0])[:200]
         return token, [list(x) for x in bids], [list(x) for x in asks]
 
 
@@ -147,33 +247,64 @@ class OKXWS(WSAdapter):
                 else:
                     book[side_key][price] = size
 
-        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:20]
-        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:20]
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
         return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
-# ── Bitget Perp (books15 snapshot) ────────────────────────────────────────────
+# ── Bitget Perp (books — 150-level snapshot + deltas) ────────────────────────
 class BitgetWS(WSAdapter):
+    """Bitget V2 `books` channel: first message action='snapshot' carries the
+    full 150-level book, subsequent 'update' messages carry only the changed
+    levels. Apply deltas (size=0 removes the level) to preserve full depth."""
+
     name = "bitget"
     url = "wss://ws.bitget.com/v2/ws/public"
 
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
     def build_subscribe(self, symbols):
-        args = [{"instType": "USDT-FUTURES", "channel": "books15", "instId": f"{s}USDT"} for s in symbols]
+        args = [{"instType": "USDT-FUTURES", "channel": "books", "instId": f"{s}USDT"} for s in symbols]
         return {"op": "subscribe", "args": args}
 
     def parse_message(self, msg):
         if msg.get("event"):
             return None
         arg = msg.get("arg", {})
-        if arg.get("channel") != "books15":
+        if arg.get("channel") != "books":
             return None
         inst = arg.get("instId", "")
         if not inst.endswith("USDT"):
             return None
         token = inst[:-4]
+        action = msg.get("action") or "snapshot"
         data = (msg.get("data") or [{}])[0]
-        bids, asks = _to_book(data.get("bids"), data.get("asks"))
-        return token, bids, asks
+
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}})
+        if action == "snapshot":
+            book["bids"].clear()
+            book["asks"].clear()
+
+        for side_key in ("bids", "asks"):
+            for lvl in data.get(side_key) or []:
+                try:
+                    price = float(lvl[0])
+                    size = float(lvl[1])
+                except (ValueError, IndexError, TypeError):
+                    continue
+                if size <= 0:
+                    book[side_key].pop(price, None)
+                else:
+                    book[side_key][price] = size
+
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
+        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
 # ── BingX Perp (depth20 on new URL) ───────────────────────────────────────────
@@ -183,9 +314,10 @@ class BingXWS(WSAdapter):
     decompress_gzip = True
 
     def build_subscribe(self, symbols):
-        # Each subscribe creates one subscription; BingX supports bulk via multiple frames
+        # Each subscribe creates one subscription; BingX supports bulk via multiple frames.
+        # @depth100 is the deepest snapshot-based option they expose publicly.
         return [
-            {"id": str(i), "reqType": "sub", "dataType": f"{s}-USDT@depth20"}
+            {"id": str(i), "reqType": "sub", "dataType": f"{s}-USDT@depth100"}
             for i, s in enumerate(symbols)
         ]
 
@@ -206,12 +338,13 @@ class BingXWS(WSAdapter):
 class AsterWS(BinanceWS):
     name = "aster"
     url = "wss://fstream.asterdex.com/ws"
+    _rest_depth_url = "https://fapi.asterdex.com/fapi/v1/depth"
 
     def build_subscribe(self, symbols):
         # Aster rejects large single-frame subscribes under load — chunk by 5
         frames = []
         for i in range(0, len(symbols), 5):
-            params = [f"{s.lower()}usdt@depth20@100ms" for s in symbols[i:i + 5]]
+            params = [f"{s.lower()}usdt@depth@100ms" for s in symbols[i:i + 5]]
             frames.append({"method": "SUBSCRIBE", "params": params, "id": i + 1})
         return frames
 
@@ -255,6 +388,10 @@ class MEXCWS(WSAdapter):
     url = "wss://contract.mexc.com/edge"
 
     def build_subscribe(self, symbols):
+        # MEXC futures `sub.depth.full` caps the `limit` param at 20 — even
+        # asking for 100 returns 20. Full book is only available via the
+        # delta channel (`sub.depth`), which needs snapshot+diff merging
+        # similar to Binance. Left at 20 until we wire that up.
         return [
             {"method": "sub.depth.full", "param": {"symbol": f"{s}_USDT", "limit": 20}}
             for s in symbols
@@ -351,8 +488,8 @@ class WhitebitWS(WSAdapter):
                 else:
                     store[price] = size
 
-        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:20]
-        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:20]
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
         return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
