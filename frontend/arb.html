@@ -47,7 +47,8 @@ body.light .topbar app-navbar .brand{color:#000!important;}
 body.light .topbar app-navbar .brand-cursor{color:#000!important;}
 
 /* ── Info bar ── */
-.infobar{display:flex;align-items:stretch;height:72px;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;overflow-y:hidden;background:linear-gradient(180deg,var(--surface) 0%,#0F0F14 100%);}
+.infobar{display:flex;align-items:stretch;flex-wrap:wrap;min-height:72px;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:hidden;overflow-y:hidden;background:linear-gradient(180deg,var(--surface) 0%,#0F0F14 100%);max-width:100%;box-sizing:border-box;}
+.infobar > * { min-width: 0; box-sizing: border-box; }
 .infobar::-webkit-scrollbar{display:none;}
 .ib-label{font-size:8.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;font-weight:600;}
 .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s ease-in-out infinite;}
