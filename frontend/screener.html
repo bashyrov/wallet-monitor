@@ -1897,7 +1897,11 @@ function setMinVol(v, btn){
 function applyArb(keepPage = false) {
   const q = document.getElementById('search').value.trim().toUpperCase();
   const minNet   = parseFloat(document.getElementById('f-min-net').value)   || -Infinity;
-  const minGross = parseFloat(document.getElementById('f-min-gross').value) || 0;
+  // Empty field must mean "no filter", not "ignore negative gross" — that
+  // dropped every spread-driven opp (e.g. RAVE bybit, where funding goes
+  // against the trade but the 4% price spread pays).
+  const fgRaw = document.getElementById('f-min-gross').value;
+  const minGross = fgRaw === '' ? -Infinity : (parseFloat(fgRaw) || -Infinity);
   const minVol   = parseFloat(document.getElementById('f-min-vol').value)   || 0;
 
   _filteredArb = _arbRows.filter(r => {
