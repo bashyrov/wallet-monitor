@@ -250,18 +250,39 @@ _REST_FALLBACK_TTL = 12.0           # memory TTL for a REST fallback fetch
 _rest_fallback_inflight: dict[str, asyncio.Task] = {}
 _rest_fallback_inflight_lock = asyncio.Lock()
 
+# Cap REST fallback depth to what each exchange's WS actually streams.
+# If REST returns 50 but WS pushes 20, the next WS tick would shrink the
+# visible book and look like "half the orders disappeared". Matching the
+# depth keeps the display stable.
+_WS_DEPTH = {
+    "binance":     20,
+    "aster":       20,
+    "gate":        20,
+    "mexc":        20,
+    "hyperliquid": 20,
+    "kucoin":      50,
+    "bingx":      100,
+    "whitebit":   100,
+    "bybit":      200,
+    "okx":        200,
+    "bitget":     200,
+}
+
 
 async def _rest_fallback(exchange: str, symbol: str, limit: int) -> dict | None:
     """Single-shot REST fetch, deduplicated per key so parallel 150ms polls
     don't spawn concurrent REST hits. Caches into _book_cache on success."""
     key = f"{exchange}:{symbol}"
+    # Never request more depth from REST than the subsequent WS push will
+    # deliver — otherwise the book shrinks visibly when WS catches up.
+    req_limit = min(limit, _WS_DEPTH.get(exchange, limit))
     async with _rest_fallback_inflight_lock:
         existing = _rest_fallback_inflight.get(key)
         if existing and not existing.done():
             return await existing
         async def _do():
             try:
-                data = await _fetch_direct(exchange, symbol, limit)
+                data = await _fetch_direct(exchange, symbol, req_limit)
             except Exception:
                 data = None
             if data and (data.get("bids") or data.get("asks")):

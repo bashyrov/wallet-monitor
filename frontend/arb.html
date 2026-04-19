@@ -1880,7 +1880,12 @@ function renderInfoStats(){
 // ── Order book grouping ───────────────────────────────────────────────────────
 // Depth grouping = price precision levels (like on exchange)
 // Level 0 = finest (tick size), 1 = ×10, 2 = ×100
-const _depthGroupIdx={long:1,short:1};
+// Default to the finest granularity (idx=0 = native tick). The previous
+// default of 1 multiplied groupSize by 10, which collapsed 20 raw levels
+// into 2-3 aggregated buckets on mid-priced tokens (RAVE at $1.06 went
+// from 20 levels → 3 visible rows). Users can widen the grouping via the
+// depth buttons.
+const _depthGroupIdx={long:0,short:0};
 let _lastBookData={long:null,short:null};
 
 function getTickSize(price){
