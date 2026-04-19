@@ -47,7 +47,7 @@ body.light .topbar app-navbar .brand{color:#000!important;}
 body.light .topbar app-navbar .brand-cursor{color:#000!important;}
 
 /* ── Info bar ── */
-.infobar{display:flex;align-items:stretch;flex-wrap:wrap;min-height:72px;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:hidden;overflow-y:hidden;background:linear-gradient(180deg,var(--surface) 0%,#0F0F14 100%);max-width:100%;box-sizing:border-box;}
+.infobar{display:flex;align-items:stretch;height:72px;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:hidden;overflow-y:hidden;background:linear-gradient(180deg,var(--surface) 0%,#0F0F14 100%);max-width:100%;box-sizing:border-box;}
 .infobar > * { min-width: 0; box-sizing: border-box; }
 .infobar::-webkit-scrollbar{display:none;}
 .ib-label{font-size:8.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;font-weight:600;}
@@ -105,7 +105,8 @@ body.light .hero-swap:hover{background:#EDEDED;color:#000;}
 .metric-val .arrow{font-size:11px;opacity:.7;}
 
 /* Back-to-Screener link fills remaining right space in infobar */
-.ib-back-link{margin-left:auto;flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;gap:10px;height:100%;padding:0 24px;border-left:1px solid var(--border);font-size:20px;font-weight:400;color:var(--text2);text-decoration:none;letter-spacing:-.01em;font-family:inherit;transition:color .15s,background .15s;}
+.ib-back-link{margin-left:auto;flex:0 0 auto;min-width:0;width:52px;display:flex;align-items:center;justify-content:center;gap:0;height:100%;padding:0 12px;border-left:1px solid var(--border);font-size:20px;font-weight:400;color:var(--text2);text-decoration:none;font-family:inherit;transition:color .15s,background .15s;}
+.ib-back-link > span { display: none; }
 .ib-back-link svg{opacity:.7;transition:opacity .15s,transform .2s;flex-shrink:0;}
 .ib-back-link:hover{color:var(--green);background:rgba(26,255,171,.05);}
 .ib-back-link:hover svg{opacity:1;transform:translateX(-3px);}
@@ -564,7 +565,8 @@ body.light .bnav-item.active{color:#000;}
   .metric-val{font-size:20px;}
   .alert-block{min-width:100%;border-top:1px solid var(--border);flex-direction:row;align-items:center;gap:10px;justify-content:space-between;}
   .alert-block .ib-label{flex-shrink:0;}
-  .ib-back-link{min-width:100%;border-left:none;border-top:1px solid var(--border);height:48px;font-size:18px;}
+  .ib-back-link{width:100%;min-width:100%;border-left:none;border-top:1px solid var(--border);height:48px;font-size:18px;gap:10px;padding:0 24px;}
+  .ib-back-link > span { display: inline; }
 
   /* Workspace: stack vertically, let body scroll */
   .workspace{flex-direction:column;overflow:visible;min-height:0;}
