@@ -54,6 +54,12 @@ class WSAdapter:
         """Return a text frame to send as heartbeat, or None for default ping."""
         return None
 
+    def on_reconnect(self) -> None:
+        """Hook for adapters that maintain local book state — called when a
+        fresh WS connection is opened, so the snapshot-+-delta stream starts
+        from a clean slate instead of merging into a stale book."""
+        pass
+
     # ── lifecycle ────────────────────────────────────────────────────────────
     def _apply_cap(self, symbols: set[str]) -> set[str]:
         """Honour max_symbols — keep first N in sorted order (stable across calls)."""
@@ -136,6 +142,7 @@ class WSAdapter:
                     backoff = 1.0
                     # Fresh connection — re-subscribe to everything we want
                     self._subscribed.clear()
+                    self.on_reconnect()
                     if self._symbols:
                         await self._send_subscribe()
                     if self.heartbeat_frame() is not None:

@@ -249,14 +249,39 @@ class MEXCWS(WSAdapter):
 
 # ── Whitebit Perp ─────────────────────────────────────────────────────────────
 class WhitebitWS(WSAdapter):
+    """WhiteBit perpetual depth.
+
+    WhiteBit sends a full snapshot on subscribe (params[0]=True) and then
+    incremental diffs (params[0]=False) that only carry changed levels.
+    Previously we replaced the stored book with whatever arrived — which
+    meant 80% of the levels vanished after the first diff. Now we keep a
+    running {price → size} dict per symbol and merge deltas in place
+    (size=0 means remove the level).
+    """
+
     name = "whitebit"
     url = "wss://api.whitebit.com/ws"
 
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        # Drop local state so next subscribe's snapshot starts clean.
+        self._books.clear()
+
     def build_subscribe(self, symbols):
-        # multi=True so successive subscribes accumulate; first clears any prior
+        # 4th param = multiple_updates: first frame clears the server-side
+        # subscription set, subsequent frames append. Always send a full
+        # re-subscribe on connect; delta adds are handled by the base class
+        # which only sends a new frame for the new symbol — that frame will
+        # also set multi=False (i=0) in isolation. That's fine for append
+        # semantics because we already have an open subscription for the
+        # existing ones on the server; if not, the fresh snapshot arrives
+        # and merge kicks in.
         return [
             {"id": i + 1, "method": "depth_subscribe",
-             "params": [f"{s}_PERP", 20, "0", i > 0]}
+             "params": [f"{s}_PERP", 100, "0", i > 0]}
             for i, s in enumerate(symbols)
         ]
 
@@ -266,13 +291,35 @@ class WhitebitWS(WSAdapter):
         params = msg.get("params") or []
         if len(params) < 3:
             return None
-        payload = params[1] if not params[0] else params[1]
+        is_snapshot = bool(params[0])
+        payload = params[1] or {}
         market = params[2] if len(params) > 2 else ""
         if not isinstance(market, str) or not market.endswith("_PERP"):
             return None
         token = market[:-5]
-        bids, asks = _to_book(payload.get("bids"), payload.get("asks"))
-        return token, bids, asks
+
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}})
+        if is_snapshot:
+            book["bids"].clear()
+            book["asks"].clear()
+
+        for side_key in ("bids", "asks"):
+            levels = payload.get(side_key) or []
+            store = book[side_key]
+            for lvl in levels:
+                try:
+                    price = float(lvl[0])
+                    size = float(lvl[1])
+                except (ValueError, IndexError, TypeError):
+                    continue
+                if size <= 0:
+                    store.pop(price, None)
+                else:
+                    store[price] = size
+
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:20]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:20]
+        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
 # ── Hyperliquid ───────────────────────────────────────────────────────────────
