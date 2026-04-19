@@ -215,12 +215,44 @@ class WatchlistIn(BaseModel):
     def _ex(cls, v): return _norm_exchange(v)
 
 
+def _current_spread_pct(symbol: str, long_ex: str, short_ex: str) -> float | None:
+    """(p_short - p_long) / p_long × 100 from the cached funding snapshot."""
+    from backend.services.arbitrage_service import get_cached_rates
+    rates = get_cached_rates() or {}
+    long_row = rates.get(f"{long_ex}:{symbol}")
+    short_row = rates.get(f"{short_ex}:{symbol}")
+    if not long_row or not short_row:
+        return None
+    p_l = long_row.get("price") or 0
+    p_s = short_row.get("price") or 0
+    if p_l <= 0:
+        return None
+    return (p_s - p_l) / p_l * 100
+
+
 @router.get("/watchlist")
 def watchlist_get(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    rows = db.query(WatchlistItem).filter(WatchlistItem.user_id == user.id).order_by(WatchlistItem.created_at.desc()).all()
+    rows = (
+        db.query(WatchlistItem)
+        .filter(WatchlistItem.user_id == user.id)
+        .order_by(WatchlistItem.created_at.desc())
+        .all()
+    )
+    # Backfill missing baselines with the current spread so legacy rows start
+    # tracking change from first visit after the migration.
+    dirty = False
+    for r in rows:
+        if r.initial_spread_pct is None:
+            spread = _current_spread_pct(r.symbol, r.long_exchange, r.short_exchange)
+            if spread is not None:
+                r.initial_spread_pct = spread
+                dirty = True
+    if dirty:
+        db.commit()
     return [{
         "id": r.id, "symbol": r.symbol, "long_exchange": r.long_exchange,
         "short_exchange": r.short_exchange, "note": r.note,
+        "initial_spread_pct": r.initial_spread_pct,
         "created_at": r.created_at.isoformat(),
     } for r in rows]
 
@@ -252,6 +284,7 @@ def watchlist_add(
         long_exchange=body.long_exchange,
         short_exchange=body.short_exchange,
         note=body.note,
+        initial_spread_pct=_current_spread_pct(body.symbol, body.long_exchange, body.short_exchange),
     )
     db.add(item)
     db.commit()

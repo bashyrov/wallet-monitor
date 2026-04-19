@@ -101,20 +101,21 @@ button { font-family:inherit; }
 .wl-card-sym { font-family:var(--mono); font-size:22px; font-weight:700; letter-spacing:-0.02em; line-height:1; }
 .wl-card-sym .usdt { color:var(--text3); font-weight:500; font-size:14px; margin-left:3px; }
 
-.alpha-ring {
-  position:relative; width:42px; height:42px; flex-shrink:0;
-  display:inline-flex; align-items:center; justify-content:center;
+/* Spread-delta badge — replaces the old alpha ring.
+   Shows Δspread between the moment the pair was added and now. */
+.sp-delta {
+  flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end;
+  padding:5px 9px; border-radius:9px;
+  background:var(--surface2); border:1px solid var(--border);
+  min-width:56px;
 }
-.alpha-ring svg { transform:rotate(-90deg); }
-.alpha-ring-bg { fill:none; stroke:var(--surface3); stroke-width:3.5; }
-.alpha-ring-fg { fill:none; stroke-width:3.5; stroke-linecap:round; transition:stroke-dashoffset .5s cubic-bezier(.16,1,.3,1); }
-.alpha-ring-val { position:absolute; font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:-0.02em; }
-.alpha-ring.hi .alpha-ring-fg { stroke:var(--green); }
-.alpha-ring.hi .alpha-ring-val { color:var(--green); }
-.alpha-ring.md .alpha-ring-fg { stroke:var(--yellow); }
-.alpha-ring.md .alpha-ring-val { color:var(--yellow); }
-.alpha-ring.lo .alpha-ring-fg { stroke:var(--red); }
-.alpha-ring.lo .alpha-ring-val { color:var(--red); }
+.sp-delta .sp-lbl { font-size:9px; font-weight:600; color:var(--text3); letter-spacing:0.06em; text-transform:uppercase; line-height:1; }
+.sp-delta .sp-val { font-family:var(--mono); font-size:14px; font-weight:700; letter-spacing:-0.02em; margin-top:3px; line-height:1; }
+.sp-delta.pos { border-color:rgba(26,255,171,0.35); background:rgba(26,255,171,0.06); }
+.sp-delta.pos .sp-val { color:var(--green); }
+.sp-delta.neg { border-color:rgba(248,113,113,0.35); background:rgba(248,113,113,0.06); }
+.sp-delta.neg .sp-val { color:var(--red); }
+.sp-delta.neu .sp-val { color:var(--text2); }
 
 .wl-card-pair { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .wl-pill {
@@ -370,7 +371,8 @@ body.light .bottom-nav { background:rgba(255,255,255,0.92); }
     <div class="wl-toolbar-right">
       <div class="wl-sort-wrap">
         <select id="wl-sort" class="wl-sort" onchange="filterRender()">
-          <option value="alpha">Alpha · high → low</option>
+          <option value="delta">ΔSpread · widening</option>
+          <option value="delta-asc">ΔSpread · narrowing</option>
           <option value="net">Net % · high → low</option>
           <option value="net-asc">Net % · low → high</option>
           <option value="sym">Symbol · A → Z</option>
@@ -578,11 +580,26 @@ function connectWs(){
 // ─────────────────────────────────────────────────────────────
 // Per-card live update (no full re-render)
 // ─────────────────────────────────────────────────────────────
+function spreadDelta(w, o){
+  const initial = w.initial_spread_pct;
+  const current = o?.price_spread;
+  if (initial == null || current == null) {
+    return { text: '—', cls: 'neu', title: 'Baseline not yet captured' };
+  }
+  const delta = current - initial;
+  const text = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`;
+  const cls = Math.abs(delta) < 0.01 ? 'neu' : (delta > 0 ? 'pos' : 'neg');
+  return {
+    text,
+    cls,
+    title: `Spread now ${current.toFixed(3)}%  ·  at add ${initial.toFixed(3)}%  ·  Δ ${text}`,
+  };
+}
+
 function updateCard(k, o){
   const card = document.querySelector(`[data-key="${k}"]`);
   if (!card) return;
   const net = o.net_profit || 0;
-  const alpha = o.alpha_score;
   const prev = _prevNet.get(k);
   _prevNet.set(k, net);
 
@@ -592,9 +609,7 @@ function updateCard(k, o){
   const metaSpread = card.querySelector('.meta-spread');
   const metaVol = card.querySelector('.meta-vol');
   const sparkEl = card.querySelector('.wl-spark');
-  const ringFg = card.querySelector('.alpha-ring-fg');
-  const ringVal = card.querySelector('.alpha-ring-val');
-  const ring = card.querySelector('.alpha-ring');
+  const spEl = card.querySelector('.sp-delta');
 
   if (bigEl) {
     bigEl.innerHTML = `${sign(net)}${Math.abs(net).toFixed(3)}<span style="font-size:15px;color:var(--text3);margin-left:2px">%</span>`;
@@ -608,15 +623,14 @@ function updateCard(k, o){
   if (metaVol) metaVol.innerHTML = `Vol <span class="v">${fmtVol(Math.min(o.long_volume||0, o.short_volume||0))}</span>`;
   if (sparkEl) sparkEl.innerHTML = buildSpark(_sparks.get(k) || []);
 
-  if (alpha != null && ringFg) {
-    const score = Math.max(0, Math.min(100, alpha));
-    const circ = 2 * Math.PI * 17;
-    ringFg.setAttribute('stroke-dasharray', circ);
-    ringFg.setAttribute('stroke-dashoffset', circ * (1 - score/100));
-    if (ringVal) ringVal.textContent = score.toFixed(0);
-    if (ring) {
-      ring.classList.remove('hi','md','lo');
-      ring.classList.add(score >= 70 ? 'hi' : score >= 40 ? 'md' : 'lo');
+  if (spEl) {
+    const w = _wl.find(x => _key(x.symbol, x.long_exchange, x.short_exchange) === k);
+    if (w) {
+      const sp = spreadDelta(w, o);
+      spEl.className = `sp-delta ${sp.cls}`;
+      spEl.title = sp.title;
+      const val = spEl.querySelector('.sp-val');
+      if (val) val.textContent = sp.text;
     }
   }
 
@@ -668,13 +682,9 @@ function cardHtml(w){
   const k = _key(w.symbol, w.long_exchange, w.short_exchange);
   const o = _live.get(k) || {};
   const net = o.net_profit || 0;
-  const alpha = o.alpha_score || 0;
-  const score = Math.max(0, Math.min(100, alpha));
-  const circ = 2 * Math.PI * 17;
-  const offset = circ * (1 - score/100);
-  const aCls = score >= 70 ? 'hi' : score >= 40 ? 'md' : 'lo';
   const pairCls = net >= 0 ? 'pos' : 'neg';
   const spark = buildSpark(_sparks.get(k) || []);
+  const sp = spreadDelta(w, o);
   return `
     <div class="wl-card ${pairCls}" data-key="${k}" onclick="openArb('${w.symbol}','${w.long_exchange}','${w.short_exchange}')">
       <div class="wl-actions">
@@ -695,12 +705,9 @@ function cardHtml(w){
             <span class="wl-pill short"><span class="wl-pill-dot"></span>${EX_LABEL[w.short_exchange]||w.short_exchange}</span>
           </div>
         </div>
-        <div class="alpha-ring ${aCls}" title="Alpha score ${score.toFixed(1)}">
-          <svg width="42" height="42">
-            <circle class="alpha-ring-bg" cx="21" cy="21" r="17"/>
-            <circle class="alpha-ring-fg" cx="21" cy="21" r="17" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
-          </svg>
-          <span class="alpha-ring-val">${score.toFixed(0)}</span>
+        <div class="sp-delta ${sp.cls}" title="${sp.title}">
+          <span class="sp-lbl">ΔSpread</span>
+          <span class="sp-val">${sp.text}</span>
         </div>
       </div>
 
@@ -734,7 +741,7 @@ function render(){
           </svg>
         </div>
         <h2>No pairs in watchlist yet</h2>
-        <p>Save pairs from the <a href="/screener" style="color:var(--green);font-weight:600">Screener</a> to track spreads live. Each card shows alpha score, net P&L per 8h, and a 6h sparkline.</p>
+        <p>Save pairs from the <a href="/screener" style="color:var(--green);font-weight:600">Screener</a> to track spreads live. Each card shows the Δ between the spread at add time and now, net P&L per 8h, and a 6h sparkline.</p>
         <a class="wl-cta" href="/screener?mode=arb">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h10M8 3v10"/></svg>
           Find pairs to watch
@@ -763,6 +770,11 @@ function filterRender(){
     return (w.symbol+' '+w.long_exchange+' '+w.short_exchange).toLowerCase().includes(q);
   });
   // sort
+  const deltaOf = w => {
+    const o = _live.get(_key(w.symbol,w.long_exchange,w.short_exchange));
+    if (!o || w.initial_spread_pct == null || o.price_spread == null) return null;
+    return o.price_spread - w.initial_spread_pct;
+  };
   items.sort((a,b) => {
     const oa = _live.get(_key(a.symbol,a.long_exchange,a.short_exchange)) || {};
     const ob = _live.get(_key(b.symbol,b.long_exchange,b.short_exchange)) || {};
@@ -770,22 +782,15 @@ function filterRender(){
     if (sortBy === 'net-asc')return (oa.net_profit||0) - (ob.net_profit||0);
     if (sortBy === 'sym')    return a.symbol.localeCompare(b.symbol);
     if (sortBy === 'added')  return b.id - a.id;
-    return (ob.alpha_score||0) - (oa.alpha_score||0);
+    if (sortBy === 'delta-asc') return (deltaOf(a) ?? 0) - (deltaOf(b) ?? 0);
+    return (deltaOf(b) ?? -Infinity) - (deltaOf(a) ?? -Infinity);
   });
-  // mark best (top by alpha in current filter)
   const grid = document.getElementById('wl-grid');
   if (!items.length) {
     grid.innerHTML = `<div class="wl-empty" style="grid-column:1/-1"><h2>No matches</h2><p>Try clearing the search or switching filter.</p></div>`;
     return;
   }
-  const best = items[0];
-  grid.innerHTML = items.map((w,i) => {
-    const html = cardHtml(w);
-    if (w === best && sortBy === 'alpha' && (_live.get(_key(w.symbol,w.long_exchange,w.short_exchange))?.alpha_score || 0) >= 70) {
-      return html.replace('<div class="wl-actions">', '<div class="wl-best-badge">★ TOP ALPHA</div><div class="wl-actions">');
-    }
-    return html;
-  }).join('');
+  grid.innerHTML = items.map(w => cardHtml(w)).join('');
   updateKpis();
 }
 
@@ -794,21 +799,28 @@ function updateKpis(){
   const count = _wl.length;
   // chip counts always update (even when zero)
   document.getElementById('wl-chip-count-all').textContent = count;
-  let pos = 0, neg = 0, sumAlpha = 0, aN = 0, bestNet = -Infinity, bestPair = null;
+  let pos = 0, neg = 0, bestNet = -Infinity, bestPair = null;
+  let wides = 0, narrows = 0, sumDelta = 0, dN = 0;
   for (const w of _wl) {
     const o = _live.get(_key(w.symbol,w.long_exchange,w.short_exchange));
     if (!o) continue;
     if ((o.net_profit||0) > 0) pos++; else neg++;
-    if (o.alpha_score != null) { sumAlpha += o.alpha_score; aN++; }
     if ((o.net_profit||0) > bestNet) { bestNet = o.net_profit||0; bestPair = w; }
+    if (w.initial_spread_pct != null && o.price_spread != null) {
+      const d = o.price_spread - w.initial_spread_pct;
+      sumDelta += d; dN++;
+      if (d > 0.01) wides++;
+      else if (d < -0.01) narrows++;
+    }
   }
   document.getElementById('wl-chip-count-pos').textContent = pos;
   document.getElementById('wl-chip-count-neg').textContent = neg;
   if (!count) { kpis.innerHTML = ''; return; }
-  const avgAlpha = aN ? (sumAlpha / aN) : 0;
+  const avgDelta = dN ? (sumDelta / dN) : 0;
+  const avgSign = avgDelta >= 0 ? '+' : '';
   kpis.innerHTML = `
     <div class="kpi accent"><div class="kpi-lbl">Watching</div><div class="kpi-val">${count}</div></div>
-    <div class="kpi"><div class="kpi-lbl">Avg Alpha</div><div class="kpi-val">${avgAlpha.toFixed(1)}</div></div>
+    <div class="kpi ${avgDelta>=0?'accent':'warn'}"><div class="kpi-lbl">Avg ΔSpread</div><div class="kpi-val">${dN?`${avgSign}${avgDelta.toFixed(2)}%`:'—'}</div></div>
     <div class="kpi ${pos>=neg?'accent':'warn'}"><div class="kpi-lbl">Profitable</div><div class="kpi-val">${pos}<span style="color:var(--text3);font-size:13px;font-weight:500"> / ${count}</span></div></div>
     <div class="kpi ${bestNet>0?'accent':'danger'}"><div class="kpi-lbl">Best Net /8h</div><div class="kpi-val">${bestPair?`${sign(bestNet)}${bestNet.toFixed(3)}%`:'—'}</div></div>`;
 }

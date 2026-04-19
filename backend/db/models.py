@@ -228,4 +228,5 @@ class WatchlistItem(Base):
     long_exchange = Column(String, nullable=False)
     short_exchange = Column(String, nullable=False)
     note = Column(String, nullable=True)
+    initial_spread_pct = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
