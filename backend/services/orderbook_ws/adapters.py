@@ -307,6 +307,7 @@ class KuCoinWS(WSAdapter):
     url = ""
     ping_interval = 18.0
     subscribe_delay = 0.4  # KuCoin rate-limits subscribes to ~3/sec per connection
+    max_symbols = 50        # >~100 topics per connection triggers ~90s server disconnect loop
 
     # Token cache — bullet-public tokens live >=24h per KuCoin docs. Refetching on
     # every reconnect turned out to trip rate-limits on their REST gateway

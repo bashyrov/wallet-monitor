@@ -25,6 +25,7 @@ class WSAdapter:
     ping_interval: float = 20.0
     decompress_gzip: bool = False  # set True for exchanges that gzip WS frames (BingX)
     subscribe_delay: float = 0.0   # seconds between subscribe frames (exchanges with rate limits)
+    max_symbols: int | None = None # cap total subscriptions per connection (None = unlimited)
 
     def __init__(self, update_cb):
         """update_cb(exchange: str, symbol: str, bids, asks) writes to _book_cache."""
@@ -54,8 +55,14 @@ class WSAdapter:
         return None
 
     # ── lifecycle ────────────────────────────────────────────────────────────
+    def _apply_cap(self, symbols: set[str]) -> set[str]:
+        """Honour max_symbols — keep first N in sorted order (stable across calls)."""
+        if self.max_symbols and len(symbols) > self.max_symbols:
+            return set(sorted(symbols)[:self.max_symbols])
+        return symbols
+
     def start(self, symbols: list[str]) -> None:
-        self._symbols = {s.upper() for s in symbols}
+        self._symbols = self._apply_cap({s.upper() for s in symbols})
         if self._task and not self._task.done():
             # Already running — trigger reconnect so we resubscribe with new set
             asyncio.create_task(self._resubscribe())
@@ -69,10 +76,12 @@ class WSAdapter:
             self._task.cancel()
 
     def add_symbols(self, symbols: list[str]) -> None:
-        new = {s.upper() for s in symbols} - self._symbols
+        combined = self._symbols | {s.upper() for s in symbols}
+        capped = self._apply_cap(combined)
+        new = capped - self._symbols
         if not new:
             return
-        self._symbols |= new
+        self._symbols = capped
         if self._ws:
             asyncio.create_task(self._send_subscribe(only=new))
 
