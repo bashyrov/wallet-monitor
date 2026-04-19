@@ -38,9 +38,10 @@ logger = logging.getLogger("avalant.orderbook")
 
 POLL_INTERVAL   = 0.50   # per-pair poll cadence (owner worker)
 IDLE_TIMEOUT    = 30.0   # stop poller if no requests in this window
-FIRST_WAIT      = 1.8    # max cold-start wait for first data
+FIRST_WAIT      = 0.7    # max cold-start wait for first data (lowered: better to show stale data than block)
 STALE_FALLBACK  = 10.0   # still serve local-cache data if younger than this
-FILE_FRESH_MAX  = 5.0    # file-cache entry usable only if younger than this
+FILE_FRESH_MAX  = 5.0    # file-cache entry is "fresh"; we still serve older data immediately (see STALE_SERVE_MAX)
+STALE_SERVE_MAX = 60.0   # serve file data this old rather than block; subscribe in the background
 
 _CACHE_DIR   = "/tmp/avalant_cache"
 _BOOKS_FILE  = os.path.join(_CACHE_DIR, "books.json")
@@ -177,14 +178,29 @@ def _refresh_file_memo() -> None:
         pass
 
 
-def _file_lookup(key: str) -> dict | None:
+def _file_lookup(key: str, max_age: float = FILE_FRESH_MAX) -> dict | None:
+    """Return file-cache data for key if younger than max_age, else None."""
     _refresh_file_memo()
     entry = _file_memo.get(key)
     if not entry:
         return None
-    if time.time() - entry.get("ts", 0) > FILE_FRESH_MAX:
+    if time.time() - entry.get("ts", 0) > max_age:
         return None
     return entry.get("data")
+
+
+def _file_lookup_stale(key: str) -> tuple[dict | None, float]:
+    """Return (data, age_in_seconds) from file cache regardless of freshness,
+    bounded by STALE_SERVE_MAX. Used for fast-path responses that would
+    otherwise be empty — better to show 30s-old orderbook than nothing."""
+    _refresh_file_memo()
+    entry = _file_memo.get(key)
+    if not entry:
+        return None, float("inf")
+    age = time.time() - entry.get("ts", 0)
+    if age > STALE_SERVE_MAX:
+        return None, age
+    return entry.get("data"), age
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -200,17 +216,26 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
         entry["last_request"] = now
         return entry["data"]
 
-    # 2. Shared file cache — populated by owner worker for top-N pairs
+    # 2. Shared file cache — fresh path (<5s old)
     fd = _file_lookup(key)
     if fd:
         return fd
 
-    # 3. WS-capable exchange but not yet streaming this symbol → subscribe + wait
+    # 3. WS-capable exchange but not yet streaming this symbol. Kick off the
+    #    subscribe, but DON'T block on it for the full FIRST_WAIT — if we have
+    #    any stale file data we return it immediately and let the background
+    #    subscribe warm the cache for the next request.
     from backend.services.orderbook_ws import is_ws_supported, get_manager
     if is_ws_supported(exchange):
         mgr = get_manager()
         if mgr:
             mgr.subscribe(exchange, [symbol])
+        # Serve STALE data right away if available — caller would rather see a
+        # 30s-old book than a blank screen.
+        stale_data, stale_age = _file_lookup_stale(key)
+        if stale_data:
+            return stale_data
+        # No stale data either — wait briefly (FIRST_WAIT = 0.7s) for WS first push
         deadline = now + FIRST_WAIT
         while time.time() < deadline:
             await asyncio.sleep(0.05)
@@ -218,6 +243,9 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
             if e.get("data"):
                 e["last_request"] = time.time()
                 return e["data"]
+            fd2 = _file_lookup(key)
+            if fd2:
+                return fd2
         return {"bids": [], "asks": []}
 
     # 4. Cold-start REST poller (only reached for non-WS exchanges: perp DEX etc.)
