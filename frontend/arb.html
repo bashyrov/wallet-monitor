@@ -573,17 +573,25 @@ body.light .bnav-item.active{color:#000;}
   .workspace{flex-direction:column;overflow:visible;min-height:0;}
   .left-stack{flex:none;}
   .main{flex-direction:column;overflow:visible;height:auto;min-height:0;flex:none;max-height:none;border-bottom:none;}
-  .col-left,.col-books,.col-info{width:100%;min-width:0;border-right:none;border-left:none;border-bottom:1px solid var(--border);}
+  .col-left,.col-books,.col-info{width:100%;min-width:0;border-right:none;border-left:none;border-bottom:none;}
   .col-left{max-height:none;}
-  .tab-pane.active{min-height:520px;}
+  /* Charts column: sized to its active tab, no forced 520px min that left
+     a big blank below short tabs like All Rates / Info. */
+  .tab-pane.active{min-height:auto;}
   .spread-section{flex:0 0 auto;height:320px;}
   .fund-section{flex:0 0 auto;height:260px;}
   .overview-scroll,.info-scroll,.all-ex-scroll{max-height:none;overflow-y:visible;}
+  /* Chart tabs: never wrap to a second row — scroll horizontally so
+     Entry/Exit / Price History / Funding / Overview / Info / All Rates
+     stay on one line on 360px phones. */
+  .chart-tabs{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;}
+  .chart-tabs::-webkit-scrollbar{display:none;}
+  .chart-tab{flex-shrink:0;}
   /* Orderbooks hidden on mobile — charts above and P&L below give the signal */
   .col-books{display:none !important;}
   /* Right P&L panel → full width */
   .col-info{flex:none;max-width:none;min-width:0;}
-  .info-content{max-height:none;overflow-y:visible;padding-bottom:120px;}
+  .info-content{max-height:none;overflow-y:visible;padding-bottom:120px;gap:8px;padding:8px;}
 
   /* Account block tabs — wrap / scroll horizontally, no single-word wrapping */
   .acc-tabs{height:auto;min-height:44px;padding:4px 8px;flex-wrap:wrap;gap:4px;overflow-x:auto;}
@@ -2126,16 +2134,12 @@ function _eeBucket(ts){
 
 function _eeBuildCandles(){
   const bucket=EE_BUCKET[_eeTfSec]||60;
-  // Group ALL stored samples (~up to 20min buffer) by bucket — each candle = one TF period
+  // Line-series data: one point per TF bucket, value = last sample in bucket.
   const bIn=new Map(), bOut=new Map();
   for(const p of _eeHist){
     const t=Math.floor(p.ts/bucket)*bucket;
-    const inRec=bIn.get(t);
-    if(!inRec) bIn.set(t,{time:t,open:p.inPct,high:p.inPct,low:p.inPct,close:p.inPct});
-    else{inRec.high=Math.max(inRec.high,p.inPct);inRec.low=Math.min(inRec.low,p.inPct);inRec.close=p.inPct;}
-    const outRec=bOut.get(t);
-    if(!outRec) bOut.set(t,{time:t,open:p.outPct,high:p.outPct,low:p.outPct,close:p.outPct});
-    else{outRec.high=Math.max(outRec.high,p.outPct);outRec.low=Math.min(outRec.low,p.outPct);outRec.close=p.outPct;}
+    bIn.set(t,{time:t, value:p.inPct});
+    bOut.set(t,{time:t, value:p.outPct});
   }
   const inArr=[...bIn.values()].sort((a,b)=>a.time-b.time);
   const outArr=[...bOut.values()].sort((a,b)=>a.time-b.time);
@@ -2171,8 +2175,8 @@ function _eeApplyTheme(){
     timeScale:{borderColor:c.border},
     crosshair:{vertLine:{color:c.cross},horzLine:{color:c.cross}},
   });
-  _eeInSeries.applyOptions({upColor:c.inUp,downColor:c.inDown,borderUpColor:c.inUp,borderDownColor:c.inDown,wickUpColor:c.inUp,wickDownColor:c.inDown});
-  _eeOutSeries.applyOptions({upColor:c.outUp,downColor:c.outDown,borderUpColor:c.outUp,borderDownColor:c.outDown,wickUpColor:c.outUp,wickDownColor:c.outDown});
+  _eeInSeries.applyOptions({color:c.inUp});
+  _eeOutSeries.applyOptions({color:c.outUp});
 }
 function _eeInit(){
   const el=document.getElementById('ee-chart');
@@ -2187,13 +2191,15 @@ function _eeInit(){
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:c.cross,style:2,width:1},horzLine:{color:c.cross,style:2,width:1}},
     localization:{priceFormatter:v=>(v>=0?'+':'')+v.toFixed(4)+'%'},
   });
-  _eeInSeries=_eeChart.addCandlestickSeries({
-    upColor:c.inUp,downColor:c.inDown,borderUpColor:c.inUp,borderDownColor:c.inDown,wickUpColor:c.inUp,wickDownColor:c.inDown,
-    priceFormat:{type:'price',precision:4,minMove:0.0001},title:'In',
+  // Line series — two overlapping candlestick sets on the same price axis
+  // made the In series invisible whenever its values tracked Out closely.
+  _eeInSeries=_eeChart.addLineSeries({
+    color:c.inUp, lineWidth:2, priceLineVisible:false,
+    priceFormat:{type:'price',precision:4,minMove:0.0001}, title:'In',
   });
-  _eeOutSeries=_eeChart.addCandlestickSeries({
-    upColor:c.outUp,downColor:c.outDown,borderUpColor:c.outUp,borderDownColor:c.outDown,wickUpColor:c.outUp,wickDownColor:c.outDown,
-    priceFormat:{type:'price',precision:4,minMove:0.0001},title:'Out',
+  _eeOutSeries=_eeChart.addLineSeries({
+    color:c.outUp, lineWidth:2, priceLineVisible:false,
+    priceFormat:{type:'price',precision:4,minMove:0.0001}, title:'Out',
   });
   _eeChart.priceScale('right').applyOptions({autoScale:true});
   const ro=new ResizeObserver(()=>{if(_eeChart) _eeChart.applyOptions({width:el.clientWidth,height:el.clientHeight});});
@@ -3325,20 +3331,7 @@ async function tradeOpenArb(){
   _showLegErr('long', null); _showLegErr('short', null);
   if (L.qty <= 0 || S.qty <= 0) { _toast('Enter size on both legs'); return; }
   if (!L.walletId || !S.walletId) { _toast('Screener API keys missing on one of the exchanges'); return; }
-  const notionalL = (L.qty * L.last).toFixed(2);
-  const notionalS = (S.qty * S.last).toFixed(2);
-  const msg =
-    `<div style="display:flex;flex-direction:column;gap:8px">` +
-    `<div><b style="color:var(--green)">LONG</b> ${L.qty.toFixed(4)} ${SYM} ≈ <b>${notionalL} USDT</b> · ${L.leverage}× ${L.margin} on <b>${EX_LABEL[LONG]||LONG}</b></div>` +
-    `<div><b style="color:var(--red)">SHORT</b> ${S.qty.toFixed(4)} ${SYM} ≈ <b>${notionalS} USDT</b> · ${S.leverage}× ${S.margin} on <b>${EX_LABEL[SHORT]||SHORT}</b></div>` +
-    `</div>`;
-  const ok = await Confirm.ask({
-    title: 'Place REAL arb positions on both exchanges?',
-    message: msg,
-    okText: 'Open both legs',
-  });
-  if (!ok) return;
-
+  // Market order on both legs — fire both without a price-confirmation prompt.
   _tradeInflight.arb = true;
   const btn = document.getElementById('trade-arb-btn');
   const txt = document.getElementById('trade-arb-text');
@@ -3402,16 +3395,9 @@ async function tradeOpen(leg){
   if (!t.qty || t.qty <= 0) { _showLegErr(leg, 'Enter size first'); return; }
   if (!t.walletId)          { _showLegErr(leg, 'Set a Screener API key for this exchange on /profile'); return; }
   const sideText = leg === 'long' ? 'LONG' : 'SHORT';
-  const exText = leg === 'long' ? (EX_LABEL[LONG] || LONG) : (EX_LABEL[SHORT] || SHORT);
-  const notional = (t.qty * t.last).toFixed(2);
-  const sideColor = leg === 'long' ? 'var(--green)' : 'var(--red)';
-  const ok = await Confirm.ask({
-    title: `Place REAL ${sideText} order on ${exText}?`,
-    message: `<div><b style="color:${sideColor}">${sideText}</b> ${t.qty.toFixed(4)} <b>${SYM}</b> ≈ <b>${notional} USDT</b><br>Leverage: <b>${t.leverage}×</b> · Margin: <b>${t.margin}</b></div>`,
-    okText: `Open ${sideText}`,
-  });
-  if (!ok) return;
-
+  // Market order — fire immediately without a price-confirmation prompt.
+  // The button itself already shows the size (e.g. "Open Long · 12.3456 TOK"),
+  // which is the only confirmation the user needs for a taker order.
   _tradeInflight[leg] = true;
   const btn = document.getElementById('trade-submit-' + leg);
   btn.disabled = true;
