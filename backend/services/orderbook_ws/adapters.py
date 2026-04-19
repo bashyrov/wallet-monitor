@@ -333,7 +333,7 @@ class KuCoinWS(WSAdapter):
             return endpoint, token, ping_s
 
     def build_subscribe(self, symbols):
-        # KuCoin supports comma-joined topics: "/contractMarket/level2Depth50:A,B,C"
+        # KuCoin supports comma-joined topics: "/contractMarket/level2Depth5:A,B,C"
         # One frame covers up to BATCH symbols, staying well below the 3/sec
         # subscribe-op rate limit even with many pairs.
         BATCH = 10
@@ -344,7 +344,7 @@ class KuCoinWS(WSAdapter):
             frames.append({
                 "id": str(uuid.uuid4()),
                 "type": "subscribe",
-                "topic": f"/contractMarket/level2Depth50:{chunk}",
+                "topic": f"/contractMarket/level2Depth5:{chunk}",
                 "response": True,
             })
         return frames
@@ -357,7 +357,7 @@ class KuCoinWS(WSAdapter):
             frames.append({
                 "id": str(uuid.uuid4()),
                 "type": "subscribe",
-                "topic": f"/contractMarket/level2Depth50:{sym_k}",
+                "topic": f"/contractMarket/level2Depth5:{sym_k}",
                 "response": True,
             })
         return frames
@@ -371,7 +371,7 @@ class KuCoinWS(WSAdapter):
         if msg.get("type") != "message":
             return None
         topic = msg.get("topic", "")
-        if not topic.startswith("/contractMarket/level2Depth50:"):
+        if not topic.startswith("/contractMarket/level2Depth5:"):
             return None
         sym_k = topic.split(":", 1)[1]  # e.g. XBTUSDTM
         if not sym_k.endswith("USDTM"):
@@ -415,9 +415,17 @@ class KuCoinWS(WSAdapter):
                     self._ws = ws
                     backoff = 1.0
                     self._subscribed.clear()
+                    # Prime heartbeat BEFORE subscribe so KuCoin registers
+                    # activity on the socket from the first second.
+                    try:
+                        await ws.send(self.heartbeat_frame())
+                    except Exception:
+                        pass
                     if self._symbols:
                         await self._send_subscribe()
-                    hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s * 0.8))
+                    # Heartbeat every ping_s/2 — conservative vs server's expected
+                    # pingInterval (18s) so we never overshoot.
+                    hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 2.0))
                     logger.info("kucoin WS connected (%d symbols)", len(self._symbols))
                     async for raw in ws:
                         if self._stop:
