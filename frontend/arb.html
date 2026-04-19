@@ -104,15 +104,15 @@ body.light .hero-swap:hover{background:#EDEDED;color:#000;}
 .metric-val.neu{color:var(--text2);}
 .metric-val .arrow{font-size:11px;opacity:.7;}
 
-/* Back-to-Screener link — compact icon-only button at the far right */
-.ib-back-link{flex:0 0 auto;min-width:0;width:52px;display:flex;align-items:center;justify-content:center;gap:0;height:100%;padding:0 12px;border-left:1px solid var(--border);font-size:20px;font-weight:400;color:var(--text2);text-decoration:none;font-family:inherit;transition:color .15s,background .15s;}
+/* Back-to-Screener link — icon-only, but flex:1 so it absorbs the remaining
+   row width (clickable area stays generous without a wide label). */
+.ib-back-link{margin-left:auto;flex:1 1 auto;min-width:72px;display:flex;align-items:center;justify-content:center;gap:0;height:100%;padding:0 12px;border-left:1px solid var(--border);font-size:20px;font-weight:400;color:var(--text2);text-decoration:none;font-family:inherit;transition:color .15s,background .15s;}
 .ib-back-link > span { display: none; }
 .ib-back-link svg{opacity:.7;transition:opacity .15s,transform .2s;flex-shrink:0;}
 .ib-back-link:hover{color:var(--green);background:rgba(26,255,171,.05);}
 .ib-back-link:hover svg{opacity:1;transform:translateX(-3px);}
 body.light .ib-back-link:hover{color:#000;background:#F4F4F4;}
-/* Alert block absorbs the spare row — sits flush between metrics and back-link */
-.alert-block{flex:1 1 auto;min-width:160px;margin-left:auto;cursor:pointer;transition:background .15s;}
+.alert-block{cursor:pointer;transition:background .15s;}
 .alert-block:hover{background:rgba(26,255,171,.04);}
 .alert-block .alert-row{display:flex;align-items:center;gap:10px;}
 .alert-block .alert-add{font-size:10px;font-weight:600;color:var(--green);background:rgba(26,255,171,.1);border:1px solid rgba(26,255,171,.3);padding:3px 7px;border-radius:4px;white-space:nowrap;}
