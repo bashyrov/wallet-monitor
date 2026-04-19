@@ -87,17 +87,94 @@ class GateProvider(BaseWalletProvider):
             logging.getLogger(__name__).warning("Gate.io earn fetch failed: %s", e)
             return {}
 
+    async def _get_unified(self, wallet: ExchangeWallet) -> dict[str, Decimal]:
+        """Gate.io Unified Trading Account (единый торговый счёт). Returns
+        a single object with a `balances` dict keyed by currency. Most
+        active traders now keep their funds here rather than in legacy
+        Spot wallets."""
+        path = "/api/v4/unified/accounts"
+        try:
+            r = await self._http.get(
+                f"{self.base_url}{path}",
+                headers=self._headers(wallet, "GET", path),
+            )
+            r.raise_for_status()
+            data = r.json() or {}
+            out = defaultdict(Decimal)
+            # Response shape: {"balances": {"USDT": {"available": "...",
+            # "freeze": "...", "borrowed": "...", ...}, ...}, ...}
+            balances = data.get("balances") or {}
+            for ccy, info in balances.items():
+                if not isinstance(info, dict):
+                    continue
+                available = Decimal(str(info.get("available") or "0"))
+                freeze    = Decimal(str(info.get("freeze")    or "0"))
+                total = available + freeze
+                if total > 0:
+                    out[ccy.upper()] += total
+            return dict(out)
+        except Exception as e:
+            import logging
+            # 404 is expected for accounts that haven't opted into unified
+            logging.getLogger(__name__).warning("Gate.io unified fetch failed: %s", e)
+            return {}
+
+    async def _get_margin(self, wallet: ExchangeWallet) -> dict[str, Decimal]:
+        """Gate.io cross-margin account. Optional — many users keep funds
+        here for spot-margin trading."""
+        path = "/api/v4/margin/cross/accounts"
+        try:
+            r = await self._http.get(
+                f"{self.base_url}{path}",
+                headers=self._headers(wallet, "GET", path),
+            )
+            r.raise_for_status()
+            data = r.json() or {}
+            out = defaultdict(Decimal)
+            balances = data.get("balances") or {}
+            for ccy, info in balances.items():
+                if not isinstance(info, dict):
+                    continue
+                available = Decimal(str(info.get("available") or "0"))
+                freeze    = Decimal(str(info.get("freeze")    or "0"))
+                total = available + freeze
+                if total > 0:
+                    out[ccy.upper()] += total
+            return dict(out)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Gate.io cross-margin fetch failed: %s", e)
+            return {}
+
     async def fetch_balance(self, wallet: ExchangeWallet):
-        spot, fut_usdt, fut_btc, earn = await asyncio.gather(
+        spot, fut_usdt, fut_btc, earn, unified, margin = await asyncio.gather(
             self._get_spot(wallet),
             self._get_futures(wallet, "usdt"),
             self._get_futures(wallet, "btc"),
             self._get_earn(wallet),
+            self._get_unified(wallet),
+            self._get_margin(wallet),
             return_exceptions=True,
         )
 
+        # Spot is the only leg that raises on real auth failure; everything
+        # else can 404 for accounts that haven't opted in (unified/margin),
+        # so we tolerate individual failures.
         if isinstance(spot, Exception):
             raise spot
+
+        # Merge Unified + Margin into the "spot" bucket so the UI shows them
+        # under the same heading. These are sibling trading wallets; Gate
+        # users frequently have funds spread across all three.
+        spot_merged: dict[str, Decimal] = defaultdict(Decimal)
+        for k, v in (spot or {}).items():
+            spot_merged[k] += v
+        if not isinstance(unified, Exception):
+            for k, v in unified.items():
+                spot_merged[k] += v
+        if not isinstance(margin, Exception):
+            for k, v in margin.items():
+                spot_merged[k] += v
 
         futures: dict[str, Decimal] = defaultdict(Decimal)
         upnl = Decimal("0")
@@ -110,4 +187,4 @@ class GateProvider(BaseWalletProvider):
 
         earn_dict = earn if not isinstance(earn, Exception) else {}
         upnl_str = str(upnl) if upnl != 0 else None
-        return self._build_result(wallet, self.name, dict(spot), dict(futures), earn_dict, upnl_usd=upnl_str)
+        return self._build_result(wallet, self.name, dict(spot_merged), dict(futures), earn_dict, upnl_usd=upnl_str)
