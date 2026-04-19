@@ -71,11 +71,13 @@ class BinanceWS(WSAdapter):
         book["bids"] = {float(p): float(q) for p, q in snap.get("bids", []) if float(q) > 0}
         book["asks"] = {float(p): float(q) for p, q in snap.get("asks", []) if float(q) > 0}
         book["lastUpdateId"] = last_id
-        # Replay buffered deltas that apply post-snapshot
+        # Replay buffered deltas that apply post-snapshot. ready MUST flip to
+        # True before the replay loop — _apply_delta rejects everything while
+        # ready is False, which was the old bug that left binance/aster empty.
+        book["ready"] = True
         for ev in book.get("buffer", []):
             self._apply_delta(token, ev)
         book["buffer"] = []
-        book["ready"] = True
 
     def _apply_delta(self, token: str, ev: dict) -> bool:
         book = self._books.get(token)
