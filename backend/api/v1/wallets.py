@@ -10,11 +10,15 @@ import backend.services.wallet_service as svc
 from backend.providers.exchanges import EXCHANGE_PROVIDERS
 from backend.providers.perp_dexes import PERPDEX_PROVIDERS
 from backend.providers.chains import CHAIN_META
+from backend.services import admin_settings
 
 router = APIRouter(prefix="/wallets", tags=["wallets"])
 
 
 def _build_wallet_options() -> dict:
+    disabled_ex = admin_settings.get_disabled_wallet_exchanges()
+    disabled_ch = admin_settings.get_disabled_chains()
+    disabled_pd = admin_settings.get_disabled_perpdexes()
     exchange_types = [
         {
             "value": value,
@@ -22,7 +26,7 @@ def _build_wallet_options() -> dict:
             "needs_passphrase": getattr(p, "needs_passphrase", False),
         }
         for value, p in EXCHANGE_PROVIDERS.items()
-        if isinstance(p, type) and getattr(p, "enabled", True)
+        if isinstance(p, type) and getattr(p, "enabled", True) and value.lower() not in disabled_ex
     ]
     perpdex_types = [
         {
@@ -32,12 +36,12 @@ def _build_wallet_options() -> dict:
             **( {"soon": True} if getattr(p, "soon", False) else {} ),
         }
         for value, p in PERPDEX_PROVIDERS.items()
-        if isinstance(p, type) and getattr(p, "enabled", True)
+        if isinstance(p, type) and getattr(p, "enabled", True) and value.lower() not in disabled_pd
     ]
     chain_types = [
         {"value": value, "label": meta["label"]}
         for value, meta in CHAIN_META.items()
-        if meta.get("enabled", True)
+        if meta.get("enabled", True) and value.lower() not in disabled_ch
     ]
     return {
         "exchange_types": exchange_types,
@@ -46,7 +50,7 @@ def _build_wallet_options() -> dict:
     }
 
 
-WALLET_OPTIONS = _build_wallet_options()
+WALLET_OPTIONS = _build_wallet_options()  # snapshot for /api/health; live reads go through _build_wallet_options()
 
 
 @router.get("", response_model=list[WalletOut])
@@ -59,7 +63,7 @@ def list_wallets(
 
 @router.get("/options")
 def get_options(current_user: User = Depends(get_current_user)):
-    return WALLET_OPTIONS
+    return _build_wallet_options()
 
 
 @router.get("/all-addresses", response_model=list[dict])
@@ -76,6 +80,15 @@ async def create_wallet(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Honour admin-disabled providers without leaking stale UI into the DB.
+    tv = (body.type_value or "").lower()
+    if body.wallet_type == "exchange" and tv in admin_settings.get_disabled_wallet_exchanges():
+        raise HTTPException(status_code=403, detail=f"{body.type_value} is currently disabled by admin")
+    if body.wallet_type == "chain" and tv in admin_settings.get_disabled_chains():
+        raise HTTPException(status_code=403, detail=f"{body.type_value} chain is currently disabled by admin")
+    if body.wallet_type == "perpdex" and tv in admin_settings.get_disabled_perpdexes():
+        raise HTTPException(status_code=403, detail=f"{body.type_value} is currently disabled by admin")
+
     if body.wallet_type == "exchange" or (body.wallet_type == "perpdex" and body.type_value == "aster"):
         if not body.api_key or not body.api_secret:
             raise HTTPException(status_code=422, detail="api_key and api_secret are required")

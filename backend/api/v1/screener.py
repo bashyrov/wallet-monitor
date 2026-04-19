@@ -441,6 +441,7 @@ async def _refresh_loop() -> None:
         FETCHERS, _cache, _arb_result_cache, _compute_arb_sync,
         _write_file_cache, get_funding_data, _slim_arb_for_file,
     )
+    from backend.services import admin_settings
     _fetch_lock = asyncio.Lock()
     async def _single_fetch():
         if _fetch_lock.locked():
@@ -456,12 +457,20 @@ async def _refresh_loop() -> None:
         # Kick background funding refresh — never await. Lock ensures only one
         # get_funding_data runs at a time (prevents pool exhaustion / duplicates).
         asyncio.create_task(_single_fetch())
-        # Recompute arb from current _cache rows (no await on exchanges)
+        # Recompute arb from current _cache rows (no await on exchanges).
+        # Honour admin-disabled exchanges + hidden symbols at rebuild time so the
+        # stale _cache rows for freshly-disabled exchanges don't leak through.
         try:
+            disabled_ex = admin_settings.get_disabled_exchanges()
+            hidden_sym = admin_settings.get_hidden_symbols()
             rows = []
             for ex in FETCHERS:
+                if ex in disabled_ex:
+                    continue
                 cached_rows, _ts = _cache.get(ex, ([], 0.0))
                 rows.extend(cached_rows)
+            if hidden_sym:
+                rows = [r for r in rows if r["symbol"] not in hidden_sym]
             if rows:
                 result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
                 _arb_result_cache["data"] = result

@@ -21,11 +21,17 @@ _cache: dict[str, tuple[Any, float]] = {}
 KEY_HIDDEN_SYMBOLS = "hidden_symbols"
 KEY_DISABLED_EXCHANGES = "disabled_exchanges"
 KEY_MAINTENANCE = "maintenance_mode"
+KEY_DISABLED_WALLET_EXCHANGES = "disabled_wallet_exchanges"
+KEY_DISABLED_CHAINS = "disabled_chains"
+KEY_DISABLED_PERPDEXES = "disabled_perpdexes"
 
 _DEFAULTS: dict[str, Any] = {
     KEY_HIDDEN_SYMBOLS: [],
     KEY_DISABLED_EXCHANGES: [],
     KEY_MAINTENANCE: False,
+    KEY_DISABLED_WALLET_EXCHANGES: [],
+    KEY_DISABLED_CHAINS: [],
+    KEY_DISABLED_PERPDEXES: [],
 }
 
 
@@ -78,3 +84,19 @@ def get_disabled_exchanges() -> set[str]:
 
 def is_maintenance() -> bool:
     return bool(get(KEY_MAINTENANCE))
+
+
+def _as_lower_set(key: str) -> set[str]:
+    return {str(s).lower() for s in (get(key) or [])}
+
+
+def get_disabled_wallet_exchanges() -> set[str]:
+    return _as_lower_set(KEY_DISABLED_WALLET_EXCHANGES)
+
+
+def get_disabled_chains() -> set[str]:
+    return _as_lower_set(KEY_DISABLED_CHAINS)
+
+
+def get_disabled_perpdexes() -> set[str]:
+    return _as_lower_set(KEY_DISABLED_PERPDEXES)

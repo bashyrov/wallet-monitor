@@ -266,3 +266,61 @@ def screener_config_patch(
     if body.maintenance_mode is not None:
         admin_settings.set_value(admin_settings.KEY_MAINTENANCE, bool(body.maintenance_mode), user_id=user.id)
     return screener_config_get(user)
+
+
+# ═══ Portfolio runtime controls ═══════════════════════════════════════════════
+
+class PortfolioConfigIn(BaseModel):
+    disabled_wallet_exchanges: list[str] | None = None
+    disabled_chains: list[str] | None = None
+    disabled_perpdexes: list[str] | None = None
+
+
+def _portfolio_inventory() -> dict:
+    from backend.providers.exchanges import EXCHANGE_PROVIDERS
+    from backend.providers.perp_dexes import PERPDEX_PROVIDERS
+    from backend.providers.chains import CHAIN_META
+    return {
+        "available_wallet_exchanges": sorted(
+            v for v, p in EXCHANGE_PROVIDERS.items()
+            if isinstance(p, type) and getattr(p, "enabled", True)
+        ),
+        "available_chains": sorted(
+            v for v, m in CHAIN_META.items() if m.get("enabled", True)
+        ),
+        "available_perpdexes": sorted(
+            v for v, p in PERPDEX_PROVIDERS.items()
+            if isinstance(p, type) and getattr(p, "enabled", True)
+        ),
+    }
+
+
+@router.get("/portfolio-config")
+def portfolio_config_get(_: User = Depends(get_admin_user)):
+    return {
+        **_portfolio_inventory(),
+        "disabled_wallet_exchanges": sorted(admin_settings.get_disabled_wallet_exchanges()),
+        "disabled_chains": sorted(admin_settings.get_disabled_chains()),
+        "disabled_perpdexes": sorted(admin_settings.get_disabled_perpdexes()),
+    }
+
+
+@router.patch("/portfolio-config")
+def portfolio_config_patch(
+    body: PortfolioConfigIn,
+    user: User = Depends(get_admin_user),
+):
+    inv = _portfolio_inventory()
+    if body.disabled_wallet_exchanges is not None:
+        known = set(inv["available_wallet_exchanges"])
+        cleaned = sorted({str(s).strip().lower() for s in body.disabled_wallet_exchanges if str(s).strip().lower() in known})
+        admin_settings.set_value(admin_settings.KEY_DISABLED_WALLET_EXCHANGES, cleaned, user_id=user.id)
+    if body.disabled_chains is not None:
+        known = set(inv["available_chains"])
+        cleaned = sorted({str(s).strip().lower() for s in body.disabled_chains if str(s).strip().lower() in known})
+        admin_settings.set_value(admin_settings.KEY_DISABLED_CHAINS, cleaned, user_id=user.id)
+    if body.disabled_perpdexes is not None:
+        known = set(inv["available_perpdexes"])
+        cleaned = sorted({str(s).strip().lower() for s in body.disabled_perpdexes if str(s).strip().lower() in known})
+        admin_settings.set_value(admin_settings.KEY_DISABLED_PERPDEXES, cleaned, user_id=user.id)
+    return portfolio_config_get(user)
