@@ -204,6 +204,84 @@ def _file_lookup_stale(key: str) -> tuple[dict | None, float]:
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
+_PENDING_SUBS_FILE = os.path.join(_CACHE_DIR, "pending_subs.json")
+
+
+def _queue_subscribe_request(exchange: str, symbol: str) -> None:
+    """Non-owner workers can't call WSManager directly (it runs only on the
+    prewarm-owner worker). Drop a request on a shared JSON file; the owner
+    drains it every prewarm tick and issues the actual subscribe."""
+    try:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        pending: dict[str, list[str]] = {}
+        if os.path.exists(_PENDING_SUBS_FILE):
+            try:
+                with open(_PENDING_SUBS_FILE) as f:
+                    pending = json.load(f) or {}
+            except Exception:
+                pending = {}
+        syms = set(pending.get(exchange) or [])
+        if symbol in syms:
+            return
+        syms.add(symbol)
+        pending[exchange] = sorted(syms)
+        tmp = _PENDING_SUBS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(pending, f, separators=(",", ":"))
+        os.replace(tmp, _PENDING_SUBS_FILE)
+    except Exception as exc:
+        logger.debug("queue_subscribe_request failed: %s", exc)
+
+
+def drain_pending_subs() -> dict[str, list[str]]:
+    """Owner-worker helper — returns accumulated requests and clears the file."""
+    try:
+        if not os.path.exists(_PENDING_SUBS_FILE):
+            return {}
+        with open(_PENDING_SUBS_FILE) as f:
+            pending = json.load(f) or {}
+        os.remove(_PENDING_SUBS_FILE)
+        return pending
+    except Exception:
+        return {}
+
+
+_REST_FALLBACK_TTL = 12.0           # memory TTL for a REST fallback fetch
+_rest_fallback_inflight: dict[str, asyncio.Task] = {}
+_rest_fallback_inflight_lock = asyncio.Lock()
+
+
+async def _rest_fallback(exchange: str, symbol: str, limit: int) -> dict | None:
+    """Single-shot REST fetch, deduplicated per key so parallel 150ms polls
+    don't spawn concurrent REST hits. Caches into _book_cache on success."""
+    key = f"{exchange}:{symbol}"
+    async with _rest_fallback_inflight_lock:
+        existing = _rest_fallback_inflight.get(key)
+        if existing and not existing.done():
+            return await existing
+        async def _do():
+            try:
+                data = await _fetch_direct(exchange, symbol, limit)
+            except Exception:
+                data = None
+            if data and (data.get("bids") or data.get("asks")):
+                now = time.time()
+                entry = _book_cache.setdefault(key, {})
+                entry["data"] = data
+                entry["ts"] = now
+                entry["last_request"] = now
+                entry["source"] = "rest"
+                return data
+            return None
+        task = asyncio.create_task(_do())
+        _rest_fallback_inflight[key] = task
+    try:
+        return await task
+    finally:
+        async with _rest_fallback_inflight_lock:
+            _rest_fallback_inflight.pop(key, None)
+
+
 async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> dict:
     exchange = exchange.lower()
     symbol = symbol.upper()
@@ -221,50 +299,49 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     if fd:
         return fd
 
-    # 3. WS-capable exchange but not yet streaming this symbol. Kick off the
-    #    subscribe, but DON'T block on it for the full FIRST_WAIT — if we have
-    #    any stale file data we return it immediately and let the background
-    #    subscribe warm the cache for the next request.
     from backend.services.orderbook_ws import is_ws_supported, get_manager
+
+    # 3. Subscribe via WS (owner worker) or queue for owner (non-owner worker).
     if is_ws_supported(exchange):
         mgr = get_manager()
         if mgr:
             mgr.subscribe(exchange, [symbol])
-        # Serve STALE data right away if available — caller would rather see a
-        # 30s-old book than a blank screen.
-        stale_data, stale_age = _file_lookup_stale(key)
-        if stale_data:
-            return stale_data
-        # No stale data either — wait briefly (FIRST_WAIT = 0.7s) for WS first push
-        deadline = now + FIRST_WAIT
-        while time.time() < deadline:
-            await asyncio.sleep(0.05)
-            e = _book_cache.get(key) or {}
-            if e.get("data"):
-                e["last_request"] = time.time()
-                return e["data"]
-            fd2 = _file_lookup(key)
-            if fd2:
-                return fd2
-        return {"bids": [], "asks": []}
+        else:
+            _queue_subscribe_request(exchange, symbol)
 
-    # 4. Cold-start REST poller (only reached for non-WS exchanges: perp DEX etc.)
-    async with _lock:
-        entry = _book_cache.setdefault(key, {})
-        entry["last_request"] = now
-        task = _pollers.get(key)
-        if not task or task.done():
-            _pollers[key] = asyncio.create_task(_poll_loop(key, exchange, symbol, limit))
+    # 4. REST fallback — parallel to WS subscribe. Gives us instant data
+    #    (~200-400ms) for any symbol, even non-prewarmed ones, while the
+    #    WS subscribe warms up in the background for sub-second updates.
+    rest_data = await _rest_fallback(exchange, symbol, limit)
+    if rest_data:
+        return rest_data
 
+    # 5. REST failed — show the freshest stale data we have (up to 60s old).
+    stale_data, _ = _file_lookup_stale(key)
+    if stale_data:
+        return stale_data
+
+    # 6. Nothing available — brief wait for WS first push, then give up.
     deadline = now + FIRST_WAIT
     while time.time() < deadline:
         await asyncio.sleep(0.05)
         e = _book_cache.get(key) or {}
         if e.get("data"):
+            e["last_request"] = time.time()
             return e["data"]
-        fd = _file_lookup(key)
-        if fd:
-            return fd
+        fd2 = _file_lookup(key)
+        if fd2:
+            return fd2
+
+    # 7. Non-WS exchange cold start: kick the polling loop
+    if not is_ws_supported(exchange):
+        async with _lock:
+            entry = _book_cache.setdefault(key, {})
+            entry["last_request"] = now
+            task = _pollers.get(key)
+            if not task or task.done():
+                _pollers[key] = asyncio.create_task(_poll_loop(key, exchange, symbol, limit))
+
     return (_book_cache.get(key) or {}).get("data") or {"bids": [], "asks": []}
 
 
@@ -340,6 +417,14 @@ async def _prewarm_hotlist_loop() -> None:
                         ws_subs.setdefault(ex, set()).add(sym)
                     else:
                         rest_pairs.add((ex, sym))
+
+            # Pick up any ad-hoc subscribe requests queued by non-owner workers
+            for ex, syms in drain_pending_subs().items():
+                if is_ws_supported(ex):
+                    ws_subs.setdefault(ex, set()).update(syms)
+                else:
+                    for s in syms:
+                        rest_pairs.add((ex, s))
 
             # WS: ensure each adapter is running with the current symbol set
             mgr = start_ws_manager()

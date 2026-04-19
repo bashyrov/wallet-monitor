@@ -1036,8 +1036,11 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                 rate_l = long_e["rate"] * (8.0 / long_e["interval_h"])
                 rate_s = short_e["rate"] * (8.0 / short_e["interval_h"])
                 gross = rate_s - rate_l
-                if gross <= 0:
-                    continue
+                # Don't short-circuit on negative gross — a large enough
+                # price spread can easily overcome unfavourable funding
+                # (e.g. RAVE bybit @ $1.12 vs okx @ $1.07 = 4% spread on
+                # a pair whose funding goes the wrong way). We still
+                # filter on net_profit below.
                 fee_l = _fee(long_e["exchange"])
                 fee_s = _fee(short_e["exchange"])
                 total_fees = 2.0 * (fee_l + fee_s)
