@@ -548,7 +548,10 @@ body.light .bnav-item.active{color:#000;}
   html,body{overflow:auto;overflow-x:hidden;}
   body{min-height:100vh;}
   /* Infobar: horizontal scroll with snap */
-  .infobar{height:auto;min-height:64px;padding:8px 0;flex-wrap:wrap;gap:0;}
+  .infobar{height:auto;min-height:64px;padding:8px 0;flex-wrap:wrap;gap:0;overflow-x:hidden;overflow-y:visible;max-width:100vw;box-sizing:border-box;}
+  .infobar > * { max-width: 100%; box-sizing: border-box; }
+  .ex-card-row, .hero-exs, .metric-val { min-width: 0; max-width: 100%; }
+  .ex-card-row { flex-wrap: wrap; word-break: break-word; }
   .hero-block{width:100%;padding:6px 14px;border-right:none;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;}
   .hero-sym{font-size:18px;}
   .hero-exs{flex:1;min-width:0;}
