@@ -38,15 +38,23 @@ _AVAILABILITY_TTL = 10.0
 async def availability():
     """Tiny payload: enabled exchanges + all current funding symbols. Used by
     the /arb pre-flight to confirm the selected exchange/symbol aren't admin-
-    disabled. Cached 10s per-worker so the pre-flight is always <30ms even
-    when get_funding_data itself would need to refetch upstream."""
+    disabled. Served from the shared funding.json file cache so every
+    worker returns in <30ms without any upstream refetch."""
     from backend.services import admin_settings
+    from backend.services.arbitrage_service import _read_file_cache
 
     now = time.time()
     if _availability_cache["data"] and now - _availability_cache["ts"] < _AVAILABILITY_TTL:
         return _availability_cache["data"]
 
-    data = await get_funding_data()
+    # Shared file cache — written by the broadcaster every 3s. Tolerate up
+    # to 30s stale; the user-visible cost of a slightly stale symbol list is
+    # zero (we just show the page).
+    data = _read_file_cache("funding.json", max_age=30.0)
+    if not data:
+        # Brand-new container / cold start — fall back to the expensive path
+        data = await get_funding_data()
+
     result = {
         "exchanges": data.get("exchanges", []),
         "symbols": sorted({r["symbol"] for r in data.get("rows", [])}),
