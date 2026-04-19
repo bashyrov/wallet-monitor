@@ -1071,6 +1071,30 @@
       color: var(--green); font-weight: 600;
     }
 
+    /* IP-whitelist hint — yellow variant */
+    .ip-hint {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 12px;
+      background: rgba(229,192,123,0.06);
+      border: 1px solid rgba(229,192,123,0.22);
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    .ip-hint-icon { flex-shrink: 0; margin-top: 1px; color: var(--yellow); opacity: 0.85; }
+    .ip-hint-text { font-size: 12px; line-height: 1.5; color: var(--text3); }
+    .ip-hint-text strong { color: var(--yellow); font-weight: 600; }
+    .ip-hint-copy {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 4px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 9px;
+      font-family: var(--mono); font-size: 12.5px; color: var(--text);
+      cursor: pointer; letter-spacing: 0.01em;
+      transition: border-color .15s, color .15s;
+    }
+    .ip-hint-copy:hover { border-color: var(--yellow); color: var(--yellow); }
+    .ip-hint-copy.copied { color: var(--green); border-color: rgba(26,255,171,0.45); }
+
     .back-btn {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: 13px; color: var(--text3); cursor: pointer;
@@ -1864,6 +1888,19 @@
                     <strong>Read-only keys only.</strong> Create API keys with <strong>read permissions only</strong> — no trading, no withdrawals. Your funds stay safe even if keys are compromised.
                   </div>
                 </div>
+                <div class="ip-hint">
+                  <span class="ip-hint-icon">
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2a10 10 0 0 1 0 12M8 2a10 10 0 0 0 0 12"/></svg>
+                  </span>
+                  <div class="ip-hint-text">
+                    <strong>Whitelist our server IP.</strong> When creating the key on the exchange, add our address to the trusted IPs list — your key only works from our server, so even a leaked key can't be used from anywhere else.
+                    <br>
+                    <button type="button" class="ip-hint-copy" onclick="copyServerIp(this)" title="Click to copy">
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg>
+                      <span>37.60.252.32</span>
+                    </button>
+                  </div>
+                </div>
                 <div class="creds-section">
                   <div class="creds-section-title">API Credentials</div>
                   <div class="form-group">
@@ -1933,6 +1970,19 @@
                   <div class="field-err" id="err-perpdex_address"></div>
                 </div>
                 <div id="perpdex-apikey-group" style="display:none;">
+                  <div class="ip-hint">
+                    <span class="ip-hint-icon">
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2a10 10 0 0 1 0 12M8 2a10 10 0 0 0 0 12"/></svg>
+                    </span>
+                    <div class="ip-hint-text">
+                      <strong>Whitelist our server IP</strong> when generating the key so it only works from here.
+                      <br>
+                      <button type="button" class="ip-hint-copy" onclick="copyServerIp(this)" title="Click to copy">
+                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg>
+                        <span>37.60.252.32</span>
+                      </button>
+                    </div>
+                  </div>
                   <div class="form-group">
                     <label class="form-label" id="perpdex-key-label">Wallet Address</label>
                     <input class="form-input" name="perpdex_api_key" placeholder="0x..." spellcheck="false" autocomplete="off">
@@ -2383,6 +2433,28 @@ function closeAddrModal() {
   _addrModalWalletId = null;
 }
 
+async function copyServerIp(btn) {
+  const ip = '37.60.252.32';
+  try {
+    await navigator.clipboard.writeText(ip);
+  } catch {
+    // Clipboard API blocked — fall back to a transient text selection
+    const ta = document.createElement('textarea');
+    ta.value = ip; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  }
+  const label = btn.querySelector('span');
+  const orig = label ? label.textContent : ip;
+  btn.classList.add('copied');
+  if (label) label.textContent = 'Copied ✓';
+  setTimeout(() => {
+    btn.classList.remove('copied');
+    if (label) label.textContent = orig;
+  }, 1200);
+}
+
 // ── Edit Wallet Modal ────────────────────────────────────────────────────────
 let _editWalletId = null;
 
@@ -2398,6 +2470,19 @@ function openEditWalletModal(walletId) {
   if (w.wallet_type === 'exchange' || (w.wallet_type === 'perpdex' && w.type_value === 'aster')) {
     const needsPass = (S.options.exchange_types || []).find(e => e.value === w.type_value)?.needs_passphrase;
     creds.innerHTML = `
+      <div class="ip-hint">
+        <span class="ip-hint-icon">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2a10 10 0 0 1 0 12M8 2a10 10 0 0 0 0 12"/></svg>
+        </span>
+        <div class="ip-hint-text">
+          <strong>Whitelist our server IP</strong> when regenerating the key on the exchange.
+          <br>
+          <button type="button" class="ip-hint-copy" onclick="copyServerIp(this)" title="Click to copy">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg>
+            <span>37.60.252.32</span>
+          </button>
+        </div>
+      </div>
       <div class="creds-section">
         <div class="creds-section-title">API Credentials <span style="font-size:11px;color:var(--text3);font-weight:400">(leave blank to keep current)</span></div>
         <div class="form-group">
