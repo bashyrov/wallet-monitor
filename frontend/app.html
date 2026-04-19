@@ -1095,6 +1095,34 @@
     .ip-hint-copy:hover { border-color: var(--yellow); color: var(--yellow); }
     .ip-hint-copy.copied { color: var(--green); border-color: rgba(26,255,171,0.45); }
 
+    /* Purpose selector — pick what this key does */
+    .purp-selector {
+      margin-bottom: 12px;
+    }
+    .purp-label {
+      font-size: 11px; font-weight: 600; color: var(--text3);
+      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;
+    }
+    .purp-tabs {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    }
+    .purp-tab {
+      display: flex; flex-direction: column; gap: 3px;
+      padding: 9px 10px; border-radius: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text2); font-family: inherit; font-size: 12.5px;
+      cursor: pointer; text-align: left;
+      transition: border-color .15s, background .15s, color .15s;
+    }
+    .purp-tab:hover { border-color: var(--border2); color: var(--text); }
+    .purp-tab.active {
+      border-color: var(--green); color: var(--text);
+      background: rgba(26,255,171,0.06);
+    }
+    .purp-tab .purp-tab-title { font-weight: 600; letter-spacing: -0.01em; }
+    .purp-tab .purp-tab-desc { font-size: 11px; color: var(--text3); line-height: 1.3; }
+    .purp-tab.active .purp-tab-title { color: var(--green); }
+
     .back-btn {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: 13px; color: var(--text3); cursor: pointer;
@@ -1880,12 +1908,38 @@
               <div class="acc-content-inner">
                 <div class="proto-grid" id="proto-exchange"></div>
                 <input type="hidden" name="exchange_type">
-                <div class="readonly-hint">
+                <input type="hidden" name="exchange_purpose" value="portfolio">
+                <div class="purp-selector">
+                  <div class="purp-label">What will this key do?</div>
+                  <div class="purp-tabs" id="purp-tabs-exchange">
+                    <button type="button" class="purp-tab active" data-purpose="portfolio" onclick="setPurpose('exchange','portfolio',this)">
+                      <span class="purp-tab-title">Portfolio</span>
+                      <span class="purp-tab-desc">Read-only balances</span>
+                    </button>
+                    <button type="button" class="purp-tab" data-purpose="screener" onclick="setPurpose('exchange','screener',this)">
+                      <span class="purp-tab-title">Screener</span>
+                      <span class="purp-tab-desc">Open / close positions</span>
+                    </button>
+                    <button type="button" class="purp-tab" data-purpose="both" onclick="setPurpose('exchange','both',this)">
+                      <span class="purp-tab-title">Both</span>
+                      <span class="purp-tab-desc">One key for everything</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="readonly-hint" id="hint-exchange-readonly">
                   <span class="readonly-hint-icon">
                     <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1.5a4 4 0 0 0-4 4v1.5H3a1 1 0 0 0-1 1V13a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-.5V5.5a4 4 0 0 0-4-4Zm2.5 5.5H5V5.5a2.5 2.5 0 0 1 5 0V7Z" fill="currentColor"/></svg>
                   </span>
                   <div class="readonly-hint-text">
                     <strong>Read-only keys only.</strong> Create API keys with <strong>read permissions only</strong> — no trading, no withdrawals. Your funds stay safe even if keys are compromised.
+                  </div>
+                </div>
+                <div class="readonly-hint" id="hint-exchange-trade" style="display:none;background:rgba(229,192,123,0.06);border-color:rgba(229,192,123,0.22);">
+                  <span class="readonly-hint-icon" style="color:var(--yellow);">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1.5L1 13.5h13L7.5 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" fill="none"/></svg>
+                  </span>
+                  <div class="readonly-hint-text">
+                    <strong style="color:var(--yellow);">Trading permission required.</strong> Enable <strong>Futures / Trading</strong> on the key, keep <strong>Withdraw OFF</strong>. Combine with the IP whitelist below so only this server can use it.
                   </div>
                 </div>
                 <div class="ip-hint">
@@ -1970,6 +2024,24 @@
                   <div class="field-err" id="err-perpdex_address"></div>
                 </div>
                 <div id="perpdex-apikey-group" style="display:none;">
+                  <input type="hidden" name="perpdex_purpose" value="portfolio">
+                  <div class="purp-selector">
+                    <div class="purp-label">What will this key do?</div>
+                    <div class="purp-tabs" id="purp-tabs-perpdex">
+                      <button type="button" class="purp-tab active" data-purpose="portfolio" onclick="setPurpose('perpdex','portfolio',this)">
+                        <span class="purp-tab-title">Portfolio</span>
+                        <span class="purp-tab-desc">Read-only balances</span>
+                      </button>
+                      <button type="button" class="purp-tab" data-purpose="screener" onclick="setPurpose('perpdex','screener',this)">
+                        <span class="purp-tab-title">Screener</span>
+                        <span class="purp-tab-desc">Open / close positions</span>
+                      </button>
+                      <button type="button" class="purp-tab" data-purpose="both" onclick="setPurpose('perpdex','both',this)">
+                        <span class="purp-tab-title">Both</span>
+                        <span class="purp-tab-desc">One key for everything</span>
+                      </button>
+                    </div>
+                  </div>
                   <div class="ip-hint">
                     <span class="ip-hint-icon">
                       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2a10 10 0 0 1 0 12M8 2a10 10 0 0 0 0 12"/></svg>
@@ -2431,6 +2503,25 @@ function toggleAddrPanel(e, walletId) {
 function closeAddrModal() {
   document.getElementById('modal-addresses').classList.add('hidden');
   _addrModalWalletId = null;
+}
+
+function setPurpose(section, purpose, btn) {
+  const tabsId = section === 'perpdex' ? 'purp-tabs-perpdex' : 'purp-tabs-exchange';
+  const hiddenName = section === 'perpdex' ? 'perpdex_purpose' : 'exchange_purpose';
+  const tabs = document.getElementById(tabsId);
+  if (tabs) tabs.querySelectorAll('.purp-tab').forEach(b => b.classList.toggle('active', b === btn));
+  const hidden = document.getElementById('wallet-form')?.elements[hiddenName];
+  if (hidden) hidden.value = purpose;
+  // Toggle hint panels for the exchange section
+  if (section === 'exchange') {
+    const ro = document.getElementById('hint-exchange-readonly');
+    const tr = document.getElementById('hint-exchange-trade');
+    if (ro && tr) {
+      const needsTrade = purpose !== 'portfolio';
+      ro.style.display = needsTrade ? 'none' : '';
+      tr.style.display = needsTrade ? '' : 'none';
+    }
+  }
 }
 
 async function copyServerIp(btn) {
@@ -3479,6 +3570,25 @@ function openAddWalletModal() {
   ['exchange','chain','perpdex'].forEach(t => document.getElementById('acc-'+t).classList.remove('open'));
   document.getElementById('modal-wallet-title').textContent = 'Add Wallet';
   _resetProtoChips();
+  _resetPurposeTabs();
+}
+
+function _resetPurposeTabs() {
+  for (const id of ['purp-tabs-exchange', 'purp-tabs-perpdex']) {
+    const tabs = document.getElementById(id);
+    if (!tabs) continue;
+    tabs.querySelectorAll('.purp-tab').forEach(b => {
+      b.classList.toggle('active', b.dataset.purpose === 'portfolio');
+    });
+  }
+  const exHidden = document.getElementById('wallet-form')?.elements['exchange_purpose'];
+  if (exHidden) exHidden.value = 'portfolio';
+  const pdHidden = document.getElementById('wallet-form')?.elements['perpdex_purpose'];
+  if (pdHidden) pdHidden.value = 'portfolio';
+  const ro = document.getElementById('hint-exchange-readonly');
+  const tr = document.getElementById('hint-exchange-trade');
+  if (ro) ro.style.display = '';
+  if (tr) tr.style.display = 'none';
 }
 function closeAddWalletModal() { document.getElementById('modal-wallet').classList.add('hidden'); }
 
@@ -3606,7 +3716,7 @@ async function submitAddWallet(e) {
     body.api_secret = form.api_secret.value.trim();
     const pp = form.api_passphrase?.value?.trim();
     if (pp) body.api_passphrase = pp;
-    body.purpose = 'portfolio';   // portfolio-only by default; promote via /profile if needed for screener
+    body.purpose = form.elements['exchange_purpose']?.value || 'portfolio';
   } else if (S.walletType === 'chain') {
     body.type_value = form.elements['chain_type'].value;
     body.address = form.chain_address.value.trim();
@@ -3616,6 +3726,7 @@ async function submitAddWallet(e) {
     if (pdOpt && pdOpt.needs_api_key) {
       body.api_key = form.perpdex_api_key.value.trim();
       body.api_secret = form.perpdex_api_secret.value.trim();
+      body.purpose = form.elements['perpdex_purpose']?.value || 'portfolio';
     } else {
       body.address = form.perpdex_address.value.trim();
     }
