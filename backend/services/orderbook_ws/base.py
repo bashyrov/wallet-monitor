@@ -91,6 +91,39 @@ class WSAdapter:
         if self._ws:
             asyncio.create_task(self._send_subscribe(only=new))
 
+    def set_symbols(self, symbols: list[str]) -> None:
+        """Replace the subscription set with exactly `symbols`. Used by the
+        prewarm loop to keep the active set bounded — without this the hot
+        list kept accumulating every symbol that was ever in the top-80,
+        eventually driving each adapter past 150 topics and starving the
+        event loop with heartbeat traffic.
+
+        Symbols that are in `symbols` but not in the current set are queued
+        for subscribe. Anything already in the current set but no longer
+        wanted is dropped by forcing a clean reconnect — most exchanges
+        don't expose a reliable unsubscribe frame for our batched topic
+        formats, and reconnecting with only the new set is simpler than
+        maintaining per-adapter unsubscribe logic.
+        """
+        desired = self._apply_cap({s.upper() for s in symbols})
+        if desired == self._symbols:
+            return
+        removed = self._symbols - desired
+        added   = desired - self._symbols
+        self._symbols = desired
+        if removed and self._ws:
+            # Reset by reconnect: cancel current run task, _run will loop
+            # back into connect and resubscribe from self._symbols.
+            try:
+                ws = self._ws
+                self._ws = None
+                asyncio.create_task(ws.close())
+            except Exception:
+                pass
+            return
+        if added and self._ws:
+            asyncio.create_task(self._send_subscribe(only=added))
+
     async def _send_subscribe(self, only: set[str] | None = None) -> None:
         """Subscribe. If `only` given, send only for those symbols (delta)."""
         async with self._sub_lock:

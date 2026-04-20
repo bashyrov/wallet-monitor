@@ -449,17 +449,28 @@ async def _prewarm_hotlist_loop() -> None:
                         rest_pairs.add((ex, sym))
 
             # Pick up any ad-hoc subscribe requests queued by non-owner workers
-            for ex, syms in drain_pending_subs().items():
-                if is_ws_supported(ex):
-                    ws_subs.setdefault(ex, set()).update(syms)
-                else:
+            pending = drain_pending_subs()
+            for ex, syms in pending.items():
+                if not is_ws_supported(ex):
                     for s in syms:
                         rest_pairs.add((ex, s))
 
-            # WS: ensure each adapter is running with the current symbol set
+            # WS: replace the subscription set with EXACTLY the current hot
+            # list. Previously we used subscribe() which unioned forever —
+            # Gate/MEXC/Binance ended up streaming 150+ topics each and the
+            # event loop starved trying to heartbeat them all.
             mgr = start_ws_manager()
             for ex, syms in ws_subs.items():
-                mgr.subscribe(ex, list(syms))
+                mgr.set_symbols(ex, list(syms))
+
+            # Ad-hoc subscribes from non-owner workers are ADDITIVE (user
+            # actively opened /arb for a non-prewarmed symbol). They live
+            # until the next prewarm tick drops them because they're not
+            # in top-80 — that's fine, by then the REST fallback has
+            # already served the page.
+            for ex, syms in pending.items():
+                if is_ws_supported(ex) and syms:
+                    mgr.subscribe(ex, list(syms))
 
             # REST: spawn pollers for exchanges without WS support (perp DEX + slow CEX)
             for ex, sym in rest_pairs:

@@ -53,6 +53,22 @@ class WSManager:
         else:
             adapter.add_symbols(symbols)
 
+    def set_symbols(self, exchange: str, symbols: list[str]) -> None:
+        """Replace the exchange's subscription set — removes anything not in
+        `symbols`, adds whatever's new. Used by the prewarm loop to rotate
+        the hot list without accumulating forever."""
+        ex = exchange.lower()
+        cls = ADAPTERS.get(ex)
+        if not cls:
+            return
+        adapter = self._adapters.get(ex)
+        if not adapter:
+            adapter = cls(self._update_cb)
+            self._adapters[ex] = adapter
+            adapter.start(symbols)
+        else:
+            adapter.set_symbols(symbols)
+
     def stop_all(self) -> None:
         for a in self._adapters.values():
             a.stop()
