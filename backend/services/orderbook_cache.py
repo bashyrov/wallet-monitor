@@ -445,13 +445,13 @@ async def _prewarm_start_poller(exchange: str, symbol: str, limit: int = 50) -> 
 
 
 async def _prewarm_hotlist_loop() -> None:
-    from backend.services.arbitrage_service import get_arbitrage_opportunities
+    from backend.services.arbitrage_service import get_arbitrage_opportunities, get_funding_data
     from backend.services.orderbook_ws import is_ws_supported, start_ws_manager
+    from collections import defaultdict
     while True:
         try:
             data = await get_arbitrage_opportunities()
             opps = data.get("opportunities", [])[:PREWARM_TOP_N]
-            # Group pairs by exchange so each WS adapter gets one subscribe call
             ws_subs: dict[str, set[str]] = {}
             rest_pairs: set[tuple[str, str]] = set()
             for o in opps:
@@ -463,6 +463,33 @@ async def _prewarm_hotlist_loop() -> None:
                         ws_subs.setdefault(ex, set()).add(sym)
                     else:
                         rest_pairs.add((ex, sym))
+
+            # Arb now REQUIRES orderbook on both sides, so a cold start would
+            # leave us with zero opps and never warm anything. Seed the hot
+            # list from cross-listed funding data: pick the highest-volume
+            # pairs that appear on >=2 exchanges. This bootstraps the book,
+            # arb fills in, and then the loop above takes over.
+            try:
+                fd = await get_funding_data()
+                by_sym: dict[str, list[dict]] = defaultdict(list)
+                for r in fd.get("rows") or []:
+                    by_sym[r["symbol"]].append(r)
+                cross = [(sym, rs) for sym, rs in by_sym.items() if len(rs) >= 2]
+                cross.sort(
+                    key=lambda kv: max((float(r.get("volume_usd") or 0) for r in kv[1]), default=0),
+                    reverse=True,
+                )
+                for sym, rs in cross[:PREWARM_TOP_N]:
+                    for r in rs:
+                        ex = r.get("exchange")
+                        if not ex:
+                            continue
+                        if is_ws_supported(ex):
+                            ws_subs.setdefault(ex, set()).add(sym)
+                        else:
+                            rest_pairs.add((ex, sym))
+            except Exception as exc:
+                logger.debug("prewarm seed from funding failed: %s", exc)
 
             # Pick up any ad-hoc subscribe requests queued by non-owner workers
             pending = drain_pending_subs()
