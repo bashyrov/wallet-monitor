@@ -1341,13 +1341,20 @@ def _slim_arb_for_file(result: dict) -> dict:
 def get_exchange_health() -> dict[str, dict]:
     """Per-exchange freshness snapshot for the UI.
 
-    Returns {exchange → {age_s, healthy, via, row_count}}.
-      · age_s: seconds since the data was last refreshed. On fetcher this
-        comes from the in-memory _cache; on web it comes from the shared
-        funding_ws.json mtime (the file the fetcher writes every 500ms).
-      · healthy: True iff age_s <= 5s for WS-streaming venues, 15s for
-        REST-only, AND row_count > 0.
-      · via: "ws" or "rest".
+    An exchange is healthy if **either** its WS stream is delivering fresh
+    rows **or** its REST/merged cache is. Reporting only-WS leads to false
+    "stale" badges for venues like Bybit/OKX/KuCoin whose WS stream can
+    stall (keepalive timeout, rate limits) while REST is still current —
+    the arbitrage engine is using the REST data correctly in the
+    background, so the UI must reflect that reality.
+
+    Returns {exchange → {age_s, healthy, via, row_count, ws_row_count,
+                         rest_row_count}} where:
+      · age_s: seconds since the freshest source for this exchange updated
+      · via: "ws" if WS is the live source, "rest" if we're on REST
+             fallback, "none" if neither is fresh
+      · healthy: True iff we have a fresh source (age ≤ 5s WS / 15s REST)
+                 AND some rows.
     """
     result: dict[str, dict] = {}
     ws_info: dict[str, dict] = {}
@@ -1358,35 +1365,86 @@ def get_exchange_health() -> dict[str, dict]:
         is_ws_funding_supported = lambda _: False
 
     is_web = os.environ.get("AVALANT_ROLE", "").lower() == "web"
-    shared_dump: dict | None = None
+    # On web: use the shared files (fetcher writes them).
+    # On fetcher/monolith: use in-memory state.
+    ws_dump: dict | None = None
+    rest_counts: dict[str, int] = {}
+    rest_age_s: float | None = None
     if is_web:
-        shared_dump = _read_file_cache("funding_ws.json", max_age=_ARB_CACHE_TTL * 10) or {}
+        ws_dump = _read_file_cache("funding_ws.json", max_age=_ARB_CACHE_TTL * 10) or {}
+        merged = _read_file_cache("funding.json", max_age=120.0) or {}
+        if merged.get("rows"):
+            from collections import Counter
+            rest_counts = Counter(r["exchange"] for r in merged["rows"])
+        if merged.get("ts"):
+            rest_age_s = max(0.0, time.time() - merged["ts"])
 
     now_m = _mono()
     now_t = time.time()
+    WS_FRESH = 5.0
+    REST_FRESH = 15.0
     for ex in FETCHERS:
-        via = "ws" if is_ws_funding_supported(ex) else "rest"
-        healthy_max = 5.0 if via == "ws" else 15.0
-        if is_web and shared_dump is not None:
-            rows_for_ex = (shared_dump.get("rows") or {}).get(ex) or []
-            dump_ts = shared_dump.get("ts") or 0
-            age_s = (now_t - dump_ts) if dump_ts else None
-            row_count = len(rows_for_ex)
+        ws_supported = is_ws_funding_supported(ex)
+
+        # ── WS side ──
+        ws_row_count = 0
+        ws_age: float | None = None
+        if is_web:
+            if ws_dump is not None:
+                rows = (ws_dump.get("rows") or {}).get(ex) or []
+                ws_row_count = len(rows)
+                if ws_dump.get("ts"):
+                    ws_age = max(0.0, now_t - ws_dump["ts"])
+        else:
+            # On fetcher/monolith: _cache holds rows from EITHER source
+            # (WS writes via _get_rows). The ws_info from manager tells us
+            # specifically about the WS adapter's health.
+            if ws_supported:
+                h = ws_info.get(ex) or {}
+                ws_age = h.get("last_age_s")
+                if h.get("healthy"):
+                    ws_row_count = h.get("symbols") or 0
+
+        # ── REST/merged side ──
+        # On fetcher/monolith, _cache is the merged source of truth for
+        # the screener endpoints — use it.
+        if is_web:
+            rest_row_count = rest_counts.get(ex, 0)
+            rest_age = rest_age_s
         else:
             cached_rows, cached_at = _cache.get(ex, ([], 0.0))
-            age_s = (now_m - cached_at) if cached_at else None
-            row_count = len(cached_rows)
-        healthy = age_s is not None and age_s <= healthy_max and row_count > 0
+            rest_row_count = len(cached_rows)
+            rest_age = (now_m - cached_at) if cached_at else None
+
+        # ── Pick the freshest healthy source ──
+        ws_fresh = ws_row_count > 0 and ws_age is not None and ws_age <= WS_FRESH
+        rest_fresh = rest_row_count > 0 and rest_age is not None and rest_age <= REST_FRESH
+
+        if ws_fresh:
+            via, healthy, age_s = "ws", True, ws_age
+        elif rest_fresh:
+            via, healthy, age_s = "rest", True, rest_age
+        else:
+            via, healthy = "none", False
+            # Report the freshest known age for diagnostics even when stale.
+            candidates = [a for a in (ws_age, rest_age) if a is not None]
+            age_s = min(candidates) if candidates else None
+
         entry = {
             "age_s": round(age_s, 2) if age_s is not None else None,
             "healthy": healthy,
             "via": via,
-            "row_count": row_count,
+            # Keep row_count for backwards-compat (consumers relied on it);
+            # it mirrors whichever source we picked.
+            "row_count": ws_row_count if via == "ws" else rest_row_count,
+            "ws_row_count": ws_row_count,
+            "rest_row_count": rest_row_count,
+            "ws_age_s": round(ws_age, 2) if ws_age is not None else None,
+            "rest_age_s": round(rest_age, 2) if rest_age is not None else None,
         }
-        if via == "ws":
+        if ws_supported:
             h = ws_info.get(ex) or {}
             entry["ws_connected"] = bool(h.get("connected"))
-            entry["ws_last_age_s"] = h.get("last_age_s")
         result[ex] = entry
     return result
 
