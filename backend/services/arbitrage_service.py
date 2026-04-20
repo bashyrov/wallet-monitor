@@ -861,13 +861,31 @@ _FETCHER_TIMEOUT = 10.0  # bound per-exchange fetch so one slow API can't stall 
 
 
 async def _get_rows(exchange: str) -> list[dict]:
+    # Prefer the WS-funding stream if healthy — avoids REST rate-limits and
+    # gives 100-300ms freshness instead of 3-6s.
+    try:
+        from backend.services.funding_ws import get_ws_rows
+        ws_rows = get_ws_rows(exchange)
+    except Exception:
+        ws_rows = None
+    if ws_rows:
+        # Normalise every row to the REST-schema and stamp the exchange
+        # name so downstream code doesn't branch.
+        for r in ws_rows:
+            r["exchange"] = exchange
+            r.setdefault("interval_h", 8.0)
+            r.setdefault("volume_usd", 0)
+            r.setdefault("next_ts", 0)
+        _cache[exchange] = (ws_rows, _mono())
+        return ws_rows
+
     cached_rows, cached_at = _cache.get(exchange, ([], 0.0))
     if _mono() - cached_at < CACHE_TTL and cached_rows:
         return cached_rows
     try:
         rows = await asyncio.wait_for(FETCHERS[exchange](), timeout=_FETCHER_TIMEOUT)
         _cache[exchange] = (rows, _mono())
-        logger.debug("Screener %s: %d contracts", exchange, len(rows))
+        logger.debug("Screener %s: %d contracts (REST)", exchange, len(rows))
         return rows
     except asyncio.TimeoutError:
         logger.warning("Screener %s fetch timeout (>%ss) — using cached", exchange, _FETCHER_TIMEOUT)

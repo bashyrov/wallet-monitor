@@ -91,6 +91,12 @@ async def lifespan(app: FastAPI):
     from backend.services.orderbook_cache import start_prewarm, stop_prewarm
     start_prewarm()
 
+    # Funding-rate WebSocket streams — replaces the REST poller for every
+    # exchange with a published adapter. Runs on every worker so ad-hoc
+    # /trade/status and screener requests always have fresh data in memory.
+    from backend.services.funding_ws import start_funding_ws_manager, stop_funding_ws_manager
+    start_funding_ws_manager()
+
     import asyncio, fcntl
     _alpha_tasks = []
     # Background loops should only run on ONE worker — use file lock
@@ -119,6 +125,7 @@ async def lifespan(app: FastAPI):
     stop_alert_service()
     stop_tg_bot()
     stop_prewarm()
+    stop_funding_ws_manager()
     logger.info("Avalant shutting down")
 
 
