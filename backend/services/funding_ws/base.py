@@ -42,6 +42,10 @@ class FundingWSAdapter:
     name: str = ""
     url: str = ""
     ping_interval: float = 20.0
+    # Give the server 3× the ping interval before considering the link dead.
+    # Previous ping_timeout == ping_interval was killing otherwise-healthy
+    # sessions on WhiteBit/BingX/Bitget during traffic spikes (1011 errors).
+    ping_timeout: float = 60.0
     decompress_gzip: bool = False
 
     # How long we tolerate silence from the stream before marking the
@@ -57,12 +61,17 @@ class FundingWSAdapter:
     # (arbitrage_service._get_rows) falls back to REST for them.
     row_stale_after_s: float = 45.0
 
+    # REST back-stop: guarantees <=rest_refresh_interval_s freshness even when
+    # WS only pushes on price-change. 0 disables the loop.
+    rest_refresh_interval_s: float = 0.0
+
     def __init__(self, update_cb):
         """update_cb(exchange, symbol, row_dict) — manager-provided."""
         self._update_cb = update_cb
         self._rows: dict[str, dict] = {}       # symbol → latest row
         self._last_update_ts: float = 0.0
         self._task: asyncio.Task | None = None
+        self._rest_task: asyncio.Task | None = None
         self._ws = None
         self._stop = False
 
@@ -73,6 +82,8 @@ class FundingWSAdapter:
             return
         self._stop = False
         self._task = asyncio.create_task(self._run(), name=f"funding_ws_{self.name}")
+        if self.rest_refresh_interval_s > 0 and (not self._rest_task or self._rest_task.done()):
+            self._rest_task = asyncio.create_task(self._rest_loop(), name=f"funding_rest_{self.name}")
 
     def stop(self) -> None:
         self._stop = True
@@ -81,8 +92,9 @@ class FundingWSAdapter:
                 asyncio.create_task(self._ws.close())
             except Exception:
                 pass
-        if self._task and not self._task.done():
-            self._task.cancel()
+        for t in (self._task, self._rest_task):
+            if t and not t.done():
+                t.cancel()
 
     # ── To override ───────────────────────────────────────────────────────
 
@@ -109,6 +121,45 @@ class FundingWSAdapter:
         Return None to rely on websocket-level pings only.
         """
         return None
+
+    async def rest_refresh(self) -> list[dict] | None:
+        """Optional: return a fresh list of normalised rows from REST.
+        Called every `rest_refresh_interval_s` by `_rest_loop` and merged
+        into `_rows` with carry-forward semantics. Use this to guarantee
+        freshness on venues whose WS only ticks on change.
+        """
+        return None
+
+    async def _rest_loop(self) -> None:
+        import random
+        # Stagger initial start so all adapters don't hit their REST endpoints
+        # in the same millisecond.
+        await asyncio.sleep(random.uniform(0.0, self.rest_refresh_interval_s))
+        while not self._stop:
+            try:
+                rows = await self.rest_refresh()
+            except Exception as exc:
+                logger.debug("%s REST refresh error: %s", self.name, exc)
+                rows = None
+            if rows:
+                now = time.time()
+                changed = False
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    sym = r.get("symbol")
+                    if not sym:
+                        continue
+                    prev = self._rows.get(sym) or {}
+                    merged = {**prev, **{k: v for k, v in r.items() if v is not None}}
+                    merged["exchange"] = self.name
+                    merged["symbol"] = sym
+                    merged["_ts"] = now
+                    self._rows[sym] = merged
+                    changed = True
+                if changed:
+                    self._last_update_ts = now
+            await asyncio.sleep(self.rest_refresh_interval_s)
 
     # ── Public state accessors ────────────────────────────────────────────
 
@@ -166,7 +217,7 @@ class FundingWSAdapter:
                 async with websockets.connect(
                     self.url,
                     ping_interval=self.ping_interval,
-                    ping_timeout=self.ping_interval,
+                    ping_timeout=self.ping_timeout,
                     close_timeout=3,
                     open_timeout=20,
                     max_size=8 * 1024 * 1024,  # funding broadcasts can be large (500-row arrays)
