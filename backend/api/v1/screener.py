@@ -46,6 +46,21 @@ _availability_cache: dict = {"data": None, "ts": 0.0}
 _AVAILABILITY_TTL = 10.0
 
 
+@router.get("/exchange-health")
+async def exchange_health():
+    """Per-exchange freshness snapshot for the UI status dots.
+
+    Payload: {exchanges: {binance: {age_s, healthy, via, ...}, ...},
+              generated_at: unix_ts}
+
+    Readers render a green dot for `healthy`, amber for age > freshness
+    threshold but < stale threshold, red for unhealthy / missing. Arb
+    rows whose exchanges are unhealthy get dimmed in the UI.
+    """
+    from backend.services.arbitrage_service import get_exchange_health
+    return {"exchanges": get_exchange_health(), "generated_at": time.time()}
+
+
 @router.get("/availability")
 async def availability():
     """Tiny payload: enabled exchanges + all current funding symbols. Used by
@@ -503,7 +518,11 @@ async def arb_history(
 _funding_clients: set[WebSocket] = set()
 _arb_clients: set[WebSocket] = set()
 _broadcaster_task: asyncio.Task | None = None
-BROADCAST_INTERVAL = 3  # seconds — full arb list refresh every 3s
+# Push to connected WS clients every 1s. We already use diff payloads on
+# /ws/arb so the wire cost of this is ~3-10KB per tick (only changed rows).
+# /ws/funding sends a full snapshot; each push is ~300KB but gzip-compressed
+# it's <100KB and every client handles that in <50ms.
+BROADCAST_INTERVAL = 1
 
 
 async def _push(clients: set[WebSocket], msg: str) -> None:

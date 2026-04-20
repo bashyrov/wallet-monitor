@@ -1338,6 +1338,59 @@ def _slim_arb_for_file(result: dict) -> dict:
     }
 
 
+def get_exchange_health() -> dict[str, dict]:
+    """Per-exchange freshness snapshot for the UI.
+
+    Returns {exchange → {age_s, healthy, via, row_count}}.
+      · age_s: seconds since the data was last refreshed. On fetcher this
+        comes from the in-memory _cache; on web it comes from the shared
+        funding_ws.json mtime (the file the fetcher writes every 500ms).
+      · healthy: True iff age_s <= 5s for WS-streaming venues, 15s for
+        REST-only, AND row_count > 0.
+      · via: "ws" or "rest".
+    """
+    result: dict[str, dict] = {}
+    ws_info: dict[str, dict] = {}
+    try:
+        from backend.services.funding_ws import ws_health, is_ws_funding_supported
+        ws_info = ws_health() or {}
+    except Exception:
+        is_ws_funding_supported = lambda _: False
+
+    is_web = os.environ.get("AVALANT_ROLE", "").lower() == "web"
+    shared_dump: dict | None = None
+    if is_web:
+        shared_dump = _read_file_cache("funding_ws.json", max_age=_ARB_CACHE_TTL * 10) or {}
+
+    now_m = _mono()
+    now_t = time.time()
+    for ex in FETCHERS:
+        via = "ws" if is_ws_funding_supported(ex) else "rest"
+        healthy_max = 5.0 if via == "ws" else 15.0
+        if is_web and shared_dump is not None:
+            rows_for_ex = (shared_dump.get("rows") or {}).get(ex) or []
+            dump_ts = shared_dump.get("ts") or 0
+            age_s = (now_t - dump_ts) if dump_ts else None
+            row_count = len(rows_for_ex)
+        else:
+            cached_rows, cached_at = _cache.get(ex, ([], 0.0))
+            age_s = (now_m - cached_at) if cached_at else None
+            row_count = len(cached_rows)
+        healthy = age_s is not None and age_s <= healthy_max and row_count > 0
+        entry = {
+            "age_s": round(age_s, 2) if age_s is not None else None,
+            "healthy": healthy,
+            "via": via,
+            "row_count": row_count,
+        }
+        if via == "ws":
+            h = ws_info.get(ex) or {}
+            entry["ws_connected"] = bool(h.get("connected"))
+            entry["ws_last_age_s"] = h.get("last_age_s")
+        result[ex] = entry
+    return result
+
+
 def get_cached_rates() -> dict[str, dict]:
     """Return flat dict {exchange:symbol → {rate, interval_h, price}} from current cache.
     Used by the alert service to check spreads without triggering new fetches.

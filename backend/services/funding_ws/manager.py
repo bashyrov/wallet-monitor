@@ -85,7 +85,11 @@ _dump_task: asyncio.Task | None = None
 
 _CACHE_DIR  = "/tmp/avalant_cache"
 _DUMP_FILE  = os.path.join(_CACHE_DIR, "funding_ws.json")
-_DUMP_EVERY = 2.0              # seconds
+# Dump cadence — every 500ms. The file is ~300-700KB atomically renamed,
+# costs <1ms of wall time on a local tmpfs and a fraction of a percent of
+# a CPU core. Halving it from 2s to 0.5s shaves ~1.5s off the end-to-end
+# WS-tick → browser latency for no practical cost.
+_DUMP_EVERY = 0.5
 _STALE_MAX  = 30.0             # file data older than this is ignored
 _LOCK_FILE  = "/tmp/avalant_funding_ws.lock"
 
@@ -155,10 +159,11 @@ _reader_memo: dict = {"ts": 0.0, "data": None}
 
 
 def _read_dump() -> dict | None:
-    """Load the owner's dump if fresh enough. Memoised for 1s so a burst
-    of _get_rows() calls doesn't thrash the disk."""
+    """Load the owner's dump if fresh enough. Memoised for 250ms so a burst
+    of _get_rows() calls doesn't thrash the disk, but the reader catches up
+    to the 500ms dump cadence within one cycle."""
     now = time.time()
-    if _reader_memo["data"] is not None and now - _reader_memo["ts"] < 1.0:
+    if _reader_memo["data"] is not None and now - _reader_memo["ts"] < 0.25:
         return _reader_memo["data"]
     try:
         with open(_DUMP_FILE) as f:
