@@ -27,6 +27,8 @@ KEY_DISABLED_PERPDEXES = "disabled_perpdexes"
 KEY_SCREENER_DISABLED = "screener_disabled"
 KEY_PORTFOLIO_DISABLED = "portfolio_disabled"
 KEY_TRADE_DISABLED_EXCHANGES = "trade_disabled_exchanges"
+KEY_ARB_MIN_VOLUME_USD = "arb_min_volume_usd"
+KEY_ARB_EXCLUDE_EXCHANGES = "arb_exclude_exchanges"
 
 _DEFAULTS: dict[str, Any] = {
     KEY_HIDDEN_SYMBOLS: [],
@@ -38,6 +40,15 @@ _DEFAULTS: dict[str, Any] = {
     KEY_SCREENER_DISABLED: False,
     KEY_PORTFOLIO_DISABLED: False,
     KEY_TRADE_DISABLED_EXCHANGES: [],
+    # Pair considered tradeable only if EITHER leg's 24h USD volume
+    # clears this bar. Raise to hide thin listings; lower to surface
+    # more obscure arbs at the cost of possibly-fake opportunities
+    # from low-liquidity feeds.
+    KEY_ARB_MIN_VOLUME_USD: 100_000,
+    # Exchanges excluded from arb pair computation (still visible on
+    # funding / portfolio sides). Historically we've excluded Kraken
+    # for spread-quality reasons.
+    KEY_ARB_EXCLUDE_EXCHANGES: ["kraken"],
 }
 
 
@@ -121,3 +132,17 @@ def get_trade_disabled_exchanges() -> set[str]:
     positions through our service (the exchange stays visible on the
     screener/funding/portfolio sides)."""
     return _as_lower_set(KEY_TRADE_DISABLED_EXCHANGES)
+
+
+def get_arb_min_volume_usd() -> float:
+    """Minimum 24h USD volume for a symbol to be considered tradeable
+    in the arb engine. Defaults to $100K; admin-tunable."""
+    v = get(KEY_ARB_MIN_VOLUME_USD)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float(_DEFAULTS[KEY_ARB_MIN_VOLUME_USD])
+
+
+def get_arb_exclude_exchanges() -> set[str]:
+    return _as_lower_set(KEY_ARB_EXCLUDE_EXCHANGES)

@@ -1,4 +1,5 @@
 import os
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -239,6 +240,8 @@ class ScreenerConfigIn(BaseModel):
     screener_disabled: bool | None = None
     portfolio_disabled: bool | None = None
     trade_disabled_exchanges: list[str] | None = None
+    arb_min_volume_usd: float | None = None
+    arb_exclude_exchanges: list[str] | None = None
 
 
 def _trade_supported_set() -> set[str]:
@@ -257,6 +260,8 @@ def screener_config_get(_: User = Depends(get_admin_user)):
         "portfolio_disabled": admin_settings.is_portfolio_disabled(),
         "trade_disabled_exchanges": sorted(admin_settings.get_trade_disabled_exchanges()),
         "trade_supported_exchanges": sorted(_trade_supported_set()),
+        "arb_min_volume_usd": admin_settings.get_arb_min_volume_usd(),
+        "arb_exclude_exchanges": sorted(admin_settings.get_arb_exclude_exchanges()),
     }
 
 
@@ -288,6 +293,15 @@ def screener_config_patch(
             if str(s).strip().lower() in known
         })
         admin_settings.set_value(admin_settings.KEY_TRADE_DISABLED_EXCHANGES, cleaned, user_id=user.id)
+    if body.arb_min_volume_usd is not None:
+        v = max(0.0, float(body.arb_min_volume_usd))
+        admin_settings.set_value(admin_settings.KEY_ARB_MIN_VOLUME_USD, v, user_id=user.id)
+    if body.arb_exclude_exchanges is not None:
+        cleaned = sorted({
+            str(s).strip().lower() for s in body.arb_exclude_exchanges
+            if str(s).strip().lower() in known_ex
+        })
+        admin_settings.set_value(admin_settings.KEY_ARB_EXCLUDE_EXCHANGES, cleaned, user_id=user.id)
     return screener_config_get(user)
 
 
@@ -419,6 +433,52 @@ def admin_logs(
 
     return {"role": role, "channel": channel, "path": str(target),
             "lines": content, "count": len(content)}
+
+
+@router.get("/data-plane-health")
+def admin_data_plane_health(_: User = Depends(get_admin_user)):
+    """Observability endpoint for the fetcher sidecar.
+
+    Every data-plane output file has an implicit heartbeat: if the
+    owner is alive and healthy, the mtime is recent. A stale file
+    means the fetcher hung or died while still holding the file lock
+    — nothing else can take over until it's killed. This endpoint
+    surfaces ages so ops can decide to restart.
+    """
+    from pathlib import Path
+    cache_dir = Path("/tmp/avalant_cache")
+    # (filename, "what it is", expected refresh cadence in seconds,
+    #  age threshold at which we report unhealthy)
+    channels = [
+        ("funding_ws.json",      "funding WS dump",     2.0,  30.0),
+        ("funding.json",         "merged funding data", 3.0,  30.0),
+        ("arbitrage.json",       "arbitrage opps",      4.0,  60.0),
+        ("books.json",           "orderbook prewarm",   5.0,  60.0),
+        ("price_anomalies.json", "price anomaly tally", 60.0, 600.0),
+    ]
+    now = time.time()
+    channels_out = []
+    overall_healthy = True
+    for name, label, cadence, unhealthy_at in channels:
+        path = cache_dir / name
+        if not path.exists():
+            channels_out.append({
+                "file": name, "label": label, "age_s": None,
+                "expected_cadence_s": cadence, "healthy": False,
+                "note": "file missing — fetcher never wrote it",
+            })
+            overall_healthy = False
+            continue
+        age = now - path.stat().st_mtime
+        healthy = age <= unhealthy_at
+        if not healthy:
+            overall_healthy = False
+        channels_out.append({
+            "file": name, "label": label, "age_s": round(age, 1),
+            "expected_cadence_s": cadence, "healthy": healthy,
+            "unhealthy_after_s": unhealthy_at,
+        })
+    return {"healthy": overall_healthy, "channels": channels_out}
 
 
 @router.get("/logs/roles")

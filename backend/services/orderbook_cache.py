@@ -38,10 +38,14 @@ logger = logging.getLogger("avalant.orderbook")
 
 POLL_INTERVAL   = 0.50   # per-pair poll cadence (owner worker)
 IDLE_TIMEOUT    = 30.0   # stop poller if no requests in this window
-FIRST_WAIT      = 0.7    # max cold-start wait for first data (lowered: better to show stale data than block)
+FIRST_WAIT      = 0.7    # max cold-start wait for first data
 STALE_FALLBACK  = 10.0   # still serve local-cache data if younger than this
-FILE_FRESH_MAX  = 5.0    # file-cache entry is "fresh"; we still serve older data immediately (see STALE_SERVE_MAX)
-STALE_SERVE_MAX = 60.0   # serve file data this old rather than block; subscribe in the background
+FILE_FRESH_MAX  = 5.0    # file-cache entry is "fresh"; returned immediately
+# Hard ceiling on file-cache staleness. Anything older than this is NOT
+# served — the arb engine would otherwise compute In/Out percentages off
+# a book that moved many ticks ago. On outage we prefer to say "no data"
+# rather than show a confidently wrong mid-price.
+STALE_SERVE_MAX = 5.0
 
 _CACHE_DIR   = "/tmp/avalant_cache"
 _BOOKS_FILE  = os.path.join(_CACHE_DIR, "books.json")
@@ -346,9 +350,17 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     if rest_data:
         return rest_data
 
-    # 5. REST failed — show the freshest stale data we have (up to 60s old).
-    stale_data, _ = _file_lookup_stale(key)
+    # 5. REST failed — serve file data ONLY if younger than STALE_SERVE_MAX
+    #    (now 5s, was 60s). Anything older is silently wrong and we'd
+    #    rather return empty so the caller can show "no data" than render
+    #    a confident mid-price that's 30+ seconds obsolete.
+    stale_data, stale_age = _file_lookup_stale(key)
     if stale_data:
+        if stale_age > FILE_FRESH_MAX:
+            logger.info(
+                "orderbook %s %s: serving %.1fs-old file data (ceiling %.1fs)",
+                exchange, symbol, stale_age, STALE_SERVE_MAX,
+            )
         return stale_data
 
     # 6. Nothing available — brief wait for WS first push, then give up.

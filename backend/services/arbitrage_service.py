@@ -598,7 +598,10 @@ async def _fetch_mexc() -> list[dict]:
     tickers = tick_r.json().get("data") or []
 
     # MEXC per-symbol interval fetch takes ~45s (461 requests) — never block;
-    # kick off background refresh and default to 4h (most common) until cache fills.
+    # kick off background refresh. Symbols not yet in the cache are SKIPPED
+    # rather than emitted with a guessed 4h default: a wrong interval mis-
+    # normalises APR by 2x and would leak into the screener for the ~45s
+    # between cold start and first warm cache write.
     ivl = await _get_interval_map("mexc", allow_blocking=False)
 
     out = []
@@ -609,8 +612,8 @@ async def _fetch_mexc() -> list[dict]:
         token = sym[:-5]
         rate = float(item.get("fundingRate") or 0)
         price = float(item.get("lastPrice") or item.get("fairPrice") or 0)
-        interval_h = ivl.get(sym, 4.0)
-        if price == 0 or rate == 0:
+        interval_h = ivl.get(sym)
+        if price == 0 or rate == 0 or interval_h is None:
             continue
         next_ts = int(item.get("nextSettleTime") or 0) // 1000
         out.append({
@@ -633,7 +636,8 @@ async def _fetch_bitget() -> list[dict]:
     tick_r.raise_for_status()
     tickers = tick_r.json().get("data") or []
 
-    # Same as MEXC — per-symbol interval fetch is slow; never block.
+    # Same as MEXC — per-symbol interval fetch is slow; skip symbols whose
+    # interval is not yet cached rather than emit a guessed default.
     ivl = await _get_interval_map("bitget", allow_blocking=False)
 
     out = []
@@ -644,8 +648,8 @@ async def _fetch_bitget() -> list[dict]:
         token = sym[:-4]
         rate = float(item.get("fundingRate") or 0)
         price = float(item.get("lastPr") or item.get("markPrice") or 0)
-        interval_h = ivl.get(sym, 4.0)
-        if price == 0 or rate == 0:
+        interval_h = ivl.get(sym)
+        if price == 0 or rate == 0 or interval_h is None:
             continue
         next_ts = int(item.get("nextFundingTime") or 0) // 1000
         out.append({
@@ -676,19 +680,30 @@ async def _fetch_aster() -> list[dict]:
     price_map, price_at = _aster_price_cache
 
     now = _mono()
-    # ticker/24hr: fetch every tick for lastPrice; also refresh volume every 60s
+    # ticker/24hr: fetch every tick for lastPrice; also refresh volume every 60s.
+    # If the fetch fails, log it AND invalidate the caches past their grace
+    # window so we don't silently ship stale prices/volumes forever.
     if now - price_at >= ASTER_PRICE_TTL:
         try:
             tick_r = await _http.get("https://fapi.asterdex.com/fapi/v1/ticker/24hr")
-            if tick_r.status_code == 200:
-                ticks = tick_r.json()
-                price_map = {t["symbol"]: float(t.get("lastPrice") or 0) for t in ticks}
-                _aster_price_cache = (price_map, now)
-                if now - vol_at >= ASTER_VOL_TTL:
-                    vol_map = {t["symbol"]: float(t.get("quoteVolume") or 0) for t in ticks}
-                    _aster_vol_cache = (vol_map, now)
-        except Exception:
-            pass
+            tick_r.raise_for_status()
+            ticks = tick_r.json()
+            price_map = {t["symbol"]: float(t.get("lastPrice") or 0) for t in ticks}
+            _aster_price_cache = (price_map, now)
+            if now - vol_at >= ASTER_VOL_TTL:
+                vol_map = {t["symbol"]: float(t.get("quoteVolume") or 0) for t in ticks}
+                _aster_vol_cache = (vol_map, now)
+        except Exception as exc:
+            logger.warning("aster ticker/24hr fetch failed: %s: %s", type(exc).__name__, exc)
+            # Evict caches that are more than 3× their normal TTL old —
+            # keeps us from serving minute-old aster prices when the API
+            # is having an extended outage.
+            if now - price_at > ASTER_PRICE_TTL * 3:
+                _aster_price_cache = ({}, now)
+                price_map = {}
+            if now - vol_at > ASTER_VOL_TTL * 3:
+                _aster_vol_cache = ({}, now)
+                vol_map = {}
 
     out = []
     for item in prem_r.json():
@@ -870,15 +885,25 @@ async def _get_rows(exchange: str) -> list[dict]:
     except Exception:
         ws_rows = None
     if ws_rows:
-        # Normalise every row to the REST-schema and stamp the exchange
-        # name so downstream code doesn't branch.
+        # Normalise every row to the REST-schema and stamp the exchange.
+        # If `interval_h` is missing the row is dropped — we must know the
+        # funding interval to compute APR correctly. Every adapter sets it
+        # explicitly for its venue (usually 8.0) so a missing value means
+        # the adapter changed and nobody updated the downstream assumption.
+        normalised: list[dict] = []
+        dropped = 0
         for r in ws_rows:
+            if r.get("interval_h") is None:
+                dropped += 1
+                continue
             r["exchange"] = exchange
-            r.setdefault("interval_h", 8.0)
             r.setdefault("volume_usd", 0)
             r.setdefault("next_ts", 0)
-        _cache[exchange] = (ws_rows, _mono())
-        return ws_rows
+            normalised.append(r)
+        if dropped:
+            logger.warning("%s WS: dropped %d rows missing interval_h", exchange, dropped)
+        _cache[exchange] = (normalised, _mono())
+        return normalised
 
     cached_rows, cached_at = _cache.get(exchange, ([], 0.0))
     if _mono() - cached_at < CACHE_TTL and cached_rows:
@@ -1076,7 +1101,8 @@ async def get_funding_data() -> dict:
     for ex, result in zip(enabled_ex, results):
         if isinstance(result, list):
             for row in result:
-                row["apr"] = round(row["rate"] * (8760 / row["interval_h"]) * 100, 4)
+                ivl = row.get("interval_h")
+                row["apr"] = round(row["rate"] * (8760 / ivl) * 100, 4) if ivl else None
             all_rows.extend(result)
 
     if hidden_sym:
@@ -1099,7 +1125,7 @@ async def get_funding_data() -> dict:
             "by_exchange": dict(_anomaly_counters),
         })
 
-    all_rows.sort(key=lambda r: abs(r["apr"]), reverse=True)
+    all_rows.sort(key=lambda r: abs(r["apr"] or 0), reverse=True)
 
     out = {
         "ts": int(time.time()),
@@ -1143,25 +1169,25 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
     Only returns opportunities with net_profit > 0. In/Out percentages come from
     the live orderbook cache when available, else are None.
 
-    Performance filters (applied in order, each cuts ~30-40% of work):
-      1. Exclude blacklisted exchanges (kraken).
-      2. Pre-filter rows by 24h volume — pairs under _MIN_VOLUME_USD are
-         skipped before any cross-exchange work. 31% of opps in production
-         had min_vol < $100K at last measurement and nobody trades them.
-      3. gross ≤ 0  (funding direction doesn't give us free money)
-      4. net ≤ 0    (gross + price spread < fees)
+    Filters (applied in order):
+      1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges.
+      2. Group by symbol, then drop pairs where BOTH legs have 24h volume
+         under admin_settings.arb_min_volume_usd. A single high-volume leg
+         is enough to keep the pair — previously we dropped a symbol as
+         soon as one feed reported low/zero volume, which silently hid
+         real arb opportunities like NTRN (hyperliquid reports $0 volume
+         but the actual Hyperliquid order book is deep).
+      3. interval_h missing on either leg → skip (APR can't be normalised).
+      4. net ≤ 0 → skip.
     """
     from backend.services.orderbook_cache import top_levels
+    from backend.services import admin_settings
 
-    _MIN_VOLUME_USD = 100_000  # skip pairs below this 24h notional on EITHER leg
-    _ARB_EXCLUDE = {"kraken"}
+    min_volume = admin_settings.get_arb_min_volume_usd()
+    exclude = admin_settings.get_arb_exclude_exchanges()
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
-        if r["exchange"] in _ARB_EXCLUDE:
-            continue
-        # Early volume filter — only keep rows that could ever pair with enough
-        # liquidity on both sides. Saves the inner O(k²) loop by shrinking k.
-        if (r.get("volume_usd") or 0) < _MIN_VOLUME_USD:
+        if r["exchange"] in exclude:
             continue
         by_symbol.setdefault(r["symbol"], []).append(r)
 
@@ -1175,8 +1201,20 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                     continue
                 long_e = entries[i]
                 short_e = entries[j]
-                rate_l = long_e["rate"] * (8.0 / long_e["interval_h"])
-                rate_s = short_e["rate"] * (8.0 / short_e["interval_h"])
+                # Require at least one leg to clear the volume floor.
+                # Both-sides low-volume is noise; one-side-deep is a
+                # real arbitrage signal (e.g. Hyperliquid order book
+                # deep even when their 24h ticker reports $0).
+                vl = float(long_e.get("volume_usd") or 0)
+                vs = float(short_e.get("volume_usd") or 0)
+                if vl < min_volume and vs < min_volume:
+                    continue
+                ivl_l = long_e.get("interval_h")
+                ivl_s = short_e.get("interval_h")
+                if not ivl_l or not ivl_s:
+                    continue
+                rate_l = long_e["rate"] * (8.0 / ivl_l)
+                rate_s = short_e["rate"] * (8.0 / ivl_s)
                 gross = rate_s - rate_l
                 # Don't short-circuit on negative gross — a large enough
                 # price spread can easily overcome unfavourable funding
@@ -1315,9 +1353,14 @@ def get_cached_rates() -> dict[str, dict]:
             sym = row["symbol"]
             if sym in hidden_sym:
                 continue
+            ivl = row.get("interval_h")
+            if ivl is None:
+                # Skip rather than expose a guessed interval — the alert
+                # service would normalise spreads incorrectly.
+                continue
             result[f"{exchange}:{sym}"] = {
                 "rate":       row.get("rate", 0.0),
-                "interval_h": row.get("interval_h", 8),
+                "interval_h": ivl,
                 "price":      row.get("price", 0.0),
             }
     return result
