@@ -23,11 +23,9 @@ from .base import FundingWSAdapter
 
 logger = logging.getLogger("avalant.funding_ws")
 
-# SYNC HTTP client for REST back-stops, used exclusively from
-# asyncio.to_thread() so the event loop is never blocked waiting on network
-# or JSON decoding. Event-loop contention (11 WS adapters + orderbook
-# manager + dump loops) was turning "0.5 s" async REST calls into 15-18 s
-# stalls, blowing the per-symbol freshness SLA.
+# SYNC HTTP client for REST back-stops, used exclusively from the
+# dedicated thread pool below so the event loop is never blocked on
+# network I/O or JSON decoding.
 _rest_http = httpx.Client(
     timeout=httpx.Timeout(connect=4.0, read=8.0, write=4.0, pool=2.0),
     headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
@@ -35,6 +33,13 @@ _rest_http = httpx.Client(
     limits=httpx.Limits(max_connections=60, max_keepalive_connections=24, keepalive_expiry=30),
     http2=False,
 )
+
+# Dedicated thread pool so a busy default executor (FastAPI, other
+# to_thread calls) can't queue our REST backstops. 16 workers > 11
+# adapters → every adapter's refresh can always grab a worker without
+# waiting.
+import concurrent.futures as _cf
+_rest_executor = _cf.ThreadPoolExecutor(max_workers=16, thread_name_prefix="funding-rest")
 
 
 # Useful tick: for venues where the stream only emits mark price, we keep
