@@ -1,4 +1,5 @@
 import os
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -432,6 +433,52 @@ def admin_logs(
 
     return {"role": role, "channel": channel, "path": str(target),
             "lines": content, "count": len(content)}
+
+
+@router.get("/data-plane-health")
+def admin_data_plane_health(_: User = Depends(get_admin_user)):
+    """Observability endpoint for the fetcher sidecar.
+
+    Every data-plane output file has an implicit heartbeat: if the
+    owner is alive and healthy, the mtime is recent. A stale file
+    means the fetcher hung or died while still holding the file lock
+    — nothing else can take over until it's killed. This endpoint
+    surfaces ages so ops can decide to restart.
+    """
+    from pathlib import Path
+    cache_dir = Path("/tmp/avalant_cache")
+    # (filename, "what it is", expected refresh cadence in seconds,
+    #  age threshold at which we report unhealthy)
+    channels = [
+        ("funding_ws.json",      "funding WS dump",     2.0,  30.0),
+        ("funding.json",         "merged funding data", 3.0,  30.0),
+        ("arbitrage.json",       "arbitrage opps",      4.0,  60.0),
+        ("books.json",           "orderbook prewarm",   5.0,  60.0),
+        ("price_anomalies.json", "price anomaly tally", 60.0, 600.0),
+    ]
+    now = time.time()
+    channels_out = []
+    overall_healthy = True
+    for name, label, cadence, unhealthy_at in channels:
+        path = cache_dir / name
+        if not path.exists():
+            channels_out.append({
+                "file": name, "label": label, "age_s": None,
+                "expected_cadence_s": cadence, "healthy": False,
+                "note": "file missing — fetcher never wrote it",
+            })
+            overall_healthy = False
+            continue
+        age = now - path.stat().st_mtime
+        healthy = age <= unhealthy_at
+        if not healthy:
+            overall_healthy = False
+        channels_out.append({
+            "file": name, "label": label, "age_s": round(age, 1),
+            "expected_cadence_s": cadence, "healthy": healthy,
+            "unhealthy_after_s": unhealthy_at,
+        })
+    return {"healthy": overall_healthy, "channels": channels_out}
 
 
 @router.get("/logs/roles")
