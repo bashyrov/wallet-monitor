@@ -410,6 +410,10 @@ def cache_stats() -> dict:
 PREWARM_TOP_N        = 80
 PREWARM_HOTLIST_S    = 4.0    # refresh hot list in lockstep with arb broadcast (3-4s)
 PREWARM_DUMP_S       = 0.5    # snapshot to file
+# Prune WS subscriptions down to the current hot-list every N ticks.
+# At PREWARM_HOTLIST_S=4s, _PRUNE_EVERY=30 → prune roughly every 2 minutes.
+_PRUNE_EVERY         = 30
+_prewarm_tick_counter = [0]
 
 _prewarm_hotlist_task: asyncio.Task | None = None
 _prewarm_dump_task:    asyncio.Task | None = None
@@ -455,19 +459,22 @@ async def _prewarm_hotlist_loop() -> None:
                     for s in syms:
                         rest_pairs.add((ex, s))
 
-            # WS: replace the subscription set with EXACTLY the current hot
-            # list. Previously we used subscribe() which unioned forever —
-            # Gate/MEXC/Binance ended up streaming 150+ topics each and the
-            # event loop starved trying to heartbeat them all.
+            # WS subscriptions: on every tick, just ADD new hot-list symbols
+            # (cheap — sends a subscribe frame). Every _PRUNE_EVERY ticks we
+            # run set_symbols() instead, which replaces the set and forces
+            # a reconnect to drop stale subscriptions. That keeps the live
+            # topic count bounded without reconnecting every 4 seconds.
+            _prewarm_tick_counter[0] += 1
+            prune = (_prewarm_tick_counter[0] % _PRUNE_EVERY) == 0
             mgr = start_ws_manager()
             for ex, syms in ws_subs.items():
-                mgr.set_symbols(ex, list(syms))
+                if prune:
+                    mgr.set_symbols(ex, list(syms))
+                else:
+                    mgr.subscribe(ex, list(syms))
 
-            # Ad-hoc subscribes from non-owner workers are ADDITIVE (user
-            # actively opened /arb for a non-prewarmed symbol). They live
-            # until the next prewarm tick drops them because they're not
-            # in top-80 — that's fine, by then the REST fallback has
-            # already served the page.
+            # Ad-hoc subscribes from non-owner workers are ADDITIVE — user
+            # just opened /arb for a non-prewarmed symbol.
             for ex, syms in pending.items():
                 if is_ws_supported(ex) and syms:
                     mgr.subscribe(ex, list(syms))
