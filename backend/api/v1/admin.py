@@ -345,3 +345,18 @@ def portfolio_config_patch(
         cleaned = sorted({str(s).strip().lower() for s in body.disabled_perpdexes if str(s).strip().lower() in known})
         admin_settings.set_value(admin_settings.KEY_DISABLED_PERPDEXES, cleaned, user_id=user.id)
     return portfolio_config_get(user)
+
+
+# ═══ Funding WS health ════════════════════════════════════════════════════════
+
+@router.get("/funding-ws-health")
+def funding_ws_health(_: User = Depends(get_admin_user)):
+    """Per-exchange WS funding stream health — used to tell at a glance
+    which adapters are up and how fresh their data is."""
+    from backend.services.funding_ws import ws_health, ADAPTERS
+    health = ws_health()
+    # Ensure every supported adapter shows up even if manager hasn't
+    # started on this worker yet.
+    for ex in ADAPTERS:
+        health.setdefault(ex, {"connected": False, "symbols": 0, "last_age_s": None, "healthy": False})
+    return {"adapters": health}
