@@ -40,11 +40,12 @@ _DEFAULTS: dict[str, Any] = {
     KEY_SCREENER_DISABLED: False,
     KEY_PORTFOLIO_DISABLED: False,
     KEY_TRADE_DISABLED_EXCHANGES: [],
-    # Pair considered tradeable only if EITHER leg's 24h USD volume
-    # clears this bar. Raise to hide thin listings; lower to surface
-    # more obscure arbs at the cost of possibly-fake opportunities
-    # from low-liquidity feeds.
-    KEY_ARB_MIN_VOLUME_USD: 100_000,
+    # Global min 24h USD volume floor. Applied at the data layer in
+    # get_funding_data: ANY row with volume below this threshold — or
+    # with missing/zero volume — is dropped from every downstream view
+    # (funding tab, arb tab, alerts). Change via /api/admin/screener-config
+    # without a deploy.
+    KEY_ARB_MIN_VOLUME_USD: 50_000,
     # Exchanges excluded from arb pair computation (still visible on
     # funding / portfolio sides). Historically we've excluded Kraken
     # for spread-quality reasons.
