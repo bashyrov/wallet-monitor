@@ -589,15 +589,38 @@ class BingXFundingWS(FundingWSAdapter):
         self._symbols: list[str] = []
 
     async def _load_symbols(self):
+        """Fetch all active USDT-M perps and sort them by 24h volume desc.
+        The sort order only matters if we ever have to truncate (we don't
+        today — all symbols are subscribed) but it's free insurance against
+        a future hard ceiling from BingX: highest-volume pairs, which are
+        the ones users actually arb, stay at the head of the list.
+        """
         try:
             async with httpx.AsyncClient(timeout=10) as c:
-                r = await c.get("https://open-api.bingx.com/openApi/swap/v2/quote/contracts")
-                r.raise_for_status()
-                data = r.json().get("data", []) or []
-                self._symbols = [
-                    it.get("symbol", "") for it in data
+                # /contracts gives us the full active list; /ticker gives
+                # 24h quote volume for ordering.
+                contracts_r, ticker_r = await asyncio.gather(
+                    c.get("https://open-api.bingx.com/openApi/swap/v2/quote/contracts"),
+                    c.get("https://open-api.bingx.com/openApi/swap/v2/quote/ticker"),
+                )
+                contracts_r.raise_for_status()
+                vol_map: dict[str, float] = {}
+                if ticker_r.status_code == 200:
+                    for t in (ticker_r.json().get("data") or []):
+                        s = t.get("symbol", "")
+                        try:
+                            vol_map[s] = float(t.get("quoteVolume") or 0)
+                        except (TypeError, ValueError):
+                            pass
+                syms = [
+                    it.get("symbol", "")
+                    for it in (contracts_r.json().get("data") or [])
                     if it.get("symbol", "").endswith("-USDT") and it.get("status") == 1
                 ]
+                # Volume-desc; unknown volume → end
+                syms.sort(key=lambda s: vol_map.get(s, 0.0), reverse=True)
+                self._symbols = syms
+                logger.info("bingx funding: loaded %d symbols", len(syms))
         except Exception as exc:
             logger.warning("bingx funding: contract list failed: %s", exc)
             self._symbols = []
@@ -607,9 +630,12 @@ class BingXFundingWS(FundingWSAdapter):
             asyncio.create_task(self._load_symbols())
             return None
         frames = []
-        # Two streams per symbol: ticker (price/volume) + markPrice (funding)
-        # We cap to the top N most-likely-to-move to keep connection manageable
-        for i, s in enumerate(self._symbols[:500]):
+        # Subscribe to every active USDT perp — previously capped at 500,
+        # which silently froze price rows for ~150 mid-cap tokens (BSB, EDU,
+        # PIEVERSE...) and leaked fake arb opps into the screener. BingX's
+        # single-connection sub count is high enough to handle all ~650
+        # contracts × 2 streams = ~1300 subs in one session.
+        for i, s in enumerate(self._symbols):
             frames.append({"id": f"t-{i}", "reqType": "sub", "dataType": f"{s}@ticker"})
             frames.append({"id": f"m-{i}", "reqType": "sub", "dataType": f"{s}@markPrice"})
         return frames
