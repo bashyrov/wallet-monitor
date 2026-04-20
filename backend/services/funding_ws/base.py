@@ -135,15 +135,19 @@ class FundingWSAdapter:
         # Stagger initial start so all adapters don't hit their REST endpoints
         # in the same millisecond.
         await asyncio.sleep(random.uniform(0.0, self.rest_refresh_interval_s))
+        logger.info("%s REST backstop started (interval=%.1fs)", self.name, self.rest_refresh_interval_s)
+        tick = 0
+        fail_streak = 0
         while not self._stop:
+            started = time.time()
             try:
                 rows = await self.rest_refresh()
             except Exception as exc:
-                logger.debug("%s REST refresh error: %s", self.name, exc)
+                logger.warning("%s REST refresh exception: %s", self.name, exc)
                 rows = None
             if rows:
                 now = time.time()
-                changed = False
+                n = 0
                 for r in rows:
                     if not isinstance(r, dict):
                         continue
@@ -156,10 +160,22 @@ class FundingWSAdapter:
                     merged["symbol"] = sym
                     merged["_ts"] = now
                     self._rows[sym] = merged
-                    changed = True
-                if changed:
+                    n += 1
+                if n:
                     self._last_update_ts = now
-            await asyncio.sleep(self.rest_refresh_interval_s)
+                fail_streak = 0
+                tick += 1
+                # Heartbeat every 10 ticks so ops can confirm loop is alive
+                if tick % 10 == 0:
+                    logger.info("%s REST backstop tick %d: updated %d rows in %.2fs",
+                                self.name, tick, n, time.time() - started)
+            else:
+                fail_streak += 1
+                if fail_streak in (1, 3, 10, 30):
+                    logger.warning("%s REST backstop: %d consecutive empty responses",
+                                   self.name, fail_streak)
+            elapsed = time.time() - started
+            await asyncio.sleep(max(0.0, self.rest_refresh_interval_s - elapsed))
 
     # ── Public state accessors ────────────────────────────────────────────
 

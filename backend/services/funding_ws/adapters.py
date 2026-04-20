@@ -117,7 +117,7 @@ class BybitFundingWS(FundingWSAdapter):
 
     name = "bybit"
     url = "wss://stream.bybit.com/v5/public/linear"
-    rest_refresh_interval_s = 3.0
+    rest_refresh_interval_s = 2.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -219,7 +219,7 @@ class OKXFundingWS(FundingWSAdapter):
 
     name = "okx"
     url = "wss://ws.okx.com:8443/ws/v5/public"
-    rest_refresh_interval_s = 3.0
+    rest_refresh_interval_s = 2.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -338,7 +338,7 @@ class GateFundingWS(FundingWSAdapter):
 
     name = "gate"
     url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
-    rest_refresh_interval_s = 3.0
+    rest_refresh_interval_s = 2.0
 
     def build_subscribe(self):
         import time as _t
@@ -419,7 +419,7 @@ class KuCoinFundingWS(FundingWSAdapter):
 
     name = "kucoin"
     url = ""  # populated dynamically
-    rest_refresh_interval_s = 3.0
+    rest_refresh_interval_s = 2.0
 
     _cached_token: tuple | None = None
     _TOKEN_TTL = 3600.0
@@ -579,7 +579,7 @@ class MexcFundingWS(FundingWSAdapter):
 
     name = "mexc"
     url = "wss://contract.mexc.com/edge"
-    rest_refresh_interval_s = 3.0
+    rest_refresh_interval_s = 2.0
 
     def build_subscribe(self):
         return {"method": "sub.tickers", "param": {}}
@@ -673,7 +673,7 @@ class BitgetFundingWS(FundingWSAdapter):
 
     name = "bitget"
     url = "wss://ws.bitget.com/v2/ws/public"
-    rest_refresh_interval_s = 3.0
+    rest_refresh_interval_s = 2.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -772,7 +772,7 @@ class BingXFundingWS(FundingWSAdapter):
     name = "bingx"
     url = "wss://open-api-swap.bingx.com/swap-market"
     decompress_gzip = True
-    rest_refresh_interval_s = 3.0
+    rest_refresh_interval_s = 2.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
