@@ -23,6 +23,16 @@ from .base import FundingWSAdapter
 
 logger = logging.getLogger("avalant.funding_ws")
 
+# Shared HTTP client for REST back-stops (keepalive, isolated pool so the
+# heavy arbitrage _http pool isn't contended by these 3s ticks).
+_rest_http = httpx.AsyncClient(
+    timeout=httpx.Timeout(connect=4.0, read=6.0, write=4.0, pool=1.5),
+    headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
+    follow_redirects=True,
+    limits=httpx.Limits(max_connections=60, max_keepalive_connections=24, keepalive_expiry=30),
+    http2=False,
+)
+
 
 # Useful tick: for venues where the stream only emits mark price, we keep
 # a background REST poll that refreshes the 24h volume (which moves
@@ -107,6 +117,7 @@ class BybitFundingWS(FundingWSAdapter):
 
     name = "bybit"
     url = "wss://stream.bybit.com/v5/public/linear"
+    rest_refresh_interval_s = 3.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -149,23 +160,53 @@ class BybitFundingWS(FundingWSAdapter):
         if not sym_pair.endswith("USDT"):
             return None
         token = sym_pair[:-4]
+        # Bybit pushes a full snapshot on subscribe, then PARTIAL updates
+        # (only changed fields). Missing field must not overwrite the
+        # carry-forward value in the manager — emit only what's present.
+        row = {"symbol": token, "interval_h": 8.0}
         try:
-            return {
-                "symbol":     token,
-                "price":      float(data.get("lastPrice") or data.get("markPrice") or 0),
-                "rate":       float(data.get("fundingRate") or 0),
-                "next_ts":    int(data.get("nextFundingTime") or 0) // 1000,
-                "interval_h": 8.0,
-                "volume_usd": float(data.get("turnover24h") or 0),
-            }
+            if data.get("lastPrice") is not None:
+                row["price"] = float(data["lastPrice"])
+            elif data.get("markPrice") is not None:
+                row["price"] = float(data["markPrice"])
+            if data.get("fundingRate") is not None:
+                row["rate"] = float(data["fundingRate"])
+            if data.get("nextFundingTime") is not None:
+                row["next_ts"] = int(data["nextFundingTime"]) // 1000
+            if data.get("turnover24h") is not None:
+                row["volume_usd"] = float(data["turnover24h"])
         except (ValueError, TypeError):
             return None
+        return row
 
     async def _run(self) -> None:
         # Eager symbol load before the first connect
         if not self._symbols:
             await self._load_symbols()
         await super()._run()
+
+    async def rest_refresh(self) -> list[dict] | None:
+        r = await _rest_http.get("https://api.bybit.com/v5/market/tickers?category=linear")
+        if r.status_code != 200:
+            return None
+        out: list[dict] = []
+        for it in (r.json().get("result", {}).get("list") or []):
+            sym = it.get("symbol", "")
+            if not sym.endswith("USDT"):
+                continue
+            try:
+                row = {
+                    "symbol":     sym[:-4],
+                    "price":      float(it.get("lastPrice") or it.get("markPrice") or 0) or None,
+                    "rate":       float(it["fundingRate"]) if it.get("fundingRate") else None,
+                    "next_ts":    int(it.get("nextFundingTime") or 0) // 1000 or None,
+                    "interval_h": 8.0,
+                    "volume_usd": float(it["turnover24h"]) if it.get("turnover24h") else None,
+                }
+                out.append(row)
+            except (ValueError, TypeError):
+                continue
+        return out
 
 
 # ── OKX Perp ──────────────────────────────────────────────────────────────────
@@ -178,6 +219,7 @@ class OKXFundingWS(FundingWSAdapter):
 
     name = "okx"
     url = "wss://ws.okx.com:8443/ws/v5/public"
+    rest_refresh_interval_s = 3.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -262,6 +304,30 @@ class OKXFundingWS(FundingWSAdapter):
             await self._load_instruments()
         await super()._run()
 
+    async def rest_refresh(self) -> list[dict] | None:
+        # Bulk tickers (price + volume) in one call; funding rate comes from WS.
+        r = await _rest_http.get("https://www.okx.com/api/v5/market/tickers?instType=SWAP")
+        if r.status_code != 200:
+            return None
+        out: list[dict] = []
+        for d in (r.json().get("data") or []):
+            inst = d.get("instId", "")
+            if not inst.endswith("-USDT-SWAP"):
+                continue
+            token = inst.split("-")[0]
+            try:
+                last = float(d.get("last") or 0)
+                vol_base = float(d.get("volCcy24h") or 0)
+                row = {
+                    "symbol":     token,
+                    "price":      last or None,
+                    "volume_usd": (vol_base * last) or None,
+                }
+                out.append(row)
+            except (ValueError, TypeError):
+                continue
+        return out
+
 
 # ── Gate.io Futures ───────────────────────────────────────────────────────────
 class GateFundingWS(FundingWSAdapter):
@@ -272,6 +338,7 @@ class GateFundingWS(FundingWSAdapter):
 
     name = "gate"
     url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+    rest_refresh_interval_s = 3.0
 
     def build_subscribe(self):
         import time as _t
@@ -320,6 +387,29 @@ class GateFundingWS(FundingWSAdapter):
                 continue
         return out
 
+    async def rest_refresh(self) -> list[dict] | None:
+        r = await _rest_http.get("https://api.gateio.ws/api/v4/futures/usdt/tickers")
+        if r.status_code != 200:
+            return None
+        out: list[dict] = []
+        for d in (r.json() or []):
+            contract = d.get("contract") or ""
+            if not contract.endswith("_USDT"):
+                continue
+            try:
+                row = {
+                    "symbol":     contract[:-5],
+                    "price":      float(d["mark_price"]) if d.get("mark_price") else (float(d["last"]) if d.get("last") else None),
+                    "rate":       float(d["funding_rate"]) if d.get("funding_rate") is not None else None,
+                    "next_ts":    int(d["funding_next_apply"]) if d.get("funding_next_apply") else None,
+                    "volume_usd": float(d["volume_24h_settle"]) if d.get("volume_24h_settle") else (float(d["volume_24h_quote"]) if d.get("volume_24h_quote") else None),
+                    "interval_h": 8.0,
+                }
+                out.append(row)
+            except (ValueError, TypeError):
+                continue
+        return out
+
 
 # ── KuCoin Futures ────────────────────────────────────────────────────────────
 class KuCoinFundingWS(FundingWSAdapter):
@@ -329,6 +419,7 @@ class KuCoinFundingWS(FundingWSAdapter):
 
     name = "kucoin"
     url = ""  # populated dynamically
+    rest_refresh_interval_s = 3.0
 
     _cached_token: tuple | None = None
     _TOKEN_TTL = 3600.0
@@ -452,6 +543,33 @@ class KuCoinFundingWS(FundingWSAdapter):
             if self._stop:
                 break
 
+    async def rest_refresh(self) -> list[dict] | None:
+        r = await _rest_http.get("https://api-futures.kucoin.com/api/v1/contracts/active")
+        if r.status_code != 200:
+            return None
+        out: list[dict] = []
+        for d in (r.json().get("data") or []):
+            sym = d.get("symbol", "")
+            if not sym.endswith("USDTM"):
+                continue
+            base = sym[:-5]
+            token = "BTC" if base == "XBT" else base
+            try:
+                gran_ms = int(d.get("fundingRateGranularity") or 0)
+                interval_h = (gran_ms / 3_600_000) if gran_ms else 8.0
+                row = {
+                    "symbol":     token,
+                    "price":      float(d["markPrice"]) if d.get("markPrice") else (float(d["lastTradePrice"]) if d.get("lastTradePrice") else None),
+                    "rate":       float(d["fundingFeeRate"]) if d.get("fundingFeeRate") is not None else None,
+                    "next_ts":    int(d["nextFundingRateTime"]) // 1000 + int(time.time()) if d.get("nextFundingRateTime") else None,
+                    "volume_usd": float(d["turnoverOf24h"]) if d.get("turnoverOf24h") else None,
+                    "interval_h": interval_h,
+                }
+                out.append(row)
+            except (ValueError, TypeError):
+                continue
+        return out
+
 
 # ── MEXC Futures ──────────────────────────────────────────────────────────────
 class MexcFundingWS(FundingWSAdapter):
@@ -461,6 +579,7 @@ class MexcFundingWS(FundingWSAdapter):
 
     name = "mexc"
     url = "wss://contract.mexc.com/edge"
+    rest_refresh_interval_s = 3.0
 
     def build_subscribe(self):
         return {"method": "sub.tickers", "param": {}}
@@ -475,29 +594,74 @@ class MexcFundingWS(FundingWSAdapter):
             return None
         items = msg.get("data") or []
         out = []
+        # MEXC push.tickers delivers price + volume only (no funding rate).
+        # rest_refresh() fills rate + next_ts from /api/v1/contract/funding_rate
+        # every 3s. We only surface what WS actually sent to avoid writing
+        # stale/zero values onto carry-forward state.
         for d in items:
             sym = d.get("symbol", "")
             if not sym.endswith("_USDT"):
                 continue
             token = sym[:-5]
             try:
-                # MEXC push.tickers doesn't always include fundingRate —
-                # leave rate as None so the manager filters this row and
-                # the REST fetcher fills funding rate periodically.
-                row = {
-                    "symbol":     token,
-                    "price":      float(d.get("lastPrice") or d.get("fairPrice") or 0),
-                    "interval_h": 8.0,
-                    "volume_usd": float(d.get("amount24") or 0),
-                }
-                if d.get("fundingRate") is not None:
-                    row["rate"] = float(d.get("fundingRate"))
-                if d.get("nextSettleTime") is not None:
-                    row["next_ts"] = int(d.get("nextSettleTime") or 0) // 1000
+                row = {"symbol": token, "interval_h": 8.0}
+                if d.get("lastPrice") is not None:
+                    row["price"] = float(d["lastPrice"])
+                elif d.get("fairPrice") is not None:
+                    row["price"] = float(d["fairPrice"])
+                if d.get("amount24") is not None:
+                    row["volume_usd"] = float(d["amount24"])
                 out.append(row)
             except (ValueError, TypeError):
                 continue
         return out
+
+    async def rest_refresh(self) -> list[dict] | None:
+        # Funding rate for ALL symbols in a single call.
+        r_fr, r_tk = await asyncio.gather(
+            _rest_http.get("https://contract.mexc.com/api/v1/contract/funding_rate"),
+            _rest_http.get("https://contract.mexc.com/api/v1/contract/ticker"),
+            return_exceptions=True,
+        )
+        rate_map: dict[str, dict] = {}
+        if not isinstance(r_fr, Exception) and r_fr.status_code == 200:
+            for d in (r_fr.json().get("data") or []):
+                sym = d.get("symbol", "")
+                if not sym.endswith("_USDT"):
+                    continue
+                try:
+                    coll_interval = d.get("collectCycle")
+                    interval_h = float(coll_interval) if coll_interval else 8.0
+                    rate_map[sym[:-5]] = {
+                        "rate": float(d["fundingRate"]) if d.get("fundingRate") is not None else None,
+                        "next_ts": int(d["nextSettleTime"]) // 1000 if d.get("nextSettleTime") else None,
+                        "interval_h": interval_h,
+                    }
+                except (ValueError, TypeError):
+                    continue
+        out: list[dict] = []
+        if not isinstance(r_tk, Exception) and r_tk.status_code == 200:
+            for d in (r_tk.json().get("data") or []):
+                sym = d.get("symbol", "")
+                if not sym.endswith("_USDT"):
+                    continue
+                token = sym[:-5]
+                try:
+                    row = {
+                        "symbol":     token,
+                        "price":      float(d["lastPrice"]) if d.get("lastPrice") else None,
+                        "volume_usd": float(d["amount24"]) if d.get("amount24") else None,
+                        "interval_h": 8.0,
+                    }
+                    if token in rate_map:
+                        row.update(rate_map[token])
+                    out.append(row)
+                except (ValueError, TypeError):
+                    continue
+        # If ticker endpoint failed but funding-rate succeeded, still merge rate.
+        if not out and rate_map:
+            out = [{"symbol": k, **v} for k, v in rate_map.items()]
+        return out or None
 
 
 # ── Bitget Perp ───────────────────────────────────────────────────────────────
@@ -509,6 +673,7 @@ class BitgetFundingWS(FundingWSAdapter):
 
     name = "bitget"
     url = "wss://ws.bitget.com/v2/ws/public"
+    rest_refresh_interval_s = 3.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -573,6 +738,30 @@ class BitgetFundingWS(FundingWSAdapter):
             await self._load_symbols()
         await super()._run()
 
+    async def rest_refresh(self) -> list[dict] | None:
+        r = await _rest_http.get(
+            "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
+        )
+        if r.status_code != 200:
+            return None
+        out: list[dict] = []
+        for d in (r.json().get("data") or []):
+            sym = d.get("symbol", "")
+            if not sym.endswith("USDT"):
+                continue
+            try:
+                out.append({
+                    "symbol":     sym[:-4],
+                    "price":      float(d["lastPr"]) if d.get("lastPr") else (float(d["markPrice"]) if d.get("markPrice") else None),
+                    "rate":       float(d["fundingRate"]) if d.get("fundingRate") is not None else None,
+                    "next_ts":    int(d["nextFundingTime"]) // 1000 if d.get("nextFundingTime") else None,
+                    "interval_h": 8.0,
+                    "volume_usd": float(d["usdtVolume"]) if d.get("usdtVolume") else (float(d["quoteVolume"]) if d.get("quoteVolume") else None),
+                })
+            except (ValueError, TypeError):
+                continue
+        return out
+
 
 # ── BingX Perp ────────────────────────────────────────────────────────────────
 class BingXFundingWS(FundingWSAdapter):
@@ -583,6 +772,7 @@ class BingXFundingWS(FundingWSAdapter):
     name = "bingx"
     url = "wss://open-api-swap.bingx.com/swap-market"
     decompress_gzip = True
+    rest_refresh_interval_s = 3.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -680,6 +870,45 @@ class BingXFundingWS(FundingWSAdapter):
         if not self._symbols:
             await self._load_symbols()
         await super()._run()
+
+    async def rest_refresh(self) -> list[dict] | None:
+        prem_r, tick_r = await asyncio.gather(
+            _rest_http.get("https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex"),
+            _rest_http.get("https://open-api.bingx.com/openApi/swap/v2/quote/ticker"),
+            return_exceptions=True,
+        )
+        vol_map: dict[str, tuple[float, float]] = {}
+        if not isinstance(tick_r, Exception) and tick_r.status_code == 200:
+            for t in (tick_r.json().get("data") or []):
+                s = t.get("symbol", "")
+                try:
+                    vol_map[s] = (
+                        float(t.get("lastPrice") or 0),
+                        float(t.get("quoteVolume") or t.get("volume") or 0),
+                    )
+                except (TypeError, ValueError):
+                    pass
+        out: list[dict] = []
+        if not isinstance(prem_r, Exception) and prem_r.status_code == 200:
+            for d in (prem_r.json().get("data") or []):
+                sym = d.get("symbol") or ""
+                if not sym.endswith("-USDT"):
+                    continue
+                token = sym[:-5]
+                try:
+                    price, volume = vol_map.get(sym, (0.0, 0.0))
+                    row = {
+                        "symbol":     token,
+                        "price":      price or (float(d["markPrice"]) if d.get("markPrice") else None),
+                        "rate":       float(d["lastFundingRate"]) if d.get("lastFundingRate") is not None else None,
+                        "next_ts":    int(d["nextFundingTime"]) // 1000 if d.get("nextFundingTime") else None,
+                        "interval_h": float(d["fundingIntervalHours"]) if d.get("fundingIntervalHours") else 8.0,
+                        "volume_usd": volume or None,
+                    }
+                    out.append(row)
+                except (ValueError, TypeError):
+                    continue
+        return out or None
 
 
 # ── WhiteBit Perp ─────────────────────────────────────────────────────────────
