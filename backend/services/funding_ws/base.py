@@ -122,11 +122,11 @@ class FundingWSAdapter:
         """
         return None
 
-    async def rest_refresh(self) -> list[dict] | None:
+    def rest_refresh_sync(self) -> list[dict] | None:
         """Optional: return a fresh list of normalised rows from REST.
-        Called every `rest_refresh_interval_s` by `_rest_loop` and merged
-        into `_rows` with carry-forward semantics. Use this to guarantee
-        freshness on venues whose WS only ticks on change.
+        Executes in a worker thread via `asyncio.to_thread` so the event
+        loop is never blocked waiting on network I/O or JSON decoding.
+        Called every `rest_refresh_interval_s` by `_rest_loop`.
         """
         return None
 
@@ -141,7 +141,7 @@ class FundingWSAdapter:
         while not self._stop:
             started = time.time()
             try:
-                rows = await self.rest_refresh()
+                rows = await asyncio.to_thread(self.rest_refresh_sync)
             except Exception as exc:
                 logger.warning("%s REST refresh exception: %s", self.name, exc)
                 rows = None
