@@ -170,9 +170,6 @@ body {
 .ex-status-dot.live  { background: var(--green); }
 .ex-status-dot.slow  { background: var(--yellow); }
 .ex-status-dot.stale { background: var(--red); }
-/* Dim arb rows where either leg is stale so users don't click through */
-tr.stale-leg { opacity: .45; }
-tr.stale-leg td { position: relative; }
 
 .lp-ex-actions { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
 .lp-ex-action {
@@ -1565,23 +1562,12 @@ async function refreshExchangeHealth() {
         dot.title = `${name} — ${h.via || '?'} · ${ageStr}`;
       }
     }
-    // Paint/unpaint stale-leg rows already on screen
-    if (typeof _markStaleArbRows === 'function') _markStaleArbRows();
   } catch (_) {}
 }
 function startExchangeHealthPoll() {
   if (_exHealthTimer) return;
   refreshExchangeHealth();
   _exHealthTimer = setInterval(refreshExchangeHealth, 3000);
-}
-function _markStaleArbRows() {
-  const rows = document.querySelectorAll('tr[data-long-ex][data-short-ex]');
-  rows.forEach(tr => {
-    const lx = tr.dataset.longEx, sx = tr.dataset.shortEx;
-    const lhealthy = (_exHealth[lx] || {}).healthy !== false;
-    const shealthy = (_exHealth[sx] || {}).healthy !== false;
-    tr.classList.toggle('stale-leg', !(lhealthy && shealthy));
-  });
 }
 
 function _updateExCount(){
@@ -2245,12 +2231,10 @@ function renderArb() {
 
     const lhealth = _exHealth[r.long_exchange] || {};
     const shealth = _exHealth[r.short_exchange] || {};
-    const staleAttr = (!lhealth.healthy && lhealth.age_s != null) || (!shealth.healthy && shealth.age_s != null)
-      ? ' class="stale-leg"' : '';
     const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.long_exchange} · ${lhealth.age_s != null ? lhealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
     const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange} · ${shealth.age_s != null ? shealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
 
-    return `<tr data-long-ex="${r.long_exchange}" data-short-ex="${r.short_exchange}"${staleAttr}>
+    return `<tr data-long-ex="${r.long_exchange}" data-short-ex="${r.short_exchange}">
       <td class="td-symbol">${symbolLink(r.symbol, r.long_exchange)}</td>
       <td>
         <div class="arb-pair">
