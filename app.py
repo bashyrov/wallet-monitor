@@ -142,20 +142,21 @@ async def lifespan(app: FastAPI):
         _alpha_tasks = []
         logger.info("Web mode — data plane runs in the fetcher sidecar")
 
-    yield
-
-    for t in _alpha_tasks:
-        t.cancel()
-    for fn in _stop_fns:
-        try:
-            fn()
-        except Exception:
-            logger.exception("stop_fn %s failed", getattr(fn, "__name__", fn))
     try:
-        stop_broadcast_loop()
-    except Exception:
-        logger.exception("stop_broadcast_loop failed")
-    logger.info("Avalant shutting down")
+        yield
+    finally:
+        for t in _alpha_tasks:
+            t.cancel()
+        for fn in _stop_fns:
+            try:
+                fn()
+            except Exception:
+                logger.exception("stop_fn %s failed", getattr(fn, "__name__", fn))
+        try:
+            stop_broadcast_loop()
+        except Exception:
+            logger.exception("stop_broadcast_loop failed")
+        logger.info("Avalant shutting down")
 
 
 app = FastAPI(
