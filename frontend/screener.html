@@ -148,6 +148,31 @@ body {
 }
 .lp-ex-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; transition: opacity .12s, filter .12s; }
 .lp-ex-label { font-size: 13px; font-weight: 500; color: var(--text); letter-spacing: -.01em; }
+/* Freshness indicator — small pulsing dot next to the label */
+.lp-ex-health {
+  width: 6px; height: 6px; border-radius: 50%;
+  flex-shrink: 0; margin-left: 4px;
+  background: var(--text3); transition: background .2s, box-shadow .2s;
+}
+.lp-ex-health.live  { background: var(--green); box-shadow: 0 0 6px rgba(26,255,171,.55); animation: lp-pulse 1.8s ease-in-out infinite; }
+.lp-ex-health.slow  { background: var(--yellow); box-shadow: 0 0 4px rgba(229,192,123,.4); }
+.lp-ex-health.stale { background: var(--red); box-shadow: 0 0 4px rgba(248,113,113,.45); }
+@keyframes lp-pulse {
+  0%,100% { opacity: 1; }
+  50%     { opacity: .45; }
+}
+/* Same dot shown next to every exchange name inside the arb rows */
+.ex-status-dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  margin-left: 6px; vertical-align: middle;
+  background: var(--text3);
+}
+.ex-status-dot.live  { background: var(--green); }
+.ex-status-dot.slow  { background: var(--yellow); }
+.ex-status-dot.stale { background: var(--red); }
+/* Dim arb rows where either leg is stale so users don't click through */
+tr.stale-leg { opacity: .45; }
+tr.stale-leg td { position: relative; }
 
 .lp-ex-actions { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
 .lp-ex-action {
@@ -1505,10 +1530,58 @@ function buildExDrop() {
     <div class="lp-ex-item checked" id="ex-item-${ex}" onclick="toggleEx('${ex}')">
       <div class="lp-ex-dot" style="background:${EX_COLOR[ex]}"></div>
       <span class="lp-ex-label">${EX_LABEL[ex]}</span>
+      <div class="lp-ex-health" id="ex-health-${ex}" title="data freshness"></div>
       <div class="lp-ex-check"></div>
     </div>
   `).join('');
   _updateExCount();
+}
+
+// ── Exchange freshness polling ─────────────────────────────────────────────
+const _exHealth = {};      // {ex: {healthy, age_s, via, klass}}
+let _exHealthTimer = null;
+async function refreshExchangeHealth() {
+  try {
+    const r = await Auth.apiFetch('/screener/exchange-health');
+    if (!r || !r.ok) return;
+    const body = await r.json();
+    const ex = body.exchanges || {};
+    for (const name of EXCHANGES) {
+      const h = ex[name] || {};
+      const age = h.age_s;
+      const healthy = !!h.healthy;
+      let klass = 'stale';
+      if (age != null) {
+        if (healthy && age <= 2) klass = 'live';
+        else if (healthy)        klass = 'slow';
+        else                     klass = 'stale';
+      }
+      _exHealth[name] = { ...h, klass };
+      const dot = document.getElementById(`ex-health-${name}`);
+      if (dot) {
+        dot.classList.remove('live', 'slow', 'stale');
+        dot.classList.add(klass);
+        const ageStr = age == null ? 'no data' : `${age.toFixed(1)}s`;
+        dot.title = `${name} — ${h.via || '?'} · ${ageStr}`;
+      }
+    }
+    // Paint/unpaint stale-leg rows already on screen
+    if (typeof _markStaleArbRows === 'function') _markStaleArbRows();
+  } catch (_) {}
+}
+function startExchangeHealthPoll() {
+  if (_exHealthTimer) return;
+  refreshExchangeHealth();
+  _exHealthTimer = setInterval(refreshExchangeHealth, 3000);
+}
+function _markStaleArbRows() {
+  const rows = document.querySelectorAll('tr[data-long-ex][data-short-ex]');
+  rows.forEach(tr => {
+    const lx = tr.dataset.longEx, sx = tr.dataset.shortEx;
+    const lhealthy = (_exHealth[lx] || {}).healthy !== false;
+    const shealthy = (_exHealth[sx] || {}).healthy !== false;
+    tr.classList.toggle('stale-leg', !(lhealthy && shealthy));
+  });
 }
 
 function _updateExCount(){
@@ -2170,13 +2243,20 @@ function renderArb() {
       ? '<span class="badge-valid">✓ valid</span>'
       : '<span class="badge-invalid">⚠ spread</span>';
 
-    return `<tr>
+    const lhealth = _exHealth[r.long_exchange] || {};
+    const shealth = _exHealth[r.short_exchange] || {};
+    const staleAttr = (!lhealth.healthy && lhealth.age_s != null) || (!shealth.healthy && shealth.age_s != null)
+      ? ' class="stale-leg"' : '';
+    const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.long_exchange} · ${lhealth.age_s != null ? lhealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
+    const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange} · ${shealth.age_s != null ? shealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
+
+    return `<tr data-long-ex="${r.long_exchange}" data-short-ex="${r.short_exchange}"${staleAttr}>
       <td class="td-symbol">${symbolLink(r.symbol, r.long_exchange)}</td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
             <span class="arb-label">long</span>
-            ${fmtExRate(r.long_exchange, r.long_rate, r.symbol)}
+            ${fmtExRate(r.long_exchange, r.long_rate, r.symbol)}${ldot}
           </div>
           <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.long_price)} · <span style="font-family:var(--mono)">${fmtVol(r.long_volume)}</span></div>
         </div>
@@ -2185,7 +2265,7 @@ function renderArb() {
         <div class="arb-pair">
           <div class="arb-ex-rate">
             <span class="arb-label">short</span>
-            ${fmtExRate(r.short_exchange, r.short_rate, r.symbol)}
+            ${fmtExRate(r.short_exchange, r.short_rate, r.symbol)}${sdot}
           </div>
           <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.short_price)} · <span style="font-family:var(--mono)">${fmtVol(r.short_volume)}</span></div>
         </div>
@@ -2488,6 +2568,7 @@ buildExDrop();
 buildMobExChips();
 buildSortChips();
 renderHiddenChips();
+startExchangeHealthPoll();
 document.getElementById('search').addEventListener('input', () => { _mode === 'funding' ? applyFilter() : applyArb(); });
 document.getElementById('f-min-apr').addEventListener('input', () => applyFilter());
 document.getElementById('f-min-net').addEventListener('input', () => applyArb());
