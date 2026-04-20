@@ -71,7 +71,7 @@ class FundingWSAdapter:
         self._rows: dict[str, dict] = {}       # symbol → latest row
         self._last_update_ts: float = 0.0
         self._task: asyncio.Task | None = None
-        self._rest_task: asyncio.Task | None = None
+        self._rest_thread = None  # threading.Thread — runs outside event loop
         self._ws = None
         self._stop = False
 
@@ -82,8 +82,14 @@ class FundingWSAdapter:
             return
         self._stop = False
         self._task = asyncio.create_task(self._run(), name=f"funding_ws_{self.name}")
-        if self.rest_refresh_interval_s > 0 and (not self._rest_task or self._rest_task.done()):
-            self._rest_task = asyncio.create_task(self._rest_loop(), name=f"funding_rest_{self.name}")
+        if self.rest_refresh_interval_s > 0 and (self._rest_thread is None or not self._rest_thread.is_alive()):
+            import threading
+            self._rest_thread = threading.Thread(
+                target=self._rest_loop_sync,
+                name=f"funding_rest_{self.name}",
+                daemon=True,
+            )
+            self._rest_thread.start()
 
     def stop(self) -> None:
         self._stop = True
@@ -92,9 +98,8 @@ class FundingWSAdapter:
                 asyncio.create_task(self._ws.close())
             except Exception:
                 pass
-        for t in (self._task, self._rest_task):
-            if t and not t.done():
-                t.cancel()
+        if self._task and not self._task.done():
+            self._task.cancel()
 
     # ── To override ───────────────────────────────────────────────────────
 
@@ -130,20 +135,21 @@ class FundingWSAdapter:
         """
         return None
 
-    async def _rest_loop(self) -> None:
+    def _rest_loop_sync(self) -> None:
+        """Pure-sync REST backstop. Runs in a dedicated daemon thread so
+        event-loop starvation cannot delay the refresh. Writes directly
+        to self._rows — dict mutation is GIL-protected, so the WS task
+        reading/writing on the event loop thread stays safe."""
         import random
-        # Stagger initial start so all adapters don't hit their REST endpoints
-        # in the same millisecond.
-        await asyncio.sleep(random.uniform(0.0, self.rest_refresh_interval_s))
-        logger.info("%s REST backstop started (interval=%.1fs)", self.name, self.rest_refresh_interval_s)
+        time.sleep(random.uniform(0.0, self.rest_refresh_interval_s))
+        logger.info("%s REST backstop started (thread, interval=%.1fs)",
+                    self.name, self.rest_refresh_interval_s)
         tick = 0
         fail_streak = 0
         while not self._stop:
             started = time.time()
             try:
-                from .adapters import _rest_executor
-                loop = asyncio.get_running_loop()
-                rows = await loop.run_in_executor(_rest_executor, self.rest_refresh_sync)
+                rows = self.rest_refresh_sync()
             except Exception as exc:
                 logger.warning("%s REST refresh exception: %s", self.name, exc)
                 rows = None
@@ -167,7 +173,6 @@ class FundingWSAdapter:
                     self._last_update_ts = now
                 fail_streak = 0
                 tick += 1
-                # Heartbeat every 10 ticks so ops can confirm loop is alive
                 if tick % 10 == 0:
                     logger.info("%s REST backstop tick %d: updated %d rows in %.2fs",
                                 self.name, tick, n, time.time() - started)
@@ -177,7 +182,9 @@ class FundingWSAdapter:
                     logger.warning("%s REST backstop: %d consecutive empty responses",
                                    self.name, fail_streak)
             elapsed = time.time() - started
-            await asyncio.sleep(max(0.0, self.rest_refresh_interval_s - elapsed))
+            slack = self.rest_refresh_interval_s - elapsed
+            if slack > 0:
+                time.sleep(slack)
 
     # ── Public state accessors ────────────────────────────────────────────
 
