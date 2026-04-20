@@ -1,4 +1,5 @@
 import logging
+import os as _os_boot
 import warnings
 from contextlib import asynccontextmanager
 
@@ -9,10 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-from backend.logging_config import setup_logging
+from backend.logging_config import setup_logging, install_asyncio_hook
 from settings import settings
 
-setup_logging(settings.LOG_LEVEL)
+_role = (_os_boot.environ.get("AVALANT_ROLE", "").lower() or "monolith")
+setup_logging(_role, level=settings.LOG_LEVEL)
 logger = logging.getLogger("avalant")
 
 _INSECURE_DEFAULTS = {
@@ -69,6 +71,7 @@ def _ensure_system_tags() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    install_asyncio_hook()
     _check_security()
     logger.info("Starting Avalant")
     run_migrations()
@@ -79,7 +82,7 @@ async def lifespan(app: FastAPI):
     # backwards-compat with single-container deploys. When running sidecar'd,
     # docker-compose sets AVALANT_ROLE=web on the uvicorn container and
     # AVALANT_ROLE=fetcher on the data-plane sidecar (python -m fetcher).
-    role = _os.environ.get("AVALANT_ROLE", "").lower() or "monolith"
+    role = _os_boot.environ.get("AVALANT_ROLE", "").lower() or "monolith"
     is_web = role == "web"
     logger.info("Avalant role: %s", role)
 
@@ -147,11 +150,11 @@ async def lifespan(app: FastAPI):
         try:
             fn()
         except Exception:
-            pass
+            logger.exception("stop_fn %s failed", getattr(fn, "__name__", fn))
     try:
         stop_broadcast_loop()
     except Exception:
-        pass
+        logger.exception("stop_broadcast_loop failed")
     logger.info("Avalant shutting down")
 
 

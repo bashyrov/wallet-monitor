@@ -56,10 +56,12 @@ services:
     environment:
       <<: *app-env
       AVALANT_ROLE: web
+      AVALANT_LOG_DIR: /var/log/avalant
     # Shared cache — fetcher writes, web reads (funding.json,
     # arbitrage.json, books.json, funding_ws.json, pending_subs.json)
     volumes:
       - avalant_cache:/tmp/avalant_cache
+      - avalant_logs:/var/log/avalant
 
   fetcher:
     build: .
@@ -71,8 +73,10 @@ services:
     environment:
       <<: *app-env
       AVALANT_ROLE: fetcher
+      AVALANT_LOG_DIR: /var/log/avalant
     volumes:
       - avalant_cache:/tmp/avalant_cache
+      - avalant_logs:/var/log/avalant
 
   nginx:
     image: nginx:alpine
@@ -105,3 +109,4 @@ volumes:
   certbot_certs:
   certbot_www:
   avalant_cache:
+  avalant_logs:

@@ -27,18 +27,16 @@ import logging
 import os
 import signal
 
-# Match the format the web app uses so logs are visually interleaved in
-# docker compose logs.
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO"),
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
+from backend.logging_config import setup_logging, install_asyncio_hook
+
+# Rotating files under <LOG_DIR>/fetcher/ + console + uncaught-exc hooks
+setup_logging("fetcher")
 
 logger = logging.getLogger("avalant.fetcher")
 
 
 async def _run() -> None:
+    install_asyncio_hook()
     # Mark role for any downstream checks
     os.environ.setdefault("AVALANT_ROLE", "fetcher")
 
@@ -109,30 +107,18 @@ async def _run() -> None:
         logger.info("fetcher: shutting down")
         for t in alpha_tasks:
             t.cancel()
-        try:
-            stop_alert_service()
-        except Exception:
-            pass
-        try:
-            stop_tg_bot()
-        except Exception:
-            pass
-        try:
-            stop_refresh_loop()
-        except Exception:
-            pass
-        try:
-            stop_funding_ws_manager()
-        except Exception:
-            pass
-        try:
-            stop_prewarm()
-        except Exception:
-            pass
-        try:
-            stop_price_loop()
-        except Exception:
-            pass
+        for name, fn in (
+            ("alert_service", stop_alert_service),
+            ("tg_bot", stop_tg_bot),
+            ("refresh_loop", stop_refresh_loop),
+            ("funding_ws_manager", stop_funding_ws_manager),
+            ("prewarm", stop_prewarm),
+            ("price_loop", stop_price_loop),
+        ):
+            try:
+                fn()
+            except Exception:
+                logger.exception("fetcher: stop %s failed", name)
 
 
 def main() -> None:
