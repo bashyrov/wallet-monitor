@@ -578,6 +578,101 @@ async def _refresh_loop() -> None:
         await asyncio.sleep(max(0.1, _REFRESH_INTERVAL - elapsed))
 
 
+# ── Arb diff state (per worker) ──────────────────────────────────────────────
+# Remembers the last broadcast snapshot so we can send only the delta each
+# tick. Keyed by (symbol, long_exchange, short_exchange). Per-worker — each
+# uvicorn worker tracks its own clients and their last-seen state.
+_last_arb_broadcast: dict[tuple, dict] = {}
+_last_arb_meta: dict = {"ts": 0.0, "fees": {}, "exchanges": []}
+
+# Fields that matter for an "updated" decision. Everything else is either
+# derivative (apr) or identity (symbol, exchanges — already the key).
+_ARB_DIFF_FIELDS = (
+    "net_profit", "gross_funding", "price_spread", "total_fees",
+    "long_price", "short_price", "long_rate", "short_rate",
+    "long_volume", "short_volume",
+    "next_ts_long", "next_ts_short", "valid_price",
+    "in_pct", "out_pct", "alpha_score",
+)
+
+
+def _arb_key(o: dict) -> tuple:
+    return (o.get("symbol"), o.get("long_exchange"), o.get("short_exchange"))
+
+
+def _opps_differ(a: dict, b: dict) -> bool:
+    """Fast field-level compare. Used to filter "updated" to rows that
+    actually changed on something the UI renders."""
+    for k in _ARB_DIFF_FIELDS:
+        if a.get(k) != b.get(k):
+            return True
+    return False
+
+
+def _build_arb_snapshot_payload(data: dict) -> str:
+    """Snapshot message sent to brand-new WS clients so they can paint
+    the initial table. Shape matches the legacy broadcast exactly +
+    a `type` tag so the frontend can branch on it."""
+    payload = {
+        "type": "snapshot",
+        "ts":   data.get("ts"),
+        "fees": data.get("fees", {}),
+        "exchanges":     data.get("exchanges", []),
+        "opportunities": data.get("opportunities", []),
+    }
+    if "truncated_to" in data:
+        payload["truncated_to"] = data["truncated_to"]
+    if "full_count" in data:
+        payload["full_count"] = data["full_count"]
+    return json.dumps(payload)
+
+
+def _build_arb_diff(curr: dict) -> dict | None:
+    """Compute the delta between the current computed arb result and the
+    last one we broadcast. Returns None if literally nothing changed —
+    the broadcaster skips the push entirely on no-ops to save bandwidth.
+    """
+    global _last_arb_broadcast, _last_arb_meta
+    curr_opps = curr.get("opportunities", []) or []
+    curr_by_key = {_arb_key(o): o for o in curr_opps}
+    added, updated = [], []
+    for k, o in curr_by_key.items():
+        prev = _last_arb_broadcast.get(k)
+        if prev is None:
+            added.append(o)
+        elif _opps_differ(prev, o):
+            updated.append(o)
+    removed = [list(k) for k in _last_arb_broadcast.keys() if k not in curr_by_key]
+
+    # Meta change (fees dict / exchanges list) triggers a light refresh.
+    fees_now = curr.get("fees", {})
+    exchanges_now = curr.get("exchanges", [])
+    meta_changed = (
+        fees_now != _last_arb_meta.get("fees")
+        or exchanges_now != _last_arb_meta.get("exchanges")
+    )
+
+    if not added and not updated and not removed and not meta_changed:
+        return None
+
+    payload: dict = {
+        "type": "diff",
+        "ts":   curr.get("ts") or time.time(),
+    }
+    if added:    payload["added"]   = added
+    if updated:  payload["updated"] = updated
+    if removed:  payload["removed"] = removed
+    if meta_changed:
+        payload["fees"]      = fees_now
+        payload["exchanges"] = exchanges_now
+
+    # Rebase our "last" state to the new snapshot — next tick's diff is
+    # relative to THIS state.
+    _last_arb_broadcast = curr_by_key
+    _last_arb_meta = {"ts": curr.get("ts"), "fees": fees_now, "exchanges": exchanges_now}
+    return payload
+
+
 async def _broadcast_loop() -> None:
     """Push cached data to WS clients on THIS worker every BROADCAST_INTERVAL.
     Runs on every worker — each one reads from the shared file cache populated
@@ -586,7 +681,8 @@ async def _broadcast_loop() -> None:
 
     while True:
         await asyncio.sleep(BROADCAST_INTERVAL)
-        # Funding payload
+        # Funding payload — unchanged (still a full snapshot every tick;
+        # the funding page itself is less hot than arb).
         try:
             if _funding_clients:
                 fd = _read_file_cache("funding.json", max_age=60)
@@ -596,13 +692,17 @@ async def _broadcast_loop() -> None:
                     await _push(_funding_clients, json.dumps(fd))
         except Exception as exc:
             logger.debug("Funding push skipped: %s", exc)
-        # Arb payload — file cache first, memory fallback
+        # Arb payload — send diff-only (massively smaller than a full snapshot
+        # when the top-N is mostly stable). New WS clients still receive a
+        # "snapshot" message on connect, so they have something to paint.
         try:
             data = _read_file_cache("arbitrage.json", max_age=60)
             if not data:
                 data = _arb_result_cache.get("data")
             if data and _arb_clients:
-                await _push(_arb_clients, json.dumps(data))
+                diff = _build_arb_diff(data)
+                if diff is not None:
+                    await _push(_arb_clients, json.dumps(diff))
         except Exception as exc:
             logger.debug("Arb push skipped: %s", exc)
 
@@ -610,20 +710,66 @@ async def _broadcast_loop() -> None:
 def start_screener_broadcaster() -> None:
     """Start broadcaster on EVERY worker. Only one worker (lock-holder) also
     runs the refresh loop which writes funding.json + arbitrage.json; every
-    other worker reads those files and pushes to its own local WS clients."""
-    import fcntl
-    global _broadcaster_task, _refresh_task, _refresh_lock_fd
+    other worker reads those files and pushes to its own local WS clients.
+
+    Kept for back-compat with monolith deploys. When running sidecar'd
+    (AVALANT_ROLE=fetcher / AVALANT_ROLE=web), prefer the narrower
+    start_refresh_loop / start_broadcast_loop helpers below.
+    """
+    start_broadcast_loop()
+    start_refresh_loop()
+
+
+def start_broadcast_loop() -> None:
+    """Web-worker half: pushes the currently cached arb + funding data
+    to connected WS clients every BROADCAST_INTERVAL. Does NOT touch any
+    external network — reads only shared files written by the fetcher.
+    Safe to run on every uvicorn worker."""
+    global _broadcaster_task
+    if _broadcaster_task and not _broadcaster_task.done():
+        return
     _broadcaster_task = asyncio.create_task(_broadcast_loop())
 
+
+def start_refresh_loop() -> None:
+    """Fetcher-side half: recomputes arb opps from the shared funding
+    cache every _REFRESH_INTERVAL and writes arbitrage.json. Acquires a
+    file-lock so it's safe to call from multiple processes — only the
+    first caller wins.
+    """
+    import fcntl
+    global _refresh_task, _refresh_lock_fd
+    if _refresh_task and not _refresh_task.done():
+        return
     try:
         _refresh_lock_fd = open("/tmp/avalant_refresh.lock", "w")
         fcntl.flock(_refresh_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (IOError, OSError):
-        logger.info("Screener refresh: another worker holds the lock — broadcaster-only")
+        logger.info("Screener refresh: another worker/process holds the lock — skipping")
         return
     asyncio.create_task(_warmup())
     _refresh_task = asyncio.create_task(_refresh_loop())
-    logger.info("Screener refresh loop started (this worker drives recompute)")
+    logger.info("Screener refresh loop started (this process drives recompute)")
+
+
+def stop_refresh_loop() -> None:
+    global _refresh_task, _refresh_lock_fd
+    if _refresh_task and not _refresh_task.done():
+        _refresh_task.cancel()
+    _refresh_task = None
+    if _refresh_lock_fd is not None:
+        try:
+            _refresh_lock_fd.close()
+        except Exception:
+            pass
+        _refresh_lock_fd = None
+
+
+def stop_broadcast_loop() -> None:
+    global _broadcaster_task
+    if _broadcaster_task and not _broadcaster_task.done():
+        _broadcaster_task.cancel()
+    _broadcaster_task = None
 
 
 _refresh_lock_fd = None
@@ -640,7 +786,8 @@ def stop_screener_broadcaster() -> None:
 
 
 async def _ws_handler(websocket: WebSocket, clients: set[WebSocket], token: str,
-                      fetch_fn, label: str) -> None:
+                      fetch_fn, label: str,
+                      snapshot_builder=None) -> None:
     user_id = decode_token(token) if token else None
     await websocket.accept()
     clients.add(websocket)
@@ -648,7 +795,14 @@ async def _ws_handler(websocket: WebSocket, clients: set[WebSocket], token: str,
 
     try:
         data = await fetch_fn()
-        await websocket.send_json(data)
+        # Snapshot-builder hook: lets the arb channel send a typed
+        # "snapshot" message so the client knows diffs will follow. Legacy
+        # channels (funding) fall back to raw data — unchanged wire shape.
+        first_payload = snapshot_builder(data) if snapshot_builder else None
+        if first_payload is not None:
+            await websocket.send_text(first_payload)
+        else:
+            await websocket.send_json(data)
         while True:
             text = await websocket.receive_text()
             if text == "ping":
@@ -669,4 +823,7 @@ async def funding_ws(websocket: WebSocket, token: str = Query("")) -> None:
 
 @router.websocket("/ws/arb")
 async def arb_ws(websocket: WebSocket, token: str = Query("")) -> None:
-    await _ws_handler(websocket, _arb_clients, token, get_arbitrage_opportunities, "arb")
+    await _ws_handler(
+        websocket, _arb_clients, token, get_arbitrage_opportunities, "arb",
+        snapshot_builder=_build_arb_snapshot_payload,
+    )

@@ -13,6 +13,7 @@ out of the hot path.
 """
 import asyncio
 import logging
+import os
 import time
 
 import httpx
@@ -909,7 +910,7 @@ def _write_file_cache(name: str, data: dict) -> None:
             _json.dump(data, f)
         os.replace(tmp, path)  # atomic on POSIX
     except Exception:
-        pass
+        logger.exception("file cache write failed: %s", name)
 
 
 def _read_file_cache(name: str, max_age: float = 60.0) -> dict | None:
@@ -925,7 +926,110 @@ def _read_file_cache(name: str, max_age: float = 60.0) -> dict | None:
         with open(path) as f:
             return _json.load(f)
     except Exception:
+        logger.exception("file cache read failed: %s", name)
         return None
+
+
+# ── Price sanity check (cross-exchange anomaly detection) ─────────────────────
+#
+# Some adapters (notoriously KuCoin) occasionally return stale or wrong
+# `lastPrice` for futures symbols — e.g. RAVE at $0.64 while every other
+# exchange quotes $1.2. We can't trust a single exchange to tell us it's
+# wrong, but we can spot outliers by comparing to the median across all
+# exchanges listing the same symbol. When an exchange deviates by > _PRICE_DEV_PCT
+# from median, log it at WARNING so ops can see which feed is drifting.
+#
+# Also flag obviously-broken rows: zero/negative price.
+
+_PRICE_DEV_PCT = 25.0      # % deviation from median to log
+_MIN_EX_FOR_MEDIAN = 3     # need at least this many exchanges to trust the median
+_anomaly_counters: dict[str, int] = {}  # {"kucoin": count} running tally
+
+# Throttle: only log each (exchange, symbol) once per N seconds.
+_last_anomaly_log: dict[tuple[str, str], float] = {}
+_ANOMALY_LOG_COOLDOWN = 300.0  # 5 min
+
+
+def price_anomaly_counters() -> dict[str, int]:
+    """Expose running anomaly tally to admin endpoints.
+    Web role reads from the shared file written by fetcher; fetcher
+    returns its in-memory dict.
+    """
+    if os.environ.get("AVALANT_ROLE", "").lower() == "web":
+        fc = _read_file_cache("price_anomalies.json", max_age=300.0)
+        if fc and isinstance(fc.get("by_exchange"), dict):
+            return dict(fc["by_exchange"])
+        return {}
+    return dict(_anomaly_counters)
+
+
+def _sanity_check_prices(rows: list[dict]) -> None:
+    """Cross-exchange outlier + zero-price detection.
+    Logs at WARNING (one entry per (exchange, symbol) per cooldown window)
+    and increments `_anomaly_counters` for admin dashboard.
+    """
+    try:
+        from statistics import median
+    except Exception:
+        return
+
+    from collections import defaultdict
+    by_sym: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    now = _mono()
+
+    for r in rows:
+        ex = r.get("exchange") or ""
+        sym = r.get("symbol") or ""
+        price = r.get("price")
+        if price is None:
+            _record_anomaly(ex, sym, "missing", None, None, now)
+            continue
+        try:
+            p = float(price)
+        except (TypeError, ValueError):
+            _record_anomaly(ex, sym, "not_numeric", price, None, now)
+            continue
+        if p <= 0:
+            _record_anomaly(ex, sym, "zero_or_neg", p, None, now)
+            continue
+        if ex and sym:
+            by_sym[sym].append((ex, p))
+
+    # Cross-sectional median check
+    for sym, pairs in by_sym.items():
+        if len(pairs) < _MIN_EX_FOR_MEDIAN:
+            continue
+        prices = [p for _, p in pairs]
+        med = median(prices)
+        if med <= 0:
+            continue
+        for ex, p in pairs:
+            dev_pct = abs(p - med) / med * 100.0
+            if dev_pct > _PRICE_DEV_PCT:
+                _record_anomaly(ex, sym, "outlier", p, med, now, dev_pct=dev_pct)
+
+
+def _record_anomaly(
+    ex: str, sym: str, kind: str, price, median_val, now: float, *, dev_pct: float | None = None,
+) -> None:
+    key = (ex, sym, kind)
+    last = _last_anomaly_log.get(key, 0.0)
+    if now - last < _ANOMALY_LOG_COOLDOWN:
+        return
+    _last_anomaly_log[key] = now
+    _anomaly_counters[ex] = _anomaly_counters.get(ex, 0) + 1
+
+    if kind == "outlier":
+        logger.warning(
+            "price_anomaly %s %s: %.6g vs median %.6g (dev=%.1f%%)",
+            ex, sym, price, median_val or 0, dev_pct or 0,
+        )
+    elif kind == "zero_or_neg":
+        logger.warning("price_anomaly %s %s: non-positive price %.6g", ex, sym, price or 0)
+    elif kind == "not_numeric":
+        logger.warning("price_anomaly %s %s: non-numeric price %r", ex, sym, price)
+    elif kind == "missing":
+        logger.warning("price_anomaly %s %s: missing price field", ex, sym)
 
 
 async def get_funding_data() -> dict:
@@ -933,6 +1037,17 @@ async def get_funding_data() -> dict:
     disabled_ex = admin_settings.get_disabled_exchanges()
     hidden_sym = admin_settings.get_hidden_symbols()
     enabled_ex = [ex for ex in FETCHERS if ex not in disabled_ex]
+
+    # Web role has no data plane — always read from shared file written by
+    # the fetcher sidecar. Avoid kicking off our own REST gather.
+    if os.environ.get("AVALANT_ROLE", "").lower() == "web":
+        cached = _read_file_cache("funding.json", max_age=30.0)
+        if cached and cached.get("rows"):
+            rows = cached["rows"]
+            if hidden_sym:
+                rows = [r for r in rows if r["symbol"] not in hidden_sym]
+            return {"ts": cached.get("ts", int(time.time())), "exchanges": enabled_ex, "rows": rows}
+        # No file yet / stale — fall through; first request after startup only.
 
     # Fast path: if every per-exchange cache is still warm, skip the gather.
     # Non-owner workers can fall back to the shared funding.json while the
@@ -974,6 +1089,15 @@ async def get_funding_data() -> dict:
     cross = {sym for sym, exs in sym_exch.items() if len(exs) >= 2}
     for row in all_rows:
         row["cross_listed"] = row["symbol"] in cross
+
+    _sanity_check_prices(all_rows)
+    # Snapshot counters so the web role (different process) can read them.
+    if _anomaly_counters:
+        _write_file_cache("price_anomalies.json", {
+            "ts": int(time.time()),
+            "total": sum(_anomaly_counters.values()),
+            "by_exchange": dict(_anomaly_counters),
+        })
 
     all_rows.sort(key=lambda r: abs(r["apr"]), reverse=True)
 
@@ -1129,12 +1253,22 @@ async def get_arbitrage_opportunities(force: bool = False) -> dict:
 
     # File cache fallback (written by broadcaster worker) — skipped on forced
     # recompute so the refresh loop always writes fresh data.
+    is_web = os.environ.get("AVALANT_ROLE", "").lower() == "web"
     if not force:
-        fc = _read_file_cache("arbitrage.json", max_age=_ARB_CACHE_TTL * 3)
+        # Web role has no data plane — read with a longer staleness budget
+        # and never compute locally.
+        max_age = 120.0 if is_web else _ARB_CACHE_TTL * 3
+        fc = _read_file_cache("arbitrage.json", max_age=max_age)
         if fc and fc.get("opportunities"):
             _arb_result_cache["data"] = fc
             _arb_result_cache["ts"] = now
             return fc
+        if is_web:
+            # Fetcher hasn't written yet — return an empty shell rather than
+            # running a heavy compute on the web worker.
+            return {"ts": int(now), "exchanges": list(FETCHERS.keys()),
+                    "fees": {ex: round(f * 100, 4) for ex, f in EXCHANGE_FEES.items()},
+                    "opportunities": []}
 
     data = await get_funding_data()
     # Run CPU-heavy computation in a thread pool so the event loop stays

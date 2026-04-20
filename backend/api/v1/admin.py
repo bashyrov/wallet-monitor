@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -349,6 +351,16 @@ def portfolio_config_patch(
 
 # ═══ Funding WS health ════════════════════════════════════════════════════════
 
+@router.get("/price-anomalies")
+def admin_price_anomalies(_: User = Depends(get_admin_user)):
+    """Running count of price anomalies per exchange since process start.
+    Useful to spot exchanges silently feeding bad prices (KuCoin, etc.)."""
+    from backend.services.arbitrage_service import price_anomaly_counters
+    counters = price_anomaly_counters()
+    total = sum(counters.values())
+    return {"total": total, "by_exchange": counters}
+
+
 @router.get("/funding-ws-health")
 def funding_ws_health(_: User = Depends(get_admin_user)):
     """Per-exchange WS funding stream health — used to tell at a glance
@@ -360,3 +372,73 @@ def funding_ws_health(_: User = Depends(get_admin_user)):
     for ex in ADAPTERS:
         health.setdefault(ex, {"connected": False, "symbols": 0, "last_age_s": None, "healthy": False})
     return {"adapters": health}
+
+
+# ═══ Logs ═════════════════════════════════════════════════════════════════════
+
+@router.get("/logs")
+def admin_logs(
+    role: str = Query("fetcher", pattern="^(web|fetcher|monolith)$"),
+    channel: str = Query("errors", pattern="^(errors|full)$"),
+    lines: int = Query(200, ge=1, le=5000),
+    _: User = Depends(get_admin_user),
+):
+    """Tail the most recent lines of a log file written by setup_logging().
+
+    Works cross-role only when the admin's web container mounts the same
+    `avalant_logs` volume as the fetcher — which the docker-compose does.
+    """
+    from pathlib import Path
+    from backend.logging_config import get_log_dir
+
+    # get_log_dir() returns the dir of the CURRENT process's role, not
+    # necessarily the one the admin wants. Walk one level up to reach the
+    # shared log root and pick the requested role subdir.
+    own = get_log_dir()
+    if own is None:
+        # File logging disabled on this process — point at the default root.
+        base = Path(os.environ.get("AVALANT_LOG_DIR", "/var/log/avalant"))
+    else:
+        base = own.parent
+
+    target = base / role / f"{channel}.log"
+    if not target.exists():
+        return {"role": role, "channel": channel, "path": str(target),
+                "lines": [], "note": "log file not found yet"}
+
+    try:
+        # Efficient tail: read last ~1MB, split, keep last N lines.
+        size = target.stat().st_size
+        read_bytes = min(size, 2 * 1024 * 1024)
+        with target.open("rb") as f:
+            f.seek(max(0, size - read_bytes))
+            tail = f.read().decode("utf-8", errors="replace")
+        content = tail.splitlines()[-lines:]
+    except Exception as exc:
+        raise HTTPException(500, f"log read failed: {exc}") from exc
+
+    return {"role": role, "channel": channel, "path": str(target),
+            "lines": content, "count": len(content)}
+
+
+@router.get("/logs/roles")
+def admin_logs_roles(_: User = Depends(get_admin_user)):
+    """List which roles have logs written so the UI can show tabs only for
+    what actually exists on disk."""
+    from pathlib import Path
+    from backend.logging_config import get_log_dir
+    own = get_log_dir()
+    base = own.parent if own else Path(os.environ.get("AVALANT_LOG_DIR", "/var/log/avalant"))
+    roles = []
+    if base.exists():
+        for child in sorted(base.iterdir()):
+            if not child.is_dir():
+                continue
+            errors = child / "errors.log"
+            full = child / "full.log"
+            roles.append({
+                "role": child.name,
+                "errors_bytes": errors.stat().st_size if errors.exists() else 0,
+                "full_bytes":   full.stat().st_size if full.exists() else 0,
+            })
+    return {"root": str(base), "roles": roles}

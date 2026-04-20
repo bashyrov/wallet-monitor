@@ -1,4 +1,5 @@
 import logging
+import os as _os_boot
 import warnings
 from contextlib import asynccontextmanager
 
@@ -9,10 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-from backend.logging_config import setup_logging
+from backend.logging_config import setup_logging, install_asyncio_hook
 from settings import settings
 
-setup_logging(settings.LOG_LEVEL)
+_role = (_os_boot.environ.get("AVALANT_ROLE", "").lower() or "monolith")
+setup_logging(_role, level=settings.LOG_LEVEL)
 logger = logging.getLogger("avalant")
 
 _INSECURE_DEFAULTS = {
@@ -69,63 +71,90 @@ def _ensure_system_tags() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    install_asyncio_hook()
     _check_security()
     logger.info("Starting Avalant")
     run_migrations()
     _ensure_system_tags()
     logger.info("Migrations applied — server ready")
 
-    from backend.services.price_service import start_price_loop, stop_price_loop
-    start_price_loop()
-    logger.info("Price refresh loop started")
+    # Role decides what runs here. Default (empty/monolith) = everything, for
+    # backwards-compat with single-container deploys. When running sidecar'd,
+    # docker-compose sets AVALANT_ROLE=web on the uvicorn container and
+    # AVALANT_ROLE=fetcher on the data-plane sidecar (python -m fetcher).
+    role = _os_boot.environ.get("AVALANT_ROLE", "").lower() or "monolith"
+    is_web = role == "web"
+    logger.info("Avalant role: %s", role)
 
-    from backend.api.v1.screener import start_screener_broadcaster, stop_screener_broadcaster
-    start_screener_broadcaster()
+    # ── Always — cheap, lives in the HTTP process ─────────────────────
+    from backend.api.v1.screener import start_broadcast_loop, stop_broadcast_loop
+    start_broadcast_loop()
 
-    from backend.services.alert_service import start_alert_service, stop_alert_service
-    start_alert_service()
+    # ── Monolith-only (web process handles everything when no sidecar) ─
+    _stop_fns = []
+    if not is_web:
+        from backend.services.price_service import start_price_loop, stop_price_loop
+        start_price_loop()
+        _stop_fns.append(stop_price_loop)
+        logger.info("Price refresh loop started")
 
-    from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
-    start_tg_bot()
+        from backend.api.v1.screener import start_refresh_loop, stop_refresh_loop
+        start_refresh_loop()
+        _stop_fns.append(stop_refresh_loop)
 
-    from backend.services.orderbook_cache import start_prewarm, stop_prewarm
-    start_prewarm()
+        from backend.services.alert_service import start_alert_service, stop_alert_service
+        start_alert_service()
+        _stop_fns.append(stop_alert_service)
 
-    # Funding-rate WebSocket streams — replaces the REST poller for every
-    # exchange with a published adapter. Runs on every worker so ad-hoc
-    # /trade/status and screener requests always have fresh data in memory.
-    from backend.services.funding_ws import start_funding_ws_manager, stop_funding_ws_manager
-    start_funding_ws_manager()
+        from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
+        start_tg_bot()
+        _stop_fns.append(stop_tg_bot)
 
-    import asyncio, fcntl
-    _alpha_tasks = []
-    # Background loops should only run on ONE worker — use file lock
-    _alpha_lock_fd = None
-    try:
-        _alpha_lock_fd = open("/tmp/avalant_alpha.lock", "w")
-        fcntl.flock(_alpha_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        from backend.services.health_service import health_loop
-        from backend.services.replay_service import snapshot_loop
-        from backend.services.anomaly_service import anomaly_loop
-        _alpha_tasks = [
-            asyncio.create_task(health_loop(interval_s=60)),
-            asyncio.create_task(snapshot_loop(interval_s=60)),
-            asyncio.create_task(anomaly_loop(interval_s=120)),
-        ]
-        logger.info("Alpha loops started (health, snapshot, anomaly)")
-    except (IOError, OSError):
-        logger.info("Alpha loops: another worker holds lock — skipping")
+        from backend.services.orderbook_cache import start_prewarm, stop_prewarm
+        start_prewarm()
+        _stop_fns.append(stop_prewarm)
+
+        from backend.services.funding_ws import (
+            start_funding_ws_manager, stop_funding_ws_manager,
+        )
+        start_funding_ws_manager()
+        _stop_fns.append(stop_funding_ws_manager)
+
+        import asyncio, fcntl
+        _alpha_tasks = []
+        _alpha_lock_fd = None
+        try:
+            _alpha_lock_fd = open("/tmp/avalant_alpha.lock", "w")
+            fcntl.flock(_alpha_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            from backend.services.health_service import health_loop
+            from backend.services.replay_service import snapshot_loop
+            from backend.services.anomaly_service import anomaly_loop
+            _alpha_tasks = [
+                asyncio.create_task(health_loop(interval_s=60)),
+                asyncio.create_task(snapshot_loop(interval_s=60)),
+                asyncio.create_task(anomaly_loop(interval_s=120)),
+            ]
+            logger.info("Alpha loops started (health, snapshot, anomaly)")
+        except (IOError, OSError):
+            logger.info("Alpha loops: another worker holds lock — skipping")
+            _alpha_tasks = []
+    else:
+        _alpha_tasks = []
+        logger.info("Web mode — data plane runs in the fetcher sidecar")
 
     yield
 
     for t in _alpha_tasks:
         t.cancel()
-    stop_price_loop()
-    stop_screener_broadcaster()
-    stop_alert_service()
-    stop_tg_bot()
-    stop_prewarm()
-    stop_funding_ws_manager()
+    for fn in _stop_fns:
+        try:
+            fn()
+        except Exception:
+            logger.exception("stop_fn %s failed", getattr(fn, "__name__", fn))
+    try:
+        stop_broadcast_loop()
+    except Exception:
+        logger.exception("stop_broadcast_loop failed")
     logger.info("Avalant shutting down")
 
 
