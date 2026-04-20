@@ -527,7 +527,9 @@ async def _refresh_loop() -> None:
 
     # How old a per-exchange local cache can be before we prefer the
     # shared funding.json (written by whichever worker last succeeded).
-    _LOCAL_STALE_MAX = 20.0
+    # Fetchers refresh every ~3-6s; 15s gives ~2-3 missed ticks before we
+    # reach over to another worker's snapshot.
+    _LOCAL_STALE_MAX = 15.0
 
     while True:
         started = asyncio.get_event_loop().time()
