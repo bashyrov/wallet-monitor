@@ -967,6 +967,7 @@ def _read_file_cache(name: str, max_age: float = 60.0) -> dict | None:
 # Also flag obviously-broken rows: zero/negative price.
 
 _PRICE_DEV_PCT = 25.0      # % deviation from median to log
+_PRICE_DROP_DEV_PCT = 20.0 # drop rows whose price deviates this much from median
 _MIN_EX_FOR_MEDIAN = 3     # need at least this many exchanges to trust the median
 _anomaly_counters: dict[str, int] = {}  # {"kucoin": count} running tally
 
@@ -986,6 +987,41 @@ def price_anomaly_counters() -> dict[str, int]:
             return dict(fc["by_exchange"])
         return {}
     return dict(_anomaly_counters)
+
+
+def _drop_price_outliers(rows: list[dict]) -> list[dict]:
+    """Drop rows whose price deviates > _PRICE_DROP_DEV_PCT from cross-exchange
+    median for the same symbol. Stale markPrice from a delisted contract (e.g.
+    Binance still broadcasting FUN at $0.0004 vs Gate $0.035) would otherwise
+    create fake 7000% arb opportunities. Requires at least _MIN_EX_FOR_MEDIAN
+    listings to trust the median."""
+    try:
+        from statistics import median
+    except Exception:
+        return rows
+    from collections import defaultdict
+    by_sym: dict[str, list[tuple[int, float]]] = defaultdict(list)
+    for idx, r in enumerate(rows):
+        try:
+            p = float(r.get("price") or 0)
+        except (TypeError, ValueError):
+            continue
+        if p <= 0:
+            continue
+        by_sym[r.get("symbol", "")].append((idx, p))
+    drop_idx: set[int] = set()
+    for sym, pairs in by_sym.items():
+        if len(pairs) < _MIN_EX_FOR_MEDIAN:
+            continue
+        med = median(p for _, p in pairs)
+        if med <= 0:
+            continue
+        for idx, p in pairs:
+            if abs(p - med) / med * 100.0 > _PRICE_DROP_DEV_PCT:
+                drop_idx.add(idx)
+    if not drop_idx:
+        return rows
+    return [r for i, r in enumerate(rows) if i not in drop_idx]
 
 
 def _sanity_check_prices(rows: list[dict]) -> None:
@@ -1119,6 +1155,7 @@ async def get_funding_data() -> dict:
             all_rows.extend(result)
 
     all_rows = [r for r in all_rows if _keep(r)]
+    all_rows = _drop_price_outliers(all_rows)
 
     from collections import defaultdict
     sym_exch: dict[str, set] = defaultdict(set)
@@ -1225,30 +1262,25 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                 fee_l = _fee(long_e["exchange"])
                 fee_s = _fee(short_e["exchange"])
                 total_fees = 2.0 * (fee_l + fee_s)
-                # Prefer live mid-price from WS orderbook cache; fall back to
-                # funding endpoint's price if WS book isn't warm yet.
+                # Orderbook is REQUIRED on both sides. Spread is computed
+                # exclusively from live (bid, ask) — never from the funding
+                # feed's stale `price`. No book → skip the pair.
                 lv_l = top_levels(long_e["exchange"], symbol)
                 lv_s = top_levels(short_e["exchange"], symbol)
-                if lv_l:
-                    p_l = (lv_l[0] + lv_l[1]) / 2
-                else:
-                    p_l = long_e["price"]
-                if lv_s:
-                    p_s = (lv_s[0] + lv_s[1]) / 2
-                else:
-                    p_s = short_e["price"]
-                price_spread = (p_s - p_l) / p_l if p_l > 0 else 0.0
+                if not lv_l or not lv_s:
+                    continue
+                bid_l, ask_l = lv_l
+                bid_s, ask_s = lv_s
+                if ask_l <= 0 or ask_s <= 0 or bid_l <= 0 or bid_s <= 0:
+                    continue
+                in_pct  = (bid_s - ask_l) / ask_l
+                out_pct = (bid_l - ask_s) / ask_s
+                price_spread = in_pct
+                p_l = (bid_l + ask_l) / 2
+                p_s = (bid_s + ask_s) / 2
                 net = gross + price_spread - total_fees
                 if net <= 0:
                     continue
-                # Live In/Out from orderbook top-of-book
-                in_pct = out_pct = None
-                if lv_l and lv_s:
-                    bid_l, ask_l = lv_l
-                    bid_s, ask_s = lv_s
-                    if ask_l > 0 and ask_s > 0:
-                        in_pct  = round((bid_s - ask_l) / ask_l * 100, 4)
-                        out_pct = round((bid_l - ask_s) / ask_s * 100, 4)
                 opportunities.append({
                     "symbol": symbol,
                     "long_exchange":  long_e["exchange"],
@@ -1272,8 +1304,8 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                     "next_ts_short":  short_e.get("next_ts", 0),
                     "long_interval_h":  long_e.get("interval_h"),
                     "short_interval_h": short_e.get("interval_h"),
-                    "in_pct":  in_pct,
-                    "out_pct": out_pct,
+                    "in_pct":  round(in_pct * 100, 4),
+                    "out_pct": round(out_pct * 100, 4),
                 })
 
     opportunities.sort(key=lambda x: x["net_profit"], reverse=True)

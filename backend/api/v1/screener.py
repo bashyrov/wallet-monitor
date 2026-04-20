@@ -558,7 +558,7 @@ async def _refresh_loop() -> None:
     from backend.services.arbitrage_service import (
         FETCHERS, _cache, _arb_result_cache, _compute_arb_sync,
         _write_file_cache, _read_file_cache, get_funding_data, _slim_arb_for_file,
-        _mono, CACHE_TTL,
+        _mono, CACHE_TTL, _drop_price_outliers,
     )
     from backend.services import admin_settings
     _fetch_lock = asyncio.Lock()
@@ -592,6 +592,7 @@ async def _refresh_loop() -> None:
         try:
             disabled_ex = admin_settings.get_disabled_exchanges()
             hidden_sym = admin_settings.get_hidden_symbols()
+            min_volume = admin_settings.get_arb_min_volume_usd()
             shared = _read_file_cache("funding.json", max_age=30.0) or {}
             shared_rows_by_ex: dict[str, list] = {}
             for r in shared.get("rows", []) or []:
@@ -608,10 +609,20 @@ async def _refresh_loop() -> None:
                 elif ex in shared_rows_by_ex:
                     rows.extend(shared_rows_by_ex[ex])
                 elif cached_rows:
-                    # No shared fallback either — keep stale, better than empty
                     rows.extend(cached_rows)
-            if hidden_sym:
-                rows = [r for r in rows if r["symbol"] not in hidden_sym]
+
+            def _keep(r: dict) -> bool:
+                if hidden_sym and r.get("symbol") in hidden_sym:
+                    return False
+                v = r.get("volume_usd")
+                if v is None:
+                    return False
+                try:
+                    return float(v) >= min_volume
+                except (TypeError, ValueError):
+                    return False
+            rows = [r for r in rows if _keep(r)]
+            rows = _drop_price_outliers(rows)
             if rows:
                 result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
                 _arb_result_cache["data"] = result
