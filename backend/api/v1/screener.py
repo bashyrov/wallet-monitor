@@ -710,20 +710,66 @@ async def _broadcast_loop() -> None:
 def start_screener_broadcaster() -> None:
     """Start broadcaster on EVERY worker. Only one worker (lock-holder) also
     runs the refresh loop which writes funding.json + arbitrage.json; every
-    other worker reads those files and pushes to its own local WS clients."""
-    import fcntl
-    global _broadcaster_task, _refresh_task, _refresh_lock_fd
+    other worker reads those files and pushes to its own local WS clients.
+
+    Kept for back-compat with monolith deploys. When running sidecar'd
+    (AVALANT_ROLE=fetcher / AVALANT_ROLE=web), prefer the narrower
+    start_refresh_loop / start_broadcast_loop helpers below.
+    """
+    start_broadcast_loop()
+    start_refresh_loop()
+
+
+def start_broadcast_loop() -> None:
+    """Web-worker half: pushes the currently cached arb + funding data
+    to connected WS clients every BROADCAST_INTERVAL. Does NOT touch any
+    external network — reads only shared files written by the fetcher.
+    Safe to run on every uvicorn worker."""
+    global _broadcaster_task
+    if _broadcaster_task and not _broadcaster_task.done():
+        return
     _broadcaster_task = asyncio.create_task(_broadcast_loop())
 
+
+def start_refresh_loop() -> None:
+    """Fetcher-side half: recomputes arb opps from the shared funding
+    cache every _REFRESH_INTERVAL and writes arbitrage.json. Acquires a
+    file-lock so it's safe to call from multiple processes — only the
+    first caller wins.
+    """
+    import fcntl
+    global _refresh_task, _refresh_lock_fd
+    if _refresh_task and not _refresh_task.done():
+        return
     try:
         _refresh_lock_fd = open("/tmp/avalant_refresh.lock", "w")
         fcntl.flock(_refresh_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (IOError, OSError):
-        logger.info("Screener refresh: another worker holds the lock — broadcaster-only")
+        logger.info("Screener refresh: another worker/process holds the lock — skipping")
         return
     asyncio.create_task(_warmup())
     _refresh_task = asyncio.create_task(_refresh_loop())
-    logger.info("Screener refresh loop started (this worker drives recompute)")
+    logger.info("Screener refresh loop started (this process drives recompute)")
+
+
+def stop_refresh_loop() -> None:
+    global _refresh_task, _refresh_lock_fd
+    if _refresh_task and not _refresh_task.done():
+        _refresh_task.cancel()
+    _refresh_task = None
+    if _refresh_lock_fd is not None:
+        try:
+            _refresh_lock_fd.close()
+        except Exception:
+            pass
+        _refresh_lock_fd = None
+
+
+def stop_broadcast_loop() -> None:
+    global _broadcaster_task
+    if _broadcaster_task and not _broadcaster_task.done():
+        _broadcaster_task.cancel()
+    _broadcaster_task = None
 
 
 _refresh_lock_fd = None

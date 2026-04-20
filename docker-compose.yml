@@ -1,3 +1,32 @@
+# Shared env block — both `app` (uvicorn, HTTP/WS) and `fetcher`
+# (data plane) use identical env. Top-level YAML anchor keeps it DRY.
+x-app-env: &app-env
+  DATABASE_URL: postgresql://wallet:${POSTGRES_PASSWORD:-changeme}@db:5432/avalant
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+  ACCESS_TOKEN_EXPIRE_DAYS: ${ACCESS_TOKEN_EXPIRE_DAYS:-30}
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  CMC_API_KEY: ${CMC_API_KEY:-}
+  TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}
+  TG_BOT_USERNAME: ${TG_BOT_USERNAME:-avalant_bot}
+  ANKR_KEY: ${ANKR_KEY:-}
+  TRON_KEY: ${TRON_KEY:-}
+  TRON_RPC: ${TRON_RPC:-}
+  SOLANA_RPC: ${SOLANA_RPC:-}
+  ETHEREUM_RPC: ${ETHEREUM_RPC:-}
+  BSC_RPC: ${BSC_RPC:-}
+  POLYGON_RPC: ${POLYGON_RPC:-}
+  ARBITRUM_RPC: ${ARBITRUM_RPC:-}
+  OPTIMISM_RPC: ${OPTIMISM_RPC:-}
+  BASE_RPC: ${BASE_RPC:-}
+  AVALANCHE_RPC: ${AVALANCHE_RPC:-}
+  ZKSYNC_RPC: ${ZKSYNC_RPC:-}
+  LINEA_RPC: ${LINEA_RPC:-}
+  SCROLL_RPC: ${SCROLL_RPC:-}
+  MANTLE_RPC: ${MANTLE_RPC:-}
+  BLAST_RPC: ${BLAST_RPC:-}
+
 services:
 
   db:
@@ -25,37 +54,25 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://wallet:${POSTGRES_PASSWORD:-changeme}@db:5432/avalant
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
-      ACCESS_TOKEN_EXPIRE_DAYS: ${ACCESS_TOKEN_EXPIRE_DAYS:-30}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      <<: *app-env
+      AVALANT_ROLE: web
+    # Shared cache — fetcher writes, web reads (funding.json,
+    # arbitrage.json, books.json, funding_ws.json, pending_subs.json)
+    volumes:
+      - avalant_cache:/tmp/avalant_cache
 
-      # Optional — price cache (top-100 CMC → Gate prices, every 30 min)
-      CMC_API_KEY: ${CMC_API_KEY:-}
-
-      # Optional — Telegram bot (alerts + login widget + profile linking)
-      TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}
-      TG_BOT_USERNAME: ${TG_BOT_USERNAME:-avalant_bot}
-
-      # Optional — EVM / chain providers
-      ANKR_KEY: ${ANKR_KEY:-}
-      TRON_KEY: ${TRON_KEY:-}
-      TRON_RPC: ${TRON_RPC:-}
-      SOLANA_RPC: ${SOLANA_RPC:-}
-      ETHEREUM_RPC: ${ETHEREUM_RPC:-}
-      BSC_RPC: ${BSC_RPC:-}
-      POLYGON_RPC: ${POLYGON_RPC:-}
-      ARBITRUM_RPC: ${ARBITRUM_RPC:-}
-      OPTIMISM_RPC: ${OPTIMISM_RPC:-}
-      BASE_RPC: ${BASE_RPC:-}
-      AVALANCHE_RPC: ${AVALANCHE_RPC:-}
-      ZKSYNC_RPC: ${ZKSYNC_RPC:-}
-      LINEA_RPC: ${LINEA_RPC:-}
-      SCROLL_RPC: ${SCROLL_RPC:-}
-      MANTLE_RPC: ${MANTLE_RPC:-}
-      BLAST_RPC: ${BLAST_RPC:-}
+  fetcher:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "-m", "fetcher"]
+    environment:
+      <<: *app-env
+      AVALANT_ROLE: fetcher
+    volumes:
+      - avalant_cache:/tmp/avalant_cache
 
   nginx:
     image: nginx:alpine
@@ -87,3 +104,4 @@ volumes:
   postgres_data:
   certbot_certs:
   certbot_www:
+  avalant_cache:

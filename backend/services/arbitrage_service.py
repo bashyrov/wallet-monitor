@@ -13,6 +13,7 @@ out of the hot path.
 """
 import asyncio
 import logging
+import os
 import time
 
 import httpx
@@ -934,6 +935,17 @@ async def get_funding_data() -> dict:
     hidden_sym = admin_settings.get_hidden_symbols()
     enabled_ex = [ex for ex in FETCHERS if ex not in disabled_ex]
 
+    # Web role has no data plane — always read from shared file written by
+    # the fetcher sidecar. Avoid kicking off our own REST gather.
+    if os.environ.get("AVALANT_ROLE", "").lower() == "web":
+        cached = _read_file_cache("funding.json", max_age=30.0)
+        if cached and cached.get("rows"):
+            rows = cached["rows"]
+            if hidden_sym:
+                rows = [r for r in rows if r["symbol"] not in hidden_sym]
+            return {"ts": cached.get("ts", int(time.time())), "exchanges": enabled_ex, "rows": rows}
+        # No file yet / stale — fall through; first request after startup only.
+
     # Fast path: if every per-exchange cache is still warm, skip the gather.
     # Non-owner workers can fall back to the shared funding.json while the
     # owner's gather runs.
@@ -1129,12 +1141,22 @@ async def get_arbitrage_opportunities(force: bool = False) -> dict:
 
     # File cache fallback (written by broadcaster worker) — skipped on forced
     # recompute so the refresh loop always writes fresh data.
+    is_web = os.environ.get("AVALANT_ROLE", "").lower() == "web"
     if not force:
-        fc = _read_file_cache("arbitrage.json", max_age=_ARB_CACHE_TTL * 3)
+        # Web role has no data plane — read with a longer staleness budget
+        # and never compute locally.
+        max_age = 120.0 if is_web else _ARB_CACHE_TTL * 3
+        fc = _read_file_cache("arbitrage.json", max_age=max_age)
         if fc and fc.get("opportunities"):
             _arb_result_cache["data"] = fc
             _arb_result_cache["ts"] = now
             return fc
+        if is_web:
+            # Fetcher hasn't written yet — return an empty shell rather than
+            # running a heavy compute on the web worker.
+            return {"ts": int(now), "exchanges": list(FETCHERS.keys()),
+                    "fees": {ex: round(f * 100, 4) for ex, f in EXCHANGE_FEES.items()},
+                    "opportunities": []}
 
     data = await get_funding_data()
     # Run CPU-heavy computation in a thread pool so the event loop stays
