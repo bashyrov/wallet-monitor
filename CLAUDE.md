@@ -1120,6 +1120,32 @@ Top: shared `<app-navbar page="arb">` (52px). Below: custom `.infobar` (72px, gr
 ### Bottom nav (mobile)
 - 5 items matching other pages' bottom-nav. Light-theme overrides added.
 
+## H1. Funding WS + REST backstop (≤5s per-symbol freshness SLA)
+
+`backend/services/funding_ws/` is the hot path. Each adapter runs **two** concurrent loops per exchange:
+
+- **WS task** (asyncio) in `_run()` — subscribes to the venue's broadcast channel, merges incoming rows into `self._rows`, stamps `_ts`. Primary sub-second updates.
+- **REST backstop** in a **pure daemon `threading.Thread`** (not `asyncio.to_thread`) — calls `rest_refresh_sync()` every `rest_refresh_interval_s` (2s for bybit/okx/gate/kucoin/mexc/bitget/bingx), merges rows into `self._rows` directly, stamps `_ts`. Guarantees freshness on any symbol whose WS doesn't tick regularly (low-volume tokens, per-symbol channels like KuCoin `/contract/instrument`, rate-less feeds like MEXC `push.tickers`).
+
+**Why pure thread, not `asyncio.to_thread`**: the fetcher runs 11 WS adapters + orderbook WS manager + dump loops + screener refresh on a single event loop. Under that load `await loop.run_in_executor(...)` took **5-6 seconds** to resume the future even though the actual HTTP call took 0.3-1s (`curl` proved it). Bypassing the event loop entirely dropped tick duration to **0.2-1.4s**. Per-symbol max age across all 10 exchanges dropped from 6-7s → **0.04-2.62s**.
+
+**Safety**: the WS task on the event loop thread reads/writes `self._rows[sym]` by key. Python dict key-assignment is GIL-atomic, so cross-thread writes from the REST thread are safe without locks.
+
+Dedicated sync HTTP client (`_rest_http = httpx.Client(...)`) with its own pool — **never** share with the async `_http` in `arbitrage_service.py`; they saturate each other.
+
+Adapters that currently have REST backstops:
+- **Bybit** — `/v5/market/tickers?category=linear` (was missing volume on partial updates)
+- **OKX** — `/api/v5/market/tickers?instType=SWAP` (WS supplies rate; REST supplies price/volume)
+- **Gate** — `/api/v4/futures/usdt/tickers`
+- **KuCoin** — `/api/v1/contracts/active` (WS never delivered volume or rate — REST owns both)
+- **MEXC** — `/contract/funding_rate` + `/contract/ticker` (WS has no rate; REST owns rate)
+- **Bitget** — `/api/v2/mix/market/tickers?productType=USDT-FUTURES`
+- **BingX** — `/openApi/swap/v2/quote/premiumIndex` + `/ticker` (WS caps at ~100 symbols; REST fills all ~600)
+
+**Do NOT regress to async REST.** If you need to add a new REST backstop, implement `rest_refresh_sync()` (sync), not `rest_refresh()` (async). The base `_rest_loop_sync()` runs in a daemon thread and calls it.
+
+**ping_timeout = 60s** (was == ping_interval = 20s) — older config killed healthy WS sessions under traffic spikes with 1011 keepalive errors on WhiteBit/BingX/Bitget.
+
 ## H. `/screener` perf architecture (arbitrage_service.py)
 
 - **Two-tier cache**: `_cache` (6s TTL, price/rate) + `_ivl_cache` (1h TTL, intervals).
