@@ -511,7 +511,8 @@ async def _refresh_loop() -> None:
     from backend.services.alpha_service import score_opportunities
     from backend.services.arbitrage_service import (
         FETCHERS, _cache, _arb_result_cache, _compute_arb_sync,
-        _write_file_cache, get_funding_data, _slim_arb_for_file,
+        _write_file_cache, _read_file_cache, get_funding_data, _slim_arb_for_file,
+        _mono, CACHE_TTL,
     )
     from backend.services import admin_settings
     _fetch_lock = asyncio.Lock()
@@ -524,23 +525,43 @@ async def _refresh_loop() -> None:
             except Exception as exc:
                 logger.warning("Background funding fetch: %s", exc)
 
+    # How old a per-exchange local cache can be before we prefer the
+    # shared funding.json (written by whichever worker last succeeded).
+    _LOCAL_STALE_MAX = 20.0
+
     while True:
         started = asyncio.get_event_loop().time()
         # Kick background funding refresh — never await. Lock ensures only one
         # get_funding_data runs at a time (prevents pool exhaustion / duplicates).
         asyncio.create_task(_single_fetch())
-        # Recompute arb from current _cache rows (no await on exchanges).
-        # Honour admin-disabled exchanges + hidden symbols at rebuild time so the
-        # stale _cache rows for freshly-disabled exchanges don't leak through.
+        # Recompute arb. Prefer local _cache when it's fresh (< 20s) because
+        # that's the hottest data we have. If an exchange keeps timing out on
+        # THIS worker (e.g. KuCoin ConnectTimeouts on the owner), its local
+        # cache goes stale — fall back to the shared funding.json, which
+        # another worker may have refreshed successfully. Without this fallback
+        # the owner kept publishing arb rows with days-old prices for any
+        # exchange that only this worker struggled with.
         try:
             disabled_ex = admin_settings.get_disabled_exchanges()
             hidden_sym = admin_settings.get_hidden_symbols()
+            shared = _read_file_cache("funding.json", max_age=30.0) or {}
+            shared_rows_by_ex: dict[str, list] = {}
+            for r in shared.get("rows", []) or []:
+                shared_rows_by_ex.setdefault(r.get("exchange",""), []).append(r)
+            now_m = _mono()
             rows = []
             for ex in FETCHERS:
                 if ex in disabled_ex:
                     continue
-                cached_rows, _ts = _cache.get(ex, ([], 0.0))
-                rows.extend(cached_rows)
+                cached_rows, cached_ts = _cache.get(ex, ([], 0.0))
+                age = now_m - cached_ts if cached_ts else float("inf")
+                if cached_rows and age <= _LOCAL_STALE_MAX:
+                    rows.extend(cached_rows)
+                elif ex in shared_rows_by_ex:
+                    rows.extend(shared_rows_by_ex[ex])
+                elif cached_rows:
+                    # No shared fallback either — keep stale, better than empty
+                    rows.extend(cached_rows)
             if hidden_sym:
                 rows = [r for r in rows if r["symbol"] not in hidden_sym]
             if rows:
