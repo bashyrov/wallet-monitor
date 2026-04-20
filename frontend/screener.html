@@ -2200,7 +2200,7 @@ function renderArb() {
       <td class="td-status">${validBadge}</td>
       <td style="display:flex;gap:4px;align-items:center">
         ${_starBtn(r.symbol, r.long_exchange, r.short_exchange)}
-        <a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page">↗</a>
+        <a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page" onmouseenter="_arbPrefetch(this.href)">↗</a>
       </td>
     </tr>`;
   }).join('');
@@ -2725,6 +2725,32 @@ function startLiveOpsPollers() {
   _loTimers.health = setInterval(refreshHealth, 30000);
   _loTimers.anom = setInterval(refreshAnomalies, 60000);
   _loTimers.lb = setInterval(refreshLeaderboard, 60000);
+}
+
+// Prefetch arb detail page + warm per-pair backend caches on row hover
+const _arbPrefetchSeen = new Set();
+function _arbPrefetch(url) {
+  if (!url || _arbPrefetchSeen.has(url)) return;
+  _arbPrefetchSeen.add(url);
+  // Browser-side prefetch (HTML + static assets)
+  const link = document.createElement('link');
+  link.rel = 'prefetch';
+  link.href = url;
+  link.as = 'document';
+  document.head.appendChild(link);
+  // Server-side cache warm (no-await fire-and-forget)
+  try {
+    const u = new URL(url, location.origin);
+    const sym = u.searchParams.get('symbol');
+    const long = u.searchParams.get('long');
+    const short = u.searchParams.get('short');
+    if (sym && long && short) {
+      const q = `symbol=${sym}&long_ex=${long}&short_ex=${short}`;
+      Auth.apiFetch(`/screener/arb-price-history?${q}`).catch(() => {});
+      Auth.apiFetch(`/screener/arb-history?${q}`).catch(() => {});
+      Auth.apiFetch(`/screener/open-interest?${q}`).catch(() => {});
+    }
+  } catch (_) {}
 }
 </script>
 
