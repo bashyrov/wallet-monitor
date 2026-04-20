@@ -680,19 +680,30 @@ async def _fetch_aster() -> list[dict]:
     price_map, price_at = _aster_price_cache
 
     now = _mono()
-    # ticker/24hr: fetch every tick for lastPrice; also refresh volume every 60s
+    # ticker/24hr: fetch every tick for lastPrice; also refresh volume every 60s.
+    # If the fetch fails, log it AND invalidate the caches past their grace
+    # window so we don't silently ship stale prices/volumes forever.
     if now - price_at >= ASTER_PRICE_TTL:
         try:
             tick_r = await _http.get("https://fapi.asterdex.com/fapi/v1/ticker/24hr")
-            if tick_r.status_code == 200:
-                ticks = tick_r.json()
-                price_map = {t["symbol"]: float(t.get("lastPrice") or 0) for t in ticks}
-                _aster_price_cache = (price_map, now)
-                if now - vol_at >= ASTER_VOL_TTL:
-                    vol_map = {t["symbol"]: float(t.get("quoteVolume") or 0) for t in ticks}
-                    _aster_vol_cache = (vol_map, now)
-        except Exception:
-            pass
+            tick_r.raise_for_status()
+            ticks = tick_r.json()
+            price_map = {t["symbol"]: float(t.get("lastPrice") or 0) for t in ticks}
+            _aster_price_cache = (price_map, now)
+            if now - vol_at >= ASTER_VOL_TTL:
+                vol_map = {t["symbol"]: float(t.get("quoteVolume") or 0) for t in ticks}
+                _aster_vol_cache = (vol_map, now)
+        except Exception as exc:
+            logger.warning("aster ticker/24hr fetch failed: %s: %s", type(exc).__name__, exc)
+            # Evict caches that are more than 3× their normal TTL old —
+            # keeps us from serving minute-old aster prices when the API
+            # is having an extended outage.
+            if now - price_at > ASTER_PRICE_TTL * 3:
+                _aster_price_cache = ({}, now)
+                price_map = {}
+            if now - vol_at > ASTER_VOL_TTL * 3:
+                _aster_vol_cache = ({}, now)
+                vol_map = {}
 
     out = []
     for item in prem_r.json():
