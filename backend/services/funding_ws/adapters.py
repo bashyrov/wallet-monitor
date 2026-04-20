@@ -23,10 +23,13 @@ from .base import FundingWSAdapter
 
 logger = logging.getLogger("avalant.funding_ws")
 
-# Shared HTTP client for REST back-stops (keepalive, isolated pool so the
-# heavy arbitrage _http pool isn't contended by these 3s ticks).
-_rest_http = httpx.AsyncClient(
-    timeout=httpx.Timeout(connect=4.0, read=6.0, write=4.0, pool=1.5),
+# SYNC HTTP client for REST back-stops, used exclusively from
+# asyncio.to_thread() so the event loop is never blocked waiting on network
+# or JSON decoding. Event-loop contention (11 WS adapters + orderbook
+# manager + dump loops) was turning "0.5 s" async REST calls into 15-18 s
+# stalls, blowing the per-symbol freshness SLA.
+_rest_http = httpx.Client(
+    timeout=httpx.Timeout(connect=4.0, read=8.0, write=4.0, pool=2.0),
     headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
     follow_redirects=True,
     limits=httpx.Limits(max_connections=60, max_keepalive_connections=24, keepalive_expiry=30),
@@ -185,8 +188,8 @@ class BybitFundingWS(FundingWSAdapter):
             await self._load_symbols()
         await super()._run()
 
-    async def rest_refresh(self) -> list[dict] | None:
-        r = await _rest_http.get("https://api.bybit.com/v5/market/tickers?category=linear")
+    def rest_refresh_sync(self) -> list[dict] | None:
+        r = _rest_http.get("https://api.bybit.com/v5/market/tickers?category=linear")
         if r.status_code != 200:
             return None
         out: list[dict] = []
@@ -304,9 +307,8 @@ class OKXFundingWS(FundingWSAdapter):
             await self._load_instruments()
         await super()._run()
 
-    async def rest_refresh(self) -> list[dict] | None:
-        # Bulk tickers (price + volume) in one call; funding rate comes from WS.
-        r = await _rest_http.get("https://www.okx.com/api/v5/market/tickers?instType=SWAP")
+    def rest_refresh_sync(self) -> list[dict] | None:
+        r = _rest_http.get("https://www.okx.com/api/v5/market/tickers?instType=SWAP")
         if r.status_code != 200:
             return None
         out: list[dict] = []
@@ -387,8 +389,8 @@ class GateFundingWS(FundingWSAdapter):
                 continue
         return out
 
-    async def rest_refresh(self) -> list[dict] | None:
-        r = await _rest_http.get("https://api.gateio.ws/api/v4/futures/usdt/tickers")
+    def rest_refresh_sync(self) -> list[dict] | None:
+        r = _rest_http.get("https://api.gateio.ws/api/v4/futures/usdt/tickers")
         if r.status_code != 200:
             return None
         out: list[dict] = []
@@ -543,8 +545,8 @@ class KuCoinFundingWS(FundingWSAdapter):
             if self._stop:
                 break
 
-    async def rest_refresh(self) -> list[dict] | None:
-        r = await _rest_http.get("https://api-futures.kucoin.com/api/v1/contracts/active")
+    def rest_refresh_sync(self) -> list[dict] | None:
+        r = _rest_http.get("https://api-futures.kucoin.com/api/v1/contracts/active")
         if r.status_code != 200:
             return None
         out: list[dict] = []
@@ -616,15 +618,17 @@ class MexcFundingWS(FundingWSAdapter):
                 continue
         return out
 
-    async def rest_refresh(self) -> list[dict] | None:
-        # Funding rate for ALL symbols in a single call.
-        r_fr, r_tk = await asyncio.gather(
-            _rest_http.get("https://contract.mexc.com/api/v1/contract/funding_rate"),
-            _rest_http.get("https://contract.mexc.com/api/v1/contract/ticker"),
-            return_exceptions=True,
-        )
+    def rest_refresh_sync(self) -> list[dict] | None:
+        try:
+            r_fr = _rest_http.get("https://contract.mexc.com/api/v1/contract/funding_rate")
+        except Exception:
+            r_fr = None
+        try:
+            r_tk = _rest_http.get("https://contract.mexc.com/api/v1/contract/ticker")
+        except Exception:
+            r_tk = None
         rate_map: dict[str, dict] = {}
-        if not isinstance(r_fr, Exception) and r_fr.status_code == 200:
+        if r_fr is not None and r_fr.status_code == 200:
             for d in (r_fr.json().get("data") or []):
                 sym = d.get("symbol", "")
                 if not sym.endswith("_USDT"):
@@ -640,7 +644,7 @@ class MexcFundingWS(FundingWSAdapter):
                 except (ValueError, TypeError):
                     continue
         out: list[dict] = []
-        if not isinstance(r_tk, Exception) and r_tk.status_code == 200:
+        if r_tk is not None and r_tk.status_code == 200:
             for d in (r_tk.json().get("data") or []):
                 sym = d.get("symbol", "")
                 if not sym.endswith("_USDT"):
@@ -658,7 +662,6 @@ class MexcFundingWS(FundingWSAdapter):
                     out.append(row)
                 except (ValueError, TypeError):
                     continue
-        # If ticker endpoint failed but funding-rate succeeded, still merge rate.
         if not out and rate_map:
             out = [{"symbol": k, **v} for k, v in rate_map.items()]
         return out or None
@@ -738,8 +741,8 @@ class BitgetFundingWS(FundingWSAdapter):
             await self._load_symbols()
         await super()._run()
 
-    async def rest_refresh(self) -> list[dict] | None:
-        r = await _rest_http.get(
+    def rest_refresh_sync(self) -> list[dict] | None:
+        r = _rest_http.get(
             "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
         )
         if r.status_code != 200:
@@ -871,14 +874,17 @@ class BingXFundingWS(FundingWSAdapter):
             await self._load_symbols()
         await super()._run()
 
-    async def rest_refresh(self) -> list[dict] | None:
-        prem_r, tick_r = await asyncio.gather(
-            _rest_http.get("https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex"),
-            _rest_http.get("https://open-api.bingx.com/openApi/swap/v2/quote/ticker"),
-            return_exceptions=True,
-        )
+    def rest_refresh_sync(self) -> list[dict] | None:
+        try:
+            prem_r = _rest_http.get("https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex")
+        except Exception:
+            prem_r = None
+        try:
+            tick_r = _rest_http.get("https://open-api.bingx.com/openApi/swap/v2/quote/ticker")
+        except Exception:
+            tick_r = None
         vol_map: dict[str, tuple[float, float]] = {}
-        if not isinstance(tick_r, Exception) and tick_r.status_code == 200:
+        if tick_r is not None and tick_r.status_code == 200:
             for t in (tick_r.json().get("data") or []):
                 s = t.get("symbol", "")
                 try:
@@ -889,7 +895,7 @@ class BingXFundingWS(FundingWSAdapter):
                 except (TypeError, ValueError):
                     pass
         out: list[dict] = []
-        if not isinstance(prem_r, Exception) and prem_r.status_code == 200:
+        if prem_r is not None and prem_r.status_code == 200:
             for d in (prem_r.json().get("data") or []):
                 sym = d.get("symbol") or ""
                 if not sym.endswith("-USDT"):
