@@ -66,6 +66,8 @@ class BinanceFundingWS(FundingWSAdapter):
 
     name = "binance"
     url = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
+    rest_refresh_interval_s = 2.0
+    _rest_base = "https://fapi.binance.com"
 
     def build_subscribe(self):
         return None  # streams are in the URL
@@ -109,10 +111,44 @@ class BinanceFundingWS(FundingWSAdapter):
         return None
 
 
+    def rest_refresh_sync(self) -> list[dict] | None:
+        try:
+            prem = _rest_http.get(f"{self._rest_base}/fapi/v1/premiumIndex")
+            tick = _rest_http.get(f"{self._rest_base}/fapi/v1/ticker/24hr")
+        except Exception:
+            return None
+        if prem.status_code != 200 or tick.status_code != 200:
+            return None
+        vol_map: dict[str, float] = {}
+        for t in (tick.json() or []):
+            sym = t.get("symbol", "")
+            if sym.endswith("USDT"):
+                try: vol_map[sym] = float(t.get("quoteVolume") or 0)
+                except (TypeError, ValueError): pass
+        out: list[dict] = []
+        for d in (prem.json() or []):
+            sym = d.get("symbol", "")
+            if not sym.endswith("USDT"):
+                continue
+            try:
+                out.append({
+                    "symbol":     sym[:-4],
+                    "price":      float(d["markPrice"]) if d.get("markPrice") else None,
+                    "rate":       float(d["lastFundingRate"]) if d.get("lastFundingRate") is not None else None,
+                    "next_ts":    int(d["nextFundingTime"]) // 1000 if d.get("nextFundingTime") else None,
+                    "interval_h": 8.0,
+                    "volume_usd": vol_map.get(sym) or None,
+                })
+            except (ValueError, TypeError):
+                continue
+        return out
+
+
 # ── Aster (Binance-compatible endpoint) ───────────────────────────────────────
 class AsterFundingWS(BinanceFundingWS):
     name = "aster"
     url = "wss://fstream.asterdex.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
+    _rest_base = "https://fapi.asterdex.com"
 
 
 # ── Bybit Linear Perp ─────────────────────────────────────────────────────────
@@ -930,6 +966,7 @@ class WhitebitFundingWS(FundingWSAdapter):
 
     name = "whitebit"
     url = "wss://api.whitebit.com/ws"
+    rest_refresh_interval_s = 2.5
 
     def build_subscribe(self):
         # Subscribe to all perp markets; documentation says empty params = all
@@ -965,6 +1002,41 @@ class WhitebitFundingWS(FundingWSAdapter):
                 continue
         return out
 
+    def rest_refresh_sync(self) -> list[dict] | None:
+        # WhiteBit has two useful REST endpoints. Futures markets list gives
+        # symbol + funding rate; ticker snapshot gives price + volume.
+        try:
+            mkt = _rest_http.get("https://whitebit.com/api/v4/public/futures")
+            tk  = _rest_http.get("https://whitebit.com/api/v4/public/ticker")
+        except Exception:
+            return None
+        if mkt.status_code != 200 or tk.status_code != 200:
+            return None
+        funding_map: dict[str, float] = {}
+        for m in (mkt.json().get("result") or []):
+            market = (m.get("ticker_id") or m.get("name") or "").replace("_PERP", "")
+            fr = m.get("last_funding_rate") or m.get("funding_rate")
+            if market and fr is not None:
+                try: funding_map[market] = float(fr)
+                except (TypeError, ValueError): pass
+        tk_data = tk.json() or {}
+        out: list[dict] = []
+        for market, info in tk_data.items():
+            if not market.endswith("_PERP"):
+                continue
+            token = market[:-5]
+            try:
+                out.append({
+                    "symbol":     token,
+                    "price":      float(info["last_price"]) if info.get("last_price") else None,
+                    "volume_usd": float(info["quote_volume"]) if info.get("quote_volume") else None,
+                    "rate":       funding_map.get(token),
+                    "interval_h": 8.0,
+                })
+            except (ValueError, TypeError):
+                continue
+        return out or None
+
 
 # ── Hyperliquid ───────────────────────────────────────────────────────────────
 class HyperliquidFundingWS(FundingWSAdapter):
@@ -975,6 +1047,7 @@ class HyperliquidFundingWS(FundingWSAdapter):
 
     name = "hyperliquid"
     url = "wss://api.hyperliquid.xyz/ws"
+    rest_refresh_interval_s = 2.0
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -1035,6 +1108,42 @@ class HyperliquidFundingWS(FundingWSAdapter):
         if not self._symbols:
             await self._load_symbols()
         await super()._run()
+
+    def rest_refresh_sync(self) -> list[dict] | None:
+        try:
+            r = _rest_http.post(
+                "https://api.hyperliquid.xyz/info",
+                json={"type": "metaAndAssetCtxs"},
+            )
+        except Exception:
+            return None
+        if r.status_code != 200:
+            return None
+        data = r.json() or []
+        if not isinstance(data, list) or len(data) < 2:
+            return None
+        meta = data[0] or {}
+        ctxs = data[1] or []
+        universe = meta.get("universe") or []
+        out: list[dict] = []
+        for i, ctx in enumerate(ctxs):
+            if i >= len(universe):
+                break
+            name = universe[i].get("name") if isinstance(universe[i], dict) else None
+            if not name:
+                continue
+            try:
+                row = {
+                    "symbol":     name,
+                    "price":      float(ctx["markPx"]) if ctx.get("markPx") else None,
+                    "rate":       float(ctx["funding"]) if ctx.get("funding") is not None else None,
+                    "volume_usd": float(ctx["dayNtlVlm"]) if ctx.get("dayNtlVlm") else None,
+                    "interval_h": 1.0,
+                }
+                out.append(row)
+            except (ValueError, TypeError):
+                continue
+        return out or None
 
 
 # ── Ethereal Perp ─────────────────────────────────────────────────────────────
