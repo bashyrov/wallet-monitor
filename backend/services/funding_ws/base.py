@@ -48,6 +48,15 @@ class FundingWSAdapter:
     # adapter "stale" (arbitrage_service will fall back to REST).
     stale_after_s: float = 30.0
 
+    # How long a PER-SYMBOL row is considered fresh. Some adapters subscribe
+    # to a capped list of top-N symbols (BingX caps at 500 of ~650). Symbols
+    # that aren't in the subscribed window never get ticker updates — the
+    # adapter stays "healthy" because the other 500 tick fine, but these
+    # stuck rows drift further and further from reality and generate fake
+    # arb opportunities. `rows()` drops rows older than this so the caller
+    # (arbitrage_service._get_rows) falls back to REST for them.
+    row_stale_after_s: float = 45.0
+
     def __init__(self, update_cb):
         """update_cb(exchange, symbol, row_dict) — manager-provided."""
         self._update_cb = update_cb
@@ -104,7 +113,26 @@ class FundingWSAdapter:
     # ── Public state accessors ────────────────────────────────────────────
 
     def rows(self) -> list[dict]:
-        return list(self._rows.values())
+        """Fresh rows only — symbols whose last update is within
+        row_stale_after_s. Stale rows are garbage-collected so downstream
+        consumers don't see phantom prices.
+        """
+        now = time.time()
+        cutoff = now - self.row_stale_after_s
+        fresh: list[dict] = []
+        stale_syms: list[str] = []
+        for sym, row in self._rows.items():
+            ts = row.get("_ts") or 0
+            if ts < cutoff:
+                stale_syms.append(sym)
+                continue
+            fresh.append(row)
+        # Evict stale entries so _rows doesn't grow unbounded when symbols
+        # churn and never come back.
+        if stale_syms:
+            for s in stale_syms:
+                self._rows.pop(s, None)
+        return fresh
 
     def health(self) -> dict:
         now = time.time()
@@ -199,6 +227,7 @@ class FundingWSAdapter:
                             merged = {**prev, **{k: v for k, v in row.items() if v is not None}}
                             merged["exchange"] = self.name
                             merged["symbol"] = sym
+                            merged["_ts"] = now
                             self._rows[sym] = merged
                             changed = True
                             try:
