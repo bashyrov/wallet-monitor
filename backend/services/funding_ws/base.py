@@ -141,7 +141,9 @@ class FundingWSAdapter:
         while not self._stop:
             started = time.time()
             try:
-                rows = await asyncio.to_thread(self.rest_refresh_sync)
+                from .adapters import _rest_executor
+                loop = asyncio.get_running_loop()
+                rows = await loop.run_in_executor(_rest_executor, self.rest_refresh_sync)
             except Exception as exc:
                 logger.warning("%s REST refresh exception: %s", self.name, exc)
                 rows = None
