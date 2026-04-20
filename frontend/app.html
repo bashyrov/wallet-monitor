@@ -121,17 +121,23 @@
 
     .icon-btn {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 30px; height: 30px;
-      border-radius: var(--radius-sm);
-      border: 1px solid transparent;
-      background: var(--surface3);
-      color: var(--text2);
+      width: 28px; height: 28px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.02);
+      color: var(--text3);
       cursor: pointer;
-      font-size: 15px;
-      transition: all 0.12s;
+      font-size: 13px;
+      transition: all 0.15s cubic-bezier(.16,1,.3,1);
       flex-shrink: 0;
     }
-    .icon-btn:hover { background: var(--green-dim); border-color: rgba(26,255,171,0.2); color: var(--green); }
+    .icon-btn:hover {
+      background: var(--green-dim); border-color: rgba(26,255,171,0.3);
+      color: var(--green);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px -4px rgba(26,255,171,0.25);
+    }
+    .icon-btn:active { transform: translateY(0); }
     .icon-btn.danger { color: var(--text3); }
     .icon-btn.danger:hover { background: var(--red-dim); border-color: rgba(248,113,113,0.2); color: var(--red); }
     .icon-btn.trade-toggle-btn { color: var(--text3); }
@@ -336,38 +342,93 @@
     .wallet-row {
       position: relative;
       display: flex; align-items: flex-start; gap: 10px;
-      padding: 12px 12px;
-      border-radius: var(--radius);
+      padding: 12px 14px 12px 16px;
+      border-radius: 10px;
       border: 1px solid var(--border);
-      background: var(--surface2);
-      transition: all 0.15s;
+      background: linear-gradient(180deg, var(--surface2) 0%, var(--surface) 100%);
+      transition: transform .18s cubic-bezier(.16,1,.3,1),
+                  border-color .15s, box-shadow .18s, background .15s;
       cursor: default;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
+      overflow: hidden;
+    }
+    /* left-edge colored stripe — set via CSS var from JS, tinted by wallet type */
+    .wallet-row::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--wr-accent, var(--border));
+      opacity: .55; transition: opacity .15s, width .15s;
+    }
+    /* soft top-sheen */
+    .wallet-row::after {
+      content: ''; position: absolute; left: 3px; right: 0; top: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.045), transparent);
+      pointer-events: none;
     }
     .wallet-row:hover {
-      background: var(--surface3);
-      border-color: rgba(255,255,255,0.08);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border-color: rgba(255,255,255,0.1);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 22px -6px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02);
     }
+    .wallet-row:hover::before { opacity: 1; width: 4px; }
     .wallet-row.selected {
-      background: rgba(26,255,171,0.05);
-      border-color: rgba(26,255,171,0.22);
-      border-left: 2px solid var(--green);
-      padding-left: 11px;
+      background: linear-gradient(180deg, rgba(26,255,171,0.07) 0%, rgba(26,255,171,0.02) 100%);
+      border-color: rgba(26,255,171,0.28);
+      box-shadow: 0 0 0 1px rgba(26,255,171,0.08), 0 8px 24px -8px rgba(26,255,171,0.15);
+    }
+    .wallet-row.selected::before {
+      background: var(--green); opacity: 1; width: 4px;
+      box-shadow: 0 0 10px rgba(26,255,171,0.35);
     }
     .wallet-row input[type="checkbox"] {
       accent-color: var(--green); cursor: pointer;
       flex-shrink: 0; margin-top: 3px;
-      width: 14px; height: 14px;
+      width: 15px; height: 15px;
     }
 
     .wallet-body { flex: 1; min-width: 0; }
-    .wallet-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; letter-spacing: -0.2px; }
-    .wallet-meta {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 12px; color: var(--text2);
-      margin-bottom: 4px;
+
+    /* Name + type badge row */
+    .wallet-head {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 5px; min-width: 0;
     }
+    .wallet-name {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      letter-spacing: -0.2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      min-width: 0;
+    }
+    .wallet-row.selected .wallet-name { color: var(--text); }
+    .wallet-type-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-family: var(--mono); font-size: 10px; font-weight: 700;
+      letter-spacing: .4px;
+      flex-shrink: 0;
+      border: 1px solid currentColor;
+      background: color-mix(in srgb, currentColor 10%, transparent);
+    }
+    .wallet-type-badge .dot {
+      width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+    }
+
+    .wallet-meta {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--text2);
+      margin-bottom: 6px;
+    }
+    .wallet-meta .meta-dim { color: var(--text3); }
+    .wallet-meta .meta-sep { color: var(--text4); }
+    .wallet-meta .addr-count {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+      color: var(--green);
+      padding: 1px 6px; border-radius: 99px;
+      background: rgba(26,255,171,0.08);
+      border: 1px solid rgba(26,255,171,0.18);
+    }
+
     .type-dot {
       width: 7px; height: 7px;
       border-radius: 50%; flex-shrink: 0;
@@ -375,22 +436,42 @@
     .wallet-addr {
       font-family: var(--mono);
       font-size: 11px; color: var(--text3);
+      letter-spacing: .3px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       max-width: 200px;
+      padding: 3px 7px;
+      background: rgba(255,255,255,.025);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: inline-block;
     }
-    .wallet-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+    .wallet-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
     .tag-pill {
       display: inline-flex; align-items: center;
-      padding: 2px 7px;
+      padding: 2px 8px;
       border-radius: var(--radius-pill);
-      font-size: 10px; font-weight: 500;
+      font-size: 10px; font-weight: 600;
+      letter-spacing: .1px;
     }
     .wallet-actions {
       display: flex; gap: 3px; flex-shrink: 0;
-      opacity: 0; transition: opacity 0.12s;
+      opacity: 0; transition: opacity 0.15s;
       margin-top: 1px;
     }
-    .wallet-row:hover .wallet-actions { opacity: 1; }
+    .wallet-row:hover .wallet-actions,
+    .wallet-row.selected .wallet-actions { opacity: 1; }
+
+    /* Subtle live-pulse on trade-enabled wallets */
+    @keyframes wr-trade-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(229,192,123,0.4); }
+      50%      { box-shadow: 0 0 0 4px rgba(229,192,123,0); }
+    }
+    .wallet-row .trade-live-dot {
+      position: absolute; top: 10px; right: 10px;
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--yellow);
+      animation: wr-trade-pulse 1.8s infinite;
+    }
 
     /* ── ADDRESS MODAL ── */
     .addr-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
@@ -1652,8 +1733,13 @@
       }
 
       /* Wallet row */
-      .wallet-row { padding: 10px 12px; }
+      .wallet-row { padding: 10px 12px 10px 14px; margin-bottom: 5px; }
       .wallet-name { font-size: 13px; }
+      .wallet-head { gap: 6px; }
+      .wallet-type-badge { padding: 1px 6px; font-size: 9.5px; }
+      .wallet-addr { max-width: 140px; font-size: 10px; }
+      .wallet-actions { opacity: 1; }
+      .icon-btn { width: 26px; height: 26px; }
 
       /* Confirm popup: centered with margins */
       .confirm-overlay { align-items: center; padding: 12px; }
@@ -2458,18 +2544,19 @@ function walletRow(w, idx = 0) {
   const addrCount = (w.addresses || []).length;
   const addrBtnTitle = `Addresses${addrCount ? ' (' + addrCount + ')' : ''}`;
 
-  return `<div class="wallet-row${ck?' selected':''}" id="wr-${w.id}">
+  return `<div class="wallet-row${ck?' selected':''}" id="wr-${w.id}" style="--wr-accent:${color}">
+    ${w.can_trade ? '<span class="trade-live-dot" title="Live trading enabled"></span>' : ''}
     <input type="checkbox" ${ck?'checked':''} onchange="toggleW(${w.id},this.checked)">
     <div class="wallet-body">
-      <div class="wallet-name">${esc(w.name)}</div>
-      <div class="wallet-meta">
-        <span class="type-dot" style="background:${color}"></span>
-        <span style="color:${color};font-size:11px;font-weight:600;letter-spacing:.4px">${label}</span>
-        <span style="color:var(--border)">·</span>
-        <span style="color:var(--text2)">${esc(w.type_value)}</span>
-        ${isExchange && addrCount ? `<span style="color:var(--border)">·</span><span style="color:var(--green);font-size:11px;font-weight:500">${addrCount} addr</span>` : ''}
+      <div class="wallet-head">
+        <span class="wallet-name">${esc(w.name)}</span>
+        <span class="wallet-type-badge" style="color:${color}"><span class="dot"></span>${label}</span>
       </div>
-      <div class="wallet-addr">${esc(w.display_info)}</div>
+      <div class="wallet-meta">
+        <span class="meta-dim">${esc(w.type_value)}</span>
+        ${isExchange && addrCount ? `<span class="addr-count">◈ ${addrCount}</span>` : ''}
+      </div>
+      <div class="wallet-addr" title="${esc(w.display_info)}">${esc(w.display_info)}</div>
       ${tagPills ? `<div class="wallet-tags">${tagPills}</div>` : ''}
     </div>
     <div class="wallet-actions">
