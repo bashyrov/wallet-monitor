@@ -598,7 +598,10 @@ async def _fetch_mexc() -> list[dict]:
     tickers = tick_r.json().get("data") or []
 
     # MEXC per-symbol interval fetch takes ~45s (461 requests) — never block;
-    # kick off background refresh and default to 4h (most common) until cache fills.
+    # kick off background refresh. Symbols not yet in the cache are SKIPPED
+    # rather than emitted with a guessed 4h default: a wrong interval mis-
+    # normalises APR by 2x and would leak into the screener for the ~45s
+    # between cold start and first warm cache write.
     ivl = await _get_interval_map("mexc", allow_blocking=False)
 
     out = []
@@ -609,8 +612,8 @@ async def _fetch_mexc() -> list[dict]:
         token = sym[:-5]
         rate = float(item.get("fundingRate") or 0)
         price = float(item.get("lastPrice") or item.get("fairPrice") or 0)
-        interval_h = ivl.get(sym, 4.0)
-        if price == 0 or rate == 0:
+        interval_h = ivl.get(sym)
+        if price == 0 or rate == 0 or interval_h is None:
             continue
         next_ts = int(item.get("nextSettleTime") or 0) // 1000
         out.append({
@@ -633,7 +636,8 @@ async def _fetch_bitget() -> list[dict]:
     tick_r.raise_for_status()
     tickers = tick_r.json().get("data") or []
 
-    # Same as MEXC — per-symbol interval fetch is slow; never block.
+    # Same as MEXC — per-symbol interval fetch is slow; skip symbols whose
+    # interval is not yet cached rather than emit a guessed default.
     ivl = await _get_interval_map("bitget", allow_blocking=False)
 
     out = []
@@ -644,8 +648,8 @@ async def _fetch_bitget() -> list[dict]:
         token = sym[:-4]
         rate = float(item.get("fundingRate") or 0)
         price = float(item.get("lastPr") or item.get("markPrice") or 0)
-        interval_h = ivl.get(sym, 4.0)
-        if price == 0 or rate == 0:
+        interval_h = ivl.get(sym)
+        if price == 0 or rate == 0 or interval_h is None:
             continue
         next_ts = int(item.get("nextFundingTime") or 0) // 1000
         out.append({
@@ -870,15 +874,25 @@ async def _get_rows(exchange: str) -> list[dict]:
     except Exception:
         ws_rows = None
     if ws_rows:
-        # Normalise every row to the REST-schema and stamp the exchange
-        # name so downstream code doesn't branch.
+        # Normalise every row to the REST-schema and stamp the exchange.
+        # If `interval_h` is missing the row is dropped — we must know the
+        # funding interval to compute APR correctly. Every adapter sets it
+        # explicitly for its venue (usually 8.0) so a missing value means
+        # the adapter changed and nobody updated the downstream assumption.
+        normalised: list[dict] = []
+        dropped = 0
         for r in ws_rows:
+            if r.get("interval_h") is None:
+                dropped += 1
+                continue
             r["exchange"] = exchange
-            r.setdefault("interval_h", 8.0)
             r.setdefault("volume_usd", 0)
             r.setdefault("next_ts", 0)
-        _cache[exchange] = (ws_rows, _mono())
-        return ws_rows
+            normalised.append(r)
+        if dropped:
+            logger.warning("%s WS: dropped %d rows missing interval_h", exchange, dropped)
+        _cache[exchange] = (normalised, _mono())
+        return normalised
 
     cached_rows, cached_at = _cache.get(exchange, ([], 0.0))
     if _mono() - cached_at < CACHE_TTL and cached_rows:
@@ -1076,7 +1090,8 @@ async def get_funding_data() -> dict:
     for ex, result in zip(enabled_ex, results):
         if isinstance(result, list):
             for row in result:
-                row["apr"] = round(row["rate"] * (8760 / row["interval_h"]) * 100, 4)
+                ivl = row.get("interval_h")
+                row["apr"] = round(row["rate"] * (8760 / ivl) * 100, 4) if ivl else None
             all_rows.extend(result)
 
     if hidden_sym:
@@ -1099,7 +1114,7 @@ async def get_funding_data() -> dict:
             "by_exchange": dict(_anomaly_counters),
         })
 
-    all_rows.sort(key=lambda r: abs(r["apr"]), reverse=True)
+    all_rows.sort(key=lambda r: abs(r["apr"] or 0), reverse=True)
 
     out = {
         "ts": int(time.time()),
@@ -1175,8 +1190,12 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                     continue
                 long_e = entries[i]
                 short_e = entries[j]
-                rate_l = long_e["rate"] * (8.0 / long_e["interval_h"])
-                rate_s = short_e["rate"] * (8.0 / short_e["interval_h"])
+                ivl_l = long_e.get("interval_h")
+                ivl_s = short_e.get("interval_h")
+                if not ivl_l or not ivl_s:
+                    continue
+                rate_l = long_e["rate"] * (8.0 / ivl_l)
+                rate_s = short_e["rate"] * (8.0 / ivl_s)
                 gross = rate_s - rate_l
                 # Don't short-circuit on negative gross — a large enough
                 # price spread can easily overcome unfavourable funding
@@ -1315,9 +1334,14 @@ def get_cached_rates() -> dict[str, dict]:
             sym = row["symbol"]
             if sym in hidden_sym:
                 continue
+            ivl = row.get("interval_h")
+            if ivl is None:
+                # Skip rather than expose a guessed interval — the alert
+                # service would normalise spreads incorrectly.
+                continue
             result[f"{exchange}:{sym}"] = {
                 "rate":       row.get("rate", 0.0),
-                "interval_h": row.get("interval_h", 8),
+                "interval_h": ivl,
                 "price":      row.get("price", 0.0),
             }
     return result
