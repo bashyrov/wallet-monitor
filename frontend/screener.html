@@ -1396,7 +1396,42 @@ function symbolLink(symbol, exchange) {
 // ── state ──────────────────────────────────────────────────────────────────────
 let _mode = (() => { const m = new URLSearchParams(location.search).get('mode'); return (m === 'funding' || m === 'alpha') ? m : 'arb'; })();
 let _rows = [];           // funding rows
-let _arbRows = [];        // arbitrage opportunities
+let _arbRows = [];                    // flat array for table rendering
+const _arbRowsByKey = new Map();      // key → opp, source of truth for diffs
+let _arbMeta = { fees: {}, exchanges: [] };
+const _arbKey = (o) => `${o.symbol}|${o.long_exchange}|${o.short_exchange}`;
+
+function _applyArbPayload(data) {
+  // Handles both snapshot messages and incremental diffs from /ws/arb.
+  // Server sends {type: 'snapshot', opportunities: [...]} on connect,
+  // then {type: 'diff', added?:[], updated?:[], removed?:[]} every tick.
+  // Legacy untyped payloads (full snapshot) are treated as snapshot too.
+  if (!data) return;
+  if (data.type === 'diff') {
+    if (Array.isArray(data.added)) {
+      for (const o of data.added) _arbRowsByKey.set(_arbKey(o), o);
+    }
+    if (Array.isArray(data.updated)) {
+      for (const o of data.updated) _arbRowsByKey.set(_arbKey(o), o);
+    }
+    if (Array.isArray(data.removed)) {
+      for (const k of data.removed) {
+        const key = Array.isArray(k) ? k.join('|') : k;
+        _arbRowsByKey.delete(key);
+      }
+    }
+    if (data.fees)      _arbMeta.fees = data.fees;
+    if (data.exchanges) _arbMeta.exchanges = data.exchanges;
+  } else {
+    _arbRowsByKey.clear();
+    for (const o of (data.opportunities || [])) {
+      _arbRowsByKey.set(_arbKey(o), o);
+    }
+    if (data.fees)      _arbMeta.fees = data.fees;
+    if (data.exchanges) _arbMeta.exchanges = data.exchanges;
+  }
+  _arbRows = Array.from(_arbRowsByKey.values());
+}
 let _filtered = [];
 let _filteredArb = [];
 let _exDisabled = new Set();   // exchanges to hide (empty = show all)
@@ -1756,7 +1791,7 @@ function flushPending() {
   }
   if (_pendingArb) {
     const d = _pendingArb; _pendingArb = null;
-    _arbRows = d.opportunities || [];
+    _applyArbPayload(d);
     applyArb(true);
     if (_mode === 'arb' && d.ts) {
       const ts = new Date(d.ts * 1000).toLocaleTimeString();
@@ -1840,7 +1875,7 @@ async function loadArb() {
     const res = await Auth.apiFetch('/screener/arbitrage');
     if (res.ok) {
       const data = await res.json();
-      _arbRows = data.opportunities || [];
+      _applyArbPayload(data);
       applyArb(true);
     }
   } catch (_) {}
@@ -2488,7 +2523,7 @@ setInterval(tickCountdowns, 1000);
     }
     if (arbRes.ok) {
       const data = await arbRes.json();
-      _arbRows = data.opportunities || [];
+      _applyArbPayload(data);
       if (_mode === 'arb') applyArb();
     }
   } catch (_) {}

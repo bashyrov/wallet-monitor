@@ -551,16 +551,28 @@ function connectWs(){
   _ws.onmessage = ev => {
     try {
       const data = JSON.parse(ev.data);
+      // Broadcaster may send snapshot ({opportunities:[...]}) on connect OR
+      // diff ({added,updated,removed}) on subsequent ticks. Build an index
+      // of "seen in this message" opps and reconcile the watchlist against it.
       const idx = new Map();
-      for (const o of (data.opportunities||[])) {
+      const allOpps = data.type === 'diff'
+        ? [...(data.added || []), ...(data.updated || [])]
+        : (data.opportunities || []);
+      for (const o of allOpps) {
         idx.set(_key(o.symbol, o.long_exchange, o.short_exchange), o);
       }
+
       const missing = [];
       for (const w of _wl) {
         const k = _key(w.symbol, w.long_exchange, w.short_exchange);
         const o = idx.get(k);
-        if (!o) { missing.push(w); continue; }
-        // update sparkline ring
+        if (!o) {
+          // On a diff, "not in this message" just means this pair didn't
+          // change this tick — keep the previously stored live value.
+          if (data.type === 'diff' && _live.has(k)) continue;
+          missing.push(w);
+          continue;
+        }
         const arr = _sparks.get(k) || [];
         arr.push(o.net_profit || 0);
         while (arr.length > SPARK_LEN) arr.shift();
@@ -568,8 +580,16 @@ function connectWs(){
         _live.set(k, o);
         updateCard(k, o);
       }
-      // Pairs excluded from the arb broadcast (gross≤0 or net≤0) stay live by
-      // recomputing from the funding snapshot so the user sees actual state.
+      // Also process `removed` — clear the live entry so the next redraw
+      // flips back to the funding-synthesised row.
+      if (Array.isArray(data.removed)) {
+        for (const key of data.removed) {
+          const k = Array.isArray(key) ? _key(key[0], key[1], key[2]) : key;
+          _live.delete(k);
+        }
+      }
+      // Pairs not broadcast at all (never profitable enough to reach the
+      // top-N) fall back to the funding snapshot computation.
       if (missing.length) seedFromFunding(missing);
     } catch(_){}
   };

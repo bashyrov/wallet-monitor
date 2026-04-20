@@ -2277,7 +2277,13 @@ function connectWs(){
   _ws.onmessage=ev=>{
     try{
       const data=JSON.parse(ev.data);
-      const opp=(data.opportunities||[]).find(o=>o.symbol===SYM&&o.long_exchange===LONG&&o.short_exchange===SHORT);
+      // Broadcaster sends snapshot on connect, diffs thereafter. On a diff
+      // we only need to scan added + updated — if nothing about THIS pair
+      // changed this tick we just keep our last _opp.
+      const pool = data.type === 'diff'
+        ? [...(data.added||[]), ...(data.updated||[])]
+        : (data.opportunities || []);
+      const opp = pool.find(o=>o.symbol===SYM&&o.long_exchange===LONG&&o.short_exchange===SHORT);
       if(!opp)return;
       _opp=opp; renderTopBar();
       if(_lastNextTsLong!==null&&opp.next_ts_long&&opp.next_ts_long!==_lastNextTsLong){
