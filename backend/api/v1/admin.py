@@ -239,6 +239,8 @@ class ScreenerConfigIn(BaseModel):
     screener_disabled: bool | None = None
     portfolio_disabled: bool | None = None
     trade_disabled_exchanges: list[str] | None = None
+    arb_min_volume_usd: float | None = None
+    arb_exclude_exchanges: list[str] | None = None
 
 
 def _trade_supported_set() -> set[str]:
@@ -257,6 +259,8 @@ def screener_config_get(_: User = Depends(get_admin_user)):
         "portfolio_disabled": admin_settings.is_portfolio_disabled(),
         "trade_disabled_exchanges": sorted(admin_settings.get_trade_disabled_exchanges()),
         "trade_supported_exchanges": sorted(_trade_supported_set()),
+        "arb_min_volume_usd": admin_settings.get_arb_min_volume_usd(),
+        "arb_exclude_exchanges": sorted(admin_settings.get_arb_exclude_exchanges()),
     }
 
 
@@ -288,6 +292,15 @@ def screener_config_patch(
             if str(s).strip().lower() in known
         })
         admin_settings.set_value(admin_settings.KEY_TRADE_DISABLED_EXCHANGES, cleaned, user_id=user.id)
+    if body.arb_min_volume_usd is not None:
+        v = max(0.0, float(body.arb_min_volume_usd))
+        admin_settings.set_value(admin_settings.KEY_ARB_MIN_VOLUME_USD, v, user_id=user.id)
+    if body.arb_exclude_exchanges is not None:
+        cleaned = sorted({
+            str(s).strip().lower() for s in body.arb_exclude_exchanges
+            if str(s).strip().lower() in known_ex
+        })
+        admin_settings.set_value(admin_settings.KEY_ARB_EXCLUDE_EXCHANGES, cleaned, user_id=user.id)
     return screener_config_get(user)
 
 

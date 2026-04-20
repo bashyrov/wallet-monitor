@@ -1169,25 +1169,25 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
     Only returns opportunities with net_profit > 0. In/Out percentages come from
     the live orderbook cache when available, else are None.
 
-    Performance filters (applied in order, each cuts ~30-40% of work):
-      1. Exclude blacklisted exchanges (kraken).
-      2. Pre-filter rows by 24h volume — pairs under _MIN_VOLUME_USD are
-         skipped before any cross-exchange work. 31% of opps in production
-         had min_vol < $100K at last measurement and nobody trades them.
-      3. gross ≤ 0  (funding direction doesn't give us free money)
-      4. net ≤ 0    (gross + price spread < fees)
+    Filters (applied in order):
+      1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges.
+      2. Group by symbol, then drop pairs where BOTH legs have 24h volume
+         under admin_settings.arb_min_volume_usd. A single high-volume leg
+         is enough to keep the pair — previously we dropped a symbol as
+         soon as one feed reported low/zero volume, which silently hid
+         real arb opportunities like NTRN (hyperliquid reports $0 volume
+         but the actual Hyperliquid order book is deep).
+      3. interval_h missing on either leg → skip (APR can't be normalised).
+      4. net ≤ 0 → skip.
     """
     from backend.services.orderbook_cache import top_levels
+    from backend.services import admin_settings
 
-    _MIN_VOLUME_USD = 100_000  # skip pairs below this 24h notional on EITHER leg
-    _ARB_EXCLUDE = {"kraken"}
+    min_volume = admin_settings.get_arb_min_volume_usd()
+    exclude = admin_settings.get_arb_exclude_exchanges()
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
-        if r["exchange"] in _ARB_EXCLUDE:
-            continue
-        # Early volume filter — only keep rows that could ever pair with enough
-        # liquidity on both sides. Saves the inner O(k²) loop by shrinking k.
-        if (r.get("volume_usd") or 0) < _MIN_VOLUME_USD:
+        if r["exchange"] in exclude:
             continue
         by_symbol.setdefault(r["symbol"], []).append(r)
 
@@ -1201,6 +1201,14 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                     continue
                 long_e = entries[i]
                 short_e = entries[j]
+                # Require at least one leg to clear the volume floor.
+                # Both-sides low-volume is noise; one-side-deep is a
+                # real arbitrage signal (e.g. Hyperliquid order book
+                # deep even when their 24h ticker reports $0).
+                vl = float(long_e.get("volume_usd") or 0)
+                vs = float(short_e.get("volume_usd") or 0)
+                if vl < min_volume and vs < min_volume:
+                    continue
                 ivl_l = long_e.get("interval_h")
                 ivl_s = short_e.get("interval_h")
                 if not ivl_l or not ivl_s:
