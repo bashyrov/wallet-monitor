@@ -1061,16 +1061,30 @@ async def get_funding_data() -> dict:
     from backend.services import admin_settings
     disabled_ex = admin_settings.get_disabled_exchanges()
     hidden_sym = admin_settings.get_hidden_symbols()
+    min_volume = admin_settings.get_arb_min_volume_usd()
     enabled_ex = [ex for ex in FETCHERS if ex not in disabled_ex]
+
+    def _keep(row: dict) -> bool:
+        """Row passes into the merged cache only if the venue actually
+        reports a 24h USD volume that clears the floor. Missing / zero
+        / below-threshold volume → dropped — we can't verify the pair
+        is tradeable enough to be worth showing."""
+        if hidden_sym and row["symbol"] in hidden_sym:
+            return False
+        v = row.get("volume_usd")
+        if v is None:
+            return False
+        try:
+            return float(v) >= min_volume
+        except (TypeError, ValueError):
+            return False
 
     # Web role has no data plane — always read from shared file written by
     # the fetcher sidecar. Avoid kicking off our own REST gather.
     if os.environ.get("AVALANT_ROLE", "").lower() == "web":
         cached = _read_file_cache("funding.json", max_age=30.0)
         if cached and cached.get("rows"):
-            rows = cached["rows"]
-            if hidden_sym:
-                rows = [r for r in rows if r["symbol"] not in hidden_sym]
+            rows = [r for r in cached["rows"] if _keep(r)]
             return {"ts": cached.get("ts", int(time.time())), "exchanges": enabled_ex, "rows": rows}
         # No file yet / stale — fall through; first request after startup only.
 
@@ -1087,8 +1101,7 @@ async def get_funding_data() -> dict:
         for ex in enabled_ex:
             cached_rows, _ts = _cache.get(ex, ([], 0.0))
             all_rows.extend(cached_rows)
-        if hidden_sym:
-            all_rows = [r for r in all_rows if r["symbol"] not in hidden_sym]
+        all_rows = [r for r in all_rows if _keep(r)]
         if all_rows:
             return {"ts": int(time.time()), "exchanges": enabled_ex, "rows": all_rows}
 
@@ -1105,8 +1118,7 @@ async def get_funding_data() -> dict:
                 row["apr"] = round(row["rate"] * (8760 / ivl) * 100, 4) if ivl else None
             all_rows.extend(result)
 
-    if hidden_sym:
-        all_rows = [r for r in all_rows if r["symbol"] not in hidden_sym]
+    all_rows = [r for r in all_rows if _keep(r)]
 
     from collections import defaultdict
     sym_exch: dict[str, set] = defaultdict(set)
@@ -1171,19 +1183,14 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
 
     Filters (applied in order):
       1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges.
-      2. Group by symbol, then drop pairs where BOTH legs have 24h volume
-         under admin_settings.arb_min_volume_usd. A single high-volume leg
-         is enough to keep the pair — previously we dropped a symbol as
-         soon as one feed reported low/zero volume, which silently hid
-         real arb opportunities like NTRN (hyperliquid reports $0 volume
-         but the actual Hyperliquid order book is deep).
+      2. Volume filter was already applied at the data layer by
+         get_funding_data — both legs here already clear min_volume_usd.
       3. interval_h missing on either leg → skip (APR can't be normalised).
       4. net ≤ 0 → skip.
     """
     from backend.services.orderbook_cache import top_levels
     from backend.services import admin_settings
 
-    min_volume = admin_settings.get_arb_min_volume_usd()
     exclude = admin_settings.get_arb_exclude_exchanges()
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
@@ -1201,14 +1208,8 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                     continue
                 long_e = entries[i]
                 short_e = entries[j]
-                # Require at least one leg to clear the volume floor.
-                # Both-sides low-volume is noise; one-side-deep is a
-                # real arbitrage signal (e.g. Hyperliquid order book
-                # deep even when their 24h ticker reports $0).
-                vl = float(long_e.get("volume_usd") or 0)
-                vs = float(short_e.get("volume_usd") or 0)
-                if vl < min_volume and vs < min_volume:
-                    continue
+                # Volume filter was applied at the data layer (get_funding_data);
+                # any row reaching here already cleared min_volume on BOTH sides.
                 ivl_l = long_e.get("interval_h")
                 ivl_s = short_e.get("interval_h")
                 if not ivl_l or not ivl_s:
