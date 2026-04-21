@@ -441,12 +441,17 @@ class KuCoinWS(WSAdapter):
     ping_interval = 18.0
     subscribe_delay = 0.4  # KuCoin rate-limits subscribes to ~3/sec per connection
     max_symbols = 50        # >~100 topics per connection triggers ~90s server disconnect loop
+    # Hot-spare second session: two independent WS connections, same symbol
+    # set. When one drops, the other keeps streaming and arb compute never
+    # sees a stale KuCoin orderbook. Each session has its own reconnect
+    # backoff and connectId so they can't be disconnected by the same event.
+    hot_spare: bool = True
 
-    # Token cache — bullet-public tokens live >=24h per KuCoin docs. Refetching on
-    # every reconnect turned out to trip rate-limits on their REST gateway
-    # (ConnectTimeout loops). Cache it for 1h and only refresh on hard failure.
+    # Token cache — bullet-public tokens live >=24h per KuCoin docs. Reusing
+    # the cached token on reconnect keeps outage windows <2 s; only the TCP
+    # + WS handshake + subscribe is on the critical path.
     _cached_token: tuple[str, str, float, float] | None = None   # (endpoint, token, ping_s, fetched_at)
-    _TOKEN_TTL = 3600.0
+    _TOKEN_TTL = 21600.0   # 6 h
 
     async def _get_token(self, force: bool = False) -> tuple[str, str, float]:
         """Return (endpoint, token, ping_interval_s). Cached for _TOKEN_TTL."""
@@ -454,7 +459,7 @@ class KuCoinWS(WSAdapter):
         cached = KuCoinWS._cached_token
         if not force and cached and _t.time() - cached[3] < KuCoinWS._TOKEN_TTL:
             return cached[0], cached[1], cached[2]
-        async with httpx.AsyncClient(timeout=15) as c:
+        async with httpx.AsyncClient(timeout=10) as c:
             r = await c.post("https://api-futures.kucoin.com/api/v1/bullet-public")
             r.raise_for_status()
             d = r.json().get("data") or {}
@@ -516,11 +521,13 @@ class KuCoinWS(WSAdapter):
         bids, asks = _to_book(data.get("bids"), data.get("asks"))
         return token_sym, bids, asks
 
-    async def _run(self) -> None:
-        # Override to fetch token before each connection (cached)
+    async def _session(self, slot: str) -> None:
+        """One WS session lifecycle. Runs forever, reconnects fast.
+        `slot` is just a label ("A" or "B") for logs so we can tell
+        primary vs hot-spare apart."""
         import websockets
         import json as _json
-        backoff = 1.0
+        backoff = 0.3
         force_refresh_token = False
         while not self._stop:
             hb_task = None
@@ -528,39 +535,42 @@ class KuCoinWS(WSAdapter):
                 try:
                     endpoint, token, ping_s = await self._get_token(force=force_refresh_token)
                 except Exception as exc:
-                    # Bullet-public failed — don't spin; back off slowly and keep old token if we have one
-                    logger.warning("kucoin bullet-public failed: %s: %s", type(exc).__name__, exc)
+                    logger.warning("kucoin[%s] bullet-public failed: %s: %s",
+                                   slot, type(exc).__name__, exc)
                     force_refresh_token = False
                     await asyncio.sleep(backoff)
-                    backoff = min(backoff * 1.6, 60.0)
+                    backoff = min(backoff * 1.8, 8.0)
                     continue
                 force_refresh_token = False
                 if not endpoint or not token:
                     raise RuntimeError("kucoin bullet-public returned empty token")
                 url = f"{endpoint}?token={token}&connectId={uuid.uuid4()}"
-                # KuCoin does NOT respond to RFC-6455 control-frame pings —
-                # only the app-level {"type":"ping"} JSON heartbeat. Disable
-                # the websockets client's protocol ping so it doesn't fire a
-                # ping_timeout and close the connection.
                 async with websockets.connect(
                     url, ping_interval=None, ping_timeout=None,
-                    open_timeout=30, close_timeout=3, max_size=4 * 1024 * 1024,
+                    open_timeout=12, close_timeout=3, max_size=4 * 1024 * 1024,
                 ) as ws:
-                    self._ws = ws
-                    backoff = 1.0
-                    self._subscribed.clear()
-                    # Prime heartbeat BEFORE subscribe so KuCoin registers
-                    # activity on the socket from the first second.
+                    # Slot "A" owns the shared `_ws` pointer (used for manual
+                    # closes from stop()). Slot "B" is the hot-spare.
+                    if slot == "A":
+                        self._ws = ws
+                    backoff = 0.3
+                    if slot == "A":
+                        self._subscribed.clear()
                     try:
                         await ws.send(self.heartbeat_frame())
                     except Exception:
                         pass
                     if self._symbols:
-                        await self._send_subscribe()
-                    # Heartbeat every ping_s/2 — conservative vs server's expected
-                    # pingInterval (18s) so we never overshoot.
+                        # Each session subscribes independently.
+                        frames = self.build_subscribe(list(self._symbols))
+                        for f in frames:
+                            try:
+                                await ws.send(_json.dumps(f))
+                            except Exception:
+                                break
+                            await asyncio.sleep(self.subscribe_delay)
                     hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 2.0))
-                    logger.info("kucoin WS connected (%d symbols)", len(self._symbols))
+                    logger.info("kucoin[%s] WS connected (%d symbols)", slot, len(self._symbols))
                     async for raw in ws:
                         if self._stop:
                             break
@@ -576,23 +586,42 @@ class KuCoinWS(WSAdapter):
                         if parsed:
                             sym, b, a = parsed
                             if b or a:
+                                # Idempotent: latest-write-wins in the shared
+                                # cache, so both sessions can push without
+                                # needing deduplication.
                                 self._update_cb(self.name, sym, b, a)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-                logger.warning("kucoin WS error: %s (retry in %.1fs)", detail, backoff)
-                # If error suggests the connection token is stale/invalid, force fresh token next cycle
+                logger.warning("kucoin[%s] WS error: %s (retry in %.1fs)", slot, detail, backoff)
                 msg = (str(exc) or "").lower()
                 if "401" in msg or "403" in msg or "invalid" in msg or "expired" in msg or "token" in msg:
                     force_refresh_token = True
-                self._ws = None
+                if slot == "A":
+                    self._ws = None
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 1.8, 30.0)
+                backoff = min(backoff * 1.8, 8.0)
             finally:
                 if hb_task and not hb_task.done():
                     hb_task.cancel()
-        self._ws = None
+        if slot == "A":
+            self._ws = None
+
+    async def _run(self) -> None:
+        """Run primary session. If hot_spare is enabled, also start a second
+        session in parallel staggered by 5s so they don't drop together."""
+        if self.hot_spare:
+            async def _spare():
+                await asyncio.sleep(5.0)
+                await self._session("B")
+            spare_task = asyncio.create_task(_spare(), name="kucoin_ws_spare")
+            try:
+                await self._session("A")
+            finally:
+                spare_task.cancel()
+        else:
+            await self._session("A")
 
 
 ADAPTERS: dict[str, type[WSAdapter]] = {
