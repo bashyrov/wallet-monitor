@@ -1477,7 +1477,14 @@ def get_exchange_health() -> dict[str, dict]:
         }
         if ws_supported:
             h = ws_info.get(ex) or {}
-            entry["ws_connected"] = bool(h.get("connected"))
+            # On web role ws_info is empty (manager runs in fetcher);
+            # fall back to "do we have fresh WS rows?" which is the same
+            # signal the frontend actually cares about.
+            entry["ws_connected"] = (
+                bool(h.get("connected"))
+                if h
+                else (ws_age is not None and ws_age < 15.0 and ws_row_count > 0)
+            )
         result[ex] = entry
     return result
 
