@@ -625,10 +625,28 @@ async def _refresh_loop() -> None:
             rows = _drop_price_outliers(rows)
             if rows:
                 result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
-                _arb_result_cache["data"] = result
-                _arb_result_cache["ts"] = time.time()
-                _write_file_cache("arbitrage.json", _slim_arb_for_file(result))
-                score_opportunities(result.get("opportunities", []))
+                # Anti-flicker: transient WS / orderbook hiccups can cause the
+                # compute to drop to a fraction of its usual pair count for
+                # 1-2 ticks. Publishing those would make the UI blink "No data
+                # yet" before recovering. If the new result has <50% of the
+                # previous opp count AND the previous result is still fresh
+                # (<5s), keep the previous result for this tick.
+                new_count = len(result.get("opportunities", []))
+                prev = _arb_result_cache.get("data")
+                prev_count = len(prev.get("opportunities", [])) if prev else 0
+                prev_age = time.time() - (_arb_result_cache.get("ts") or 0)
+                if (prev_count > 0
+                        and new_count < prev_count * 0.5
+                        and prev_age < 5.0):
+                    logger.info(
+                        "arb anti-flicker: skipped write (prev=%d new=%d age=%.1fs)",
+                        prev_count, new_count, prev_age,
+                    )
+                else:
+                    _arb_result_cache["data"] = result
+                    _arb_result_cache["ts"] = time.time()
+                    _write_file_cache("arbitrage.json", _slim_arb_for_file(result))
+                    score_opportunities(result.get("opportunities", []))
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)
         elapsed = asyncio.get_event_loop().time() - started
