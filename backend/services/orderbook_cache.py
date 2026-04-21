@@ -388,12 +388,19 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
 
 
 def top_levels(exchange: str, symbol: str) -> tuple[float, float] | None:
-    """Sync accessor (best_bid, best_ask). Checks local memory then file cache."""
+    """Sync accessor (best_bid, best_ask). Checks local memory then file
+    cache. Rejects entries older than FILE_FRESH_MAX — a stale orderbook
+    leaking into arb compute produced 14%-off prices (e.g. KuCoin RAVE at
+    $1.39 vs live $1.59) because the WS connection to that pair had
+    dropped but the last snapshot lingered in _book_cache."""
     key = f"{exchange.lower()}:{symbol.upper()}"
     data: dict | None = None
+    now = time.time()
     entry = _book_cache.get(key)
     if entry:
-        data = entry.get("data")
+        ts = entry.get("ts", 0)
+        if now - ts <= FILE_FRESH_MAX:
+            data = entry.get("data")
     if not data:
         data = _file_lookup(key)
     if not data:
