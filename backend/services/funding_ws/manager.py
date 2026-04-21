@@ -54,19 +54,18 @@ class FundingWSManager:
         a = self._adapters.get(exchange)
         if not a:
             return None
-        if not a.health().get("healthy"):
-            return None
-        # Only return rows where the critical fields are populated — some
-        # venues (KuCoin's funding.rate subject, BingX markPrice) don't
-        # fire on every tick, so a "healthy" adapter might still be
-        # missing funding rate on fresh symbols. In that case the caller
-        # falls back to REST rather than serving a broken row.
+        # Filter to usable rows only (price set, rate non-None).
         complete = [
             r for r in a.rows()
             if r.get("price") and r.get("rate") is not None
         ]
-        if len(complete) < max(5, len(a.rows()) // 4):
-            # Adapter running but not producing enough usable data
+        # Don't gate by aggregate `healthy` flag — it depends on
+        # `_last_update_ts` which some adapters (notably Hyperliquid
+        # whose WS only emits per-subscription and whose REST backstop
+        # writes might not trigger the aggregate timestamp reliably)
+        # leave stale even though individual rows are fresh. Per-row
+        # staleness is already enforced by `a.rows()` via row_stale_after_s.
+        if not complete:
             return None
         return complete
 
