@@ -516,21 +516,13 @@ class KuCoinWS(WSAdapter):
                     logger.info("kucoin WS connected (pro, subscribing %d symbols, ping=%.0fs)",
                                 len(self._symbols), ping_s)
                     backoff = 0.3
-                    # Subscribe BEFORE starting heartbeat — with 30 symbols *
-                    # 0.3s = 9s, we finish well under the 18s server ping
-                    # timeout. Concurrent heartbeat vs subscribe sends on the
-                    # same ws object hung on an internal lock before.
+                    # Use the base class's _send_subscribe which acquires
+                    # self._sub_lock — needed because prewarm's set_symbols()
+                    # spawns a parallel _send_subscribe on symbol changes,
+                    # and two unsynchronised sends on the same ws deadlock.
                     if self._symbols:
-                        frames = self.build_subscribe(list(self._symbols))
-                        logger.info("kucoin will send %d subscribe frames", len(frames))
-                        for idx, f in enumerate(frames):
-                            try:
-                                await ws.send(_json.dumps(f))
-                            except Exception as exc:
-                                logger.warning("kucoin subscribe[%d] failed: %s", idx, exc)
-                                break
-                            await asyncio.sleep(self.subscribe_delay)
-                        logger.info("kucoin finished sending %d subscribes", len(frames))
+                        await self._send_subscribe()
+                        logger.info("kucoin subscribe done (%d symbols)", len(self._symbols))
                     hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 3.0))
                     _dbg = 0
                     logger.info("kucoin entering async-for loop")
