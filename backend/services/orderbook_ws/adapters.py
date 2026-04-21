@@ -529,6 +529,7 @@ class KuCoinWS(WSAdapter):
         import json as _json
         backoff = 0.3
         force_refresh_token = False
+        fail_count = 0
         while not self._stop:
             hb_task = None
             try:
@@ -547,7 +548,7 @@ class KuCoinWS(WSAdapter):
                 url = f"{endpoint}?token={token}&connectId={uuid.uuid4()}"
                 async with websockets.connect(
                     url, ping_interval=None, ping_timeout=None,
-                    open_timeout=12, close_timeout=3, max_size=4 * 1024 * 1024,
+                    open_timeout=30, close_timeout=3, max_size=4 * 1024 * 1024,
                 ) as ws:
                     # Slot "A" owns the shared `_ws` pointer (used for manual
                     # closes from stop()). Slot "B" is the hot-spare.
@@ -571,6 +572,7 @@ class KuCoinWS(WSAdapter):
                             await asyncio.sleep(self.subscribe_delay)
                     hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 2.0))
                     logger.info("kucoin[%s] WS connected (%d symbols)", slot, len(self._symbols))
+                    fail_count = 0
                     async for raw in ws:
                         if self._stop:
                             break
@@ -593,14 +595,23 @@ class KuCoinWS(WSAdapter):
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                import random as _r
                 detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-                logger.warning("kucoin[%s] WS error: %s (retry in %.1fs)", slot, detail, backoff)
+                fail_count += 1
+                logger.warning("kucoin[%s] WS error (#%d): %s (retry in %.1fs)",
+                               slot, fail_count, detail, backoff)
                 msg = (str(exc) or "").lower()
-                if "401" in msg or "403" in msg or "invalid" in msg or "expired" in msg or "token" in msg:
+                # Force fresh token on auth/token errors, OR after 3 handshake
+                # timeouts in a row — the token may have been invalidated by
+                # a server-side throttle without telling us.
+                if ("401" in msg or "403" in msg or "invalid" in msg or
+                    "expired" in msg or "token" in msg or fail_count >= 3):
                     force_refresh_token = True
+                    fail_count = 0
                 if slot == "A":
                     self._ws = None
-                await asyncio.sleep(backoff)
+                # Jitter ±30% so concurrent slots don't retry in lockstep.
+                await asyncio.sleep(backoff * _r.uniform(0.7, 1.3))
                 backoff = min(backoff * 1.8, 8.0)
             finally:
                 if hb_task and not hb_task.done():
@@ -610,10 +621,11 @@ class KuCoinWS(WSAdapter):
 
     async def _run(self) -> None:
         """Run primary session. If hot_spare is enabled, also start a second
-        session in parallel staggered by 5s so they don't drop together."""
+        session in parallel staggered by 15s so they don't hit KuCoin's
+        rate-limit in the same window and can't be disconnected together."""
         if self.hot_spare:
             async def _spare():
-                await asyncio.sleep(5.0)
+                await asyncio.sleep(15.0)
                 await self._session("B")
             spare_task = asyncio.create_task(_spare(), name="kucoin_ws_spare")
             try:
