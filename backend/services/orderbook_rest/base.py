@@ -196,9 +196,12 @@ class OrderbookRestBackstop:
             ]
             for w in workers:
                 w.start()
-            deadline = time.time() + self.interval_s * 3.0
+            # Wait indefinitely for workers to finish. Earlier we hard-capped at
+            # interval_s * 3, which meant slow upstreams (MEXC / Gate under load)
+            # left workers orphaned and leaked threads across ticks. Cadence slips
+            # to fetch latency rather than interval_s — acceptable for a backstop.
             for w in workers:
-                w.join(max(0.05, deadline - time.time()))
+                w.join()
 
             self._last_ok = n_ok
             self._last_fail = n_fail
