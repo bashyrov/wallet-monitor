@@ -30,11 +30,16 @@ logger = logging.getLogger("avalant.orderbook.rest")
 
 # Shared sync client — dedicated pool so orderbook REST doesn't compete with
 # the async `_arb_http` in orderbook_cache.py or the funding REST pool.
+# Pool sized generously because 11 adapters × concurrency=8 = 88 possible
+# in-flight requests at steady state, with spikes up to 2× that during a
+# tick boundary when all adapters submit new batches in the same ~10ms
+# window. Previous 120/40 limit caused PoolTimeoutError storms on startup
+# and after every tick, with zero successful fetches reported.
 _rest_http = httpx.Client(
-    timeout=httpx.Timeout(connect=3.0, read=4.0, write=3.0, pool=1.0),
+    timeout=httpx.Timeout(connect=3.0, read=4.0, write=3.0, pool=8.0),
     headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
     follow_redirects=True,
-    limits=httpx.Limits(max_connections=120, max_keepalive_connections=40, keepalive_expiry=30),
+    limits=httpx.Limits(max_connections=400, max_keepalive_connections=150, keepalive_expiry=30),
     http2=False,
 )
 
@@ -130,12 +135,15 @@ class OrderbookRestBackstop:
         entry["ts"] = now
         entry["source"] = "rest_backstop"
 
-    def _fetch_one(self, symbol: str) -> bool:
+    def _fetch_one(self, symbol: str) -> bool | Exception:
+        """Returns True on success, False on empty response, Exception on raise.
+        The loop uses this tri-state to log a sample error during all-fail
+        bursts — previously we swallowed everything and reported just 'all
+        ticks failed' with no root cause hint."""
         try:
             data = self.fetch_sync(symbol)
         except Exception as exc:
-            logger.debug("%s REST fetch %s failed: %s", self.name, symbol, exc)
-            return False
+            return exc
         if not data:
             return False
         if not (data.get("bids") or data.get("asks")):
@@ -163,28 +171,35 @@ class OrderbookRestBackstop:
             futures = [pool.submit(self._fetch_one, s) for s in symbols]
             n_ok = 0
             n_fail = 0
+            seen_exc: Exception | None = None
+            counted: set[int] = set()
+
+            def _take(fut):
+                nonlocal n_ok, n_fail, seen_exc
+                if id(fut) in counted:
+                    return
+                counted.add(id(fut))
+                try:
+                    res = fut.result(timeout=0)
+                except Exception as exc:
+                    seen_exc = seen_exc or exc
+                    n_fail += 1
+                    return
+                if res is True:
+                    n_ok += 1
+                elif isinstance(res, Exception):
+                    seen_exc = seen_exc or res
+                    n_fail += 1
+                else:
+                    n_fail += 1
+
             try:
                 for fut in _cf.as_completed(futures, timeout=self.interval_s * 2.5):
-                    try:
-                        if fut.result(timeout=0):
-                            n_ok += 1
-                        else:
-                            n_fail += 1
-                    except Exception:
-                        n_fail += 1
+                    _take(fut)
             except _cf.TimeoutError:
-                # One or more futures ran past the per-tick budget. Leave them
-                # in flight — ThreadPoolExecutor will reclaim threads as they
-                # finish. Next tick starts anyway to keep cadence predictable.
                 for fut in futures:
                     if fut.done():
-                        try:
-                            if fut.result(timeout=0):
-                                n_ok += 1
-                            else:
-                                n_fail += 1
-                        except Exception:
-                            n_fail += 1
+                        _take(fut)
 
             self._last_ok = n_ok
             self._last_fail = n_fail
@@ -196,10 +211,20 @@ class OrderbookRestBackstop:
                 self._fail_streak += 1
 
             # Throttle error-log spam but keep visibility on ongoing outages.
-            if self._fail_streak in (1, 5, 20, 60):
+            if self._fail_streak in (1, 5, 20, 60, 200):
+                exc_repr = (
+                    f"{type(seen_exc).__name__}: {seen_exc}"
+                    if seen_exc else "no exception captured"
+                )
                 logger.warning(
-                    "%s REST backstop: %d consecutive all-fail ticks",
-                    self.name, self._fail_streak,
+                    "%s REST backstop: %d consecutive all-fail ticks (%d futures; sample: %s)",
+                    self.name, self._fail_streak, len(futures), exc_repr,
+                )
+            elif n_ok > 0 and (self._last_ok + self._last_fail) % 200 == 0:
+                # Periodic heartbeat so operators know it's working.
+                logger.info(
+                    "%s REST backstop: ok=%d fail=%d dur=%.2fs (symbols=%d)",
+                    self.name, n_ok, n_fail, self._last_tick_dur, len(symbols),
                 )
 
             slack = self.interval_s - self._last_tick_dur
