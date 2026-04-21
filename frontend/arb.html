@@ -1665,6 +1665,43 @@ function renderTopBar(){
 }
 setInterval(()=>{if(!_opp)return;setT('fund-long-cd',fmtCD(_opp.next_ts_long));setT('fund-short-cd',fmtCD(_opp.next_ts_short));},1000);
 
+// Per-leg fallback: populate a side's infobar fields (Fund / Ivl / Next / Vol)
+// from /screener/all-exchanges-funding. Runs in parallel with /pair at init
+// so that even if /pair returns {opp:null} (pair has no arb right now), each
+// leg still shows its funding data individually instead of dashes.
+function _applyLegFallback(side, row){
+  if (!row) return;
+  const r = row;
+  const ivl = r.interval_h || 8;
+  const native = (Number(r.rate) || 0) * 100;  // rate is a decimal fraction
+  const cls = native > 0 ? 'pos' : native < 0 ? 'neg' : 'neu';
+  // Only fill a field if the main renderTopBar hasn't already set a real value.
+  // Check text content first — if _opp won the race, don't overwrite.
+  const fundEl = document.getElementById(`fund-${side}-rate`);
+  if (fundEl && (fundEl.textContent === '—' || fundEl.textContent.trim() === '')) {
+    setH(`fund-${side}-rate`, `<span class="${cls}" title="Per ${ivl}h tick (native)">${sign(native)}${native.toFixed(4)}%</span>`);
+  }
+  const ivlEl = document.getElementById(`fund-${side}-ivl`);
+  if (ivlEl && (ivlEl.textContent === '—' || ivlEl.textContent.trim() === '')) {
+    setT(`fund-${side}-ivl`, `/ ${ivl}h /`);
+  }
+  const nextEl = document.getElementById(`fund-${side}-cd`);
+  if (nextEl && (nextEl.textContent === '—' || nextEl.textContent.trim() === '')) {
+    setT(`fund-${side}-cd`, r.next_ts ? fmtCD(r.next_ts) : '—');
+  }
+  const volEl = document.getElementById(`vol-${side}-val`);
+  if (volEl && (volEl.textContent === '—' || volEl.textContent.trim() === '')) {
+    setT(`vol-${side}-val`, (r.volume_usd ? fmtV(r.volume_usd) : '—') + ' USDT');
+  }
+  // Seed trade-panel LAST from funding mark so it's non-empty before books land.
+  if (side === 'long'  && _trade && _trade.long)  { _trade.long.last  = _trade.long.last  || Number(r.price) || 0; }
+  if (side === 'short' && _trade && _trade.short) { _trade.short.last = _trade.short.last || Number(r.price) || 0; }
+  const tLast = document.getElementById(`trade-last-${side}`);
+  if (tLast && (tLast.textContent === '—' || tLast.textContent.trim() === '') && Number(r.price)) {
+    tLast.textContent = '$' + Number(r.price).toFixed(4);
+  }
+}
+
 // ── P&L ──────────────────────────────────────────────────────────────────────
 function renderOverview(){
   const r=_opp; if(!r) return;
@@ -2044,6 +2081,15 @@ function renderBook(d,side){
   }
   _midPrev[side]=midPrice;
   setT(`book-${side}-price`,fmtBookP(midPrice));
+  // Live LAST on the trade panel — mirrors the orderbook mid each tick
+  // (fetchBook runs every 150ms). Without this the trade panel stayed at
+  // the initial _opp.long_price / short_price snapshot and was often '—'
+  // when the pair wasn't in the arb result cache.
+  if (typeof _trade !== 'undefined' && _trade && _trade[side] && midPrice > 0) {
+    _trade[side].last = midPrice;
+    const tLast = document.getElementById(`trade-last-${side}`);
+    if (tLast) tLast.textContent = '$' + Number(midPrice).toFixed(midPrice < 1 ? 6 : 4);
+  }
   // Live spread uses raw top-of-book (not grouped), so it reacts to every tick
   const rawBestBid=rawBids[0]?.[0]||0;
   const rawBestAsk=rawAsks[0]?.[0]||0;
@@ -2168,12 +2214,19 @@ function _eeBucket(ts){
 
 function _eeBuildCandles(){
   const bucket=EE_BUCKET[_eeTfSec]||60;
-  // Line-series data: one point per TF bucket, value = last sample in bucket.
+  // OHLC candles: one candle per TF bucket. Tracks open (first sample in the
+  // bucket), high (max), low (min), close (last). Same shape TradingView
+  // Lightweight Charts candlestick series expects.
   const bIn=new Map(), bOut=new Map();
   for(const p of _eeHist){
     const t=Math.floor(p.ts/bucket)*bucket;
-    bIn.set(t,{time:t, value:p.inPct});
-    bOut.set(t,{time:t, value:p.outPct});
+    const inVal=p.inPct, outVal=p.outPct;
+    let ci=bIn.get(t);
+    if(!ci){ci={time:t,open:inVal,high:inVal,low:inVal,close:inVal};bIn.set(t,ci);}
+    else { if(inVal>ci.high) ci.high=inVal; if(inVal<ci.low) ci.low=inVal; ci.close=inVal; }
+    let co=bOut.get(t);
+    if(!co){co={time:t,open:outVal,high:outVal,low:outVal,close:outVal};bOut.set(t,co);}
+    else { if(outVal>co.high) co.high=outVal; if(outVal<co.low) co.low=outVal; co.close=outVal; }
   }
   const inArr=[...bIn.values()].sort((a,b)=>a.time-b.time);
   const outArr=[...bOut.values()].sort((a,b)=>a.time-b.time);
@@ -2209,8 +2262,16 @@ function _eeApplyTheme(){
     timeScale:{borderColor:c.border},
     crosshair:{vertLine:{color:c.cross},horzLine:{color:c.cross}},
   });
-  _eeInSeries.applyOptions({color:c.inUp});
-  _eeOutSeries.applyOptions({color:c.outUp});
+  _eeInSeries.applyOptions({
+    upColor:c.inUp, downColor:c.inDown,
+    borderUpColor:c.inUp, borderDownColor:c.inDown,
+    wickUpColor:c.inUp, wickDownColor:c.inDown,
+  });
+  _eeOutSeries.applyOptions({
+    upColor:c.outUp, downColor:c.outDown,
+    borderUpColor:c.outUp, borderDownColor:c.outDown,
+    wickUpColor:c.outUp, wickDownColor:c.outDown,
+  });
 }
 function _eeInit(){
   const el=document.getElementById('ee-chart');
@@ -2220,22 +2281,34 @@ function _eeInit(){
   _eeChart=LightweightCharts.createChart(el,{
     layout:{background:{type:'solid',color:c.bg},textColor:c.text,fontFamily:'JetBrains Mono, monospace',fontSize:10},
     grid:{vertLines:{color:c.grid},horzLines:{color:c.grid}},
-    rightPriceScale:{borderColor:c.border,scaleMargins:{top:0.1,bottom:0.1}},
+    rightPriceScale:{borderColor:c.border,scaleMargins:{top:0.1,bottom:0.1},visible:true},
+    leftPriceScale:{borderColor:c.border,scaleMargins:{top:0.1,bottom:0.1},visible:true},
     timeScale:{borderColor:c.border,timeVisible:true,secondsVisible:true,rightOffset:4,barSpacing:6},
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:c.cross,style:2,width:1},horzLine:{color:c.cross,style:2,width:1}},
     localization:{priceFormatter:v=>(v>=0?'+':'')+v.toFixed(4)+'%'},
   });
-  // Line series — two overlapping candlestick sets on the same price axis
-  // made the In series invisible whenever its values tracked Out closely.
-  _eeInSeries=_eeChart.addLineSeries({
-    color:c.inUp, lineWidth:2, priceLineVisible:false,
-    priceFormat:{type:'price',precision:4,minMove:0.0001}, title:'In',
+  // Candlestick series — In on the RIGHT axis, Out on the LEFT axis.
+  // Using two separate price scales prevents the earlier issue where the
+  // In series went invisible whenever its values tracked Out closely (they
+  // were literally the same pixel column). Each gets its own autoscale.
+  _eeInSeries=_eeChart.addCandlestickSeries({
+    upColor:c.inUp, downColor:c.inDown,
+    borderUpColor:c.inUp, borderDownColor:c.inDown,
+    wickUpColor:c.inUp, wickDownColor:c.inDown,
+    priceLineVisible:false,
+    priceFormat:{type:'price',precision:4,minMove:0.0001},
+    title:'In', priceScaleId:'right',
   });
-  _eeOutSeries=_eeChart.addLineSeries({
-    color:c.outUp, lineWidth:2, priceLineVisible:false,
-    priceFormat:{type:'price',precision:4,minMove:0.0001}, title:'Out',
+  _eeOutSeries=_eeChart.addCandlestickSeries({
+    upColor:c.outUp, downColor:c.outDown,
+    borderUpColor:c.outUp, borderDownColor:c.outDown,
+    wickUpColor:c.outUp, wickDownColor:c.outDown,
+    priceLineVisible:false,
+    priceFormat:{type:'price',precision:4,minMove:0.0001},
+    title:'Out', priceScaleId:'left',
   });
-  _eeChart.priceScale('right').applyOptions({autoScale:true});
+  _eeChart.priceScale('right').applyOptions({autoScale:true, borderColor:c.border, scaleMargins:{top:0.08,bottom:0.08}});
+  _eeChart.priceScale('left' ).applyOptions({autoScale:true, borderColor:c.border, scaleMargins:{top:0.08,bottom:0.08}, visible:true});
   const ro=new ResizeObserver(()=>{if(_eeChart) _eeChart.applyOptions({width:el.clientWidth,height:el.clientHeight});});
   ro.observe(el);
   _eeChart.applyOptions({width:el.clientWidth,height:el.clientHeight});
@@ -2829,6 +2902,12 @@ async function init(){
   // lightweight /pair endpoint fetches only 2 exchanges (not all 12).
   connectWs();
   startBooks();
+
+  // Fire /pair AND /all-exchanges-funding concurrently. /pair gives a full
+  // synthesized opp (preferred). /all-exchanges-funding covers the case
+  // where the pair has no arb (e.g. rates too close, or filtered by the
+  // zero-rate guard) — we still want to show each leg's funding/ivl/vol
+  // independently instead of dashes.
   (async () => {
     try {
       const r = await Auth.apiFetch(`/screener/pair?symbol=${SYM}&long_ex=${LONG}&short_ex=${SHORT}`);
@@ -2839,6 +2918,20 @@ async function init(){
         if (typeof _ssSave === 'function') _ssSave(d.opp);
         renderTopBar();
       }
+    } catch {}
+  })();
+  (async () => {
+    // Populate per-leg infobar fields even when /pair has nothing. Don't
+    // touch _opp so that if /pair wins the race, its synthesized spread /
+    // net metrics take precedence.
+    try {
+      const r = await Auth.apiFetch(`/screener/all-exchanges-funding?symbol=${SYM}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      const byEx = {};
+      for (const row of (d.rates || [])) byEx[row.exchange] = row;
+      _applyLegFallback('long',  byEx[LONG]);
+      _applyLegFallback('short', byEx[SHORT]);
     } catch {}
   })();
   // Alerts count in topbar — lightweight, non-critical
