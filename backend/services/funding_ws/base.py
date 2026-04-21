@@ -52,14 +52,13 @@ class FundingWSAdapter:
     # adapter "stale" (arbitrage_service will fall back to REST).
     stale_after_s: float = 30.0
 
-    # How long a PER-SYMBOL row is considered fresh. Some adapters subscribe
-    # to a capped list of top-N symbols (BingX caps at 500 of ~650). Symbols
-    # that aren't in the subscribed window never get ticker updates — the
-    # adapter stays "healthy" because the other 500 tick fine, but these
-    # stuck rows drift further and further from reality and generate fake
-    # arb opportunities. `rows()` drops rows older than this so the caller
-    # (arbitrage_service._get_rows) falls back to REST for them.
-    row_stale_after_s: float = 45.0
+    # Per-symbol freshness cap. Every adapter either gets updates via WS or
+    # via the REST backstop (interval 2-2.5 s). If a symbol hasn't seen
+    # EITHER source in this window, it's probably been delisted / dropped
+    # from the venue's active set — evict it so callers don't serve phantom
+    # prices. Keep the cap slightly > max(rest_refresh_interval_s) + one
+    # failed call's worth of slack.
+    row_stale_after_s: float = 8.0
 
     # REST back-stop: guarantees <=rest_refresh_interval_s freshness even when
     # WS only pushes on price-change. 0 disables the loop.
