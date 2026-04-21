@@ -94,8 +94,11 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
                 creds = decrypt_credentials(w.credentials or {})
                 bal = await ADAPTERS[ex].fetch_balance(creds)
                 balance = round(float(bal.get("usdt", 0) or 0), 2)
+                logger.info("balance %s wallet=%s usdt=%.2f raw=%s",
+                            ex, w.id, balance, bal)
             except Exception as exc:
-                logger.info("Balance fetch failed for %s wallet %s: %s", ex, w.id, exc)
+                logger.warning("Balance fetch FAILED for %s wallet=%s uid=%s: %s: %s",
+                               ex, w.id, user_id, type(exc).__name__, exc)
                 status = "disabled"
 
         # Even when there's no screener-eligible key, try to show the balance
@@ -110,9 +113,11 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
                     creds = decrypt_credentials(any_w.credentials or {})
                     bal = await ADAPTERS[ex].fetch_balance(creds)
                     balance = round(float(bal.get("usdt", 0) or 0), 2)
+                    logger.info("balance %s (portfolio-fallback) wallet=%s usdt=%.2f",
+                                ex, any_w.id, balance)
                 except Exception as exc:
-                    logger.info("Portfolio-fallback balance fetch failed for %s wallet %s: %s",
-                                ex, any_w.id, exc)
+                    logger.warning("Portfolio-fallback balance fetch FAILED for %s wallet=%s uid=%s: %s: %s",
+                                   ex, any_w.id, user_id, type(exc).__name__, exc)
 
         out[leg] = {
             "wallet_id": w.id if w else None,

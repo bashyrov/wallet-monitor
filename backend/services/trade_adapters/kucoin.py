@@ -142,8 +142,19 @@ class KuCoinAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
+        """KuCoin Futures: availableBalance is the free portion. If user has
+        open positions, fall back to accountEquity (total) so the UI reflects
+        actual funds on the account, not just free margin."""
         data = await cls._signed(creds, "GET", "/api/v1/account-overview", {"currency": "USDT"})
-        return {"usdt": float((data or {}).get("availableBalance") or 0)}
+        d = data or {}
+        avail = float(d.get("availableBalance") or 0)
+        if avail > 0:
+            return {"usdt": avail}
+        # Fall back to accountEquity (= marginBalance = wallet balance + uPnL).
+        # Not perfect for "what can I open now" but prevents the UI showing
+        # $0 when user has funds tied up in an open position.
+        equity = float(d.get("accountEquity") or d.get("marginBalance") or 0)
+        return {"usdt": max(avail, equity), "available": avail, "equity": equity}
 
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:

@@ -147,10 +147,22 @@ class BinanceAdapter:
     # ── Balance ──
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
+        """Return available Futures USDT. If a user holds funds in cross-wallet
+        but has positions open, `availableBalance` can be low or zero — fall
+        back to `crossWalletBalance` (total margin wallet) so the UI shows the
+        real money, not just the free portion."""
         data = await cls._signed(creds, "GET", "/fapi/v2/balance")
         for x in data:
             if x.get("asset") == "USDT":
-                return {"usdt": float(x.get("availableBalance", 0) or 0)}
+                avail = float(x.get("availableBalance", 0) or 0)
+                if avail > 0:
+                    return {"usdt": avail, "total": float(x.get("balance", 0) or 0)}
+                # availableBalance=0 → try crossWalletBalance / balance. Means
+                # user has funds but they're currently used as margin.
+                total = float(x.get("balance", 0) or 0)
+                cross = float(x.get("crossWalletBalance", 0) or 0)
+                return {"usdt": max(avail, cross, total), "total": total,
+                        "available": avail}
         return {"usdt": 0.0}
 
     # ── Position mode ──
