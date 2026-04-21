@@ -1,923 +1,1801 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Avalant — funding arbitrage, built for serious traders</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avalant — funding arbitrage, built for serious traders</title>
 
-  <meta name="description" content="A minimalist funding-rate screener and arbitrage platform. 10+ exchanges, sub-second live data, trade directly from one interface.">
-  <meta property="og:title" content="Avalant — funding arbitrage for serious traders">
-  <meta property="og:description" content="Funding-rate screener, spread alerts, one-click arb. 10+ exchanges under one keyboard.">
-  <meta property="og:image" content="/og-image.jpg">
-  <meta name="twitter:card" content="summary_large_image">
+<meta name="description" content="Cross-exchange funding-rate screener and arbitrage workbench. 13 venues, sub-second live data, one-click trade from a single interface.">
+<meta property="og:title" content="Avalant — funding arbitrage for serious traders">
+<meta property="og:description" content="Funding screener, spread alerts, pair detection, one-click arb. 13 exchanges under one keyboard.">
+<meta property="og:image" content="/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
 
-  <link rel="icon" type="image/png" sizes="48x48" href="/avalant_favicon-48.png">
-  <link rel="icon" type="image/png" sizes="96x96" href="/avalant_favicon-96.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="/avalant_favicon-192.png">
-  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
-  <link rel="apple-touch-icon" href="/avalant_favicon-192.png">
+<link rel="icon" type="image/png" sizes="48x48" href="/avalant_favicon-48.png">
+<link rel="icon" type="image/png" sizes="96x96" href="/avalant_favicon-96.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/avalant_favicon-192.png">
+<link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+<link rel="apple-touch-icon" href="/avalant_favicon-192.png">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Fraunces for display serif (editorial), Inter for UI, JetBrains Mono for data -->
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
 <style>
-  :root {
-    --bg:        #0E0E11;
-    --bg-warm:   #14120E;           /* subtle warm variant for section alternation */
-    --surface:  #17161B;
-    --surface2: #1D1C22;
-    --border:   #2A2933;
-    --text:     #EDEAE3;
-    --text2:    #A6A69F;
-    --text3:    #6F6F6B;
-    --green:    #1AFFAB;
-    --green-soft: rgba(26,255,171,0.12);
-    --green-edge: rgba(26,255,171,0.35);
-    --cream:    #F3EFE4;            /* light section background */
-    --cream-text: #1A1915;
-    --cream-text2: #595750;
-    --radius:   6px;
-  }
+:root {
+  --bg:        #0A0A0D;
+  --bg-soft:   #0F0F13;
+  --surface:   #131318;
+  --surface2:  #17171D;
+  --surface3:  #1E1E25;
+  --border:    #222229;
+  --border2:   #2E2E38;
+  --text:      #ECECEC;
+  --text2:     #A0A0AD;
+  --text3:     #676B7E;
+  --text4:     #4B4E5B;
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: var(--bg); color: var(--text); }
-  body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 16px; line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-    overflow-x: hidden;
-  }
-  ::selection { background: var(--green); color: #0a0a0f; }
+  --green:     #1AFFAB;
+  --green-d:   #12CC88;
+  --green-soft:rgba(26,255,171,0.10);
+  --green-edge:rgba(26,255,171,0.28);
+  --green-glow:rgba(26,255,171,0.45);
 
-  .serif {
-    font-family: 'Fraunces', 'Instrument Serif', Georgia, serif;
-    font-optical-sizing: auto;
-    letter-spacing: -0.02em;
-  }
-  .mono { font-family: 'JetBrains Mono', monospace; }
+  --red:       #F87171;
+  --red-soft:  rgba(248,113,113,0.10);
+  --yellow:    #E5C07B;
+  --blue:      #7CB9F7;
+  --purple:    #A78BFA;
 
-  a { color: inherit; text-decoration: none; }
-  button, input { font: inherit; color: inherit; background: none; border: 0; }
+  --max-w:     1560px;
+  --section-y: clamp(80px, 11vw, 168px);
+  --gutter:    clamp(20px, 3.5vw, 56px);
 
-  .container { max-width: 1200px; margin: 0 auto; padding: 0 28px; }
-  .container-sm { max-width: 820px; margin: 0 auto; padding: 0 28px; }
+  --r-sm: 6px;
+  --r:    10px;
+  --r-lg: 16px;
+  --r-xl: 24px;
 
-  /* ═══ NAV ═════════════════════════════════════════════════════════════ */
-  .nav {
-    position: sticky; top: 0; z-index: 50;
-    background: rgba(14,14,17,0.85); backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border);
-  }
-  .nav-inner {
-    display: flex; align-items: center; justify-content: space-between;
-    max-width: 1200px; margin: 0 auto; padding: 14px 28px;
-  }
-  .nav-brand {
-    font-family: Inter, sans-serif; font-weight: 800; font-size: 18px;
-    letter-spacing: -0.02em;
-  }
-  .nav-brand .cursor {
-    display: inline-block; color: var(--green);
-    animation: blink 1.1s steps(2) infinite;
-  }
-  @keyframes blink { 50% { opacity: 0.1; } }
-  .nav-links { display: flex; gap: 32px; align-items: center; }
-  .nav-links a {
-    font-size: 13px; color: var(--text2); font-weight: 500;
-    transition: color 0.15s ease;
-  }
-  .nav-links a:hover { color: var(--text); }
-  .nav-cta {
-    padding: 8px 16px; background: var(--green); color: #0a0a0f;
-    border-radius: var(--radius); font-weight: 600; font-size: 13px;
-    transition: transform 0.08s ease, filter 0.15s ease;
-  }
-  .nav-cta:hover { filter: brightness(1.1); }
-  .nav-cta:active { transform: scale(0.98); }
+  --fs-h1:  clamp(44px, 7.2vw, 112px);
+  --fs-h2:  clamp(32px, 4.6vw, 64px);
+  --fs-h3:  clamp(22px, 2.4vw, 34px);
+  --fs-lede:clamp(17px, 1.5vw, 22px);
 
-  /* ═══ HERO ════════════════════════════════════════════════════════════ */
-  .hero {
-    padding: 120px 0 100px;
-    position: relative;
-    overflow: hidden;
-  }
-  .hero-ornament {
-    position: absolute; inset: 0; pointer-events: none;
-    background:
-      radial-gradient(circle at 20% 30%, rgba(26,255,171,0.06) 0%, transparent 45%),
-      radial-gradient(circle at 85% 70%, rgba(26,255,171,0.04) 0%, transparent 40%);
-  }
-  .hero-eyebrow {
-    display: inline-flex; align-items: center; gap: 10px;
-    margin-bottom: 40px;
-    padding: 6px 14px; border: 1px solid var(--green-edge);
-    background: var(--green-soft); border-radius: 99px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
-    color: var(--green); text-transform: uppercase;
-  }
-  .hero-eyebrow .dot {
-    width: 6px; height: 6px; background: var(--green); border-radius: 50%;
-    box-shadow: 0 0 8px var(--green);
-    animation: pulse 1.8s ease-in-out infinite;
-  }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  --ease:   cubic-bezier(.2,.7,.2,1);
+}
 
-  h1.hero-title {
-    font-size: clamp(44px, 7vw, 96px);
-    font-weight: 400;
-    line-height: 0.98;
-    letter-spacing: -0.035em;
-    margin-bottom: 32px;
-    max-width: 16ch;
-  }
-  h1.hero-title em {
-    font-style: italic; color: var(--green);
-    font-weight: 400;
-  }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 16px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+img, svg { display: block; max-width: 100%; }
+.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.serif { font-family: 'Fraunces', Georgia, serif; font-feature-settings: "ss01" on; letter-spacing: -0.01em; }
+.row { display: flex; }
+.hide-d { display: none; }
+@media (max-width: 900px) { .hide-d { display: block; } .hide-m { display: none !important; } }
 
-  .hero-sub {
-    font-size: 19px; line-height: 1.55; color: var(--text2);
-    max-width: 58ch; margin-bottom: 48px;
-  }
+/* ─── LAYOUT ─── */
+.wrap { max-width: var(--max-w); margin: 0 auto; padding: 0 var(--gutter); }
+.section { padding: var(--section-y) 0; position: relative; }
 
-  .hero-cta-row {
-    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
-    margin-bottom: 72px;
-  }
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 14px 22px; border-radius: var(--radius);
-    font-weight: 600; font-size: 14px;
-    transition: transform 0.08s ease, filter 0.15s ease, background 0.2s ease;
-    cursor: pointer;
-  }
-  .btn-primary { background: var(--green); color: #0a0a0f; }
-  .btn-primary:hover { filter: brightness(1.08); }
-  .btn-primary:active { transform: scale(0.985); }
-  .btn-ghost {
-    background: transparent; color: var(--text);
-    border: 1px solid var(--border);
-  }
-  .btn-ghost:hover { border-color: var(--text3); background: var(--surface); }
+/* ─── NAVBAR ─── */
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10,10,13,0.78);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid transparent;
+  transition: border-color .2s ease, background .2s ease;
+}
+.nav.scrolled { border-bottom-color: var(--border); background: rgba(10,10,13,0.92); }
+.nav-inner {
+  height: 64px;
+  display: flex; align-items: center;
+  gap: 32px; padding: 0 var(--gutter);
+  max-width: var(--max-w); margin: 0 auto;
+}
+.brand {
+  font-weight: 800; font-size: 18px; letter-spacing: -0.01em;
+  display: inline-flex; align-items: baseline;
+}
+.brand .cursor { color: var(--green); animation: blink 1s steps(2) infinite; margin-left: 1px; }
+@keyframes blink { 50% { opacity: 0; } }
 
-  /* ─── Floating live terminal window ─── */
-  .hero-terminal {
-    position: relative;
-    margin-top: 24px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: linear-gradient(180deg, rgba(23,22,27,0.9), rgba(14,14,17,0.9));
-    box-shadow: 0 40px 90px rgba(0,0,0,0.4), 0 2px 10px rgba(26,255,171,0.05);
-    overflow: hidden;
-  }
-  .term-header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 11px 18px; border-bottom: 1px solid var(--border);
-    background: rgba(0,0,0,0.2);
-  }
-  .term-dots { display: flex; gap: 6px; }
-  .term-dots span {
-    width: 11px; height: 11px; border-radius: 50%;
-    background: #35343B;
-  }
-  .term-dots span:nth-child(1) { background: #FF6B6B; }
-  .term-dots span:nth-child(2) { background: #FFD93D; }
-  .term-dots span:nth-child(3) { background: #6BCB77; }
-  .term-path {
-    font-family: 'JetBrains Mono', monospace; font-size: 11px;
-    color: var(--text3); margin-left: 16px;
-  }
-  .term-tabs {
-    display: flex; gap: 0;
-    border-bottom: 1px solid var(--border);
-    background: rgba(0,0,0,0.15);
-    padding: 0 12px;
-    overflow-x: auto; scrollbar-width: none;
-  }
-  .term-tabs::-webkit-scrollbar { display: none; }
-  .term-tab {
-    padding: 10px 14px; font-size: 11px; font-weight: 500; letter-spacing: 0.04em;
-    color: var(--text3); text-transform: uppercase;
-    border-bottom: 2px solid transparent;
-    white-space: nowrap;
-  }
-  .term-tab.active { color: var(--green); border-bottom-color: var(--green); }
-  .term-body {
-    padding: 20px 24px;
-    font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7;
-  }
-  .term-row {
-    display: grid;
-    grid-template-columns: 80px 1fr 90px 90px 90px 80px;
-    gap: 14px; align-items: center;
-    padding: 6px 0;
-    border-bottom: 1px dashed rgba(42,41,51,0.4);
-    transition: background 0.2s ease;
-  }
-  .term-row:hover { background: rgba(26,255,171,0.03); }
-  .term-row:last-child { border-bottom: 0; }
-  .term-row-header {
-    color: var(--text3); font-size: 10px; letter-spacing: 0.08em;
-    text-transform: uppercase; font-weight: 600;
-    padding-bottom: 10px; border-bottom: 1px solid var(--border);
-    margin-bottom: 6px;
-  }
-  .term-sym { color: var(--text); font-weight: 600; letter-spacing: -0.01em; }
-  .term-ex { color: var(--text2); font-size: 11px; }
-  .term-ex .arrow { color: var(--green); margin: 0 6px; }
-  .term-num { text-align: right; font-variant-numeric: tabular-nums; }
-  .term-num.pos { color: var(--green); }
-  .term-num.neg { color: #F87171; }
-  .term-num.neutral { color: var(--text2); }
-  .term-pill {
-    display: inline-block; padding: 2px 8px; border-radius: 99px;
-    font-size: 10px; font-weight: 600;
-    background: var(--green-soft); color: var(--green);
-    border: 1px solid var(--green-edge);
-    text-align: center;
-  }
+.nav-menu { display: flex; gap: 28px; align-items: center; }
+.nav-menu a {
+  color: var(--text2); font-size: 14px; font-weight: 500;
+  transition: color .15s ease; position: relative;
+}
+.nav-menu a:hover { color: var(--text); }
+.nav-cta { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 600; font-family: inherit;
+  padding: 10px 18px; border-radius: 999px;
+  transition: transform .15s var(--ease), background .15s ease, border-color .15s ease, box-shadow .2s ease;
+  white-space: nowrap;
+}
+.btn-ghost { color: var(--text2); }
+.btn-ghost:hover { color: var(--text); background: var(--surface2); }
+.btn-outline { border: 1px solid var(--border2); color: var(--text); }
+.btn-outline:hover { border-color: var(--text3); background: var(--surface2); }
+.btn-primary {
+  background: var(--green); color: #071612; font-weight: 700;
+  box-shadow: 0 4px 16px -2px rgba(26,255,171,0.25);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px -2px rgba(26,255,171,0.45); }
+.btn-lg { padding: 14px 24px; font-size: 15px; }
+.nav-burger { display: none; margin-left: auto; width: 40px; height: 40px; border-radius: 10px; align-items: center; justify-content: center; color: var(--text); }
+.nav-burger:hover { background: var(--surface2); }
 
-  @media (max-width: 768px) {
-    .term-row { grid-template-columns: 70px 1fr 80px 80px; gap: 10px; }
-    .term-row :nth-child(5), .term-row :nth-child(6) { display: none; }
-    .term-body { padding: 16px; font-size: 11px; }
-  }
+@media (max-width: 900px) {
+  .nav-menu, .nav-cta { display: none; }
+  .nav-burger { display: inline-flex; }
+}
 
-  /* ═══ SECTION ══════════════════════════════════════════════════════════ */
-  section { padding: 100px 0; position: relative; }
-  section.alt { background: var(--bg-warm); }
-  section.light {
-    background: var(--cream);
-    color: var(--cream-text);
-  }
-  section.light .section-eyebrow { color: var(--cream-text2); border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); }
-  section.light h2 { color: var(--cream-text); }
-  section.light p, section.light .feature-body { color: var(--cream-text2); }
-  section.light .feature-card { background: rgba(255,255,255,0.5); border-color: rgba(0,0,0,0.08); }
-  section.light .stat-num { color: var(--cream-text); }
+/* Mobile drawer */
+.drawer { position: fixed; inset: 0; background: rgba(10,10,13,0.96); backdrop-filter: blur(20px); z-index: 200; display: none; flex-direction: column; padding: 24px var(--gutter); }
+.drawer.open { display: flex; }
+.drawer-top { display: flex; align-items: center; justify-content: space-between; height: 40px; }
+.drawer-menu { display: flex; flex-direction: column; gap: 4px; margin-top: 48px; }
+.drawer-menu a {
+  padding: 18px 0; border-bottom: 1px solid var(--border);
+  font-family: 'Fraunces', serif; font-size: 32px; font-weight: 400; letter-spacing: -0.02em;
+  color: var(--text); display: flex; justify-content: space-between; align-items: center;
+}
+.drawer-menu a span { color: var(--text3); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.drawer-cta { display: flex; gap: 10px; margin-top: auto; padding-top: 24px; }
+.drawer-cta .btn { flex: 1; justify-content: center; }
 
-  .section-eyebrow {
-    display: inline-block; margin-bottom: 22px;
-    padding: 4px 12px; border: 1px solid var(--border); background: var(--surface);
-    border-radius: 99px; font-size: 10.5px; font-weight: 600;
-    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text2);
-  }
-  h2 {
-    font-size: clamp(34px, 5vw, 58px);
-    font-weight: 400;
-    letter-spacing: -0.03em; line-height: 1.05;
-    margin-bottom: 24px;
-    max-width: 22ch;
-  }
-  h2 em { font-style: italic; color: var(--green); font-weight: 400; }
-  .section-lede {
-    font-size: 18px; line-height: 1.6; color: var(--text2);
-    max-width: 62ch; margin-bottom: 60px;
-  }
+/* ─── ANNOUNCEMENT BAR ─── */
+.announce {
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 0; font-size: 13px; color: var(--text2);
+  text-align: center;
+}
+.announce .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 8px; vertical-align: middle; box-shadow: 0 0 10px var(--green-glow); animation: pulse 2s infinite; }
+.announce a { color: var(--green); font-weight: 500; margin-left: 8px; border-bottom: 1px dashed var(--green-edge); }
+.announce a:hover { color: var(--green); border-bottom-color: var(--green); }
+@keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .5; } }
 
-  /* ═══ NUMBERS (live stats) ═════════════════════════════════════════════ */
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 2px;
-    border: 1px solid var(--border);
-    background: var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .stat {
-    padding: 40px 30px; background: var(--bg);
-    display: flex; flex-direction: column; gap: 6px;
-  }
-  .stat-num {
-    font-family: 'Fraunces', serif;
-    font-size: clamp(38px, 4.5vw, 56px);
-    font-weight: 400; letter-spacing: -0.025em;
-    line-height: 1; color: var(--text);
-  }
-  .stat-num .suffix { color: var(--green); }
-  .stat-label { font-size: 13px; color: var(--text3); letter-spacing: 0.02em; }
-  @media (max-width: 900px) {
-    .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  }
+/* ─── HERO ─── */
+.hero {
+  position: relative; overflow: hidden;
+  padding: clamp(48px, 6vw, 88px) 0 clamp(64px, 7vw, 120px);
+  border-bottom: 1px solid var(--border);
+}
+.hero-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 30% 10%, rgba(26,255,171,0.18), transparent 55%),
+    radial-gradient(ellipse at 80% 50%, rgba(124,185,247,0.08), transparent 60%);
+  pointer-events: none; opacity: 0.9;
+}
+.hero-grid-bg {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at 50% 30%, black 20%, transparent 70%);
+  pointer-events: none;
+}
+.hero-inner { position: relative; z-index: 2; }
+.hero-kicker {
+  display: inline-flex; gap: 8px; align-items: center;
+  padding: 6px 14px 6px 8px; border-radius: 999px;
+  border: 1px solid var(--border2); background: var(--surface);
+  font-size: 12px; color: var(--text2); margin-bottom: 28px;
+}
+.hero-kicker .badge { padding: 3px 8px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-weight: 600; font-size: 11px; letter-spacing: .02em; }
+.hero h1 {
+  font-family: 'Fraunces', serif; font-weight: 400;
+  font-size: var(--fs-h1); line-height: 0.98;
+  letter-spacing: -0.035em;
+  max-width: 20ch;
+}
+.hero h1 .accent {
+  font-style: italic; font-weight: 300;
+  background: linear-gradient(100deg, var(--green) 0%, #7BE0C9 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+.hero-lede {
+  margin-top: 28px; max-width: 56ch;
+  font-size: var(--fs-lede); color: var(--text2); line-height: 1.5;
+}
+.hero-actions { margin-top: 36px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.hero-actions .sub { color: var(--text3); font-size: 13px; margin-left: 6px; }
+.hero-actions .sub .mono { color: var(--text2); }
 
-  /* ═══ FEATURE CARDS ════════════════════════════════════════════════════ */
-  .feature-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .feature-card {
-    background: var(--bg);
-    padding: 48px 40px;
-    display: flex; flex-direction: column; gap: 16px;
-    transition: background 0.25s ease;
-  }
-  .feature-card:hover { background: var(--surface); }
-  .feature-icon {
-    width: 44px; height: 44px;
-    display: inline-flex; align-items: center; justify-content: center;
-    border-radius: var(--radius); border: 1px solid var(--green-edge);
-    background: var(--green-soft); color: var(--green);
-  }
-  .feature-title {
-    font-family: 'Fraunces', serif;
-    font-size: 28px; font-weight: 400;
-    letter-spacing: -0.02em; line-height: 1.15;
-  }
-  .feature-body {
-    font-size: 14.5px; line-height: 1.65; color: var(--text2);
-    max-width: 44ch;
-  }
-  .feature-meta {
-    font-family: 'JetBrains Mono', monospace; font-size: 11px;
-    color: var(--text3); letter-spacing: 0.04em; margin-top: auto;
-    padding-top: 22px;
-  }
-  @media (max-width: 768px) {
-    .feature-grid { grid-template-columns: 1fr; }
-    .feature-card { padding: 34px 28px; }
-  }
+/* Dashboard mockup */
+.hero-mock-wrap {
+  margin-top: clamp(56px, 6vw, 96px);
+  position: relative;
+}
+.hero-mock-wrap::before {
+  content: ''; position: absolute; inset: 20% -10% auto -10%; height: 60%;
+  background: radial-gradient(ellipse, rgba(26,255,171,0.12), transparent 70%);
+  filter: blur(60px); pointer-events: none;
+}
+.mock {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.02) inset;
+}
+.mock-chrome {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.mock-dots { display: flex; gap: 6px; }
+.mock-dots span { width: 10px; height: 10px; border-radius: 50%; background: var(--surface3); }
+.mock-url {
+  margin: 0 auto; padding: 5px 14px;
+  background: var(--surface2); border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: var(--text3); display: flex; align-items: center; gap: 8px;
+}
+.mock-url::before { content: ''; width: 10px; height: 10px; border-radius: 2px; background: var(--green); opacity: 0.7; }
 
-  /* ═══ HOW IT WORKS — EDITORIAL STEPS ═══════════════════════════════════ */
-  .steps { display: flex; flex-direction: column; gap: 60px; }
-  .step {
-    display: grid;
-    grid-template-columns: 120px 1fr;
-    gap: 40px;
-    padding-bottom: 60px;
-    border-bottom: 1px solid var(--border);
-  }
-  .step:last-child { border-bottom: 0; padding-bottom: 0; }
-  .step-num {
-    font-family: 'Fraunces', serif;
-    font-size: 72px; font-weight: 300;
-    color: var(--green); line-height: 0.9;
-    letter-spacing: -0.04em;
-  }
-  .step-title {
-    font-family: 'Fraunces', serif;
-    font-size: 32px; font-weight: 400; letter-spacing: -0.02em;
-    margin-bottom: 14px; line-height: 1.15;
-  }
-  .step-body { font-size: 15px; color: var(--text2); max-width: 60ch; line-height: 1.65; }
-  @media (max-width: 768px) {
-    .step { grid-template-columns: 1fr; gap: 12px; }
-    .step-num { font-size: 52px; }
-  }
+/* Hero dashboard specific */
+.dash {
+  display: grid; grid-template-columns: 220px 1fr 300px;
+  min-height: 580px;
+}
+@media (max-width: 1100px) { .dash { grid-template-columns: 180px 1fr 260px; min-height: 500px; } }
+@media (max-width: 900px) { .dash { grid-template-columns: 1fr; min-height: auto; } .dash-side, .dash-right { display: none; } }
 
-  /* ═══ EDITORIAL QUOTE BLOCK ════════════════════════════════════════════ */
-  .editorial {
-    padding: 120px 0;
-    text-align: center;
-    background: linear-gradient(180deg, var(--bg) 0%, #0A0A0D 100%);
-  }
-  .editorial-quote {
-    font-family: 'Fraunces', serif;
-    font-size: clamp(28px, 4vw, 44px);
-    font-weight: 300; font-style: italic;
-    letter-spacing: -0.02em; line-height: 1.25;
-    max-width: 24ch; margin: 0 auto;
-  }
-  .editorial-quote em { color: var(--green); font-style: normal; }
-  .editorial-byline {
-    margin-top: 48px; font-size: 12px; color: var(--text3);
-    letter-spacing: 0.08em; text-transform: uppercase;
-  }
+.dash-side {
+  border-right: 1px solid var(--border);
+  padding: 20px 14px; background: var(--bg-soft);
+}
+.dash-side-title { font-size: 10px; font-weight: 600; color: var(--text3); letter-spacing: .12em; text-transform: uppercase; padding: 0 8px 12px; }
+.dash-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: var(--r-sm);
+  font-size: 13px; color: var(--text2); cursor: pointer;
+  transition: background .15s ease;
+}
+.dash-item:hover { background: var(--surface2); color: var(--text); }
+.dash-item.active { background: var(--surface3); color: var(--text); }
+.dash-item .ic { width: 16px; height: 16px; color: var(--text3); }
+.dash-item.active .ic { color: var(--green); }
+.dash-item .ct { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text3); padding: 2px 6px; background: var(--surface2); border-radius: 4px; }
 
-  /* ═══ CTA SECTION ══════════════════════════════════════════════════════ */
-  .cta-section {
-    padding: 140px 0;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  .cta-section::before {
-    content: ''; position: absolute; inset: 0;
-    background: radial-gradient(circle at 50% 100%, rgba(26,255,171,0.08) 0%, transparent 60%);
-    pointer-events: none;
-  }
-  .cta-headline {
-    font-family: 'Fraunces', serif;
-    font-size: clamp(40px, 6vw, 80px);
-    font-weight: 400; letter-spacing: -0.035em; line-height: 1;
-    max-width: 18ch; margin: 0 auto 28px;
-  }
-  .cta-headline em { font-style: italic; color: var(--green); }
-  .cta-sub {
-    font-size: 17px; color: var(--text2); max-width: 50ch;
-    margin: 0 auto 44px;
-  }
-  .cta-row {
-    display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
-  }
+.dash-main { padding: 18px 22px; min-width: 0; }
+.dash-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.dash-chip {
+  padding: 5px 12px; border-radius: 999px;
+  font-size: 12px; color: var(--text2); font-weight: 500;
+  border: 1px solid var(--border);
+  cursor: pointer; transition: all .15s ease;
+}
+.dash-chip:hover { border-color: var(--border2); color: var(--text); }
+.dash-chip.active { background: var(--green-soft); border-color: var(--green-edge); color: var(--green); }
+.dash-head-right { margin-left: auto; display: flex; gap: 6px; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text3); }
+.dash-head-right .live { color: var(--green); display: inline-flex; align-items: center; gap: 6px; }
+.dash-head-right .live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green-glow); animation: pulse 2s infinite; }
 
-  /* ═══ FOOTER ═══════════════════════════════════════════════════════════ */
-  footer {
-    padding: 60px 0 40px;
-    border-top: 1px solid var(--border);
-    font-size: 13px; color: var(--text3);
-  }
-  .footer-grid {
-    display: grid;
-    grid-template-columns: 1.5fr 1fr 1fr 1fr;
-    gap: 40px; margin-bottom: 48px;
-  }
-  .footer-col h5 {
-    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-    color: var(--text2); font-weight: 600; margin-bottom: 14px;
-  }
-  .footer-col a {
-    display: block; padding: 5px 0; color: var(--text3);
-    transition: color 0.15s;
-  }
-  .footer-col a:hover { color: var(--text); }
-  .footer-brand {
-    font-weight: 800; font-size: 18px; color: var(--text);
-    margin-bottom: 10px; letter-spacing: -0.02em;
-  }
-  .footer-brand .cursor { color: var(--green); }
-  .footer-blurb { max-width: 32ch; color: var(--text3); line-height: 1.55; }
-  .footer-bottom {
-    padding-top: 32px; border-top: 1px solid var(--border);
-    display: flex; justify-content: space-between; flex-wrap: wrap;
-    gap: 16px;
-  }
-  @media (max-width: 768px) {
-    .footer-grid { grid-template-columns: 1fr 1fr; gap: 28px; }
-  }
+.dash-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dash-table th {
+  text-align: left; padding: 10px 8px; font-weight: 500; font-size: 11px;
+  color: var(--text3); text-transform: uppercase; letter-spacing: .08em;
+  border-bottom: 1px solid var(--border);
+}
+.dash-table th.num { text-align: right; }
+.dash-table td {
+  padding: 13px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.dash-table td.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
+.dash-sym {
+  display: flex; align-items: center; gap: 10px;
+}
+.dash-sym-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--surface3); display: grid; place-items: center;
+  font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px;
+  color: var(--text);
+}
+.dash-sym-name { font-weight: 600; }
+.dash-pair { display: inline-flex; gap: 6px; align-items: center; }
+.dash-pair-dot { width: 6px; height: 6px; border-radius: 50%; }
+.dash-pair-dot.long { background: var(--green); }
+.dash-pair-dot.short { background: var(--red); }
+.dash-ex-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px; border-radius: 4px; font-size: 11px;
+  background: var(--surface2); color: var(--text2);
+}
+.spread-pos { color: var(--green); font-weight: 600; }
+.spread-neg { color: var(--red); font-weight: 600; }
+.dash-spark { display: inline-block; width: 60px; height: 18px; vertical-align: middle; }
+.dash-act {
+  display: inline-flex; gap: 4px;
+}
+.dash-act-btn {
+  padding: 4px 10px; font-size: 11px; font-weight: 600;
+  border-radius: var(--r-sm);
+  background: var(--green); color: #071612;
+  border: none; cursor: pointer;
+}
+.dash-act-btn:hover { background: #0EE59A; }
 
-  /* ═══ SCROLL REVEALS ═══════════════════════════════════════════════════ */
-  .reveal {
-    opacity: 0; transform: translateY(24px);
-    transition: opacity 0.7s cubic-bezier(0.22, 0.9, 0.3, 1),
-                transform 0.7s cubic-bezier(0.22, 0.9, 0.3, 1);
-  }
-  .reveal.visible { opacity: 1; transform: translateY(0); }
+/* Right panel */
+.dash-right {
+  border-left: 1px solid var(--border);
+  padding: 18px 16px;
+  display: flex; flex-direction: column; gap: 16px;
+  background: var(--bg-soft);
+}
+.dash-stat-card {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.dash-stat-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+.dash-stat-val { font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 500; letter-spacing: -0.01em; }
+.dash-stat-sub { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text3); margin-top: 4px; }
+.dash-stat-sub.pos { color: var(--green); }
+.dash-pos-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.dash-pos-item:last-child { border-bottom: none; }
+.dash-pos-title { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
 
-  /* Small detail: marquee for "live" row */
-  .marquee {
-    overflow: hidden;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-warm);
-    padding: 18px 0;
-  }
-  .marquee-inner {
-    display: flex; gap: 48px; white-space: nowrap;
-    animation: marquee 40s linear infinite;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px; color: var(--text2);
-  }
-  .marquee-item { display: inline-flex; gap: 10px; align-items: center; }
-  .marquee-item .pos { color: var(--green); }
-  .marquee-item .neg { color: #F87171; }
-  .marquee-item .lbl { color: var(--text3); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
-  @keyframes marquee {
-    from { transform: translateX(0); }
-    to   { transform: translateX(-50%); }
-  }
+/* ─── MARQUEE TICKER ─── */
+.ticker {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  overflow: hidden;
+  padding: 14px 0;
+  position: relative;
+}
+.ticker::before, .ticker::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 100px; z-index: 2;
+  pointer-events: none;
+}
+.ticker::before { left: 0; background: linear-gradient(90deg, var(--bg-soft), transparent); }
+.ticker::after { right: 0; background: linear-gradient(-90deg, var(--bg-soft), transparent); }
+.ticker-track {
+  display: flex; gap: 48px;
+  width: max-content;
+  animation: scrollTicker 60s linear infinite;
+}
+.ticker:hover .ticker-track { animation-play-state: paused; }
+.ticker-item {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--text2);
+}
+.ticker-item .sym { font-weight: 600; color: var(--text); }
+.ticker-item .rate { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+.ticker-item .up { color: var(--green); }
+.ticker-item .dn { color: var(--red); }
+@keyframes scrollTicker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+/* ─── TRUST STRIP ─── */
+.trust {
+  padding: clamp(40px, 5vw, 72px) 0;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.trust-label {
+  font-size: 11px; color: var(--text3); text-transform: uppercase;
+  letter-spacing: .18em; margin-bottom: 28px;
+}
+.trust-row {
+  display: flex; justify-content: center; align-items: center;
+  gap: clamp(24px, 4vw, 56px); flex-wrap: wrap;
+  color: var(--text2);
+}
+.trust-row .ex {
+  font-family: 'Fraunces', serif; font-weight: 500; font-size: clamp(16px, 1.5vw, 22px);
+  letter-spacing: -0.01em; opacity: 0.6; transition: opacity .2s ease, color .2s ease;
+}
+.trust-row .ex:hover { opacity: 1; color: var(--text); }
+.trust-row .ex .num { font-family: 'JetBrains Mono', monospace; color: var(--green); font-weight: 500; font-size: 12px; vertical-align: super; margin-left: 2px; }
+
+/* ─── SECTION HEADERS ─── */
+.sec-head { max-width: 900px; margin-bottom: 56px; }
+.sec-kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: var(--green); letter-spacing: .12em; text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.sec-kicker::before { content: ''; width: 12px; height: 1px; background: var(--green); }
+.sec-title {
+  font-family: 'Fraunces', serif; font-weight: 400;
+  font-size: var(--fs-h2); line-height: 1.02; letter-spacing: -0.025em;
+}
+.sec-title .it { font-style: italic; font-weight: 300; color: var(--text2); }
+.sec-lede { margin-top: 20px; color: var(--text2); font-size: var(--fs-lede); max-width: 64ch; }
+
+/* ─── PRODUCT SHOWCASES ─── */
+.showcase {
+  display: grid; grid-template-columns: 1fr 1.2fr;
+  gap: clamp(40px, 5vw, 88px); align-items: center;
+}
+@media (max-width: 960px) { .showcase { grid-template-columns: 1fr; } }
+.showcase.reverse .showcase-body { order: 2; }
+@media (max-width: 960px) { .showcase.reverse .showcase-body { order: 0; } }
+
+.showcase-body h3 {
+  font-family: 'Fraunces', serif; font-weight: 400;
+  font-size: var(--fs-h3); letter-spacing: -0.02em; line-height: 1.1;
+  margin-bottom: 20px;
+}
+.showcase-body h3 .it { font-style: italic; color: var(--text2); }
+.showcase-body p { color: var(--text2); font-size: 16px; line-height: 1.6; max-width: 48ch; }
+.showcase-feats { margin-top: 24px; display: flex; flex-direction: column; gap: 14px; }
+.showcase-feats .f {
+  display: flex; gap: 12px; align-items: flex-start;
+  color: var(--text);
+  font-size: 14px;
+}
+.showcase-feats .f .ic {
+  flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--green-soft); color: var(--green);
+  display: grid; place-items: center;
+  margin-top: 2px;
+}
+.showcase-feats .f .ic svg { width: 12px; height: 12px; }
+.showcase-feats .f b { color: var(--text); font-weight: 600; }
+.showcase-feats .f span { color: var(--text2); }
+.showcase-link {
+  margin-top: 28px; display: inline-flex; align-items: center; gap: 8px;
+  color: var(--green); font-weight: 600; font-size: 14px;
+  border-bottom: 1px solid transparent; padding-bottom: 2px;
+  transition: border-color .2s ease;
+}
+.showcase-link:hover { border-bottom-color: var(--green); }
+.showcase-link svg { transition: transform .2s ease; }
+.showcase-link:hover svg { transform: translateX(3px); }
+
+/* ─── SCREENER MOCKUP ─── */
+.scr-mock { font-size: 13px; }
+.scr-mock-body { padding: 16px 18px; }
+.scr-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+.scr-tab { padding: 7px 14px; border-radius: var(--r-sm); font-size: 12px; color: var(--text2); font-weight: 500; cursor: pointer; }
+.scr-tab.active { background: var(--surface3); color: var(--text); }
+.scr-filters { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.scr-fchip { padding: 4px 10px; border-radius: var(--r-sm); font-size: 11px; background: var(--surface2); color: var(--text2); }
+.scr-fchip.on { background: var(--green-soft); color: var(--green); border: 1px solid var(--green-edge); padding: 3px 9px; }
+
+/* ─── ARB DETAIL MOCKUP ─── */
+.arb-mock { padding: 18px; display: grid; grid-template-columns: 1fr 240px; gap: 14px; min-height: 440px; }
+@media (max-width: 640px) { .arb-mock { grid-template-columns: 1fr; } }
+.arb-chart-box { border: 1px solid var(--border); border-radius: var(--r); background: var(--bg); padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 380px; }
+.arb-chart-head { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text3); }
+.arb-chart-head .pair { font-family: 'JetBrains Mono', monospace; color: var(--text); font-weight: 500; font-size: 13px; }
+.arb-chart-head .tfs { margin-left: auto; display: flex; gap: 4px; }
+.arb-chart-head .tf { padding: 3px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text3); cursor: pointer; }
+.arb-chart-head .tf.on { background: var(--surface3); color: var(--green); }
+.arb-chart-svg { flex: 1; width: 100%; min-height: 240px; }
+.arb-book-box { border: 1px solid var(--border); border-radius: var(--r); background: var(--bg); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.arb-book-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .1em; }
+.arb-book-rows { display: flex; flex-direction: column; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6; position: relative; }
+.arb-book-rows .br { display: flex; justify-content: space-between; padding: 1px 6px; position: relative; }
+.arb-book-rows .br::before {
+  content: ''; position: absolute; top: 1px; bottom: 1px; right: 0;
+  background: rgba(248,113,113,0.08); z-index: 0;
+}
+.arb-book-rows .br.bid::before { background: rgba(26,255,171,0.08); left: 0; right: auto; }
+.arb-book-rows .br > * { position: relative; z-index: 1; }
+.arb-book-rows .br .px.ask { color: var(--red); }
+.arb-book-rows .br .px.bid { color: var(--green); }
+.arb-book-mid { padding: 6px; border: 1px dashed var(--border2); border-radius: 4px; display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text2); }
+.arb-book-mid b { color: var(--text); }
+
+/* ─── TRADE MOCKUP ─── */
+.trade-mock { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 560px) { .trade-mock { grid-template-columns: 1fr; } }
+.trade-col { border: 1px solid var(--border); border-radius: var(--r); padding: 14px; background: var(--bg); }
+.trade-col-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .08em; }
+.trade-col-hd .side-pill { padding: 3px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0; }
+.trade-col-hd .side-pill.long { background: rgba(26,255,171,0.12); color: var(--green); }
+.trade-col-hd .side-pill.short { background: rgba(248,113,113,0.12); color: var(--red); }
+.trade-field { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.trade-field:last-child { border-bottom: none; }
+.trade-field .lb { color: var(--text3); }
+.trade-field .vl { font-family: 'JetBrains Mono', monospace; color: var(--text); }
+.trade-input {
+  margin-top: 10px; display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  background: var(--surface);
+}
+.trade-input .cur { color: var(--text3); font-size: 11px; }
+.trade-input .amt { flex: 1; color: var(--text); }
+.trade-submit {
+  margin-top: 12px;
+  width: 100%; padding: 13px; border-radius: var(--r-sm);
+  background: var(--green); color: #071612;
+  font-weight: 700; font-size: 14px; text-align: center;
+  cursor: pointer;
+  font-family: inherit; border: none;
+}
+
+/* ─── PORTFOLIO MOCKUP ─── */
+.port-mock { padding: 20px; }
+.port-totals { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.port-stat { flex: 1; min-width: 140px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r); background: var(--bg); }
+.port-stat-lb { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+.port-stat-vl { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 500; letter-spacing: -0.01em; }
+.port-stat-sub { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text3); margin-top: 3px; }
+.port-stat-sub.pos { color: var(--green); }
+.port-chart-box { border: 1px solid var(--border); border-radius: var(--r); background: var(--bg); padding: 14px; }
+.port-chart-svg { width: 100%; height: 160px; }
+.port-assets { margin-top: 16px; display: flex; flex-direction: column; gap: 2px; }
+.port-asset-row { display: grid; grid-template-columns: 1fr 100px 100px 60px; gap: 12px; padding: 10px 12px; border-radius: 4px; font-size: 12px; align-items: center; }
+.port-asset-row:hover { background: var(--surface2); }
+.port-asset-row .nm { display: flex; align-items: center; gap: 8px; }
+.port-asset-row .sym-ic { width: 24px; height: 24px; border-radius: 50%; background: var(--surface3); font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; display: grid; place-items: center; }
+.port-asset-row .num { font-family: 'JetBrains Mono', monospace; text-align: right; }
+
+/* ─── COMPARE TABLE ─── */
+.compare-wrap { overflow-x: auto; margin-top: 40px; }
+.compare-table {
+  width: 100%; min-width: 880px; border-collapse: collapse;
+  font-size: 14px;
+}
+.compare-table th, .compare-table td {
+  padding: 18px 16px; text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.compare-table thead th {
+  font-weight: 500; color: var(--text3); font-size: 12px; letter-spacing: .05em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border2);
+}
+.compare-table th.col-us {
+  color: var(--green); font-weight: 700;
+  font-family: 'Inter', sans-serif; font-size: 14px; text-transform: none; letter-spacing: 0;
+}
+.compare-table .feat-name { font-weight: 500; color: var(--text); max-width: 40ch; }
+.compare-table .feat-sub { display: block; color: var(--text3); font-size: 12px; font-weight: 400; margin-top: 3px; }
+.compare-table td.us { background: rgba(26,255,171,0.03); }
+.compare-table td.us .y { color: var(--green); }
+.compare-table .y, .compare-table .n, .compare-table .p { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; }
+.compare-table .n { color: var(--text4); }
+.compare-table .p { color: var(--yellow); }
+
+/* ─── STEPS ─── */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 2vw, 28px); margin-top: 56px; }
+@media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
+.step {
+  position: relative; padding: 32px 28px 28px;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface);
+  transition: border-color .2s ease, transform .2s ease;
+}
+.step:hover { border-color: var(--border2); transform: translateY(-2px); }
+.step-num {
+  font-family: 'Fraunces', serif; font-weight: 300; font-style: italic;
+  font-size: 48px; line-height: 1; color: var(--green); margin-bottom: 20px;
+}
+.step h4 { font-size: 18px; font-weight: 600; margin-bottom: 10px; letter-spacing: -0.01em; }
+.step p { color: var(--text2); font-size: 14px; line-height: 1.55; }
+.step-hint {
+  margin-top: 16px; font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: var(--text3);
+}
+
+/* ─── QUOTE ─── */
+.quote-sec {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  padding: clamp(72px, 9vw, 128px) 0;
+}
+.quote-block {
+  max-width: 1100px; margin: 0 auto; text-align: left;
+  font-family: 'Fraunces', serif; font-style: italic; font-weight: 300;
+  font-size: clamp(24px, 3.4vw, 44px); line-height: 1.25;
+  letter-spacing: -0.015em; color: var(--text);
+}
+.quote-block .q-mark { color: var(--green); font-style: normal; }
+.quote-attr { margin-top: 28px; display: flex; align-items: center; gap: 14px; color: var(--text2); font-size: 14px; font-style: normal; font-family: 'Inter', sans-serif; font-weight: 500; }
+.quote-attr .dot { width: 24px; height: 1px; background: var(--text3); }
+
+/* ─── PRICING ─── */
+.pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 56px; }
+@media (max-width: 900px) { .pricing-grid { grid-template-columns: 1fr; } }
+.price-card {
+  padding: 32px;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); position: relative;
+  transition: border-color .2s ease, transform .2s ease;
+}
+.price-card:hover { border-color: var(--border2); }
+.price-card.featured {
+  border-color: var(--green-edge);
+  background: linear-gradient(180deg, rgba(26,255,171,0.04) 0%, var(--surface) 50%);
+  box-shadow: 0 0 0 1px var(--green-edge), 0 20px 60px -20px rgba(26,255,171,0.2);
+}
+.price-badge {
+  position: absolute; top: -12px; left: 32px;
+  padding: 4px 12px; border-radius: 999px;
+  background: var(--green); color: #071612;
+  font-size: 11px; font-weight: 700; letter-spacing: .03em;
+}
+.price-name { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 500; letter-spacing: -0.015em; margin-bottom: 4px; }
+.price-desc { color: var(--text3); font-size: 13px; margin-bottom: 24px; }
+.price-amt { display: flex; align-items: baseline; gap: 4px; margin-bottom: 28px; }
+.price-amt .cur { font-size: 20px; color: var(--text2); }
+.price-amt .big { font-family: 'JetBrains Mono', monospace; font-size: 48px; font-weight: 500; letter-spacing: -0.02em; }
+.price-amt .per { color: var(--text3); font-size: 14px; margin-left: 4px; }
+.price-feats { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+.price-feats li { list-style: none; display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text2); }
+.price-feats li::before {
+  content: '✓'; color: var(--green); font-weight: 700; font-family: 'JetBrains Mono', monospace;
+  width: 16px; text-align: center; flex-shrink: 0;
+}
+.price-feats li b { color: var(--text); font-weight: 600; }
+.price-cta { width: 100%; justify-content: center; }
+
+/* ─── SECURITY GRID ─── */
+.sec-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 48px; }
+@media (max-width: 900px) { .sec-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .sec-grid { grid-template-columns: 1fr; } }
+.sec-card {
+  padding: 26px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+  transition: border-color .2s ease;
+}
+.sec-card:hover { border-color: var(--border2); }
+.sec-card-ic {
+  width: 44px; height: 44px; border-radius: var(--r);
+  background: var(--green-soft); color: var(--green);
+  display: grid; place-items: center; margin-bottom: 20px;
+}
+.sec-card h4 { font-size: 16px; font-weight: 600; margin-bottom: 8px; letter-spacing: -0.01em; }
+.sec-card p { color: var(--text2); font-size: 14px; line-height: 1.55; }
+
+/* ─── FAQ ─── */
+.faq { max-width: 880px; margin: 56px auto 0; }
+.faq details {
+  border-bottom: 1px solid var(--border);
+  padding: 24px 0;
+}
+.faq details summary {
+  list-style: none; cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: 'Fraunces', serif; font-weight: 400;
+  font-size: clamp(18px, 2vw, 24px); letter-spacing: -0.01em;
+  color: var(--text);
+  transition: color .15s ease;
+}
+.faq details summary:hover { color: var(--green); }
+.faq details summary::-webkit-details-marker { display: none; }
+.faq details summary .plus {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface2); display: grid; place-items: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--text2);
+  transition: transform .2s ease, background .2s ease;
+  flex-shrink: 0; margin-left: 16px;
+}
+.faq details[open] summary .plus { transform: rotate(45deg); background: var(--green); color: #071612; }
+.faq details > div {
+  padding-top: 14px;
+  font-size: 15px; color: var(--text2); line-height: 1.65;
+  max-width: 68ch;
+}
+
+/* ─── CTA ─── */
+.cta-sec {
+  position: relative; padding: clamp(96px, 12vw, 168px) 0;
+  text-align: center; overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.cta-sec::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(26,255,171,0.2), transparent 60%);
+  pointer-events: none;
+}
+.cta-sec::after {
+  content: ''; position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse at 50% 50%, black 10%, transparent 70%);
+  pointer-events: none;
+}
+.cta-inner { position: relative; z-index: 2; max-width: 820px; margin: 0 auto; }
+.cta-title {
+  font-family: 'Fraunces', serif; font-weight: 300; font-size: clamp(40px, 6vw, 88px); line-height: 1;
+  letter-spacing: -0.03em;
+}
+.cta-title .it { font-style: italic; }
+.cta-title .accent { background: linear-gradient(100deg, var(--green) 0%, #7BE0C9 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.cta-lede { margin-top: 24px; color: var(--text2); font-size: var(--fs-lede); }
+.cta-actions { margin-top: 36px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+/* ─── FOOTER ─── */
+.footer {
+  background: var(--bg-soft);
+  border-top: 1px solid var(--border);
+  padding: clamp(56px, 7vw, 96px) 0 32px;
+}
+.footer-cols {
+  display: grid; grid-template-columns: 2fr repeat(4, 1fr);
+  gap: clamp(24px, 3vw, 56px);
+  margin-bottom: clamp(40px, 5vw, 72px);
+}
+@media (max-width: 900px) { .footer-cols { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .footer-cols { grid-template-columns: 1fr 1fr; } .footer-brand-col { grid-column: 1 / -1; } }
+.footer-brand-col .brand { font-size: 22px; }
+.footer-brand-col p { margin-top: 16px; color: var(--text2); font-size: 14px; max-width: 36ch; line-height: 1.55; }
+.footer-col h5 { font-size: 11px; font-weight: 600; color: var(--text3); letter-spacing: .12em; text-transform: uppercase; margin-bottom: 18px; }
+.footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.footer-col a { color: var(--text2); font-size: 14px; transition: color .15s ease; }
+.footer-col a:hover { color: var(--text); }
+.footer-bottom {
+  padding-top: 24px; border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; color: var(--text3); flex-wrap: wrap; gap: 12px;
+}
+.footer-bottom .socials { display: flex; gap: 14px; }
+.footer-bottom .socials a { color: var(--text3); }
+.footer-bottom .socials a:hover { color: var(--text); }
+
+/* ─── REVEAL ANIMATIONS ─── */
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity .8s var(--ease), transform .8s var(--ease); }
+.reveal.in { opacity: 1; transform: none; }
+.reveal-stagger > * { opacity: 0; transform: translateY(16px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
+.reveal-stagger.in > *:nth-child(1) { transition-delay: 0s; }
+.reveal-stagger.in > *:nth-child(2) { transition-delay: 0.08s; }
+.reveal-stagger.in > *:nth-child(3) { transition-delay: 0.16s; }
+.reveal-stagger.in > *:nth-child(4) { transition-delay: 0.24s; }
+.reveal-stagger.in > *:nth-child(5) { transition-delay: 0.32s; }
+.reveal-stagger.in > *:nth-child(6) { transition-delay: 0.40s; }
+.reveal-stagger.in > * { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  .reveal, .reveal-stagger > * { opacity: 1; transform: none; }
+}
 </style>
 </head>
 <body>
 
-  <!-- ═══ NAV ═══ -->
-  <nav class="nav">
-    <div class="nav-inner">
-      <a href="/" class="nav-brand">avalant<span class="cursor">_</span></a>
-      <div class="nav-links">
-        <a href="#what">What it is</a>
-        <a href="#how">How it works</a>
-        <a href="/pricing">Pricing</a>
-        <a href="/login" style="color:var(--text)">Sign in</a>
-        <a href="/register" class="nav-cta">Get started</a>
-      </div>
+<!-- ─── ANNOUNCEMENT ─── -->
+<div class="announce">
+  <span class="dot"></span>
+  <span>Avalant is live across 13 exchanges — sub-second funding-rate data.</span>
+  <a href="/screener">See live screener →</a>
+</div>
+
+<!-- ─── NAVBAR ─── -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="/" class="brand">avalant<span class="cursor">_</span></a>
+    <div class="nav-menu">
+      <a href="#product">Product</a>
+      <a href="#why">Why Avalant</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
     </div>
-  </nav>
-
-  <!-- ═══ HERO ═══ -->
-  <header class="hero">
-    <div class="hero-ornament"></div>
-    <div class="container">
-      <div class="hero-eyebrow">
-        <span class="dot"></span>
-        Live funding data from 10+ exchanges
-      </div>
-
-      <h1 class="serif hero-title">
-        Funding arbitrage,<br>
-        <em>designed for how you already think.</em>
-      </h1>
-
-      <p class="hero-sub">
-        One keyboard. Ten exchanges. Sub-second orderbooks, every funding
-        cycle normalised to 8-hour APR, and one-click arbitrage legs that
-        close as cleanly as they open. Built by traders who got tired of
-        flipping between six tabs.
-      </p>
-
-      <div class="hero-cta-row">
-        <a href="/register" class="btn btn-primary">
-          Start screening
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M4 8h8M8 4l4 4-4 4"/>
-          </svg>
-        </a>
-        <a href="#what" class="btn btn-ghost">See what's inside</a>
-      </div>
-
-      <!-- Live terminal preview -->
-      <div class="hero-terminal reveal">
-        <div class="term-header">
-          <div class="term-dots"><span></span><span></span><span></span></div>
-          <div class="term-path mono">/screener — arbitrage opportunities</div>
-        </div>
-        <div class="term-tabs">
-          <div class="term-tab active">Arbitrage</div>
-          <div class="term-tab">Funding</div>
-          <div class="term-tab">Watchlist</div>
-          <div class="term-tab">Paper</div>
-        </div>
-        <div class="term-body">
-          <div class="term-row term-row-header">
-            <span>Symbol</span><span>Pair</span>
-            <span class="term-num">Gross</span>
-            <span class="term-num">Spread</span>
-            <span class="term-num">Net APR</span>
-            <span class="term-num">Vol</span>
-          </div>
-          <div class="term-row">
-            <span class="term-sym">BTC</span>
-            <span class="term-ex">Binance <span class="arrow">→</span> KuCoin</span>
-            <span class="term-num pos">+0.0412%</span>
-            <span class="term-num pos">+0.0198%</span>
-            <span class="term-num pos">+668%</span>
-            <span class="term-num neutral">$2.4B</span>
-          </div>
-          <div class="term-row">
-            <span class="term-sym">ETH</span>
-            <span class="term-ex">Bybit <span class="arrow">→</span> OKX</span>
-            <span class="term-num pos">+0.0315%</span>
-            <span class="term-num pos">+0.0086%</span>
-            <span class="term-num pos">+482%</span>
-            <span class="term-num neutral">$1.6B</span>
-          </div>
-          <div class="term-row">
-            <span class="term-sym">SOL</span>
-            <span class="term-ex">Gate <span class="arrow">→</span> BingX</span>
-            <span class="term-num pos">+0.0274%</span>
-            <span class="term-num pos">+0.0112%</span>
-            <span class="term-num pos">+412%</span>
-            <span class="term-num neutral">$812M</span>
-          </div>
-          <div class="term-row">
-            <span class="term-sym">ARIA</span>
-            <span class="term-ex">Binance <span class="arrow">→</span> KuCoin</span>
-            <span class="term-num pos">+0.8360%</span>
-            <span class="term-num neg">−0.0052%</span>
-            <span class="term-num pos">+3577%</span>
-            <span class="term-num neutral">$36M</span>
-          </div>
-          <div class="term-row">
-            <span class="term-sym">HYPE</span>
-            <span class="term-ex">Hyperliquid <span class="arrow">→</span> Aster</span>
-            <span class="term-num pos">+0.0526%</span>
-            <span class="term-num pos">+0.0041%</span>
-            <span class="term-num pos">+895%</span>
-            <span class="term-num neutral">$248M</span>
-          </div>
-        </div>
-      </div>
+    <div class="nav-cta">
+      <a href="/login" class="btn btn-ghost">Sign in</a>
+      <a href="/register" class="btn btn-primary">Get started</a>
     </div>
-  </header>
+    <button class="nav-burger" id="burger" aria-label="Menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
 
-  <!-- ═══ MARQUEE — always-on liveness ═══ -->
-  <div class="marquee">
-    <div class="marquee-inner">
-      <span class="marquee-item"><span class="lbl">BTC·8h</span><span class="pos">+0.0412%</span></span>
-      <span class="marquee-item"><span class="lbl">ETH·8h</span><span class="pos">+0.0315%</span></span>
-      <span class="marquee-item"><span class="lbl">SOL·8h</span><span class="pos">+0.0274%</span></span>
-      <span class="marquee-item"><span class="lbl">HYPE·8h</span><span class="pos">+0.0526%</span></span>
-      <span class="marquee-item"><span class="lbl">10 exch</span><span class="pos">● live</span></span>
-      <span class="marquee-item"><span class="lbl">depth</span><span>sub-second</span></span>
-      <span class="marquee-item"><span class="lbl">ARIA·8h</span><span class="pos">+0.8360%</span></span>
-      <span class="marquee-item"><span class="lbl">uptime</span><span class="pos">99.4%</span></span>
-      <!-- duplicate for seamless loop -->
-      <span class="marquee-item"><span class="lbl">BTC·8h</span><span class="pos">+0.0412%</span></span>
-      <span class="marquee-item"><span class="lbl">ETH·8h</span><span class="pos">+0.0315%</span></span>
-      <span class="marquee-item"><span class="lbl">SOL·8h</span><span class="pos">+0.0274%</span></span>
-      <span class="marquee-item"><span class="lbl">HYPE·8h</span><span class="pos">+0.0526%</span></span>
-      <span class="marquee-item"><span class="lbl">10 exch</span><span class="pos">● live</span></span>
-      <span class="marquee-item"><span class="lbl">depth</span><span>sub-second</span></span>
-      <span class="marquee-item"><span class="lbl">ARIA·8h</span><span class="pos">+0.8360%</span></span>
-      <span class="marquee-item"><span class="lbl">uptime</span><span class="pos">99.4%</span></span>
+<!-- Mobile drawer -->
+<div class="drawer" id="drawer">
+  <div class="drawer-top">
+    <a href="/" class="brand">avalant<span class="cursor">_</span></a>
+    <button id="drawer-close" aria-label="Close" style="width:40px;height:40px;border-radius:10px;color:var(--text);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-menu">
+    <a href="#product">Product <span>01</span></a>
+    <a href="#why">Why Avalant <span>02</span></a>
+    <a href="#pricing">Pricing <span>03</span></a>
+    <a href="#faq">FAQ <span>04</span></a>
+    <a href="/screener">Screener <span>↗</span></a>
+  </div>
+  <div class="drawer-cta">
+    <a href="/login" class="btn btn-outline">Sign in</a>
+    <a href="/register" class="btn btn-primary">Get started</a>
+  </div>
+</div>
+
+<!-- ─── HERO ─── -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid-bg"></div>
+  <div class="wrap hero-inner">
+    <div class="hero-kicker reveal">
+      <span class="badge">LIVE</span>
+      <span><span id="hero-opps" class="mono">—</span> opportunities across <span class="mono">13</span> venues</span>
+    </div>
+    <h1 class="reveal">
+      Funding<br>
+      arbitrage <span class="accent serif">without the</span><br>
+      spreadsheet tax.
+    </h1>
+    <p class="hero-lede reveal">
+      One workbench for cross-exchange funding rates, live spreads, pair detection and one-click execution.
+      Thirteen venues, sub-second updates, no extensions, no toolbelt of tabs.
+    </p>
+    <div class="hero-actions reveal">
+      <a href="/register" class="btn btn-primary btn-lg">
+        Start trading free
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+      </a>
+      <a href="/screener" class="btn btn-outline btn-lg">See the screener</a>
+      <span class="sub">No card · <span class="mono">4</span> wallets free forever</span>
+    </div>
+
+    <!-- Hero Dashboard Mockup -->
+    <div class="hero-mock-wrap reveal">
+      <div class="mock">
+        <div class="mock-chrome">
+          <div class="mock-dots"><span></span><span></span><span></span></div>
+          <div class="mock-url">avalant.xyz / screener</div>
+        </div>
+        <div class="dash">
+          <!-- Sidebar -->
+          <aside class="dash-side">
+            <div class="dash-side-title">Workspace</div>
+            <div class="dash-item active">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="4"/><rect x="3" y="10" width="18" height="4"/><rect x="3" y="16" width="18" height="4"/></svg>
+              Screener <span class="ct">487</span>
+            </div>
+            <div class="dash-item">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/></svg>
+              Arb detail
+            </div>
+            <div class="dash-item">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M4 12h16M12 4v16"/></svg>
+              Portfolio <span class="ct">8</span>
+            </div>
+            <div class="dash-item">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+              Alerts <span class="ct">3</span>
+            </div>
+
+            <div class="dash-side-title" style="margin-top:22px;">Venues</div>
+            <div class="dash-item"><span class="ic" style="width:8px;height:8px;border-radius:50%;background:#F3BA2F;"></span>Binance <span class="ct">ok</span></div>
+            <div class="dash-item"><span class="ic" style="width:8px;height:8px;border-radius:50%;background:#1652F0;"></span>Bybit <span class="ct">ok</span></div>
+            <div class="dash-item"><span class="ic" style="width:8px;height:8px;border-radius:50%;background:#15AE6E;"></span>OKX <span class="ct">ok</span></div>
+            <div class="dash-item"><span class="ic" style="width:8px;height:8px;border-radius:50%;background:#2354E6;"></span>Gate <span class="ct">ok</span></div>
+            <div class="dash-item"><span class="ic" style="width:8px;height:8px;border-radius:50%;background:#15B088;"></span>KuCoin <span class="ct">ok</span></div>
+            <div class="dash-item"><span class="ic" style="width:8px;height:8px;border-radius:50%;background:#97FCE4;"></span>Hyperliquid <span class="ct">ok</span></div>
+          </aside>
+
+          <!-- Main table -->
+          <main class="dash-main">
+            <div class="dash-head">
+              <div class="dash-chip active">Arbitrage</div>
+              <div class="dash-chip">Funding</div>
+              <div class="dash-chip">Spreads</div>
+              <div class="dash-head-right"><span class="live">LIVE</span> · updated 2.1s ago</div>
+            </div>
+            <table class="dash-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Pair</th>
+                  <th class="num">Net 8h</th>
+                  <th class="num">Spread</th>
+                  <th class="num hide-m">Trend</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#F7931A22;color:#F7931A;">B</div><div class="dash-sym-name">BTC</div></div></td>
+                  <td><span class="dash-pair"><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>Bybit</span><span style="color:var(--text3);">/</span><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>Gate</span></span></td>
+                  <td class="num spread-pos">+0.083%</td>
+                  <td class="num">+0.011%</td>
+                  <td class="num hide-m">
+                    <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 14 L10 10 L20 12 L30 6 L40 8 L50 4 L60 2"/></svg>
+                  </td>
+                  <td><button class="dash-act-btn">Trade</button></td>
+                </tr>
+                <tr>
+                  <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#627EEA22;color:#7CB9F7;">E</div><div class="dash-sym-name">ETH</div></div></td>
+                  <td><span class="dash-pair"><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>Binance</span><span style="color:var(--text3);">/</span><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>OKX</span></span></td>
+                  <td class="num spread-pos">+0.061%</td>
+                  <td class="num">+0.008%</td>
+                  <td class="num hide-m">
+                    <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 10 L10 12 L20 8 L30 9 L40 5 L50 7 L60 3"/></svg>
+                  </td>
+                  <td><button class="dash-act-btn">Trade</button></td>
+                </tr>
+                <tr>
+                  <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#97FCE422;color:#97FCE4;">H</div><div class="dash-sym-name">HYPE</div></div></td>
+                  <td><span class="dash-pair"><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>Hyperliquid</span><span style="color:var(--text3);">/</span><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>Bybit</span></span></td>
+                  <td class="num spread-pos">+0.142%</td>
+                  <td class="num">+0.027%</td>
+                  <td class="num hide-m">
+                    <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 15 L10 11 L20 13 L30 7 L40 9 L50 3 L60 1"/></svg>
+                  </td>
+                  <td><button class="dash-act-btn">Trade</button></td>
+                </tr>
+                <tr>
+                  <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#9945FF22;color:#A78BFA;">S</div><div class="dash-sym-name">SOL</div></div></td>
+                  <td><span class="dash-pair"><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>OKX</span><span style="color:var(--text3);">/</span><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>MEXC</span></span></td>
+                  <td class="num spread-pos">+0.054%</td>
+                  <td class="num">+0.006%</td>
+                  <td class="num hide-m">
+                    <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 12 L10 9 L20 11 L30 8 L40 10 L50 6 L60 5"/></svg>
+                  </td>
+                  <td><button class="dash-act-btn">Trade</button></td>
+                </tr>
+                <tr>
+                  <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#E5C07B22;color:#E5C07B;">R</div><div class="dash-sym-name">RAVE</div></div></td>
+                  <td><span class="dash-pair"><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>Gate</span><span style="color:var(--text3);">/</span><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>BingX</span></span></td>
+                  <td class="num spread-pos">+0.215%</td>
+                  <td class="num">+0.038%</td>
+                  <td class="num hide-m">
+                    <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 14 L10 13 L20 8 L30 10 L40 4 L50 5 L60 2"/></svg>
+                  </td>
+                  <td><button class="dash-act-btn">Trade</button></td>
+                </tr>
+                <tr>
+                  <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#F8717122;color:#F87171;">A</div><div class="dash-sym-name">ARB</div></div></td>
+                  <td><span class="dash-pair"><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>Bitget</span><span style="color:var(--text3);">/</span><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>KuCoin</span></span></td>
+                  <td class="num spread-pos">+0.039%</td>
+                  <td class="num spread-neg">−0.003%</td>
+                  <td class="num hide-m">
+                    <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#F87171" stroke-width="1.5"><path d="M0 4 L10 7 L20 5 L30 9 L40 8 L50 12 L60 10"/></svg>
+                  </td>
+                  <td><button class="dash-act-btn">Trade</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </main>
+
+          <!-- Right panel -->
+          <aside class="dash-right">
+            <div class="dash-stat-card">
+              <div class="dash-stat-label">Portfolio · 24h</div>
+              <div class="dash-stat-val">$48,920.18</div>
+              <div class="dash-stat-sub pos">+$1,248.02 (+2.62%)</div>
+            </div>
+            <div>
+              <div class="dash-pos-title">Open Positions · 3</div>
+              <div class="dash-pos-item">
+                <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:8px;"></span>BTC/Bybit·Gate</span>
+                <span class="spread-pos mono">+$182.04</span>
+              </div>
+              <div class="dash-pos-item">
+                <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:8px;"></span>ETH/Binance·OKX</span>
+                <span class="spread-pos mono">+$94.16</span>
+              </div>
+              <div class="dash-pos-item">
+                <span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-right:8px;"></span>SOL/OKX·MEXC</span>
+                <span class="spread-neg mono">−$12.08</span>
+              </div>
+            </div>
+            <div class="dash-stat-card" style="margin-top:auto;">
+              <div class="dash-stat-label">Realized · This month</div>
+              <div class="dash-stat-val">$4,612</div>
+              <div class="dash-stat-sub pos">+19 closed · 82% win rate</div>
+            </div>
+          </aside>
+        </div>
+      </div>
     </div>
   </div>
+</section>
 
-  <!-- ═══ LIVE STATS ═══ -->
-  <section>
-    <div class="container reveal">
-      <div class="section-eyebrow">The numbers</div>
-      <h2 class="serif">Built on the data we actually trade with.</h2>
-      <p class="section-lede">
-        Avalant talks directly to each venue's funding websocket plus a REST
-        backstop in a pure daemon thread, so freshness never drifts past a
-        handful of seconds — even when one exchange decides to have a bad
-        minute.
-      </p>
-    </div>
-    <div class="container reveal">
-      <div class="stats-grid">
-        <div class="stat">
-          <span class="stat-num mono">10<span class="suffix">+</span></span>
-          <span class="stat-label">Exchanges live</span>
-        </div>
-        <div class="stat">
-          <span class="stat-num mono">3<span class="suffix">k+</span></span>
-          <span class="stat-label">Arb pairs tracked</span>
-        </div>
-        <div class="stat">
-          <span class="stat-num mono">&lt;2<span class="suffix">s</span></span>
-          <span class="stat-label">Data-to-screen latency</span>
-        </div>
-        <div class="stat">
-          <span class="stat-num mono">99.4<span class="suffix">%</span></span>
-          <span class="stat-label">Per-exchange presence</span>
-        </div>
-      </div>
-    </div>
-  </section>
+<!-- ─── TICKER ─── -->
+<div class="ticker">
+  <div class="ticker-track" id="ticker-track">
+    <!-- filled by JS, fallback items below -->
+    <div class="ticker-item"><span class="sym">BTC</span><span class="rate up">+0.083%</span><span style="color:var(--text3);">Bybit·Gate</span></div>
+    <div class="ticker-item"><span class="sym">ETH</span><span class="rate up">+0.061%</span><span style="color:var(--text3);">Binance·OKX</span></div>
+    <div class="ticker-item"><span class="sym">HYPE</span><span class="rate up">+0.142%</span><span style="color:var(--text3);">HL·Bybit</span></div>
+    <div class="ticker-item"><span class="sym">SOL</span><span class="rate up">+0.054%</span><span style="color:var(--text3);">OKX·MEXC</span></div>
+    <div class="ticker-item"><span class="sym">RAVE</span><span class="rate up">+0.215%</span><span style="color:var(--text3);">Gate·BingX</span></div>
+    <div class="ticker-item"><span class="sym">ARB</span><span class="rate dn">−0.018%</span><span style="color:var(--text3);">Bitget·KuCoin</span></div>
+    <div class="ticker-item"><span class="sym">AVAX</span><span class="rate up">+0.047%</span><span style="color:var(--text3);">OKX·Gate</span></div>
+    <div class="ticker-item"><span class="sym">DOGE</span><span class="rate up">+0.039%</span><span style="color:var(--text3);">Binance·MEXC</span></div>
+    <div class="ticker-item"><span class="sym">LINK</span><span class="rate up">+0.028%</span><span style="color:var(--text3);">Bybit·Aster</span></div>
+    <div class="ticker-item"><span class="sym">TON</span><span class="rate up">+0.072%</span><span style="color:var(--text3);">OKX·Bybit</span></div>
+    <div class="ticker-item"><span class="sym">XRP</span><span class="rate up">+0.014%</span><span style="color:var(--text3);">Binance·Gate</span></div>
+    <div class="ticker-item"><span class="sym">PEPE</span><span class="rate up">+0.099%</span><span style="color:var(--text3);">Bybit·MEXC</span></div>
+  </div>
+</div>
 
-  <!-- ═══ WHAT IT IS — FEATURE GRID ═══ -->
-  <section id="what" class="alt">
-    <div class="container reveal">
-      <div class="section-eyebrow">What's inside</div>
-      <h2 class="serif">Everything <em>at trading desk level</em>,<br>nothing more.</h2>
-      <p class="section-lede">
-        Four tools that compound. Use the screener alone to pick spreads,
-        or connect keys and trade both legs in a click.
-      </p>
-    </div>
-    <div class="container reveal">
-      <div class="feature-grid">
-
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="2" width="12" height="12" rx="1.5"/>
-              <path d="M2 6h12M2 10h12M6 2v12M10 2v12"/>
-            </svg>
-          </div>
-          <div class="feature-title serif">Funding screener</div>
-          <p class="feature-body">
-            Every perpetual listing on every connected venue, normalised to
-            8-hour APR. Sort, filter by volume, hide symbols you don't want
-            to see. Red/yellow/green freshness dots so you can tell at a
-            glance which exchange is lagging.
-          </p>
-          <div class="feature-meta">WS • sub-second • 600+ symbols</div>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2 13l4-5 3 2 5-6"/>
-              <path d="M10 4h4v4"/>
-            </svg>
-          </div>
-          <div class="feature-title serif">Arbitrage engine</div>
-          <p class="feature-body">
-            Every long-short pair ranked by net profit — funding spread
-            plus price delta, minus fees. Click through to a live detail
-            page with entry/exit candles, both orderbooks side-by-side,
-            real-time slippage simulator.
-          </p>
-          <div class="feature-meta">Top 500 pairs • live entry/exit chart</div>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="8" cy="8" r="6"/>
-              <path d="M8 5v3l2 2"/>
-            </svg>
-          </div>
-          <div class="feature-title serif">One-click trading</div>
-          <p class="feature-body">
-            Open both legs of an arb in parallel. Size in TOK or USDT,
-            pick leverage from a stepper that knows each venue's public
-            max. Positions tab auto-pairs mirror legs and sums funding
-            P&L across both sides.
-          </p>
-          <div class="feature-meta">13 adapters • parallel set-leverage • reduce-only close</div>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2 10l4 3 8-9"/>
-            </svg>
-          </div>
-          <div class="feature-title serif">Portfolio + alerts</div>
-          <p class="feature-body">
-            Tag wallets as "Owner", check balance, and the profile chart
-            tracks your per-asset composition over time — hover any point
-            for the top-5 holdings at that snapshot. Telegram alerts fire
-            when spread crosses your threshold.
-          </p>
-          <div class="feature-meta">CEX + 13 chains • TG alerts • balance history</div>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ EDITORIAL QUOTE ═══ -->
-  <div class="editorial">
-    <div class="container-sm">
-      <blockquote class="editorial-quote">
-        We built the thing we wished existed — <em>one view, one keyboard,
-        every venue</em>. No more ten tabs, ten spreadsheets, ten moods.
-      </blockquote>
-      <div class="editorial-byline">The Avalant team</div>
+<!-- ─── TRUST STRIP ─── -->
+<section class="trust">
+  <div class="wrap">
+    <div class="trust-label">Connected to 13 venues · $40B+ daily volume</div>
+    <div class="trust-row">
+      <span class="ex">Binance<span class="num">01</span></span>
+      <span class="ex">Bybit<span class="num">02</span></span>
+      <span class="ex">OKX<span class="num">03</span></span>
+      <span class="ex">Gate.io<span class="num">04</span></span>
+      <span class="ex">KuCoin<span class="num">05</span></span>
+      <span class="ex">MEXC<span class="num">06</span></span>
+      <span class="ex">Bitget<span class="num">07</span></span>
+      <span class="ex">BingX<span class="num">08</span></span>
+      <span class="ex">Backpack<span class="num">09</span></span>
+      <span class="ex">Hyperliquid<span class="num">10</span></span>
+      <span class="ex">Aster<span class="num">11</span></span>
+      <span class="ex">Lighter<span class="num">12</span></span>
+      <span class="ex">Paradex<span class="num">13</span></span>
     </div>
   </div>
+</section>
 
-  <!-- ═══ HOW IT WORKS ═══ -->
-  <section id="how">
-    <div class="container-sm reveal">
-      <div class="section-eyebrow">How it works</div>
-      <h2 class="serif">Three steps. That's the whole thing.</h2>
-      <p class="section-lede">
-        You don't need to run our infrastructure or learn a new keyboard.
-        Everything below is live the moment you sign up.
+<!-- ─── WHY / INTRO ─── -->
+<section class="section" id="why">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="sec-kicker">01 · The problem</div>
+      <h2 class="sec-title">Funding arb is <span class="it">a research job</span>,<br>not a dashboard.</h2>
+      <p class="sec-lede">
+        Most traders chase funding spreads across a tab forest — one window per exchange, spreadsheets glueing rates together,
+        manual math for fees and intervals. By the time the math is done, the opportunity is gone.
+        Avalant collapses all of that into a single interface with real-time data, pair detection, and execution in the same keystroke.
       </p>
     </div>
-    <div class="container-sm">
-      <div class="steps">
-        <div class="step reveal">
-          <div class="step-num serif">01</div>
-          <div>
-            <div class="step-title serif">Connect — or don't.</div>
-            <p class="step-body">
-              Use the screener without any keys at all. Watch funding,
-              spreads, watchlists. Ready to trade? Add a read-only key for
-              position tracking, or a trading key for one-click execution.
-              All credentials encrypted at rest with per-user Fernet keys.
-            </p>
+  </div>
+</section>
+
+<!-- ─── PRODUCT SHOWCASE 1 — SCREENER ─── -->
+<section class="section" id="product" style="padding-top:0;">
+  <div class="wrap">
+    <div class="showcase reveal">
+      <div class="showcase-body">
+        <div class="sec-kicker">02 · Screener</div>
+        <h3>Every funding rate, <span class="it">every exchange</span>, in one sortable table.</h3>
+        <p>Cross-exchange spreads, interval-normalized (8h), pre-fee, net-of-fee and APR. Filter by exchange set, direction, minimum spread. Live-update via WebSocket — no refresh, no polling.</p>
+        <div class="showcase-feats">
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Sub-second updates</b> <span>— primary WS + REST backstop, ≤5s max-age SLA per symbol.</span></div>
+          </div>
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Net P&L preview</b> <span>— maker/taker fees, interval normalization and predicted APR per opp.</span></div>
+          </div>
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Spread alerts</b> <span>— threshold + direction, pushed to Telegram with 1h cooldown.</span></div>
           </div>
         </div>
-
-        <div class="step reveal">
-          <div class="step-num serif">02</div>
-          <div>
-            <div class="step-title serif">Pick your spread.</div>
-            <p class="step-body">
-              Sort the arb table by net APR, click through to a pair you
-              like. Live entry/exit candlestick chart tells you whether
-              the spread is widening or compressing. Size-aware slippage
-              simulator shows exactly what you'd get filled at.
-            </p>
-          </div>
-        </div>
-
-        <div class="step reveal">
-          <div class="step-num serif">03</div>
-          <div>
-            <div class="step-title serif">Enter, hold, close.</div>
-            <p class="step-body">
-              Open both legs in parallel. Positions auto-pair by symbol
-              and mirror size. Funding P&L accumulates across each venue's
-              native history. One "Close Both" button reduces-only on both
-              sides at market.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ TRUST / SECURITY ═══ -->
-  <section class="alt">
-    <div class="container-sm reveal">
-      <div class="section-eyebrow">Security</div>
-      <h2 class="serif">Your keys stay yours.<br><em>We never see them.</em></h2>
-      <p class="section-lede">
-        API credentials are encrypted with a Fernet key derived from your
-        account via PBKDF2-SHA256. The database stores ciphertext only; the
-        key never touches logs, metrics, or third-party services. When you
-        delete a wallet, the row is gone — not just flagged.
-      </p>
-      <p class="section-lede">
-        Read-only keys are limited to balance + position queries. Trading keys
-        are opt-in per wallet and never stored in the same credential set as
-        withdrawal permissions. HTTPS everywhere. HTTP-only cookies for
-        session. No third-party analytics.
-      </p>
-    </div>
-  </section>
-
-  <!-- ═══ CTA ═══ -->
-  <section class="cta-section">
-    <div class="container-sm reveal">
-      <h2 class="cta-headline serif">
-        Start screening in<br><em>under a minute.</em>
-      </h2>
-      <p class="cta-sub">
-        Free plan covers 4 wallets and every live feature on the public side.
-        Upgrade when you actually need more slots — no trials, no card upfront.
-      </p>
-      <div class="cta-row">
-        <a href="/register" class="btn btn-primary">
-          Create account
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M4 8h8M8 4l4 4-4 4"/>
-          </svg>
+        <a href="/screener" class="showcase-link">Open screener
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
         </a>
-        <a href="/pricing" class="btn btn-ghost">See pricing</a>
+      </div>
+      <div class="mock scr-mock">
+        <div class="mock-chrome">
+          <div class="mock-dots"><span></span><span></span><span></span></div>
+          <div class="mock-url">avalant.xyz / screener</div>
+        </div>
+        <div class="scr-mock-body">
+          <div class="scr-tabs">
+            <div class="scr-tab active">Arbitrage · 487</div>
+            <div class="scr-tab">Funding · 1,240</div>
+          </div>
+          <div class="scr-filters">
+            <div class="scr-fchip on">All 13 venues</div>
+            <div class="scr-fchip">Min 0.01%</div>
+            <div class="scr-fchip">Net +APR</div>
+            <div class="scr-fchip">Volume &gt; $1M</div>
+            <div class="scr-fchip">Fresh &lt; 5s</div>
+          </div>
+          <table class="dash-table">
+            <thead>
+              <tr>
+                <th>Symbol</th><th>Long</th><th>Short</th>
+                <th class="num">Gross</th><th class="num">Fees</th><th class="num">Net 8h</th><th class="num">APR</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="mono">RAVE</td><td><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>Gate</span></td><td><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>BingX</span></td><td class="num">0.215%</td><td class="num" style="color:var(--text3);">−0.06%</td><td class="num spread-pos">+0.155%</td><td class="num spread-pos">+168.5%</td></tr>
+              <tr><td class="mono">HYPE</td><td><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>HL</span></td><td><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>Bybit</span></td><td class="num">0.142%</td><td class="num" style="color:var(--text3);">−0.06%</td><td class="num spread-pos">+0.082%</td><td class="num spread-pos">+89.2%</td></tr>
+              <tr><td class="mono">BTC</td><td><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>Bybit</span></td><td><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>Gate</span></td><td class="num">0.083%</td><td class="num" style="color:var(--text3);">−0.05%</td><td class="num spread-pos">+0.033%</td><td class="num spread-pos">+35.8%</td></tr>
+              <tr><td class="mono">ETH</td><td><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>Binance</span></td><td><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>OKX</span></td><td class="num">0.061%</td><td class="num" style="color:var(--text3);">−0.05%</td><td class="num spread-pos">+0.011%</td><td class="num spread-pos">+12.0%</td></tr>
+              <tr><td class="mono">SOL</td><td><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>OKX</span></td><td><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>MEXC</span></td><td class="num">0.054%</td><td class="num" style="color:var(--text3);">−0.05%</td><td class="num spread-pos">+0.004%</td><td class="num spread-pos">+4.4%</td></tr>
+              <tr><td class="mono">AVAX</td><td><span class="dash-ex-chip"><span class="dash-pair-dot long"></span>OKX</span></td><td><span class="dash-ex-chip"><span class="dash-pair-dot short"></span>Gate</span></td><td class="num">0.047%</td><td class="num" style="color:var(--text3);">−0.05%</td><td class="num" style="color:var(--yellow);">−0.003%</td><td class="num" style="color:var(--text3);">—</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- ═══ FOOTER ═══ -->
-  <footer>
-    <div class="container">
-      <div class="footer-grid">
-        <div>
-          <div class="footer-brand">avalant<span class="cursor">_</span></div>
-          <p class="footer-blurb">
-            A funding-rate screener and arbitrage platform built by people
-            who trade with it daily.
-          </p>
+<!-- ─── PRODUCT SHOWCASE 2 — ARB DETAIL ─── -->
+<section class="section" style="padding-top:0;">
+  <div class="wrap">
+    <div class="showcase reverse reveal">
+      <div class="mock">
+        <div class="mock-chrome">
+          <div class="mock-dots"><span></span><span></span><span></span></div>
+          <div class="mock-url">avalant.xyz / arb?symbol=BTC&amp;long=bybit&amp;short=gate</div>
         </div>
-        <div class="footer-col">
-          <h5>Product</h5>
-          <a href="/screener">Screener</a>
-          <a href="/app">Portfolio</a>
-          <a href="/pricing">Pricing</a>
-        </div>
-        <div class="footer-col">
-          <h5>Account</h5>
-          <a href="/login">Sign in</a>
-          <a href="/register">Get started</a>
-          <a href="/profile">Profile</a>
-        </div>
-        <div class="footer-col">
-          <h5>Contact</h5>
-          <a href="mailto:hello@avalant.xyz">hello@avalant.xyz</a>
-          <a href="https://t.me/avalant_bot">Telegram bot</a>
+        <div class="arb-mock">
+          <div class="arb-chart-box">
+            <div class="arb-chart-head">
+              <span class="pair">BTC · Bybit ⇄ Gate</span>
+              <span class="tfs">
+                <span class="tf">30s</span>
+                <span class="tf on">1m</span>
+                <span class="tf">5m</span>
+                <span class="tf">15m</span>
+              </span>
+            </div>
+            <svg class="arb-chart-svg" viewBox="0 0 400 240" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="entryGrad" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#1AFFAB" stop-opacity="0.35"/>
+                  <stop offset="100%" stop-color="#1AFFAB" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <!-- gridlines -->
+              <line x1="0" y1="60" x2="400" y2="60" stroke="#222229" stroke-dasharray="2,4"/>
+              <line x1="0" y1="120" x2="400" y2="120" stroke="#222229" stroke-dasharray="2,4"/>
+              <line x1="0" y1="180" x2="400" y2="180" stroke="#222229" stroke-dasharray="2,4"/>
+              <!-- area -->
+              <path d="M0 200 L20 180 L40 190 L60 165 L80 150 L100 135 L120 145 L140 110 L160 120 L180 95 L200 100 L220 80 L240 85 L260 70 L280 75 L300 60 L320 65 L340 55 L360 50 L380 40 L400 45 L400 240 L0 240 Z" fill="url(#entryGrad)"/>
+              <!-- Line -->
+              <path d="M0 200 L20 180 L40 190 L60 165 L80 150 L100 135 L120 145 L140 110 L160 120 L180 95 L200 100 L220 80 L240 85 L260 70 L280 75 L300 60 L320 65 L340 55 L360 50 L380 40 L400 45" fill="none" stroke="#1AFFAB" stroke-width="1.75"/>
+              <!-- Candles (simplified) -->
+              <g>
+                <rect x="14" y="160" width="6" height="22" fill="#1AFFAB"/>
+                <rect x="38" y="170" width="6" height="18" fill="#F87171"/>
+                <rect x="62" y="140" width="6" height="24" fill="#1AFFAB"/>
+                <rect x="86" y="130" width="6" height="16" fill="#1AFFAB"/>
+                <rect x="110" y="130" width="6" height="14" fill="#F87171"/>
+                <rect x="134" y="98" width="6" height="20" fill="#1AFFAB"/>
+                <rect x="158" y="105" width="6" height="12" fill="#F87171"/>
+                <rect x="182" y="80" width="6" height="22" fill="#1AFFAB"/>
+                <rect x="206" y="90" width="6" height="10" fill="#F87171"/>
+                <rect x="230" y="72" width="6" height="14" fill="#1AFFAB"/>
+                <rect x="254" y="75" width="6" height="8" fill="#F87171"/>
+                <rect x="278" y="60" width="6" height="18" fill="#1AFFAB"/>
+                <rect x="302" y="60" width="6" height="8" fill="#1AFFAB"/>
+                <rect x="326" y="50" width="6" height="12" fill="#1AFFAB"/>
+                <rect x="350" y="44" width="6" height="10" fill="#1AFFAB"/>
+                <rect x="374" y="38" width="6" height="10" fill="#1AFFAB"/>
+              </g>
+              <!-- last label -->
+              <line x1="0" y1="45" x2="400" y2="45" stroke="#1AFFAB" stroke-dasharray="3,3" stroke-opacity="0.5"/>
+              <rect x="360" y="36" width="44" height="16" fill="#1AFFAB"/>
+              <text x="382" y="48" font-family="JetBrains Mono" font-size="10" fill="#071612" text-anchor="middle" font-weight="700">+0.083</text>
+            </svg>
+            <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);">
+              <span>In · entry divergence</span>
+              <span>Out · exit divergence</span>
+            </div>
+          </div>
+          <div class="arb-book-box">
+            <div class="arb-book-head"><span>Bybit · bids</span><span>long</span></div>
+            <div class="arb-book-rows">
+              <div class="br"><span class="px ask">67,421.0</span><span>1.82</span></div>
+              <div class="br"><span class="px ask">67,420.5</span><span>3.15</span></div>
+              <div class="br"><span class="px ask">67,420.0</span><span>0.94</span></div>
+              <div class="br bid"><span class="px bid">67,419.5</span><span>2.27</span></div>
+              <div class="br bid"><span class="px bid">67,419.0</span><span>4.80</span></div>
+              <div class="br bid"><span class="px bid">67,418.5</span><span>1.11</span></div>
+            </div>
+            <div class="arb-book-mid"><span>mid</span><span><b>67,419.8</b></span></div>
+            <div class="arb-book-head" style="margin-top:6px;"><span>Gate · asks</span><span>short</span></div>
+            <div class="arb-book-rows">
+              <div class="br"><span class="px ask">67,426.0</span><span>0.75</span></div>
+              <div class="br"><span class="px ask">67,425.5</span><span>1.43</span></div>
+              <div class="br"><span class="px ask">67,425.0</span><span>2.08</span></div>
+              <div class="br bid"><span class="px bid">67,424.5</span><span>3.20</span></div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="footer-bottom">
-        <span>© Avalant 2026 · All rights reserved.</span>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px">status: <span style="color:var(--green)">● operational</span></span>
+      <div class="showcase-body">
+        <div class="sec-kicker">03 · Arb detail</div>
+        <h3>A terminal for <span class="it">one pair</span>. Charts, books, P&amp;L, alerts.</h3>
+        <p>Dual orderbooks side-by-side at 150ms cadence. Entry/Exit candlesticks that show the fill-adjusted divergence for your actual size. Funding forecast, next settlement, open interest, and a history of spreads back to page-load.</p>
+        <div class="showcase-feats">
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Size-aware divergence</b> <span>— walk the book to VWAP, so a $100k entry isn't priced like a tick.</span></div>
+          </div>
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Pair detection</b> <span>— Avalant spots your open two-leg position and shows combined P&amp;L automatically.</span></div>
+          </div>
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Local history</b> <span>— 20 min of divergence preserved in the browser so the chart never starts from scratch.</span></div>
+          </div>
+        </div>
+        <a href="/screener" class="showcase-link">Open a pair
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
       </div>
     </div>
-  </footer>
+  </div>
+</section>
+
+<!-- ─── PRODUCT SHOWCASE 3 — TRADE ─── -->
+<section class="section" style="padding-top:0;">
+  <div class="wrap">
+    <div class="showcase reveal">
+      <div class="showcase-body">
+        <div class="sec-kicker">04 · Execute</div>
+        <h3>Two legs, <span class="it">one click</span>.</h3>
+        <p>Open both sides of an arb in a single action. Leverage and margin mode are sent explicitly to each exchange — no "inherits from last trade" surprises, no silent hardcoded defaults. You pick the size in tokens or USDT, Avalant handles the rest.</p>
+        <div class="showcase-feats">
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Native API connection</b> <span>— fastest path per venue, no broker layer, no routing vig.</span></div>
+          </div>
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Explicit reduce-only</b> <span>— closes use the reduce flag, never silently open an opposing leg.</span></div>
+          </div>
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Keys stay encrypted</b> <span>— Fernet-sealed at rest, per-request decrypted in memory, never logged.</span></div>
+          </div>
+        </div>
+        <a href="/register" class="showcase-link">Connect an exchange
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+      <div class="mock">
+        <div class="mock-chrome">
+          <div class="mock-dots"><span></span><span></span><span></span></div>
+          <div class="mock-url">avalant.xyz / arb · trade</div>
+        </div>
+        <div class="trade-mock">
+          <div class="trade-col">
+            <div class="trade-col-hd">
+              <span>Bybit · BTC/USDT</span>
+              <span class="side-pill long">LONG</span>
+            </div>
+            <div class="trade-field"><span class="lb">Last</span><span class="vl">67,419.8</span></div>
+            <div class="trade-field"><span class="lb">Fund 8h</span><span class="vl" style="color:var(--green);">+0.0105%</span></div>
+            <div class="trade-field"><span class="lb">Next</span><span class="vl">03:41:22</span></div>
+            <div class="trade-field"><span class="lb">Leverage</span><span class="vl">10× · isolated</span></div>
+            <div class="trade-input">
+              <span class="cur">USDT</span>
+              <span class="amt">10,000.00</span>
+              <span style="color:var(--text3);font-size:11px;">≈ 0.1483 BTC</span>
+            </div>
+          </div>
+          <div class="trade-col">
+            <div class="trade-col-hd">
+              <span>Gate · BTC/USDT</span>
+              <span class="side-pill short">SHORT</span>
+            </div>
+            <div class="trade-field"><span class="lb">Last</span><span class="vl">67,424.5</span></div>
+            <div class="trade-field"><span class="lb">Fund 8h</span><span class="vl" style="color:var(--red);">−0.0729%</span></div>
+            <div class="trade-field"><span class="lb">Next</span><span class="vl">03:41:22</span></div>
+            <div class="trade-field"><span class="lb">Leverage</span><span class="vl">10× · isolated</span></div>
+            <div class="trade-input">
+              <span class="cur">USDT</span>
+              <span class="amt">10,000.00</span>
+              <span style="color:var(--text3);font-size:11px;">≈ 0.1483 BTC</span>
+            </div>
+          </div>
+          <button class="trade-submit" style="grid-column: 1 / -1;">Open paired position · est. +0.083% / 8h</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── PRODUCT SHOWCASE 4 — PORTFOLIO ─── -->
+<section class="section" style="padding-top:0;">
+  <div class="wrap">
+    <div class="showcase reverse reveal">
+      <div class="mock">
+        <div class="mock-chrome">
+          <div class="mock-dots"><span></span><span></span><span></span></div>
+          <div class="mock-url">avalant.xyz / app</div>
+        </div>
+        <div class="port-mock">
+          <div class="port-totals">
+            <div class="port-stat"><div class="port-stat-lb">Total equity</div><div class="port-stat-vl">$48,920.18</div><div class="port-stat-sub pos">+2.62% / 24h</div></div>
+            <div class="port-stat"><div class="port-stat-lb">Realized M/M</div><div class="port-stat-vl">$4,612</div><div class="port-stat-sub pos">+18.4%</div></div>
+            <div class="port-stat"><div class="port-stat-lb">Funding · 30d</div><div class="port-stat-vl">$3,284</div><div class="port-stat-sub pos">+0.042%/8h avg</div></div>
+          </div>
+          <div class="port-chart-box">
+            <svg class="port-chart-svg" viewBox="0 0 600 160" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="portGrad" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#1AFFAB" stop-opacity="0.3"/>
+                  <stop offset="100%" stop-color="#1AFFAB" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0 130 C80 120 120 115 180 100 S280 85 360 65 S480 40 600 20 L600 160 L0 160 Z" fill="url(#portGrad)"/>
+              <path d="M0 130 C80 120 120 115 180 100 S280 85 360 65 S480 40 600 20" fill="none" stroke="#1AFFAB" stroke-width="2"/>
+              <circle cx="600" cy="20" r="4" fill="#1AFFAB"/>
+            </svg>
+          </div>
+          <div class="port-assets">
+            <div class="port-asset-row" style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);padding-bottom:6px;">
+              <div>Asset</div><div class="num">Balance</div><div class="num">USD</div><div class="num">%</div>
+            </div>
+            <div class="port-asset-row">
+              <div class="nm"><div class="sym-ic" style="color:#F7931A;">B</div><span>BTC</span></div>
+              <div class="num">0.4820</div><div class="num">$32,480</div><div class="num">66%</div>
+            </div>
+            <div class="port-asset-row">
+              <div class="nm"><div class="sym-ic" style="color:#7CB9F7;">E</div><span>ETH</span></div>
+              <div class="num">2.14</div><div class="num">$8,642</div><div class="num">18%</div>
+            </div>
+            <div class="port-asset-row">
+              <div class="nm"><div class="sym-ic" style="color:var(--text);">T</div><span>USDT</span></div>
+              <div class="num">5,120.30</div><div class="num">$5,120</div><div class="num">10%</div>
+            </div>
+            <div class="port-asset-row">
+              <div class="nm"><div class="sym-ic" style="color:#A78BFA;">S</div><span>SOL</span></div>
+              <div class="num">18.4</div><div class="num">$2,678</div><div class="num">5%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="showcase-body">
+        <div class="sec-kicker">05 · Portfolio</div>
+        <h3>Every wallet you own, <span class="it">one equity curve</span>.</h3>
+        <p>Connect 8 CEX accounts, 13 EVM chains, 5 perp DEXes and watch a single total. Balance history is saved per snapshot — hover the chart and see what you held on any day.</p>
+        <div class="showcase-feats">
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Historical snapshot tooltip</b> <span>— hover any day to see the exact asset split at that moment.</span></div>
+          </div>
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>On-chain + CEX unified</b> <span>— 26 sources into one USD total, aggregated by the Owner tag.</span></div>
+          </div>
+          <div class="f">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div><b>Read-only keys welcome</b> <span>— trade permission is opt-in, never required to track balances.</span></div>
+          </div>
+        </div>
+        <a href="/app" class="showcase-link">Open portfolio
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── COMPARE ─── -->
+<section class="section">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="sec-kicker">06 · Compare</div>
+      <h2 class="sec-title">Avalant vs. <span class="it">the usual stack</span>.</h2>
+      <p class="sec-lede">Most arb workflows are held together by three tools, four exchange tabs and a lot of mental math. Here's what you stop needing once Avalant is running.</p>
+    </div>
+    <div class="compare-wrap reveal">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th style="min-width:280px;">Capability</th>
+            <th class="col-us">Avalant</th>
+            <th>Screener sites</th>
+            <th>Broker tools</th>
+            <th>DIY spreadsheets</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="feat-name">Cross-exchange funding + spreads <span class="feat-sub">13 venues, live</span></td>
+            <td class="us"><span class="y">Native</span></td>
+            <td><span class="p">Partial</span></td>
+            <td><span class="n">Single-venue</span></td>
+            <td><span class="p">Manual</span></td>
+          </tr>
+          <tr>
+            <td class="feat-name">Size-aware entry/exit divergence <span class="feat-sub">VWAP-walk the book for your actual size</span></td>
+            <td class="us"><span class="y">Yes</span></td>
+            <td><span class="n">No</span></td>
+            <td><span class="n">No</span></td>
+            <td><span class="n">No</span></td>
+          </tr>
+          <tr>
+            <td class="feat-name">Pair detection <span class="feat-sub">auto-matches your two-leg positions</span></td>
+            <td class="us"><span class="y">Yes</span></td>
+            <td><span class="n">No</span></td>
+            <td><span class="n">No</span></td>
+            <td><span class="n">No</span></td>
+          </tr>
+          <tr>
+            <td class="feat-name">One-click paired execution <span class="feat-sub">native API per venue, no routing vig</span></td>
+            <td class="us"><span class="y">Yes</span></td>
+            <td><span class="n">Links out</span></td>
+            <td><span class="p">One-sided</span></td>
+            <td><span class="n">Manual</span></td>
+          </tr>
+          <tr>
+            <td class="feat-name">Telegram alerts with cooldown <span class="feat-sub">per-pair threshold, direction, 1h cooldown</span></td>
+            <td class="us"><span class="y">Built-in</span></td>
+            <td><span class="p">Email</span></td>
+            <td><span class="n">No</span></td>
+            <td><span class="n">No</span></td>
+          </tr>
+          <tr>
+            <td class="feat-name">Unified portfolio <span class="feat-sub">CEX + 13 EVM chains + 5 perp DEXes</span></td>
+            <td class="us"><span class="y">Yes</span></td>
+            <td><span class="n">No</span></td>
+            <td><span class="p">Single-venue</span></td>
+            <td><span class="p">Manual</span></td>
+          </tr>
+          <tr>
+            <td class="feat-name">Balance snapshot history <span class="feat-sub">daily chart with asset composition</span></td>
+            <td class="us"><span class="y">Yes</span></td>
+            <td><span class="n">No</span></td>
+            <td><span class="p">Summary only</span></td>
+            <td><span class="n">No</span></td>
+          </tr>
+          <tr>
+            <td class="feat-name">Encrypted API keys <span class="feat-sub">Fernet at rest, never logged</span></td>
+            <td class="us"><span class="y">Yes</span></td>
+            <td><span class="p">Varies</span></td>
+            <td><span class="y">Yes</span></td>
+            <td><span class="n">Plaintext</span></td>
+          </tr>
+          <tr>
+            <td class="feat-name">Freshness SLA <span class="feat-sub">≤5s per symbol across all venues</span></td>
+            <td class="us"><span class="y">&lt; 5s</span></td>
+            <td><span class="p">15-30s</span></td>
+            <td><span class="n">—</span></td>
+            <td><span class="n">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ─── STEPS ─── -->
+<section class="section" style="padding-top:0;">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="sec-kicker">07 · How it works</div>
+      <h2 class="sec-title">From sign-up to first paired<br>trade in <span class="it">three steps</span>.</h2>
+    </div>
+    <div class="steps reveal-stagger">
+      <div class="step">
+        <div class="step-num">01</div>
+        <h4>Create an account</h4>
+        <p>No card required. Basic tier is free forever with 4 connected wallets and full access to the funding screener.</p>
+        <div class="step-hint">GET /api/auth/register — 2 seconds</div>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <h4>Connect your venues</h4>
+        <p>Paste API keys for any of the 8 CEX exchanges or on-chain addresses for 13 EVM networks and 5 perp DEXes. Keys are Fernet-encrypted on write.</p>
+        <div class="step-hint">Read-only mode is fine — trade is opt-in</div>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <h4>Spot, click, profit</h4>
+        <p>Open the screener, pick a pair, open the arb terminal, size the position in tokens or USDT, send both legs with one click.</p>
+        <div class="step-hint">Avg. time from idea → open: &lt; 10 seconds</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── QUOTE ─── -->
+<section class="quote-sec reveal">
+  <div class="wrap">
+    <blockquote class="quote-block">
+      <span class="q-mark">“</span>I used to keep six exchange tabs open and a spreadsheet for funding math.
+      Avalant folded all of that into one window<span class="q-mark">”</span> — and the size-aware divergence chart is the
+      only tool I trust for sub-1% spreads.
+    </blockquote>
+    <div class="quote-attr">
+      <span class="dot"></span>
+      <span>Hedge-fund PM · delta-neutral funding desk</span>
+    </div>
+  </div>
+</section>
+
+<!-- ─── PRICING PREVIEW ─── -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="sec-kicker">08 · Pricing</div>
+      <h2 class="sec-title">Free to try. <span class="it">Flat monthly</span> when you scale.</h2>
+      <p class="sec-lede">No per-trade fee, no volume markup, no routing vig — Avalant never touches your orders.</p>
+    </div>
+    <div class="pricing-grid reveal-stagger">
+      <div class="price-card">
+        <div class="price-name serif">Basic</div>
+        <div class="price-desc">For exploring the screener</div>
+        <div class="price-amt"><span class="cur">$</span><span class="big">0</span><span class="per">/ month</span></div>
+        <ul class="price-feats">
+          <li><b>4</b> connected wallets</li>
+          <li>Full funding screener</li>
+          <li>Arb detail terminal</li>
+          <li>3 spread alerts</li>
+        </ul>
+        <a href="/register" class="btn btn-outline price-cta">Start free</a>
+      </div>
+      <div class="price-card featured">
+        <div class="price-badge">Most popular</div>
+        <div class="price-name serif">Pro</div>
+        <div class="price-desc">Active traders</div>
+        <div class="price-amt"><span class="cur">$</span><span class="big">5</span><span class="per">/ month</span></div>
+        <ul class="price-feats">
+          <li><b>30</b> connected wallets</li>
+          <li>Unlimited spread alerts</li>
+          <li>One-click paired execution</li>
+          <li>Priority data freshness</li>
+          <li>$48/year — save 20%</li>
+        </ul>
+        <a href="/register" class="btn btn-primary price-cta">Get Pro</a>
+      </div>
+      <div class="price-card">
+        <div class="price-name serif">Platinum</div>
+        <div class="price-desc">Prop desks &amp; systematic</div>
+        <div class="price-amt"><span class="cur">$</span><span class="big">10</span><span class="per">/ month</span></div>
+        <ul class="price-feats">
+          <li><b>70</b> connected wallets</li>
+          <li>Everything in Pro</li>
+          <li>Advanced API access</li>
+          <li>Dedicated support</li>
+          <li>$96/year — save 20%</li>
+        </ul>
+        <a href="/register" class="btn btn-outline price-cta">Get Platinum</a>
+      </div>
+    </div>
+    <p style="text-align:center;margin-top:32px;color:var(--text3);font-size:14px;">Need custom limits, white-label, or self-hosted? <a href="mailto:hi@avalant.xyz" style="color:var(--green);border-bottom:1px dashed var(--green-edge);">Talk to us about Enterprise →</a></p>
+  </div>
+</section>
+
+<!-- ─── SECURITY ─── -->
+<section class="section" style="padding-top:0;">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="sec-kicker">09 · Security</div>
+      <h2 class="sec-title">Your keys. <span class="it">Your orders.</span><br>Our job to disappear.</h2>
+    </div>
+    <div class="sec-grid reveal-stagger">
+      <div class="sec-card">
+        <div class="sec-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h4>Fernet-encrypted keys</h4>
+        <p>API keys and signer private keys are PBKDF2-derived Fernet-encrypted at rest. Decrypted per-request, never logged, never serialized to disk outside of ciphertext.</p>
+      </div>
+      <div class="sec-card">
+        <div class="sec-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></div>
+        <h4>Read-only by default</h4>
+        <p>Connect with balance-only keys to monitor portfolios. Trade permission is an explicit opt-in — an account can be read-only across all venues if you want.</p>
+      </div>
+      <div class="sec-card">
+        <div class="sec-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg></div>
+        <h4>No custody, ever</h4>
+        <p>Avalant never holds customer funds. All orders go directly to the venue via its native API — no broker layer, no intermediate wallet, no withdrawal rights.</p>
+      </div>
+      <div class="sec-card">
+        <div class="sec-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h6v6H9z"/></svg></div>
+        <h4>Reduce-only closes</h4>
+        <p>Every close instruction carries the exchange's explicit reduce flag — positions can never silently flip or open an opposing leg in hedge mode.</p>
+      </div>
+      <div class="sec-card">
+        <div class="sec-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12h4l3-9 6 18 3-9h4"/></svg></div>
+        <h4>Rate-limited auth</h4>
+        <p>Per-IP 10-req/60s rate limit on all authentication endpoints. Blocked users cannot session, even with a valid token. HttpOnly cookies protect pages server-side.</p>
+      </div>
+      <div class="sec-card">
+        <div class="sec-card-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></div>
+        <h4>Provenance &amp; open architecture</h4>
+        <p>We publish our adapter code, changelog, and freshness-SLA telemetry. You audit what we audit — no black-box order router between you and the market.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FAQ ─── -->
+<section class="section" id="faq" style="padding-top:0;">
+  <div class="wrap">
+    <div class="sec-head reveal" style="text-align:center;margin:0 auto 40px;">
+      <div class="sec-kicker" style="margin-left:auto;margin-right:auto;justify-content:center;">10 · Questions</div>
+      <h2 class="sec-title" style="text-align:center;">Frequently asked.</h2>
+    </div>
+    <div class="faq reveal">
+      <details>
+        <summary>Do you have custody over my funds or keys?<span class="plus">+</span></summary>
+        <div>No. Avalant never moves or holds customer funds. API keys are Fernet-encrypted on our side and used only to read balances or place orders via the venue's native API. Withdrawal permission is not used or required — we recommend you never grant it.</div>
+      </details>
+      <details>
+        <summary>Which exchanges does Avalant connect to?<span class="plus">+</span></summary>
+        <div>Thirteen venues today. Centralised: Binance, Bybit, OKX, Gate.io, KuCoin, MEXC, Bitget, BingX, Backpack. Perp DEXes: Hyperliquid, Aster, Lighter, Paradex. Ethereal is in a read-only state pending public REST stability. We're actively working on Kraken and WhiteBit integration.</div>
+      </details>
+      <details>
+        <summary>How fresh is the funding data?<span class="plus">+</span></summary>
+        <div>Our engineering target is ≤5s max-age per symbol across every exchange. We run a dual-source pipeline: primary WebSocket streams plus a REST backstop in dedicated threads (so the async event loop never starves during heavy orderbook polling). You can audit live freshness on the screener health panel.</div>
+      </details>
+      <details>
+        <summary>What happens if a venue goes down?<span class="plus">+</span></summary>
+        <div>The WS adapter auto-reconnects with exponential backoff and the REST backstop keeps trying. A venue with stale data is marked red on the health panel and its rows are dimmed in the screener. Other exchanges stay unaffected — nothing shares fate.</div>
+      </details>
+      <details>
+        <summary>Can I trade from Avalant or is it read-only?<span class="plus">+</span></summary>
+        <div>Both. Read-only mode tracks balances and spreads without any write permission on the API key. Trading mode requires a key with trade rights; Avalant then sends MARKET orders via the venue's native endpoint. Closes always carry the reduce-only flag so you cannot accidentally flip a position.</div>
+      </details>
+      <details>
+        <summary>Is there a free tier?<span class="plus">+</span></summary>
+        <div>Yes. The Basic tier is $0/month with four connected wallets and full access to the funding screener, arb terminal and three alerts. Pro adds more wallets and unlimited alerts for $5/month or $48/year.</div>
+      </details>
+      <details>
+        <summary>Can I self-host Avalant?<span class="plus">+</span></summary>
+        <div>Enterprise customers can run Avalant inside their own infrastructure with a dedicated docker-compose deployment, air-gapped Postgres, and BYO RPC endpoints. Reach out to hi@avalant.xyz.</div>
+      </details>
+      <details>
+        <summary>What is "pair detection"?<span class="plus">+</span></summary>
+        <div>If you have two positions that mirror each other (same symbol, opposite sides, matching USD notional within 10%), Avalant collapses them into a single card showing combined P&L, entry spread, funding-collected and current divergence. Click to expand and see each leg individually.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ─── CTA ─── -->
+<section class="cta-sec">
+  <div class="wrap cta-inner reveal">
+    <h2 class="cta-title">Stop <span class="it">scrolling</span> tabs.<br><span class="accent">Start trading</span> spreads.</h2>
+    <p class="cta-lede">Four wallets free forever. Thirteen venues. One workbench.</p>
+    <div class="cta-actions">
+      <a href="/register" class="btn btn-primary btn-lg">
+        Create free account
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+      </a>
+      <a href="/screener" class="btn btn-outline btn-lg">Explore screener</a>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FOOTER ─── -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-cols">
+      <div class="footer-col footer-brand-col">
+        <a href="/" class="brand">avalant<span class="cursor">_</span></a>
+        <p>Funding arbitrage, without the spreadsheet tax. Thirteen venues, sub-second data, one workbench.</p>
+      </div>
+      <div class="footer-col">
+        <h5>Product</h5>
+        <ul>
+          <li><a href="/screener">Screener</a></li>
+          <li><a href="/app">Portfolio</a></li>
+          <li><a href="/arb">Arb terminal</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Resources</h5>
+        <ul>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="/changelog">Changelog</a></li>
+          <li><a href="/status">Status</a></li>
+          <li><a href="/docs">API docs</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Company</h5>
+        <ul>
+          <li><a href="mailto:hi@avalant.xyz">Contact</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="/security">Security</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Connect</h5>
+        <ul>
+          <li><a href="https://t.me/avalant" target="_blank" rel="noopener">Telegram</a></li>
+          <li><a href="https://twitter.com/avalant_xyz" target="_blank" rel="noopener">X / Twitter</a></li>
+          <li><a href="https://github.com/avalant" target="_blank" rel="noopener">GitHub</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div>© 2026 Avalant. Not investment advice. Trading is risky.</div>
+      <div class="socials">
+        <a href="https://t.me/avalant" target="_blank" rel="noopener" aria-label="Telegram">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm4.6 6.9l-1.65 7.8c-.12.55-.45.69-.92.43l-2.53-1.86-1.22 1.17c-.14.14-.25.25-.5.25l.18-2.55 4.65-4.2c.2-.18-.04-.28-.32-.1l-5.75 3.62-2.47-.77c-.54-.17-.55-.54.11-.8l9.66-3.73c.44-.17.83.1.7.78z"/></svg>
+        </a>
+        <a href="https://twitter.com/avalant_xyz" target="_blank" rel="noopener" aria-label="Twitter">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.24 2.25h3.37l-7.36 8.41 8.66 11.45h-6.78l-5.31-6.94-6.08 6.94H1.36l7.88-9L.92 2.25h6.96l4.8 6.34zm-1.18 17.85h1.87L7.04 4.15H5.05z"/></svg>
+        </a>
+        <a href="https://github.com/avalant" target="_blank" rel="noopener" aria-label="GitHub">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 00-3.16 19.5c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.1-1.47-1.1-1.47-.9-.61.07-.6.07-.6 1 .07 1.52 1.03 1.52 1.03.89 1.52 2.34 1.08 2.9.82.1-.64.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.1.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.58 9.58 0 015 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.69 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0012 2z"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>
 
 <script>
-  // Scroll-triggered reveal — minimal IntersectionObserver, CSS does the rest.
+// ─── nav scroll state ───
+const navEl = document.getElementById('nav');
+const onScroll = () => {
+  if (window.scrollY > 8) navEl.classList.add('scrolled');
+  else navEl.classList.remove('scrolled');
+};
+window.addEventListener('scroll', onScroll, { passive: true });
+onScroll();
+
+// ─── mobile drawer ───
+const burger = document.getElementById('burger');
+const drawer = document.getElementById('drawer');
+const drawerClose = document.getElementById('drawer-close');
+burger?.addEventListener('click', () => {
+  drawer.classList.add('open');
+  document.body.style.overflow = 'hidden';
+});
+drawerClose?.addEventListener('click', () => {
+  drawer.classList.remove('open');
+  document.body.style.overflow = '';
+});
+drawer?.querySelectorAll('.drawer-menu a').forEach(a => {
+  a.addEventListener('click', () => {
+    drawer.classList.remove('open');
+    document.body.style.overflow = '';
+  });
+});
+
+// ─── reveal on scroll ───
+if ('IntersectionObserver' in window) {
   const io = new IntersectionObserver((entries) => {
-    for (const e of entries) {
+    entries.forEach(e => {
       if (e.isIntersecting) {
-        e.target.classList.add('visible');
+        e.target.classList.add('in');
         io.unobserve(e.target);
       }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+  document.querySelectorAll('.reveal, .reveal-stagger').forEach(el => io.observe(el));
+} else {
+  document.querySelectorAll('.reveal, .reveal-stagger').forEach(el => el.classList.add('in'));
+}
+
+// ─── live hydration — opps count ───
+(async () => {
+  try {
+    const r = await fetch('/api/screener/arbitrage', { credentials: 'include' });
+    if (!r.ok) return;
+    const j = await r.json();
+    const n = Array.isArray(j) ? j.length : (j.opportunities?.length || 0);
+    if (n > 0) {
+      const el = document.getElementById('hero-opps');
+      if (el) el.textContent = n.toLocaleString();
     }
-  }, { threshold: 0.15 });
-  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  } catch { /* ignore */ }
+})();
 
-  // Fetch live stats — quietly fill in actual exchange count + pairs if the
-  // screener API answers fast enough. Falls back to the hard-coded numbers
-  // in the HTML for offline / logged-out state.
-  (async () => {
-    try {
-      const r = await fetch('/api/screener/arbitrage', { credentials: 'include' });
-      if (!r.ok) return;
-      const d = await r.json();
-      const stats = document.querySelectorAll('.stat-num');
-      // exchange count
-      if (stats[0] && d.exchanges) {
-        stats[0].innerHTML = d.exchanges.length + '<span class="suffix">+</span>';
-      }
-      // pair count
-      if (stats[1]) {
-        const n = d.full_count || (d.opportunities || []).length;
-        if (n > 100) {
-          const rounded = Math.floor(n / 100) * 100;
-          stats[1].innerHTML = (rounded / 1000).toFixed(1).replace(/\.0$/, '') + 'k<span class="suffix">+</span>';
-        }
-      }
-    } catch (_) { /* silent — fallback to static numbers */ }
-  })();
+// ─── ticker duplication for seamless scroll ───
+(() => {
+  const track = document.getElementById('ticker-track');
+  if (!track) return;
+  track.innerHTML = track.innerHTML + track.innerHTML;
+})();
 </script>
-
 </body>
 </html>
