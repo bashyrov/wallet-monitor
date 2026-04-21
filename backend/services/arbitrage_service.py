@@ -1397,6 +1397,18 @@ def get_exchange_health() -> dict[str, dict]:
     except Exception:
         is_ws_funding_supported = lambda _: False
 
+    # Orderbook freshness per exchange (book-cache lives in fetcher for WS
+    # and in books.json file for web). This lets the UI show a second dot
+    # for "orderbook live?" independent of funding-rate freshness — users
+    # were seeing green funding dots while pairs disappeared from the arb
+    # grid because KuCoin/Bybit orderbook WS had dropped.
+    ob_freshness: dict[str, dict] = {}
+    try:
+        from backend.services.orderbook_cache import freshness_by_exchange
+        ob_freshness = freshness_by_exchange() or {}
+    except Exception:
+        pass
+
     is_web = os.environ.get("AVALANT_ROLE", "").lower() == "web"
     # On web: use the shared files (fetcher writes them).
     # On fetcher/monolith: use in-memory state.
@@ -1485,6 +1497,13 @@ def get_exchange_health() -> dict[str, dict]:
                 if h
                 else (ws_age is not None and ws_age < 15.0 and ws_row_count > 0)
             )
+        ob = ob_freshness.get(ex) or {}
+        entry["orderbook_min_age_s"] = ob.get("min_age_s")
+        entry["orderbook_fresh"] = ob.get("fresh") or 0
+        entry["orderbook_degraded"] = ob.get("degraded") or 0
+        entry["orderbook_stale"] = ob.get("stale") or 0
+        entry["orderbook_total"] = ob.get("total") or 0
+        entry["orderbook_healthy"] = bool(ob.get("healthy"))
         result[ex] = entry
     return result
 

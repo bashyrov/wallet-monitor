@@ -430,6 +430,58 @@ def cache_stats() -> dict:
     }
 
 
+def freshness_by_exchange() -> dict[str, dict]:
+    """Orderbook freshness aggregated per exchange. Used by /exchange-health
+    to show a second freshness indicator alongside the funding-WS one.
+    Reads from in-memory `_book_cache` (fetcher/owner workers) and from the
+    shared file cache (other workers), taking the fresher of the two.
+
+    Returns {exchange: {min_age_s, fresh, degraded, stale, total, healthy}}
+      · min_age_s: age of freshest book on that exchange (None if no books).
+      · fresh:    count with age <= FILE_FRESH_MAX     (5s)  — green
+      · degraded: count with age <= FILE_DEGRADED_MAX (15s)  — yellow
+      · stale:    count older than FILE_DEGRADED_MAX         — red
+      · healthy:  fresh > 0 (at least one live pair)
+    """
+    _refresh_file_memo()
+    now = time.time()
+    per_ex: dict[str, dict] = {}
+
+    def _ingest(key: str, ts: float) -> None:
+        if ":" not in key:
+            return
+        ex = key.split(":", 1)[0]
+        age = max(0.0, now - ts)
+        b = per_ex.setdefault(ex, {"fresh": 0, "degraded": 0, "stale": 0, "min_age_s": float("inf")})
+        if age <= FILE_FRESH_MAX:
+            b["fresh"] += 1
+        elif age <= FILE_DEGRADED_MAX:
+            b["degraded"] += 1
+        else:
+            b["stale"] += 1
+        if age < b["min_age_s"]:
+            b["min_age_s"] = age
+
+    seen: set[str] = set()
+    for key, entry in _book_cache.items():
+        ts = entry.get("ts", 0)
+        if ts:
+            _ingest(key, ts)
+            seen.add(key)
+    for key, entry in _file_memo.items():
+        if key in seen:
+            continue
+        ts = entry.get("ts", 0)
+        if ts:
+            _ingest(key, ts)
+
+    for b in per_ex.values():
+        b["total"] = b["fresh"] + b["degraded"] + b["stale"]
+        b["healthy"] = b["fresh"] > 0
+        b["min_age_s"] = None if b["min_age_s"] == float("inf") else round(b["min_age_s"], 2)
+    return per_ex
+
+
 # ── Prewarm owner loops (single worker) ──────────────────────────────────────
 PREWARM_TOP_N        = 80
 PREWARM_HOTLIST_S    = 4.0    # refresh hot list in lockstep with arb broadcast (3-4s)
