@@ -577,14 +577,12 @@ async def _refresh_loop() -> None:
     # reach over to another worker's snapshot.
     _LOCAL_STALE_MAX = 15.0
 
-    _tick_counter = [0]
     while True:
         started = asyncio.get_event_loop().time()
         # Kick background funding refresh — never await. Lock ensures only one
         # get_funding_data runs at a time (prevents pool exhaustion / duplicates).
         asyncio.create_task(_single_fetch())
         try:
-            t_prep = asyncio.get_event_loop().time()
             disabled_ex = admin_settings.get_disabled_exchanges()
             hidden_sym = admin_settings.get_hidden_symbols()
             min_volume = admin_settings.get_arb_min_volume_usd()
@@ -618,10 +616,8 @@ async def _refresh_loop() -> None:
                     return False
             rows = [r for r in rows if _keep(r)]
             rows = _drop_price_outliers(rows)
-            t_filter = asyncio.get_event_loop().time()
             if rows:
                 result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
-                t_compute = asyncio.get_event_loop().time()
                 # Anti-flicker: transient WS / orderbook hiccups can cause the
                 # compute to drop to a fraction of its usual pair count for
                 # 1-2 ticks. Publishing those would make the UI blink "No data
@@ -644,16 +640,6 @@ async def _refresh_loop() -> None:
                     _arb_result_cache["ts"] = time.time()
                     _write_file_cache("arbitrage.json", _slim_arb_for_file(result))
                     score_opportunities(result.get("opportunities", []))
-                t_write = asyncio.get_event_loop().time()
-                _tick_counter[0] += 1
-                if _tick_counter[0] % 20 == 0:
-                    logger.info(
-                        "refresh tick #%d: prep=%.2fs filter=%.2fs compute=%.2fs write=%.2fs rows=%d opps=%d",
-                        _tick_counter[0],
-                        t_prep - started, t_filter - t_prep,
-                        t_compute - t_filter, t_write - t_compute,
-                        len(rows), len(result.get("opportunities", [])),
-                    )
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)
         elapsed = asyncio.get_event_loop().time() - started
