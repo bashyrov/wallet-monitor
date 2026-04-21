@@ -11,40 +11,52 @@ so it's always interpretable as "top 10% = score 90+".
 """
 from __future__ import annotations
 
+import bisect
 import math
 from typing import Iterable
 
 
-def _rank_pct(values: list[float], v: float) -> float:
-    """Percentile rank of v within values (0-1)."""
-    if not values:
+def _rank_pct_bisect(sorted_vals: list[float], v: float, n: int) -> float:
+    """Percentile rank of v within pre-sorted values (0-1). O(log N) via bisect.
+    Ties split half-and-half like the original implementation."""
+    if n == 0:
         return 0.5
-    below = sum(1 for x in values if x < v)
-    equal = sum(1 for x in values if x == v)
-    return (below + 0.5 * equal) / len(values)
+    lo = bisect.bisect_left(sorted_vals, v)
+    hi = bisect.bisect_right(sorted_vals, v)
+    # lo = count strictly below; hi - lo = count equal
+    return (lo + 0.5 * (hi - lo)) / n
 
 
 def score_opportunities(opps: list[dict]) -> list[dict]:
-    """Annotate each opp with `alpha_score` (0-100) and `alpha_rank`."""
+    """Annotate each opp with `alpha_score` (0-100) and `alpha_rank`.
+
+    Performance: the naive O(N²) version took 5-7s on the prod fetcher
+    with ~3300 opps per tick and was the dominant reason arbitrage.json
+    was being refreshed every 6-9s instead of the configured 600ms.
+    Pre-sorting each metric once then using bisect.bisect_* brings this
+    to O(N log N) ≈ ~100ms for the same input.
+    """
     if not opps:
         return opps
 
-    spreads = [float(o.get("net_profit", 0) or 0) for o in opps]
-    volumes = [math.log1p(max(float(o.get("long_volume", 0) or 0), float(o.get("short_volume", 0) or 0))) for o in opps]
-    intervals = [float(o.get("long_interval_h", 8) or 8) + float(o.get("short_interval_h", 8) or 8) for o in opps]
-    inv_price = [-abs(float(o.get("price_spread", 0) or 0)) for o in opps]  # closer to 0 = better
+    n = len(opps)
+    spreads_all = [float(o.get("net_profit", 0) or 0) for o in opps]
+    volumes_all = [math.log1p(max(float(o.get("long_volume", 0) or 0),
+                                  float(o.get("short_volume", 0) or 0))) for o in opps]
+    intervals_all = [float(o.get("long_interval_h", 8) or 8)
+                     + float(o.get("short_interval_h", 8) or 8) for o in opps]
+    inv_price_all = [-abs(float(o.get("price_spread", 0) or 0)) for o in opps]
 
-    for o in opps:
-        s = float(o.get("net_profit", 0) or 0)
-        v = math.log1p(max(float(o.get("long_volume", 0) or 0), float(o.get("short_volume", 0) or 0)))
-        it = float(o.get("long_interval_h", 8) or 8) + float(o.get("short_interval_h", 8) or 8)
-        ip = -abs(float(o.get("price_spread", 0) or 0))
+    spreads_sorted   = sorted(spreads_all)
+    volumes_sorted   = sorted(volumes_all)
+    intervals_sorted = sorted(intervals_all)
+    inv_price_sorted = sorted(inv_price_all)
 
-        p_spread = _rank_pct(spreads, s)
-        p_vol = _rank_pct(volumes, v)
-        p_ival = 1 - _rank_pct(intervals, it)  # shorter interval = higher rank
-        p_price = _rank_pct(inv_price, ip)
-
+    for o, s, v, it, ip in zip(opps, spreads_all, volumes_all, intervals_all, inv_price_all):
+        p_spread = _rank_pct_bisect(spreads_sorted, s, n)
+        p_vol    = _rank_pct_bisect(volumes_sorted, v, n)
+        p_ival   = 1 - _rank_pct_bisect(intervals_sorted, it, n)
+        p_price  = _rank_pct_bisect(inv_price_sorted, ip, n)
         score = 100 * (0.45 * p_spread + 0.25 * p_vol + 0.15 * p_ival + 0.15 * p_price)
         o["alpha_score"] = round(score, 1)
 
