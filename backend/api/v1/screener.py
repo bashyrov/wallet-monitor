@@ -619,12 +619,20 @@ async def _refresh_loop() -> None:
                     rows.extend(cached_rows)
 
             def _keep(r: dict) -> bool:
+                # Mirrors arbitrage_service.get_funding_data's filter —
+                # keep in sync. Zero rate = uninitialised / stale feed;
+                # no venue reports a truly-zero funding in practice.
                 if hidden_sym and r.get("symbol") in hidden_sym:
                     return False
                 v = r.get("volume_usd")
                 if v is None:
                     return False
+                rate = r.get("rate")
+                if rate is None:
+                    return False
                 try:
+                    if float(rate) == 0.0:
+                        return False
                     return float(v) >= min_volume
                 except (TypeError, ValueError):
                     return False
