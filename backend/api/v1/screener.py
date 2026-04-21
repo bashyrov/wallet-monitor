@@ -522,7 +522,7 @@ _broadcaster_task: asyncio.Task | None = None
 # /ws/arb so the wire cost of this is ~3-10KB per tick (only changed rows).
 # /ws/funding sends a full snapshot; each push is ~300KB but gzip-compressed
 # it's <100KB and every client handles that in <50ms.
-BROADCAST_INTERVAL = 0.25  # live-feel push cadence; arb engine is event-driven so file updates land in real time
+BROADCAST_INTERVAL = 1
 
 
 async def _push(clients: set[WebSocket], msg: str) -> None:
@@ -546,7 +546,7 @@ async def _warmup() -> None:
     logger.info("Screener interval cache warmed up")
 
 
-_REFRESH_INTERVAL = 30.0  # safety-net full-scan cadence; event-driven engine does the real work
+_REFRESH_INTERVAL = 3.0  # recompute + push cadence (seconds)
 
 
 async def _refresh_loop() -> None:

@@ -32,14 +32,10 @@ class FundingWSManager:
         self._adapters: dict[str, FundingWSAdapter] = {}
 
     def _update_cb(self, exchange: str, symbol: str, row: dict) -> None:
-        """Fan out to the event-driven arb engine so every funding tick can
-        trigger a per-symbol recompute. Adapter still owns its own _rows
-        dict — we just notify the consumer about the change."""
-        try:
-            from backend.services.arbitrage_service import on_row_update
-            on_row_update(exchange, symbol)
-        except Exception:
-            pass
+        """Currently a no-op — adapters manage their own _rows dict. Kept as
+        the hook surface in case we later want to fan out to Redis / pub-sub.
+        """
+        pass
 
     def start_all(self) -> None:
         for ex, cls in ADAPTERS.items():
