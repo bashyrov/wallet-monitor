@@ -571,7 +571,11 @@ class KuCoinWS(WSAdapter):
                             except Exception:
                                 break
                             await asyncio.sleep(self.subscribe_delay)
-                    hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 2.0))
+                    # ping_s/3 instead of /2 — event loop starvation under
+                    # heavy WS traffic can delay asyncio.sleep wakeups by
+                    # 3-5 s, pushing our heartbeat past KuCoin's 18s cut-off
+                    # and getting the session silently dropped.
+                    hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 3.0))
                     logger.info("kucoin[%s] WS connected (%d symbols)", slot, len(self._symbols))
                     fail_count = 0
                     # KuCoin server-side drops sessions at ~60s with no clean
