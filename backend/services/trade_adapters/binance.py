@@ -171,18 +171,27 @@ class BinanceAdapter:
     # ── Leverage + margin mode ──
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
+        # Parallel: marginType and leverage are independent endpoints. Doing
+        # them concurrently shaves ~100-200ms off the first order on a symbol
+        # (the usual latency of one API roundtrip to Binance Futures).
         sym = cls._symbol(symbol)
-        try:
-            await cls._signed(creds, "POST", "/fapi/v1/marginType",
-                              {"symbol": sym, "marginType": "ISOLATED" if margin_mode == "isolated" else "CROSSED"})
-        except RuntimeError as e:
-            if "-4046" not in str(e) and "No need" not in str(e):
+
+        async def _margin():
+            try:
+                await cls._signed(creds, "POST", "/fapi/v1/marginType",
+                                  {"symbol": sym, "marginType": "ISOLATED" if margin_mode == "isolated" else "CROSSED"})
+            except RuntimeError as e:
+                if "-4046" not in str(e) and "No need" not in str(e):
+                    raise RuntimeError(_friendly_error(*_split_code(e)))
+
+        async def _lev():
+            try:
+                await cls._signed(creds, "POST", "/fapi/v1/leverage",
+                                  {"symbol": sym, "leverage": int(leverage)})
+            except RuntimeError as e:
                 raise RuntimeError(_friendly_error(*_split_code(e)))
-        try:
-            await cls._signed(creds, "POST", "/fapi/v1/leverage",
-                              {"symbol": sym, "leverage": int(leverage)})
-        except RuntimeError as e:
-            raise RuntimeError(_friendly_error(*_split_code(e)))
+
+        await asyncio.gather(_margin(), _lev())
 
     # ── Pre-flight sanity ──
     @classmethod
@@ -230,7 +239,8 @@ class BinanceAdapter:
 
     # ── Place order ──
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
         info = (await _exchange_info()).get(sym) or {}
         step = info.get("stepSize") or 0

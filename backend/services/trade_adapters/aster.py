@@ -118,17 +118,24 @@ class AsterAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         sym = cls._symbol(symbol)
-        try:
-            await cls._signed(creds, "POST", "/fapi/v1/marginType",
-                              {"symbol": sym, "marginType": "ISOLATED" if margin_mode == "isolated" else "CROSSED"})
-        except RuntimeError as e:
-            if "No need" not in str(e) and "-4046" not in str(e):
-                raise
-        await cls._signed(creds, "POST", "/fapi/v1/leverage",
-                          {"symbol": sym, "leverage": str(leverage)})
+
+        async def _mode():
+            try:
+                await cls._signed(creds, "POST", "/fapi/v1/marginType",
+                                  {"symbol": sym, "marginType": "ISOLATED" if margin_mode == "isolated" else "CROSSED"})
+            except RuntimeError as e:
+                if "No need" not in str(e) and "-4046" not in str(e):
+                    raise
+
+        async def _lev():
+            await cls._signed(creds, "POST", "/fapi/v1/leverage",
+                              {"symbol": sym, "leverage": str(leverage)})
+
+        await asyncio.gather(_mode(), _lev())
 
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
         r = await cls._signed(creds, "POST", "/fapi/v1/order", {
             "symbol": sym,

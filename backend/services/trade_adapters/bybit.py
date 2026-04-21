@@ -162,29 +162,33 @@ class BybitAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         sym = cls._symbol(symbol)
-        # Margin mode: Bybit uses setMarginMode (portfolio-wide for UTA) + set leverage per symbol
-        try:
-            await cls._signed(creds, "POST", "/v5/position/switch-isolated", {
-                "category": "linear",
-                "symbol": sym,
-                "tradeMode": 1 if margin_mode == "isolated" else 0,
-                "buyLeverage": str(int(leverage)),
-                "sellLeverage": str(int(leverage)),
-            })
-        except RuntimeError as e:
-            # 110026: already isolated/cross, 110043: leverage not modified
-            if not any(code in str(e) for code in ("110026", "110043", "110027")):
-                raise
-        try:
-            await cls._signed(creds, "POST", "/v5/position/set-leverage", {
-                "category": "linear",
-                "symbol": sym,
-                "buyLeverage": str(int(leverage)),
-                "sellLeverage": str(int(leverage)),
-            })
-        except RuntimeError as e:
-            if "110043" not in str(e):
-                raise
+        # Parallel: independent endpoints; saves ~100-200ms on first order.
+        async def _mode():
+            try:
+                await cls._signed(creds, "POST", "/v5/position/switch-isolated", {
+                    "category": "linear",
+                    "symbol": sym,
+                    "tradeMode": 1 if margin_mode == "isolated" else 0,
+                    "buyLeverage": str(int(leverage)),
+                    "sellLeverage": str(int(leverage)),
+                })
+            except RuntimeError as e:
+                if not any(code in str(e) for code in ("110026", "110043", "110027")):
+                    raise
+
+        async def _lev():
+            try:
+                await cls._signed(creds, "POST", "/v5/position/set-leverage", {
+                    "category": "linear",
+                    "symbol": sym,
+                    "buyLeverage": str(int(leverage)),
+                    "sellLeverage": str(int(leverage)),
+                })
+            except RuntimeError as e:
+                if "110043" not in str(e):
+                    raise
+
+        await asyncio.gather(_mode(), _lev())
 
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
@@ -224,7 +228,8 @@ class BybitAdapter:
         return {"ok": True, "qty_rounded": qty_r, "step_size": step, "min_qty": min_qty, "min_notional": min_notional}
 
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
         info = await _instrument_info(sym) or {}
         step = float(info.get("qtyStep") or 0)

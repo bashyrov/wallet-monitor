@@ -62,3 +62,19 @@ for _key, _label in _READONLY.items():
 
 SUPPORTED_EXCHANGES = set(ADAPTERS.keys())
 
+
+# ── Runtime interface check — catches signature drift at import time ────────
+from ._base import verify_adapter as _verify_adapter
+
+for _name, _cls in ADAPTERS.items():
+    if _name in _READONLY:
+        continue  # readonly proxy is intentionally minimal
+    try:
+        _verify_adapter(_name, _cls)
+    except ImportError as _exc:
+        import logging as _logging
+        _logging.getLogger("avalant.trade_adapters").error("adapter check: %s", _exc)
+        # Don't block app start on a misbehaving adapter — just mark it
+        # unsupported so trade_service rejects orders cleanly.
+        SUPPORTED_EXCHANGES.discard(_name)
+

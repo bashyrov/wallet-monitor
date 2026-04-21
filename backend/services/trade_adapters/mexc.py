@@ -177,7 +177,8 @@ class MexcAdapter:
         return {"ok": True, "qty_contracts": qty_contracts, "contract_size": contract_size, "min_vol": min_vol}
 
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
         info = await _instrument_info(sym) or {}
         contract_size = info.get("contractSize", 1)
@@ -188,6 +189,8 @@ class MexcAdapter:
             raise RuntimeError(f"Quantity below minimum for {sym}")
         # side: 1=open_long, 3=open_short
         mexc_side = 1 if side == "buy" else 3
+        # openType: 1 = isolated, 2 = cross
+        open_type = 1 if margin_mode == "isolated" else 2
         try:
             data = await cls._signed(creds, "POST", "/api/v1/private/order/submit", body={
                 "symbol": sym,
@@ -195,7 +198,7 @@ class MexcAdapter:
                 "vol": qty_contracts,
                 "side": mexc_side,
                 "type": 5,  # market
-                "openType": 1,  # isolated default
+                "openType": open_type,
             })
         except RuntimeError as e:
             code, msg = _split_code(e)
@@ -217,6 +220,9 @@ class MexcAdapter:
         vol = int(p["quantity"] / contract_size) if contract_size else int(p["quantity"])
         if vol <= 0:
             vol = 1
+        # Must close in the same openType as the position was opened.
+        pos_mm = (p.get("margin_mode") or "isolated").lower()
+        open_type = 1 if pos_mm.startswith("iso") else 2
         try:
             data = await cls._signed(creds, "POST", "/api/v1/private/order/submit", body={
                 "symbol": sym,
@@ -224,7 +230,7 @@ class MexcAdapter:
                 "vol": vol,
                 "side": mexc_side,
                 "type": 5,
-                "openType": 1,
+                "openType": open_type,
             })
         except RuntimeError as e:
             code, msg = _split_code(e)
