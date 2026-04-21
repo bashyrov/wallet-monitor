@@ -38,6 +38,13 @@ class WSManager:
         # keep last_request fresh so file-dumper includes it
         if "last_request" not in entry or time.time() - entry.get("last_request", 0) > 5:
             entry["last_request"] = time.time()
+        # Fan out to the event-driven arb engine — orderbook changes affect
+        # the price_spread component of any pair involving this symbol.
+        try:
+            from backend.services.arbitrage_service import on_row_update
+            on_row_update(exchange, symbol)
+        except Exception:
+            pass
 
     def subscribe(self, exchange: str, symbols: list[str]) -> None:
         """Ensure an adapter for `exchange` is running and subscribed to `symbols`."""

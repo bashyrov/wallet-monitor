@@ -62,12 +62,18 @@ async def _run() -> None:
     start_funding_ws_manager()
     logger.info("fetcher: funding WS manager started")
 
-    # ── Screener broadcaster's compute half (NOT the WS push half).
-    # _refresh_loop writes arbitrage.json every 3s; the push half lives
-    # on web workers where the WS client sets live.
+    # ── Event-driven arb engine — recomputes pairs on WS/REST tick,
+    # bypassing any fixed-interval scan. Must start BEFORE the WS
+    # managers push updates so the first ticks are captured.
+    from backend.services.arbitrage_service import start_arb_event_loop, stop_arb_event_loop
+    start_arb_event_loop()
+    logger.info("fetcher: arb event loop started")
+
+    # ── Legacy refresh loop — kept as a 30s safety net to reconcile the
+    # live opp dict against a full scan in case we missed any events.
     from backend.api.v1.screener import start_refresh_loop, stop_refresh_loop
     start_refresh_loop()
-    logger.info("fetcher: screener refresh loop started")
+    logger.info("fetcher: screener refresh loop started (safety-net)")
 
     # ── Alerts (Telegram) — reads funding cache, sends on threshold ──
     from backend.services.alert_service import start_alert_service, stop_alert_service
@@ -111,6 +117,7 @@ async def _run() -> None:
             ("alert_service", stop_alert_service),
             ("tg_bot", stop_tg_bot),
             ("refresh_loop", stop_refresh_loop),
+            ("arb_event_loop", stop_arb_event_loop),
             ("funding_ws_manager", stop_funding_ws_manager),
             ("prewarm", stop_prewarm),
             ("price_loop", stop_price_loop),
