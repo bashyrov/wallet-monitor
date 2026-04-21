@@ -311,17 +311,34 @@ class BinanceAdapter:
 
     # ── Positions ──
     @classmethod
+    async def _funding_pnl(cls, creds: dict, symbol: str, since_ms: int) -> float | None:
+        """Sum of funding fees (income) since `since_ms`. Negative = paid out.
+        `/fapi/v1/income?incomeType=FUNDING_FEE&symbol=...&limit=1000` —
+        Binance returns funding events with `income` in USDT. Returns None if
+        the call fails so the UI falls back to an em-dash."""
+        try:
+            data = await cls._signed(creds, "GET", "/fapi/v1/income", {
+                "symbol": symbol, "incomeType": "FUNDING_FEE",
+                "startTime": since_ms, "limit": 1000,
+            })
+            return sum(float(x.get("income") or 0) for x in (data or []))
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         params = {"symbol": cls._symbol(symbol)} if symbol else None
         data = await cls._signed(creds, "GET", "/fapi/v2/positionRisk", params)
-        out = []
+        # Gather positions first, then fetch funding P&L per symbol in parallel.
+        positions = []
         for p in data:
             amt = float(p.get("positionAmt", 0) or 0)
             if amt == 0:
                 continue
-            out.append({
+            positions.append({
                 "exchange": "binance",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
+                "_api_symbol": p.get("symbol", ""),
                 "side":   "buy" if amt > 0 else "sell",
                 "quantity": abs(amt),
                 "entry_price": float(p.get("entryPrice", 0) or 0),
@@ -330,7 +347,20 @@ class BinanceAdapter:
                 "leverage": int(float(p.get("leverage", 1) or 1)),
                 "position_id": str(p.get("symbol", "")),
             })
-        return out
+        if not positions:
+            return []
+        # Funding P&L since position-open time is hard to obtain from the
+        # Binance position API (no openTime field). 7 days window is a
+        # reasonable default — most arb positions are closed within days.
+        # Users can always see precise accumulated funding on the exchange UI.
+        since_ms = int((time.time() - 7 * 86400) * 1000)
+        fundings = await asyncio.gather(*[
+            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
+        ], return_exceptions=True)
+        for p, f in zip(positions, fundings):
+            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
+            p.pop("_api_symbol", None)
+        return positions
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

@@ -275,28 +275,54 @@ class KuCoinAdapter:
         }
 
     @classmethod
+    async def _funding_pnl(cls, creds: dict, api_symbol: str, since_ms: int) -> float | None:
+        """Sum `funding` field from /api/v1/funding-history since `since_ms`.
+        Positive = received, negative = paid. Returns None on any failure
+        so the UI falls back to an em-dash rather than misleading zero."""
+        try:
+            data = await cls._signed(creds, "GET", "/api/v1/funding-history", {
+                "symbol": api_symbol,
+                "from": since_ms,
+                "maxCount": 200,
+            })
+            # KuCoin returns {dataList: [{funding, fundingRate, timestamp, ...}]}
+            items = (data or {}).get("dataList") if isinstance(data, dict) else data
+            return sum(float(x.get("funding") or 0) for x in (items or []))
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
+        import time as _t
         params = {}
         if symbol:
             params["symbol"] = cls._symbol(symbol)
         data = await cls._signed(creds, "GET", "/api/v1/position" + ("s" if not symbol else ""), params or None)
         items = [data] if isinstance(data, dict) else (data or [])
-        out = []
+        # Gather funding history + instrument info per position concurrently.
+        pending = []
         for p in items:
             raw_qty = int(p.get("currentQty") or 0)
             if raw_qty == 0:
                 continue
+            pending.append(p)
+        if not pending:
+            return []
+        # 7-day window for accumulated funding. See binance adapter note.
+        since_ms = int((_t.time() - 7 * 86400) * 1000)
+        infos, fundings = await asyncio.gather(
+            asyncio.gather(*[_instrument_info(p.get("symbol") or cls._symbol(str(p.get("symbol", "")).replace("USDTM", "")))
+                             for p in pending], return_exceptions=True),
+            asyncio.gather(*[cls._funding_pnl(creds, p.get("symbol"), since_ms) for p in pending],
+                           return_exceptions=True),
+        )
+        out = []
+        for p, info, funding in zip(pending, infos, fundings):
+            raw_qty = int(p.get("currentQty") or 0)
             base_sym = str(p.get("symbol", "")).replace("USDTM", "")
             if base_sym == "XBT":
                 base_sym = "BTC"
-            # KuCoin position API does NOT include `multiplier` — it's only on
-            # the contract-info endpoint. Before this fix we defaulted to 1,
-            # so the reported qty was in contracts (e.g. ARIA: 1015 contracts
-            # of 10 ARIA each appeared as 1015 base units instead of 10150).
-            # That broke arb pair detection against Binance which reports
-            # base units directly.
-            info = await _instrument_info(p.get("symbol") or cls._symbol(base_sym)) or {}
-            multiplier = float(info.get("multiplier") or 1)
+            multiplier = float((info or {}).get("multiplier") or 1) if not isinstance(info, Exception) else 1.0
             out.append({
                 "exchange": "kucoin",
                 "symbol": base_sym,
@@ -305,6 +331,7 @@ class KuCoinAdapter:
                 "entry_price": float(p.get("avgEntryPrice") or 0),
                 "mark_price": float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealisedPnl") or 0),
+                "funding_pnl_usd": funding if isinstance(funding, (int, float)) else None,
                 "leverage": int(float(p.get("realLeverage") or p.get("leverage") or 1)),
                 "position_id": str(p.get("id", "")),
             })
