@@ -112,13 +112,26 @@ class EtherealAdapter:
 
     @classmethod
     async def close_position(cls, creds: dict, symbol: str, side: str) -> dict:
+        """Reduce-only market order. Previously called place_order without
+        a reduce flag, which would open an opposing position in hedge mode."""
         positions = await cls.list_positions(creds, symbol)
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         p = positions[0]
         close_side = "sell" if p["side"] == "buy" else "buy"
-        r = await cls.place_order(creds, symbol, close_side, p["quantity"])
-        return {"order_id": r.get("order_id"), "closed_qty": p["quantity"], "realized_pnl_usd": 0}
+        body = {
+            "symbol": cls._symbol(symbol),
+            "side": close_side,
+            "type": "market",
+            "quantity": str(p["quantity"]),
+            "reduceOnly": True,
+        }
+        r = await cls._signed_request(creds, "POST", "/v1/order", body=body)
+        return {
+            "order_id": str(r.get("orderId", r.get("id", ""))),
+            "closed_qty": p["quantity"],
+            "realized_pnl_usd": p.get("unrealized_pnl_usd", 0),
+        }
 
     @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:

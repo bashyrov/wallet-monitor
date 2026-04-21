@@ -147,13 +147,33 @@ class AsterAdapter:
 
     @classmethod
     async def close_position(cls, creds: dict, symbol: str, side: str) -> dict:
+        """Reduce-only market order. Previous implementation just called
+        place_order(close_side, qty) which, without reduceOnly, would OPEN a
+        new opposing position in hedge mode and only work by accident in
+        one-way mode when position net goes to zero. Now mirrors the binance
+        adapter — submit a MARKET order with reduceOnly=true."""
         positions = await cls.list_positions(creds, symbol)
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         p = positions[0]
-        close_side = "sell" if p["side"] == "buy" else "buy"
-        r = await cls.place_order(creds, symbol, close_side, p["quantity"])
-        return {"order_id": r.get("order_id"), "closed_qty": p["quantity"], "realized_pnl_usd": 0}
+        sym = cls._symbol(symbol)
+        reduce_side = "SELL" if p["side"] == "buy" else "BUY"
+        qty_s = f"{p['quantity']:.6f}".rstrip("0").rstrip(".")
+        try:
+            r = await cls._signed(creds, "POST", "/fapi/v1/order", {
+                "symbol": sym,
+                "side": reduce_side,
+                "type": "MARKET",
+                "quantity": qty_s,
+                "reduceOnly": "true",
+            })
+        except RuntimeError as e:
+            raise RuntimeError(_friendly_error(*_split_code(e)) if '_friendly_error' in globals() else str(e))
+        return {
+            "order_id": str(r.get("orderId", "")),
+            "closed_qty": p["quantity"],
+            "realized_pnl_usd": p.get("unrealized_pnl_usd", 0),
+        }
 
     @classmethod
     async def _funding_pnl(cls, creds: dict, api_symbol: str, since_ms: int) -> float | None:

@@ -2214,22 +2214,24 @@ function _eeBucket(ts){
 
 function _eeBuildCandles(){
   const bucket=EE_BUCKET[_eeTfSec]||60;
-  // OHLC candles: one candle per TF bucket. Tracks open (first sample in the
-  // bucket), high (max), low (min), close (last). Same shape TradingView
-  // Lightweight Charts candlestick series expects.
-  const bIn=new Map(), bOut=new Map();
+  // In = OHLC candles; Out = {time, value} line (mean of samples in bucket).
+  // Mean makes the out-line smooth — using last-sample makes it spike when
+  // orderbooks arrive off-beat between legs and obscures the entry trend.
+  const bIn=new Map();
+  const bOutSum=new Map(), bOutN=new Map();
   for(const p of _eeHist){
     const t=Math.floor(p.ts/bucket)*bucket;
     const inVal=p.inPct, outVal=p.outPct;
     let ci=bIn.get(t);
     if(!ci){ci={time:t,open:inVal,high:inVal,low:inVal,close:inVal};bIn.set(t,ci);}
     else { if(inVal>ci.high) ci.high=inVal; if(inVal<ci.low) ci.low=inVal; ci.close=inVal; }
-    let co=bOut.get(t);
-    if(!co){co={time:t,open:outVal,high:outVal,low:outVal,close:outVal};bOut.set(t,co);}
-    else { if(outVal>co.high) co.high=outVal; if(outVal<co.low) co.low=outVal; co.close=outVal; }
+    bOutSum.set(t, (bOutSum.get(t)||0) + outVal);
+    bOutN.set(t, (bOutN.get(t)||0) + 1);
   }
   const inArr=[...bIn.values()].sort((a,b)=>a.time-b.time);
-  const outArr=[...bOut.values()].sort((a,b)=>a.time-b.time);
+  const outArr=[...bOutSum.keys()].sort((a,b)=>a-b).map(t => ({
+    time: t, value: bOutSum.get(t) / bOutN.get(t),
+  }));
   return {inArr,outArr};
 }
 
@@ -2246,10 +2248,12 @@ function _eeThemeColors(){
   const light=document.body.classList.contains('light');
   return light?{
     bg:'#FFFFFF',text:'#1A1A1A',grid:'#E0E0E0',border:'#000000',cross:'#595959',
-    inUp:'#006B3C',inDown:'#006B3C',outUp:'#8B0000',outDown:'#8B0000',
+    zero:'#8C8C8C',
+    inUp:'#006B3C',inDown:'#8B0000',outUp:'#1A5CC2',outDown:'#1A5CC2',
   }:{
     bg:'#0D0D12',text:'#9B9FAB',grid:'#1F1F28',border:'#22222A',cross:'#3A3A50',
-    inUp:'#1AFFAB',inDown:'#0D9B66',outUp:'#F87171',outDown:'#A63B3B',
+    zero:'#3A3A50',
+    inUp:'#1AFFAB',inDown:'#F87171',outUp:'#6FB2FF',outDown:'#6FB2FF',
   };
 }
 function _eeApplyTheme(){
@@ -2267,11 +2271,7 @@ function _eeApplyTheme(){
     borderUpColor:c.inUp, borderDownColor:c.inDown,
     wickUpColor:c.inUp, wickDownColor:c.inDown,
   });
-  _eeOutSeries.applyOptions({
-    upColor:c.outUp, downColor:c.outDown,
-    borderUpColor:c.outUp, borderDownColor:c.outDown,
-    wickUpColor:c.outUp, wickDownColor:c.outDown,
-  });
+  _eeOutSeries.applyOptions({color:c.outUp});
 }
 function _eeInit(){
   const el=document.getElementById('ee-chart');
@@ -2281,34 +2281,30 @@ function _eeInit(){
   _eeChart=LightweightCharts.createChart(el,{
     layout:{background:{type:'solid',color:c.bg},textColor:c.text,fontFamily:'JetBrains Mono, monospace',fontSize:10},
     grid:{vertLines:{color:c.grid},horzLines:{color:c.grid}},
-    rightPriceScale:{borderColor:c.border,scaleMargins:{top:0.1,bottom:0.1},visible:true},
-    leftPriceScale:{borderColor:c.border,scaleMargins:{top:0.1,bottom:0.1},visible:true},
-    timeScale:{borderColor:c.border,timeVisible:true,secondsVisible:true,rightOffset:4,barSpacing:6},
+    rightPriceScale:{borderColor:c.border,scaleMargins:{top:0.12,bottom:0.12},visible:true},
+    timeScale:{borderColor:c.border,timeVisible:true,secondsVisible:_eeTfSec<=60,rightOffset:6,barSpacing:8},
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:c.cross,style:2,width:1},horzLine:{color:c.cross,style:2,width:1}},
     localization:{priceFormatter:v=>(v>=0?'+':'')+v.toFixed(4)+'%'},
   });
-  // Candlestick series — In on the RIGHT axis, Out on the LEFT axis.
-  // Using two separate price scales prevents the earlier issue where the
-  // In series went invisible whenever its values tracked Out closely (they
-  // were literally the same pixel column). Each gets its own autoscale.
+  // TradingView-style: single price axis. "In" (entry) as candles — this is
+  // the primary metric for judging an arb entry. "Out" (exit divergence) as
+  // a thin overlay line on the same axis so you can see entry/exit together
+  // without the chart reading like two unrelated plots.
   _eeInSeries=_eeChart.addCandlestickSeries({
     upColor:c.inUp, downColor:c.inDown,
     borderUpColor:c.inUp, borderDownColor:c.inDown,
     wickUpColor:c.inUp, wickDownColor:c.inDown,
     priceLineVisible:false,
     priceFormat:{type:'price',precision:4,minMove:0.0001},
-    title:'In', priceScaleId:'right',
+    title:'In',
   });
-  _eeOutSeries=_eeChart.addCandlestickSeries({
-    upColor:c.outUp, downColor:c.outDown,
-    borderUpColor:c.outUp, borderDownColor:c.outDown,
-    wickUpColor:c.outUp, wickDownColor:c.outDown,
-    priceLineVisible:false,
+  _eeOutSeries=_eeChart.addLineSeries({
+    color:c.outUp, lineWidth:1, priceLineVisible:false, lastValueVisible:true,
     priceFormat:{type:'price',precision:4,minMove:0.0001},
-    title:'Out', priceScaleId:'left',
+    title:'Out',
   });
-  _eeChart.priceScale('right').applyOptions({autoScale:true, borderColor:c.border, scaleMargins:{top:0.08,bottom:0.08}});
-  _eeChart.priceScale('left' ).applyOptions({autoScale:true, borderColor:c.border, scaleMargins:{top:0.08,bottom:0.08}, visible:true});
+  // Zero reference line so "In > 0 = positive entry divergence" reads visually.
+  _eeInSeries.createPriceLine({price:0, color:c.zero||c.border, lineStyle:2, lineWidth:1, axisLabelVisible:false, title:''});
   const ro=new ResizeObserver(()=>{if(_eeChart) _eeChart.applyOptions({width:el.clientWidth,height:el.clientHeight});});
   ro.observe(el);
   _eeChart.applyOptions({width:el.clientWidth,height:el.clientHeight});
