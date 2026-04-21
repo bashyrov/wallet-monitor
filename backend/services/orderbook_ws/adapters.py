@@ -522,12 +522,15 @@ class KuCoinWS(WSAdapter):
                     backoff = 0.3
                     if self._symbols:
                         frames = self.build_subscribe(list(self._symbols))
-                        for f in frames:
+                        logger.info("kucoin will send %d subscribe frames", len(frames))
+                        for idx, f in enumerate(frames):
                             try:
                                 await ws.send(_json.dumps(f))
-                            except Exception:
+                            except Exception as exc:
+                                logger.warning("kucoin subscribe[%d] failed: %s", idx, exc)
                                 break
                             await asyncio.sleep(self.subscribe_delay)
+                        logger.info("kucoin finished sending %d subscribes", len(frames))
                     _dbg = 0
                     logger.info("kucoin entering async-for loop")
                     async for raw in ws:
