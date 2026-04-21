@@ -1262,22 +1262,37 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                 fee_l = _fee(long_e["exchange"])
                 fee_s = _fee(short_e["exchange"])
                 total_fees = 2.0 * (fee_l + fee_s)
-                # Orderbook is REQUIRED on both sides. Spread is computed
-                # exclusively from live (bid, ask) — never from the funding
-                # feed's stale `price`. No book → skip the pair.
+                # Prefer orderbook-derived (bid, ask) on both sides — that's
+                # the accurate picture. If either side's book is missing
+                # (WS drop, subscribe race, stale entry), fall back to the
+                # funding feed's mark price so the pair stays visible in
+                # the screener during orderbook hiccups instead of vanishing.
+                # `book_ok` is threaded into the opp so the frontend can
+                # soften the indicator for fallback rows.
                 lv_l = top_levels(long_e["exchange"], symbol)
                 lv_s = top_levels(short_e["exchange"], symbol)
-                if not lv_l or not lv_s:
-                    continue
-                bid_l, ask_l = lv_l
-                bid_s, ask_s = lv_s
-                if ask_l <= 0 or ask_s <= 0 or bid_l <= 0 or bid_s <= 0:
-                    continue
-                in_pct  = (bid_s - ask_l) / ask_l
-                out_pct = (bid_l - ask_s) / ask_s
-                price_spread = in_pct
-                p_l = (bid_l + ask_l) / 2
-                p_s = (bid_s + ask_s) / 2
+                book_ok = bool(lv_l and lv_s)
+                if book_ok:
+                    bid_l, ask_l = lv_l
+                    bid_s, ask_s = lv_s
+                    if ask_l <= 0 or ask_s <= 0 or bid_l <= 0 or bid_s <= 0:
+                        book_ok = False
+                if book_ok:
+                    in_pct  = (bid_s - ask_l) / ask_l
+                    out_pct = (bid_l - ask_s) / ask_s
+                    price_spread = in_pct
+                    p_l = (bid_l + ask_l) / 2
+                    p_s = (bid_s + ask_s) / 2
+                else:
+                    # Funding-mark fallback. No bid/ask so in/out are
+                    # symmetric estimates from the mid-to-mid spread.
+                    p_l = float(long_e.get("price") or 0)
+                    p_s = float(short_e.get("price") or 0)
+                    if p_l <= 0 or p_s <= 0:
+                        continue
+                    price_spread = (p_s - p_l) / p_l
+                    in_pct = price_spread
+                    out_pct = -price_spread
                 net = gross + price_spread - total_fees
                 if net <= 0:
                     continue
@@ -1306,6 +1321,7 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                     "short_interval_h": short_e.get("interval_h"),
                     "in_pct":  round(in_pct * 100, 4),
                     "out_pct": round(out_pct * 100, 4),
+                    "book_ok": book_ok,
                 })
 
     opportunities.sort(key=lambda x: x["net_profit"], reverse=True)
