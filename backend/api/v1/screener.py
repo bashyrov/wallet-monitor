@@ -562,6 +562,7 @@ async def _refresh_loop() -> None:
     )
     from backend.services import admin_settings
     _fetch_lock = asyncio.Lock()
+    _compute_lock = asyncio.Lock()
     async def _single_fetch():
         if _fetch_lock.locked():
             return  # previous fetch still running — skip
@@ -616,8 +617,14 @@ async def _refresh_loop() -> None:
                     return False
             rows = [r for r in rows if _keep(r)]
             rows = _drop_price_outliers(rows)
-            if rows:
-                result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
+            if rows and not _compute_lock.locked():
+                # Prevent queue buildup: if the previous compute is still
+                # running (to_thread future hasn't resolved), skip this tick.
+                # Default asyncio to_thread uses a shared threadpool and
+                # Python's GIL, so piling 5+ computes queued doesn't parallelise
+                # — it just starves the event loop until they all drain.
+                async with _compute_lock:
+                    result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
                 # Anti-flicker: transient WS / orderbook hiccups can cause the
                 # compute to drop to a fraction of its usual pair count for
                 # 1-2 ticks. Publishing those would make the UI blink "No data
