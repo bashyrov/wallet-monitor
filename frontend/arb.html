@@ -3163,52 +3163,45 @@ async function accLoadKeyCounts(){
 }
 
 // Detect arb pairs: two positions on the same symbol, opposite sides,
-// size within 2% (exchanges round differently — e.g. Binance allows
-// fractional qty, KuCoin is integer lots, so exact-match is too strict).
-// A matched pair is rendered as a single "paired" row at the top with
-// summed uPnL + aggregate size.
+// with matching USD notional (qty × mark). Match is on USD because
+// different exchanges return qty in different units — KuCoin reports
+// contracts (lots), Binance returns base-asset qty — so a raw-quantity
+// match is unreliable. 10% tolerance handles slight price differences
+// between the legs at snapshot time. Matched pair renders as a single
+// "⇆ PAIR" block with summed metrics.
 function _acc_pair_positions(rows){
+  // Tag rows with stable IDs + computed USD notional.
+  const tagged = rows.map((p, i) => ({
+    p,
+    key: p.position_id || `${p.exchange}:${p.symbol}:${i}`,
+    notional: Math.abs(Number(p.quantity || 0) * Number(p.mark_price || 0)),
+  }));
   const bySym = {};
-  for (const p of rows) {
-    (bySym[p.symbol] = bySym[p.symbol] || []).push(p);
-  }
+  for (const t of tagged) (bySym[t.p.symbol] = bySym[t.p.symbol] || []).push(t);
   const pairs = [];
-  const singles = [];
   const used = new Set();
   for (const [sym, group] of Object.entries(bySym)) {
-    for (let i = 0; i < group.length; i++) {
-      if (used.has(group[i].position_id || `${i}:${sym}`)) continue;
-      const a = group[i];
-      let matched = false;
-      for (let j = i + 1; j < group.length; j++) {
-        if (used.has(group[j].position_id || `${j}:${sym}`)) continue;
-        const b = group[j];
-        if (a.side === b.side) continue;  // need opposing
-        // Quantity match within 2% of max — exchanges round differently.
-        const qa = Number(a.quantity) || 0, qb = Number(b.quantity) || 0;
-        const maxQ = Math.max(qa, qb);
-        if (maxQ <= 0) continue;
-        const diffPct = Math.abs(qa - qb) / maxQ;
-        if (diffPct > 0.02) continue;
-        // Mark both as paired.
-        used.add(a.position_id || `${i}:${sym}`);
-        used.add(b.position_id || `${j}:${sym}`);
-        const longLeg  = a.side === 'buy' ? a : b;
-        const shortLeg = a.side === 'buy' ? b : a;
-        pairs.push({symbol: sym, long: longLeg, short: shortLeg});
-        matched = true;
-        break;
-      }
-      if (!matched) singles.push(a);
+    const longs  = group.filter(t => t.p.side === 'buy');
+    const shorts = group.filter(t => t.p.side === 'sell');
+    // Greedy USD-notional match: for each long, find the short with the
+    // closest notional within 10%. Prevents mis-pairing when a user has
+    // e.g. two longs + one short on the same symbol.
+    const candidates = [];
+    for (const l of longs) for (const s of shorts) {
+      const maxN = Math.max(l.notional, s.notional);
+      if (maxN <= 0) continue;
+      const diffPct = Math.abs(l.notional - s.notional) / maxN;
+      if (diffPct > 0.10) continue;
+      candidates.push({l, s, diffPct});
     }
-    // Any group entries not yet matched fall to singles (handled by `matched`
-    // flag — if i iterated past j without matching, it's still in singles).
+    candidates.sort((a, b) => a.diffPct - b.diffPct);
+    for (const c of candidates) {
+      if (used.has(c.l.key) || used.has(c.s.key)) continue;
+      used.add(c.l.key); used.add(c.s.key);
+      pairs.push({symbol: sym, long: c.l.p, short: c.s.p});
+    }
   }
-  // Also push unpaired entries from groups of 1
-  for (const p of rows) {
-    const key = p.position_id || `${rows.indexOf(p)}:${p.symbol}`;
-    if (!used.has(key) && !singles.includes(p)) singles.push(p);
-  }
+  const singles = tagged.filter(t => !used.has(t.key)).map(t => t.p);
   return {pairs, singles};
 }
 
