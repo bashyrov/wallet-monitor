@@ -191,9 +191,14 @@ def get_ws_rows(exchange: str) -> list[dict] | None:
     rows = (dump.get("rows") or {}).get(exchange)
     if not rows:
         return None
-    # Re-apply the completeness check — dump serialises raw adapter rows.
+    # Keep only rows with price AND non-None rate. Do NOT apply the
+    # 'ratio of complete > 25%' gate that used to live here: exchanges
+    # like OKX split rate across a separate REST poll (not the main WS
+    # broadcast), so most adapter rows have rate=None and the ratio
+    # guard was dropping the entire exchange. We'd rather serve 20 usable
+    # OKX symbols than silently return nothing because the ratio is low.
     complete = [r for r in rows if r.get("price") and r.get("rate") is not None]
-    if len(complete) < max(5, len(rows) // 4):
+    if not complete:
         return None
     return complete
 
