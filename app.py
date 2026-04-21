@@ -90,14 +90,20 @@ async def lifespan(app: FastAPI):
     from backend.api.v1.screener import start_broadcast_loop, stop_broadcast_loop
     start_broadcast_loop()
 
-    # ── Monolith-only (web process handles everything when no sidecar) ─
+    # Price loop runs in EVERY process (web + fetcher + monolith).
+    # _prices is in-memory per-process, and balance_service.get_usd_value
+    # reads it on the web container when serving /api/portfolio/balance.
+    # Previously gated behind `if not is_web`, which left the web worker
+    # with an empty price cache → all portfolio tokens rendered with no
+    # USD value. The loop itself is cheap: 1 CMC + 1 Gate call / 30min.
     _stop_fns = []
-    if not is_web:
-        from backend.services.price_service import start_price_loop, stop_price_loop
-        start_price_loop()
-        _stop_fns.append(stop_price_loop)
-        logger.info("Price refresh loop started")
+    from backend.services.price_service import start_price_loop, stop_price_loop
+    start_price_loop()
+    _stop_fns.append(stop_price_loop)
+    logger.info("Price refresh loop started (role=%s)", role)
 
+    # ── Monolith-only (web process handles everything when no sidecar) ─
+    if not is_web:
         from backend.api.v1.screener import start_refresh_loop, stop_refresh_loop
         start_refresh_loop()
         _stop_fns.append(stop_refresh_loop)
