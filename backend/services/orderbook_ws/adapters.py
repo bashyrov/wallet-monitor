@@ -435,135 +435,83 @@ class HyperliquidWS(WSAdapter):
 
 # ── KuCoin Futures (requires dynamic token) ──────────────────────────────────
 class KuCoinWS(WSAdapter):
+    """KuCoin futures orderbook via the Pro WebSocket API.
+
+    Migration history: the Classic futures feed (api-futures.kucoin.com +
+    bullet-public + /contractMarket/level2Depth50) forcibly rotated
+    sessions every ~60s without a close frame, causing 30-70s gaps while
+    hot-spare slots reconnected. Pro WS (wss://x-push-futures.kucoin.com)
+    holds a single session for 24h per KuCoin docs; A/B testing from the
+    same host showed one connection alive >5 minutes vs Classic's 50-60s
+    death cycle. Simplified single-session model since rotation is no
+    longer needed.
+    """
     name = "kucoin"
-    # url is set dynamically from /api/v1/bullet-public
-    url = ""
-    ping_interval = 18.0
-    subscribe_delay = 0.4  # KuCoin rate-limits subscribes to ~3/sec per connection
-    max_symbols = 50        # >~100 topics per connection triggers ~90s server disconnect loop
-    # Hot-spare second session: two independent WS connections, same symbol
-    # set. When one drops, the other keeps streaming and arb compute never
-    # sees a stale KuCoin orderbook. Each session has its own reconnect
-    # backoff and connectId so they can't be disconnected by the same event.
-    hot_spare: bool = True
-
-    # Token cache — bullet-public tokens live >=24h per KuCoin docs. Reusing
-    # the cached token on reconnect keeps outage windows <2 s; only the TCP
-    # + WS handshake + subscribe is on the critical path.
-    _cached_token: tuple[str, str, float, float] | None = None   # (endpoint, token, ping_s, fetched_at)
-    _TOKEN_TTL = 21600.0   # 6 h
-
-    async def _get_token(self, force: bool = False) -> tuple[str, str, float]:
-        """Return (endpoint, token, ping_interval_s). Cached for _TOKEN_TTL."""
-        import time as _t
-        cached = KuCoinWS._cached_token
-        if not force and cached and _t.time() - cached[3] < KuCoinWS._TOKEN_TTL:
-            return cached[0], cached[1], cached[2]
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post("https://api-futures.kucoin.com/api/v1/bullet-public")
-            r.raise_for_status()
-            d = r.json().get("data") or {}
-            servers = d.get("instanceServers") or [{}]
-            s = servers[0]
-            endpoint = s.get("endpoint", "")
-            token = d.get("token", "")
-            ping_s = (s.get("pingInterval") or 18000) / 1000.0
-            KuCoinWS._cached_token = (endpoint, token, ping_s, _t.time())
-            return endpoint, token, ping_s
+    url = "wss://x-push-futures.kucoin.com"  # Pro WS futures — no token, no bullet-public
+    ping_interval = 18.0   # will be overridden by server welcome msg
+    subscribe_delay = 0.15  # Pro WS is faster; 10 subs/sec is fine
+    max_symbols = 80        # Pro WS accepts more subs per connection
 
     def build_subscribe(self, symbols):
-        # KuCoin supports comma-joined topics: "/contractMarket/level2Depth50:A,B,C"
-        # One frame covers up to BATCH symbols, staying well below the 3/sec
-        # subscribe-op rate limit even with many pairs.
-        BATCH = 10
-        frames = []
-        mapped = [("XBT" if s == "BTC" else s) + "USDTM" for s in symbols]
-        for i in range(0, len(mapped), BATCH):
-            chunk = ",".join(mapped[i:i + BATCH])
-            frames.append({
-                "id": str(uuid.uuid4()),
-                "type": "subscribe",
-                "topic": f"/contractMarket/level2Depth50:{chunk}",
-                "response": True,
-            })
-        return frames
-
-    # Keep original per-symbol format disabled (stays here for reference)
-    def _build_subscribe_single(self, symbols):
+        # Pro WS: one subscribe per symbol (multi-symbol `symbols` field
+        # exists but spec is inconsistent between docs pages; per-symbol
+        # is always supported). Map BTC -> XBTUSDTM for futures.
         frames = []
         for s in symbols:
             sym_k = ("XBT" if s == "BTC" else s) + "USDTM"
             frames.append({
-                "id": str(uuid.uuid4()),
-                "type": "subscribe",
-                "topic": f"/contractMarket/level2Depth50:{sym_k}",
-                "response": True,
+                "id": f"ku-{uuid.uuid4().hex[:8]}",
+                "action": "SUBSCRIBE",
+                "channel": "obu",
+                "tradeType": "FUTURES",
+                "symbol": sym_k,
+                "depth": "50",
             })
         return frames
 
     def heartbeat_frame(self):
-        return '{"id":"ping","type":"ping"}'
+        import time as _t
+        return f'{{"id":"{int(_t.time()*1000)}","type":"ping"}}'
 
     def parse_message(self, msg):
-        if msg.get("type") in ("welcome", "ack", "pong"):
+        # Welcome, pong, subscribe ack → ignore
+        if msg.get("type") in ("welcome", "pong"):
             return None
-        if msg.get("type") != "message":
+        if msg.get("result") is not None:
+            return None  # subscribe ack
+        # Pro WS shape: {"T":"obu.FUTURES", "t":"snapshot|delta", "dp":"50", "d":{"s":"XBTUSDTM","a":[...],"b":[...]}}
+        if msg.get("T") != "obu.FUTURES":
             return None
-        topic = msg.get("topic", "")
-        if not topic.startswith("/contractMarket/level2Depth50:"):
-            return None
-        sym_k = topic.split(":", 1)[1]  # e.g. XBTUSDTM
+        d = msg.get("d") or {}
+        sym_k = d.get("s", "")
         if not sym_k.endswith("USDTM"):
             return None
         base = sym_k[:-5]
         token_sym = "BTC" if base == "XBT" else base
-        data = msg.get("data") or {}
-        bids, asks = _to_book(data.get("bids"), data.get("asks"))
+        bids, asks = _to_book(d.get("b"), d.get("a"))
         return token_sym, bids, asks
 
-    async def _session(self, slot: str) -> None:
-        """One WS session lifecycle. Runs forever, reconnects fast.
-        `slot` is just a label ("A" or "B") for logs so we can tell
-        primary vs hot-spare apart."""
+    async def _run(self) -> None:
         import websockets
         import json as _json
-        import time as _time
         backoff = 0.3
-        force_refresh_token = False
-        fail_count = 0
         while not self._stop:
             hb_task = None
             try:
-                try:
-                    endpoint, token, ping_s = await self._get_token(force=force_refresh_token)
-                except Exception as exc:
-                    logger.warning("kucoin[%s] bullet-public failed: %s: %s",
-                                   slot, type(exc).__name__, exc)
-                    force_refresh_token = False
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 1.8, 8.0)
-                    continue
-                force_refresh_token = False
-                if not endpoint or not token:
-                    raise RuntimeError("kucoin bullet-public returned empty token")
-                url = f"{endpoint}?token={token}&connectId={uuid.uuid4()}"
                 async with websockets.connect(
-                    url, ping_interval=None, ping_timeout=None,
-                    open_timeout=30, close_timeout=3, max_size=4 * 1024 * 1024,
+                    self.url, ping_interval=None, ping_timeout=None,
+                    open_timeout=20, close_timeout=3, max_size=8 * 1024 * 1024,
                 ) as ws:
-                    # Slot "A" owns the shared `_ws` pointer (used for manual
-                    # closes from stop()). Slot "B" is the hot-spare.
-                    if slot == "A":
-                        self._ws = ws
-                    backoff = 0.3
-                    if slot == "A":
-                        self._subscribed.clear()
+                    self._ws = ws
+                    # Read welcome to get pingInterval
                     try:
-                        await ws.send(self.heartbeat_frame())
+                        welcome_raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                        welcome = _json.loads(welcome_raw)
+                        ping_s = welcome.get("pingInterval", 18000) / 1000.0
                     except Exception:
-                        pass
+                        ping_s = 18.0
+                    self._subscribed.clear()
                     if self._symbols:
-                        # Each session subscribes independently.
                         frames = self.build_subscribe(list(self._symbols))
                         for f in frames:
                             try:
@@ -571,31 +519,17 @@ class KuCoinWS(WSAdapter):
                             except Exception:
                                 break
                             await asyncio.sleep(self.subscribe_delay)
-                    # ping_s/3 instead of /2 — event loop starvation under
-                    # heavy WS traffic can delay asyncio.sleep wakeups by
-                    # 3-5 s, pushing our heartbeat past KuCoin's 18s cut-off
-                    # and getting the session silently dropped.
                     hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 3.0))
-                    logger.info("kucoin[%s] WS connected (%d symbols)", slot, len(self._symbols))
-                    fail_count = 0
-                    # KuCoin server-side drops sessions at ~60s with no clean
-                    # close frame. Pre-emptively rotate each slot before that:
-                    # A at 45s, B at 55s so the two sessions never both hit a
-                    # rotate at the same second. On rotate we break out of the
-                    # recv loop; the outer while reconnects with jitter-free
-                    # 0.3s backoff.
-                    rotate_at = _time.time() + (45.0 if slot == "A" else 55.0)
+                    logger.info("kucoin WS connected (pro, %d symbols, ping=%.0fs)",
+                                len(self._symbols), ping_s)
+                    backoff = 0.3
                     async for raw in ws:
                         if self._stop:
-                            break
-                        if _time.time() > rotate_at:
-                            logger.info("kucoin[%s] pre-emptive rotation", slot)
                             break
                         try:
                             msg = _json.loads(raw)
                         except Exception:
                             continue
-                        parsed = None
                         try:
                             parsed = self.parse_message(msg)
                         except Exception:
@@ -607,45 +541,15 @@ class KuCoinWS(WSAdapter):
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                import random as _r
                 detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-                fail_count += 1
-                logger.warning("kucoin[%s] WS error (#%d): %s (retry in %.1fs)",
-                               slot, fail_count, detail, backoff)
-                msg = (str(exc) or "").lower()
-                # Force fresh token on auth/token errors, OR after 3 handshake
-                # timeouts in a row — the token may have been invalidated by
-                # a server-side throttle without telling us.
-                if ("401" in msg or "403" in msg or "invalid" in msg or
-                    "expired" in msg or "token" in msg or fail_count >= 3):
-                    force_refresh_token = True
-                    fail_count = 0
-                if slot == "A":
-                    self._ws = None
-                # Jitter ±30% so concurrent slots don't retry in lockstep.
-                await asyncio.sleep(backoff * _r.uniform(0.7, 1.3))
+                logger.warning("kucoin WS error: %s (retry in %.1fs)", detail, backoff)
+                self._ws = None
+                await asyncio.sleep(backoff)
                 backoff = min(backoff * 1.8, 8.0)
             finally:
                 if hb_task and not hb_task.done():
                     hb_task.cancel()
-        if slot == "A":
-            self._ws = None
-
-    async def _run(self) -> None:
-        """Run primary session. If hot_spare is enabled, also start a second
-        session in parallel staggered by 15s so they don't hit KuCoin's
-        rate-limit in the same window and can't be disconnected together."""
-        if self.hot_spare:
-            async def _spare():
-                await asyncio.sleep(15.0)
-                await self._session("B")
-            spare_task = asyncio.create_task(_spare(), name="kucoin_ws_spare")
-            try:
-                await self._session("A")
-            finally:
-                spare_task.cancel()
-        else:
-            await self._session("A")
+        self._ws = None
 
 
 ADAPTERS: dict[str, type[WSAdapter]] = {
