@@ -529,6 +529,7 @@ class KuCoinWS(WSAdapter):
                                 break
                             await asyncio.sleep(self.subscribe_delay)
                     _dbg = 0
+                    logger.info("kucoin entering async-for loop")
                     async for raw in ws:
                         if self._stop:
                             break
