@@ -513,6 +513,13 @@ class KuCoinWS(WSAdapter):
                     except Exception:
                         ping_s = 18.0
                     self._subscribed.clear()
+                    # Start heartbeat BEFORE subscribe burst. With 72 symbols
+                    # * 0.5s = 36s of subscribes, KuCoin's 18s ping cut-off
+                    # fires mid-burst and drops the session if we wait.
+                    hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 3.0))
+                    logger.info("kucoin WS connected (pro, subscribing %d symbols, ping=%.0fs)",
+                                len(self._symbols), ping_s)
+                    backoff = 0.3
                     if self._symbols:
                         frames = self.build_subscribe(list(self._symbols))
                         for f in frames:
@@ -521,10 +528,6 @@ class KuCoinWS(WSAdapter):
                             except Exception:
                                 break
                             await asyncio.sleep(self.subscribe_delay)
-                    hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 3.0))
-                    logger.info("kucoin WS connected (pro, %d symbols, ping=%.0fs)",
-                                len(self._symbols), ping_s)
-                    backoff = 0.3
                     async for raw in ws:
                         if self._stop:
                             break
