@@ -534,6 +534,25 @@ async def _prewarm_hotlist_loop() -> None:
             for ex, sym in rest_pairs:
                 await _prewarm_start_poller(ex, sym)
 
+            # REST backstop (pure-thread): run alongside WS on all supported
+            # exchanges. On a healthy WS, it's redundant. During a WS outage
+            # it becomes the primary source and the arb compute keeps working
+            # at ~1s cadence without waiting for the WS to reconnect.
+            try:
+                from backend.services.orderbook_rest import (
+                    set_backstop_symbols, BACKSTOPS,
+                )
+                backstop_syms: dict[str, set[str]] = {}
+                for ex, syms in ws_subs.items():
+                    backstop_syms.setdefault(ex, set()).update(syms)
+                for ex, sym in rest_pairs:
+                    backstop_syms.setdefault(ex, set()).add(sym)
+                for ex, syms in backstop_syms.items():
+                    if ex in BACKSTOPS:
+                        set_backstop_symbols(ex, list(syms))
+            except Exception as exc:
+                logger.debug("prewarm: rest backstop symbol-push failed: %s", exc)
+
             logger.info(
                 "orderbook prewarm: ws=%s rest_pairs=%d (%d opps)",
                 {ex: len(s) for ex, s in ws_subs.items()}, len(rest_pairs), len(opps),
@@ -584,6 +603,13 @@ def start_prewarm() -> None:
                 PREWARM_TOP_N, POLL_INTERVAL, PREWARM_DUMP_S)
     _prewarm_hotlist_task = asyncio.create_task(_prewarm_hotlist_loop())
     _prewarm_dump_task = asyncio.create_task(_prewarm_dump_loop())
+    # Pure-thread REST backstops — one daemon thread per exchange. The
+    # hotlist loop will hand them their symbol set each tick.
+    try:
+        from backend.services.orderbook_rest import start_rest_backstops
+        start_rest_backstops()
+    except Exception as exc:
+        logger.warning("orderbook prewarm: rest backstop start failed: %s", exc)
 
 
 def stop_prewarm() -> None:
@@ -593,6 +619,11 @@ def stop_prewarm() -> None:
             t.cancel()
     _prewarm_hotlist_task = None
     _prewarm_dump_task = None
+    try:
+        from backend.services.orderbook_rest import stop_rest_backstops
+        stop_rest_backstops()
+    except Exception:
+        pass
     from backend.services.orderbook_ws import stop_ws_manager
     stop_ws_manager()
     if _prewarm_lock_fd:
