@@ -156,17 +156,30 @@ class AsterAdapter:
         return {"order_id": r.get("order_id"), "closed_qty": p["quantity"], "realized_pnl_usd": 0}
 
     @classmethod
+    async def _funding_pnl(cls, creds: dict, api_symbol: str, since_ms: int) -> float | None:
+        """Aster is a Binance fork — same /fapi/v1/income with FUNDING_FEE."""
+        try:
+            data = await cls._signed(creds, "GET", "/fapi/v1/income", {
+                "symbol": api_symbol, "incomeType": "FUNDING_FEE",
+                "startTime": since_ms, "limit": 1000,
+            })
+            return sum(float(x.get("income") or 0) for x in (data or []))
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         params = {"symbol": cls._symbol(symbol)} if symbol else {}
         data = await cls._signed(creds, "GET", "/fapi/v2/positionRisk", params or None)
-        out = []
+        positions = []
         for p in (data if isinstance(data, list) else []):
             amt = float(p.get("positionAmt", 0) or 0)
             if amt == 0:
                 continue
-            out.append({
+            positions.append({
                 "exchange": "aster",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
+                "_api_symbol": str(p.get("symbol", "")),
                 "side": "buy" if amt > 0 else "sell",
                 "quantity": abs(amt),
                 "entry_price": float(p.get("entryPrice", 0) or 0),
@@ -175,7 +188,17 @@ class AsterAdapter:
                 "leverage": int(float(p.get("leverage", 1) or 1)),
                 "position_id": str(p.get("symbol", "")),
             })
-        return out
+        if not positions:
+            return []
+        import time as _t
+        since_ms = int((_t.time() - 7 * 86400) * 1000)
+        fundings = await asyncio.gather(*[
+            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
+        ], return_exceptions=True)
+        for p, f in zip(positions, fundings):
+            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
+            p.pop("_api_symbol", None)
+        return positions
 
     @classmethod
     async def get_public_max_leverage(cls, symbol: str) -> int:

@@ -323,6 +323,22 @@ class BybitAdapter:
         return 100
 
     @classmethod
+    async def _funding_pnl(cls, creds: dict, api_symbol: str, since_ms: int) -> float | None:
+        """Sum funding settlements for `api_symbol` via transaction log.
+        `/v5/account/transaction-log?category=linear&type=SETTLEMENT` — SETTLEMENT
+        covers periodic funding fees; `change` field is the USDT delta (negative
+        = paid)."""
+        try:
+            data = await cls._signed(creds, "GET", "/v5/account/transaction-log", {
+                "category": "linear", "type": "SETTLEMENT",
+                "symbol": api_symbol, "startTime": since_ms, "limit": 50,
+            })
+            rows = (data or {}).get("list") or []
+            return sum(float(x.get("change") or 0) for x in rows)
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         params = {"category": "linear"}
         if symbol:
@@ -330,15 +346,16 @@ class BybitAdapter:
         else:
             params["settleCoin"] = "USDT"
         data = await cls._signed(creds, "GET", "/v5/position/list", params)
-        out = []
+        positions = []
         for p in data.get("list", []):
             qty = float(p.get("size") or 0)
             if qty == 0:
                 continue
             side = "buy" if p.get("side") == "Buy" else "sell"
-            out.append({
+            positions.append({
                 "exchange": "bybit",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
+                "_api_symbol": str(p.get("symbol", "")),
                 "side": side,
                 "quantity": qty,
                 "entry_price": float(p.get("avgPrice") or 0),
@@ -347,4 +364,13 @@ class BybitAdapter:
                 "leverage": int(float(p.get("leverage") or 1)),
                 "position_id": str(p.get("symbol", "")),
             })
-        return out
+        if not positions:
+            return []
+        since_ms = int((time.time() - 7 * 86400) * 1000)
+        fundings = await asyncio.gather(*[
+            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
+        ], return_exceptions=True)
+        for p, f in zip(positions, fundings):
+            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
+            p.pop("_api_symbol", None)
+        return positions

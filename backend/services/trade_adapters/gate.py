@@ -280,12 +280,22 @@ class GateAdapter:
 
     # ── Positions ──
     @classmethod
+    async def _funding_pnl(cls, creds: dict, contract: str, since_s: int) -> float | None:
+        """Sum `change` from /api/v4/futures/usdt/account_book?type=fund."""
+        try:
+            data = await cls._req(creds, "GET",
+                f"/api/v4/futures/usdt/account_book?type=fund&contract={contract}&from={since_s}&limit=100")
+            return sum(float(x.get("change") or 0) for x in (data or []))
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         data = await cls._req(creds, "GET", "/api/v4/futures/usdt/positions")
         if not isinstance(data, list):
             data = []
         all_contracts = await _contracts()
-        out = []
+        positions = []
         for p in data:
             size = int(p.get("size") or 0)
             if size == 0:
@@ -296,9 +306,10 @@ class GateAdapter:
             quanto = all_contracts.get(cname, {}).get("quanto_multiplier", 1)
             qty_coins = abs(size) * quanto
             sym = cname.replace("_USDT", "")
-            out.append({
+            positions.append({
                 "exchange": "gate",
                 "symbol": sym,
+                "_contract": cname,
                 "side": "buy" if size > 0 else "sell",
                 "quantity": qty_coins,
                 "entry_price": float(p.get("entry_price") or 0),
@@ -307,7 +318,16 @@ class GateAdapter:
                 "leverage": int(float(p.get("leverage") or 1)),
                 "position_id": cname,
             })
-        return out
+        if not positions:
+            return []
+        since_s = int(time.time() - 7 * 86400)
+        fundings = await asyncio.gather(*[
+            cls._funding_pnl(creds, p["_contract"], since_s) for p in positions
+        ], return_exceptions=True)
+        for p, f in zip(positions, fundings):
+            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
+            p.pop("_contract", None)
+        return positions
 
     # ── Validate key ──
     @classmethod
