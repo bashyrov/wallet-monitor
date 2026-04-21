@@ -449,8 +449,8 @@ class KuCoinWS(WSAdapter):
     name = "kucoin"
     url = "wss://x-push-futures.kucoin.com"  # Pro WS futures — no token, no bullet-public
     ping_interval = 18.0   # will be overridden by server welcome msg
-    subscribe_delay = 0.5   # obu channel is per-symbol only; slow subscribes
-    max_symbols = 80        # Pro WS accepts more subs per connection
+    subscribe_delay = 0.3   # Pro WS tolerates faster subs than Classic
+    max_symbols = 30        # observed: >~40 subscribes trigger server reset on Pro WS
 
     def build_subscribe(self, symbols):
         # Pro WS `obu` channel requires a single `symbol` per frame
