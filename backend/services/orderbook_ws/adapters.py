@@ -505,9 +505,11 @@ class KuCoinWS(WSAdapter):
                     open_timeout=20, close_timeout=3, max_size=8 * 1024 * 1024,
                 ) as ws:
                     self._ws = ws
-                    # Read welcome to get pingInterval
+                    # Welcome is always the first frame; read directly without
+                    # wait_for wrapper (wait_for leaks cancelled tasks into the
+                    # websocket state if timeout fires mid-recv).
                     try:
-                        welcome_raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                        welcome_raw = await ws.recv()
                         welcome = _json.loads(welcome_raw)
                         ping_s = welcome.get("pingInterval", 18000) / 1000.0
                     except Exception:
