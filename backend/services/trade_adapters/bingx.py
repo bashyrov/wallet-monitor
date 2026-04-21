@@ -221,19 +221,36 @@ class BingxAdapter:
 
     # ── Positions ──
     @classmethod
+    async def _funding_pnl(cls, creds: dict, api_symbol: str, since_ms: int) -> float | None:
+        """Sum `amount` from /openApi/swap/v2/user/income with incomeType='FUNDING_FEE'.
+        Returns None on failure so the UI shows '—' instead of a misleading zero."""
+        try:
+            data = await cls._req(creds, "GET", "/openApi/swap/v2/user/income", {
+                "symbol": api_symbol,
+                "incomeType": "FUNDING_FEE",
+                "startTime": since_ms,
+                "limit": 1000,
+            })
+            return sum(float(x.get("income") or x.get("amount") or 0) for x in (data or []))
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
+        import time as _t
         params = {"symbol": cls._symbol(symbol)} if symbol else {}
         data = await cls._req(creds, "GET", "/openApi/swap/v2/user/positions", params or None)
         pos_list = data if isinstance(data, list) else []
-        out = []
+        positions = []
         for p in pos_list:
             amt = float(p.get("positionAmt") or 0)
             if amt == 0:
                 continue
             sym_raw = str(p.get("symbol", ""))
-            out.append({
+            positions.append({
                 "exchange": "bingx",
                 "symbol": sym_raw.replace("-USDT", ""),
+                "_api_symbol": sym_raw,
                 "side": "buy" if amt > 0 else "sell",
                 "quantity": abs(amt),
                 "entry_price": float(p.get("avgPrice") or 0),
@@ -242,7 +259,16 @@ class BingxAdapter:
                 "leverage": int(float(p.get("leverage") or 1)),
                 "position_id": sym_raw,
             })
-        return out
+        if not positions:
+            return []
+        since_ms = int((_t.time() - 7 * 86400) * 1000)
+        fundings = await asyncio.gather(*[
+            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
+        ], return_exceptions=True)
+        for p, f in zip(positions, fundings):
+            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
+            p.pop("_api_symbol", None)
+        return positions
 
     # ── Validate key ──
     @classmethod

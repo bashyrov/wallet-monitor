@@ -3162,6 +3162,16 @@ async function accLoadKeyCounts(){
   } catch {}
 }
 
+// Which pairs are currently expanded (user clicked the header).
+// Default: collapsed. Persists across the 10s refresh tick.
+const _accPairOpen = new Set();
+function _accPairToggle(key) {
+  if (_accPairOpen.has(key)) _accPairOpen.delete(key);
+  else                       _accPairOpen.add(key);
+  // Re-render immediately without waiting for the next poll tick.
+  if (typeof accLoadPositions === 'function') accLoadPositions();
+}
+
 // Detect arb pairs: two positions on the same symbol, opposite sides,
 // with matching USD notional (qty × mark). Match is on USD because
 // different exchanges return qty in different units — KuCoin reports
@@ -3246,9 +3256,11 @@ async function accLoadPositions(){
         </tr>`;
     };
 
-    // Paired rows — stacked as a header "pair" + both legs grouped below.
-    // Pairs are rendered first so they're the default view.
-    const pairHtml = pairs.map(pair => {
+    // Paired rows — stacked as a clickable header + both legs grouped below.
+    // Header is a collapsible "summary" by default; click toggles the legs.
+    // State persists in _accPairOpen so it survives re-renders from the
+    // 10s refresh tick. Default collapsed.
+    const pairHtml = pairs.map((pair, pi) => {
       const lp = Number(pair.long.unrealized_pnl_usd || 0);
       const sp = Number(pair.short.unrealized_pnl_usd || 0);
       const totalPnl = lp + sp;
@@ -3258,29 +3270,48 @@ async function accLoadPositions(){
       const totalFunding = hasFunding ? (lf + sf) : null;
       const lq = Number(pair.long.quantity || 0) * Number(pair.long.mark_price || 0);
       const sq = Number(pair.short.quantity || 0) * Number(pair.short.mark_price || 0);
-      const pairUsd = (lq + sq) / 2;  // pair size ≈ notional of one leg
+      const pairUsd = (lq + sq) / 2;
       const pnlCls = totalPnl >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
       const fundCls = hasFunding && totalFunding >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
       const combinedPct = pairUsd > 0 ? (totalPnl / pairUsd * 100) : 0;
+      // Entry spread: divergence between the two legs' entry prices, measured
+      // relative to the long leg. Positive = short entered higher than long
+      // (favourable for a long-short arb). This is the "spread I entered at".
+      const leEntry = Number(pair.long.entry_price || 0);
+      const seEntry = Number(pair.short.entry_price || 0);
+      const entrySpread = (leEntry > 0 && seEntry > 0) ? ((seEntry - leEntry) / leEntry * 100) : null;
+      const entrySpreadTxt = entrySpread != null
+        ? `<span class="${entrySpread>=0?'acc-pos-pnl-pos':'acc-pos-pnl-neg'}">${entrySpread>=0?'+':''}${entrySpread.toFixed(4)}%</span>`
+        : '<span style="color:var(--text3)">—</span>';
+      const pairKey = `${pair.symbol}:${pair.long.exchange}:${pair.short.exchange}`;
+      const isOpen = _accPairOpen.has(pairKey);
+      const caret = isOpen ? '▾' : '▸';
       const header = `
-        <tr class="acc-pair-header" style="background:rgba(26,255,171,0.04);border-top:1px solid rgba(26,255,171,0.18)">
+        <tr class="acc-pair-header" data-pair-key="${pairKey}" onclick="_accPairToggle('${pairKey}')"
+            style="background:rgba(26,255,171,0.04);border-top:1px solid rgba(26,255,171,0.18);cursor:pointer;user-select:none">
           <td colspan="2" style="padding:8px 10px">
+            <span style="color:var(--green);font-family:monospace;margin-right:6px">${caret}</span>
             <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ PAIR</span>
             <span class="sym" style="margin-left:6px">${pair.symbol}</span>
             <span style="color:var(--text3);margin-left:3px">USDT</span>
             <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
           </td>
-          <td colspan="2" class="num" style="color:var(--text2);font-size:11px">${pairUsd.toFixed(2)} USDT per leg</td>
+          <td colspan="2" class="num" style="color:var(--text2);font-size:11px">
+            ${pairUsd.toFixed(2)} USDT / leg
+            <br><span style="color:var(--text3);font-size:10px">entry spread ${entrySpreadTxt}</span>
+          </td>
           <td colspan="2" class="num" style="color:var(--text3);font-size:11px">Δ pair</td>
           <td class="num">${hasFunding ? `<span class="${fundCls}">${sumUsd(totalFunding)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
           <td class="num ${pnlCls}" style="font-weight:700">${sumUsd(totalPnl)}</td>
           <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
           <td>
-            <button class="pos-close" onclick="_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')"
+            <button class="pos-close"
+                    onclick="event.stopPropagation();_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')"
                     style="background:var(--green);border:none;color:#0a0a0f;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-weight:700;font-family:inherit">Close Both</button>
           </td>
         </tr>`;
-      return header + rowFor(pair.long) + rowFor(pair.short);
+      const legs = isOpen ? (rowFor(pair.long) + rowFor(pair.short)) : '';
+      return header + legs;
     }).join('');
     const singlesHtml = singles.map(rowFor).join('');
     tbody.innerHTML = pairHtml + singlesHtml;
