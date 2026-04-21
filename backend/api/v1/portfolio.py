@@ -175,6 +175,10 @@ def get_balance_history(
         .all()
     )
     return [
-        {"usd_total": r.usd_total, "at": r.snapshot_at.strftime("%Y-%m-%d %H:%M")}
+        {
+            "usd_total": r.usd_total,
+            "at": r.snapshot_at.strftime("%Y-%m-%d %H:%M"),
+            "totals": r.totals or {},
+        }
         for r in rows
     ]

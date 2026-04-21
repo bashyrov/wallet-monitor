@@ -268,10 +268,22 @@ async def fetch_balances_stream(
                 Decimal(r.usd_total) for _, r, *_ in collected
                 if r.wallet_id in owner_ids and not r.error
             )
+            # Per-asset USD breakdown summed across Owner wallets. Used by the
+            # profile chart tooltip to show asset composition on hover.
+            owner_totals_usd: dict[str, float] = {}
+            for _, r, *_ in collected:
+                if r.wallet_id not in owner_ids or r.error:
+                    continue
+                for sym, usd_str in (r.usd_values or {}).items():
+                    try:
+                        owner_totals_usd[sym] = owner_totals_usd.get(sym, 0.0) + float(usd_str)
+                    except (TypeError, ValueError):
+                        continue
             try:
                 db.add(BalanceHistory(
                     user_id=owner_wallets[0].user_id,
                     usd_total=float(owner_usd),
+                    totals=owner_totals_usd or None,
                     snapshot_at=now,
                 ))
             except Exception:
