@@ -1210,7 +1210,7 @@ def _fee(exchange: str) -> float:
 
 
 _arb_result_cache: dict = {"data": None, "ts": 0.0}
-_ARB_CACHE_TTL = 3.5
+_ARB_CACHE_TTL = 0.7  # match the refresh loop cadence; just a lower bound for the web-side fast path
 
 
 def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
