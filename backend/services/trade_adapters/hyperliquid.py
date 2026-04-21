@@ -173,13 +173,55 @@ class HyperliquidAdapter:
 
     @classmethod
     async def close_position(cls, creds: dict, symbol: str, side: str) -> dict:
+        """Reduce-only IoC order. Previous implementation called place_order
+        which builds {"r": False} → NOT reduce-only. In hedge mode that would
+        open a fresh opposing position; in one-way mode it happened to flatten
+        by netting. Now posts the same action with "r": true."""
         positions = await cls.list_positions(creds, symbol)
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         p = positions[0]
-        close_side = "sell" if p["side"] == "buy" else "buy"
-        result = await cls.place_order(creds, symbol, close_side, p["quantity"])
-        return {"order_id": result.get("order_id"), "closed_qty": p["quantity"], "realized_pnl_usd": 0}
+        asset = await cls._get_asset_index(symbol)
+        close_is_buy = p["side"] == "sell"  # close a short by BUY
+        action = {
+            "type": "order",
+            "orders": [{
+                "a": asset,
+                "b": close_is_buy,
+                "p": "0",
+                "s": str(p["quantity"]),
+                "r": True,  # reduce-only
+                "t": {"limit": {"tif": "Ioc"}},
+            }],
+            "grouping": "na",
+        }
+        result = await cls._post_action(creds, action)
+        statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+        oid = ""
+        if statuses:
+            s = statuses[0]
+            if "resting" in s: oid = str(s["resting"].get("oid", ""))
+            elif "filled" in s: oid = str(s["filled"].get("oid", ""))
+            elif "error" in s: raise RuntimeError(f"Hyperliquid: {s['error']}")
+        return {
+            "order_id": oid,
+            "closed_qty": p["quantity"],
+            "realized_pnl_usd": p.get("unrealized_pnl_usd", 0),
+        }
+
+    @classmethod
+    async def _funding_pnl(cls, address: str, coin: str, since_ms: int) -> float | None:
+        """HL: POST /info {type: "userFunding", user, startTime}.
+        Returns list of {time, coin, delta (USDT, signed), ...}."""
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.post(f"{BASE}/info",
+                    json={"type": "userFunding", "user": address, "startTime": since_ms},
+                    headers={"Content-Type": "application/json"})
+                rows = r.json() or []
+            return sum(float(x.get("delta") or 0) for x in rows if x.get("coin", "").upper() == coin.upper())
+        except Exception:
+            return None
 
     @classmethod
     async def _funding_pnl(cls, address: str, coin: str, since_ms: int) -> float | None:
