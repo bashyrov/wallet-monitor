@@ -484,8 +484,17 @@ def freshness_by_exchange() -> dict[str, dict]:
 
 # ── Prewarm owner loops (single worker) ──────────────────────────────────────
 PREWARM_TOP_N        = 80
-PREWARM_HOTLIST_S    = 4.0    # refresh hot list in lockstep with arb broadcast (3-4s)
-PREWARM_DUMP_S       = 0.5    # snapshot to file
+def _env_float(name: str, default: float) -> float:
+    try:
+        v = os.environ.get(name)
+        return float(v) if v else default
+    except (TypeError, ValueError):
+        return default
+
+PREWARM_HOTLIST_S    = _env_float("AVALANT_PREWARM_HOTLIST_S", 4.0)
+# refresh hot list in lockstep with arb broadcast (3-4s)
+PREWARM_DUMP_S       = _env_float("AVALANT_PREWARM_DUMP_S", 0.5)
+# snapshot to file
 # Prune WS subscriptions down to the current hot-list every N ticks.
 # At PREWARM_HOTLIST_S=4s, _PRUNE_EVERY=30 → prune roughly every 2 minutes.
 _PRUNE_EVERY         = 30

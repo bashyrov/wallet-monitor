@@ -1211,7 +1211,18 @@ def _fee(exchange: str) -> float:
 
 
 _arb_result_cache: dict = {"data": None, "ts": 0.0}
-_ARB_CACHE_TTL = 0.7  # match the refresh loop cadence; just a lower bound for the web-side fast path
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        v = os.environ.get(name)
+        return float(v) if v else default
+    except (TypeError, ValueError):
+        return default
+
+
+_ARB_CACHE_TTL = _env_float("AVALANT_ARB_CACHE_TTL", 0.7)
+# match the refresh loop cadence; just a lower bound for the web-side fast path
 
 
 def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
