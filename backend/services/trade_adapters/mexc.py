@@ -239,20 +239,35 @@ class MexcAdapter:
         return {"order_id": order_id, "closed_qty": p["quantity"], "realized_pnl_usd": p.get("unrealized_pnl_usd", 0)}
 
     @classmethod
+    async def _funding_pnl(cls, creds: dict, api_symbol: str, position_id: str, since_ms: int) -> float | None:
+        """MEXC: /api/v1/private/position/funding_records?position_id=…&symbol=…
+        Returns list of {funding: float, ...}. Summed as USDT delta."""
+        try:
+            params = {"symbol": api_symbol, "limit": 100}
+            if position_id:
+                params["position_id"] = position_id
+            data = await cls._signed(creds, "GET", "/api/v1/private/position/funding_records", params)
+            items = (data or {}).get("resultList") if isinstance(data, dict) else data
+            return sum(float(x.get("funding") or x.get("amount") or 0) for x in (items or []))
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         params = {}
         if symbol:
             params["symbol"] = cls._symbol(symbol)
         data = await cls._signed(creds, "GET", "/api/v1/private/position/open_positions", params or None)
-        out = []
+        positions = []
         for p in (data or []):
             vol = float(p.get("holdVol") or 0)
             if vol == 0:
                 continue
             pos_type = int(p.get("positionType", 0))  # 1=long, 2=short
-            out.append({
+            positions.append({
                 "exchange": "mexc",
                 "symbol": str(p.get("symbol", "")).replace("_USDT", ""),
+                "_api_symbol": str(p.get("symbol", "")),
                 "side": "buy" if pos_type == 1 else "sell",
                 "quantity": vol * float(p.get("contractSize") or 1),
                 "entry_price": float(p.get("openAvgPrice") or 0),
@@ -261,7 +276,17 @@ class MexcAdapter:
                 "leverage": int(float(p.get("leverage") or 1)),
                 "position_id": str(p.get("positionId", "")),
             })
-        return out
+        if not positions:
+            return []
+        import time as _t
+        since_ms = int((_t.time() - 7 * 86400) * 1000)
+        fundings = await asyncio.gather(*[
+            cls._funding_pnl(creds, p["_api_symbol"], p["position_id"], since_ms) for p in positions
+        ], return_exceptions=True)
+        for p, f in zip(positions, fundings):
+            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
+            p.pop("_api_symbol", None)
+        return positions
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

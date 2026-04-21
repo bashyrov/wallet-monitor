@@ -315,12 +315,24 @@ class OKXAdapter:
 
     # ── Positions ──
     @classmethod
+    async def _funding_pnl(cls, creds: dict, inst_id: str, since_ms: int) -> float | None:
+        """Sum funding bills for `inst_id`. OKX type=8 = funding fee.
+        /api/v5/account/bills-archive covers >3 months; /bills covers recent
+        3 months. We use /bills since arb positions are usually short-lived."""
+        try:
+            path = f"/api/v5/account/bills?instType=SWAP&type=8&instId={inst_id}&begin={since_ms}&limit=100"
+            data = await cls._req(creds, "GET", path)
+            return sum(float(x.get("balChg") or x.get("pnl") or 0) for x in (data or []))
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         path = "/api/v5/account/positions?instType=SWAP"
         if symbol:
             path += f"&instId={_okx_symbol(symbol)}"
         data = await cls._req(creds, "GET", path)
-        out = []
+        positions = []
         for p in data:
             pos = float(p.get("pos") or 0)
             if pos == 0:
@@ -336,9 +348,10 @@ class OKXAdapter:
                 side = "buy" if pos > 0 else "sell"
             inst_id = p.get("instId", "")
             sym = inst_id.replace("-USDT-SWAP", "")
-            out.append({
+            positions.append({
                 "exchange": "okx",
                 "symbol": sym,
+                "_inst_id": inst_id,
                 "side": side,
                 "quantity": qty_coins,
                 "entry_price": float(p.get("avgPx") or 0),
@@ -347,7 +360,17 @@ class OKXAdapter:
                 "leverage": int(float(p.get("lever") or 1)),
                 "position_id": inst_id,
             })
-        return out
+        if not positions:
+            return []
+        import time as _t
+        since_ms = int((_t.time() - 7 * 86400) * 1000)
+        fundings = await asyncio.gather(*[
+            cls._funding_pnl(creds, p["_inst_id"], since_ms) for p in positions
+        ], return_exceptions=True)
+        for p, f in zip(positions, fundings):
+            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
+            p.pop("_inst_id", None)
+        return positions
 
     # ── Validate key ──
     @classmethod

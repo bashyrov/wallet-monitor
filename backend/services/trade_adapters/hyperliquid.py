@@ -182,13 +182,27 @@ class HyperliquidAdapter:
         return {"order_id": result.get("order_id"), "closed_qty": p["quantity"], "realized_pnl_usd": 0}
 
     @classmethod
+    async def _funding_pnl(cls, address: str, coin: str, since_ms: int) -> float | None:
+        """HL: POST /info {type: "userFunding", user, startTime}.
+        Returns list of {time, coin, delta (USDT, signed), ...}."""
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.post(f"{BASE}/info",
+                    json={"type": "userFunding", "user": address, "startTime": since_ms},
+                    headers={"Content-Type": "application/json"})
+                rows = r.json() or []
+            return sum(float(x.get("delta") or 0) for x in rows if x.get("coin", "").upper() == coin.upper())
+        except Exception:
+            return None
+
+    @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         address = creds.get("address") or creds.get("api_key") or ""
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.post(f"{BASE}/info", json={"type": "clearinghouseState", "user": address},
                              headers={"Content-Type": "application/json"})
             j = r.json()
-        out = []
+        positions = []
         for p in j.get("assetPositions", []):
             pos = p.get("position", {})
             sz = float(pos.get("szi", 0) or 0)
@@ -197,7 +211,7 @@ class HyperliquidAdapter:
             coin = pos.get("coin", "")
             if symbol and coin.upper() != symbol.upper():
                 continue
-            out.append({
+            positions.append({
                 "exchange": "hyperliquid",
                 "symbol": coin,
                 "side": "buy" if sz > 0 else "sell",
@@ -208,7 +222,28 @@ class HyperliquidAdapter:
                 "leverage": int(float(pos.get("leverage", {}).get("value", 1) or 1)),
                 "position_id": coin,
             })
-        return out
+        if not positions or not address:
+            return positions
+        import time as _t
+        since_ms = int((_t.time() - 7 * 86400) * 1000)
+        # HL's userFunding endpoint can filter by address only — we fetch once,
+        # then split by coin so 7 legs don't cost 7 HL calls.
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.post(f"{BASE}/info",
+                    json={"type": "userFunding", "user": address, "startTime": since_ms},
+                    headers={"Content-Type": "application/json"})
+                rows = r.json() or []
+            by_coin: dict[str, float] = {}
+            for x in rows:
+                coin = (x.get("coin") or "").upper()
+                by_coin[coin] = by_coin.get(coin, 0.0) + float(x.get("delta") or 0)
+        except Exception:
+            by_coin = {}
+        for p in positions:
+            f = by_coin.get(p["symbol"].upper())
+            p["funding_pnl_usd"] = f if f is not None else None
+        return positions
 
     @classmethod
     async def get_public_max_leverage(cls, symbol: str) -> int:
