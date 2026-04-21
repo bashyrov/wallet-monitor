@@ -528,6 +528,7 @@ class KuCoinWS(WSAdapter):
                             except Exception:
                                 break
                             await asyncio.sleep(self.subscribe_delay)
+                    _dbg = 0
                     async for raw in ws:
                         if self._stop:
                             break
@@ -535,6 +536,11 @@ class KuCoinWS(WSAdapter):
                             msg = _json.loads(raw)
                         except Exception:
                             continue
+                        if _dbg < 5:
+                            _dbg += 1
+                            logger.info("kucoin raw#%d type=%r T=%r result=%r d_keys=%s",
+                                        _dbg, msg.get("type"), msg.get("T"),
+                                        msg.get("result"), list((msg.get("d") or {}).keys())[:6])
                         try:
                             parsed = self.parse_message(msg)
                         except Exception:
