@@ -99,6 +99,11 @@ class BalanceHistory(Base):
     id          = Column(Integer, primary_key=True, index=True)
     user_id     = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     usd_total   = Column(Float,   nullable=False)
+    # Per-asset USD breakdown at snapshot time, e.g. {"BTC": 3421.55, "ETH": 812.10}.
+    # Used by the profile chart tooltip to show composition at the hovered point.
+    # Nullable — older rows (pre-migration p2q3r4s5t6u7) stay without this data
+    # and the tooltip falls back to the aggregate only.
+    totals      = Column(JSON,    nullable=True)
     snapshot_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 

@@ -288,6 +288,28 @@
     .chart-svg { width: 100%; overflow: visible; display: block; }
     .chart-empty { font-size: 12px; color: var(--text4); text-align: center; padding: 32px 0; }
 
+    /* Hover tooltip on the balance chart — absolute over chart-wrap */
+    .chart-tooltip {
+      position: absolute; pointer-events: none; z-index: 10;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 12px;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.5);
+      min-width: 170px; max-width: 240px;
+      font-family: Inter, sans-serif; font-size: 11px;
+      opacity: 0; transition: opacity 0.12s ease;
+    }
+    .chart-tooltip.visible { opacity: 1; }
+    .chart-tt-date  { color: var(--text3); font-size: 10px; margin-bottom: 4px; }
+    .chart-tt-total { font-family: JetBrains Mono, monospace; color: var(--green);
+                      font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+    .chart-tt-row   { display: flex; justify-content: space-between; gap: 12px;
+                      padding: 2px 0; font-family: JetBrains Mono, monospace; font-size: 11px; }
+    .chart-tt-sym   { color: var(--text2); }
+    .chart-tt-val   { color: var(--text); }
+    .chart-tt-pct   { color: var(--text3); font-size: 10px; margin-left: 6px; }
+    .chart-tt-more  { color: var(--text3); font-size: 10px; margin-top: 4px; }
+    .chart-hover-line { pointer-events: none; }
+
     /* ── BOTTOM NAV ── */
     .bottom-nav {
       display: none;
@@ -487,7 +509,7 @@
       </div>
     </div>
     <div class="section-body" style="padding:16px 20px 20px">
-      <div id="chart-wrap" style="width:100%;min-height:140px;display:flex;align-items:center;justify-content:center">
+      <div id="chart-wrap" style="position:relative;width:100%;min-height:140px;display:flex;align-items:center;justify-content:center">
         <span style="font-size:12px;color:var(--text4)">Tag wallets with <span style="color:var(--green);font-weight:600">◈ Owner</span> and check balance to start tracking</span>
       </div>
     </div>
@@ -1081,6 +1103,123 @@ async function loadHistory(days, btn) {
     return;
   }
   wrap.innerHTML = buildChart(data);
+  _chartAttachHover(wrap, data);
+}
+
+// ── Hover tooltip showing per-asset composition at the hovered snapshot ──
+function _chartAttachHover(wrap, data) {
+  const svg = wrap.querySelector('svg.chart-svg');
+  if (!svg) return;
+
+  // SVG viewBox is fixed; reuse the same constants as buildChart.
+  const W = 600, H = 160, PL = 48, PR = 12, PT = 16, PB = 32;
+  const cw = W - PL - PR, ch = H - PT - PB;
+  const values = data.map(d => d.usd_total);
+  const minV = Math.min(...values), maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+  const xOf = i => PL + (i / (data.length - 1 || 1)) * cw;
+  const yOf = v => PT + ch - ((v - minV) / range) * ch;
+
+  // Create tooltip DIV + crosshair + hover dot inside the SVG.
+  let tip = wrap.querySelector('.chart-tooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.className = 'chart-tooltip';
+    wrap.appendChild(tip);
+  }
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const crosshair = document.createElementNS(svgNS, 'line');
+  crosshair.setAttribute('class', 'chart-hover-line');
+  crosshair.setAttribute('stroke', '#3A3A50');
+  crosshair.setAttribute('stroke-width', '1');
+  crosshair.setAttribute('stroke-dasharray', '2,3');
+  crosshair.setAttribute('y1', PT);
+  crosshair.setAttribute('y2', PT + ch);
+  crosshair.style.display = 'none';
+  svg.appendChild(crosshair);
+
+  const hoverDot = document.createElementNS(svgNS, 'circle');
+  hoverDot.setAttribute('r', '4');
+  hoverDot.setAttribute('fill', '#1AFFAB');
+  hoverDot.setAttribute('stroke', '#0E0E11');
+  hoverDot.setAttribute('stroke-width', '2');
+  hoverDot.style.display = 'none';
+  svg.appendChild(hoverDot);
+
+  const fUSD = v => '$' + Number(v).toLocaleString('en-US',
+    { maximumFractionDigits: Number(v) < 10 ? 2 : 0 });
+
+  function render(idx) {
+    const d = data[idx];
+    if (!d) return;
+    const cx = xOf(idx), cy = yOf(d.usd_total);
+    crosshair.setAttribute('x1', cx);
+    crosshair.setAttribute('x2', cx);
+    crosshair.style.display = '';
+    hoverDot.setAttribute('cx', cx);
+    hoverDot.setAttribute('cy', cy);
+    hoverDot.style.display = '';
+
+    // Build tooltip body — top 5 assets by USD value + "X more" tail.
+    const totals = d.totals || {};
+    const entries = Object.entries(totals)
+      .map(([sym, usd]) => [sym, Number(usd) || 0])
+      .filter(([, u]) => u > 0)
+      .sort((a, b) => b[1] - a[1]);
+    const top = entries.slice(0, 5);
+    const tail = entries.length - top.length;
+    const grand = Number(d.usd_total) || entries.reduce((s, [, u]) => s + u, 0);
+
+    const rows = top.map(([sym, usd]) => {
+      const pct = grand > 0 ? (usd / grand * 100) : 0;
+      return `<div class="chart-tt-row">
+        <span class="chart-tt-sym">${sym}</span>
+        <span><span class="chart-tt-val">${fUSD(usd)}</span><span class="chart-tt-pct">${pct.toFixed(1)}%</span></span>
+      </div>`;
+    }).join('');
+
+    tip.innerHTML = `
+      <div class="chart-tt-date">${d.at || ''}</div>
+      <div class="chart-tt-total">${fUSD(grand)}</div>
+      ${rows || '<div class="chart-tt-more">(no per-asset data for this snapshot)</div>'}
+      ${tail > 0 ? `<div class="chart-tt-more">+${tail} more</div>` : ''}
+    `;
+    tip.classList.add('visible');
+
+    // Position tooltip near cursor but clamped inside wrap.
+    // Convert SVG viewBox coordinate to pixel offset within wrap.
+    const rect = svg.getBoundingClientRect();
+    const scaleX = rect.width / W;
+    const scaleY = rect.height / H;
+    let px = cx * scaleX + 14;
+    let py = cy * scaleY - 14;
+    const tipW = tip.offsetWidth || 200;
+    const tipH = tip.offsetHeight || 140;
+    if (px + tipW > rect.width - 4)  px = cx * scaleX - tipW - 14;
+    if (py < 4)                       py = 4;
+    if (py + tipH > rect.height - 4)  py = rect.height - tipH - 4;
+    tip.style.left = px + 'px';
+    tip.style.top  = py + 'px';
+  }
+
+  svg.addEventListener('mousemove', (e) => {
+    const rect = svg.getBoundingClientRect();
+    const scaleX = rect.width / W;
+    const vbX = (e.clientX - rect.left) / scaleX;
+    if (vbX < PL - 4 || vbX > PL + cw + 4) return;
+    // Find nearest data point by x.
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < data.length; i++) {
+      const d = Math.abs(xOf(i) - vbX);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    render(best);
+  });
+  svg.addEventListener('mouseleave', () => {
+    crosshair.style.display = 'none';
+    hoverDot.style.display = 'none';
+    tip.classList.remove('visible');
+  });
 }
 
 function buildChart(data) {
