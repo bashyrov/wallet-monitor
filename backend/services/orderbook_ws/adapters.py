@@ -516,13 +516,25 @@ class KuCoinWS(WSAdapter):
                     logger.info("kucoin WS connected (pro, subscribing %d symbols, ping=%.0fs)",
                                 len(self._symbols), ping_s)
                     backoff = 0.3
-                    # Use the base class's _send_subscribe which acquires
-                    # self._sub_lock — needed because prewarm's set_symbols()
-                    # spawns a parallel _send_subscribe on symbol changes,
-                    # and two unsynchronised sends on the same ws deadlock.
                     if self._symbols:
-                        await self._send_subscribe()
-                        logger.info("kucoin subscribe done (%d symbols)", len(self._symbols))
+                        # Hold sub_lock so any concurrent set_symbols() ->
+                        # _send_subscribe() waits until our initial burst is
+                        # done. Two unsynchronised senders deadlocked the
+                        # first send.
+                        async with self._sub_lock:
+                            syms = sorted(self._symbols)
+                            frames = self.build_subscribe(syms)
+                            logger.info("kucoin sending %d subscribe frames", len(frames))
+                            for i, f in enumerate(frames):
+                                try:
+                                    await ws.send(_json.dumps(f))
+                                except Exception as exc:
+                                    logger.warning("kucoin sub[%d] send failed: %s", i, exc)
+                                    raise
+                                if self.subscribe_delay > 0 and i < len(frames) - 1:
+                                    await asyncio.sleep(self.subscribe_delay)
+                            self._subscribed.update(syms)
+                        logger.info("kucoin subscribe done (%d frames)", len(frames))
                     hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 3.0))
                     _dbg = 0
                     logger.info("kucoin entering async-for loop")
