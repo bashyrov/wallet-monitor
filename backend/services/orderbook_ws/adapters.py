@@ -527,6 +527,7 @@ class KuCoinWS(WSAdapter):
         primary vs hot-spare apart."""
         import websockets
         import json as _json
+        import time as _time
         backoff = 0.3
         force_refresh_token = False
         fail_count = 0
@@ -573,8 +574,18 @@ class KuCoinWS(WSAdapter):
                     hb_task = asyncio.create_task(self._heartbeat_loop(ws, ping_s / 2.0))
                     logger.info("kucoin[%s] WS connected (%d symbols)", slot, len(self._symbols))
                     fail_count = 0
+                    # KuCoin server-side drops sessions at ~60s with no clean
+                    # close frame. Pre-emptively rotate each slot before that:
+                    # A at 45s, B at 55s so the two sessions never both hit a
+                    # rotate at the same second. On rotate we break out of the
+                    # recv loop; the outer while reconnects with jitter-free
+                    # 0.3s backoff.
+                    rotate_at = _time.time() + (45.0 if slot == "A" else 55.0)
                     async for raw in ws:
                         if self._stop:
+                            break
+                        if _time.time() > rotate_at:
+                            logger.info("kucoin[%s] pre-emptive rotation", slot)
                             break
                         try:
                             msg = _json.loads(raw)
@@ -588,9 +599,6 @@ class KuCoinWS(WSAdapter):
                         if parsed:
                             sym, b, a = parsed
                             if b or a:
-                                # Idempotent: latest-write-wins in the shared
-                                # cache, so both sessions can push without
-                                # needing deduplication.
                                 self._update_cb(self.name, sym, b, a)
             except asyncio.CancelledError:
                 raise
