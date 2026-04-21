@@ -136,15 +136,16 @@ class HyperliquidAdapter:
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         action = {
             "type": "updateLeverage",
-            "asset": cls._get_asset_index(symbol),
+            "asset": await cls._get_asset_index(symbol),
             "isCross": margin_mode == "cross",
             "leverage": leverage,
         }
         await cls._post_action(creds, action)
 
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
-        asset = cls._get_asset_index(symbol)
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
+        asset = await cls._get_asset_index(symbol)
         action = {
             "type": "order",
             "orders": [{
@@ -226,12 +227,43 @@ class HyperliquidAdapter:
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
         return {"ok": True, "qty_rounded": quantity}
 
-    @staticmethod
-    def _get_asset_index(symbol: str) -> int:
-        """Hyperliquid uses numeric asset indices. Common mappings."""
-        _MAP = {"BTC": 0, "ETH": 1, "SOL": 2, "AVAX": 3, "MATIC": 4, "DOGE": 5,
-                "ARB": 6, "OP": 7, "SUI": 8, "APT": 9, "FIL": 10, "LINK": 11}
-        idx = _MAP.get(symbol.upper())
-        if idx is not None:
-            return idx
-        return 0  # fallback; proper implementation should query /info type=meta
+    # Cache of HL asset index map, populated lazily on first call and refreshed
+    # every _ASSET_MAP_TTL seconds. Index is the position of the asset in HL's
+    # universe array — it changes only when a new perp is listed, so a 1h TTL
+    # is generous.
+    _asset_map: dict[str, int] = {}
+    _asset_map_at: float = 0.0
+    _ASSET_MAP_TTL = 3600.0
+
+    @classmethod
+    async def _get_asset_index(cls, symbol: str) -> int:
+        """Hyperliquid uses numeric asset indices — look up the symbol in the
+        current universe instead of relying on a hardcoded list. Raises if the
+        symbol isn't listed so we never silently trade the wrong asset."""
+        import time as _t
+        sym = symbol.upper()
+        now = _t.time()
+        if cls._asset_map and (now - cls._asset_map_at) < cls._ASSET_MAP_TTL:
+            idx = cls._asset_map.get(sym)
+            if idx is not None:
+                return idx
+        # Refresh — also serves cold start.
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post("https://api.hyperliquid.xyz/info",
+                             json={"type": "meta"},
+                             headers={"Content-Type": "application/json"})
+            r.raise_for_status()
+            data = r.json() or {}
+            universe = data.get("universe") or []
+            cls._asset_map = {
+                (a.get("name") or "").upper(): i
+                for i, a in enumerate(universe)
+                if a.get("name")
+            }
+            cls._asset_map_at = now
+        idx = cls._asset_map.get(sym)
+        if idx is None:
+            raise RuntimeError(
+                f"{sym} is not listed on Hyperliquid (universe has {len(cls._asset_map)} assets)."
+            )
+        return idx

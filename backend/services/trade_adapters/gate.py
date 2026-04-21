@@ -229,7 +229,8 @@ class GateAdapter:
 
     # ── Place order ──
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         contract = _gate_symbol(symbol)
         all_contracts = await _contracts()
         info = all_contracts.get(contract) or {}

@@ -154,22 +154,22 @@ class BitgetAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         sym = cls._symbol(symbol)
-        # Set margin mode first
         bg_mode = "isolated" if margin_mode == "isolated" else "crossed"
-        try:
-            await cls._signed(creds, "POST", "/api/v2/mix/account/set-margin-mode", body={
-                "symbol": sym,
-                "productType": "USDT-FUTURES",
-                "marginCoin": "USDT",
-                "marginMode": bg_mode,
-            })
-        except RuntimeError as e:
-            if "45110" not in str(e) and "already" not in str(e).lower():
-                code, msg = _split_code(e)
-                raise RuntimeError(_friendly_bg(code, msg))
 
-        # Set leverage for both sides
-        for hold_side in ("long", "short"):
+        async def _set_mode():
+            try:
+                await cls._signed(creds, "POST", "/api/v2/mix/account/set-margin-mode", body={
+                    "symbol": sym,
+                    "productType": "USDT-FUTURES",
+                    "marginCoin": "USDT",
+                    "marginMode": bg_mode,
+                })
+            except RuntimeError as e:
+                if "45110" not in str(e) and "already" not in str(e).lower():
+                    code, msg = _split_code(e)
+                    raise RuntimeError(_friendly_bg(code, msg))
+
+        async def _set_lev(hold_side: str):
             try:
                 await cls._signed(creds, "POST", "/api/v2/mix/account/set-leverage", body={
                     "symbol": sym,
@@ -182,6 +182,11 @@ class BitgetAdapter:
                 if "leverage" not in str(e).lower() or "not modified" not in str(e).lower():
                     code, msg = _split_code(e)
                     raise RuntimeError(_friendly_bg(code, msg))
+
+        # Parallel: margin-mode + long-leverage + short-leverage. 3 API calls
+        # go out concurrently rather than sequentially — saves ~200-400ms on
+        # first order per symbol.
+        await asyncio.gather(_set_mode(), _set_lev("long"), _set_lev("short"))
 
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
@@ -228,7 +233,8 @@ class BitgetAdapter:
         return {"ok": True, "qty_rounded": qty_r, "size_multiplier": size_mult, "min_trade": min_trade, "volume_place": vol_prec}
 
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
         info = await _instrument_info(sym) or {}
         size_mult = info.get("sizeMultiplier", 1)
@@ -241,7 +247,7 @@ class BitgetAdapter:
             data = await cls._signed(creds, "POST", "/api/v2/mix/order/place-order", body={
                 "symbol": sym,
                 "productType": "USDT-FUTURES",
-                "marginMode": "isolated",
+                "marginMode": "isolated" if margin_mode == "isolated" else "crossed",
                 "marginCoin": "USDT",
                 "side": "buy" if side == "buy" else "sell",
                 "tradeSide": "open",
@@ -263,11 +269,15 @@ class BitgetAdapter:
         info = await _instrument_info(sym) or {}
         vol_prec = info.get("volumePlace", 4)
         reduce_side = "sell" if p["side"] == "buy" else "buy"
+        # Mirror the existing position's margin mode on close; passing a
+        # different one would be rejected by Bitget.
+        pos_mm = (p.get("margin_mode") or "isolated").lower()
+        mm_api = "isolated" if pos_mm.startswith("iso") else "crossed"
         try:
             data = await cls._signed(creds, "POST", "/api/v2/mix/order/place-order", body={
                 "symbol": sym,
                 "productType": "USDT-FUTURES",
-                "marginMode": "isolated",
+                "marginMode": mm_api,
                 "marginCoin": "USDT",
                 "side": reduce_side,
                 "tradeSide": "close",

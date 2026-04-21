@@ -99,7 +99,8 @@ class EtherealAdapter:
         pass  # Ethereal manages leverage per-position at order time
 
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         body = {
             "symbol": cls._symbol(symbol),
             "side": side,

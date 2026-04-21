@@ -126,19 +126,25 @@ class BingxAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         sym = cls._symbol(symbol)
-        try:
-            await cls._req(creds, "POST", "/openApi/swap/v2/trade/marginType", {
-                "symbol": sym,
-                "marginType": "ISOLATED" if margin_mode == "isolated" else "CROSSED",
-            })
-        except RuntimeError:
-            pass  # already set
-        try:
-            await cls._req(creds, "POST", "/openApi/swap/v2/trade/leverage", {
-                "symbol": sym, "side": "BOTH", "leverage": int(leverage),
-            })
-        except RuntimeError as e:
-            raise RuntimeError(_friendly_error(*_split_code(e)))
+
+        async def _mode():
+            try:
+                await cls._req(creds, "POST", "/openApi/swap/v2/trade/marginType", {
+                    "symbol": sym,
+                    "marginType": "ISOLATED" if margin_mode == "isolated" else "CROSSED",
+                })
+            except RuntimeError:
+                pass  # already set
+
+        async def _lev():
+            try:
+                await cls._req(creds, "POST", "/openApi/swap/v2/trade/leverage", {
+                    "symbol": sym, "side": "BOTH", "leverage": int(leverage),
+                })
+            except RuntimeError as e:
+                raise RuntimeError(_friendly_error(*_split_code(e)))
+
+        await asyncio.gather(_mode(), _lev())
 
     # ── Preflight ──
     @classmethod
@@ -162,7 +168,8 @@ class BingxAdapter:
 
     # ── Place order ──
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
         info = (await _exchange_info()).get(sym) or {}
         prec = info.get("quantityPrecision", 2)

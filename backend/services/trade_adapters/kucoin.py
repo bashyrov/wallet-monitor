@@ -208,23 +208,31 @@ class KuCoinAdapter:
         return {"ok": True, "qty_lots": qty_lots, "multiplier": multiplier, "lot_size": lot_size}
 
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
         info = await _instrument_info(sym) or {}
         multiplier = info.get("multiplier", 1)
         lot_size = info.get("lotSize", 1)
+        max_lev = int(info.get("maxLeverage") or 100)
         qty_lots = int(quantity / multiplier) if multiplier else int(quantity)
         qty_lots = (qty_lots // lot_size) * lot_size
         if qty_lots <= 0:
             raise RuntimeError(f"Quantity below minimum for {sym}")
+        # Clamp to the per-symbol max. Set a safe default if caller passed 0/neg.
+        lev = max(1, min(int(leverage or 1), max_lev))
+        body = {
+            "symbol": sym,
+            "side": "buy" if side == "buy" else "sell",
+            "type": "market",
+            "size": qty_lots,
+            "leverage": lev,
+            # KuCoin Futures: tdMode "ISOLATED" | "CROSS" — without this the
+            # server may default to whatever the account has cached.
+            "marginMode": "ISOLATED" if margin_mode == "isolated" else "CROSS",
+        }
         try:
-            data = await cls._signed(creds, "POST", "/api/v1/orders", body={
-                "symbol": sym,
-                "side": "buy" if side == "buy" else "sell",
-                "type": "market",
-                "size": qty_lots,
-                "leverage": 1,  # leverage set separately; pass 1 as default
-            })
+            data = await cls._signed(creds, "POST", "/api/v1/orders", body=body)
         except RuntimeError as e:
             code, msg = _split_code(e)
             raise RuntimeError(_friendly_kc(code, msg))

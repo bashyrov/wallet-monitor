@@ -172,10 +172,43 @@ async def place_open_order(
     creds = decrypt_credentials(w.credentials or {})
 
     # ── Pre-flight: round qty, validate notional + balance BEFORE signing an order ──
-    if hasattr(adapter, "preflight"):
+    # Run preflight concurrently with set_leverage when the cache says leverage
+    # already matches — in that case we can skip the leverage call entirely.
+    from backend.services.trade_adapters import _state_cache
+
+    async def _ensure_leverage() -> None:
+        """Skip set_leverage if we applied the same (leverage, margin_mode)
+        recently for this account+symbol. Normal flow: user opens 3-5 arb
+        legs on the same symbol in quick succession — only the first one
+        actually hits the exchange's set-leverage endpoint."""
+        if _state_cache.matches(ex, creds, symbol, leverage, margin_mode):
+            return
         try:
-            pre = await adapter.preflight(creds, symbol, quantity, leverage)
+            await adapter.set_leverage(creds, symbol, leverage, margin_mode)
+            _state_cache.record(ex, creds, symbol, leverage, margin_mode)
+        except Exception as exc:
+            logger.error("set_leverage failed %s/%s lev=%s mode=%s: %s: %s",
+                         ex, symbol, leverage, margin_mode,
+                         type(exc).__name__, exc)
+            # Non-fatal — cached setup may already be correct on the exchange
+            # side even if our state-cache was invalidated. The order will
+            # either succeed (exchange agrees) or fail with a specific error
+            # we surface to the user below.
+
+    preflight_task = None
+    if hasattr(adapter, "preflight"):
+        preflight_task = asyncio.create_task(adapter.preflight(creds, symbol, quantity, leverage))
+
+    # Always start leverage config in parallel with preflight.
+    leverage_task = asyncio.create_task(_ensure_leverage())
+
+    if preflight_task:
+        try:
+            pre = await preflight_task
             if not pre.get("ok"):
+                # Cancel the leverage task so we don't leave it pending if we
+                # bail early on a bad preflight.
+                leverage_task.cancel()
                 raise ValueError(pre.get("reason") or "Pre-flight check failed")
             if pre.get("qty_rounded"):
                 quantity = float(pre["qty_rounded"])
@@ -184,19 +217,20 @@ async def place_open_order(
         except Exception as exc:
             logger.info("preflight unexpected error %s/%s: %s", ex, symbol, exc)
 
-    try:
-        await adapter.set_leverage(creds, symbol, leverage, margin_mode)
-    except Exception as exc:
-        logger.warning("set_leverage failed %s/%s: %s", ex, symbol, exc)
-        # Non-fatal — some accounts already have the desired setup
+    await leverage_task
 
     try:
-        result = await adapter.place_order(creds, symbol, side, quantity)
+        result = await adapter.place_order(creds, symbol, side, quantity,
+                                           leverage=leverage, margin_mode=margin_mode)
     except RuntimeError as exc:
+        # On a failed order, invalidate the state cache — the exchange may
+        # have returned a leverage/margin-mode mismatch, and we want the
+        # next attempt to re-sync.
+        _state_cache.invalidate(ex, creds, symbol)
         # Adapters surface friendly messages in RuntimeError
         raise ValueError(str(exc))
-    logger.info("Order placed: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s",
-                user_id, wallet_id, ex, symbol, side, quantity)
+    logger.info("Order placed: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s lev=%sx mode=%s",
+                user_id, wallet_id, ex, symbol, side, quantity, leverage, margin_mode)
     return {**result, "exchange": ex, "symbol": symbol, "side": side, "quantity": quantity}
 
 

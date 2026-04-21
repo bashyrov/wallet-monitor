@@ -182,7 +182,8 @@ class BackpackAdapter:
 
     # ── Place order ──
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
         info = (await _markets()).get(sym) or {}
         prec = info.get("quantityPrecision", 4)

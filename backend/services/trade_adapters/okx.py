@@ -241,7 +241,8 @@ class OKXAdapter:
 
     # ── Place order ──
     @classmethod
-    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float) -> dict:
+    async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
+                          leverage: int = 1, margin_mode: str = "isolated") -> dict:
         inst_id = _okx_symbol(symbol)
         instruments = await _instruments()
         info = instruments.get(inst_id) or {}
@@ -256,7 +257,7 @@ class OKXAdapter:
         try:
             r = await cls._req(creds, "POST", "/api/v5/trade/order", {
                 "instId": inst_id,
-                "tdMode": "isolated",
+                "tdMode": "isolated" if margin_mode == "isolated" else "cross",
                 "side": "buy" if side == "buy" else "sell",
                 "posSide": "long" if side == "buy" else "short",
                 "ordType": "market",
@@ -287,6 +288,10 @@ class OKXAdapter:
         p = positions[0]
         close_side = "sell" if p["side"] == "buy" else "buy"
         pos_side = "long" if p["side"] == "buy" else "short"
+        # Match the position's own margin mode — closing in a different mode
+        # would be rejected by OKX ("52000: Position & order tdMode mismatch").
+        td_mode = p.get("margin_mode") or "isolated"
+        td_mode = "isolated" if td_mode.lower().startswith("iso") else "cross"
 
         instruments = await _instruments()
         info = instruments.get(inst_id) or {}
@@ -296,7 +301,7 @@ class OKXAdapter:
         try:
             r = await cls._req(creds, "POST", "/api/v5/trade/order", {
                 "instId": inst_id,
-                "tdMode": "isolated",
+                "tdMode": td_mode,
                 "side": close_side,
                 "posSide": pos_side,
                 "ordType": "market",
