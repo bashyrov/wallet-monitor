@@ -3162,6 +3162,56 @@ async function accLoadKeyCounts(){
   } catch {}
 }
 
+// Detect arb pairs: two positions on the same symbol, opposite sides,
+// size within 2% (exchanges round differently — e.g. Binance allows
+// fractional qty, KuCoin is integer lots, so exact-match is too strict).
+// A matched pair is rendered as a single "paired" row at the top with
+// summed uPnL + aggregate size.
+function _acc_pair_positions(rows){
+  const bySym = {};
+  for (const p of rows) {
+    (bySym[p.symbol] = bySym[p.symbol] || []).push(p);
+  }
+  const pairs = [];
+  const singles = [];
+  const used = new Set();
+  for (const [sym, group] of Object.entries(bySym)) {
+    for (let i = 0; i < group.length; i++) {
+      if (used.has(group[i].position_id || `${i}:${sym}`)) continue;
+      const a = group[i];
+      let matched = false;
+      for (let j = i + 1; j < group.length; j++) {
+        if (used.has(group[j].position_id || `${j}:${sym}`)) continue;
+        const b = group[j];
+        if (a.side === b.side) continue;  // need opposing
+        // Quantity match within 2% of max — exchanges round differently.
+        const qa = Number(a.quantity) || 0, qb = Number(b.quantity) || 0;
+        const maxQ = Math.max(qa, qb);
+        if (maxQ <= 0) continue;
+        const diffPct = Math.abs(qa - qb) / maxQ;
+        if (diffPct > 0.02) continue;
+        // Mark both as paired.
+        used.add(a.position_id || `${i}:${sym}`);
+        used.add(b.position_id || `${j}:${sym}`);
+        const longLeg  = a.side === 'buy' ? a : b;
+        const shortLeg = a.side === 'buy' ? b : a;
+        pairs.push({symbol: sym, long: longLeg, short: shortLeg});
+        matched = true;
+        break;
+      }
+      if (!matched) singles.push(a);
+    }
+    // Any group entries not yet matched fall to singles (handled by `matched`
+    // flag — if i iterated past j without matching, it's still in singles).
+  }
+  // Also push unpaired entries from groups of 1
+  for (const p of rows) {
+    const key = p.position_id || `${rows.indexOf(p)}:${p.symbol}`;
+    if (!used.has(key) && !singles.includes(p)) singles.push(p);
+  }
+  return {pairs, singles};
+}
+
 async function accLoadPositions(){
   const tbody = document.getElementById('acc-positions-body');
   const empty = document.getElementById('acc-positions-empty');
@@ -3173,35 +3223,113 @@ async function accLoadPositions(){
     document.getElementById('acc-pos-count').textContent = rows.length;
     if (!rows.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
     empty.style.display = 'none';
-    tbody.innerHTML = rows.map(p => {
-      const sideCls = p.side === 'buy' ? 'acc-side-long' : 'acc-side-short';
+
+    const {pairs, singles} = _acc_pair_positions(rows);
+    const sumUsd = (v) => (v>=0?'+':'') + '$' + Math.abs(v).toFixed(2);
+    const rowFor = (p) => {
+      const sideCls  = p.side === 'buy' ? 'acc-side-long' : 'acc-side-short';
       const sideText = p.side === 'buy' ? 'LONG' : 'SHORT';
-      const pnlCls = (p.unrealized_pnl_usd||0) >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
-      const pnlPct = (p.entry_price > 0 && p.quantity > 0) ? ((p.unrealized_pnl_usd||0) / (p.entry_price * p.quantity) * 100) : 0;
+      const pnl = Number(p.unrealized_pnl_usd || 0);
+      const mark = Number(p.mark_price || 0);
+      const qty  = Number(p.quantity || 0);
+      const sizeUsd = qty * mark;
+      const pnlCls = pnl >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
+      const pnlPct = (p.entry_price > 0 && qty > 0) ? (pnl / (p.entry_price * qty) * 100) : 0;
+      const funding = (p.funding_pnl_usd != null)
+        ? `<span class="${(Number(p.funding_pnl_usd)||0)>=0?'acc-pos-pnl-pos':'acc-pos-pnl-neg'}">${sumUsd(Number(p.funding_pnl_usd))}</span>`
+        : '<span style="color:var(--text3)">—</span>';
       return `
         <tr>
           <td><span class="sym">${p.symbol}</span><span style="color:var(--text3);margin-left:3px">USDT</span></td>
           <td><span class="ex-pill">${(EX_LABEL[p.exchange]||p.exchange)}</span></td>
           <td class="${sideCls}">${sideText}</td>
-          <td class="num">${Number(p.quantity).toFixed(4)}</td>
+          <td class="num">${qty.toFixed(4)}<br><span style="color:var(--text3);font-size:10px">${sizeUsd.toFixed(2)} USDT</span></td>
           <td class="num">${Number(p.entry_price||0).toFixed(4)}</td>
-          <td class="num" style="color:var(--text2)">${Number(p.mark_price||0).toFixed(4)}</td>
-          <td class="num" style="color:var(--text3)">—</td>
-          <td class="num ${pnlCls}">${(p.unrealized_pnl_usd||0)>=0?'+':''}${Number(p.unrealized_pnl_usd||0).toFixed(2)}</td>
+          <td class="num" style="color:var(--text2)">${mark.toFixed(4)}</td>
+          <td class="num">${funding}</td>
+          <td class="num ${pnlCls}">${sumUsd(pnl)}</td>
           <td class="num ${pnlCls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
           <td><button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button></td>
         </tr>`;
-    }).join('');
+    };
 
-    // upnl sum in P&L pane
+    // Paired rows — stacked as a header "pair" + both legs grouped below.
+    // Pairs are rendered first so they're the default view.
+    const pairHtml = pairs.map(pair => {
+      const lp = Number(pair.long.unrealized_pnl_usd || 0);
+      const sp = Number(pair.short.unrealized_pnl_usd || 0);
+      const totalPnl = lp + sp;
+      const lf = Number(pair.long.funding_pnl_usd || 0);
+      const sf = Number(pair.short.funding_pnl_usd || 0);
+      const hasFunding = (pair.long.funding_pnl_usd != null) || (pair.short.funding_pnl_usd != null);
+      const totalFunding = hasFunding ? (lf + sf) : null;
+      const lq = Number(pair.long.quantity || 0) * Number(pair.long.mark_price || 0);
+      const sq = Number(pair.short.quantity || 0) * Number(pair.short.mark_price || 0);
+      const pairUsd = (lq + sq) / 2;  // pair size ≈ notional of one leg
+      const pnlCls = totalPnl >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
+      const fundCls = hasFunding && totalFunding >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
+      const combinedPct = pairUsd > 0 ? (totalPnl / pairUsd * 100) : 0;
+      const header = `
+        <tr class="acc-pair-header" style="background:rgba(26,255,171,0.04);border-top:1px solid rgba(26,255,171,0.18)">
+          <td colspan="2" style="padding:8px 10px">
+            <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ PAIR</span>
+            <span class="sym" style="margin-left:6px">${pair.symbol}</span>
+            <span style="color:var(--text3);margin-left:3px">USDT</span>
+            <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
+          </td>
+          <td colspan="2" class="num" style="color:var(--text2);font-size:11px">${pairUsd.toFixed(2)} USDT per leg</td>
+          <td colspan="2" class="num" style="color:var(--text3);font-size:11px">Δ pair</td>
+          <td class="num">${hasFunding ? `<span class="${fundCls}">${sumUsd(totalFunding)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+          <td class="num ${pnlCls}" style="font-weight:700">${sumUsd(totalPnl)}</td>
+          <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
+          <td>
+            <button class="pos-close" onclick="_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')"
+                    style="background:var(--green);border:none;color:#0a0a0f;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-weight:700;font-family:inherit">Close Both</button>
+          </td>
+        </tr>`;
+      return header + rowFor(pair.long) + rowFor(pair.short);
+    }).join('');
+    const singlesHtml = singles.map(rowFor).join('');
+    tbody.innerHTML = pairHtml + singlesHtml;
+
+    // P&L pane: total uPnL + total funding across all positions.
     const upnlSum = rows.reduce((a, p) => a + (Number(p.unrealized_pnl_usd)||0), 0);
     const upEl = document.getElementById('acc-upnl');
     if (upEl) { upEl.textContent = (upnlSum>=0?'+':'') + '$' + Math.abs(upnlSum).toFixed(2); upEl.className = 'acc-sum-val ' + (upnlSum>=0?'pos':'neg'); }
+    const fundingSum = rows.reduce((a, p) => a + (Number(p.funding_pnl_usd)||0), 0);
+    const fEl = document.getElementById('acc-funding-24h');
+    if (fEl && rows.some(p => p.funding_pnl_usd != null)) {
+      fEl.textContent = (fundingSum>=0?'+':'') + '$' + Math.abs(fundingSum).toFixed(2);
+      fEl.className = 'acc-sum-val ' + (fundingSum>=0?'pos':'neg');
+    }
   } catch {
     tbody.innerHTML = '';
     empty.style.display = 'block';
     document.getElementById('acc-cnt-positions').textContent = '0';
   }
+}
+
+async function _tradeClosePair(longWid, shortWid, sym){
+  const ok = await Confirm.ask({
+    title: 'Close both legs?',
+    message: 'The long and short positions on this pair will be closed at market with reduce-only orders.',
+    okText: 'Close both',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const [lr, sr] = await Promise.allSettled([
+      Auth.apiFetch('/trade/close', {method:'POST', body: JSON.stringify({wallet_id: longWid,  symbol: sym})}),
+      Auth.apiFetch('/trade/close', {method:'POST', body: JSON.stringify({wallet_id: shortWid, symbol: sym})}),
+    ]);
+    const okCount = [lr, sr].filter(r => r.status === 'fulfilled' && r.value.ok).length;
+    if (okCount === 2)      _toast('Pair closed', 'success');
+    else if (okCount === 1) _toast('One leg closed — the other failed; check Positions', 'warn');
+    else                    _toast('Close pair failed — check Positions', 'error');
+    refreshTradePositions();
+    _reloadTradeStatus();
+    if (typeof accLoadPositions === 'function') accLoadPositions();
+  } catch (e) { _toast('Close pair failed: ' + (e.message||'unknown'), 'error'); }
 }
 
 async function accLoadBalances(){
@@ -3429,9 +3557,17 @@ function _renderSubmit(leg){
   else if (!t.last)                          reason = 'waiting for price';
   else if (!t.qty)                           reason = 'enter size';
   btn.disabled = !!reason;
-  btn.textContent = reason
-    ? `${actionText} · ${reason}`
-    : `${actionText} · ${t.qty.toFixed(4)} ${SYM}`;
+  if (reason) {
+    btn.textContent = `${actionText} · ${reason}`;
+  } else {
+    // Show order size in whichever unit the user is working in. Underneath,
+    // quantity sent to the exchange is always TOKEN — the USDT view is just
+    // a display convenience, converted from t.last mid price at paint time.
+    const usd = t.qty * t.last;
+    btn.textContent = t.unit === 'usdt'
+      ? `${actionText} · ${usd.toFixed(2)} USDT (${t.qty.toFixed(4)} ${SYM})`
+      : `${actionText} · ${t.qty.toFixed(4)} ${SYM} (${usd.toFixed(2)} USDT)`;
+  }
   _renderArbBtn();
 }
 
