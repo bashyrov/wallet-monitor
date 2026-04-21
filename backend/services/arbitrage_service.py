@@ -1103,15 +1103,22 @@ async def get_funding_data() -> dict:
 
     def _keep(row: dict) -> bool:
         """Row passes into the merged cache only if the venue actually
-        reports a 24h USD volume that clears the floor. Missing / zero
-        / below-threshold volume → dropped — we can't verify the pair
-        is tradeable enough to be worth showing."""
+        reports a 24h USD volume that clears the floor AND a non-zero
+        funding rate. Missing / zero volume → dropped. Rate exactly 0 →
+        dropped too (no venue reports a truly-zero funding; 0 means the
+        value is uninitialised / hasn't been received from the WS / REST
+        feed yet, and letting it through creates fake 'free' arb pairs)."""
         if hidden_sym and row["symbol"] in hidden_sym:
             return False
         v = row.get("volume_usd")
         if v is None:
             return False
+        rate = row.get("rate")
+        if rate is None:
+            return False
         try:
+            if float(rate) == 0.0:
+                return False
             return float(v) >= min_volume
         except (TypeError, ValueError):
             return False
