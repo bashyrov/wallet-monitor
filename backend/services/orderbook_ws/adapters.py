@@ -449,26 +449,24 @@ class KuCoinWS(WSAdapter):
     name = "kucoin"
     url = "wss://x-push-futures.kucoin.com"  # Pro WS futures — no token, no bullet-public
     ping_interval = 18.0   # will be overridden by server welcome msg
-    subscribe_delay = 0.15  # Pro WS is faster; 10 subs/sec is fine
+    subscribe_delay = 0.5   # obu channel is per-symbol only; slow subscribes
     max_symbols = 80        # Pro WS accepts more subs per connection
 
     def build_subscribe(self, symbols):
-        # Pro WS `obu` channel accepts a `symbols` array, so one frame per
-        # batch covers many pairs. Per-symbol frames (72 × 0.15s = 11s of
-        # subscribe traffic) were getting the session reset — server sees
-        # the long subscribe burst and closes the TCP without a close
-        # frame. Batch of 30 symbols per frame keeps each send cheap.
-        BATCH = 30
+        # Pro WS `obu` channel requires a single `symbol` per frame
+        # (multi-symbol `symbols` array isn't supported for orderbook in
+        # the current Pro spec — confirmed by silent-empty-stream on prod
+        # with no error message when we tried it). Send a frame per
+        # symbol at subscribe_delay cadence.
         frames = []
-        mapped = [("XBT" if s == "BTC" else s) + "USDTM" for s in symbols]
-        for i in range(0, len(mapped), BATCH):
-            chunk = mapped[i:i + BATCH]
+        for s in symbols:
+            sym_k = ("XBT" if s == "BTC" else s) + "USDTM"
             frames.append({
                 "id": f"ku-{uuid.uuid4().hex[:8]}",
                 "action": "SUBSCRIBE",
                 "channel": "obu",
                 "tradeType": "FUTURES",
-                "symbols": chunk,
+                "symbol": sym_k,
                 "depth": "50",
             })
         return frames
