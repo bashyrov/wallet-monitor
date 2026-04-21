@@ -1796,6 +1796,22 @@ if ('IntersectionObserver' in window) {
   if (!track) return;
   track.innerHTML = track.innerHTML + track.innerHTML;
 })();
+
+// ─── pre-launch: disable all product + auth links ───
+(() => {
+  const LOCKED = ['/login', '/register', '/app', '/screener', '/arb', '/profile', '/admin', '/archive'];
+  document.querySelectorAll('a[href]').forEach(a => {
+    if (!LOCKED.includes(a.getAttribute('href'))) return;
+    if (a.closest('.nav-cta') || a.closest('.drawer-cta') || a.closest('.drawer-menu')) {
+      a.style.display = 'none';
+      return;
+    }
+    a.removeAttribute('href');
+    a.style.cursor = 'default';
+    a.style.opacity = '0.55';
+    a.addEventListener('click', e => e.preventDefault());
+  });
+})();
 </script>
 </body>
 </html>
