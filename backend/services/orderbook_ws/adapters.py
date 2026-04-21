@@ -453,18 +453,22 @@ class KuCoinWS(WSAdapter):
     max_symbols = 80        # Pro WS accepts more subs per connection
 
     def build_subscribe(self, symbols):
-        # Pro WS: one subscribe per symbol (multi-symbol `symbols` field
-        # exists but spec is inconsistent between docs pages; per-symbol
-        # is always supported). Map BTC -> XBTUSDTM for futures.
+        # Pro WS `obu` channel accepts a `symbols` array, so one frame per
+        # batch covers many pairs. Per-symbol frames (72 × 0.15s = 11s of
+        # subscribe traffic) were getting the session reset — server sees
+        # the long subscribe burst and closes the TCP without a close
+        # frame. Batch of 30 symbols per frame keeps each send cheap.
+        BATCH = 30
         frames = []
-        for s in symbols:
-            sym_k = ("XBT" if s == "BTC" else s) + "USDTM"
+        mapped = [("XBT" if s == "BTC" else s) + "USDTM" for s in symbols]
+        for i in range(0, len(mapped), BATCH):
+            chunk = mapped[i:i + BATCH]
             frames.append({
                 "id": f"ku-{uuid.uuid4().hex[:8]}",
                 "action": "SUBSCRIBE",
                 "channel": "obu",
                 "tradeType": "FUTURES",
-                "symbol": sym_k,
+                "symbols": chunk,
                 "depth": "50",
             })
         return frames
