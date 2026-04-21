@@ -577,7 +577,7 @@ async def _refresh_loop() -> None:
     # reach over to another worker's snapshot.
     _LOCAL_STALE_MAX = 15.0
 
-    _tick_counter = [0]
+    _tick_i = [0]
     while True:
         started = asyncio.get_event_loop().time()
         # Kick background funding refresh — never await. Lock ensures only one
@@ -642,18 +642,22 @@ async def _refresh_loop() -> None:
                 else:
                     _arb_result_cache["data"] = result
                     _arb_result_cache["ts"] = time.time()
+                    t_cache = asyncio.get_event_loop().time()
                     _write_file_cache("arbitrage.json", _slim_arb_for_file(result))
+                    t_write = asyncio.get_event_loop().time()
                     score_opportunities(result.get("opportunities", []))
-                t_write = asyncio.get_event_loop().time()
-                _tick_counter[0] += 1
-                if _tick_counter[0] % 20 == 0:
-                    logger.info(
-                        "refresh tick #%d: prep=%.2fs filter=%.2fs compute=%.2fs write=%.2fs rows=%d opps=%d",
-                        _tick_counter[0],
-                        t_prep - started, t_filter - t_prep,
-                        t_compute - t_filter, t_write - t_compute,
-                        len(rows), len(result.get("opportunities", [])),
-                    )
+                    t_score = asyncio.get_event_loop().time()
+                    _tick_i[0] += 1
+                    if _tick_i[0] % 10 == 0:
+                        logger.info(
+                            "refresh tick #%d: prep=%.2f filter=%.2f compute=%.2f write=%.2f score=%.2f TOTAL=%.2f rows=%d opps=%d",
+                            _tick_i[0],
+                            t_prep - started, t_filter - t_prep,
+                            t_compute - t_filter, t_write - t_cache,
+                            t_score - t_write,
+                            t_score - started,
+                            len(rows), len(result.get("opportunities", [])),
+                        )
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)
         elapsed = asyncio.get_event_loop().time() - started
