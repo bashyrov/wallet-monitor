@@ -40,12 +40,17 @@ POLL_INTERVAL   = 0.50   # per-pair poll cadence (owner worker)
 IDLE_TIMEOUT    = 30.0   # stop poller if no requests in this window
 FIRST_WAIT      = 0.7    # max cold-start wait for first data
 STALE_FALLBACK  = 10.0   # still serve local-cache data if younger than this
-FILE_FRESH_MAX  = 5.0    # file-cache entry is "fresh"; returned immediately
-# Hard ceiling on file-cache staleness. Anything older than this is NOT
-# served — the arb engine would otherwise compute In/Out percentages off
-# a book that moved many ticks ago. On outage we prefer to say "no data"
-# rather than show a confidently wrong mid-price.
-STALE_SERVE_MAX = 5.0
+# Two-tier freshness:
+#   FILE_FRESH    — green indicator, arb compute prefers these. Prices considered live.
+#   FILE_DEGRADED — yellow indicator, still fed to arb compute. Prices may lag but are
+#                   within acceptable bounds (outlier filter catches stale-gap cases).
+#   STALE_SERVE   — hard ceiling. Beyond this, arb excludes the pair entirely.
+# Earlier version had FRESH==STALE_SERVE==5s, which caused pairs to disappear from arb
+# every time a single WS heartbeat was late — flickering UI and pairs with half-dead
+# orderbooks. Split lets a single delayed tick degrade to yellow instead of vanishing.
+FILE_FRESH_MAX  = 5.0
+FILE_DEGRADED_MAX = 15.0
+STALE_SERVE_MAX = 30.0
 
 _CACHE_DIR   = "/tmp/avalant_cache"
 _BOOKS_FILE  = os.path.join(_CACHE_DIR, "books.json")
@@ -389,20 +394,20 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
 
 def top_levels(exchange: str, symbol: str) -> tuple[float, float] | None:
     """Sync accessor (best_bid, best_ask). Checks local memory then file
-    cache. Rejects entries older than FILE_FRESH_MAX — a stale orderbook
-    leaking into arb compute produced 14%-off prices (e.g. KuCoin RAVE at
-    $1.39 vs live $1.59) because the WS connection to that pair had
-    dropped but the last snapshot lingered in _book_cache."""
+    cache. Rejects entries older than FILE_DEGRADED_MAX — prices >15s old
+    are unreliable for arb compute. Cap is generous vs the original 5s
+    because the outlier filter catches truly stale books (the KuCoin RAVE
+    incident was 30+ minutes stale, not 10 seconds)."""
     key = f"{exchange.lower()}:{symbol.upper()}"
     data: dict | None = None
     now = time.time()
     entry = _book_cache.get(key)
     if entry:
         ts = entry.get("ts", 0)
-        if now - ts <= FILE_FRESH_MAX:
+        if now - ts <= FILE_DEGRADED_MAX:
             data = entry.get("data")
     if not data:
-        data = _file_lookup(key)
+        data = _file_lookup(key, max_age=FILE_DEGRADED_MAX)
     if not data:
         return None
     bids = data.get("bids") or []
