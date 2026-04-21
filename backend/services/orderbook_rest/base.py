@@ -145,9 +145,9 @@ class OrderbookRestBackstop:
         except Exception as exc:
             return exc
         if not data:
-            return False
+            return RuntimeError(f"fetch_sync({symbol}) returned None")
         if not (data.get("bids") or data.get("asks")):
-            return False
+            return RuntimeError(f"fetch_sync({symbol}) returned empty book: {str(data)[:200]}")
         self._write_book(symbol, data)
         return True
 

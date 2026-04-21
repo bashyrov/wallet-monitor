@@ -43,7 +43,7 @@ class BinanceRest(OrderbookRestBackstop):
             f"https://fapi.binance.com/fapi/v1/depth?symbol={symbol}USDT&limit=20"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = r.json()
         return {"bids": _pairs(d.get("bids")), "asks": _pairs(d.get("asks"))}
 
@@ -59,7 +59,7 @@ class BybitRest(OrderbookRestBackstop):
             f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={symbol}USDT&limit=50"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = r.json().get("result") or {}
         return {"bids": _pairs(d.get("b")), "asks": _pairs(d.get("a"))}
 
@@ -75,7 +75,7 @@ class OKXRest(OrderbookRestBackstop):
             f"https://www.okx.com/api/v5/market/books?instId={symbol}-USDT-SWAP&sz=50"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         arr = r.json().get("data") or [{}]
         d = arr[0] if arr else {}
         return {"bids": _pairs(d.get("bids")), "asks": _pairs(d.get("asks"))}
@@ -94,7 +94,7 @@ class GateRest(OrderbookRestBackstop):
             f"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract={symbol}_USDT&limit=20"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = r.json()
         bids = [[float(x["p"]), float(x["s"])] for x in d.get("bids") or []
                 if isinstance(x, dict) and "p" in x and "s" in x]
@@ -119,7 +119,7 @@ class KuCoinRest(OrderbookRestBackstop):
             f"https://api-futures.kucoin.com/api/v1/level2/depth20?symbol={sym}"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = (r.json() or {}).get("data") or {}
         return {"bids": _pairs(d.get("bids")), "asks": _pairs(d.get("asks"))}
 
@@ -135,7 +135,7 @@ class MEXCRest(OrderbookRestBackstop):
             f"https://contract.mexc.com/api/v1/contract/depth/{symbol}_USDT?limit=20"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = (r.json() or {}).get("data") or {}
         return {"bids": _pairs(d.get("bids")), "asks": _pairs(d.get("asks"))}
 
@@ -151,7 +151,7 @@ class BitgetRest(OrderbookRestBackstop):
             f"https://api.bitget.com/api/v2/mix/market/merge-depth?symbol={symbol}USDT&productType=USDT-FUTURES&limit=50"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = (r.json() or {}).get("data") or {}
         return {"bids": _pairs(d.get("bids")), "asks": _pairs(d.get("asks"))}
 
@@ -169,7 +169,7 @@ class AsterRest(OrderbookRestBackstop):
             f"https://fapi.asterdex.com/fapi/v1/depth?symbol={symbol}USDT&limit=20"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = r.json()
         return {"bids": _pairs(d.get("bids")), "asks": _pairs(d.get("asks"))}
 
@@ -189,7 +189,7 @@ class HyperliquidRest(OrderbookRestBackstop):
             headers={"Content-Type": "application/json"},
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         levels = (r.json() or {}).get("levels") or [[], []]
         if len(levels) < 2:
             return None
@@ -211,7 +211,7 @@ class BingXRest(OrderbookRestBackstop):
             f"https://open-api.bingx.com/openApi/swap/v2/quote/depth?symbol={symbol}-USDT&limit=50"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = (r.json() or {}).get("data") or {}
         return {"bids": _pairs(d.get("bids")), "asks": _pairs(d.get("asks"))}
 
@@ -227,7 +227,7 @@ class WhiteBitRest(OrderbookRestBackstop):
             f"https://whitebit.com/api/v4/public/orderbook/{symbol}_PERP?limit=100&level=2"
         )
         if r.status_code != 200:
-            return None
+            raise RuntimeError(f"{self.name} HTTP {r.status_code}: {r.text[:200]}")
         d = r.json() or {}
         return {"bids": _pairs(d.get("bids")), "asks": _pairs(d.get("asks"))}
 
