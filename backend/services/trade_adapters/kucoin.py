@@ -283,15 +283,20 @@ class KuCoinAdapter:
         items = [data] if isinstance(data, dict) else (data or [])
         out = []
         for p in items:
-            qty = abs(int(p.get("currentQty") or 0))
-            if qty == 0:
-                continue
             raw_qty = int(p.get("currentQty") or 0)
-            multiplier = float(p.get("multiplier") or 1)
+            if raw_qty == 0:
+                continue
             base_sym = str(p.get("symbol", "")).replace("USDTM", "")
-            # Normalize XBT → BTC
             if base_sym == "XBT":
                 base_sym = "BTC"
+            # KuCoin position API does NOT include `multiplier` — it's only on
+            # the contract-info endpoint. Before this fix we defaulted to 1,
+            # so the reported qty was in contracts (e.g. ARIA: 1015 contracts
+            # of 10 ARIA each appeared as 1015 base units instead of 10150).
+            # That broke arb pair detection against Binance which reports
+            # base units directly.
+            info = await _instrument_info(p.get("symbol") or cls._symbol(base_sym)) or {}
+            multiplier = float(info.get("multiplier") or 1)
             out.append({
                 "exchange": "kucoin",
                 "symbol": base_sym,
