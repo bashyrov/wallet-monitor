@@ -702,14 +702,37 @@ def _build_arb_snapshot_payload(data: dict) -> str:
     return json.dumps(payload)
 
 
+_last_arb_broadcast_at: float = 0.0
+
+
 def _build_arb_diff(curr: dict) -> dict | None:
     """Compute the delta between the current computed arb result and the
     last one we broadcast. Returns None if literally nothing changed —
     the broadcaster skips the push entirely on no-ops to save bandwidth.
+
+    Empty-snapshot guard: if the computed result has <50% of the previous
+    opp count AND the previous broadcast was recent (<5s), we suppress the
+    push. A momentary gap in the fetcher's refresh cycle would otherwise
+    translate to `removed: [hundreds of keys]` and wipe the user's grid
+    for one tick before it recovers on the next one. Users were seeing
+    the screener flash empty — this is its immediate cause.
     """
-    global _last_arb_broadcast, _last_arb_meta
+    global _last_arb_broadcast, _last_arb_meta, _last_arb_broadcast_at
     curr_opps = curr.get("opportunities", []) or []
     curr_by_key = {_arb_key(o): o for o in curr_opps}
+
+    prev_count = len(_last_arb_broadcast)
+    new_count = len(curr_by_key)
+    now_ts = time.time()
+    if (prev_count > 0
+            and new_count < prev_count * 0.5
+            and (now_ts - _last_arb_broadcast_at) < 5.0):
+        logger.info(
+            "arb broadcast empty-guard: skipped push (prev=%d new=%d age=%.1fs)",
+            prev_count, new_count, now_ts - _last_arb_broadcast_at,
+        )
+        return None
+
     added, updated = [], []
     for k, o in curr_by_key.items():
         prev = _last_arb_broadcast.get(k)
@@ -719,7 +742,6 @@ def _build_arb_diff(curr: dict) -> dict | None:
             updated.append(o)
     removed = [list(k) for k in _last_arb_broadcast.keys() if k not in curr_by_key]
 
-    # Meta change (fees dict / exchanges list) triggers a light refresh.
     fees_now = curr.get("fees", {})
     exchanges_now = curr.get("exchanges", [])
     meta_changed = (
@@ -741,10 +763,9 @@ def _build_arb_diff(curr: dict) -> dict | None:
         payload["fees"]      = fees_now
         payload["exchanges"] = exchanges_now
 
-    # Rebase our "last" state to the new snapshot — next tick's diff is
-    # relative to THIS state.
     _last_arb_broadcast = curr_by_key
     _last_arb_meta = {"ts": curr.get("ts"), "fees": fees_now, "exchanges": exchanges_now}
+    _last_arb_broadcast_at = now_ts
     return payload
 
 
