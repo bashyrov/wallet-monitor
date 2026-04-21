@@ -885,10 +885,6 @@ async def _get_rows(exchange: str) -> list[dict]:
     except Exception as exc:
         logger.debug("%s: get_ws_rows raised: %s", exchange, exc)
         ws_rows = None
-    # Temporary diagnostic — tracking HL disappearance from funding.json.
-    if exchange in ("hyperliquid", "okx"):
-        logger.info("_get_rows(%s): ws_rows=%s",
-                    exchange, len(ws_rows) if ws_rows else ws_rows)
     if ws_rows:
         # Normalise every row to the REST-schema and stamp the exchange.
         # If `interval_h` is missing the row is dropped — we must know the
