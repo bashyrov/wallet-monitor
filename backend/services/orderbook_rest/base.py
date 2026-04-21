@@ -154,8 +154,7 @@ class OrderbookRestBackstop:
             started = time.time()
             with self._lock:
                 symbols = list(self._symbols)
-            pool = self._pool
-            if not symbols or pool is None:
+            if not symbols:
                 time.sleep(self.interval_s)
                 continue
 
