@@ -1685,12 +1685,18 @@ if (TYPE === 'spot' || TYPE === 'dex') {
           <!-- LEFT: chart area (iframe or spot info) -->
           <div class="col-left">
             <div class="chart-tabs">
-              <div class="chart-tab active">${IS_DEX ? 'DexScreener' : 'TradingView'}</div>
-              <div class="chart-tab" style="color:var(--text3);cursor:default;opacity:.55">Basis history · soon</div>
+              <div class="chart-tab active">${IS_DEX ? 'DexScreener' : 'Entry / Exit'}</div>
             </div>
             ${IS_DEX
               ? `<iframe id="pt-dex-frame" class="pt-iframe" src="about:blank" loading="lazy" allow="clipboard-write; fullscreen" allowfullscreen></iframe>`
-              : `<iframe id="pt-spot-frame" class="pt-iframe" src="about:blank" loading="lazy" allow="fullscreen" allowfullscreen></iframe>`}
+              : `<div id="pt-ee-chart" style="flex:1;min-height:0;background:var(--bg);position:relative">
+                   <div style="position:absolute;top:8px;left:10px;z-index:5;display:flex;align-items:center;gap:10px;font-size:10px;font-family:var(--mono);color:var(--text3)">
+                     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:2px;background:#1AFFAB;border-radius:1px"></span>Spread %</span>
+                     <span style="color:var(--text3)">·</span>
+                     <span id="pt-ee-count">0 pts</span>
+                   </div>
+                   <div id="pt-ee-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;pointer-events:none">Collecting order-book ticks…</div>
+                 </div>`}
           </div>
 
           <!-- CENTER: order books (futures-style .book-panel for all types) -->
@@ -2029,16 +2035,69 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     if (frame) frame.src = `https://dexscreener.com/${DEX_CHAIN}/${DEX_PAIR}?embed=1&theme=dark&trades=1&info=0`;
   }
 
-  // TradingView embed (Spot mode)
-  if (!IS_DEX) {
-    const TV_EX = {binance:'BINANCE', bybit:'BYBIT', okx:'OKX', gate:'GATEIO',
-                   kucoin:'KUCOIN', mexc:'MEXC', bitget:'BITGET', bingx:'BINGX'};
-    const tvEx = TV_EX[LONG] || 'BINANCE';
-    const frame = $('pt-spot-frame');
-    if (frame) {
-      const theme = document.body.classList.contains('light') ? 'light' : 'dark';
-      frame.src = `https://s.tradingview.com/widgetembed/?symbol=${tvEx}%3A${SYM}USDT&interval=15&theme=${theme}&style=1&timezone=Etc%2FUTC&hidesidetoolbar=1&withdateranges=0&saveimage=0&studies=[]&hideideas=1`;
-    }
+  // Live Entry/Exit chart for Spot / Short — lightweight-charts line series.
+  // Plots (mid_short − mid_long) / mid_long × 100 sampled on every orderbook
+  // tick. Data persisted to localStorage so a page reload keeps the last 20 min.
+  let _eeChart = null, _eeSeries = null, _eeData = [], _eeLastT = 0;
+  const _eeKey = `pt-ee:${TYPE}:${SYM}:${LONG}:${SHORT}`;
+  const _eeMax = 2000;
+  function _eeInit() {
+    if (IS_DEX) return;
+    if (!window.LightweightCharts) { setTimeout(_eeInit, 300); return; }
+    const el = $('pt-ee-chart');
+    if (!el || _eeChart) return;
+    const theme = document.body.classList.contains('light')
+      ? {bg:'#FFFFFF', grid:'#EDEDED', text:'#1A1A1A', border:'#D0D0D0'}
+      : {bg:'#0B0B0E', grid:'#1F1F28', text:'#9B9FAB', border:'#22222A'};
+    _eeChart = LightweightCharts.createChart(el, {
+      layout: { background: {type:'solid', color: theme.bg}, textColor: theme.text, fontSize: 10 },
+      grid:   { vertLines: {color: theme.grid}, horzLines: {color: theme.grid} },
+      rightPriceScale: { borderColor: theme.border },
+      timeScale: { borderColor: theme.border, timeVisible: true, secondsVisible: true },
+      crosshair: { mode: 1 },
+    });
+    _eeSeries = _eeChart.addLineSeries({
+      color: '#1AFFAB', lineWidth: 2,
+      priceFormat: {type:'price', precision: 4, minMove: 0.0001},
+    });
+    const ro = new ResizeObserver(() => {
+      _eeChart.applyOptions({ width: el.clientWidth, height: el.clientHeight });
+    });
+    ro.observe(el);
+    _eeChart.applyOptions({ width: el.clientWidth, height: el.clientHeight });
+    try {
+      const raw = localStorage.getItem(_eeKey);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          const cutoff = Date.now() / 1000 - 1200;
+          _eeData = arr.filter(d => d.time >= cutoff).slice(-_eeMax);
+          if (_eeData.length) {
+            _eeSeries.setData(_eeData);
+            const empty = $('pt-ee-empty'); if (empty) empty.style.display = 'none';
+            setT('pt-ee-count', _eeData.length + ' pts');
+            _eeLastT = _eeData[_eeData.length-1].time;
+          }
+        }
+      }
+    } catch {}
+    setInterval(() => {
+      try { localStorage.setItem(_eeKey, JSON.stringify(_eeData.slice(-1500))); } catch {}
+    }, 3000);
+  }
+  _eeInit();
+  function _eePush(spreadPct) {
+    if (!_eeSeries) return;
+    const now = Math.floor(Date.now() / 1000);
+    const t = now <= _eeLastT ? _eeLastT + 1 : now;
+    _eeLastT = t;
+    const point = { time: t, value: +spreadPct };
+    _eeData.push(point);
+    if (_eeData.length > _eeMax) _eeData.splice(0, _eeData.length - _eeMax);
+    _eeSeries.update(point);
+    const empty = $('pt-ee-empty');
+    if (empty && empty.style.display !== 'none') empty.style.display = 'none';
+    setT('pt-ee-count', _eeData.length + ' pts');
   }
 
   // Build the pair row from independent sources — top-200 opps cache often
@@ -2225,6 +2284,8 @@ if (TYPE === 'spot' || TYPE === 'dex') {
           setT('pt-live-spread', `${live >= 0 ? '+' : ''}${live.toFixed(4)}%`);
           const el = $('pt-live-spread');
           if (el) el.style.color = live >= 0 ? 'var(--green)' : 'var(--red)';
+          // Push to live Entry/Exit chart (spot only — we have both mids)
+          if (!IS_DEX && _lastMidLong) _eePush(live);
         }
       }
     }
