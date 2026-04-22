@@ -1371,26 +1371,24 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       <div class="pager" id="pager-arb"></div>
     </div>
 
-    <!-- ── SPOT / SHORT SECTION ── -->
+    <!-- ── SPOT / SHORT SECTION (mirrors ARBITRAGE layout) ── -->
     <div id="section-spot" style="display:none">
       <div class="table-wrap">
         <table id="tbl-spot">
           <thead>
             <tr>
-              <th data-tip="Token">Token</th>
-              <th data-tip="Buy spot on this venue">Spot (buy)</th>
-              <th data-tip="Short perp on this venue">Short perp</th>
-              <th class="num" data-tip="Spot price">Spot $</th>
-              <th class="num" data-tip="Perp price">Perp $</th>
-              <th class="num" data-tip="Basis = (perp − spot) / spot">Basis</th>
-              <th class="num" data-tip="Funding collected by short per 8h">Funding 8h</th>
-              <th class="num" data-tip="Gross = basis + short funding">Gross</th>
-              <th class="num" data-tip="Net after spot + perp round-trip fees">Net 8h</th>
-              <th class="num" data-tip="Annualized net (8h × 3 × 365)">APR</th>
+              <th onclick="sortSpot('symbol')"          data-scol="symbol"          data-tip="Token ticker">Token <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('spot_exchange')"   data-scol="spot_exchange"   data-tip="Spot venue to buy — price + 24h volume">Spot / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('short_exchange')"  data-scol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('short_funding_8h')" data-scol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       data-tip="Basis = (perp − spot) / spot. Positive = perp trades above spot, you capture the gap at entry">Basis <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('total_fees')"      data-scol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
+              <th onclick="sortSpot('net_apr')"         data-scol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-spot"><tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+          <tbody id="tbody-spot"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
@@ -1913,54 +1911,123 @@ function switchMode(mode) {
   else applyArb();
 }
 
-// ── Spot-short arbitrage ─────────────────────────────────────────────────────
+// ── Spot-short arbitrage (mirrors arb layout + cadence) ──────────────────────
 let _spotRows = [];
+let _spotFiltered = [];
 let _spotTimer = null;
+let _pageSP = 0;
+let _spotSort = { col: 'net_profit', dir: 'desc' };
+
 async function loadSpot() {
+  if (!_spotRows.length) {
+    document.getElementById('tbody-spot').innerHTML =
+      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
+  }
   try {
     const r = await Auth.apiFetch('/screener/spot-arbitrage');
     if (!r.ok) throw new Error('spot ' + r.status);
     const j = await r.json();
     _spotRows = j.opportunities || [];
-    renderSpot();
+    applySpot();
   } catch (e) {
-    document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="11" class="empty-msg">Failed: ${e.message}</td></tr>`;
+    document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
   }
   clearInterval(_spotTimer);
-  _spotTimer = setInterval(() => { if (_mode === 'spot') loadSpot(); }, 6000);
+  // 2 s — matches fetcher's spot refresh cadence (and futures REST backstop)
+  _spotTimer = setInterval(() => { if (_mode === 'spot') loadSpot(); }, 2000);
 }
 
-function renderSpot() {
+function sortSpot(col) {
+  if (_spotSort.col === col) _spotSort.dir = _spotSort.dir === 'desc' ? 'asc' : 'desc';
+  else { _spotSort.col = col; _spotSort.dir = 'desc'; }
+  document.querySelectorAll('#tbl-spot th[data-scol]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (th.dataset.scol === col) { th.classList.add('sorted'); if (arrow) arrow.textContent = _spotSort.dir === 'desc' ? '↓' : '↑'; }
+    else { th.classList.remove('sorted'); if (arrow) arrow.textContent = '↕'; }
+  });
+  applySpot();
+}
+
+function applySpot() {
   const q = (document.getElementById('search').value || '').trim().toUpperCase();
-  const rows = _spotRows.filter(r => {
+  const minNet = parseFloat(document.getElementById('f-min-net').value) || null;
+  const minGS  = parseFloat(document.getElementById('f-min-gs').value) || null;
+  const minVol = parseFloat(document.getElementById('f-min-vol').value) || 0;
+  _spotFiltered = _spotRows.filter(r => {
     if (q && !r.symbol.toUpperCase().includes(q)) return false;
     if (_exDisabled.has(r.spot_exchange) || _exDisabled.has(r.short_exchange)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
+    if (minNet != null && r.net_profit < minNet) return false;
+    if (minGS  != null && r.gross < minGS) return false;
+    if (minVol && (Math.min(r.spot_volume_usd || 0, r.perp_volume_usd || 0) < minVol)) return false;
     return true;
   });
-  const tb = document.getElementById('tbody-spot');
-  if (!rows.length) {
-    tb.innerHTML = `<tr><td colspan="11" class="empty-msg">No opportunities found.</td></tr>`;
+  const dir = _spotSort.dir === 'desc' ? -1 : 1;
+  _spotFiltered.sort((a, b) => {
+    const av = a[_spotSort.col], bv = b[_spotSort.col];
+    if (typeof av === 'string') return av.localeCompare(bv) * dir;
+    return ((av ?? 0) - (bv ?? 0)) * dir;
+  });
+  _pageSP = 0;
+  renderSpot();
+}
+
+function renderSpot() {
+  const tbody = document.getElementById('tbody-spot');
+  const start = _pageSP * PAGE_SIZE;
+  const page = _spotFiltered.slice(start, start + PAGE_SIZE);
+  if (!_spotFiltered.length) {
+    const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
     return;
   }
-  tb.innerHTML = rows.slice(0, 200).map(r => {
-    const sCls = r.gross >= 0 ? 'pos' : 'neg';
-    const nCls = r.net_profit >= 0 ? 'pos' : 'neg';
-    return `<tr>
-      <td class="sym-cell">${esc(r.symbol)}</td>
-      <td><span class="ex-chip" style="color:${EX_COLOR[r.spot_exchange]||'#aaa'}">${EX_LABEL[r.spot_exchange]||r.spot_exchange}</span></td>
-      <td><span class="ex-chip" style="color:${EX_COLOR[r.short_exchange]||'#aaa'}">${EX_LABEL[r.short_exchange]||r.short_exchange}</span></td>
-      <td class="num">$${fmtPrice(r.spot_price)}</td>
-      <td class="num">$${fmtPrice(r.perp_price)}</td>
-      <td class="num ${r.basis_pct >= 0 ? 'pos' : 'neg'}">${r.basis_pct >= 0 ? '+' : ''}${r.basis_pct.toFixed(3)}%</td>
-      <td class="num ${r.short_funding_8h >= 0 ? 'pos' : 'neg'}">${r.short_funding_8h >= 0 ? '+' : ''}${r.short_funding_8h.toFixed(4)}%</td>
-      <td class="num ${sCls}">${r.gross >= 0 ? '+' : ''}${r.gross.toFixed(4)}%</td>
-      <td class="num ${nCls}"><b>${r.net_profit >= 0 ? '+' : ''}${r.net_profit.toFixed(4)}%</b></td>
-      <td class="num ${nCls}">${r.net_apr > 0 ? r.net_apr.toFixed(1) + '%' : '—'}</td>
+  tbody.innerHTML = page.map(r => {
+    const netCls  = r.net_profit > 0 ? 'net-pos' : 'net-neg';
+    const netSign = r.net_profit >= 0 ? '+' : '';
+    const grossSign = r.gross >= 0 ? '+' : '';
+    const basisSign = r.basis_pct >= 0 ? '+' : '';
+    const basisCls  = r.basis_pct >= 0 ? 'rate-neg' : 'rate-pos'; // positive basis = pay more for perp = cost at entry → red
+    const fundSign  = r.short_funding_8h >= 0 ? '+' : '';
+    const fundCls   = r.short_funding_8h >= 0 ? 'rate-pos' : 'rate-neg';
+    const lhealth = _exHealth[r.spot_exchange] || {};
+    const shealth = _exHealth[r.short_exchange] || {};
+    const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.spot_exchange}"></span>`;
+    const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange}"></span>`;
+    return `<tr data-long-ex="${r.spot_exchange}" data-short-ex="${r.short_exchange}">
+      <td class="td-symbol">${esc(r.symbol)}</td>
+      <td>
+        <div class="arb-pair">
+          <div class="arb-ex-rate">
+            <span class="arb-label">spot</span>
+            <span class="ex-chip" style="color:${EX_COLOR[r.spot_exchange]||'#aaa'}">${EX_LABEL[r.spot_exchange]||r.spot_exchange}</span>${ldot}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.spot_price)} · <span style="font-family:var(--mono)">${fmtVol(r.spot_volume_usd)}</span></div>
+        </div>
+      </td>
+      <td>
+        <div class="arb-pair">
+          <div class="arb-ex-rate">
+            <span class="arb-label">short</span>
+            ${fmtExRate(r.short_exchange, r.funding_rate, r.symbol)}${sdot}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.perp_price)} · <span style="font-family:var(--mono)">${fmtVol(r.perp_volume_usd)}</span></div>
+        </div>
+      </td>
+      <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
+      <td class="td-spread"><span class="${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span></td>
+      <td class="td-fees">
+        <span title="spot rt: ${r.fee_spot.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
+      </td>
+      <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
+      <td>${fmtApr(r.net_apr)}</td>
       <td></td>
     </tr>`;
   }).join('');
+  renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
 }
+
+function goPageSP(p) { _pageSP = p; renderSpot(); }
 
 // ── All (combined) ───────────────────────────────────────────────────────────
 let _allRows = [];

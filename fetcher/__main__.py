@@ -69,6 +69,13 @@ async def _run() -> None:
     start_refresh_loop()
     logger.info("fetcher: screener refresh loop started")
 
+    # ── Spot-short arbitrage refresh (same cadence as futures) ──────
+    from backend.services.spot_arbitrage_service import (
+        start_spot_refresh_loop, stop_spot_refresh_loop,
+    )
+    start_spot_refresh_loop()
+    logger.info("fetcher: spot refresh loop started")
+
     # ── Alerts (Telegram) — reads funding cache, sends on threshold ──
     from backend.services.alert_service import start_alert_service, stop_alert_service
     start_alert_service()
@@ -110,6 +117,7 @@ async def _run() -> None:
         for name, fn in (
             ("alert_service", stop_alert_service),
             ("tg_bot", stop_tg_bot),
+            ("spot_refresh_loop", stop_spot_refresh_loop),
             ("refresh_loop", stop_refresh_loop),
             ("funding_ws_manager", stop_funding_ws_manager),
             ("prewarm", stop_prewarm),

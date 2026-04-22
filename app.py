@@ -108,6 +108,12 @@ async def lifespan(app: FastAPI):
         start_refresh_loop()
         _stop_fns.append(stop_refresh_loop)
 
+        from backend.services.spot_arbitrage_service import (
+            start_spot_refresh_loop, stop_spot_refresh_loop,
+        )
+        start_spot_refresh_loop()
+        _stop_fns.append(stop_spot_refresh_loop)
+
         from backend.services.alert_service import start_alert_service, stop_alert_service
         start_alert_service()
         _stop_fns.append(stop_alert_service)

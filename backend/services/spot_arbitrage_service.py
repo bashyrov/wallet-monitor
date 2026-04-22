@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any
 
@@ -243,7 +244,16 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
 
     Returns rows with positive gross (basis + inverted funding > 0) only,
     sorted by net profit descending.
+
+    Web role reads from the shared file cache that the fetcher writes every
+    2 s — same pattern as the futures arbitrage feed.
     """
+    if os.environ.get("AVALANT_ROLE", "").lower() == "web":
+        cached = _arb._read_file_cache("spot_arbitrage.json", max_age=15.0)
+        if cached and isinstance(cached, dict) and cached.get("opportunities"):
+            return cached
+        # fall through on cache miss (first request after startup)
+
     # Fetch spot tickers for every supported spot venue in parallel
     spot_results = await asyncio.gather(
         *[get_spot_rows(ex) for ex in SPOT_EXCHANGES],
@@ -345,3 +355,58 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
         "generated_at": int(time.time()),
         "spot_exchanges": SPOT_EXCHANGES,
     }
+
+
+# ── Background refresh loop (fetcher-side) ────────────────────────────────────
+SPOT_REFRESH_INTERVAL = 2.0  # s — match the futures REST backstop cadence
+
+_spot_refresh_task: asyncio.Task | None = None
+_spot_refresh_lock_fd = None
+
+
+async def _spot_refresh_loop() -> None:
+    """Recompute spot-short arb opportunities every SPOT_REFRESH_INTERVAL
+    and write spot_arbitrage.json. Skips a cycle if the previous compute
+    is still in flight."""
+    in_flight = False
+    while True:
+        if not in_flight:
+            in_flight = True
+            try:
+                result = await get_spot_arbitrage_opportunities()
+                _arb._write_file_cache("spot_arbitrage.json", result)
+            except Exception as exc:
+                logger.warning("spot refresh: %s", exc)
+            finally:
+                in_flight = False
+        await asyncio.sleep(SPOT_REFRESH_INTERVAL)
+
+
+def start_spot_refresh_loop() -> None:
+    """Start the spot refresh loop. File-lock ensures only one process runs
+    it. Safe to call from any number of workers."""
+    import fcntl
+    global _spot_refresh_task, _spot_refresh_lock_fd
+    if _spot_refresh_task and not _spot_refresh_task.done():
+        return
+    try:
+        _spot_refresh_lock_fd = open("/tmp/avalant_spot_refresh.lock", "w")
+        fcntl.flock(_spot_refresh_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        logger.info("Spot refresh: another worker holds the lock — skipping")
+        return
+    _spot_refresh_task = asyncio.create_task(_spot_refresh_loop())
+    logger.info("Spot refresh loop started")
+
+
+def stop_spot_refresh_loop() -> None:
+    global _spot_refresh_task, _spot_refresh_lock_fd
+    if _spot_refresh_task and not _spot_refresh_task.done():
+        _spot_refresh_task.cancel()
+    _spot_refresh_task = None
+    if _spot_refresh_lock_fd is not None:
+        try:
+            _spot_refresh_lock_fd.close()
+        except Exception:
+            pass
+        _spot_refresh_lock_fd = None
