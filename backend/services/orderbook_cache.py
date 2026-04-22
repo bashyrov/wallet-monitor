@@ -67,9 +67,36 @@ _file_memo_last_check: float = 0.0
 _FILE_CHECK_INTERVAL = 0.1  # re-open file at most every 100ms per worker
 
 
+# ── Per-exchange accepted `limit` values ────────────────────────────────────
+# Some venues silently return empty books when the requested limit isn't in
+# their canonical set (Aster / Binance-fork behaviour). Round up to the
+# smallest acceptable value — serving 20 levels when the caller asked for 12
+# is strictly better than serving zero.
+_VALID_LIMITS = {
+    "binance":  [5, 10, 20, 50, 100, 500, 1000],   # /fapi/v1/depth
+    "aster":    [5, 10, 20, 50, 100, 500, 1000],   # Binance fork
+    "bybit":    [1, 50, 200, 500, 1000],           # /v5/market/orderbook
+    "bitget":   [5, 15, 50, 100, 200, 1000],       # /mix/market/merge-depth
+    "mexc":     [5, 10, 20, 50, 100, 200, 500, 1000],  # contract depth
+    "okx":      [1, 5, 10, 20, 50, 100, 200, 400],     # /market/books
+    "gate":     [5, 10, 20, 50, 100],              # /futures/usdt/order_book
+}
+
+
+def _canonical_limit(exchange: str, limit: int) -> int:
+    valid = _VALID_LIMITS.get(exchange)
+    if not valid:
+        return limit
+    for v in valid:
+        if v >= limit:
+            return v
+    return valid[-1]
+
+
 # ── Direct per-exchange fetch ────────────────────────────────────────────────
 async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
     c = _arb_http
+    limit = _canonical_limit(exchange, limit)
     try:
         if exchange == "binance":
             r = await c.get(f"https://fapi.binance.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit}")
@@ -109,11 +136,7 @@ async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
             return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
                     "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
         if exchange == "aster":
-            # Aster (Binance-fork) only accepts specific limits: 5/10/20/50/100/500/1000.
-            # Round up from caller's value — returning 20 when the user asked for 12
-            # is strictly better than returning empty.
-            valid = [5, 10, 20, 50, 100, 500, 1000]
-            limit_a = next((v for v in valid if v >= limit), 1000)
+            limit_a = _canonical_limit("aster", limit)
             r = await c.get(f"https://fapi.asterdex.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit_a}")
             d = r.json()
             return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
