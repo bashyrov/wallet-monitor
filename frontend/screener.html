@@ -2020,7 +2020,7 @@ async function loadDex() {
       '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
   }
   try {
-    const r = await Auth.apiFetch('/screener/dex-arbitrage');
+    const r = await Auth.apiFetch('/screener/dex-short');
     if (!r.ok) throw new Error('dex ' + r.status);
     const j = await r.json();
     _dexRows = j.opportunities || [];
@@ -2140,7 +2140,7 @@ async function loadSpot() {
       '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
   }
   try {
-    const r = await Auth.apiFetch('/screener/spot-arbitrage');
+    const r = await Auth.apiFetch('/screener/spot-short');
     if (!r.ok) throw new Error('spot ' + r.status);
     const j = await r.json();
     _spotRows = j.opportunities || [];
@@ -2579,7 +2579,7 @@ async function loadArb() {
   }
   // Always fetch fresh arb data when switching to this tab
   try {
-    const res = await Auth.apiFetch('/screener/arbitrage');
+    const res = await Auth.apiFetch('/screener/long-short');
     if (res.ok) {
       const data = await res.json();
       _applyArbPayload(data);
@@ -3226,7 +3226,7 @@ setInterval(tickCountdowns, 1000);
 
     const [fundingRes, arbRes] = await Promise.all([
       Auth.apiFetch('/screener/funding'),
-      Auth.apiFetch('/screener/arbitrage'),
+      Auth.apiFetch('/screener/long-short'),
     ]);
     if (fundingRes.ok) {
       const data = await fundingRes.json();

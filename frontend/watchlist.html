@@ -429,7 +429,7 @@ let _prevNet = new Map();// key → previous net (for flash + pulse)
 let _view = 'all';
 let _ws = null;
 let _funding = {};     // "ex|sym" → funding row (for off-broadcast watchlist pairs)
-let _fees = {};        // exchange → fee % (from /screener/arbitrage)
+let _fees = {};        // exchange → fee % (from /screener/long-short)
 const _DEFAULT_FEE_PCT = 0.05; // fee in percent when unknown
 const SPARK_LEN = 36;
 
@@ -457,7 +457,7 @@ async function loadWl(){
 
 async function primeFees(){
   try {
-    const r = await Auth.apiFetch('/screener/arbitrage');
+    const r = await Auth.apiFetch('/screener/long-short');
     if (!r.ok) return;
     const d = await r.json();
     _fees = d.fees || {};
@@ -547,7 +547,7 @@ function connectWs(){
   try { _ws && _ws.close(); } catch(_){}
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const tok = Auth.getToken();
-  _ws = new WebSocket(`${proto}://${location.host}/api/screener/ws/arb?token=${encodeURIComponent(tok)}`);
+  _ws = new WebSocket(`${proto}://${location.host}/api/screener/ws/long-short?token=${encodeURIComponent(tok)}`);
   _ws.onmessage = ev => {
     try {
       const data = JSON.parse(ev.data);

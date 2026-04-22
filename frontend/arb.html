@@ -1606,7 +1606,7 @@ if(!SYM||!LONG||!SHORT) document.body.innerHTML='<div style="padding:40px;color:
 // navigation works end-to-end and users aren't dropped into a broken
 // terminal painted with dashes.
 if (TYPE === 'spot' || TYPE === 'dex') {
-  const SRC = TYPE === 'spot' ? '/screener/spot-arbitrage' : '/screener/dex-arbitrage';
+  const SRC = TYPE === 'spot' ? '/screener/spot-short' : '/screener/dex-short';
   const BACK = '/screener?mode=' + TYPE;
   const IS_DEX = TYPE === 'dex';
   const LONG_LABEL_PLAIN = IS_DEX ? 'DEX' : 'SPOT';
@@ -2159,7 +2159,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     // Spot type: look up in /spot-arbitrage first (covers all pairs), then in
     // the long-side venue's funding row (no spot price endpoint exists today)
     try {
-      const r = await Auth.apiFetch('/screener/spot-arbitrage');
+      const r = await Auth.apiFetch('/screener/spot-short');
       if (!r.ok) return null;
       const j = await r.json();
       return (j.opportunities || []).find(o =>
@@ -3391,7 +3391,7 @@ let _ws=null;
 function connectWs(){
   const token=Auth.getToken();if(!token)return;
   const proto=location.protocol==='https:'?'wss':'ws';
-  _ws=new WebSocket(`${proto}://${location.host}/api/screener/ws/arb?token=${encodeURIComponent(token)}`);
+  _ws=new WebSocket(`${proto}://${location.host}/api/screener/ws/long-short?token=${encodeURIComponent(token)}`);
   _ws.onmessage=ev=>{
     try{
       const data=JSON.parse(ev.data);
