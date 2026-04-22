@@ -9,7 +9,7 @@ Brand: "avalant_" — Inter 800, 18px, with a blinking green `_`. Logo: `/avalan
 Supported sources:
 - **10 CEX exchanges** (portfolio + arbitrage feeds): Binance, OKX, Bybit, Gate, MEXC, KuCoin, Bitget, Backpack, BingX, WhiteBIT
 - **5 Perp DEXes**: Hyperliquid, Aster, Lighter, Ethereal, Paradex (stub)
-- **13 chains**: Tron, Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Linea, Scroll, Mantle, Blast
+- **14 chains**: Tron, Solana, Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Linea, Scroll, Mantle, Blast
 
 Spot arbitrage fetchers (new cash-and-carry feed, 8 CEX): Binance, Bybit, OKX, Gate, KuCoin, MEXC, Bitget, BingX.
 
@@ -910,7 +910,7 @@ Tabs: Overview · All Users · Provider Errors
 
 ## Roadmap
 
-- [ ] **Solana provider** — `SOLANA_RPC` in settings exists, `_solana_txs()` stub in transaction_service, balance provider not written
+- [x] **Solana provider** — implemented (`backend/providers/chains/solana_provider.py`): native SOL + SPL tokens via `getTokenAccountsByOwner`, Jupiter strict-list for symbol lookup with `KNOWN_SPL` hardcoded fallback. Transactions via `_solana_txs()`.
 - [ ] **Notifications** — alert if balance changes > N%
 - [ ] **Edit wallet** — currently only create and delete
 - [ ] **Export** — CSV/JSON balance export
