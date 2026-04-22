@@ -31,19 +31,20 @@ const _ALL_LINKS = [
   { id: 'pricing',   href: '/pricing',   label: 'Pricing',   icon: _ICONS.pricing,   authOnly: false },
 ];
 
-// Links shown per page variant (global trim: Screener / Portfolio / Pricing)
+// Links shown per page variant
 const _NAV_SET = {
-  app:      ['screener', 'app', 'pricing'],
-  archive:  ['screener', 'app', 'pricing'],
-  profile:  ['screener', 'app', 'pricing'],
-  index:    ['screener', 'app', 'pricing'],
-  pricing:  ['screener', 'app', 'pricing'],
-  screener: ['screener', 'app', 'pricing'],
-  arb:      ['screener', 'app', 'pricing'],
-  watchlist:['screener', 'app', 'pricing'],
+  app:      ['app', 'archive', 'screener', 'pricing'],
+  archive:  ['app', 'archive', 'screener', 'pricing'],
+  profile:  ['app', 'archive', 'screener', 'pricing'],
+  index:    ['app', 'archive', 'screener', 'pricing'],
+  pricing:  ['app', 'archive', 'screener', 'pricing'],
+  // Screener service (screener + arb + watchlist) — its own trimmed nav
+  screener: ['app', 'pricing'],
+  arb:      ['app', 'pricing'],
+  watchlist:['app', 'pricing'],
   login:    [],
   register: [],
-  checkout: ['screener', 'app', 'pricing'],
+  checkout: ['app', 'pricing'],
 };
 
 // Which link is active per page
@@ -143,7 +144,7 @@ class AppNavbar extends HTMLElement {
     const page = this.getAttribute('page') || 'index';
     const active = _ACTIVE[page] ?? null;
     const linkIds = _NAV_SET[page] ?? [];
-    const links = linkIds.map(id => _ALL_LINKS.find(l => l.id === id)).filter(Boolean);
+    const links = _ALL_LINKS.filter(l => linkIds.includes(l.id));
 
     // For pricing: Portfolio+Archive are auth-gated (hidden initially)
     const authGated = page === 'pricing' ? ['app', 'archive'] : [];
