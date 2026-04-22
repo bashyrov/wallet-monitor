@@ -899,13 +899,7 @@ async def _solana_txs(address: str) -> list[Transaction]:
     import asyncio as _asyncio
     from settings import settings
     from backend.providers.chains.solana_provider import _symbol_for
-    # SOLANA_RPC override > Ankr (same key as EVM) > public mainnet-beta
-    if settings.SOLANA_RPC:
-        rpc = settings.SOLANA_RPC
-    elif settings.ANKR_KEY:
-        rpc = f"https://rpc.ankr.com/solana/{settings.ANKR_KEY}"
-    else:
-        rpc = "https://api.mainnet-beta.solana.com"
+    rpc = settings.SOLANA_RPC or "https://api.mainnet-beta.solana.com"
 
     def _parse_tx(sig: str, tx: dict) -> Transaction | None:
         """Parse a single transaction dict into a Transaction or None."""
