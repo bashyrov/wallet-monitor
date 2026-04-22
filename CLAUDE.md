@@ -7,9 +7,11 @@
 Brand: "avalant_" — Inter 800, 18px, with a blinking green `_`. Logo: `/avalant_favicon.svg` (icon), `/avalant-logo.svg` (full logo used in login/register forms).
 
 Supported sources:
-- **8 CEX exchanges**: Binance, OKX, Bybit, Gate, MEXC, KuCoin, Bitget, Backpack
+- **10 CEX exchanges** (portfolio + arbitrage feeds): Binance, OKX, Bybit, Gate, MEXC, KuCoin, Bitget, Backpack, BingX, WhiteBIT
 - **5 Perp DEXes**: Hyperliquid, Aster, Lighter, Ethereal, Paradex (stub)
 - **13 chains**: Tron, Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Linea, Scroll, Mantle, Blast
+
+Spot arbitrage fetchers (new cash-and-carry feed, 8 CEX): Binance, Bybit, OKX, Gate, KuCoin, MEXC, Bitget, BingX.
 
 ---
 
@@ -116,14 +118,18 @@ wallet-monitor/
 │   ├── robots.txt                      # SEO: allow all
 │   ├── sitemap.xml                     # SEO: all public pages
 │   ├── og-image.jpg                    # Open Graph social preview image (1200×630)
-│   ├── index.html                      # Landing page (public)
-│   ├── app.html                        # Main app — portfolio, balances, transactions (auth required)
-│   ├── profile.html                    # User profile, balance history chart, plan info, admin link (auth required)
+│   ├── index.html                      # Landing page (public, legacy — kept for backwards compat)
+│   ├── landing.html                    # NEW full-bleed crypto-style landing at /landing (pre-launch: product/auth links disabled via JS)
+│   ├── app.html                        # Main app — portfolio, balances, transactions (auth required). View switcher restyled to screener-style underline tabs
+│   ├── profile.html                    # User profile, balance history chart, plan info, AvaShare button top-right (auth required)
+│   ├── avashare.html                   # NEW referral / cashback page (auth required). UI-only skeleton, localStorage-backed
 │   ├── login.html                      # Login form → JWT + HttpOnly cookie → redirect to /app
 │   ├── register.html                   # Register form → JWT + HttpOnly cookie → redirect to /app
 │   ├── pricing.html                    # Pricing: Basic/Pro/Platinum/Enterprise with monthly/annual toggle
 │   ├── checkout.html                   # Card payment form (stub)
 │   ├── archive.html                    # Archived wallets with restore/delete (auth required)
+│   ├── screener.html                   # Screener service — Arb/Funding/Spot-Short/Alpha/All modes; filters bar on top; exchange picker is a dropdown popover
+│   ├── arb.html                        # Per-pair terminal (charts / dual orderbooks / P&L)
 │   ├── admin.html                      # Admin panel — KPI, users table with plan management, provider errors tab (admin required)
 │   ├── admin-user.html                 # Per-user admin detail page (admin required)
 │   ├── 404.html                        # Custom 404 page with terminal animation
@@ -205,6 +211,13 @@ wallet-monitor/
         ├── arbitrage_service.py        # Funding rate fetchers for 12 exchanges; two-tier cache (_cache 6s, _ivl_cache 5min)
         │                               #   get_funding_data() / get_arbitrage_opportunities() / get_cached_rates()
         │                               #   Aster: separate _aster_price_cache (5s TTL) + _aster_vol_cache (60s TTL)
+        │                               #   Price-deviation outlier drop filter is DISABLED (user request) — spreads uncapped
+        ├── spot_arbitrage_service.py   # NEW: Spot-vs-Perp cash-and-carry (buy spot A, short perp B)
+        │                               #   8 spot fetchers (binance/bybit/okx/gate/kucoin/mexc/bitget/bingx)
+        │                               #   Dedicated httpx.AsyncClient (own pool, NOT shared with arb _http)
+        │                               #   _spot_refresh_loop() runs every 2s on fetcher, writes spot_arbitrage.json
+        │                               #   Web role reads file cache with 120s max_age, NEVER computes
+        │                               #   |basis_pct| > 5% rows dropped (ticker-collision filter)
         └── alert_service.py            # Background task (60s interval): checks arb spreads vs ArbAlert thresholds
                                         #   sends Telegram message via TG_BOT_TOKEN; cooldown 1h per alert
 ```
@@ -255,6 +268,8 @@ wallet-monitor/
 | DELETE | `/api/alerts/{id}` | Bearer | Delete alert |
 | GET | `/api/screener/funding` | Bearer | All funding rates (cached 6s per exchange) |
 | GET | `/api/screener/arbitrage` | Bearer | Cross-exchange arb opportunities with net P&L |
+| GET | `/api/screener/spot-arbitrage` | Bearer | Spot-short cash-and-carry opps (buy spot A, short perp B). Refresh 2s, served from file cache on web |
+| GET | `/api/screener/all-arbitrage` | Bearer | Combined futures + spot-short, sorted by net profit desc |
 | GET | `/api/screener/orderbook?symbol=&exchange=&limit=` | Bearer | Order book for a symbol on an exchange |
 | GET | `/api/screener/arb-price-history?symbol=&long_ex=&short_ex=` | Bearer | 1h OHLCV klines for two exchanges |
 | GET | `/api/screener/arb-history?symbol=&long_ex=&short_ex=` | Bearer | Funding rate history for two exchanges |
@@ -648,9 +663,11 @@ Multiple self-contained HTML pages (inline CSS + JS). Shared design language. Al
 ### Pages
 | File | Auth guard | Description |
 |------|-----------|-------------|
-| `index.html` | — | Landing page |
-| `app.html` | requireAuth + backend cookie | Main app: wallet list, balance check, transactions view |
-| `profile.html` | requireAuth + backend cookie | Profile: balance history chart, plan info with color badge, Telegram username field, admin link |
+| `index.html` | — | Landing page (legacy, public) |
+| `landing.html` | — | NEW full-bleed crypto-style landing at `/landing`. All product/auth links are neutralized via JS (pre-launch lock) |
+| `app.html` | requireAuth + backend cookie | Main app: wallet list, balance check, transactions view. Balances/Transactions switcher is now screener-style underline tabs (not pill buttons) |
+| `profile.html` | requireAuth + backend cookie | Profile: balance history chart, plan info, TG username, AvaShare button top-right of hero card |
+| `avashare.html` | requireAuth + backend cookie | NEW: Cashback / referral page. UI-only (localStorage), backend coming later. Lets user register via ref link or submit UID transfer per exchange |
 | `login.html` | redirectIfAuthed | Login form → JWT + HttpOnly cookie → redirect to /app |
 | `register.html` | redirectIfAuthed | Register form → JWT + HttpOnly cookie → redirect to /app |
 | `pricing.html` | — | Basic/Pro/Platinum/Enterprise plans, monthly/annual toggle |
@@ -658,7 +675,7 @@ Multiple self-contained HTML pages (inline CSS + JS). Shared design language. Al
 | `archive.html` | requireAuth + backend cookie | Archived wallets with restore/delete; fetches `/auth/me` for wallet_limit |
 | `admin.html` | requireAdmin + backend cookie | KPI, users table with plan badge + plan modal, provider errors tab |
 | `admin-user.html` | requireAdmin + backend cookie | Per-user detail: stats, wallet list, last active |
-| `screener.html` | requireAuth + backend cookie | Funding rate screener: sortable table, WebSocket live updates, ↗ link to arb detail |
+| `screener.html` | requireAuth + backend cookie | Screener — 5 modes: **All / Arbitrage / Spot-Short / Funding Rates / Alpha**. No left panel; filters bar on top; exchange picker is a popover dropdown under an "Exchanges" button; freshness dots hidden except in Alpha mode |
 | `arb.html` | requireAuth + backend cookie | Arb pair detail: 3-column terminal layout (charts / order books / P&L) |
 | `404.html` | — | Custom 404 with terminal animation |
 | `maintenance.html` | — | Maintenance mode page |
@@ -946,6 +963,14 @@ Tabs: Overview · All Users · Provider Errors
 38. **`arb.html` URL params** — `?symbol=BTC&long=binance&short=aster`. All three required; missing params render an error div instead of the page.
 39. **`arb.html` theme** — dark/light toggle saved to `localStorage` key `arb-theme`. Light theme applied via `body.light` CSS class.
 40. **`screener.html`** — the ↗ button on each arb row links to `/arb?symbol=...&long=...&short=...`.
+41. **Screener modes** are now 5: `all / arb / spot / funding / alpha`. `switchMode(mode)` toggles each `tab-{mode}` active class and each `section-{mode}` display. Loader per mode: `loadAll() · loadArb() · loadSpot() · applyFilter() · loadAlpha()`. Filter inputs shared across arb/spot/all (Min net, Min G+S, Min volume, Hidden tokens, Exchange selector).
+42. **Spot-Short tab visually mirrors Arbitrage**: same pair cell pattern (side label + exchange chip + price/volume), same PAGE_SIZE pagination, same sort helpers (`sortSpot()`), same health dots. "Long" here is the spot venue, "Short" is the perp venue.
+43. **All tab** (`loadAll()`) merges futures arb rows + spot-short rows, sorts by `net_profit` desc, renders with a type pill (FUTURES/SPOT-SHORT). Uses `GET /api/screener/all-arbitrage`.
+44. **Spot cache must NEVER share with arb `_http`**: gave them separate `httpx.AsyncClient` instances. Shared pool caused 8s timeouts on `gather(8 spots)` under load. If you add more spot venues, keep the dedicated client.
+45. **Spot ticker collisions**: MEXC "META" ≠ KuCoin "META" (different tokens, same ticker). The `|basis_pct| > 5%` sanity filter in `spot_arbitrage_service` drops these. Don't lower the threshold — replace with an allowlist if needed.
+46. **Price-outlier drop is off for futures arb**: `_drop_price_outliers()` was removed from the `get_funding_data()` pipeline per explicit user request. Stale-markPrice scenarios are no longer filtered — anomaly logging still runs so we can see the noise in admin. Don't re-add the filter without asking.
+47. **AvaShare page (`/avashare`)** is UI-only: accounts saved to `localStorage[avashare-accounts-v1]`. Backend integration (real cashback tracking, UID submission to exchange programmes) is pending. The profile hero has a green "AvaShare" pill in the top-right that links here.
+48. **Landing page pre-launch lock**: `/landing` renders the new design but its inline JS disables clicks on every internal product / auth link (`/app, /screener, /arb, /login, /register, /profile, /admin, /archive`). Nav Sign-in and Get-started buttons are hidden outright. Single-snippet lock, trivial to remove when we open the gates.
 
 ---
 
@@ -1105,16 +1130,27 @@ Top: shared `<app-navbar page="arb">` (52px). Below: custom `.infobar` (72px, gr
 
 ## G. `/screener` page — deep dive
 
-### Modes
-- URL param `?mode=funding|arb`. `_mode` initialized from URL. `switchMode(_mode)` called at bootstrap AND on `pageshow` (bfcache). Preload only calls `applyFilter` or `applyArb` based on mode.
-- The arb row ↗ button opens `/arb?symbol=&long=&short=` in new tab. The back-link from `/arb` uses `?mode=arb` so the user returns to the arb tab, not funding.
+### Modes (current: 5 tabs)
+- URL param `?mode=all|arb|spot|funding|alpha`. `_mode` initialized from URL; `switchMode(_mode)` called at bootstrap AND on `pageshow` (bfcache).
+- `all` — combined futures + spot-short opps, sorted by net profit. Uses `/screener/all-arbitrage`. Polls every ~2s when visible.
+- `arb` — classic futures / futures arbitrage (default tab).
+- `spot` — Spot/Short cash-and-carry. Uses `/screener/spot-arbitrage`. Polls every 2s. Mirrors the Arbitrage table layout (Long/Spot · Short · Funding/8h · Basis · Fees · Net · APR) including sortable headers, pager, health dots.
+- `funding` — single-exchange funding rate list.
+- `alpha` — watchlist mode with Alpha score; **only** mode where the bottom Exchange-status strip is visible.
+- The arb row ↗ button opens `/arb?symbol=&long=&short=` in new tab. The back-link from `/arb` uses `?mode=arb` so the user returns to the arb tab.
 
-### Exchange selector (left panel, current state)
-- **Minimalist rows** (no longer colorful cards — user rejected two prior designs). Vertical stack, `gap: 1px`.
+### Layout (current, post-redesign)
+- **No left panel.** `.screener-layout` is a single column (flex-direction: column) after the topbar.
+- Filters bar directly above the table: `[Search] [Exchanges ▼ button] [funding OR arb filters] [Hide · Add]`.
+- Exchanges picker is a **compact popover dropdown** positioned under its button (NOT a full-width accordion, NOT a modal). Click outside to close. Inside: All / None / Invert actions + checkbox list of every venue.
+- Freshness dots (`.lp-ex-health`) are **hidden globally** and re-enabled only inside `#alpha-status-strip`, which is a sticky bottom strip visible exclusively when `_mode === 'alpha'`. Rendered via `renderAlphaStatus()`; updates on each `refreshExchangeHealth()` tick.
+
+### Exchange selector (inside the popover)
+- **Minimalist rows** (user rejected multiple colorful card designs). Vertical stack, `gap: 1px`.
 - Each row: [7px brand-color dot] [label] [14px checkmark square, green when selected].
 - Unchecked: dot desaturated + opacity 0.35, label muted.
-- Hover: `background: var(--surface3)` only. No transforms, no borders, no translates.
-- Header: "Exchanges" + count pill (`X/13`) — green if all, red if none, yellow otherwise.
+- Header inside popover: "Select exchanges" + All/None/Invert buttons.
+- Count pill (`X/13`) lives on the main "Exchanges" button itself, green if all, red if none, yellow otherwise.
 - Actions: All / None / Invert, each with tiny SVG icon.
 
 ### Bottom nav (mobile)
@@ -1155,6 +1191,25 @@ Adapters that currently have REST backstops:
 - **OKX funding rate**: has its own `_okx_fr_cache` (5min TTL) because rates require 500 per-symbol calls.
 - **Aster**: two separate caches — `_aster_price_cache` (5s) for lastPrice, `_aster_vol_cache` (60s) for quoteVolume. Also filters `SHIELD*` symbols AND non-`TRADING` status from exchangeInfo to exclude 1001x/Shield synthetic contracts.
 - **Open Interest endpoints** implemented for: binance, bybit, okx, gate, hyperliquid, aster, bingx, mexc, bitget, kucoin, whitebit. Ethereal has no public OI endpoint.
+- **Price-deviation outlier filter is DISABLED** (user request) — `_drop_price_outliers()` is no longer called from `get_funding_data()`. Large spreads (e.g. ASTEROID +17%) now pass through. Anomaly logging is still active so we can see the noise.
+
+## H2. Spot-Short arbitrage architecture (spot_arbitrage_service.py)
+
+Lives in its own module so it can run in lock-step with futures without fighting for the same HTTP connection pool.
+
+- **Dedicated httpx client**: separate `AsyncClient` with a 64-connection pool, 12s read timeout, 15s wait_for per fetcher. Sharing the arb `_http` pool caused the spot gather to starve and every call to timeout → blank `spot_arbitrage.json` → 8s page loads. Do NOT merge the pools.
+- **Spot fetchers** (8): `binance, bybit, okx, gate, kucoin, mexc, bitget, bingx`. Each returns `[{symbol, price, volume_usd}]` for USDT pairs. `_spot_cache` has 6s per-exchange TTL.
+- **Refresh loop** (`_spot_refresh_loop`): runs on the fetcher container every 2s (`SPOT_REFRESH_INTERVAL`). File-lock via `/tmp/avalant_spot_refresh.lock` ensures only one process drives it. Writes `spot_arbitrage.json` to `/tmp/avalant_cache/` (same volume shared with funding.json / arbitrage.json).
+- **Web role NEVER computes**: `AVALANT_ROLE=web` reads the file cache with 120s max_age. On cache miss returns `{"opportunities": []}` instead of running a gather — the user never waits for REST.
+- **Opportunity logic**:
+  - Entry: buy spot on exchange A, short perp on exchange B.
+  - `basis_pct = (perp_price - spot_price) / spot_price * 100`. Positive = perp trades above spot → you capture the gap at entry.
+  - `short_funding_8h = -rate * (8/interval)`. Flip sign because we're the short side (negative perp funding = shorts receive).
+  - `gross = short_funding_8h + basis_pct`. Only rows with `gross > 0` survive.
+  - `total_fees = spot_fee_round_trip + perp_fee_round_trip` (taker × 2 each).
+  - `net = gross - total_fees`. `net_apr = net × 3 × 365` (8h window).
+- **Ticker-collision filter**: rows with `|basis_pct| > 5%` are dropped. Reason: MEXC "META" = Metaverse, KuCoin "META" = Meta Pool. Real cash-and-carry USDT basis never exceeds a couple of percent; anything bigger is a different asset. Don't lower the threshold without replacing it with a per-symbol allowlist.
+- **Monolith dev** (local `uvicorn app:app`) starts the loop via `start_spot_refresh_loop()` inside `app.py` lifespan — same file-lock protects against double-start.
 
 ## I. Arbitrage opportunity schema (what's in `_opp`)
 
@@ -1238,6 +1293,13 @@ Used by both arbitrage_service fetchers AND the orderbook endpoint (aliased as `
 - **No tooltips on infobar metrics** — user asked for them, then asked to remove. Don't add back unless explicitly requested.
 - **No "Funding History" panel** in the arb center column — user moved it to Overview tab + Spread History tab only.
 - **Net / 8h on arb.html excludes price spread** — user asked for funding-only on that metric. Screener still computes net_profit as gross+spread-fees (do not propagate the arb.html-only change to the backend).
+- **Screener has no left panel** — the old 260px left-panel was removed in favour of a filters bar above the table + a popover exchange picker. `#left-panel` still exists in the DOM but is `display: none` (kept only so legacy JS like `togglePanel()` doesn't throw). Don't "restore" it.
+- **Exchange selector is a popover dropdown, not an accordion, not a modal** — user iterated through both and rejected them. Keep it compact (`min-width: 240px; max-width: 280px`), positioned relative to the filters-bar, closes on outside click.
+- **Freshness dots are hidden globally** via `.lp-ex-health { display: none !important }` — only the Alpha bottom `#alpha-status-strip` re-enables them. Don't reintroduce the dots on arb/spot/funding tables.
+- **Price-outlier filter for futures arb is OFF** — user explicitly wants uncapped spreads (e.g. ASTEROID +17%). `_drop_price_outliers()` call is commented/removed in `get_funding_data()`. Don't put it back.
+- **Landing page product/auth links are locked** — the single JS snippet at the bottom of `frontend/landing.html` neutralizes every `/app`, `/screener`, `/arb`, `/login`, `/register`, `/profile`, `/admin`, `/archive` anchor. Nav CTAs are hidden. Don't "restore" until we're ready to open the gates.
+- **Spot httpx client must stay dedicated** — do NOT refactor spot_arbitrage_service to reuse `arbitrage_service._http`. The two pools MUST be separate, proven by the 8s first-load regression when they were shared.
+- **AvaShare backend doesn't exist yet** — don't wire real API calls when "fixing" the page. It's localStorage-only by design until we ship the referral programme integration.
 
 ## Q. Naming patterns
 
@@ -1263,6 +1325,8 @@ Used by both arbitrage_service fetchers AND the orderbook endpoint (aliased as `
 - Orderbook refresh interval on arb.html: **150ms**. Not 100ms (client-side storms some exchanges), not 500ms (feels laggy).
 - WS broadcast interval: 5s from server (`BROADCAST_INTERVAL`). Cache TTL 6s (slightly longer to prevent double-fetches).
 - Alert service poll: 60s (set in alert_service.py).
+- Spot-arb refresh: **2s** on the fetcher (`SPOT_REFRESH_INTERVAL`); frontend polls `/screener/spot-arbitrage` every 2s when the Spot tab is visible. File cache max_age on web = 120s (generous — fetcher is the source of truth).
+- Spot-arb endpoint first-hit on web: should be <300ms (file read). If it ever takes 5s+ again, the fetcher lock is probably held by a dead process — check `ls -la /tmp/avalant_spot_refresh.lock` inside the container.
 
 ## T. Toast usage cheat sheet
 
@@ -1310,9 +1374,14 @@ CSS: fixed bottom, 12px inset, 64px tall, glassmorphic, `z-index:300`, backdrop-
 Add these to your mental model of the repo:
 - `frontend/toast.js`
 - `frontend/theme.js`
+- `frontend/landing.html` — full-bleed landing (pre-launch lock)
+- `frontend/avashare.html` — AvaShare cashback page (UI-only, localStorage)
 - `backend/providers/exchanges/bingx_provider.py`
 - `backend/providers/exchanges/kraken_provider.py`
 - `backend/providers/exchanges/whitebit_provider.py`
+- `backend/services/spot_arbitrage_service.py` — spot-vs-perp cash-and-carry pipeline
+- `backend/services/trade_adapters/_state_cache.py` — per-account leverage/margin-mode cache
+- `backend/services/trade_adapters/_base.py` — trade-adapter runtime protocol check
 
 ## Y. Debugging workflow preference
 
