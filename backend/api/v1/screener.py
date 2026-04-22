@@ -669,8 +669,10 @@ _broadcaster_task: asyncio.Task | None = None
 # /ws/arb so the wire cost of this is ~3-10KB per tick (only changed rows).
 # /ws/funding sends a full snapshot; each push is ~300KB but gzip-compressed
 # it's <100KB and every client handles that in <50ms.
-BROADCAST_INTERVAL = _env_float("AVALANT_BROADCAST_INTERVAL", 0.5)
-# WS push cadence: live feel without drowning clients
+BROADCAST_INTERVAL = _env_float("AVALANT_BROADCAST_INTERVAL", 0.25)
+# WS push cadence: 250ms gives sub-second refresh without drowning clients.
+# Funding is diff-payloaded so CPU cost per tick is bounded by row-change count;
+# at steady-state only a handful of rows move per 250ms window.
 
 
 async def _push(clients: set[WebSocket], msg: str) -> None:
@@ -694,8 +696,10 @@ async def _warmup() -> None:
     logger.info("Screener interval cache warmed up")
 
 
-_REFRESH_INTERVAL = _env_float("AVALANT_REFRESH_INTERVAL", 0.6)
-# arb recompute cadence; _compute_arb_sync runs in a thread so loop stays free
+_REFRESH_INTERVAL = _env_float("AVALANT_REFRESH_INTERVAL", 0.3)
+# arb recompute cadence; _compute_arb_sync runs in a thread so loop stays free.
+# 300ms recompute + 250ms broadcast = sub-second freshness end-to-end when WS
+# adapters are healthy (their _rows already update in real-time as frames arrive).
 
 
 async def _refresh_loop() -> None:
