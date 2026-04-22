@@ -1163,7 +1163,7 @@ async def get_funding_data() -> dict:
             all_rows.extend(result)
 
     all_rows = [r for r in all_rows if _keep(r)]
-    all_rows = _drop_price_outliers(all_rows)
+    # price-deviation outlier filter disabled by request — all rows pass through
 
     from collections import defaultdict
     sym_exch: dict[str, set] = defaultdict(set)
