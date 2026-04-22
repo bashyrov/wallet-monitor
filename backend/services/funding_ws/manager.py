@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import time
 
 from .adapters import ADAPTERS
@@ -80,7 +81,8 @@ class FundingWSManager:
 
 _manager: FundingWSManager | None = None
 _owner_lock_fd = None          # only the owner worker has the manager running
-_dump_task: asyncio.Task | None = None
+_dump_thread: threading.Thread | None = None
+_dump_stop_evt: threading.Event | None = None
 
 _CACHE_DIR  = "/tmp/avalant_cache"
 _DUMP_FILE  = os.path.join(_CACHE_DIR, "funding_ws.json")
@@ -93,14 +95,21 @@ _STALE_MAX  = 30.0             # file data older than this is ignored
 _LOCK_FILE  = "/tmp/avalant_funding_ws.lock"
 
 
-async def _dump_loop(mgr: FundingWSManager) -> None:
+def _dump_loop_sync(mgr: FundingWSManager, stop_evt: "threading.Event") -> None:
+    """Pure-thread dump loop — runs independent of the event loop.
+
+    Previously this was an asyncio task; under heavy fetcher load (spot/dex
+    compute gathers saturating the loop) `await asyncio.sleep(0.5)` stretched
+    to 15-20s, which surfaced on the web role as "all exchanges same age_s =
+    file-mtime" because funding_ws.json wasn't rewritten. A dedicated thread
+    bypasses the loop and guarantees the 0.5s cadence.
+    """
+    import threading  # local import keeps module import cheap
     os.makedirs(_CACHE_DIR, exist_ok=True)
-    while True:
+    while not stop_evt.is_set():
         try:
             snapshot = {ex: a.rows() for ex, a in mgr._adapters.items() if a.rows()}
             if snapshot:
-                # Per-exchange last-update timestamps so web role can compute
-                # real per-venue freshness instead of flat "file mtime" for all.
                 ts_by_ex = {
                     ex: a._last_update_ts
                     for ex, a in mgr._adapters.items()
@@ -113,7 +122,7 @@ async def _dump_loop(mgr: FundingWSManager) -> None:
                 os.replace(tmp, _DUMP_FILE)
         except Exception as exc:
             logger.debug("funding_ws dump failed: %s", exc)
-        await asyncio.sleep(_DUMP_EVERY)
+        stop_evt.wait(_DUMP_EVERY)
 
 
 def start_funding_ws_manager() -> FundingWSManager | None:
@@ -121,7 +130,7 @@ def start_funding_ws_manager() -> FundingWSManager | None:
     lock; losers become passive file readers — they don't open any WS
     connections, keeping per-container CPU flat.
     """
-    global _manager, _owner_lock_fd, _dump_task
+    global _manager, _owner_lock_fd, _dump_thread, _dump_stop_evt
     if _manager is not None:
         return _manager
     try:
@@ -132,11 +141,14 @@ def start_funding_ws_manager() -> FundingWSManager | None:
         return None
     _manager = FundingWSManager()
     _manager.start_all()
-    try:
-        loop = asyncio.get_event_loop()
-        _dump_task = loop.create_task(_dump_loop(_manager))
-    except RuntimeError:
-        pass
+    _dump_stop_evt = threading.Event()
+    _dump_thread = threading.Thread(
+        target=_dump_loop_sync,
+        args=(_manager, _dump_stop_evt),
+        name="funding-ws-dump",
+        daemon=True,
+    )
+    _dump_thread.start()
     return _manager
 
 
@@ -145,10 +157,11 @@ def get_funding_ws_manager() -> FundingWSManager | None:
 
 
 def stop_funding_ws_manager() -> None:
-    global _manager, _dump_task, _owner_lock_fd
-    if _dump_task and not _dump_task.done():
-        _dump_task.cancel()
-    _dump_task = None
+    global _manager, _dump_thread, _dump_stop_evt, _owner_lock_fd
+    if _dump_stop_evt is not None:
+        _dump_stop_evt.set()
+    _dump_thread = None
+    _dump_stop_evt = None
     if _manager is not None:
         _manager.stop_all()
         _manager = None
