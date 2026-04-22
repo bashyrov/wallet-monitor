@@ -379,15 +379,29 @@ _spot_refresh_lock_fd = None
 
 
 def _run_spot_cycle_sync() -> dict:
-    """Run a single spot refresh cycle in a fresh event loop.
-    Isolates the 8 parallel REST calls from the fetcher's main event loop —
-    prevents the 'all 8 ConnectTimeout' burst we saw when the fetcher loop
-    was saturated with WS handlers + other refresh loops."""
+    """Run a single spot refresh cycle in a fresh event loop WITH a fresh
+    httpx.AsyncClient. Can't reuse the module-level _http because it's bound
+    to whatever loop instantiated it first (RuntimeError across loops)."""
     import asyncio as _asyncio
+    global _http
     loop = _asyncio.new_event_loop()
     try:
         _asyncio.set_event_loop(loop)
-        return loop.run_until_complete(get_spot_arbitrage_opportunities())
+        # Bind a brand-new client to this loop
+        _http = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=12.0, write=5.0, pool=5.0),
+            headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=64, max_keepalive_connections=16, keepalive_expiry=30),
+            http2=False,
+        )
+        try:
+            return loop.run_until_complete(get_spot_arbitrage_opportunities())
+        finally:
+            try:
+                loop.run_until_complete(_http.aclose())
+            except Exception:
+                pass
     finally:
         loop.close()
 
