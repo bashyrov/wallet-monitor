@@ -360,12 +360,9 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     if rest_data:
         return rest_data
 
-    # 5. REST failed — serve file data ONLY if younger than STALE_SERVE_MAX
-    #    (now 5s, was 60s). Anything older is silently wrong and we'd
-    #    rather return empty so the caller can show "no data" than render
-    #    a confident mid-price that's 30+ seconds obsolete.
+    # 5. REST failed — serve file data ONLY if younger than STALE_SERVE_MAX.
     stale_data, stale_age = _file_lookup_stale(key)
-    if stale_data:
+    if stale_data and (stale_data.get("bids") or stale_data.get("asks")):
         if stale_age > FILE_FRESH_MAX:
             logger.info(
                 "orderbook %s %s: serving %.1fs-old file data (ceiling %.1fs)",
@@ -378,11 +375,12 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     while time.time() < deadline:
         await asyncio.sleep(0.05)
         e = _book_cache.get(key) or {}
-        if e.get("data"):
+        d = e.get("data") or {}
+        if d.get("bids") or d.get("asks"):
             e["last_request"] = time.time()
-            return e["data"]
+            return d
         fd2 = _file_lookup(key)
-        if fd2:
+        if fd2 and (fd2.get("bids") or fd2.get("asks")):
             return fd2
 
     # 7. Non-WS exchange cold start: kick the polling loop
