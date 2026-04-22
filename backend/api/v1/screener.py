@@ -1305,8 +1305,6 @@ async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
                 free = max(0, BOOK_MAX_PAIRS_PER_CLIENT - len(subs))
                 for pair in pairs[:free]:
                     subs[pair] = 0.0
-                logger.info("book WS subscribe uid=%s pairs=%s subs_total=%d",
-                            user_id, pairs[:free], len(subs))
                     # Kick the prewarm poller so non-top-N pairs populate quickly.
                     ex, _, sym = pair.partition(":")
                     try:
@@ -1314,6 +1312,8 @@ async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
                         asyncio.create_task(get_cached_orderbook(ex, sym, 50))
                     except Exception:
                         pass
+                logger.info("book WS subscribe uid=%s pairs=%s subs_total=%d",
+                            user_id, pairs[:free], len(subs))
             elif action == "unsubscribe":
                 for pair in pairs:
                     subs.pop(pair, None)
