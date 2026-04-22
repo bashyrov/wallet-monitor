@@ -20,11 +20,21 @@ import os
 import time
 from typing import Any
 
+import httpx
+
 from . import arbitrage_service as _arb
 
 logger = logging.getLogger("avalant.spot_arb")
 
-_http = _arb._http  # reuse shared HTTP client (http/1.1 keepalive pool)
+# Dedicated client — shares no pool with the futures arb loop so concurrent
+# refreshes don't starve each other.
+_http = httpx.AsyncClient(
+    timeout=httpx.Timeout(connect=5.0, read=12.0, write=5.0, pool=5.0),
+    headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
+    follow_redirects=True,
+    limits=httpx.Limits(max_connections=64, max_keepalive_connections=16, keepalive_expiry=30),
+    http2=False,
+)
 
 _spot_cache: dict[str, tuple[list[dict], float]] = {}
 SPOT_CACHE_TTL = 6.0
@@ -231,9 +241,9 @@ async def get_spot_rows(exchange: str) -> list[dict]:
     if not fn:
         return []
     try:
-        rows = await asyncio.wait_for(fn(), timeout=8.0)
+        rows = await asyncio.wait_for(fn(), timeout=15.0)
     except Exception as e:
-        logger.warning("spot fetch %s failed: %s", exchange, e)
+        logger.warning("spot fetch %s failed: %s", exchange, type(e).__name__)
         rows = cached[0] if cached else []
     _spot_cache[exchange] = (rows, now)
     return rows
@@ -249,10 +259,13 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
     2 s — same pattern as the futures arbitrage feed.
     """
     if os.environ.get("AVALANT_ROLE", "").lower() == "web":
-        cached = _arb._read_file_cache("spot_arbitrage.json", max_age=15.0)
-        if cached and isinstance(cached, dict) and cached.get("opportunities"):
+        # Web NEVER computes — always serves whatever the fetcher wrote.
+        # Use a generous max_age so a fetcher hiccup doesn't produce a
+        # 10-second page-load while the web worker tries to recompute.
+        cached = _arb._read_file_cache("spot_arbitrage.json", max_age=120.0)
+        if cached and isinstance(cached, dict):
             return cached
-        # fall through on cache miss (first request after startup)
+        return {"opportunities": [], "generated_at": int(time.time()), "spot_exchanges": SPOT_EXCHANGES}
 
     # Fetch spot tickers for every supported spot venue in parallel
     spot_results = await asyncio.gather(
