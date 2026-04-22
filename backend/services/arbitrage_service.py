@@ -1503,7 +1503,11 @@ def get_exchange_health() -> dict[str, dict]:
             if ws_dump is not None:
                 rows = (ws_dump.get("rows") or {}).get(ex) or []
                 ws_row_count = len(rows)
-                if ws_dump.get("ts"):
+                ts_by_ex = ws_dump.get("ts_by_ex") or {}
+                per_ex_ts = ts_by_ex.get(ex)
+                if per_ex_ts:
+                    ws_age = max(0.0, now_t - per_ex_ts)
+                elif ws_dump.get("ts"):
                     ws_age = max(0.0, now_t - ws_dump["ts"])
         else:
             # On fetcher/monolith: _cache holds rows from EITHER source

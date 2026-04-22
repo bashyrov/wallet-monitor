@@ -99,7 +99,14 @@ async def _dump_loop(mgr: FundingWSManager) -> None:
         try:
             snapshot = {ex: a.rows() for ex, a in mgr._adapters.items() if a.rows()}
             if snapshot:
-                body = {"ts": time.time(), "rows": snapshot}
+                # Per-exchange last-update timestamps so web role can compute
+                # real per-venue freshness instead of flat "file mtime" for all.
+                ts_by_ex = {
+                    ex: a._last_update_ts
+                    for ex, a in mgr._adapters.items()
+                    if a._last_update_ts
+                }
+                body = {"ts": time.time(), "rows": snapshot, "ts_by_ex": ts_by_ex}
                 fd, tmp = tempfile.mkstemp(dir=_CACHE_DIR, suffix=".tmp")
                 with os.fdopen(fd, "w") as f:
                     json.dump(body, f)
