@@ -4938,7 +4938,59 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeKeysP
 .kp-add{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:7px;background:var(--surface3);border:1px solid var(--border);color:var(--text);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s,background .15s;margin-top:6px;}
 .kp-add:hover{color:var(--green);border-color:rgba(26,255,171,0.4);background:rgba(26,255,171,0.06);}
 .kp-empty{padding:10px 2px;font-size:11.5px;color:var(--text3);}
+
+/* Exchange status strip — sticky bottom */
+.ex-status-strip{position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(19,18,23,.94);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-top:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text3);}
+.ex-status-strip .lbl{font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-size:10px;}
+.ex-status-strip .as-ex{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);}
+.ex-status-strip .as-ex .d{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--text3);}
+.ex-status-strip .as-ex .d.live{background:var(--green);box-shadow:0 0 6px rgba(26,255,171,.55);}
+.ex-status-strip .as-ex .d.slow{background:var(--yellow);}
+.ex-status-strip .as-ex .d.stale{background:var(--red);}
+body.light .ex-status-strip{background:rgba(255,255,255,.96);}
+body{padding-bottom:44px;}
+@media (max-width:768px){body{padding-bottom:140px;} .ex-status-strip{bottom:88px;}}
 </style>
+
+<!-- Exchange status strip — sticky bottom -->
+<div class="ex-status-strip" id="ex-status-strip">
+  <span class="lbl">Exchange status</span>
+  <div id="ex-status-items" style="display:contents"></div>
+</div>
+
+<script>
+(function(){
+  const EXES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit'];
+  const LABELS = (window.EX && window.EX.labels) || {binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate',kucoin:'KuCoin',mexc:'MEXC',bitget:'Bitget',hyperliquid:'Hyperliquid',aster:'Aster',ethereal:'Ethereal',whitebit:'WhiteBIT'};
+  const FRESH_S = 8, STALE_S = 30;
+  const wrap = document.getElementById('ex-status-items');
+  wrap.innerHTML = EXES.map(e => `<span class="as-ex" id="exs-${e}"><span class="d"></span><span class="nm">${LABELS[e]||e}</span><span class="age" style="font-family:var(--mono);color:var(--text3)">—</span></span>`).join('');
+
+  async function tick(){
+    try {
+      const r = await Auth.apiFetch('/screener/exchange-health');
+      if (!r.ok) return;
+      const j = await r.json();
+      const exs = (j && j.exchanges) || {};
+      for (const ex of EXES) {
+        const h = exs[ex] || {};
+        const el = document.getElementById('exs-'+ex);
+        if (!el) continue;
+        const d = el.querySelector('.d');
+        const a = el.querySelector('.age');
+        const age = (typeof h.age_s === 'number') ? h.age_s : null;
+        const healthy = (h.healthy !== false) && age != null && age <= STALE_S;
+        const kls = (age == null) ? 'stale' : age <= FRESH_S ? 'live' : age <= STALE_S ? 'slow' : 'stale';
+        d.className = 'd ' + kls;
+        a.textContent = age == null ? '—' : (age < 60 ? age.toFixed(1)+'s' : Math.round(age/60)+'m');
+        el.title = `${LABELS[ex]||ex} — ${h.via || '?'}${age != null ? ' · '+age.toFixed(1)+'s' : ''}`;
+      }
+    } catch(_) {}
+  }
+  tick();
+  setInterval(tick, 3000);
+})();
+</script>
 
 </body>
 </html>

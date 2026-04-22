@@ -160,10 +160,13 @@ body {
 /* Hide freshness dots everywhere by default — re-enabled only inside the alpha status strip */
 .lp-ex-health { display: none !important; }
 
-/* Exchange status strip (Alpha mode only, at the bottom) */
+/* Exchange status strip — sticky bottom across all modes + pair pages */
 .alpha-status-strip {
-  position: sticky; bottom: 0;
-  background: var(--surface);
+  position: sticky; bottom: 0; left: 0; right: 0;
+  z-index: 40;
+  background: rgba(19,18,23,.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-top: 1px solid var(--border);
   padding: 8px 16px;
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -423,13 +426,6 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
   padding: 0 16px;
   margin-bottom: 0;
 }
-/* All-tab row polish — tighter rhythm, hover stripe, cleaner numerics */
-#tbl-all .tr-all > td { padding: 10px 12px; vertical-align: middle; }
-#tbl-all .tr-all:hover { background: var(--surface2); }
-#tbl-all .tr-all b { font-weight: 700; }
-#tbl-all .num { font-family: var(--mono); letter-spacing: -.01em; text-align: right; }
-#tbl-all thead th { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); }
-
 /* ── Phone density (≤560px): trim noise so core arb metrics stay legible ── */
 @media (max-width: 560px) {
   #tbl-arb thead th:nth-child(5),  /* Price spread */
@@ -448,7 +444,6 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
   .type-pill { font-size: 9px; padding: 2px 5px; letter-spacing: 0; }
   .ex-badge, .ex-chip { font-size: 11px; gap: 4px; }
   .ex-badge .ex-name, .ex-chip .ex-name { max-width: 10ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
-  #tbl-all .tr-all > td { padding: 9px 7px; }
   .all-type-chip { padding: 5px 9px; font-size: 10.5px; }
 }
 
@@ -1486,16 +1481,16 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
         <button class="all-type-chip"        data-t="dex_short"  onclick="setAllType('dex_short',this)">DEX/Short · <span id="all-cnt-dex">—</span></button>
       </div>
       <div class="table-wrap">
-        <table id="tbl-all"
+        <table id="tbl-all">
           <thead>
             <tr>
               <th data-tip="Type — Long/Short (futures arb) or Spot/Short / DEX/Short cash-and-carry">Type</th>
               <th data-tip="Token">Token</th>
               <th data-tip="Long / Buy-spot venue">Long / Spot</th>
               <th data-tip="Short venue">Short</th>
-              <th class="num" data-tip="Gross P&L per 8h before fees">Gross</th>
-              <th class="num" data-tip="Net after fees per 8h">Net 8h</th>
-              <th class="num" data-tip="Annualized net">APR</th>
+              <th data-tip="Gross P&L per 8h before fees">Gross</th>
+              <th data-tip="Net after fees per 8h">Net 8h</th>
+              <th data-tip="Annualized net">APR</th>
               <th></th>
             </tr>
           </thead>
@@ -1556,8 +1551,8 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       <div class="pager" id="pager-alpha"></div>
     </div>
 
-    <!-- Alpha-only exchange status strip (rendered only when mode === 'alpha') -->
-    <div class="alpha-status-strip" id="alpha-status-strip" style="display:none">
+    <!-- Exchange status strip — sticky bottom, visible across all modes -->
+    <div class="alpha-status-strip" id="alpha-status-strip">
       <span class="lbl">Exchange status</span>
       <div id="alpha-status-items" style="display:contents"></div>
     </div>
@@ -1843,7 +1838,7 @@ async function refreshExchangeHealth() {
         dot.title = `${name} — ${h.via || '?'} · ${ageStr}`;
       }
     }
-    if (_mode === 'alpha') renderAlphaStatus();
+    renderAlphaStatus();
   } catch (_) {}
 }
 function startExchangeHealthPoll() {
@@ -2024,9 +2019,7 @@ function switchMode(mode) {
   const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all') ? '' : 'none';
   const mobSortF = document.getElementById('mobile-sort-funding'); if (mobSortF) mobSortF.style.display = mode === 'funding' ? '' : 'none';
   const mobSortA = document.getElementById('mobile-sort-arb');     if (mobSortA) mobSortA.style.display = mode === 'arb'     ? '' : 'none';
-  const asStrip = document.getElementById('alpha-status-strip');
-  if (asStrip) asStrip.style.display = mode === 'alpha' ? '' : 'none';
-  if (mode === 'alpha') renderAlphaStatus();
+  renderAlphaStatus();
   if (mode === 'arb' && !_arbRows.length) loadArb();
   else if (mode === 'alpha') loadAlpha();
   else if (mode === 'funding') applyFilter();
@@ -2336,35 +2329,47 @@ function renderAll() {
   tb.innerHTML = rows.slice(0, 300).map(r => {
     const isSpot = r.type === 'spot_short';
     const isDex  = r.type === 'dex_short';
-    const longEx =
-      isSpot ? r.spot_exchange :
-      isDex  ? null :
-               r.long_exchange;
     const shortEx = r.short_exchange;
-    const gross = (isSpot || isDex) ? r.gross : (r.gross_funding + (r.price_spread || 0));
-    const net = r.net_profit || 0;
-    const apr = r.net_apr || 0;
-    const longCell = isDex
-      ? `<span class="ex-chip"><span class="ex-dot" style="background:#A78BFA"></span><span class="ex-name">${(r.dex_name||'DEX').toUpperCase()}<span style="color:var(--text3);font-weight:500"> · ${(r.dex_chain||'').toUpperCase()}</span></span></span>`
-      : window.EX.chip(longEx, {suffix: isSpot ? '· spot' : ''});
+
+    const gross = (isSpot || isDex) ? (r.gross || 0) : ((r.gross_funding || 0) + (r.price_spread || 0));
+    const net   = r.net_profit || 0;
+    const apr   = r.net_apr || 0;
+
+    const grossSign = gross >= 0 ? '+' : '';
+    const netCls    = net > 0 ? 'net-pos' : 'net-neg';
+    const netSign   = net >= 0 ? '+' : '';
+
+    let longCell;
+    if (isDex) {
+      const dexName  = (r.dex_name  || 'DEX').toUpperCase();
+      const dexChain = (r.dex_chain || '').toUpperCase();
+      longCell = `<span class="ex-chip"><span class="ex-dot" style="background:#A78BFA"></span><span class="ex-name">${dexName}<span style="color:var(--text3);font-weight:500"> · ${dexChain}</span></span></span>`;
+    } else if (isSpot) {
+      longCell = window.EX.chip(r.spot_exchange);
+    } else {
+      longCell = window.EX.chip(r.long_exchange);
+    }
+
     const typeChip = isDex
       ? `<span class="type-pill tp-dex">DEX/SHORT</span>`
       : isSpot
       ? `<span class="type-pill tp-spot">SPOT/SHORT</span>`
       : `<span class="type-pill tp-ls">LONG/SHORT</span>`;
+
     const detailUrl = isDex
       ? `/arb?type=dex-short&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(shortEx)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`
       : isSpot
-      ? `/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(longEx)}&short=${esc(shortEx)}`
-      : `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(longEx)}&short=${esc(shortEx)}`;
-    return `<tr class="tr-all">
+      ? `/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(shortEx)}`
+      : `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(shortEx)}`;
+
+    return `<tr>
       <td>${typeChip}</td>
-      <td class="sym-cell"><b>${esc(r.symbol)}</b></td>
+      <td class="td-symbol">${esc(r.symbol)}</td>
       <td>${longCell}</td>
       <td>${window.EX.chip(shortEx)}</td>
-      <td class="num ${gross >= 0 ? 'pos' : 'neg'}">${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%</td>
-      <td class="num ${net >= 0 ? 'pos' : 'neg'}"><b>${net >= 0 ? '+' : ''}${net.toFixed(4)}%</b></td>
-      <td class="num ${apr > 0 ? 'pos' : 'neg'}">${apr > 0 ? apr.toFixed(1) + '%' : '—'}</td>
+      <td class="td-gross">${grossSign}${gross.toFixed(4)}%</td>
+      <td><span class="td-net ${netCls}">${netSign}${net.toFixed(4)}%</span></td>
+      <td>${fmtApr(apr)}</td>
       <td><a href="${detailUrl}" target="_blank" class="arb-detail-btn" onclick="event.stopPropagation()" title="Open detail">↗</a></td>
     </tr>`;
   }).join('');
