@@ -44,8 +44,13 @@ _DEX_SEM = asyncio.Semaphore(3)
 # Hard timeout on the per-cycle gather so DEX can't starve the fetcher loop
 _CYCLE_TIMEOUT_S = 40.0
 
-# USD-like quote tokens — pairs quoted in these are directly comparable to CEX USDT price.
-_USD_QUOTES = {"USDC", "USDT", "DAI", "BUSD", "USDC.E", "FDUSD", "PYUSD"}
+# Native / wrapped tokens accepted as quote — DexScreener always returns
+# priceUsd for the pair regardless of the quote, so restricting to USDC/USDT
+# was a mistake (filtered out most large-cap tokens that trade WETH-quoted).
+_ACCEPTED_QUOTES = {
+    "USDC", "USDT", "DAI", "BUSD", "USDC.E", "FDUSD", "PYUSD",
+    "WETH", "WBTC", "WBNB", "WSOL", "SOL", "ETH", "BNB", "MATIC", "WMATIC",
+}
 
 # Filters
 MIN_DEX_LIQUIDITY_USD = 50_000.0   # skip illiquid long-tail memecoins
@@ -219,7 +224,7 @@ async def _fetch_dex_by_contract(chain: str, address: str) -> dict | None:
         if (base.get("address") or "").lower() != addr_low:
             continue  # the token must be the base side
         quote_sym = (p.get("quoteToken") or {}).get("symbol", "").upper()
-        if quote_sym not in _USD_QUOTES:
+        if quote_sym not in _ACCEPTED_QUOTES:
             continue
         try:
             liq_f = float((p.get("liquidity") or {}).get("usd") or 0)
