@@ -1775,26 +1775,59 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   _refreshPair();
   setInterval(_refreshPair, 3000);
 
-  // Short-side perp orderbook (live polled 1s)
+  // Short-side perp orderbook (live polled)
+  let _obTickCount = 0;
   async function _refreshOB() {
+    const age = $('pt-ob-age');
     try {
-      const r = await Auth.apiFetch(`/screener/orderbook?exchange=${SHORT}&symbol=${SYM}&limit=12`);
-      if (!r.ok) return;
-      const j = await r.json();
-      const asks = (j.asks || []).slice(0, 8).reverse();
-      const bids = (j.bids || []).slice(0, 8);
-      const fmtL = (arr, side) => arr.map(([p, q]) => `<div class="pt-ob-row ${side}"><span class="px ${side}">${p}</span><span>${(+q).toFixed(3)}</span></div>`).join('');
-      $('pt-ob-asks').innerHTML = fmtL(asks, 'ask');
-      $('pt-ob-bids').innerHTML = fmtL(bids, 'bid');
-      if (asks.length && bids.length) {
-        const mid = (parseFloat(asks[asks.length-1][0]) + parseFloat(bids[0][0])) / 2;
-        $('pt-ob-mid').innerHTML = `<b>${mid >= 1000 ? mid.toFixed(2) : mid >= 1 ? mid.toFixed(4) : mid.toPrecision(5)}</b>`;
+      const r = await Auth.apiFetch(`/screener/orderbook?exchange=${SHORT}&symbol=${SYM}&limit=20`);
+      if (!r.ok) {
+        if (age) age.textContent = `error ${r.status} · ${EX_LABEL[SHORT]||SHORT}`;
+        return;
       }
-      $('pt-ob-age').textContent = 'live · ' + (EX_LABEL[SHORT] || SHORT);
-    } catch {}
+      const j = await r.json();
+      const asksAll = j.asks || [];
+      const bidsAll = j.bids || [];
+      if (!asksAll.length && !bidsAll.length) {
+        if (age) age.textContent = `warming up · ${EX_LABEL[SHORT]||SHORT}`;
+        return;
+      }
+      const asks = asksAll.slice(0, 10).reverse();  // furthest first → nearest to mid at bottom
+      const bids = bidsAll.slice(0, 10);
+      const fmtPrice = (p) => {
+        const n = +p;
+        if (n >= 1000) return n.toLocaleString('en-US',{maximumFractionDigits:2});
+        if (n >= 1)    return n.toFixed(4);
+        return n.toPrecision(5);
+      };
+      const fmtQty = (q) => {
+        const n = +q;
+        if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
+        if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+        return n.toFixed(n < 1 ? 4 : 2);
+      };
+      const rowHtml = (arr, side) => arr.map(([p, q]) =>
+        `<div class="pt-ob-row ${side}"><span class="px ${side}">${fmtPrice(p)}</span><span>${fmtQty(q)}</span></div>`
+      ).join('');
+      $('pt-ob-asks').innerHTML = rowHtml(asks, 'ask');
+      $('pt-ob-bids').innerHTML = rowHtml(bids, 'bid');
+      if (asks.length && bids.length) {
+        const bestAsk = parseFloat(asksAll[0][0]);
+        const bestBid = parseFloat(bidsAll[0][0]);
+        const mid = (bestAsk + bestBid) / 2;
+        const spread = ((bestAsk - bestBid) / mid * 100);
+        $('pt-ob-mid').innerHTML = `<span>mid · <span style="color:var(--yellow,#E5C07B)">${spread.toFixed(3)}% spread</span></span><b>${fmtPrice(mid)}</b>`;
+      }
+      _obTickCount++;
+      if (age) age.textContent = `live · ${(_obTickCount).toString().padStart(3,' ')} ticks · ${EX_LABEL[SHORT]||SHORT}`;
+    } catch (e) {
+      console.error('[pair] orderbook fetch error:', e);
+      if (age) age.textContent = `offline · ${EX_LABEL[SHORT]||SHORT}`;
+    }
   }
   _refreshOB();
-  setInterval(_refreshOB, 1000);
+  // 600ms — same cadence spirit as the futures terminal (150ms per side × 4 slots)
+  setInterval(_refreshOB, 600);
 
   throw new Error('_arb_type_gate');  // stop the rest of this futures-specific script
 }
