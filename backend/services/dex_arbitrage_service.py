@@ -38,11 +38,8 @@ _http = httpx.AsyncClient(
     http2=False,
 )
 
-# Keep concurrency modest — DexScreener free is rate-limited AND each hanging
-# request costs us an event-loop slot. 3 parallel is plenty for 40-symbol batch.
-_DEX_SEM = asyncio.Semaphore(3)
-# Hard timeout on the per-cycle gather so DEX can't starve the fetcher loop
-_CYCLE_TIMEOUT_S = 40.0
+# Per-call timeout — if DexScreener takes > this many seconds, skip and move on
+_DEX_CALL_TIMEOUT = 2.5
 
 # Native / wrapped tokens accepted as quote — DexScreener always returns
 # priceUsd for the pair regardless of the quote, so restricting to USDC/USDT
@@ -201,12 +198,11 @@ def _lookup_contracts(symbol: str) -> list[tuple[str, str]]:
 async def _fetch_dex_by_contract(chain: str, address: str) -> dict | None:
     """DexScreener pairs for a specific contract — no symbol ambiguity."""
     url = f"https://api.dexscreener.com/latest/dex/tokens/{address}"
-    async with _DEX_SEM:
-        try:
-            r = await _http.get(url)
-        except Exception as e:
-            logger.debug("dex by contract %s %s: %s", chain, address, e)
-            return None
+    try:
+        r = await asyncio.wait_for(_http.get(url), timeout=_DEX_CALL_TIMEOUT)
+    except (asyncio.TimeoutError, Exception) as e:
+        logger.debug("dex by contract %s %s: %s", chain, address, e)
+        return None
     if r.status_code != 200:
         return None
     try:
@@ -251,21 +247,14 @@ async def _fetch_dex_by_contract(chain: str, address: str) -> dict | None:
 
 
 async def _best_dex_match(symbol: str) -> dict | None:
-    """Resolve symbol → contract(s) via CoinGecko, then find the
-    highest-liquidity DEX pair across all listed chains for that contract."""
+    """Resolve symbol → single canonical contract (via CoinGecko), fetch it
+    from DexScreener. Sequential — no gather / semaphore complexity to clash
+    with the fetcher's event-loop load."""
     targets = _lookup_contracts(symbol)
     if not targets:
         return None
-    results = await asyncio.gather(*[_fetch_dex_by_contract(c, a) for c, a in targets])
-    best: dict | None = None
-    best_liq = 0.0
-    for r in results:
-        if not r:
-            continue
-        if r["liquidity_usd"] > best_liq:
-            best_liq = r["liquidity_usd"]
-            best = r
-    return best
+    chain, addr = targets[0]
+    return await _fetch_dex_by_contract(chain, addr)
 
 
 def _dex_fee_rt() -> float:
@@ -317,20 +306,16 @@ async def get_dex_arbitrage_opportunities(min_perp_vol_usd: float = 100_000.0) -
     mappable = [s for s in perp_map if _lookup_contracts(s)]
     symbols = sorted(mappable, key=_best_perp_vol, reverse=True)[:_SYMBOL_BATCH_LIMIT]
 
-    # Resolve each symbol via its canonical contract (no ticker ambiguity).
-    # Hard cycle-level timeout so one slow DexScreener response can't block
-    # the fetcher event loop long enough to starve WS keepalives.
-    try:
-        dex_results = await asyncio.wait_for(
-            asyncio.gather(*[_best_dex_match(s) for s in symbols], return_exceptions=True),
-            timeout=_CYCLE_TIMEOUT_S,
-        )
-    except asyncio.TimeoutError:
-        logger.warning("DEX cycle timed out after %.0fs — partial results only", _CYCLE_TIMEOUT_S)
-        dex_results = [None] * len(symbols)
-
-    # gather(..., return_exceptions=True) may embed exceptions
-    dex_results = [r if isinstance(r, dict) else None for r in dex_results]
+    # Sequential scan — each call has its own 2.5s timeout. Event-loop-friendly
+    # because we yield after every call and never hold a semaphore slot across
+    # gather tasks that compete with busy WS handlers.
+    dex_results: list[dict | None] = []
+    for sym in symbols:
+        try:
+            dex_results.append(await _best_dex_match(sym))
+        except Exception as e:
+            logger.debug("dex match %s: %s", sym, e)
+            dex_results.append(None)
 
     opps: list[dict] = []
     for sym, dex in zip(symbols, dex_results):
