@@ -49,11 +49,16 @@ _sync_http = httpx.Client(
 
 # Config
 DEX_REFRESH_INTERVAL = 30.0
-_SYMBOL_BATCH_LIMIT = 500   # fan-out via ThreadPool — 500 / 10 workers × 0.14s ≈ 7 s
-_DEX_WORKERS = 10            # parallel DexScreener requests per cycle
+_SYMBOL_BATCH_LIMIT = 900   # fan-out via ThreadPool — 900 / 12 workers × 0.14s ≈ 10s
+_DEX_WORKERS = 12            # parallel DexScreener requests per cycle
 MIN_DEX_LIQUIDITY_USD = 50_000.0
 MIN_DEX_VOL_24H = 10_000.0
 MAX_BASIS_PCT = 10.0       # drop ticker-collision outliers
+# Market-cap rank ceiling. Was 1_000 — too tight: CoinGecko has ~5-10k tokens
+# with real DEX+CEX liquidity and mid-cap (rank 1000-5000) names routinely
+# surface the most interesting basis opportunities. 5000 expands the candidate
+# universe ~3-5× without flooding DexScreener (still bounded by _SYMBOL_BATCH_LIMIT).
+MAX_MCAP_RANK = 5_000
 
 # Native / wrapped tokens accepted as quote — DexScreener always returns
 # priceUsd regardless of the quote, so restricting to USDC/USDT filters out
@@ -356,8 +361,9 @@ def _run_cycle_sync(min_perp_vol_usd: float = 100_000.0) -> dict:
     mappable = [s for s in perp_map if _lookup_contract(s)]
     # Sort by mcap rank ascending (lower = bigger); drop non-ranked (10_000)
     symbols = sorted(mappable, key=_mcap_rank)
-    # Keep only symbols with a real CG rank (covers ~top 500)
-    symbols = [s for s in symbols if _mcap_rank(s) < 1_000][:_SYMBOL_BATCH_LIMIT]
+    # Keep symbols with a real CG rank up to MAX_MCAP_RANK; batch limit caps
+    # the per-cycle DexScreener fan-out.
+    symbols = [s for s in symbols if _mcap_rank(s) < MAX_MCAP_RANK][:_SYMBOL_BATCH_LIMIT]
 
     # Parallel DexScreener fetch with a bounded thread pool. Each worker has
     # its own connection to _sync_http (httpx.Client is thread-safe) and its
