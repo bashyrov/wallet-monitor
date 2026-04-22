@@ -31,6 +31,7 @@ _http = httpx.AsyncClient(
 # ── Price/rate cache ───────────────────────────────────────────────────────────
 _cache: dict[str, tuple[list, float]] = {}
 CACHE_TTL = 6.0  # seconds — prices fresh enough for 4s recompute; per-fetcher timeout protects against rate-limited exchanges
+_FAST_PATH_LAST_WRITE: float = 0.0  # throttle funding.json writes to once per 2s on the fast path
 
 # ── Interval cache ─────────────────────────────────────────────────────────────
 _ivl_cache: dict[str, tuple[dict[str, float], float]] = {}
@@ -1147,7 +1148,16 @@ async def get_funding_data() -> dict:
             all_rows.extend(cached_rows)
         all_rows = [r for r in all_rows if _keep(r)]
         if all_rows:
-            return {"ts": int(time.time()), "exchanges": enabled_ex, "rows": all_rows}
+            out = {"ts": int(time.time()), "exchanges": enabled_ex, "rows": all_rows}
+            # Throttled file write — web role reads this for `via=rest` freshness,
+            # and without it funding.json stays stale forever when every WS is
+            # healthy (fast-path never reaches the gather-then-write block).
+            global _FAST_PATH_LAST_WRITE
+            now_t = time.time()
+            if now_t - _FAST_PATH_LAST_WRITE >= 2.0:
+                _write_file_cache("funding.json", out)
+                _FAST_PATH_LAST_WRITE = now_t
+            return out
 
     results = await asyncio.gather(
         *(_get_rows(ex) for ex in enabled_ex),
