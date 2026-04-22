@@ -3060,7 +3060,16 @@ async function fetchBook(exchange,side){
 function renderBook(d,side){
   const rawAsks=(d.asks||[]);
   const rawBids=(d.bids||[]);
-  if(!rawAsks.length&&!rawBids.length) return;
+  if(!rawAsks.length&&!rawBids.length){
+    // Empty response (usually Aster -4108 / delisted, or symbol not on this venue).
+    // Show an explicit placeholder rather than leaving the previous frame stale.
+    const asksEl=document.getElementById(`asks-${side}`);
+    const bidsEl=document.getElementById(`bids-${side}`);
+    const msg=`<div class="book-empty" style="padding:18px 10px;color:var(--text3);font-size:11px;text-align:center">no orderbook · symbol delisted or unlisted</div>`;
+    if(asksEl&&!asksEl.querySelector('.book-empty')) asksEl.innerHTML=msg;
+    if(bidsEl) bidsEl.innerHTML='';
+    return;
+  }
 
   // Detect price for tick size
   const refPrice=rawBids[0]?.[0]||rawAsks[0]?.[0]||0;

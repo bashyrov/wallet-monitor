@@ -36,6 +36,11 @@ _FAST_PATH_LAST_WRITE: float = 0.0  # throttle funding.json writes to once per 2
 # ── Interval cache ─────────────────────────────────────────────────────────────
 _ivl_cache: dict[str, tuple[dict[str, float], float]] = {}
 IVL_TTL = 3600.0  # 1 hour — intervals change very rarely
+# Per-exchange override: Aster delists symbols ~daily (pre-trading/settled),
+# so a 1h ivl cache keeps dead symbols in the arb feed for up to an hour —
+# depth endpoint then returns 400 -4108 and orderbook panels look "stuck".
+# 10min is short enough that a fresh delist falls off the UI quickly.
+IVL_TTL_BY_EX = {"aster": 600.0}
 
 # ── OKX funding-rate cache (500 per-symbol requests, rates change every 8h) ───
 # {inst_id: {"rate": float, "next_ts": int}}
@@ -264,7 +269,8 @@ async def _get_interval_map(exchange: str, *, allow_blocking: bool = True) -> di
     background and return whatever we have (possibly empty) — caller falls
     back to a sane default interval."""
     cached, at = _ivl_cache.get(exchange, ({}, 0.0))
-    if _mono() - at < IVL_TTL and cached:
+    ttl = IVL_TTL_BY_EX.get(exchange, IVL_TTL)
+    if _mono() - at < ttl and cached:
         return cached
     fetcher = _IVL_FETCHERS.get(exchange)
     if not fetcher:
