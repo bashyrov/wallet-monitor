@@ -430,6 +430,28 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
 #tbl-all .num { font-family: var(--mono); letter-spacing: -.01em; text-align: right; }
 #tbl-all thead th { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); }
 
+/* ── Phone density (≤560px): trim noise so core arb metrics stay legible ── */
+@media (max-width: 560px) {
+  #tbl-arb thead th:nth-child(5),  /* Price spread */
+  #tbl-arb thead th:nth-child(6),  /* Fees */
+  #tbl-arb tbody td:nth-child(5),
+  #tbl-arb tbody td:nth-child(6) { display: none; }
+
+  #tbl-spot thead th:nth-child(6),  /* Fees */
+  #tbl-spot tbody td:nth-child(6),
+  #tbl-dex  thead th:nth-child(6),
+  #tbl-dex  tbody td:nth-child(6) { display: none; }
+
+  #tbl-all thead th:nth-child(5),  /* Gross */
+  #tbl-all tbody td:nth-child(5) { display: none; }
+
+  .type-pill { font-size: 9px; padding: 2px 5px; letter-spacing: 0; }
+  .ex-badge, .ex-chip { font-size: 11px; gap: 4px; }
+  .ex-badge .ex-name, .ex-chip .ex-name { max-width: 10ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+  #tbl-all .tr-all > td { padding: 9px 7px; }
+  .all-type-chip { padding: 5px 9px; font-size: 10.5px; }
+}
+
 /* Type pills for rows in the All tab — one per row-kind */
 .type-pill {
   display: inline-flex; align-items: center;
