@@ -1779,7 +1779,7 @@ if ('IntersectionObserver' in window) {
 // ─── live hydration — opps count ───
 (async () => {
   try {
-    const r = await fetch('/api/screener/arbitrage', { credentials: 'include' });
+    const r = await fetch('/api/screener/long-short', { credentials: 'include' });
     if (!r.ok) return;
     const j = await r.json();
     const n = Array.isArray(j) ? j.length : (j.opportunities?.length || 0);

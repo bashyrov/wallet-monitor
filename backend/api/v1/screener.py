@@ -47,22 +47,46 @@ async def funding_rates():
     return await get_funding_data()
 
 
-@router.get("/arbitrage")
-async def arbitrage_opportunities():
-    """Cross-exchange funding arbitrage opportunities with price spread and fees."""
+@router.get("/long-short")
+async def long_short_opportunities():
+    """Cross-exchange funding arbitrage (perp-long vs perp-short) with price spread + fees.
+    Canonical endpoint for the Long/Short mode."""
     return await get_arbitrage_opportunities()
 
 
-@router.get("/spot-arbitrage")
-async def spot_arbitrage_opportunities():
-    """Spot-short cash-and-carry: buy spot on one venue, short perp on another."""
+@router.get("/arbitrage", deprecated=True)
+async def arbitrage_opportunities():
+    """Legacy alias for /long-short. Kept so existing bookmarks / API clients
+    don't 404 after the rename. Remove once frontend callers are migrated."""
+    return await get_arbitrage_opportunities()
+
+
+@router.get("/spot-short")
+async def spot_short_opportunities():
+    """Spot-short cash-and-carry: buy spot on one venue, short perp on another.
+    Canonical endpoint."""
     from backend.services.spot_arbitrage_service import get_spot_arbitrage_opportunities
     return await get_spot_arbitrage_opportunities()
 
 
-@router.get("/dex-arbitrage")
+@router.get("/spot-arbitrage", deprecated=True)
+async def spot_arbitrage_opportunities():
+    """Legacy alias for /spot-short."""
+    from backend.services.spot_arbitrage_service import get_spot_arbitrage_opportunities
+    return await get_spot_arbitrage_opportunities()
+
+
+@router.get("/dex-short")
+async def dex_short_opportunities():
+    """DEX-short cash-and-carry: buy spot on a DEX (via DexScreener), short perp on CEX.
+    Canonical endpoint."""
+    from backend.services.dex_arbitrage_service import get_dex_arbitrage_opportunities
+    return await get_dex_arbitrage_opportunities()
+
+
+@router.get("/dex-arbitrage", deprecated=True)
 async def dex_arbitrage_opportunities():
-    """DEX-short cash-and-carry: buy spot on a DEX (via DexScreener), short perp on CEX."""
+    """Legacy alias for /dex-short."""
     from backend.services.dex_arbitrage_service import get_dex_arbitrage_opportunities
     return await get_dex_arbitrage_opportunities()
 
@@ -1117,8 +1141,19 @@ async def funding_ws(websocket: WebSocket, token: str = Query("")) -> None:
     await _ws_handler(websocket, _funding_clients, token, get_funding_data, "funding")
 
 
+@router.websocket("/ws/long-short")
+async def long_short_ws(websocket: WebSocket, token: str = Query("")) -> None:
+    """Canonical WS for the Long/Short feed."""
+    await _ws_handler(
+        websocket, _arb_clients, token, get_arbitrage_opportunities, "long-short",
+        snapshot_builder=_build_arb_snapshot_payload,
+    )
+
+
 @router.websocket("/ws/arb")
 async def arb_ws(websocket: WebSocket, token: str = Query("")) -> None:
+    """Legacy alias for /ws/long-short. Kept so existing frontend connections
+    don't break while we roll out the rename."""
     await _ws_handler(
         websocket, _arb_clients, token, get_arbitrage_opportunities, "arb",
         snapshot_builder=_build_arb_snapshot_payload,
