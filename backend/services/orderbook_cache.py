@@ -327,15 +327,20 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     key = f"{exchange}:{symbol}"
     now = time.time()
 
-    # 1. Local memory — fastest (WS pushes land here directly)
+    # 1. Local memory — fastest (WS pushes land here directly).
+    # Treat an empty book (no bids AND no asks) as a cache miss — some WS
+    # streams briefly deliver an empty snapshot before the first real tick,
+    # and we'd otherwise serve the empty book forever until TTL.
     entry = _book_cache.get(key)
-    if entry and entry.get("data") and now - entry.get("ts", 0) < STALE_FALLBACK:
-        entry["last_request"] = now
-        return entry["data"]
+    if entry and now - entry.get("ts", 0) < STALE_FALLBACK:
+        d = entry.get("data") or {}
+        if (d.get("bids") or d.get("asks")):
+            entry["last_request"] = now
+            return d
 
-    # 2. Shared file cache — fresh path (<5s old)
+    # 2. Shared file cache — fresh path (<5s old). Same empty-book guard.
     fd = _file_lookup(key)
-    if fd:
+    if fd and (fd.get("bids") or fd.get("asks")):
         return fd
 
     from backend.services.orderbook_ws import is_ws_supported, get_manager
