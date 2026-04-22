@@ -1679,8 +1679,8 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     </div>
 
     <div class="workspace">
-      <div class="left-stack">
-        <div class="main top-row">
+      <div class="left-stack" style="flex:1;display:flex;flex-direction:column;min-height:0">
+        <div class="main top-row" style="flex:1;min-height:0">
 
           <!-- LEFT: chart area (iframe or spot info) -->
           <div class="col-left">
@@ -1726,6 +1726,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             </div>
           </div>
 
+          <!-- (LEFT + CENTER above; RIGHT below) -->
           <!-- RIGHT: Trade panel (matches futures terminal 1:1) -->
           <div class="col-info">
             <div class="col-info-title">Execute trade</div>
@@ -1846,9 +1847,66 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             </div>
           </div>
 
-        </div>
-      </div>
-    </div>
+        </div><!-- /.main.top-row -->
+
+        <!-- Account block: Positions / Orders / P&L / Balances (same as futures) -->
+        <section class="acc-block" id="acc-block">
+          <div class="acc-tabs" role="tablist">
+            <div class="acc-tab is-active" data-pane="positions" onclick="_ptAccSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
+            <div class="acc-tab" data-pane="orders" onclick="_ptAccSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
+            <div class="acc-tab" data-pane="pnl" onclick="_ptAccSwitch(this)" role="tab">P&amp;L</div>
+            <div class="acc-tab" data-pane="balances" onclick="_ptAccSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
+            <span class="acc-spacer"></span>
+            <div class="acc-keyinfo">
+              <span class="pill ro"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
+              <span class="pill tr"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
+              <a href="/app" class="pill" style="text-decoration:none;color:var(--text2)" title="Manage API keys">Keys ⚙</a>
+            </div>
+          </div>
+          <div class="acc-body">
+            <div class="acc-pane is-active" id="acc-pane-positions">
+              <table class="acc-table">
+                <thead><tr><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Funding P&amp;L</th><th class="num">uPnL</th><th class="num">uPnL %</th><th></th></tr></thead>
+                <tbody id="acc-positions-body"></tbody>
+              </table>
+              <div class="acc-empty" id="acc-positions-empty">
+                <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg></div>
+                <h4>No open positions</h4>
+                <p>Connect a read-only API key in Portfolio, or open a position from the right-hand panel.</p>
+                <a href="/app" class="acc-empty-cta">Manage API keys</a>
+              </div>
+            </div>
+            <div class="acc-pane" id="acc-pane-orders">
+              <div class="acc-empty">
+                <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v10H3z"/><path d="M3 6h10M3 9h10M3 12h6"/></svg></div>
+                <h4>No orders</h4>
+                <p>Order history across your exchange keys will appear here.</p>
+              </div>
+            </div>
+            <div class="acc-pane" id="acc-pane-pnl">
+              <div class="acc-sum-grid">
+                <div class="acc-sum-card"><div class="acc-sum-lbl">Unrealized P&amp;L</div><div class="acc-sum-val" id="acc-upnl">$0.00</div></div>
+                <div class="acc-sum-card"><div class="acc-sum-lbl">Open positions</div><div class="acc-sum-val" id="acc-pos-count">0</div></div>
+                <div class="acc-sum-card"><div class="acc-sum-lbl">Read-only keys</div><div class="acc-sum-val" id="acc-ro-count-pnl">0</div></div>
+                <div class="acc-sum-card"><div class="acc-sum-lbl">Trade keys</div><div class="acc-sum-val" id="acc-tr-count-pnl">0</div></div>
+              </div>
+            </div>
+            <div class="acc-pane" id="acc-pane-balances">
+              <table class="acc-table">
+                <thead><tr><th>Exchange</th><th>Wallet</th><th>Key type</th><th class="num">Available USDT</th></tr></thead>
+                <tbody id="acc-balances-body"></tbody>
+              </table>
+              <div class="acc-empty" id="acc-balances-empty">
+                <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 6v4M6 8h4"/></svg></div>
+                <h4>No balance data</h4>
+                <p>Add a read-only or trading API key in <a href="/app" style="color:var(--green)">Portfolio</a>.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /.left-stack -->
+    </div><!-- /.workspace -->
   `;
 
   // Pair-level state
@@ -2357,6 +2415,105 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
   _ptFetchStatus();
   setInterval(_ptFetchStatus, 15000);
+
+  // ── Account block (Positions / Orders / P&L / Balances) ──────────────────
+  window._ptAccSwitch = function (el) {
+    const pane = el.dataset.pane;
+    document.querySelectorAll('.acc-tab').forEach(t => t.classList.toggle('is-active', t === el));
+    document.querySelectorAll('.acc-pane').forEach(p => p.classList.toggle('is-active', p.id === 'acc-pane-' + pane));
+  };
+  async function _ptLoadKeyCounts() {
+    try {
+      const r = await Auth.apiFetch('/wallets');
+      if (!r.ok) return;
+      const rows = await r.json();
+      const ex = rows.filter(w => w.wallet_type === 'exchange' && !w.is_archived);
+      const tr = ex.filter(w => w.can_trade).length;
+      const ro = ex.length - tr;
+      const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+      set('acc-ro-count', ro);
+      set('acc-tr-count', tr);
+      set('acc-ro-count-pnl', ro);
+      set('acc-tr-count-pnl', tr);
+    } catch {}
+  }
+  async function _ptLoadPositions() {
+    try {
+      const r = await Auth.apiFetch('/trade/positions');
+      if (!r.ok) return;
+      const j = await r.json();
+      const arr = Array.isArray(j) ? j : (j.positions || []);
+      const tb = document.getElementById('acc-positions-body');
+      const em = document.getElementById('acc-positions-empty');
+      const cnt = document.getElementById('acc-cnt-positions');
+      const cntPnl = document.getElementById('acc-pos-count');
+      if (cnt) cnt.textContent = arr.length;
+      if (cntPnl) cntPnl.textContent = arr.length;
+      if (!arr.length) {
+        if (tb) tb.innerHTML = '';
+        if (em) em.style.display = '';
+        return;
+      }
+      if (em) em.style.display = 'none';
+      const fmtPx = (p) => p == null ? '—' : (+p).toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
+      const fmtPct = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${(+v).toFixed(2)}%`;
+      const fmtUsd = (v) => v == null ? '—' : `$${(+v).toFixed(2)}`;
+      let totalUpnl = 0;
+      if (tb) tb.innerHTML = arr.map(p => {
+        const side = (p.side || '').toLowerCase();
+        const sideCls = side === 'buy' ? 'pos' : 'neg';
+        const sideTxt = side === 'buy' ? 'LONG' : 'SHORT';
+        const upnl = +(p.unrealized_pnl_usd || 0);
+        totalUpnl += upnl;
+        const upnlPct = p.entry_price && p.quantity ? (upnl / (p.entry_price * p.quantity) * 100) : null;
+        return `<tr>
+          <td>${p.symbol}</td>
+          <td>${EX_LABEL[p.exchange]||p.exchange}</td>
+          <td class="${sideCls}">${sideTxt}</td>
+          <td class="num">${fmtPx(p.quantity)}</td>
+          <td class="num">${fmtPx(p.entry_price)}</td>
+          <td class="num">${fmtPx(p.mark_price)}</td>
+          <td class="num ${(+p.funding_pnl_usd||0) >= 0 ? 'pos' : 'neg'}">${fmtUsd(p.funding_pnl_usd)}</td>
+          <td class="num ${upnl >= 0 ? 'pos' : 'neg'}">${fmtUsd(upnl)}</td>
+          <td class="num ${upnl >= 0 ? 'pos' : 'neg'}">${fmtPct(upnlPct)}</td>
+          <td></td>
+        </tr>`;
+      }).join('');
+      const upnlEl = document.getElementById('acc-upnl');
+      if (upnlEl) upnlEl.textContent = fmtUsd(totalUpnl);
+    } catch (e) { console.error('[pair-acc] positions:', e); }
+  }
+  async function _ptLoadBalances() {
+    try {
+      const r = await Auth.apiFetch('/wallets');
+      if (!r.ok) return;
+      const wallets = (await r.json()).filter(w => w.wallet_type === 'exchange' && !w.is_archived);
+      const tb = document.getElementById('acc-balances-body');
+      const em = document.getElementById('acc-balances-empty');
+      const cnt = document.getElementById('acc-cnt-balances');
+      if (cnt) cnt.textContent = wallets.length;
+      if (!wallets.length) {
+        if (tb) tb.innerHTML = '';
+        if (em) em.style.display = '';
+        return;
+      }
+      if (em) em.style.display = 'none';
+      if (tb) tb.innerHTML = wallets.map(w => {
+        const keyType = w.can_trade ? '<span class="pill tr" style="font-size:10px"><span class="pill-dot"></span>Trade</span>' : '<span class="pill ro" style="font-size:10px"><span class="pill-dot"></span>Read-only</span>';
+        return `<tr>
+          <td>${EX_LABEL[w.type_value]||w.type_value}</td>
+          <td>${w.name||''}</td>
+          <td>${keyType}</td>
+          <td class="num">—</td>
+        </tr>`;
+      }).join('');
+    } catch (e) { console.error('[pair-acc] balances:', e); }
+  }
+  async function _ptLoadAcc() {
+    await Promise.all([_ptLoadKeyCounts(), _ptLoadPositions(), _ptLoadBalances()]);
+  }
+  _ptLoadAcc();
+  setInterval(_ptLoadAcc, 10000);
 
   throw new Error('_arb_type_gate');  // stop the rest of this futures-specific script
 }
