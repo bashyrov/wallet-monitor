@@ -1746,20 +1746,64 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             </div>
           </div>
 
-          <!-- RIGHT: P&L / metrics -->
+          <!-- RIGHT: Trade panel + position breakdown -->
           <div class="col-info">
-            <div class="col-info-title">Position breakdown</div>
+            <div class="col-info-title">Execute · ${IS_DEX ? 'DEX / Short' : 'Spot / Short'}</div>
             <div class="pt-info-cards">
-              <div class="card">
-                <div class="lb">${IS_DEX ? 'DEX price' : 'Spot price'}</div>
-                <div class="vl" id="pt-rt-long">—</div>
-                <div class="sub" id="pt-rt-long-sub">—</div>
+
+              <!-- DEX / Spot (long) buy card -->
+              <div class="card" id="pt-trade-long" style="border-left:3px solid ${IS_DEX ? '#A78BFA' : 'var(--green)'};padding-bottom:12px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;background:${IS_DEX ? 'rgba(167,139,250,.15)' : 'rgba(26,255,171,.12)'};color:${IS_DEX ? '#A78BFA' : 'var(--green)'};letter-spacing:.08em">${IS_DEX ? 'BUY · DEX' : 'BUY · SPOT'}</span>
+                  <span id="pt-trade-long-venue" style="font-size:11px;color:var(--text2);font-weight:600">—</span>
+                </div>
+                <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:10px">
+                  <span style="font-family:var(--mono);font-size:16px;font-weight:600" id="pt-trade-long-px">—</span>
+                  <span style="font-size:10px;color:var(--text3)">per ${SYM}</span>
+                </div>
+                ${IS_DEX
+                  ? `<a id="pt-dex-swap" class="trade-submit" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;background:linear-gradient(135deg,#A78BFA 0%,#8B5CF6 100%);color:#0B0B0E;text-decoration:none;box-shadow:0 4px 14px -4px rgba(167,139,250,.45)">Open swap on DEX →</a>`
+                  : `<div style="font-size:11px;color:var(--text3);line-height:1.5">Спот-трейд с ключей биржи скоро будет. Пока открой биржу отдельно:<a id="pt-spot-link" href="#" target="_blank" rel="noopener" style="display:block;margin-top:8px;color:var(--green);font-weight:600;text-decoration:none">Open on exchange →</a></div>`}
               </div>
-              <div class="card">
-                <div class="lb">Perp price · short</div>
-                <div class="vl" id="pt-rt-short">—</div>
-                <div class="sub" id="pt-rt-short-sub">—</div>
+
+              <!-- Perp short trade panel -->
+              <div class="card" id="pt-trade-short" style="border-left:3px solid var(--red);padding:12px 14px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                  <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(248,113,113,.14);color:var(--red);letter-spacing:.08em">SHORT · PERP</span>
+                  <span style="font-size:11px;color:var(--text2);font-weight:600">${EX_LABEL[SHORT]||SHORT}</span>
+                  <span id="pt-trade-status" style="margin-left:auto;font-size:10px;color:var(--text3);font-family:var(--mono)">—</span>
+                </div>
+
+                <div style="display:flex;gap:6px;margin-bottom:8px">
+                  <span class="trade-dd-chip is-active" id="pt-mm-iso" onclick="_pt_setMM('isolated')" style="flex:1;text-align:center;cursor:pointer;padding:5px 8px;border-radius:5px;background:var(--surface3);color:var(--text);font-size:10.5px;font-weight:600;border:1px solid var(--border)">Isolated</span>
+                  <span class="trade-dd-chip" id="pt-mm-cross" onclick="_pt_setMM('cross')" style="flex:1;text-align:center;cursor:pointer;padding:5px 8px;border-radius:5px;background:var(--surface2);color:var(--text3);font-size:10.5px;font-weight:600;border:1px solid var(--border)">Cross</span>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                  <span style="flex:1;font-size:10px;color:var(--text3)">Leverage</span>
+                  <button onclick="_pt_lev(-1)" style="width:24px;height:24px;border-radius:5px;background:var(--surface2);border:1px solid var(--border);color:var(--text);cursor:pointer;font-weight:700">−</button>
+                  <span id="pt-lev-val" style="min-width:36px;text-align:center;font-family:var(--mono);font-size:13px;font-weight:700">3×</span>
+                  <button onclick="_pt_lev(+1)" style="width:24px;height:24px;border-radius:5px;background:var(--surface2);border:1px solid var(--border);color:var(--text);cursor:pointer;font-weight:700">+</button>
+                </div>
+
+                <div style="display:flex;gap:6px;margin-bottom:6px">
+                  <input id="pt-size" type="number" placeholder="Size" oninput="_pt_updateCalc()" style="flex:1;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12.5px;outline:none"/>
+                  <span style="display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:5px;overflow:hidden">
+                    <button id="pt-unit-tok" onclick="_pt_setUnit('token')" style="padding:0 9px;font-size:10px;font-weight:600;background:var(--surface3);color:var(--text);border:none;cursor:pointer">TOK</button>
+                    <button id="pt-unit-usd" onclick="_pt_setUnit('usdt')" style="padding:0 9px;font-size:10px;font-weight:600;background:transparent;color:var(--text3);border:none;cursor:pointer">USDT</button>
+                  </span>
+                </div>
+
+                <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:8px">
+                  <span>Notional · <span class="mono" id="pt-notional">—</span></span>
+                  <span>Margin · <span class="mono" id="pt-margin">—</span></span>
+                </div>
+
+                <button class="trade-submit" id="pt-submit" onclick="_pt_submit()" disabled style="width:100%;background:linear-gradient(135deg,#F87171 0%,#EF4444 100%);color:#FFF;text-align:center;border:none;cursor:pointer">Open Short · add keys</button>
+                <div id="pt-err" style="margin-top:6px;font-size:10.5px;color:var(--red);display:none"></div>
               </div>
+
+              <!-- Position breakdown -->
               <div class="card">
                 <div class="lb">Basis (perp − ${IS_DEX ? 'dex' : 'spot'}) / ${IS_DEX ? 'dex' : 'spot'}</div>
                 <div class="vl" id="pt-rt-basis">—</div>
@@ -1782,10 +1826,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
                 <div class="lb" style="color:var(--green)">Net profit · 8h</div>
                 <div class="vl pos" id="pt-rt-net">—</div>
                 <div class="sub" id="pt-rt-apr">APR —</div>
-              </div>
-              <a class="pt-ext" id="pt-ext-link" target="_blank" rel="noopener" style="display:none"></a>
-              <div style="padding:10px 12px;background:var(--surface2);border:1px dashed var(--border2);border-radius:8px;font-size:11px;color:var(--text3);line-height:1.5">
-                <b style="color:var(--text2)">Next iteration:</b> trade panel & basis-history candles.
               </div>
             </div>
           </div>
@@ -1866,13 +1906,21 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       setCls('pt-ov-apr', 'vl ' + (apr > 0 ? 'pos' : ''));
     }
 
+    // Right-column trade panels
+    setT('pt-trade-long-venue', IS_DEX
+      ? `${(r.dex_name||'').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()}`
+      : (EX_LABEL[r.spot_exchange] || r.spot_exchange || ''));
+    setT('pt-trade-long-px', fmtPxUsd(IS_DEX ? r.dex_price : r.spot_price));
+    if (IS_DEX) {
+      const swap = $('pt-dex-swap');
+      if (swap && r.dex_pair_url) swap.href = r.dex_pair_url;
+    } else {
+      const sp = $('pt-spot-link');
+      if (sp) sp.href = _ptSpotUrl(r.spot_exchange || LONG, SYM);
+    }
+    _ptRecalc();
+
     // Right column position breakdown
-    setT('pt-rt-long',  fmtPxUsd(IS_DEX ? r.dex_price : r.spot_price));
-    setT('pt-rt-long-sub', IS_DEX
-      ? `${(r.dex_name||'').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()} · liq ${fmtVol(r.dex_liquidity_usd)}`
-      : `${EX_LABEL[r.spot_exchange]||r.spot_exchange} · vol ${fmtVol(r.spot_volume_usd)}`);
-    setT('pt-rt-short', fmtPxUsd(r.perp_price));
-    setT('pt-rt-short-sub', `${EX_LABEL[r.short_exchange]||r.short_exchange} · vol ${fmtVol(r.perp_volume_usd)}`);
     setT('pt-rt-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(4)}%`);
     setCls('pt-rt-basis', 'vl ' + (basis >= 0 ? 'pos' : 'neg'));
     setT('pt-rt-fund', `${fund >= 0 ? '+' : ''}${fund.toFixed(4)}%`);
@@ -2120,6 +2168,142 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   }
   _refreshOB();
   setInterval(_refreshOB, 500);
+
+  // ── Trade panel (short leg on CEX perp) ───────────────────────────────────
+  const _pt = {
+    wallet_id: null, status: 'missing', balance: null,
+    leverage: 3, margin: 'isolated',
+    unit: 'token', size: 0,
+    lastPerp: 0,
+  };
+  function _ptSpotUrl(ex, sym) {
+    const s = (sym||'').toUpperCase();
+    const url = ({
+      binance: `https://www.binance.com/en/trade/${s}_USDT`,
+      bybit:   `https://www.bybit.com/en/trade/spot/${s}/USDT`,
+      okx:     `https://www.okx.com/trade-spot/${s.toLowerCase()}-usdt`,
+      gate:    `https://www.gate.com/trade/${s}_USDT`,
+      kucoin:  `https://www.kucoin.com/trade/${s}-USDT`,
+      mexc:    `https://www.mexc.com/exchange/${s}_USDT`,
+      bitget:  `https://www.bitget.com/spot/${s}USDT`,
+      bingx:   `https://bingx.com/spot/${s}USDT`,
+    })[ex];
+    return url || '#';
+  }
+  async function _ptFetchStatus() {
+    try {
+      // /trade/status requires both legs — pass SHORT on both sides; we only
+      // consume the short result. Same trick works for the spot type too.
+      const r = await Auth.apiFetch(`/trade/status?symbol=${SYM}&long_ex=${SHORT}&short_ex=${SHORT}`);
+      if (!r.ok) return;
+      const j = await r.json();
+      const s = j.short || {};
+      _pt.wallet_id = s.wallet_id || null;
+      _pt.status = s.status || 'missing';
+      _pt.balance = s.balance_usdt;
+      const st = $('pt-trade-status');
+      if (st) {
+        if (_pt.wallet_id) {
+          st.textContent = `bal ${_pt.balance != null ? (+_pt.balance).toFixed(2) : '—'} USDT`;
+          st.style.color = 'var(--text2)';
+        } else {
+          st.textContent = 'no trade keys';
+          st.style.color = 'var(--yellow)';
+        }
+      }
+      _ptRecalc();
+    } catch { /* ignore */ }
+  }
+  window._pt_setMM = function (v) {
+    _pt.margin = v;
+    $('pt-mm-iso').classList.toggle('is-active', v === 'isolated');
+    $('pt-mm-cross').classList.toggle('is-active', v === 'cross');
+    $('pt-mm-iso').style.background  = v === 'isolated' ? 'var(--surface3)' : 'var(--surface2)';
+    $('pt-mm-iso').style.color       = v === 'isolated' ? 'var(--text)'     : 'var(--text3)';
+    $('pt-mm-cross').style.background= v === 'cross'    ? 'var(--surface3)' : 'var(--surface2)';
+    $('pt-mm-cross').style.color     = v === 'cross'    ? 'var(--text)'     : 'var(--text3)';
+  };
+  window._pt_lev = function (d) {
+    _pt.leverage = Math.max(1, Math.min(100, _pt.leverage + d));
+    setT('pt-lev-val', _pt.leverage + '×');
+    _ptRecalc();
+  };
+  window._pt_setUnit = function (u) {
+    _pt.unit = u;
+    $('pt-unit-tok').style.background = u === 'token' ? 'var(--surface3)' : 'transparent';
+    $('pt-unit-tok').style.color      = u === 'token' ? 'var(--text)'     : 'var(--text3)';
+    $('pt-unit-usd').style.background = u === 'usdt'  ? 'var(--surface3)' : 'transparent';
+    $('pt-unit-usd').style.color      = u === 'usdt'  ? 'var(--text)'     : 'var(--text3)';
+    const ph = $('pt-size');
+    if (ph) ph.placeholder = u === 'token' ? `Size · ${SYM}` : 'Size · USDT';
+    _ptRecalc();
+  };
+  window._pt_updateCalc = function () {
+    _pt.size = parseFloat(($('pt-size').value || '0'));
+    _ptRecalc();
+  };
+  function _ptRecalc() {
+    const px = _row ? (+_row.perp_price || 0) : 0;
+    _pt.lastPerp = px;
+    const sz = +_pt.size;
+    let tokQty = 0, notional = 0;
+    if (sz > 0 && px > 0) {
+      if (_pt.unit === 'token') { tokQty = sz; notional = sz * px; }
+      else { notional = sz; tokQty = sz / px; }
+    }
+    const margin = _pt.leverage > 0 ? notional / _pt.leverage : 0;
+    setT('pt-notional', notional > 0 ? notional.toFixed(2) + ' USDT' : '—');
+    setT('pt-margin', margin > 0 ? margin.toFixed(2) + ' USDT' : '—');
+    const btn = $('pt-submit');
+    if (btn) {
+      const ok = !!_pt.wallet_id && tokQty > 0;
+      btn.disabled = !ok;
+      if (!_pt.wallet_id) btn.textContent = 'Open Short · add trade keys';
+      else if (!tokQty)   btn.textContent = 'Open Short · enter size';
+      else btn.textContent = `Open Short · ${tokQty.toFixed(6).replace(/0+$/,'').replace(/\.$/,'')} ${SYM}`;
+      btn.style.opacity = ok ? '1' : '0.55';
+    }
+  }
+  window._pt_submit = async function () {
+    if (!_pt.wallet_id) return;
+    const px = _pt.lastPerp;
+    if (!px) return;
+    const tokQty = _pt.unit === 'token' ? +_pt.size : (+_pt.size / px);
+    if (tokQty <= 0) return;
+    const btn = $('pt-submit');
+    const err = $('pt-err');
+    if (err) err.style.display = 'none';
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Opening…';
+    try {
+      const r = await Auth.apiFetch('/trade/open', {
+        method: 'POST',
+        body: JSON.stringify({
+          wallet_id: _pt.wallet_id,
+          symbol: SYM,
+          side: 'sell',
+          quantity: tokQty,
+          leverage: _pt.leverage,
+          margin_mode: _pt.margin,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+      if (window.toast) toast(`Short opened · ${SYM} × ${tokQty.toFixed(6).replace(/0+$/,'').replace(/\.$/,'')}`, 'success');
+      btn.textContent = '✓ Opened';
+      setTimeout(() => { btn.textContent = original; }, 2000);
+    } catch (e) {
+      if (err) { err.textContent = String(e.message || e); err.style.display = 'block'; }
+      btn.textContent = original;
+    } finally {
+      btn.disabled = false;
+      _ptFetchStatus();
+    }
+  };
+
+  _ptFetchStatus();
+  setInterval(_ptFetchStatus, 15000);
 
   throw new Error('_arb_type_gate');  // stop the rest of this futures-specific script
 }
