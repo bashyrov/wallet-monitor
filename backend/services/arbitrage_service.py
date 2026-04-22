@@ -898,11 +898,32 @@ async def _get_rows(exchange: str) -> list[dict]:
         # funding interval to compute APR correctly. Every adapter sets it
         # explicitly for its venue (usually 8.0) so a missing value means
         # the adapter changed and nobody updated the downstream assumption.
+        #
+        # Aster-specific: the WS feed keeps delivering premiumIndex rows for
+        # symbols that are in SETTLING / DELIVERED status (DEGO etc). They
+        # appear in arb/spot opps, then the depth endpoint 400s because
+        # they're no longer tradable. Intersect with the TRADING-only ivl
+        # map to drop them before they reach the UI.
+        aster_tradable: set[str] | None = None
+        if exchange == "aster":
+            ivl_map, ivl_at = _ivl_cache.get("aster", ({}, 0.0))
+            # Kick off a background refresh when cache is stale/empty — WS
+            # path otherwise never triggers _fetch_aster → ivl_map stays {}.
+            ttl = IVL_TTL_BY_EX.get("aster", IVL_TTL)
+            if (_mono() - ivl_at) > ttl or not ivl_map:
+                if "aster" not in _ivl_locks:
+                    _ivl_locks["aster"] = asyncio.Lock()
+                if not _ivl_locks["aster"].locked():
+                    asyncio.create_task(_refresh_interval("aster"))
+            if ivl_map:
+                aster_tradable = {k[:-4] for k in ivl_map.keys() if k.endswith("USDT")}
         normalised: list[dict] = []
         dropped = 0
         for r in ws_rows:
             if r.get("interval_h") is None:
                 dropped += 1
+                continue
+            if aster_tradable is not None and r.get("symbol") not in aster_tradable:
                 continue
             r["exchange"] = exchange
             r.setdefault("volume_usd", 0)
