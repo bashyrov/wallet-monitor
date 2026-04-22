@@ -54,7 +54,14 @@ MAX_BASIS_PCT = 10.0               # sanity: prices more divergent than this
 DEX_REFRESH_INTERVAL = 30.0
 
 # Cap how many CEX perp symbols we try to match each cycle
-_SYMBOL_BATCH_LIMIT = 250
+_SYMBOL_BATCH_LIMIT = 150
+
+# DexScreener chain preference when a token is deployed on several — pick the
+# venue that historically has the deepest DEX liquidity for that asset class.
+_CHAIN_PREFERENCE = (
+    "ethereum", "solana", "base", "arbitrum", "bsc", "polygon",
+    "optimism", "avalanche", "blast", "linea", "scroll", "mantle", "sui", "ton",
+)
 
 # ── CoinGecko resolver: symbol → canonical contract ──────────────────────────
 # We can't trust symbol matching — PEPE on Solana ≠ PEPE on Ethereum. CoinGecko
@@ -165,15 +172,22 @@ async def _ensure_cg_cache() -> None:
 
 
 def _lookup_contracts(symbol: str) -> list[tuple[str, str]]:
-    """Return [(ds_chain, contract_address), ...] for a symbol, best first."""
+    """Return [(ds_chain, contract_address)] for a symbol — at most ONE entry,
+    picked by CoinGecko market-cap rank and then by our chain preference list.
+    Keeping this to a single pair per symbol is critical for staying inside
+    DexScreener's rate budget (one cycle = one call per token)."""
     entries = _CG_CACHE.get(symbol.upper()) or []
-    # Only the top entry by market cap — avoids fake-token farms sharing the ticker.
-    # If there's a collision we could loop all, but realistic arb targets are top-cap.
-    out: list[tuple[str, str]] = []
-    for entry in entries[:1]:
-        for chain, addr in entry["platforms"].items():
-            out.append((chain, addr))
-    return out
+    if not entries:
+        return []
+    platforms = entries[0]["platforms"]
+    if not platforms:
+        return []
+    for pref in _CHAIN_PREFERENCE:
+        if pref in platforms:
+            return [(pref, platforms[pref])]
+    # Nothing matched our preference list — take whatever is available
+    chain, addr = next(iter(platforms.items()))
+    return [(chain, addr)]
 
 
 async def _fetch_dex_by_contract(chain: str, address: str) -> dict | None:
