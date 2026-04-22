@@ -47,26 +47,143 @@ _USD_QUOTES = {"USDC", "USDT", "DAI", "BUSD", "USDC.E", "FDUSD", "PYUSD"}
 # Filters
 MIN_DEX_LIQUIDITY_USD = 50_000.0   # skip illiquid long-tail memecoins
 MIN_DEX_VOL_24H = 10_000.0         # some volume means real market
-MAX_BASIS_PCT = 10.0               # sanity: drop rows with wildly divergent prices
-                                   #        (usually a different token with the same ticker)
+MAX_BASIS_PCT = 10.0               # sanity: prices more divergent than this
+                                   #        almost always signal a problem
 
 # Refresh cadence
 DEX_REFRESH_INTERVAL = 30.0
 
-# How many top-volume perp symbols we feed DexScreener per cycle (keeps us
-# comfortably under the rate limit — 200 symbols @ 5 rps = ~40s for a batch,
-# so we set refresh to 30s and let the gather overlap for the tail).
-_SYMBOL_BATCH_LIMIT = 200
+# Cap how many CEX perp symbols we try to match each cycle
+_SYMBOL_BATCH_LIMIT = 250
+
+# ── CoinGecko resolver: symbol → canonical contract ──────────────────────────
+# We can't trust symbol matching — PEPE on Solana ≠ PEPE on Ethereum. CoinGecko
+# publishes the canonical contract-per-chain for every token. We fetch it once
+# an hour and use it to translate CEX tickers into DexScreener token addresses.
+#
+# Cache shape: {symbol_upper: [{id, mcap_rank, platforms: {chain: addr}}]}
+_CG_CACHE: dict[str, list[dict]] = {}
+_CG_CACHE_TS: float = 0.0
+_CG_TTL = 3600.0
+_CG_LOCK = asyncio.Lock()
+
+# Map CoinGecko chain slug → DexScreener chainId. DexScreener uses slightly
+# different ids for some L2s. Keep this list tight to major venues.
+_CG_TO_DS = {
+    "ethereum":       "ethereum",
+    "solana":         "solana",
+    "binance-smart-chain": "bsc",
+    "polygon-pos":    "polygon",
+    "arbitrum-one":   "arbitrum",
+    "optimistic-ethereum": "optimism",
+    "base":           "base",
+    "avalanche":      "avalanche",
+    "fantom":         "fantom",
+    "linea":          "linea",
+    "scroll":         "scroll",
+    "mantle":         "mantle",
+    "blast":          "blast",
+    "zksync":         "zksync",
+    "sui":            "sui",
+    "tron":           "tron",
+    "ton":            "ton",
+    "aptos":          "aptos",
+}
 
 
-async def _search_dex_for_symbol(symbol: str) -> dict | None:
-    """Return the highest-liquidity USD-quoted DEX pair for a ticker, or None."""
-    url = f"https://api.dexscreener.com/latest/dex/search?q={symbol}"
+async def _ensure_cg_cache() -> None:
+    """Refresh the symbol→contract map from CoinGecko every 1h."""
+    global _CG_CACHE, _CG_CACHE_TS
+    now = time.time()
+    if _CG_CACHE and (now - _CG_CACHE_TS) < _CG_TTL:
+        return
+    async with _CG_LOCK:
+        if _CG_CACHE and (time.time() - _CG_CACHE_TS) < _CG_TTL:
+            return  # raced
+        try:
+            # 1) Full coin list with platforms (~20 MB, free, no auth)
+            r = await _http.get(
+                "https://api.coingecko.com/api/v3/coins/list",
+                params={"include_platform": "true"},
+                timeout=30.0,
+            )
+            if r.status_code != 200:
+                logger.warning("CoinGecko list: HTTP %s — keeping stale cache", r.status_code)
+                return
+            coins = r.json() or []
+
+            # 2) Top-500 by market cap — we rank collisions by mcap rank
+            rank_map: dict[str, int] = {}
+            try:
+                for page in (1, 2):
+                    m = await _http.get(
+                        "https://api.coingecko.com/api/v3/coins/markets",
+                        params={"vs_currency": "usd", "order": "market_cap_desc",
+                                "per_page": 250, "page": page, "sparkline": "false"},
+                        timeout=20.0,
+                    )
+                    if m.status_code == 200:
+                        for row in (m.json() or []):
+                            cid = row.get("id")
+                            rk = row.get("market_cap_rank")
+                            if cid and isinstance(rk, int):
+                                rank_map[cid] = rk
+            except Exception as e:
+                logger.debug("CoinGecko markets rank: %s", e)
+
+            new_cache: dict[str, list[dict]] = {}
+            for c in coins:
+                sym = (c.get("symbol") or "").upper()
+                if not sym:
+                    continue
+                platforms = c.get("platforms") or {}
+                # Filter to chains DexScreener actually covers
+                keep = {}
+                for chain_cg, addr in platforms.items():
+                    if not addr:
+                        continue
+                    ds = _CG_TO_DS.get(chain_cg)
+                    if not ds:
+                        continue
+                    keep[ds] = addr
+                if not keep:
+                    continue
+                new_cache.setdefault(sym, []).append({
+                    "id": c.get("id"),
+                    "mcap_rank": rank_map.get(c.get("id") or "", 10_000),
+                    "platforms": keep,
+                })
+            # Sort each symbol's entries by mcap rank (lower = better)
+            for sym, entries in new_cache.items():
+                entries.sort(key=lambda x: x["mcap_rank"])
+
+            _CG_CACHE = new_cache
+            _CG_CACHE_TS = time.time()
+            logger.info("CoinGecko cache refreshed: %d symbols mapped", len(_CG_CACHE))
+        except Exception as e:
+            logger.warning("CoinGecko cache refresh failed: %s", e)
+
+
+def _lookup_contracts(symbol: str) -> list[tuple[str, str]]:
+    """Return [(ds_chain, contract_address), ...] for a symbol, best first."""
+    entries = _CG_CACHE.get(symbol.upper()) or []
+    # Only the top entry by market cap — avoids fake-token farms sharing the ticker.
+    # If there's a collision we could loop all, but realistic arb targets are top-cap.
+    out: list[tuple[str, str]] = []
+    for entry in entries[:1]:
+        for chain, addr in entry["platforms"].items():
+            out.append((chain, addr))
+    return out
+
+
+async def _fetch_dex_by_contract(chain: str, address: str) -> dict | None:
+    """DexScreener pairs for a specific contract — no symbol ambiguity."""
+    url = f"https://api.dexscreener.com/latest/dex/tokens/{address}"
     async with _DEX_SEM:
         try:
             r = await _http.get(url)
         except Exception as e:
-            logger.debug("dex search %s failed: %s", symbol, e)
+            logger.debug("dex by contract %s %s: %s", chain, address, e)
             return None
     if r.status_code != 200:
         return None
@@ -77,42 +194,55 @@ async def _search_dex_for_symbol(symbol: str) -> dict | None:
 
     best: dict | None = None
     best_liq = 0.0
-    sym_u = symbol.upper()
+    addr_low = address.lower()
     for p in pairs:
-        base_sym = (p.get("baseToken") or {}).get("symbol", "").upper()
-        quote_sym = (p.get("quoteToken") or {}).get("symbol", "").upper()
-        if base_sym != sym_u:
+        if (p.get("chainId") or "") != chain:
             continue
+        base = p.get("baseToken") or {}
+        if (base.get("address") or "").lower() != addr_low:
+            continue  # the token must be the base side
+        quote_sym = (p.get("quoteToken") or {}).get("symbol", "").upper()
         if quote_sym not in _USD_QUOTES:
             continue
-        liq = (p.get("liquidity") or {}).get("usd") or 0
-        vol = (p.get("volume") or {}).get("h24") or 0
-        price = p.get("priceUsd")
-        if not price:
-            continue
         try:
-            liq_f = float(liq)
-            vol_f = float(vol)
-            price_f = float(price)
+            liq_f = float((p.get("liquidity") or {}).get("usd") or 0)
+            vol_f = float((p.get("volume") or {}).get("h24") or 0)
+            price_f = float(p.get("priceUsd") or 0)
         except (TypeError, ValueError):
             continue
-        if liq_f < MIN_DEX_LIQUIDITY_USD or vol_f < MIN_DEX_VOL_24H:
-            continue
-        if price_f <= 0:
+        if price_f <= 0 or liq_f < MIN_DEX_LIQUIDITY_USD or vol_f < MIN_DEX_VOL_24H:
             continue
         if liq_f > best_liq:
             best_liq = liq_f
             best = {
-                "symbol": sym_u,
-                "chain": p.get("chainId") or "",
+                "symbol": base.get("symbol", "").upper(),
+                "chain": chain,
                 "dex": p.get("dexId") or "",
                 "price": price_f,
                 "liquidity_usd": liq_f,
                 "volume_usd": vol_f,
                 "pair_address": p.get("pairAddress") or "",
                 "url": p.get("url") or "",
-                "base_address": (p.get("baseToken") or {}).get("address") or "",
+                "base_address": addr_low,
             }
+    return best
+
+
+async def _best_dex_match(symbol: str) -> dict | None:
+    """Resolve symbol → contract(s) via CoinGecko, then find the
+    highest-liquidity DEX pair across all listed chains for that contract."""
+    targets = _lookup_contracts(symbol)
+    if not targets:
+        return None
+    results = await asyncio.gather(*[_fetch_dex_by_contract(c, a) for c, a in targets])
+    best: dict | None = None
+    best_liq = 0.0
+    for r in results:
+        if not r:
+            continue
+        if r["liquidity_usd"] > best_liq:
+            best_liq = r["liquidity_usd"]
+            best = r
     return best
 
 
@@ -135,6 +265,8 @@ async def get_dex_arbitrage_opportunities(min_perp_vol_usd: float = 100_000.0) -
         return {"opportunities": [], "generated_at": int(time.time()), "cold": True}
 
     # Fetcher path: build perp map first, pick top-volume tickers, query DexScreener.
+    await _ensure_cg_cache()
+
     perp_exs = [ex for ex in _arb.FETCHERS.keys() if ex != "lighter"]
     perp_results = await asyncio.gather(
         *[_arb._get_rows(ex) for ex in perp_exs],
@@ -151,17 +283,20 @@ async def get_dex_arbitrage_opportunities(min_perp_vol_usd: float = 100_000.0) -
                 continue
             perp_map.setdefault(sym, {})[ex] = r
 
-    # Pick top symbols by best perp volume (any exchange)
+    # Filter out symbols with no CoinGecko contract mapping — we can't match
+    # by address without one, and matching by symbol alone is unsafe.
+    # Then pick top by perp volume.
     def _best_perp_vol(sym: str) -> float:
         return max(
             (float(r.get("volume_usd") or 0) for r in perp_map[sym].values()),
             default=0.0,
         )
 
-    symbols = sorted(perp_map.keys(), key=_best_perp_vol, reverse=True)[:_SYMBOL_BATCH_LIMIT]
+    mappable = [s for s in perp_map if _lookup_contracts(s)]
+    symbols = sorted(mappable, key=_best_perp_vol, reverse=True)[:_SYMBOL_BATCH_LIMIT]
 
-    # Query DexScreener in parallel (semaphore-limited)
-    dex_results = await asyncio.gather(*[_search_dex_for_symbol(s) for s in symbols])
+    # Resolve each symbol via its canonical contract (no ticker ambiguity)
+    dex_results = await asyncio.gather(*[_best_dex_match(s) for s in symbols])
 
     opps: list[dict] = []
     for sym, dex in zip(symbols, dex_results):
@@ -201,6 +336,7 @@ async def get_dex_arbitrage_opportunities(min_perp_vol_usd: float = 100_000.0) -
                 "dex_chain": dex["chain"],
                 "dex_name": dex["dex"],
                 "dex_pair_url": dex["url"],
+                "dex_base_address": dex["base_address"],
                 "short_exchange": perp_ex,
                 "dex_price": dex_price,
                 "perp_price": perp_price,
