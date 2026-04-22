@@ -2387,7 +2387,11 @@ async function init() {
       api.get('/wallets'), api.get('/tags'), api.get('/wallets/options'),
       Auth.apiFetch('/auth/me'),
     ]);
-    S.wallets = wallets; S.tags = tags; S.options = options;
+    // Portfolio excludes screener-only wallets (purpose='screener'): those are
+    // connected solely for one-click trading from /arb and have no balance
+    // relevance. purpose='both' stays — it's dual-use.
+    S.wallets = (wallets || []).filter(w => w.purpose !== 'screener');
+    S.tags = tags; S.options = options;
     if (meRes && meRes.ok) {
       const me = await meRes.json();
       const PLAN_LIMITS = { basic: 4, pro: 30, platinum: 70, enterprise: null, unlim: null };
@@ -2785,7 +2789,7 @@ async function addWalletAddr() {
     nameEl.value = '';
     addressEl.value = '';
     const wallets = await api.get('/wallets');
-    S.wallets = wallets;
+    S.wallets = (wallets || []).filter(w => w.purpose !== 'screener');
     await loadAddressBook();
     const w = S.wallets.find(x => x.id === walletId);
     _renderAddrList(w);
@@ -2805,7 +2809,7 @@ async function delWalletAddr(walletId, addressId) {
   try {
     await api.del(`/wallets/${walletId}/addresses/${addressId}`);
     const wallets = await api.get('/wallets');
-    S.wallets = wallets;
+    S.wallets = (wallets || []).filter(w => w.purpose !== 'screener');
     await loadAddressBook();
     const w = S.wallets.find(x => x.id === walletId);
     _renderAddrList(w);
