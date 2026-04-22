@@ -603,20 +603,29 @@
       100% { background-position: -200% 0; }
     }
 
-    /* ── VIEW SWITCHER ── */
+    /* ── VIEW SWITCHER (screener-style underline tabs) ── */
     .view-switcher {
-      display: flex; align-items: center; gap: 4px;
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 8px; padding: 3px;
+      display: flex; align-items: center; gap: 0;
     }
     .view-btn {
-      padding: 4px 12px; border-radius: 6px; border: none; background: none;
-      font-size: 12px; font-weight: 500; color: var(--text3);
-      cursor: pointer; transition: all 0.15s; white-space: nowrap;
-      display: flex; align-items: center; gap: 5px;
+      position: relative;
+      padding: 12px 18px 11px;
+      border: none; background: transparent;
+      color: var(--text3);
+      font-size: 13px; font-weight: 600; font-family: inherit;
+      cursor: pointer; transition: color .15s;
+      white-space: nowrap;
+      display: flex; align-items: center; gap: 6px;
     }
-    .view-btn.active { background: var(--surface3); color: var(--text); }
-    .view-btn:hover:not(.active) { color: var(--text2); }
+    .view-btn::after {
+      content: '';
+      position: absolute; bottom: -1px; left: 10px; right: 10px; height: 2px;
+      background: var(--green); border-radius: 2px 2px 0 0;
+      opacity: 0; transition: opacity .15s;
+    }
+    .view-btn:hover { color: var(--text2); }
+    .view-btn.active { color: var(--text); }
+    .view-btn.active::after { opacity: 1; }
 
     /* ── PROGRESS LOADER ── */
     .fetch-progress {

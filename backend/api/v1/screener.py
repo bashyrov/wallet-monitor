@@ -53,6 +53,35 @@ async def arbitrage_opportunities():
     return await get_arbitrage_opportunities()
 
 
+@router.get("/spot-arbitrage")
+async def spot_arbitrage_opportunities():
+    """Spot-short cash-and-carry: buy spot on one venue, short perp on another."""
+    from backend.services.spot_arbitrage_service import get_spot_arbitrage_opportunities
+    return await get_spot_arbitrage_opportunities()
+
+
+@router.get("/all-arbitrage")
+async def all_arbitrage():
+    """Combined futures-arb + spot-short arb, sorted by net profit."""
+    from backend.services.spot_arbitrage_service import get_spot_arbitrage_opportunities as _spot
+    fut, spot = await asyncio.gather(
+        get_arbitrage_opportunities(),
+        _spot(),
+        return_exceptions=True,
+    )
+    fut_opps = [] if isinstance(fut, BaseException) else (fut.get("opportunities") or [])
+    spot_opps = [] if isinstance(spot, BaseException) else (spot.get("opportunities") or [])
+    for r in fut_opps:
+        r.setdefault("type", "futures")
+    merged = list(fut_opps) + list(spot_opps)
+    merged.sort(key=lambda x: x.get("net_profit", 0.0), reverse=True)
+    return {
+        "opportunities": merged[:400],
+        "generated_at": int(time.time()),
+        "counts": {"futures": len(fut_opps), "spot_short": len(spot_opps)},
+    }
+
+
 _availability_cache: dict = {"data": None, "ts": 0.0}
 _AVAILABILITY_TTL = 10.0
 

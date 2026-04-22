@@ -1125,11 +1125,13 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
   <!-- MAIN CONTENT -->
   <div class="main-content">
 
-    <!-- ── MODE TABS + WS status ── -->
+    <!-- ── MODE TABS ── -->
     <div class="mode-tabs">
+      <button class="mode-tab" id="tab-all"     onclick="switchMode('all')">All</button>
       <button class="mode-tab active" id="tab-arb" onclick="switchMode('arb')">Arbitrage</button>
+      <button class="mode-tab" id="tab-spot"    onclick="switchMode('spot')">Spot / Short</button>
       <button class="mode-tab" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
-      <button class="mode-tab" id="tab-alpha" onclick="switchMode('alpha')">Alpha <span class="wl-count-badge" id="wl-count-badge" style="display:none">★ <span id="wl-count">0</span></span></button>
+      <button class="mode-tab" id="tab-alpha"   onclick="switchMode('alpha')">Alpha <span class="wl-count-badge" id="wl-count-badge" style="display:none">★ <span id="wl-count">0</span></span></button>
     </div>
 
     <!-- ── FILTERS BAR (above table) ── -->
@@ -1367,6 +1369,55 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       </div>
       <div class="cards-wrap" id="cards-arb"></div>
       <div class="pager" id="pager-arb"></div>
+    </div>
+
+    <!-- ── SPOT / SHORT SECTION ── -->
+    <div id="section-spot" style="display:none">
+      <div class="table-wrap">
+        <table id="tbl-spot">
+          <thead>
+            <tr>
+              <th data-tip="Token">Token</th>
+              <th data-tip="Buy spot on this venue">Spot (buy)</th>
+              <th data-tip="Short perp on this venue">Short perp</th>
+              <th class="num" data-tip="Spot price">Spot $</th>
+              <th class="num" data-tip="Perp price">Perp $</th>
+              <th class="num" data-tip="Basis = (perp − spot) / spot">Basis</th>
+              <th class="num" data-tip="Funding collected by short per 8h">Funding 8h</th>
+              <th class="num" data-tip="Gross = basis + short funding">Gross</th>
+              <th class="num" data-tip="Net after spot + perp round-trip fees">Net 8h</th>
+              <th class="num" data-tip="Annualized net (8h × 3 × 365)">APR</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-spot"><tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-spot"></div>
+      <div class="pager" id="pager-spot"></div>
+    </div>
+
+    <!-- ── ALL (combined) SECTION ── -->
+    <div id="section-all" style="display:none">
+      <div class="table-wrap">
+        <table id="tbl-all">
+          <thead>
+            <tr>
+              <th data-tip="Type — Futures arb or Spot/Short cash-and-carry">Type</th>
+              <th data-tip="Token">Token</th>
+              <th data-tip="Long / Buy-spot venue">Long / Spot</th>
+              <th data-tip="Short venue">Short</th>
+              <th class="num" data-tip="Gross P&L per 8h before fees">Gross</th>
+              <th class="num" data-tip="Net after fees per 8h">Net 8h</th>
+              <th class="num" data-tip="Annualized net">APR</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-all"><tr><td colspan="8" class="empty-msg"><span class="spinner"></span>Loading combined opportunities…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-all"></div>
+      <div class="pager" id="pager-all"></div>
     </div>
 
     <!-- ── ALPHA SECTION ── -->
@@ -1839,25 +1890,139 @@ function togglePanel() {
 // ── mode switch ────────────────────────────────────────────────────────────────
 function switchMode(mode) {
   _mode = mode;
-  document.getElementById('tab-funding').classList.toggle('active', mode === 'funding');
-  document.getElementById('tab-arb').classList.toggle('active', mode === 'arb');
-  document.getElementById('tab-alpha').classList.toggle('active', mode === 'alpha');
-  document.getElementById('section-funding').style.display      = mode === 'funding' ? '' : 'none';
-  document.getElementById('section-arb').style.display          = mode === 'arb'     ? '' : 'none';
-  document.getElementById('section-alpha').style.display        = mode === 'alpha'   ? '' : 'none';
+  ['all','arb','spot','funding','alpha'].forEach(m => {
+    const t = document.getElementById('tab-' + m);
+    if (t) t.classList.toggle('active', mode === m);
+    const s = document.getElementById('section-' + m);
+    if (s) s.style.display = mode === m ? '' : 'none';
+  });
   document.getElementById('lp-filters-funding').style.display   = mode === 'funding' ? '' : 'none';
-  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha') ? '' : 'none';
+  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha' || mode === 'all') ? '' : 'none';
   const mf = document.getElementById('mob-filters-funding'); if (mf) mf.style.display = mode === 'funding' ? '' : 'none';
-  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha') ? '' : 'none';
-  document.getElementById('mobile-sort-funding').style.display  = mode === 'funding' ? '' : 'none';
-  document.getElementById('mobile-sort-arb').style.display      = mode === 'arb'     ? '' : 'none';
+  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all') ? '' : 'none';
+  const mobSortF = document.getElementById('mobile-sort-funding'); if (mobSortF) mobSortF.style.display = mode === 'funding' ? '' : 'none';
+  const mobSortA = document.getElementById('mobile-sort-arb');     if (mobSortA) mobSortA.style.display = mode === 'arb'     ? '' : 'none';
   const asStrip = document.getElementById('alpha-status-strip');
   if (asStrip) asStrip.style.display = mode === 'alpha' ? '' : 'none';
   if (mode === 'alpha') renderAlphaStatus();
   if (mode === 'arb' && !_arbRows.length) loadArb();
   else if (mode === 'alpha') loadAlpha();
   else if (mode === 'funding') applyFilter();
+  else if (mode === 'spot') loadSpot();
+  else if (mode === 'all') loadAll();
   else applyArb();
+}
+
+// ── Spot-short arbitrage ─────────────────────────────────────────────────────
+let _spotRows = [];
+let _spotTimer = null;
+async function loadSpot() {
+  try {
+    const r = await Auth.apiFetch('/screener/spot-arbitrage');
+    if (!r.ok) throw new Error('spot ' + r.status);
+    const j = await r.json();
+    _spotRows = j.opportunities || [];
+    renderSpot();
+  } catch (e) {
+    document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="11" class="empty-msg">Failed: ${e.message}</td></tr>`;
+  }
+  clearInterval(_spotTimer);
+  _spotTimer = setInterval(() => { if (_mode === 'spot') loadSpot(); }, 6000);
+}
+
+function renderSpot() {
+  const q = (document.getElementById('search').value || '').trim().toUpperCase();
+  const rows = _spotRows.filter(r => {
+    if (q && !r.symbol.toUpperCase().includes(q)) return false;
+    if (_exDisabled.has(r.spot_exchange) || _exDisabled.has(r.short_exchange)) return false;
+    if (_hiddenTokens.has(r.symbol)) return false;
+    return true;
+  });
+  const tb = document.getElementById('tbody-spot');
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="11" class="empty-msg">No opportunities found.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.slice(0, 200).map(r => {
+    const sCls = r.gross >= 0 ? 'pos' : 'neg';
+    const nCls = r.net_profit >= 0 ? 'pos' : 'neg';
+    return `<tr>
+      <td class="sym-cell">${esc(r.symbol)}</td>
+      <td><span class="ex-chip" style="color:${EX_COLOR[r.spot_exchange]||'#aaa'}">${EX_LABEL[r.spot_exchange]||r.spot_exchange}</span></td>
+      <td><span class="ex-chip" style="color:${EX_COLOR[r.short_exchange]||'#aaa'}">${EX_LABEL[r.short_exchange]||r.short_exchange}</span></td>
+      <td class="num">$${fmtPrice(r.spot_price)}</td>
+      <td class="num">$${fmtPrice(r.perp_price)}</td>
+      <td class="num ${r.basis_pct >= 0 ? 'pos' : 'neg'}">${r.basis_pct >= 0 ? '+' : ''}${r.basis_pct.toFixed(3)}%</td>
+      <td class="num ${r.short_funding_8h >= 0 ? 'pos' : 'neg'}">${r.short_funding_8h >= 0 ? '+' : ''}${r.short_funding_8h.toFixed(4)}%</td>
+      <td class="num ${sCls}">${r.gross >= 0 ? '+' : ''}${r.gross.toFixed(4)}%</td>
+      <td class="num ${nCls}"><b>${r.net_profit >= 0 ? '+' : ''}${r.net_profit.toFixed(4)}%</b></td>
+      <td class="num ${nCls}">${r.net_apr > 0 ? r.net_apr.toFixed(1) + '%' : '—'}</td>
+      <td></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── All (combined) ───────────────────────────────────────────────────────────
+let _allRows = [];
+let _allTimer = null;
+async function loadAll() {
+  try {
+    const r = await Auth.apiFetch('/screener/all-arbitrage');
+    if (!r.ok) throw new Error('all ' + r.status);
+    const j = await r.json();
+    _allRows = j.opportunities || [];
+    renderAll();
+  } catch (e) {
+    document.getElementById('tbody-all').innerHTML = `<tr><td colspan="8" class="empty-msg">Failed: ${e.message}</td></tr>`;
+  }
+  clearInterval(_allTimer);
+  _allTimer = setInterval(() => { if (_mode === 'all') loadAll(); }, 6000);
+}
+
+function renderAll() {
+  const q = (document.getElementById('search').value || '').trim().toUpperCase();
+  const rows = _allRows.filter(r => {
+    if (q && !r.symbol.toUpperCase().includes(q)) return false;
+    if (_hiddenTokens.has(r.symbol)) return false;
+    const longEx = r.type === 'spot_short' ? r.spot_exchange : r.long_exchange;
+    const shortEx = r.type === 'spot_short' ? r.short_exchange : r.short_exchange;
+    if (_exDisabled.has(longEx) || _exDisabled.has(shortEx)) return false;
+    return true;
+  });
+  const tb = document.getElementById('tbody-all');
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="8" class="empty-msg">No opportunities found.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.slice(0, 300).map(r => {
+    const isSpot = r.type === 'spot_short';
+    const longEx = isSpot ? r.spot_exchange : r.long_exchange;
+    const shortEx = r.short_exchange;
+    const gross = isSpot ? r.gross : (r.gross_funding + (r.price_spread || 0));
+    const net = r.net_profit || 0;
+    const apr = r.net_apr || 0;
+    const typeChip = isSpot
+      ? `<span class="ex-chip" style="color:#E5C07B;background:rgba(229,192,123,0.08);border:1px solid rgba(229,192,123,0.3);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">SPOT/SHORT</span>`
+      : `<span class="ex-chip" style="color:#1AFFAB;background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.3);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">FUTURES</span>`;
+    return `<tr>
+      <td>${typeChip}</td>
+      <td class="sym-cell">${esc(r.symbol)}</td>
+      <td><span class="ex-chip" style="color:${EX_COLOR[longEx]||'#aaa'}">${EX_LABEL[longEx]||longEx}${isSpot?' (spot)':''}</span></td>
+      <td><span class="ex-chip" style="color:${EX_COLOR[shortEx]||'#aaa'}">${EX_LABEL[shortEx]||shortEx}</span></td>
+      <td class="num ${gross >= 0 ? 'pos' : 'neg'}">${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%</td>
+      <td class="num ${net >= 0 ? 'pos' : 'neg'}"><b>${net >= 0 ? '+' : ''}${net.toFixed(4)}%</b></td>
+      <td class="num ${apr >= 0 ? 'pos' : 'neg'}">${apr > 0 ? apr.toFixed(1) + '%' : '—'}</td>
+      <td></td>
+    </tr>`;
+  }).join('');
+}
+
+function fmtPrice(p) {
+  if (p == null) return '—';
+  if (p >= 1000) return p.toFixed(0);
+  if (p >= 1)    return p.toFixed(2);
+  if (p >= 0.01) return p.toFixed(4);
+  return p.toFixed(6);
 }
 
 function toggleValidOnly() {
