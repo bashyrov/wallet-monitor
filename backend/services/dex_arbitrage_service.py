@@ -346,8 +346,18 @@ def _run_cycle_sync(min_perp_vol_usd: float = 100_000.0) -> dict:
             default=0.0,
         )
 
+    # Select top-N by CoinGecko market cap (not perp volume). We want the
+    # well-known market-cap leaders — they're liquid on both DEX and CEX and
+    # avoid the long-tail memecoin noise.
+    def _mcap_rank(sym: str) -> int:
+        entries = _CG_CACHE.get(sym.upper()) or []
+        return entries[0]["mcap_rank"] if entries else 10_000
+
     mappable = [s for s in perp_map if _lookup_contract(s)]
-    symbols = sorted(mappable, key=_best_perp_vol, reverse=True)[:_SYMBOL_BATCH_LIMIT]
+    # Sort by mcap rank ascending (lower = bigger); drop non-ranked (10_000)
+    symbols = sorted(mappable, key=_mcap_rank)
+    # Keep only symbols with a real CG rank (covers ~top 500)
+    symbols = [s for s in symbols if _mcap_rank(s) < 1_000][:_SYMBOL_BATCH_LIMIT]
 
     # Parallel DexScreener fetch with a bounded thread pool. Each worker has
     # its own connection to _sync_http (httpx.Client is thread-safe) and its
