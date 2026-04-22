@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Arb · avalant_</title>
+<title>Long/Short · avalant_</title>
 <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1579,9 +1579,22 @@ const _p=new URLSearchParams(location.search);
 const SYM=(_p.get('symbol')||'').toUpperCase();
 const LONG=(_p.get('long')||'').toLowerCase();
 const SHORT=(_p.get('short')||'').toLowerCase();
-// type: 'futures' (default, CEX perp ⇄ CEX perp), 'spot' (CEX spot long, CEX perp short),
-//       'dex' (DEX pool long via DexScreener, CEX perp short)
-const TYPE=(_p.get('type')||'futures').toLowerCase();
+// type: 'long-short' (default, CEX perp ⇄ CEX perp), 'spot' (CEX spot long, CEX perp short),
+//       'dex' (DEX pool long via DexScreener, CEX perp short).
+// Canonical URL param is `type=long-short / spot-short / dex-short`. Legacy
+// 'futures' and 'spot' / 'dex' short forms are accepted and normalised.
+const _RAW_TYPE = (_p.get('type') || 'long-short').toLowerCase();
+const _TYPE_ALIAS = {
+  'futures': 'long-short', 'arb': 'long-short', 'arbitrage': 'long-short', 'long-short': 'long-short', 'longshort': 'long-short',
+  'spot': 'spot', 'spot-short': 'spot', 'spotshort': 'spot',
+  'dex':  'dex',  'dex-short':  'dex',  'dexshort':  'dex',
+};
+// Internal TYPE keeps the old short-form ('futures'/'spot'/'dex') so the rest
+// of the page code doesn't need to change.
+const TYPE = (() => {
+  const canon = _TYPE_ALIAS[_RAW_TYPE] || 'long-short';
+  return canon === 'long-short' ? 'futures' : canon;
+})();
 const DEX_CHAIN=(_p.get('chain')||'').toLowerCase();  // only meaningful for type=dex
 const DEX_ADDR=(_p.get('addr')||'').toLowerCase();    // only meaningful for type=dex
 const DEX_PAIR=(_p.get('pair')||'').toLowerCase();    // only meaningful for type=dex
