@@ -260,12 +260,17 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
     """
     if os.environ.get("AVALANT_ROLE", "").lower() == "web":
         # Web NEVER computes — always serves whatever the fetcher wrote.
-        # Use a generous max_age so a fetcher hiccup doesn't produce a
-        # 10-second page-load while the web worker tries to recompute.
         cached = _arb._read_file_cache("spot_arbitrage.json", max_age=120.0)
         if cached and isinstance(cached, dict):
             return cached
-        return {"opportunities": [], "generated_at": int(time.time()), "spot_exchanges": SPOT_EXCHANGES}
+        # Cold-start: block briefly so the page doesn't flash an empty table
+        # when the fetcher is about to land its first write. Up to 500 ms.
+        for _ in range(10):
+            await asyncio.sleep(0.05)
+            cached = _arb._read_file_cache("spot_arbitrage.json", max_age=120.0)
+            if cached and isinstance(cached, dict):
+                return cached
+        return {"opportunities": [], "generated_at": int(time.time()), "spot_exchanges": SPOT_EXCHANGES, "cold": True}
 
     # Fetch spot tickers for every supported spot venue in parallel
     spot_results = await asyncio.gather(

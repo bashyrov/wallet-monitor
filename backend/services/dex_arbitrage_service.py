@@ -394,6 +394,13 @@ async def get_dex_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> dic
     cached = _arb._read_file_cache("dex_arbitrage.json", max_age=120.0)
     if cached and isinstance(cached, dict) and cached.get("opportunities") is not None:
         return cached
+    # Cold-start: wait up to 500 ms for the fetcher to land its first write
+    # instead of flashing an empty table to the user.
+    for _ in range(10):
+        await asyncio.sleep(0.05)
+        cached = _arb._read_file_cache("dex_arbitrage.json", max_age=120.0)
+        if cached and isinstance(cached, dict) and cached.get("opportunities") is not None:
+            return cached
     return {"opportunities": [], "generated_at": int(time.time()),
             "symbols_scanned": 0, "dex_hits": 0, "cold": True}
 
