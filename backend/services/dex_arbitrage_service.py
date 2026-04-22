@@ -28,6 +28,7 @@ import logging
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import httpx
@@ -48,7 +49,8 @@ _sync_http = httpx.Client(
 
 # Config
 DEX_REFRESH_INTERVAL = 30.0
-_SYMBOL_BATCH_LIMIT = 80   # sequential sync walk; 80 × ~0.3s ≈ 24 s per cycle
+_SYMBOL_BATCH_LIMIT = 500   # fan-out via ThreadPool — 500 / 10 workers × 0.14s ≈ 7 s
+_DEX_WORKERS = 10            # parallel DexScreener requests per cycle
 MIN_DEX_LIQUIDITY_USD = 50_000.0
 MIN_DEX_VOL_24H = 10_000.0
 MAX_BASIS_PCT = 10.0       # drop ticker-collision outliers
@@ -347,15 +349,24 @@ def _run_cycle_sync(min_perp_vol_usd: float = 100_000.0) -> dict:
     mappable = [s for s in perp_map if _lookup_contract(s)]
     symbols = sorted(mappable, key=_best_perp_vol, reverse=True)[:_SYMBOL_BATCH_LIMIT]
 
+    # Parallel DexScreener fetch with a bounded thread pool. Each worker has
+    # its own connection to _sync_http (httpx.Client is thread-safe) and its
+    # own per-call timeout (4s). 10 workers × ~0.15s/call = ~7s for 500 syms.
     dex_by_sym: dict[str, dict] = {}
-    for sym in symbols:
+    def _one(sym: str) -> tuple[str, dict | None]:
         target = _lookup_contract(sym)
         if not target:
-            continue
+            return (sym, None)
         chain, addr = target
-        dex = _fetch_dex_by_contract_sync(chain, addr)
-        if dex:
-            dex_by_sym[sym] = dex
+        try:
+            return (sym, _fetch_dex_by_contract_sync(chain, addr))
+        except Exception:
+            return (sym, None)
+
+    with ThreadPoolExecutor(max_workers=_DEX_WORKERS, thread_name_prefix="dex-fetch") as pool:
+        for sym, dex in pool.map(_one, symbols):
+            if dex:
+                dex_by_sym[sym] = dex
 
     opps = _build_opps_sync(dex_by_sym, perp_map, min_perp_vol_usd)
     return {
