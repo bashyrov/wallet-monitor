@@ -370,37 +370,51 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
     }
 
 
-# ── Background refresh loop (fetcher-side) ────────────────────────────────────
+# ── Background refresh loop (dedicated daemon thread, own event loop) ────────
 SPOT_REFRESH_INTERVAL = 2.0  # s — match the futures REST backstop cadence
 
-_spot_refresh_task: asyncio.Task | None = None
+_spot_thread: Any | None = None
+_spot_stop = None          # threading.Event — created lazily
 _spot_refresh_lock_fd = None
 
 
-async def _spot_refresh_loop() -> None:
-    """Recompute spot-short arb opportunities every SPOT_REFRESH_INTERVAL
-    and write spot_arbitrage.json. Skips a cycle if the previous compute
-    is still in flight."""
-    in_flight = False
-    while True:
-        if not in_flight:
-            in_flight = True
-            try:
-                result = await get_spot_arbitrage_opportunities()
-                _arb._write_file_cache("spot_arbitrage.json", result)
-            except Exception as exc:
-                logger.warning("spot refresh: %s", exc)
-            finally:
-                in_flight = False
-        await asyncio.sleep(SPOT_REFRESH_INTERVAL)
+def _run_spot_cycle_sync() -> dict:
+    """Run a single spot refresh cycle in a fresh event loop.
+    Isolates the 8 parallel REST calls from the fetcher's main event loop —
+    prevents the 'all 8 ConnectTimeout' burst we saw when the fetcher loop
+    was saturated with WS handlers + other refresh loops."""
+    import asyncio as _asyncio
+    loop = _asyncio.new_event_loop()
+    try:
+        _asyncio.set_event_loop(loop)
+        return loop.run_until_complete(get_spot_arbitrage_opportunities())
+    finally:
+        loop.close()
+
+
+def _spot_worker_loop() -> None:
+    logger.info("Spot worker thread running (interval=%.1fs)", SPOT_REFRESH_INTERVAL)
+    while not _spot_stop.is_set():
+        t0 = time.time()
+        try:
+            result = _run_spot_cycle_sync()
+            _arb._write_file_cache("spot_arbitrage.json", result)
+            logger.info(
+                "spot refresh: %d opps, %.1fs",
+                len(result.get("opportunities") or []), time.time() - t0,
+            )
+        except Exception as exc:
+            logger.warning("spot refresh failed: %s", exc)
+        remaining = max(0.2, SPOT_REFRESH_INTERVAL - (time.time() - t0))
+        _spot_stop.wait(remaining)
 
 
 def start_spot_refresh_loop() -> None:
-    """Start the spot refresh loop. File-lock ensures only one process runs
-    it. Safe to call from any number of workers."""
+    """Start the spot refresh worker in a dedicated daemon thread."""
     import fcntl
-    global _spot_refresh_task, _spot_refresh_lock_fd
-    if _spot_refresh_task and not _spot_refresh_task.done():
+    import threading
+    global _spot_thread, _spot_stop, _spot_refresh_lock_fd
+    if _spot_thread is not None and _spot_thread.is_alive():
         return
     try:
         _spot_refresh_lock_fd = open("/tmp/avalant_spot_refresh.lock", "w")
@@ -408,15 +422,19 @@ def start_spot_refresh_loop() -> None:
     except (IOError, OSError):
         logger.info("Spot refresh: another worker holds the lock — skipping")
         return
-    _spot_refresh_task = asyncio.create_task(_spot_refresh_loop())
-    logger.info("Spot refresh loop started")
+    _spot_stop = threading.Event()
+    _spot_thread = threading.Thread(target=_spot_worker_loop, name="spot-refresh", daemon=True)
+    _spot_thread.start()
+    logger.info("Spot refresh thread started (every %.1fs)", SPOT_REFRESH_INTERVAL)
 
 
 def stop_spot_refresh_loop() -> None:
-    global _spot_refresh_task, _spot_refresh_lock_fd
-    if _spot_refresh_task and not _spot_refresh_task.done():
-        _spot_refresh_task.cancel()
-    _spot_refresh_task = None
+    global _spot_thread, _spot_stop, _spot_refresh_lock_fd
+    if _spot_stop is not None:
+        _spot_stop.set()
+    if _spot_thread is not None:
+        _spot_thread.join(timeout=5.0)
+    _spot_thread = None
     if _spot_refresh_lock_fd is not None:
         try:
             _spot_refresh_lock_fd.close()
