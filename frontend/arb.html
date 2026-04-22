@@ -1593,108 +1593,200 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   const SRC = TYPE === 'spot' ? '/screener/spot-arbitrage' : '/screener/dex-arbitrage';
   const BACK = '/screener?mode=' + TYPE;
   const IS_DEX = TYPE === 'dex';
+  const LONG_LABEL_PLAIN = IS_DEX ? 'DEX' : 'SPOT';
 
+  // Reuse the futures arb terminal's CSS — .infobar / .hero-block / .ex-card /
+  // .metric-block / .workspace / .col-left / .col-books / .col-info are all
+  // already defined in the page <style>. We only add a tiny CSS tail for the
+  // iframe container + the pair-specific single-book view.
   document.body.innerHTML = `
-    <header class="topbar" style="position:sticky;top:0;z-index:10;background:rgba(14,14,17,0.88);backdrop-filter:blur(14px);border-bottom:1px solid #22222A">
-      <app-navbar page="arb"></app-navbar>
-    </header>
     <style>
-      @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-      .pt-wrap { max-width:1520px; margin:20px auto; padding:0 20px; }
-      .pt-back { color:#9B9FAB; font-size:12.5px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; margin-bottom:14px; }
-      .pt-back:hover { color:#ECECEC; }
-      .pt-infobar { display:flex; align-items:center; gap:18px; padding:16px 22px; background:linear-gradient(180deg,#15151A 0%,#0E0E12 100%); border:1px solid #22222A; border-radius:14px; margin-bottom:14px; flex-wrap:wrap; position:relative; overflow:hidden; }
-      .pt-infobar::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(26,255,171,0.25),transparent); }
-      .pt-kicker { display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 8px; border-radius:999px; background:rgba(26,255,171,0.08); border:1px solid rgba(26,255,171,0.2); color:#1AFFAB; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
-      .pt-kicker::before { content:''; width:5px; height:5px; border-radius:50%; background:#1AFFAB; box-shadow:0 0 8px rgba(26,255,171,.8); animation:pulse 2s infinite; }
-      .pt-sym { font-size:22px; font-weight:700; letter-spacing:-.3px; color:#ECECEC; }
-      .pt-venues { font-size:13px; color:#9B9FAB; }
-      .pt-metric { min-width:92px; }
-      .pt-metric .lb { font-size:10px; color:#676B7E; text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px; }
-      .pt-metric .vl { font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:500; letter-spacing:-.3px; color:#ECECEC; }
-      .pt-metric .vl.pos { color:#1AFFAB; }
-      .pt-metric .vl.neg { color:#F87171; }
-      .pt-net-block { margin-left:auto; padding:10px 18px; background:linear-gradient(135deg,rgba(26,255,171,0.1),rgba(26,255,171,0.02)); border:1px solid rgba(26,255,171,0.3); border-radius:10px; }
-      .pt-net-block .lb { font-size:10px; color:#1AFFAB; text-transform:uppercase; letter-spacing:.1em; margin-bottom:4px; }
-      .pt-net-block .vl { font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:500; color:#1AFFAB; letter-spacing:-.4px; }
-      .pt-grid { display:grid; grid-template-columns: 1fr 340px; gap:14px; min-height:620px; }
-      @media (max-width:1080px) { .pt-grid { grid-template-columns: 1fr; } }
-      .pt-card { background:#131217; border:1px solid #22222A; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; }
-      .pt-card-hd { padding:12px 16px; border-bottom:1px solid #22222A; display:flex; align-items:center; justify-content:space-between; font-size:11px; font-weight:700; color:#676B7E; text-transform:uppercase; letter-spacing:.1em; }
-      .pt-card-hd .right { font-family:'JetBrains Mono',monospace; text-transform:none; letter-spacing:0; color:#9B9FAB; font-weight:500; font-size:11px; }
-      .pt-iframe { flex:1; min-height:620px; border:0; background:#0B0B0E; }
-      .pt-spot-info { padding:28px 24px; display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-      .pt-spot-info .c { padding:16px 18px; background:#17171C; border:1px solid #22222A; border-radius:10px; }
-      .pt-spot-info .c .lb { font-size:10px; color:#676B7E; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
-      .pt-spot-info .c .vl { font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:500; color:#ECECEC; letter-spacing:-.3px; }
-      .pt-ob-rows { flex:1; padding:6px 14px; font-family:'JetBrains Mono',monospace; font-size:11.5px; overflow-y:auto; display:flex; flex-direction:column; gap:1px; }
-      .pt-ob-row { display:flex; justify-content:space-between; padding:3px 7px; position:relative; border-radius:3px; }
-      .pt-ob-row::before { content:''; position:absolute; top:0; bottom:0; right:0; background:rgba(248,113,113,0.09); z-index:0; border-radius:3px; }
-      .pt-ob-row.bid::before { background:rgba(26,255,171,0.09); left:0; right:auto; }
-      .pt-ob-row > * { position:relative; z-index:1; }
-      .pt-ob-row .px.ask { color:#F87171; }
-      .pt-ob-row .px.bid { color:#1AFFAB; }
-      .pt-ob-mid { padding:8px 10px; margin:6px 14px; border:1px dashed #2E2E38; border-radius:6px; display:flex; justify-content:space-between; font-family:'JetBrains Mono',monospace; font-size:12px; color:#9B9FAB; }
-      .pt-ob-mid b { color:#ECECEC; }
-      .pt-footer-note { margin-top:14px; padding:12px 16px; background:#131217; border:1px dashed #2E2E38; border-radius:10px; font-size:12px; color:#9B9FAB; line-height:1.6; }
-      .pt-footer-note b { color:#ECECEC; }
-      .pt-ext-link { color:#1AFFAB; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
-      .pt-ext-link:hover { text-decoration:underline; }
+      .pt-iframe{flex:1;border:0;background:var(--bg);min-height:0;}
+      .pt-spot-pane{flex:1;padding:14px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;}
+      .pt-spot-pane .row{display:flex;justify-content:space-between;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:12px;}
+      .pt-spot-pane .row .lb{color:var(--text3);font-size:11px;font-weight:500;}
+      .pt-spot-pane .row .vl{font-family:var(--mono);font-weight:600;color:var(--text);}
+      .pt-spot-pane .row .vl.pos{color:var(--green);}
+      .pt-spot-pane .row .vl.neg{color:var(--red);}
+      .pt-ext{margin-top:6px;color:var(--green);font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
+      .pt-ext:hover{text-decoration:underline;}
+      .pt-ob-wrap{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+      .pt-ob-cols{display:grid;grid-template-columns:1fr 1fr 1fr;padding:2px 6px;border-bottom:1px solid var(--border);flex-shrink:0;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;}
+      .pt-ob-cols span:last-child,.pt-ob-cols span:nth-child(2){text-align:right;}
+      .pt-ob-asks,.pt-ob-bids{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
+      .pt-ob-asks{justify-content:flex-end;}
+      .pt-ob-row{position:relative;display:grid;grid-template-columns:1fr 1fr 1fr;padding:0 6px;}
+      .pt-ob-row > span{font-family:var(--mono);font-size:10px;line-height:17px;text-align:right;position:relative;z-index:1;}
+      .pt-ob-row > span:first-child{text-align:left;}
+      .pt-ob-row .amt{color:var(--text2);}
+      .pt-ob-row .tot{color:var(--text3);}
+      .pt-ob-row.ask .px{color:var(--red);}
+      .pt-ob-row.bid .px{color:var(--green);}
+      .pt-ob-row-bg{position:absolute;top:0;right:0;height:100%;opacity:.14;pointer-events:none;}
+      .pt-ob-row.bid .pt-ob-row-bg{background:var(--green);}
+      .pt-ob-row.ask .pt-ob-row-bg{background:var(--red);}
+      .pt-ob-mid{padding:4px 6px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:8px;background:var(--surface2);flex-shrink:0;}
+      .pt-ob-mid .px-big{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);}
+      .pt-ob-mid .spread{font-family:var(--mono);font-size:10px;color:var(--yellow);}
+      .pt-info-cards{padding:10px 10px 14px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;}
+      .pt-info-cards .card{padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;}
+      .pt-info-cards .card .lb{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+      .pt-info-cards .card .vl{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text);letter-spacing:-.2px;}
+      .pt-info-cards .card .vl.pos{color:var(--green);}
+      .pt-info-cards .card .vl.neg{color:var(--red);}
+      .pt-info-cards .card .sub{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;}
     </style>
-    <div class="pt-wrap">
-      <a href="${BACK}" class="pt-back">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 4L6 8l4 4"/></svg>
-        Back to screener
-      </a>
 
-      <div class="pt-infobar">
-        <div class="pt-kicker">${IS_DEX ? 'DEX / Short' : 'Spot / Short'}</div>
-        <div>
-          <div class="pt-sym">${SYM}</div>
-          <div class="pt-venues" id="pt-venues">—</div>
-        </div>
-        <div class="pt-metric"><div class="lb">${IS_DEX ? 'DEX price' : 'Spot price'}</div><div class="vl" id="pt-px-long">—</div></div>
-        <div class="pt-metric"><div class="lb">Perp price</div><div class="vl" id="pt-px-short">—</div></div>
-        <div class="pt-metric"><div class="lb">Basis</div><div class="vl" id="pt-basis">—</div></div>
-        <div class="pt-metric"><div class="lb">Short fund /8h</div><div class="vl" id="pt-fund">—</div></div>
-        <div class="pt-metric"><div class="lb">Next funding</div><div class="vl" id="pt-next">—</div></div>
-        <div class="pt-net-block">
-          <div class="lb">Net /8h · APR</div>
-          <div class="vl" id="pt-net">—</div>
+    <header class="topbar"><app-navbar page="arb"></app-navbar></header>
+
+    <div class="infobar">
+      <div class="hero-block">
+        <span class="hero-sym">${SYM}</span>
+        <span class="live-dot"></span>
+        <div class="hero-exs">
+          <span class="hero-ex"><span class="dot" style="background:${IS_DEX ? '#A78BFA' : 'var(--green)'}"></span><span>${LONG_LABEL_PLAIN}</span></span>
+          <span class="hero-swap" style="opacity:.5;cursor:default">⇄</span>
+          <span class="hero-ex"><span class="dot dot-${SHORT}"></span><span>${EX_LABEL[SHORT]||SHORT}</span></span>
         </div>
       </div>
 
-      <div class="pt-grid">
-        <div class="pt-card">
-          <div class="pt-card-hd">
-            <span>${IS_DEX ? 'DexScreener chart' : 'Spot venue'}</span>
-            <span class="right" id="pt-left-sub">—</span>
-          </div>
+      <div class="ex-card">
+        <div class="ex-card-hdr">
+          <span class="tb-ex-dot" style="background:${IS_DEX ? '#A78BFA' : 'var(--green)'}"></span>
+          ${IS_DEX ? 'DEX' : 'SPOT'} · <span id="pt-long-name" style="color:var(--text);font-weight:600">—</span>
+        </div>
+        <div class="ex-card-row">
+          <span class="cell"><span class="lbl">Price</span><span class="val" id="pt-px-long">—</span></span>
           ${IS_DEX
-            ? `<iframe id="pt-dex-frame" class="pt-iframe" src="about:blank" loading="lazy" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>`
-            : `<div class="pt-spot-info">
-                 <div class="c"><div class="lb">Spot 24h vol</div><div class="vl" id="pt-sv">—</div></div>
-                 <div class="c"><div class="lb">Perp 24h vol</div><div class="vl" id="pt-pv">—</div></div>
-                 <div class="c" style="grid-column:1 / -1"><div class="lb">Gross (basis + fund)</div><div class="vl" id="pt-gross">—</div></div>
-                 <div class="c" style="grid-column:1 / -1"><div class="lb">Round-trip fees</div><div class="vl" id="pt-fees">—</div></div>
-               </div>`
-          }
+            ? '<span class="cell"><span class="lbl">Chain</span><span class="val muted" id="pt-chain">—</span></span>'
+            : '<span class="cell"><span class="lbl">Vol 24h</span><span class="val muted" id="pt-sv">—</span></span>'}
         </div>
-        <div class="pt-card">
-          <div class="pt-card-hd">
-            <span id="pt-ob-name">Short · Perp order book</span>
-            <span class="right" id="pt-ob-age">—</span>
-          </div>
-          <div class="pt-ob-rows" id="pt-ob-asks"></div>
-          <div class="pt-ob-mid"><span>mid</span><span id="pt-ob-mid">—</span></div>
-          <div class="pt-ob-rows" id="pt-ob-bids"></div>
+        <div class="ex-card-row">
+          ${IS_DEX
+            ? '<span class="cell"><span class="lbl">Liquidity</span><span class="val muted" id="pt-liq">—</span></span><span class="cell"><span class="lbl">Vol 24h</span><span class="val muted" id="pt-dv">—</span></span>'
+            : '<span class="cell"><span class="lbl">Exchange</span><span class="val muted" id="pt-spot-exlbl">—</span></span>'}
         </div>
       </div>
 
-      <div class="pt-footer-note">
-        <b>Heads-up:</b> trade-panel and basis-history chart for ${IS_DEX ? 'DEX / Short' : 'Spot / Short'}
-        are landing in the next iteration. Alerts on spread work today — use the main screener row to create.
-        ${IS_DEX ? `<span id="pt-external" style="margin-left:8px"></span>` : ''}
+      <div class="ex-card">
+        <div class="ex-card-hdr"><span class="tb-ex-dot" style="background:var(--red)"></span>SHORT · <span id="pt-short-name" style="color:var(--text);font-weight:600">${EX_LABEL[SHORT]||SHORT}</span></div>
+        <div class="ex-card-row">
+          <span class="cell"><span class="lbl">Fund</span><span class="val" id="pt-fund">—</span></span>
+          <span class="cell"><span class="lbl">Ivl</span><span class="val muted" id="pt-ivl">—</span></span>
+          <span class="cell"><span class="lbl">Next</span><span class="val muted" id="pt-next">—</span></span>
+        </div>
+        <div class="ex-card-row">
+          <span class="cell"><span class="lbl">Price</span><span class="val muted" id="pt-px-short">—</span></span>
+          <span class="cell"><span class="lbl">Vol</span><span class="val muted" id="pt-pv">—</span></span>
+        </div>
+      </div>
+
+      <div class="metric-block">
+        <span class="ib-label">Basis</span>
+        <span class="metric-val" id="pt-basis">—</span>
+      </div>
+      <div class="metric-block accent">
+        <span class="ib-label">Net / 8h</span>
+        <span class="metric-val" id="pt-net">—</span>
+      </div>
+      <div class="metric-block">
+        <span class="ib-label">APR</span>
+        <span class="metric-val" id="pt-apr">—</span>
+      </div>
+
+      <a href="${BACK}" class="ib-back-link">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H4"/><path d="M10 6l-6 6 6 6"/></svg>
+        <span>Screener</span>
+      </a>
+    </div>
+
+    <div class="workspace">
+      <div class="left-stack">
+        <div class="main top-row">
+
+          <!-- LEFT: chart area (iframe or spot info) -->
+          <div class="col-left">
+            <div class="chart-tabs">
+              <div class="chart-tab active">${IS_DEX ? 'DexScreener' : 'Overview'}</div>
+              <div class="chart-tab" style="color:var(--text3);cursor:default;opacity:.55">Basis history · soon</div>
+            </div>
+            ${IS_DEX
+              ? `<iframe id="pt-dex-frame" class="pt-iframe" src="about:blank" loading="lazy" allow="clipboard-write; fullscreen" allowfullscreen></iframe>`
+              : `<div class="pt-spot-pane">
+                   <div class="row"><span class="lb">Spot price</span><span class="vl" id="pt-ov-sp">—</span></div>
+                   <div class="row"><span class="lb">Perp price</span><span class="vl" id="pt-ov-pp">—</span></div>
+                   <div class="row"><span class="lb">Basis</span><span class="vl" id="pt-ov-basis">—</span></div>
+                   <div class="row"><span class="lb">Short funding /8h</span><span class="vl" id="pt-ov-fund">—</span></div>
+                   <div class="row"><span class="lb">Gross</span><span class="vl" id="pt-ov-gross">—</span></div>
+                   <div class="row"><span class="lb">Total fees</span><span class="vl" id="pt-ov-fees">—</span></div>
+                   <div class="row"><span class="lb">Net / 8h</span><span class="vl" id="pt-ov-net">—</span></div>
+                   <div class="row"><span class="lb">Annualised</span><span class="vl" id="pt-ov-apr">—</span></div>
+                 </div>`}
+          </div>
+
+          <!-- CENTER: perp order book (single — DEX side has no book) -->
+          <div class="col-books">
+            <div class="books-row">
+              <div class="book-panel">
+                <div class="book-header">
+                  <span class="book-ex-name" id="pt-ob-name">${EX_LABEL[SHORT]||SHORT} · ${SYM}</span>
+                  <span class="book-price-hdr" id="pt-ob-age">—</span>
+                </div>
+                <div class="pt-ob-cols"><span>Price</span><span>Amount</span><span>Total</span></div>
+                <div class="pt-ob-wrap">
+                  <div class="pt-ob-asks" id="pt-ob-asks"></div>
+                  <div class="pt-ob-mid"><span class="spread" id="pt-ob-spread">—</span><span class="px-big" id="pt-ob-mid">—</span></div>
+                  <div class="pt-ob-bids" id="pt-ob-bids"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: P&L / metrics -->
+          <div class="col-info">
+            <div class="col-info-title">Position breakdown</div>
+            <div class="pt-info-cards">
+              <div class="card">
+                <div class="lb">${IS_DEX ? 'DEX price' : 'Spot price'}</div>
+                <div class="vl" id="pt-rt-long">—</div>
+                <div class="sub" id="pt-rt-long-sub">—</div>
+              </div>
+              <div class="card">
+                <div class="lb">Perp price · short</div>
+                <div class="vl" id="pt-rt-short">—</div>
+                <div class="sub" id="pt-rt-short-sub">—</div>
+              </div>
+              <div class="card">
+                <div class="lb">Basis (perp − ${IS_DEX ? 'dex' : 'spot'}) / ${IS_DEX ? 'dex' : 'spot'}</div>
+                <div class="vl" id="pt-rt-basis">—</div>
+              </div>
+              <div class="card">
+                <div class="lb">Short funding per 8h</div>
+                <div class="vl" id="pt-rt-fund">—</div>
+                <div class="sub" id="pt-rt-fund-sub">native rate × 8/ivl</div>
+              </div>
+              <div class="card">
+                <div class="lb">Gross (basis + short funding)</div>
+                <div class="vl" id="pt-rt-gross">—</div>
+              </div>
+              <div class="card">
+                <div class="lb">Total fees (round-trip)</div>
+                <div class="vl" id="pt-rt-fees">—</div>
+                <div class="sub" id="pt-rt-fees-sub">—</div>
+              </div>
+              <div class="card" style="background:linear-gradient(135deg,rgba(26,255,171,0.08),rgba(26,255,171,0.02));border-color:rgba(26,255,171,0.22);">
+                <div class="lb" style="color:var(--green)">Net profit · 8h</div>
+                <div class="vl pos" id="pt-rt-net">—</div>
+                <div class="sub" id="pt-rt-apr">APR —</div>
+              </div>
+              <a class="pt-ext" id="pt-ext-link" target="_blank" rel="noopener" style="display:none"></a>
+              <div style="padding:10px 12px;background:var(--surface2);border:1px dashed var(--border2);border-radius:8px;font-size:11px;color:var(--text3);line-height:1.5">
+                <b style="color:var(--text2)">Next iteration:</b> trade panel & basis-history candles.
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   `;
@@ -1702,7 +1794,8 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // Pair-level state
   let _row = null;
   const $ = (id) => document.getElementById(id);
-  const fmtPx = (p) => p == null ? '—' : p >= 1000 ? '$' + p.toLocaleString('en-US', {maximumFractionDigits: 2}) : p >= 1 ? '$' + p.toFixed(4) : '$' + p.toPrecision(4);
+  const fmtPx = (p) => p == null ? '—' : p >= 1000 ? p.toLocaleString('en-US', {maximumFractionDigits: 2}) : p >= 1 ? p.toFixed(4) : p.toPrecision(4);
+  const fmtPxUsd = (p) => p == null ? '—' : '$' + fmtPx(p);
   const fmtVol = (v) => {
     if (!v) return '—';
     if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B';
@@ -1710,47 +1803,109 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     if (v >= 1e3) return '$' + (v/1e3).toFixed(1) + 'K';
     return '$' + v.toFixed(0);
   };
+  const setT = (id, t) => { const el = $(id); if (el) el.textContent = t; };
+  const setCls = (id, cls) => { const el = $(id); if (el) el.className = cls; };
+
   function _paint(r) {
     if (!r) return;
     _row = r;
-    const longLabel = IS_DEX
-      ? `${(r.dex_name||'DEX').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()}`
-      : (EX_LABEL[r.spot_exchange] || r.spot_exchange);
-    $('pt-venues').textContent = `${longLabel}  →  ${EX_LABEL[r.short_exchange] || r.short_exchange}`;
-    $('pt-left-sub').textContent = longLabel;
-    $('pt-px-long').textContent = fmtPx(IS_DEX ? r.dex_price : r.spot_price);
-    $('pt-px-short').textContent = fmtPx(r.perp_price);
-    const basis = r.basis_pct || 0;
-    const fund = r.short_funding_8h || 0;
-    const net = r.net_profit || 0;
-    const apr = r.net_apr || 0;
-    $('pt-basis').textContent = (basis >= 0 ? '+' : '') + basis.toFixed(3) + '%';
-    $('pt-basis').className = 'vl ' + (basis >= 0 ? 'pos' : 'neg');
-    $('pt-fund').textContent = (fund >= 0 ? '+' : '') + fund.toFixed(4) + '%';
-    $('pt-fund').className = 'vl ' + (fund >= 0 ? 'pos' : 'neg');
-    $('pt-net').textContent = `${net >= 0 ? '+' : ''}${net.toFixed(4)}% · ${apr > 0 ? apr.toFixed(0) + '%' : '—'}`;
-    if (!IS_DEX) {
-      $('pt-sv').textContent = fmtVol(r.spot_volume_usd);
-      $('pt-pv').textContent = fmtVol(r.perp_volume_usd);
-      const gross = r.gross || 0;
-      $('pt-gross').textContent = (gross >= 0 ? '+' : '') + gross.toFixed(4) + '%';
-      $('pt-gross').className = 'vl ' + (gross >= 0 ? 'pos' : 'neg');
-      $('pt-fees').textContent = '−' + (r.total_fees || 0).toFixed(4) + '%';
-    } else if (r.dex_pair_url) {
-      const ext = $('pt-external');
-      if (ext) ext.innerHTML = `<a href="${r.dex_pair_url}" target="_blank" rel="noopener" class="pt-ext-link">Open on DexScreener →</a>`;
+    const longLabelPlain = IS_DEX ? (r.dex_name||'').toUpperCase() : (EX_LABEL[r.spot_exchange] || r.spot_exchange);
+    setT('pt-long-name', longLabelPlain);
+    setT('pt-short-name', EX_LABEL[r.short_exchange] || r.short_exchange);
+    setT('pt-px-long', fmtPxUsd(IS_DEX ? r.dex_price : r.spot_price));
+    setT('pt-px-short', fmtPxUsd(r.perp_price));
+
+    if (IS_DEX) {
+      setT('pt-chain', (r.dex_chain||'').toUpperCase());
+      setT('pt-liq', fmtVol(r.dex_liquidity_usd));
+      setT('pt-dv', fmtVol(r.dex_volume_usd));
+    } else {
+      setT('pt-sv', fmtVol(r.spot_volume_usd));
+      setT('pt-spot-exlbl', EX_LABEL[r.spot_exchange] || r.spot_exchange);
     }
-    // Next funding countdown
-    if (r.next_ts) {
+    setT('pt-pv', fmtVol(r.perp_volume_usd));
+
+    const basis = r.basis_pct || 0;
+    const fund  = r.short_funding_8h || 0;
+    const net   = r.net_profit || 0;
+    const apr   = r.net_apr || 0;
+    const gross = r.gross || 0;
+    const ivl   = r.interval_h || 8;
+    const fundNative = (r.funding_rate || 0) * 100; // native per-interval %
+
+    // Infobar cards
+    setT('pt-fund', `${fundNative >= 0 ? '+' : ''}${fundNative.toFixed(4)}%`);
+    setCls('pt-fund', 'val ' + (fundNative >= 0 ? 'rate-pos' : 'rate-neg'));
+    setT('pt-ivl', `/ ${ivl}h /`);
+
+    setT('pt-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`);
+    $('pt-basis').style.color = basis >= 0 ? 'var(--green)' : 'var(--red)';
+    setT('pt-net',  `${net >= 0 ? '+' : ''}${net.toFixed(4)}%`);
+    $('pt-net').style.color = net >= 0 ? 'var(--green)' : 'var(--red)';
+    setT('pt-apr',  apr > 0 ? apr.toFixed(0) + '%' : '—');
+    $('pt-apr').style.color = apr > 0 ? 'var(--green)' : 'var(--text2)';
+
+    // Overview pane (Spot only — DEX has iframe)
+    if (!IS_DEX) {
+      setT('pt-ov-sp', fmtPxUsd(r.spot_price));
+      setT('pt-ov-pp', fmtPxUsd(r.perp_price));
+      setT('pt-ov-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`);
+      setCls('pt-ov-basis', 'vl ' + (basis >= 0 ? 'pos' : 'neg'));
+      setT('pt-ov-fund', `${fund >= 0 ? '+' : ''}${fund.toFixed(4)}%`);
+      setCls('pt-ov-fund', 'vl ' + (fund >= 0 ? 'pos' : 'neg'));
+      setT('pt-ov-gross', `${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%`);
+      setCls('pt-ov-gross', 'vl ' + (gross >= 0 ? 'pos' : 'neg'));
+      setT('pt-ov-fees', `−${(r.total_fees||0).toFixed(4)}%`);
+      setT('pt-ov-net', `${net >= 0 ? '+' : ''}${net.toFixed(4)}%`);
+      setCls('pt-ov-net', 'vl ' + (net >= 0 ? 'pos' : 'neg'));
+      setT('pt-ov-apr', apr > 0 ? apr.toFixed(1) + '% APR' : '—');
+      setCls('pt-ov-apr', 'vl ' + (apr > 0 ? 'pos' : ''));
+    }
+
+    // Right column position breakdown
+    setT('pt-rt-long',  fmtPxUsd(IS_DEX ? r.dex_price : r.spot_price));
+    setT('pt-rt-long-sub', IS_DEX
+      ? `${(r.dex_name||'').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()} · liq ${fmtVol(r.dex_liquidity_usd)}`
+      : `${EX_LABEL[r.spot_exchange]||r.spot_exchange} · vol ${fmtVol(r.spot_volume_usd)}`);
+    setT('pt-rt-short', fmtPxUsd(r.perp_price));
+    setT('pt-rt-short-sub', `${EX_LABEL[r.short_exchange]||r.short_exchange} · vol ${fmtVol(r.perp_volume_usd)}`);
+    setT('pt-rt-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(4)}%`);
+    setCls('pt-rt-basis', 'vl ' + (basis >= 0 ? 'pos' : 'neg'));
+    setT('pt-rt-fund', `${fund >= 0 ? '+' : ''}${fund.toFixed(4)}%`);
+    setCls('pt-rt-fund', 'vl ' + (fund >= 0 ? 'pos' : 'neg'));
+    setT('pt-rt-fund-sub', `native ${fundNative.toFixed(4)}% / ${ivl}h`);
+    setT('pt-rt-gross', `${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%`);
+    setCls('pt-rt-gross', 'vl ' + (gross >= 0 ? 'pos' : 'neg'));
+    setT('pt-rt-fees', `−${(r.total_fees||0).toFixed(4)}%`);
+    setT('pt-rt-fees-sub', IS_DEX
+      ? `DEX rt ${(r.fee_dex||0).toFixed(3)}% + perp rt ${(r.fee_perp||0).toFixed(3)}%`
+      : `spot rt ${(r.fee_spot||0).toFixed(3)}% + perp rt ${(r.fee_perp||0).toFixed(3)}%`);
+    setT('pt-rt-net', `${net >= 0 ? '+' : ''}${net.toFixed(4)}%`);
+    setCls('pt-rt-net', 'vl ' + (net >= 0 ? 'pos' : 'neg'));
+    setT('pt-rt-apr', `APR ${apr > 0 ? apr.toFixed(1) + '%' : '—'}`);
+    if (IS_DEX && r.dex_pair_url) {
+      const ext = $('pt-ext-link');
+      if (ext) {
+        ext.href = r.dex_pair_url;
+        ext.style.display = 'inline-flex';
+        ext.innerHTML = `Open on DexScreener <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h8v8M5 11L13 3"/></svg>`;
+      }
+    }
+
+    // Next funding countdown — once per row fetch (stable closure)
+    if (r.next_ts && !_paint._cdTs) {
+      _paint._cdTs = r.next_ts;
       const tick = () => {
-        const sec = Math.max(0, Math.floor((r.next_ts * 1000 - Date.now()) / 1000));
+        const sec = Math.max(0, Math.floor((_paint._cdTs * 1000 - Date.now()) / 1000));
         const h = Math.floor(sec / 3600);
         const m = Math.floor((sec % 3600) / 60);
         const s = sec % 60;
-        $('pt-next').textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        setT('pt-next', `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
       };
       tick();
       setInterval(tick, 1000);
+    } else if (r.next_ts) {
+      _paint._cdTs = r.next_ts;  // refresh underlying ts, countdown already ticking
     }
   }
 
@@ -1775,59 +1930,76 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   _refreshPair();
   setInterval(_refreshPair, 3000);
 
-  // Short-side perp orderbook (live polled)
+  // Short-side perp orderbook (live polled) — mirrors futures .book-row style
   let _obTickCount = 0;
   async function _refreshOB() {
     const age = $('pt-ob-age');
     try {
-      const r = await Auth.apiFetch(`/screener/orderbook?exchange=${SHORT}&symbol=${SYM}&limit=20`);
+      const r = await Auth.apiFetch(`/screener/orderbook?exchange=${SHORT}&symbol=${SYM}&limit=40`);
       if (!r.ok) {
-        if (age) age.textContent = `error ${r.status} · ${EX_LABEL[SHORT]||SHORT}`;
+        if (age) age.textContent = `error ${r.status}`;
         return;
       }
       const j = await r.json();
       const asksAll = j.asks || [];
       const bidsAll = j.bids || [];
       if (!asksAll.length && !bidsAll.length) {
-        if (age) age.textContent = `warming up · ${EX_LABEL[SHORT]||SHORT}`;
+        if (age) age.textContent = 'warming up…';
         return;
       }
-      const asks = asksAll.slice(0, 10).reverse();  // furthest first → nearest to mid at bottom
-      const bids = bidsAll.slice(0, 10);
-      const fmtPrice = (p) => {
+      const N = 14;
+      const asks = asksAll.slice(0, N).reverse();  // furthest ask first → nearest to mid at bottom
+      const bids = bidsAll.slice(0, N);
+
+      const fmtP = (p) => {
         const n = +p;
         if (n >= 1000) return n.toLocaleString('en-US',{maximumFractionDigits:2});
         if (n >= 1)    return n.toFixed(4);
         return n.toPrecision(5);
       };
-      const fmtQty = (q) => {
+      const fmtQ = (q) => {
         const n = +q;
         if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
         if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
         return n.toFixed(n < 1 ? 4 : 2);
       };
-      const rowHtml = (arr, side) => arr.map(([p, q]) =>
-        `<div class="pt-ob-row ${side}"><span class="px ${side}">${fmtPrice(p)}</span><span>${fmtQty(q)}</span></div>`
-      ).join('');
-      $('pt-ob-asks').innerHTML = rowHtml(asks, 'ask');
-      $('pt-ob-bids').innerHTML = rowHtml(bids, 'bid');
-      if (asks.length && bids.length) {
+      // Depth-bar: percentage of the per-side cumulative max — mirrors
+      // Binance-style orderbook visualisation
+      const maxAskTot = asks.reduce((a,b) => a + (+b[1]), 0);
+      const maxBidTot = bids.reduce((a,b) => a + (+b[1]), 0);
+      const rowHtml = (arr, side, maxTot) => {
+        let cum = 0;
+        return arr.map(([p, q]) => {
+          cum += +q;
+          const pct = Math.min(100, (cum / Math.max(1e-9, maxTot)) * 100);
+          return `<div class="pt-ob-row ${side}">
+            <div class="pt-ob-row-bg" style="width:${pct.toFixed(1)}%"></div>
+            <span class="px">${fmtP(p)}</span>
+            <span class="amt">${fmtQ(q)}</span>
+            <span class="tot">${fmtQ(cum)}</span>
+          </div>`;
+        }).join('');
+      };
+      $('pt-ob-asks').innerHTML = rowHtml(asks, 'ask', maxAskTot);
+      $('pt-ob-bids').innerHTML = rowHtml(bids, 'bid', maxBidTot);
+
+      if (asksAll.length && bidsAll.length) {
         const bestAsk = parseFloat(asksAll[0][0]);
         const bestBid = parseFloat(bidsAll[0][0]);
         const mid = (bestAsk + bestBid) / 2;
         const spread = ((bestAsk - bestBid) / mid * 100);
-        $('pt-ob-mid').innerHTML = `<span>mid · <span style="color:var(--yellow,#E5C07B)">${spread.toFixed(3)}% spread</span></span><b>${fmtPrice(mid)}</b>`;
+        setT('pt-ob-mid', fmtP(mid));
+        setT('pt-ob-spread', `${spread.toFixed(3)}% spread`);
       }
       _obTickCount++;
-      if (age) age.textContent = `live · ${(_obTickCount).toString().padStart(3,' ')} ticks · ${EX_LABEL[SHORT]||SHORT}`;
+      if (age) age.textContent = `live · ${_obTickCount} ticks`;
     } catch (e) {
       console.error('[pair] orderbook fetch error:', e);
-      if (age) age.textContent = `offline · ${EX_LABEL[SHORT]||SHORT}`;
+      if (age) age.textContent = 'offline';
     }
   }
   _refreshOB();
-  // 600ms — same cadence spirit as the futures terminal (150ms per side × 4 slots)
-  setInterval(_refreshOB, 600);
+  setInterval(_refreshOB, 500);
 
   throw new Error('_arb_type_gate');  // stop the rest of this futures-specific script
 }
