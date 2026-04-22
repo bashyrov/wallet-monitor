@@ -1908,147 +1908,295 @@ try {
 <style>
   .avs-bg {
     position: fixed; inset: 0; z-index: 500;
-    background: rgba(10,10,13,0.7);
-    backdrop-filter: blur(6px);
+    background: rgba(8,8,11,0.78);
+    backdrop-filter: blur(10px);
     display: none; align-items: flex-start; justify-content: center;
-    padding: 8vh 20px 20px;
-    animation: avsFadeIn .15s ease-out;
+    padding: 6vh 20px 20px;
+    animation: avsFadeIn .18s ease-out;
   }
   .avs-bg.open { display: flex; }
   .avs-modal {
-    width: 100%; max-width: 480px;
-    background: var(--surface, #131217);
-    border: 1px solid var(--border, #22222A);
-    border-radius: 14px;
+    width: 100%; max-width: 520px;
+    background: #101014;
+    border: 1px solid #22222A;
+    border-radius: 18px;
     overflow: hidden;
-    box-shadow: 0 32px 80px -20px rgba(0,0,0,.7), 0 0 0 1px rgba(26,255,171,.06);
-    animation: avsUp .22s cubic-bezier(0.16,1,0.3,1) both;
+    position: relative;
+    box-shadow:
+      0 40px 100px -20px rgba(0,0,0,.85),
+      0 0 0 1px rgba(26,255,171,.04) inset,
+      0 1px 0 rgba(255,255,255,.04) inset;
+    animation: avsUp .28s cubic-bezier(0.16,1,0.3,1) both;
+  }
+  .avs-modal::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 140px;
+    background:
+      radial-gradient(ellipse 420px 180px at 50% 0%, rgba(26,255,171,0.18), transparent 70%),
+      radial-gradient(ellipse 300px 140px at 20% 0%, rgba(6,182,212,0.1), transparent 70%);
+    pointer-events: none;
   }
   .avs-head {
-    padding: 20px 22px 14px;
-    border-bottom: 1px solid var(--border, #22222A);
-    position: relative;
+    padding: 24px 24px 18px;
+    position: relative; z-index: 2;
   }
-  .avs-head::after {
-    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(26,255,171,0.3), transparent);
+  .avs-kicker {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 4px 11px 4px 9px;
+    border-radius: 999px;
+    background: rgba(26,255,171,0.08);
+    border: 1px solid rgba(26,255,171,0.2);
+    color: #1AFFAB;
+    font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 14px;
   }
-  .avs-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-  .avs-logo {
-    width: 30px; height: 30px; border-radius: 9px;
-    background: linear-gradient(135deg, rgba(26,255,171,0.2), rgba(6,182,212,0.12));
-    border: 1px solid rgba(26,255,171,0.3);
-    color: var(--green, #1AFFAB);
-    display: grid; place-items: center;
+  .avs-kicker::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%;
+    background: #1AFFAB;
+    box-shadow: 0 0 8px rgba(26,255,171,.8);
+    animation: avsPulse 2s ease-in-out infinite;
   }
-  .avs-title { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; color: var(--text, #E6E8E3); flex: 1; }
+  @keyframes avsPulse { 0%,100%{opacity:1}50%{opacity:.4} }
+  .avs-title-row { display: flex; align-items: flex-start; gap: 14px; }
+  .avs-title {
+    font-size: 22px; font-weight: 700; letter-spacing: -0.5px;
+    color: #ECECEC; flex: 1; line-height: 1.15;
+  }
+  .avs-title .accent {
+    background: linear-gradient(100deg, #1AFFAB 0%, #7BE0C9 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
   .avs-close {
-    width: 28px; height: 28px; border-radius: 7px;
-    background: transparent; border: none; color: var(--text3, #676B7E);
+    width: 32px; height: 32px; border-radius: 9px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid #22222A;
+    color: #9B9FAB;
     cursor: pointer; display: grid; place-items: center;
-    transition: background .12s, color .12s;
+    transition: all .15s;
+    flex-shrink: 0;
   }
-  .avs-close:hover { background: var(--surface3, #202028); color: var(--text, #E6E8E3); }
-  .avs-sub { font-size: 12.5px; color: var(--text3, #676B7E); line-height: 1.5; }
+  .avs-close:hover { background: #17171C; border-color: #2E2E38; color: #ECECEC; }
+  .avs-sub {
+    font-size: 13px; color: #9B9FAB; line-height: 1.55;
+    margin-top: 10px; max-width: 44ch;
+  }
 
-  .avs-body { max-height: 66vh; overflow-y: auto; padding: 6px 0; }
+  .avs-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 0 24px 18px;
+    position: relative; z-index: 2;
+  }
+  .avs-stat {
+    padding: 12px 14px;
+    background: #17171C;
+    border: 1px solid #22222A;
+    border-radius: 10px;
+    text-align: center;
+  }
+  .avs-stat-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px; font-weight: 500;
+    color: #ECECEC; letter-spacing: -0.3px;
+    line-height: 1;
+  }
+  .avs-stat-lb {
+    font-size: 10px; color: #676B7E;
+    text-transform: uppercase; letter-spacing: .08em;
+    margin-top: 5px;
+  }
+
+  .avs-body {
+    max-height: 52vh; overflow-y: auto;
+    padding: 4px 0;
+    border-top: 1px solid #22222A;
+    scrollbar-width: thin;
+    scrollbar-color: #22222A transparent;
+  }
   .avs-body::-webkit-scrollbar { width: 6px; }
-  .avs-body::-webkit-scrollbar-thumb { background: var(--border, #22222A); border-radius: 3px; }
+  .avs-body::-webkit-scrollbar-thumb { background: #2E2E38; border-radius: 3px; }
 
+  .avs-section-title {
+    font-size: 10px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: #676B7E;
+    padding: 12px 24px 6px;
+  }
   .avs-row {
     display: grid;
-    grid-template-columns: 32px 1fr auto auto;
-    align-items: center; gap: 12px;
-    padding: 12px 22px;
-    border-bottom: 1px solid var(--border, #22222A);
-    transition: background .12s;
+    grid-template-columns: 40px 1fr auto auto;
+    align-items: center; gap: 14px;
+    padding: 14px 24px;
+    position: relative;
+    transition: background .15s;
+    cursor: default;
   }
-  .avs-row:last-child { border-bottom: none; }
-  .avs-row:hover { background: var(--surface2, #17171C); }
-  .avs-row.soon { opacity: 0.55; }
+  .avs-row:hover { background: rgba(255,255,255,0.02); }
+  .avs-row.featured {
+    background: linear-gradient(90deg, rgba(26,255,171,0.03), transparent 70%);
+  }
+  .avs-row.featured:hover {
+    background: linear-gradient(90deg, rgba(26,255,171,0.06), rgba(255,255,255,0.015) 70%);
+  }
+  .avs-row.soon { opacity: 0.6; }
   .avs-row-logo {
-    width: 32px; height: 32px; border-radius: 50%;
+    width: 40px; height: 40px; border-radius: 50%;
     display: grid; place-items: center;
-    font-weight: 700; font-size: 13px;
-  }
-  .avs-row-name { font-size: 13.5px; font-weight: 600; color: var(--text, #E6E8E3); letter-spacing: -0.1px; }
-  .avs-row-sub  { font-size: 10.5px; color: var(--text3, #676B7E); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
-  .avs-pct {
+    font-weight: 700; font-size: 15px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 14px; font-weight: 700;
-    color: var(--green, #1AFFAB);
-    background: rgba(26,255,171,0.08);
-    border: 1px solid rgba(26,255,171,0.22);
-    padding: 4px 10px; border-radius: 999px;
-    min-width: 52px; text-align: center;
-    letter-spacing: -0.2px;
+    letter-spacing: -0.5px;
+    position: relative;
   }
-  .avs-pct.none {
-    color: var(--text3, #676B7E);
-    background: var(--surface2, #17171C);
-    border-color: var(--border, #22222A);
+  .avs-row-logo::after {
+    content: ''; position: absolute; inset: -1px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    opacity: 0.25;
   }
-  .avs-join {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 6px 12px; border-radius: 8px;
-    background: var(--green, #1AFFAB); color: #09090B;
-    font-weight: 600; font-size: 12px;
-    text-decoration: none;
-    transition: background .12s, box-shadow .12s;
-    white-space: nowrap;
+  .avs-row-info { min-width: 0; }
+  .avs-row-name {
+    font-size: 14.5px; font-weight: 600;
+    color: #ECECEC; letter-spacing: -0.2px;
+    display: flex; align-items: center; gap: 8px;
   }
-  .avs-join:hover { background: #00E89A; box-shadow: 0 0 14px rgba(26,255,171,.35); }
-  .avs-join svg { opacity: .85; }
-  .avs-soon {
-    padding: 6px 12px; border-radius: 8px;
-    background: var(--surface2, #17171C);
-    color: var(--text3, #676B7E);
-    font-weight: 500; font-size: 11px;
-    white-space: nowrap;
+  .avs-row-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: .08em;
+    padding: 2px 6px; border-radius: 4px;
+    background: rgba(26,255,171,0.12);
+    color: #1AFFAB;
+    text-transform: uppercase;
   }
-  .avs-foot {
-    padding: 14px 22px;
-    border-top: 1px solid var(--border, #22222A);
-    font-size: 11.5px; color: var(--text3, #676B7E);
-    text-align: center;
-    line-height: 1.5;
+  .avs-row-sub {
+    font-size: 11px; color: #676B7E;
+    margin-top: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: -0.1px;
+  }
+  .avs-row-sub .code {
+    color: #9B9FAB;
+    padding: 1px 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.04);
+    font-size: 10.5px;
   }
 
+  .avs-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px; font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #1AFFAB;
+    min-width: 46px; text-align: right;
+  }
+  .avs-pct.none {
+    color: #4B4E5B;
+    font-weight: 500;
+  }
+  .avs-pct.unknown {
+    font-size: 11px; font-weight: 500;
+    color: #E5C07B;
+    letter-spacing: 0;
+  }
+
+  .avs-join {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 9px;
+    background: #1AFFAB; color: #05120D;
+    font-weight: 700; font-size: 12.5px;
+    font-family: 'Inter', sans-serif;
+    text-decoration: none;
+    transition: transform .12s, box-shadow .15s, background .12s;
+    white-space: nowrap;
+  }
+  .avs-join:hover {
+    background: #0EE59A;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px -4px rgba(26,255,171,.5);
+  }
+  .avs-join svg { transition: transform .12s; }
+  .avs-join:hover svg { transform: translate(1px, -1px); }
+  .avs-soon {
+    padding: 8px 12px; border-radius: 9px;
+    background: transparent;
+    border: 1px dashed #2E2E38;
+    color: #676B7E;
+    font-weight: 500; font-size: 11px;
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+
+  .avs-foot {
+    padding: 14px 24px;
+    border-top: 1px solid #22222A;
+    background: #0C0C10;
+    font-size: 11.5px; color: #676B7E;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  .avs-foot-left { display: flex; align-items: center; gap: 8px; }
+  .avs-foot-dot { width: 6px; height: 6px; border-radius: 50%; background: #1AFFAB; box-shadow: 0 0 8px rgba(26,255,171,.6); }
+  .avs-foot-right { color: #9B9FAB; }
+
   @keyframes avsFadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes avsUp     { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  @keyframes avsUp     {
+    from { opacity: 0; transform: translateY(16px) scale(0.98); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  @media (max-width: 520px) {
+    .avs-stats { grid-template-columns: 1fr 1fr; }
+    .avs-stats .avs-stat:last-child { grid-column: 1 / -1; }
+  }
 </style>
 
 <div class="avs-bg" id="avs-bg" onclick="if(event.target.id==='avs-bg')closeAvashare()">
   <div class="avs-modal">
     <div class="avs-head">
       <div class="avs-title-row">
-        <div class="avs-logo">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2v20M4 6l8-4 8 4M4 18l8 4 8-4"/>
-          </svg>
+        <div style="flex:1">
+          <div class="avs-kicker">AvaShare · Partner programme</div>
+          <div class="avs-title">Cashback on <span class="accent">every trade</span>.</div>
+          <div class="avs-sub">Sign up on any exchange below through our referral link and earn a share of the commissions you pay — forever.</div>
         </div>
-        <div class="avs-title">AvaShare · Cashback</div>
         <button class="avs-close" onclick="closeAvashare()" aria-label="Close">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
         </button>
       </div>
-      <div class="avs-sub">Зарегистрируйся на бирже по нашей ссылке — получай % от каждой уплаченной комиссии обратно.</div>
     </div>
+
+    <div class="avs-stats">
+      <div class="avs-stat">
+        <div class="avs-stat-val" id="avs-stat-live">—</div>
+        <div class="avs-stat-lb">Live programmes</div>
+      </div>
+      <div class="avs-stat">
+        <div class="avs-stat-val" id="avs-stat-max"><span style="color:#1AFFAB">—</span></div>
+        <div class="avs-stat-lb">Max rate</div>
+      </div>
+      <div class="avs-stat">
+        <div class="avs-stat-val">$0<span style="color:#676B7E;font-size:12px">·fees</span></div>
+        <div class="avs-stat-lb">Extra cost</div>
+      </div>
+    </div>
+
     <div class="avs-body" id="avs-body"></div>
-    <div class="avs-foot">Cashback выплачивается в USDT на первое число каждого месяца.</div>
+
+    <div class="avs-foot">
+      <div class="avs-foot-left">
+        <span class="avs-foot-dot"></span>
+        <span>Paid monthly in USDT</span>
+      </div>
+      <div class="avs-foot-right">No account takeover · Links only</div>
+    </div>
   </div>
 </div>
 
 <script>
 const _avsProgrammes = [
-  { id: 'gate',        name: 'Gate.io',     pct: 20, url: 'https://www.gate.com/ru/signup/AVJMB1FB?ref_type=103', code: 'AVJMB1FB',  color: '#E40C5B' },
-  { id: 'bybit',       name: 'Bybit',       pct: 20, url: 'https://partner.bybit.com/b/58945',                   code: '58945',     color: '#F7A600' },
-  { id: 'kucoin',      name: 'KuCoin',      pct: 15, url: 'https://www.kucoin.com/r/rf/QBA39VTM',                code: 'QBA39VTM',  color: '#00BC8C' },
+  { id: 'gate',        name: 'Gate.io',     pct: 20,   url: 'https://www.gate.com/ru/signup/AVJMB1FB?ref_type=103', code: 'AVJMB1FB',  color: '#E40C5B' },
+  { id: 'bybit',       name: 'Bybit',       pct: 20,   url: 'https://partner.bybit.com/b/58945',                   code: '58945',     color: '#F7A600' },
+  { id: 'okx',         name: 'OKX',         pct: 15,   url: 'https://www.okx.com/join/AVALANT',                    code: 'AVALANT',   color: '#E0E0E0' },
+  { id: 'kucoin',      name: 'KuCoin',      pct: 15,   url: 'https://www.kucoin.com/r/rf/QBA39VTM',                code: 'QBA39VTM',  color: '#00BC8C' },
+  { id: 'bingx',       name: 'BingX',       pct: 5,    url: 'https://bingxdao.com/invite/DULALM/',                 code: 'DULALM',    color: '#1DB8F2' },
+  { id: 'bitget',      name: 'Bitget',      pct: null, url: 'https://www.bitgetapps.com/ru/referral/register?clacCode=X76Y2U1U&from=%2Fru%2Fevents%2Freferral-all-program&source=events&utmSource=PremierInviter', code: 'X76Y2U1U', color: '#00B4D8', unknownPct: true },
   { id: 'binance',     name: 'Binance',     pct: null, url: null, code: null, color: '#F0B90B' },
-  { id: 'okx',         name: 'OKX',         pct: null, url: null, code: null, color: '#E0E0E0' },
   { id: 'mexc',        name: 'MEXC',        pct: null, url: null, code: null, color: '#00C09A' },
-  { id: 'bitget',      name: 'Bitget',      pct: null, url: null, code: null, color: '#00B4D8' },
-  { id: 'bingx',       name: 'BingX',       pct: null, url: null, code: null, color: '#1DB8F2' },
   { id: 'backpack',    name: 'Backpack',    pct: null, url: null, code: null, color: '#4ADE80' },
   { id: 'hyperliquid', name: 'Hyperliquid', pct: null, url: null, code: null, color: '#48CDD8' },
   { id: 'aster',       name: 'Aster',       pct: null, url: null, code: null, color: '#FF8C00' },
@@ -2058,25 +2206,54 @@ const _avsProgrammes = [
 
 function openAvashare() {
   const body = document.getElementById('avs-body');
-  body.innerHTML = _avsProgrammes.map(p => {
+  const live = _avsProgrammes.filter(p => p.url);
+  const soon = _avsProgrammes.filter(p => !p.url);
+  const maxPct = Math.max(...live.map(p => p.pct || 0));
+
+  document.getElementById('avs-stat-live').innerHTML =
+    `${live.length}<span style="color:#676B7E;font-size:12px"> / ${_avsProgrammes.length}</span>`;
+  document.getElementById('avs-stat-max').innerHTML =
+    `<span style="color:#1AFFAB">${maxPct}%</span>`;
+
+  const renderRow = (p) => {
     const initial = p.name.charAt(0);
     const hasRef = !!p.url;
+    const isTop = hasRef && p.pct === maxPct;
+    let pctHtml;
+    if (p.pct != null) pctHtml = `<div class="avs-pct">${p.pct}%</div>`;
+    else if (p.unknownPct) pctHtml = `<div class="avs-pct unknown">TBD</div>`;
+    else pctHtml = `<div class="avs-pct none">—</div>`;
+
     return `
-      <div class="avs-row ${hasRef ? '' : 'soon'}">
+      <div class="avs-row ${hasRef ? '' : 'soon'} ${isTop ? 'featured' : ''}">
         <div class="avs-row-logo" style="color:${p.color};background:${p.color}1a;">${initial}</div>
-        <div>
-          <div class="avs-row-name">${p.name}</div>
-          ${p.code ? `<div class="avs-row-sub">code · ${p.code}</div>` : '<div class="avs-row-sub">coming soon</div>'}
+        <div class="avs-row-info">
+          <div class="avs-row-name">
+            ${p.name}
+            ${isTop ? '<span class="avs-row-badge">top rate</span>' : ''}
+          </div>
+          <div class="avs-row-sub">
+            ${p.code
+              ? `Referral code <span class="code">${p.code}</span>`
+              : 'Ref programme coming soon'}
+          </div>
         </div>
-        <div class="avs-pct ${p.pct == null ? 'none' : ''}">${p.pct != null ? p.pct + '%' : '—'}</div>
+        ${pctHtml}
         ${hasRef
           ? `<a class="avs-join" href="${p.url}" target="_blank" rel="noopener">
-               Join
-               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h8v8M5 11L13 3"/></svg>
+               Sign up
+               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h8v8M5 11L13 3"/></svg>
              </a>`
           : `<span class="avs-soon">Soon</span>`}
       </div>`;
-  }).join('');
+  };
+
+  body.innerHTML =
+    `<div class="avs-section-title">Available now — ${live.length}</div>` +
+    live.map(renderRow).join('') +
+    (soon.length ? `<div class="avs-section-title">Partners coming soon</div>` : '') +
+    soon.map(renderRow).join('');
+
   document.getElementById('avs-bg').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
