@@ -119,40 +119,43 @@ body {
   margin-left: 4px;
 }
 
-/* Exchange accordion panel */
+/* Exchange dropdown popover */
 .fb-ex-acc {
-  max-height: 0; overflow: hidden;
-  background: var(--surface);
-  border-bottom: 1px solid transparent;
-  transition: max-height .28s cubic-bezier(.16,1,.3,1), border-color .2s;
+  position: absolute; z-index: 40;
+  min-width: 240px; max-width: 280px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 38px rgba(0,0,0,.5);
+  padding: 10px;
+  opacity: 0; pointer-events: none; transform: translateY(-4px);
+  transition: opacity .14s, transform .14s;
 }
 .fb-ex-acc.open {
-  max-height: 640px;
-  border-bottom-color: var(--border);
+  opacity: 1; pointer-events: auto; transform: translateY(0);
 }
-.fb-ex-acc-inner {
-  padding: 14px 16px 16px;
-}
+.fb-ex-acc-inner { padding: 0; }
 .fb-ex-acc-head {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
+  padding: 4px 6px 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
 }
 .fb-ex-acc-head > span {
   font-size: 10px; font-weight: 600; color: var(--text3);
   text-transform: uppercase; letter-spacing: .12em;
 }
-.fb-ex-acc-actions { display: flex; gap: 6px; }
+.fb-ex-acc-actions { display: flex; gap: 4px; }
 .fb-ex-acc-actions button {
-  padding: 4px 10px; font-size: 11px; font-weight: 600; color: var(--text3);
-  background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 8px; font-size: 10.5px; font-weight: 600; color: var(--text3);
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 5px;
   cursor: pointer; font-family: inherit;
   transition: all .12s;
 }
 .fb-ex-acc-actions button:hover { color: var(--green); border-color: rgba(26,255,171,.35); }
 .fb-ex-acc-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 4px;
+  display: flex; flex-direction: column; gap: 1px;
+  max-height: 320px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
 }
 /* Hide freshness dots everywhere by default — re-enabled only inside the alpha status strip */
 .lp-ex-health { display: none !important; }
@@ -1713,12 +1716,19 @@ function _renderExBtnDots(){
     .join('');
 }
 
-// Exchange accordion open/close
+// Exchange dropdown open/close (positioned under the button)
 function toggleExAcc(){
   const acc = document.getElementById('fb-ex-acc');
   const btn = document.getElementById('fb-ex-btn');
   const open = acc.classList.toggle('open');
   btn.classList.toggle('open', open);
+  if (open) {
+    const r = btn.getBoundingClientRect();
+    const bar = acc.parentElement; // .filters-bar (position:relative)
+    const pr = bar.getBoundingClientRect();
+    acc.style.left = (r.left - pr.left) + 'px';
+    acc.style.top  = (r.bottom - pr.top + 6) + 'px';
+  }
 }
 // close on outside click
 document.addEventListener('click', (e) => {
