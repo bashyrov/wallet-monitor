@@ -1188,12 +1188,17 @@ async def _book_broadcast_loop() -> None:
     `from … import _file_memo` at top level would freeze our reference to
     the initial (empty) dict."""
     from backend.services import orderbook_cache as _ob
+    debug_tick = 0
     while True:
         try:
             await asyncio.sleep(BOOK_BROADCAST_INTERVAL)
             if not _book_ws_subs:
                 continue
             _ob._refresh_file_memo()
+            debug_tick += 1
+            if debug_tick % 20 == 1:  # every ~2s
+                logger.info("book broadcast tick: clients=%d file_memo_keys=%d",
+                            len(_book_ws_subs), len(_ob._file_memo))
             for ws, subs in list(_book_ws_subs.items()):
                 if not subs:
                     continue
@@ -1300,6 +1305,8 @@ async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
                 free = max(0, BOOK_MAX_PAIRS_PER_CLIENT - len(subs))
                 for pair in pairs[:free]:
                     subs[pair] = 0.0
+                logger.info("book WS subscribe uid=%s pairs=%s subs_total=%d",
+                            user_id, pairs[:free], len(subs))
                     # Kick the prewarm poller so non-top-N pairs populate quickly.
                     ex, _, sym = pair.partition(":")
                     try:
