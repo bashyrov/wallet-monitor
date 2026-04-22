@@ -11,6 +11,7 @@
 <script src="/toast.js"></script>
 <script src="/confirm.js"></script>
 <script src="/theme.js"></script>
+<script src="/exchanges.js"></script>
 <link rel="stylesheet" href="/navbar.css">
 <script src="/navbar.js" defer></script>
 <link rel="preconnect" href="https://unpkg.com" crossorigin>
@@ -1569,8 +1570,10 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
 </div>
 
 <script>
-const EX_LABEL={binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate',kucoin:'KuCoin',mexc:'MEXC',bitget:'Bitget',hyperliquid:'Hyperliquid',aster:'Aster',ethereal:'Ethereal',whitebit:'WhiteBIT',bingx:'BingX'};
-const EX_COLOR={binance:'#F0B90B',bybit:'#F0842D',okx:'#C8C8C8',gate:'#17C684',kucoin:'#09BA86',mexc:'#17D854',bitget:'#00D2C8',hyperliquid:'#64B4FF',aster:'#8A63D2',ethereal:'#C864C8',whitebit:'#2DCCCD',bingx:'#1DB8F2'};
+// Single source of truth lives in /exchanges.js — the local consts are just
+// thin aliases so existing call sites keep working.
+const EX_LABEL = (window.EX && window.EX.labels) || {binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate',kucoin:'KuCoin',mexc:'MEXC',bitget:'Bitget',hyperliquid:'Hyperliquid',aster:'Aster',ethereal:'Ethereal',whitebit:'WhiteBIT',bingx:'BingX',backpack:'Backpack',lighter:'Lighter',paradex:'Paradex'};
+const EX_COLOR = (window.EX && window.EX.colors) || {binance:'#F0B90B',bybit:'#F0842D',okx:'#C8C8C8',gate:'#17C684',kucoin:'#09BA86',mexc:'#17D854',bitget:'#00D2C8',hyperliquid:'#64B4FF',aster:'#8A63D2',ethereal:'#C864C8',whitebit:'#2DCCCD',bingx:'#1DB8F2',backpack:'#4ADE80',lighter:'#A78BFA',paradex:'#FF6A6A'};
 
 const _p=new URLSearchParams(location.search);
 const SYM=(_p.get('symbol')||'').toUpperCase();
