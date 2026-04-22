@@ -31,15 +31,18 @@ logger = logging.getLogger("avalant.dex_arb")
 # Dedicated httpx client — DO NOT share with _arb._http or spot_arbitrage._http.
 # DexScreener is slower and cross-pool traffic has already bitten us once.
 _http = httpx.AsyncClient(
-    timeout=httpx.Timeout(connect=5.0, read=12.0, write=5.0, pool=3.0),
+    timeout=httpx.Timeout(connect=4.0, read=6.0, write=4.0, pool=2.0),
     headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
     follow_redirects=True,
-    limits=httpx.Limits(max_connections=32, max_keepalive_connections=16, keepalive_expiry=30),
+    limits=httpx.Limits(max_connections=16, max_keepalive_connections=8, keepalive_expiry=30),
     http2=False,
 )
 
-# DexScreener free-tier rate limit: 300 rpm = 5 rps. Semaphore keeps us under.
-_DEX_SEM = asyncio.Semaphore(5)
+# Keep concurrency modest — DexScreener free is rate-limited AND each hanging
+# request costs us an event-loop slot. 3 parallel is plenty for 40-symbol batch.
+_DEX_SEM = asyncio.Semaphore(3)
+# Hard timeout on the per-cycle gather so DEX can't starve the fetcher loop
+_CYCLE_TIMEOUT_S = 40.0
 
 # USD-like quote tokens — pairs quoted in these are directly comparable to CEX USDT price.
 _USD_QUOTES = {"USDC", "USDT", "DAI", "BUSD", "USDC.E", "FDUSD", "PYUSD"}
@@ -54,7 +57,7 @@ MAX_BASIS_PCT = 10.0               # sanity: prices more divergent than this
 DEX_REFRESH_INTERVAL = 30.0
 
 # Cap how many CEX perp symbols we try to match each cycle
-_SYMBOL_BATCH_LIMIT = 150
+_SYMBOL_BATCH_LIMIT = 60
 
 # DexScreener chain preference when a token is deployed on several — pick the
 # venue that historically has the deepest DEX liquidity for that asset class.
@@ -309,8 +312,20 @@ async def get_dex_arbitrage_opportunities(min_perp_vol_usd: float = 100_000.0) -
     mappable = [s for s in perp_map if _lookup_contracts(s)]
     symbols = sorted(mappable, key=_best_perp_vol, reverse=True)[:_SYMBOL_BATCH_LIMIT]
 
-    # Resolve each symbol via its canonical contract (no ticker ambiguity)
-    dex_results = await asyncio.gather(*[_best_dex_match(s) for s in symbols])
+    # Resolve each symbol via its canonical contract (no ticker ambiguity).
+    # Hard cycle-level timeout so one slow DexScreener response can't block
+    # the fetcher event loop long enough to starve WS keepalives.
+    try:
+        dex_results = await asyncio.wait_for(
+            asyncio.gather(*[_best_dex_match(s) for s in symbols], return_exceptions=True),
+            timeout=_CYCLE_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("DEX cycle timed out after %.0fs — partial results only", _CYCLE_TIMEOUT_S)
+        dex_results = [None] * len(symbols)
+
+    # gather(..., return_exceptions=True) may embed exceptions
+    dex_results = [r if isinstance(r, dict) else None for r in dex_results]
 
     opps: list[dict] = []
     for sym, dex in zip(symbols, dex_results):
