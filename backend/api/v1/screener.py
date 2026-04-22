@@ -1158,3 +1158,150 @@ async def arb_ws(websocket: WebSocket, token: str = Query("")) -> None:
         websocket, _arb_clients, token, get_arbitrage_opportunities, "arb",
         snapshot_builder=_build_arb_snapshot_payload,
     )
+
+
+# ── Orderbook WS push ─────────────────────────────────────────────────────────
+# Per-client subscription registry. Each ws → {pair: last_ts_sent}. The
+# broadcaster task reads the shared file-cache every BOOK_BROADCAST_INTERVAL
+# and diff-pushes updated pairs only.
+#
+# Why this exists: /arb previously polled /api/screener/orderbook every 150ms
+# per side — at 500 concurrent users that's 6600 req/s against the web role's
+# cache lookup. This WS push is fed by the same _file_memo so exchange API
+# traffic is unchanged (zero extra calls to Binance/Bybit/etc).
+_book_ws_subs: dict[WebSocket, dict[str, float]] = {}
+_book_broadcast_task: asyncio.Task | None = None
+BOOK_BROADCAST_INTERVAL = _env_float("AVALANT_BOOK_BROADCAST_INTERVAL", 0.1)
+BOOK_MAX_PAIRS_PER_CLIENT = 16  # /arb needs 2; 16 is defensive headroom
+
+
+async def _book_broadcast_loop() -> None:
+    """Push fresh orderbook frames to subscribed clients. Reads the shared
+    books.json via orderbook_cache._refresh_file_memo — no exchange calls."""
+    from backend.services.orderbook_cache import _refresh_file_memo, _file_memo
+    while True:
+        try:
+            await asyncio.sleep(BOOK_BROADCAST_INTERVAL)
+            if not _book_ws_subs:
+                continue
+            _refresh_file_memo()
+            for ws, subs in list(_book_ws_subs.items()):
+                if not subs:
+                    continue
+                payload: dict[str, dict] = {}
+                for pair, last_ts in list(subs.items()):
+                    entry = _file_memo.get(pair)
+                    if not entry:
+                        continue
+                    ts = entry.get("ts", 0.0)
+                    if ts <= last_ts:
+                        continue
+                    data = entry.get("data") or {}
+                    payload[pair] = {
+                        "ts": ts,
+                        "bids": data.get("bids") or [],
+                        "asks": data.get("asks") or [],
+                    }
+                    subs[pair] = ts
+                if payload:
+                    try:
+                        await ws.send_json({"books": payload})
+                    except Exception:
+                        # Client gone or wire error — drop the sub; next send will
+                        # fully clean up on receive-loop side.
+                        pass
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("book broadcast: %s", exc)
+
+
+def start_book_broadcast_loop() -> None:
+    """Web-worker half: pushes live orderbook frames to subscribed clients.
+    Reads only the shared books.json, no exchange calls — safe on every
+    uvicorn worker."""
+    global _book_broadcast_task
+    if _book_broadcast_task and not _book_broadcast_task.done():
+        return
+    _book_broadcast_task = asyncio.create_task(_book_broadcast_loop())
+
+
+def stop_book_broadcast_loop() -> None:
+    global _book_broadcast_task
+    if _book_broadcast_task and not _book_broadcast_task.done():
+        _book_broadcast_task.cancel()
+    _book_broadcast_task = None
+
+
+def _normalize_pair(raw: str) -> str | None:
+    """pair = 'exchange:SYMBOL' — matches the _book_cache key format."""
+    if not raw or ":" not in raw:
+        return None
+    ex, _, sym = raw.partition(":")
+    ex = ex.strip().lower()
+    sym = sym.strip().upper()
+    if not ex or not sym or len(ex) > 24 or len(sym) > 16:
+        return None
+    if not ex.replace("_", "").isalnum() or not sym.replace("_", "").isalnum():
+        return None
+    return f"{ex}:{sym}"
+
+
+@router.websocket("/ws/book")
+async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
+    """Live orderbook push for /arb.
+
+    Protocol:
+      Client → {"action": "subscribe",   "pairs": ["binance:BTC", "bybit:BTC"]}
+              {"action": "unsubscribe", "pairs": [...]}
+              (text "ping" → text "pong" heartbeat accepted too)
+      Server → {"books": {"<ex>:<SYM>": {ts, bids, asks}, ...}}
+
+    Subscribing a pair also kicks the orderbook prewarm poller so pairs
+    outside the top-N prewarm set start flowing into books.json within one
+    POLL_INTERVAL (~500ms)."""
+    user_id = decode_token(token) if token else None
+    await websocket.accept()
+    _book_ws_subs[websocket] = {}
+    logger.debug("book WS connect uid=%s (total=%d)", user_id, len(_book_ws_subs))
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            if raw == "ping":
+                await websocket.send_text("pong")
+                continue
+            try:
+                msg = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            action = (msg.get("action") or "").lower()
+            pairs_raw = msg.get("pairs") or []
+            if not isinstance(pairs_raw, list):
+                continue
+            pairs = [p for p in (_normalize_pair(x) for x in pairs_raw if isinstance(x, str)) if p]
+            subs = _book_ws_subs.get(websocket)
+            if subs is None:
+                break
+            if action == "subscribe":
+                # Cap total subs per client so a misbehaving tab can't pin
+                # all server-side book memory.
+                free = max(0, BOOK_MAX_PAIRS_PER_CLIENT - len(subs))
+                for pair in pairs[:free]:
+                    subs[pair] = 0.0
+                    # Kick the prewarm poller so non-top-N pairs populate quickly.
+                    ex, _, sym = pair.partition(":")
+                    try:
+                        from backend.services.orderbook_cache import get_cached_orderbook
+                        asyncio.create_task(get_cached_orderbook(ex, sym, 50))
+                    except Exception:
+                        pass
+            elif action == "unsubscribe":
+                for pair in pairs:
+                    subs.pop(pair, None)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.debug("book WS error uid=%s: %s", user_id, exc)
+    finally:
+        _book_ws_subs.pop(websocket, None)
+        logger.debug("book WS disconnect uid=%s (total=%d)", user_id, len(_book_ws_subs))
