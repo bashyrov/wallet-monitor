@@ -423,6 +423,13 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
   padding: 0 16px;
   margin-bottom: 0;
 }
+/* All-tab row polish — tighter rhythm, hover stripe, cleaner numerics */
+#tbl-all .tr-all > td { padding: 10px 12px; vertical-align: middle; }
+#tbl-all .tr-all:hover { background: var(--surface2); }
+#tbl-all .tr-all b { font-weight: 700; }
+#tbl-all .num { font-family: var(--mono); letter-spacing: -.01em; text-align: right; }
+#tbl-all thead th { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--text3); }
+
 /* Type pills for rows in the All tab — one per row-kind */
 .type-pill {
   display: inline-flex; align-items: center;
@@ -2316,22 +2323,27 @@ function renderAll() {
     const net = r.net_profit || 0;
     const apr = r.net_apr || 0;
     const longCell = isDex
-      ? `<span class="ex-chip"><span class="ex-dot" style="background:#A78BFA"></span><span class="ex-name">${(r.dex_name||'DEX').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()}</span></span>`
+      ? `<span class="ex-chip"><span class="ex-dot" style="background:#A78BFA"></span><span class="ex-name">${(r.dex_name||'DEX').toUpperCase()}<span style="color:var(--text3);font-weight:500"> · ${(r.dex_chain||'').toUpperCase()}</span></span></span>`
       : window.EX.chip(longEx, {suffix: isSpot ? '· spot' : ''});
     const typeChip = isDex
       ? `<span class="type-pill tp-dex">DEX/SHORT</span>`
       : isSpot
       ? `<span class="type-pill tp-spot">SPOT/SHORT</span>`
       : `<span class="type-pill tp-ls">LONG/SHORT</span>`;
-    return `<tr>
+    const detailUrl = isDex
+      ? `/arb?type=dex-short&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(shortEx)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`
+      : isSpot
+      ? `/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(longEx)}&short=${esc(shortEx)}`
+      : `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(longEx)}&short=${esc(shortEx)}`;
+    return `<tr class="tr-all">
       <td>${typeChip}</td>
-      <td class="sym-cell">${esc(r.symbol)}</td>
+      <td class="sym-cell"><b>${esc(r.symbol)}</b></td>
       <td>${longCell}</td>
       <td>${window.EX.chip(shortEx)}</td>
       <td class="num ${gross >= 0 ? 'pos' : 'neg'}">${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%</td>
       <td class="num ${net >= 0 ? 'pos' : 'neg'}"><b>${net >= 0 ? '+' : ''}${net.toFixed(4)}%</b></td>
-      <td class="num ${apr >= 0 ? 'pos' : 'neg'}">${apr > 0 ? apr.toFixed(1) + '%' : '—'}</td>
-      <td></td>
+      <td class="num ${apr > 0 ? 'pos' : 'neg'}">${apr > 0 ? apr.toFixed(1) + '%' : '—'}</td>
+      <td><a href="${detailUrl}" target="_blank" class="arb-detail-btn" onclick="event.stopPropagation()" title="Open detail">↗</a></td>
     </tr>`;
   }).join('');
 }
