@@ -160,9 +160,9 @@ body {
 /* Hide freshness dots everywhere by default — re-enabled only inside the alpha status strip */
 .lp-ex-health { display: none !important; }
 
-/* Exchange status strip — sticky bottom across all modes + pair pages */
+/* Exchange status strip — pinned to viewport bottom on every mode */
 .alpha-status-strip {
-  position: sticky; bottom: 0; left: 0; right: 0;
+  position: fixed; bottom: 0; left: 0; right: 0;
   z-index: 40;
   background: rgba(19,18,23,.94);
   backdrop-filter: blur(8px);
@@ -171,6 +171,11 @@ body {
   padding: 8px 16px;
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   font-size: 11px; color: var(--text3);
+}
+body { padding-bottom: 44px; }
+@media (max-width: 768px) {
+  body { padding-bottom: 140px; }
+  .alpha-status-strip { bottom: 88px; }
 }
 .alpha-status-strip .lbl {
   font-weight: 600; color: var(--text3);

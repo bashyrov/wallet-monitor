@@ -20,6 +20,7 @@ import fcntl
 import json
 import logging
 import os
+import threading
 import time
 
 import httpx
@@ -532,7 +533,8 @@ _PRUNE_EVERY         = 30
 _prewarm_tick_counter = [0]
 
 _prewarm_hotlist_task: asyncio.Task | None = None
-_prewarm_dump_task:    asyncio.Task | None = None
+_prewarm_dump_thread:  threading.Thread | None = None
+_prewarm_dump_stop:    threading.Event | None = None
 _prewarm_lock_fd = None
 
 
@@ -636,9 +638,20 @@ async def _prewarm_hotlist_loop() -> None:
         await asyncio.sleep(PREWARM_HOTLIST_S)
 
 
-async def _prewarm_dump_loop() -> None:
+def _prewarm_dump_loop_sync(stop_evt: threading.Event) -> None:
+    """Pure-thread books.json dumper.
+
+    Was previously an asyncio task — under heavy fetcher load
+    (spot/dex compute + orderbook pollers) the 0.5s sleep stretched to
+    15-20s, leaving books.json frozen and the web role serving
+    stale/empty orderbooks (and Aster disappearing entirely because its
+    poller couldn't keep up).
+
+    Runs in a daemon thread so file IO is fully decoupled from the
+    event loop.
+    """
     os.makedirs(_CACHE_DIR, exist_ok=True)
-    while True:
+    while not stop_evt.is_set():
         try:
             cutoff = time.time() - FILE_FRESH_MAX
             snapshot: dict[str, dict] = {}
@@ -656,13 +669,13 @@ async def _prewarm_dump_loop() -> None:
             os.replace(tmp, _BOOKS_FILE)
         except Exception as exc:
             logger.warning("prewarm dump error: %s", exc)
-        await asyncio.sleep(PREWARM_DUMP_S)
+        stop_evt.wait(PREWARM_DUMP_S)
 
 
 def start_prewarm() -> None:
     """Attempt to become the prewarm owner. Only one worker wins the lock;
     others become passive file readers with no added polling load."""
-    global _prewarm_hotlist_task, _prewarm_dump_task, _prewarm_lock_fd
+    global _prewarm_hotlist_task, _prewarm_dump_thread, _prewarm_dump_stop, _prewarm_lock_fd
     if _prewarm_hotlist_task and not _prewarm_hotlist_task.done():
         return
     try:
@@ -676,7 +689,14 @@ def start_prewarm() -> None:
     logger.info("orderbook prewarm owner started: top=%d, poll=%.1fs, dump=%.1fs",
                 PREWARM_TOP_N, POLL_INTERVAL, PREWARM_DUMP_S)
     _prewarm_hotlist_task = asyncio.create_task(_prewarm_hotlist_loop())
-    _prewarm_dump_task = asyncio.create_task(_prewarm_dump_loop())
+    _prewarm_dump_stop = threading.Event()
+    _prewarm_dump_thread = threading.Thread(
+        target=_prewarm_dump_loop_sync,
+        args=(_prewarm_dump_stop,),
+        name="orderbook-dump",
+        daemon=True,
+    )
+    _prewarm_dump_thread.start()
     # REST backstop DISABLED — 11 adapters × 6-12 workers caused GIL
     # contention that starved the asyncio event loop for the WS adapters,
     # net-regressed arb availability vs pre-fix (opp_count median 83→13,
@@ -687,12 +707,14 @@ def start_prewarm() -> None:
 
 
 def stop_prewarm() -> None:
-    global _prewarm_hotlist_task, _prewarm_dump_task, _prewarm_lock_fd
-    for t in (_prewarm_hotlist_task, _prewarm_dump_task):
-        if t and not t.done():
-            t.cancel()
+    global _prewarm_hotlist_task, _prewarm_dump_thread, _prewarm_dump_stop, _prewarm_lock_fd
+    if _prewarm_hotlist_task and not _prewarm_hotlist_task.done():
+        _prewarm_hotlist_task.cancel()
+    if _prewarm_dump_stop is not None:
+        _prewarm_dump_stop.set()
     _prewarm_hotlist_task = None
-    _prewarm_dump_task = None
+    _prewarm_dump_thread = None
+    _prewarm_dump_stop = None
     try:
         from backend.services.orderbook_rest import stop_rest_backstops
         stop_rest_backstops()

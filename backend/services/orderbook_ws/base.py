@@ -172,7 +172,10 @@ class WSAdapter:
                     ping_interval=self.ping_interval,
                     ping_timeout=self.ping_timeout,
                     close_timeout=3,
-                    open_timeout=20,      # allow slow exchanges to complete TLS + WS handshake
+                    # 30s tolerance: Aster/BingX can take 5-10s for TLS+WS upgrade
+                    # when the event loop is saturated by spot/dex compute; the
+                    # previous 20s tripped on most scheduler-contention windows.
+                    open_timeout=30,
                     max_size=4 * 1024 * 1024,
                 ) as ws:
                     self._ws = ws
