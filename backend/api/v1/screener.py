@@ -1181,20 +1181,25 @@ BOOK_MAX_PAIRS_PER_CLIENT = 16  # /arb needs 2; 16 is defensive headroom
 
 async def _book_broadcast_loop() -> None:
     """Push fresh orderbook frames to subscribed clients. Reads the shared
-    books.json via orderbook_cache._refresh_file_memo — no exchange calls."""
-    from backend.services.orderbook_cache import _refresh_file_memo, _file_memo
+    books.json via orderbook_cache._refresh_file_memo — no exchange calls.
+
+    NOTE: we import the module (not its _file_memo binding) because
+    _refresh_file_memo rebinds the module-level name on every reload — a
+    `from … import _file_memo` at top level would freeze our reference to
+    the initial (empty) dict."""
+    from backend.services import orderbook_cache as _ob
     while True:
         try:
             await asyncio.sleep(BOOK_BROADCAST_INTERVAL)
             if not _book_ws_subs:
                 continue
-            _refresh_file_memo()
+            _ob._refresh_file_memo()
             for ws, subs in list(_book_ws_subs.items()):
                 if not subs:
                     continue
                 payload: dict[str, dict] = {}
                 for pair, last_ts in list(subs.items()):
-                    entry = _file_memo.get(pair)
+                    entry = _ob._file_memo.get(pair)
                     if not entry:
                         continue
                     ts = entry.get("ts", 0.0)
