@@ -1711,21 +1711,12 @@ if (TYPE === 'spot' || TYPE === 'dex') {
           <!-- LEFT: chart area (iframe or spot info) -->
           <div class="col-left">
             <div class="chart-tabs">
-              <div class="chart-tab active">${IS_DEX ? 'DexScreener' : 'Overview'}</div>
+              <div class="chart-tab active">${IS_DEX ? 'DexScreener' : 'TradingView'}</div>
               <div class="chart-tab" style="color:var(--text3);cursor:default;opacity:.55">Basis history · soon</div>
             </div>
             ${IS_DEX
               ? `<iframe id="pt-dex-frame" class="pt-iframe" src="about:blank" loading="lazy" allow="clipboard-write; fullscreen" allowfullscreen></iframe>`
-              : `<div class="pt-spot-pane">
-                   <div class="row"><span class="lb">Spot price</span><span class="vl" id="pt-ov-sp">—</span></div>
-                   <div class="row"><span class="lb">Perp price</span><span class="vl" id="pt-ov-pp">—</span></div>
-                   <div class="row"><span class="lb">Basis</span><span class="vl" id="pt-ov-basis">—</span></div>
-                   <div class="row"><span class="lb">Short funding /8h</span><span class="vl" id="pt-ov-fund">—</span></div>
-                   <div class="row"><span class="lb">Gross</span><span class="vl" id="pt-ov-gross">—</span></div>
-                   <div class="row"><span class="lb">Total fees</span><span class="vl" id="pt-ov-fees">—</span></div>
-                   <div class="row"><span class="lb">Net / 8h</span><span class="vl" id="pt-ov-net">—</span></div>
-                   <div class="row"><span class="lb">Annualised</span><span class="vl" id="pt-ov-apr">—</span></div>
-                 </div>`}
+              : `<iframe id="pt-spot-frame" class="pt-iframe" src="about:blank" loading="lazy" allow="fullscreen" allowfullscreen></iframe>`}
           </div>
 
           <!-- CENTER: perp order book (single — DEX side has no book) -->
@@ -1925,23 +1916,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     setT('pt-apr',  apr > 0 ? apr.toFixed(0) + '%' : '—');
     $('pt-apr').style.color = apr > 0 ? 'var(--green)' : 'var(--text2)';
 
-    // Overview pane (Spot only — DEX has iframe)
-    if (!IS_DEX) {
-      setT('pt-ov-sp', fmtPxUsd(r.spot_price));
-      setT('pt-ov-pp', fmtPxUsd(r.perp_price));
-      setT('pt-ov-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`);
-      setCls('pt-ov-basis', 'vl ' + (basis >= 0 ? 'pos' : 'neg'));
-      setT('pt-ov-fund', `${fund >= 0 ? '+' : ''}${fund.toFixed(4)}%`);
-      setCls('pt-ov-fund', 'vl ' + (fund >= 0 ? 'pos' : 'neg'));
-      setT('pt-ov-gross', `${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%`);
-      setCls('pt-ov-gross', 'vl ' + (gross >= 0 ? 'pos' : 'neg'));
-      setT('pt-ov-fees', `−${(r.total_fees||0).toFixed(4)}%`);
-      setT('pt-ov-net', `${net >= 0 ? '+' : ''}${net.toFixed(4)}%`);
-      setCls('pt-ov-net', 'vl ' + (net >= 0 ? 'pos' : 'neg'));
-      setT('pt-ov-apr', apr > 0 ? apr.toFixed(1) + '% APR' : '—');
-      setCls('pt-ov-apr', 'vl ' + (apr > 0 ? 'pos' : ''));
-    }
-
     // LONG leg card (DEX or Spot)
     setT('pt-trade-long-venue', IS_DEX
       ? `${(r.dex_name||'').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()}`
@@ -2004,10 +1978,22 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     }
   }
 
-  // DexScreener embed
+  // DexScreener embed (DEX mode)
   if (IS_DEX && DEX_CHAIN && DEX_PAIR) {
     const frame = $('pt-dex-frame');
     if (frame) frame.src = `https://dexscreener.com/${DEX_CHAIN}/${DEX_PAIR}?embed=1&theme=dark&trades=1&info=0`;
+  }
+
+  // TradingView embed (Spot mode)
+  if (!IS_DEX) {
+    const TV_EX = {binance:'BINANCE', bybit:'BYBIT', okx:'OKX', gate:'GATEIO',
+                   kucoin:'KUCOIN', mexc:'MEXC', bitget:'BITGET', bingx:'BINGX'};
+    const tvEx = TV_EX[LONG] || 'BINANCE';
+    const frame = $('pt-spot-frame');
+    if (frame) {
+      const theme = document.body.classList.contains('light') ? 'light' : 'dark';
+      frame.src = `https://s.tradingview.com/widgetembed/?symbol=${tvEx}%3A${SYM}USDT&interval=15&theme=${theme}&style=1&timezone=Etc%2FUTC&hidesidetoolbar=1&withdateranges=0&saveimage=0&studies=[]&hideideas=1`;
+    }
   }
 
   // Build the pair row from independent sources — top-200 opps cache often

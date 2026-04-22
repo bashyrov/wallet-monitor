@@ -423,6 +423,20 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
   padding: 0 16px;
   margin-bottom: 0;
 }
+/* All-tab type chips (show only futures / spot-short / dex-short / all) */
+.all-type-chip {
+  padding: 5px 11px; border-radius: 999px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text3); font-size: 11.5px; font-weight: 600; font-family: inherit;
+  cursor: pointer; transition: all .15s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.all-type-chip:hover { color: var(--text); border-color: var(--border2); }
+.all-type-chip.active {
+  color: var(--green); background: rgba(26,255,171,0.08); border-color: rgba(26,255,171,0.3);
+}
+.all-type-chip span { font-family: var(--mono); font-size: 10px; opacity: .75; }
+
 .mode-tab {
   position: relative;
   padding: 14px 18px 13px;
@@ -1422,8 +1436,15 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
 
     <!-- ── ALL (combined) SECTION ── -->
     <div id="section-all" style="display:none">
+      <div style="display:flex;align-items:center;gap:6px;padding:10px 16px 6px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-right:4px">Show</span>
+        <button class="all-type-chip active" data-t="all"      onclick="setAllType('all',this)">All · <span id="all-cnt-all">—</span></button>
+        <button class="all-type-chip"        data-t="futures"  onclick="setAllType('futures',this)">Futures · <span id="all-cnt-fut">—</span></button>
+        <button class="all-type-chip"        data-t="spot_short" onclick="setAllType('spot_short',this)">Spot / Short · <span id="all-cnt-spot">—</span></button>
+        <button class="all-type-chip"        data-t="dex_short"  onclick="setAllType('dex_short',this)">DEX / Short · <span id="all-cnt-dex">—</span></button>
+      </div>
       <div class="table-wrap">
-        <table id="tbl-all">
+        <table id="tbl-all"
           <thead>
             <tr>
               <th data-tip="Type — Futures arb or Spot/Short cash-and-carry">Type</th>
@@ -2209,9 +2230,30 @@ async function loadAll() {
   _allTimer = setInterval(() => { if (_mode === 'all') loadAll(); }, 6000);
 }
 
+let _allTypeFilter = 'all';
+function setAllType(t, btn) {
+  _allTypeFilter = t;
+  document.querySelectorAll('.all-type-chip').forEach(c => c.classList.toggle('active', c === btn));
+  renderAll();
+}
+function _countAll() {
+  const c = { futures: 0, spot_short: 0, dex_short: 0 };
+  for (const r of _allRows) {
+    const t = r.type || 'futures';
+    if (c[t] != null) c[t]++;
+  }
+  const el = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  el('all-cnt-all', _allRows.length);
+  el('all-cnt-fut', c.futures);
+  el('all-cnt-spot', c.spot_short);
+  el('all-cnt-dex', c.dex_short);
+}
 function renderAll() {
+  _countAll();
   const q = (document.getElementById('search').value || '').trim().toUpperCase();
   const rows = _allRows.filter(r => {
+    const rType = r.type || 'futures';
+    if (_allTypeFilter !== 'all' && rType !== _allTypeFilter) return false;
     if (q && !r.symbol.toUpperCase().includes(q)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
     const longEx =
