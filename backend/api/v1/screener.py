@@ -353,6 +353,75 @@ _ORDERBOOK_EX = {
     "aster","hyperliquid","bingx","whitebit",
 }
 
+_SPOT_OB_EX = {"binance","bybit","okx","gate","kucoin","mexc","bitget","bingx"}
+
+
+@router.get("/orderbook-spot")
+async def get_spot_orderbook(
+    symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,16}$"),
+    exchange: str = Query(..., min_length=2, max_length=24),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Best-ask/best-bid snapshot from a CEX **spot** market — for the Spot /
+    Short detail terminal. Uses the venue's public REST (no WS cache yet).
+    Returns the same shape as /orderbook: {bids: [[px, qty], ...], asks: [...]}."""
+    from fastapi import HTTPException
+    import httpx as _httpx
+    ex = exchange.lower()
+    sym = symbol.upper()
+    if ex not in _SPOT_OB_EX:
+        raise HTTPException(400, f"unsupported exchange for spot orderbook: {ex}")
+
+    urls = {
+        "binance": (f"https://api.binance.com/api/v3/depth?symbol={sym}USDT&limit={min(limit, 100)}", "binance"),
+        "bybit":   (f"https://api.bybit.com/v5/market/orderbook?category=spot&symbol={sym}USDT&limit={min(limit, 50)}", "bybit"),
+        "okx":     (f"https://www.okx.com/api/v5/market/books?instId={sym}-USDT&sz={min(limit, 50)}", "okx"),
+        "gate":    (f"https://api.gateio.ws/api/v4/spot/order_book?currency_pair={sym}_USDT&limit={min(limit, 100)}", "gate"),
+        "kucoin":  (f"https://api.kucoin.com/api/v1/market/orderbook/level2_20?symbol={sym}-USDT", "kucoin"),
+        "mexc":    (f"https://api.mexc.com/api/v3/depth?symbol={sym}USDT&limit={min(limit, 100)}", "mexc"),
+        "bitget":  (f"https://api.bitget.com/api/v2/spot/market/orderbook?symbol={sym}USDT&limit={min(limit, 100)}", "bitget"),
+        "bingx":   (f"https://open-api.bingx.com/openApi/spot/v1/market/depth?symbol={sym}-USDT&limit={min(limit, 100)}", "bingx"),
+    }
+    url, kind = urls[ex]
+    try:
+        async with _httpx.AsyncClient(timeout=6.0, headers={"User-Agent": "Mozilla/5.0"}) as c:
+            r = await c.get(url)
+        if r.status_code != 200:
+            return {"bids": [], "asks": []}
+        j = r.json() or {}
+    except Exception:
+        return {"bids": [], "asks": []}
+
+    def _norm(arr):
+        out = []
+        for x in arr or []:
+            try:
+                out.append([float(x[0]), float(x[1])])
+            except (TypeError, ValueError, IndexError):
+                continue
+        return out
+
+    if kind == "binance" or kind == "mexc":
+        return {"bids": _norm(j.get("bids")), "asks": _norm(j.get("asks"))}
+    if kind == "bybit":
+        d = (j.get("result") or {})
+        return {"bids": _norm(d.get("b")), "asks": _norm(d.get("a"))}
+    if kind == "okx":
+        d = ((j.get("data") or [{}])[0])
+        return {"bids": _norm(d.get("bids")), "asks": _norm(d.get("asks"))}
+    if kind == "gate":
+        return {"bids": _norm(j.get("bids")), "asks": _norm(j.get("asks"))}
+    if kind == "kucoin":
+        d = j.get("data") or {}
+        return {"bids": _norm(d.get("bids")), "asks": _norm(d.get("asks"))}
+    if kind == "bitget":
+        d = (j.get("data") or {})
+        return {"bids": _norm(d.get("bids")), "asks": _norm(d.get("asks"))}
+    if kind == "bingx":
+        d = (j.get("data") or {})
+        return {"bids": _norm(d.get("bids")), "asks": _norm(d.get("asks"))}
+    return {"bids": [], "asks": []}
+
 
 @router.get("/orderbook")
 async def get_orderbook(
