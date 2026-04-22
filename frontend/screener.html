@@ -1608,7 +1608,14 @@ function symbolLink(symbol, exchange) {
 }
 
 // ── state ──────────────────────────────────────────────────────────────────────
-let _mode = (() => { const m = new URLSearchParams(location.search).get('mode'); return (m === 'funding' || m === 'alpha') ? m : 'arb'; })();
+let _mode = (() => {
+  const VALID = ['all','arb','spot','dex','funding','alpha'];
+  const u = new URLSearchParams(location.search).get('mode');
+  if (u && VALID.includes(u)) return u;
+  const ls = localStorage.getItem('screener_mode');
+  if (ls && VALID.includes(ls)) return ls;
+  return 'arb';
+})();
 let _rows = [];           // funding rows
 let _arbRows = [];                    // flat array for table rendering
 const _arbRowsByKey = new Map();      // key → opp, source of truth for diffs
@@ -1913,6 +1920,14 @@ function togglePanel() {
 // ── mode switch ────────────────────────────────────────────────────────────────
 function switchMode(mode) {
   _mode = mode;
+  // Persist so a page reload lands back on the same tab. Also mirror in URL
+  // so the user can share or bookmark a direct link.
+  try { localStorage.setItem('screener_mode', mode); } catch {}
+  try {
+    const url = new URL(window.location);
+    url.searchParams.set('mode', mode);
+    history.replaceState(null, '', url);
+  } catch {}
   ['all','arb','spot','dex','funding','alpha'].forEach(m => {
     const t = document.getElementById('tab-' + m);
     if (t) t.classList.toggle('active', mode === m);
