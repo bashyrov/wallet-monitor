@@ -1576,7 +1576,107 @@ const _p=new URLSearchParams(location.search);
 const SYM=(_p.get('symbol')||'').toUpperCase();
 const LONG=(_p.get('long')||'').toLowerCase();
 const SHORT=(_p.get('short')||'').toLowerCase();
-if(!SYM||!LONG||!SHORT) document.querySelector('.main').innerHTML='<div style="padding:40px;color:var(--text3)">Missing params. <a href="/screener" style="color:var(--green)">Back</a></div>';
+// type: 'futures' (default, CEX perp ⇄ CEX perp), 'spot' (CEX spot long, CEX perp short),
+//       'dex' (DEX pool long via DexScreener, CEX perp short)
+const TYPE=(_p.get('type')||'futures').toLowerCase();
+const DEX_CHAIN=(_p.get('chain')||'').toLowerCase();  // only meaningful for type=dex
+const DEX_ADDR=(_p.get('addr')||'').toLowerCase();    // only meaningful for type=dex
+if(!SYM||!LONG||!SHORT) document.body.innerHTML='<div style="padding:40px;color:var(--text3);font-family:Inter,sans-serif">Missing params. <a href="/screener" style="color:var(--green)">Back</a></div>';
+
+// Type-gate: full futures terminal only makes sense for type=futures.
+// Spot/Short and DEX/Short need their own detail layouts (coming in next
+// iteration). For now show a clean placeholder card so the button
+// navigation works end-to-end and users aren't dropped into a broken
+// terminal painted with dashes.
+if (TYPE === 'spot' || TYPE === 'dex') {
+  const SRC = TYPE === 'spot' ? '/screener/spot-arbitrage' : '/screener/dex-arbitrage';
+  const BACK = '/screener?mode=' + TYPE;
+  document.body.innerHTML = `
+    <header class="topbar" style="position:sticky;top:0;z-index:10;background:rgba(14,14,17,0.88);backdrop-filter:blur(14px);border-bottom:1px solid #22222A">
+      <app-navbar page="arb"></app-navbar>
+    </header>
+    <main style="max-width:820px;margin:40px auto;padding:24px">
+      <a href="${BACK}" style="color:#9B9FAB;font-size:13px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin-bottom:20px">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 4L6 8l4 4"/></svg>
+        Back to screener
+      </a>
+      <div style="background:#131217;border:1px solid #22222A;border-radius:14px;padding:28px 32px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(26,255,171,0.25),transparent)"></div>
+        <div style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:999px;background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.2);color:#1AFFAB;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px">
+          <span style="width:5px;height:5px;border-radius:50%;background:#1AFFAB;box-shadow:0 0 8px rgba(26,255,171,.8);animation:pulse 2s infinite"></span>
+          ${TYPE === 'spot' ? 'Spot / Short' : 'DEX / Short'}
+        </div>
+        <div style="font-size:24px;font-weight:700;letter-spacing:-.5px;margin-bottom:6px">${SYM}</div>
+        <div style="font-size:13px;color:#9B9FAB;margin-bottom:20px" id="pair-sub">—</div>
+        <div id="pair-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="padding:14px 16px;background:#17171C;border:1px solid #22222A;border-radius:10px">
+            <div style="font-size:10px;color:#676B7E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${TYPE === 'spot' ? 'Spot price' : 'DEX price'}</div>
+            <div id="pair-px-long" style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500">—</div>
+          </div>
+          <div style="padding:14px 16px;background:#17171C;border:1px solid #22222A;border-radius:10px">
+            <div style="font-size:10px;color:#676B7E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Perp price · short</div>
+            <div id="pair-px-short" style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500">—</div>
+          </div>
+          <div style="padding:14px 16px;background:#17171C;border:1px solid #22222A;border-radius:10px">
+            <div style="font-size:10px;color:#676B7E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Basis</div>
+            <div id="pair-basis" style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500">—</div>
+          </div>
+          <div style="padding:14px 16px;background:#17171C;border:1px solid #22222A;border-radius:10px">
+            <div style="font-size:10px;color:#676B7E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Short funding · 8h</div>
+            <div id="pair-fund" style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500">—</div>
+          </div>
+          <div style="grid-column:1 / -1;padding:14px 16px;background:linear-gradient(90deg,rgba(26,255,171,0.06),transparent);border:1px solid rgba(26,255,171,0.2);border-radius:10px">
+            <div style="font-size:10px;color:#1AFFAB;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Net profit · 8h (after fees)</div>
+            <div id="pair-net" style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:500;color:#1AFFAB">—</div>
+            <div id="pair-apr" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#9B9FAB;margin-top:3px">—</div>
+          </div>
+        </div>
+        <div id="pair-link" style="margin-top:18px"></div>
+        <div style="margin-top:24px;padding:12px 14px;background:#17171C;border:1px dashed #2E2E38;border-radius:10px;font-size:12px;color:#9B9FAB;line-height:1.55">
+          <b style="color:#E6E8E3">Full detail terminal is coming.</b> Next iteration will bring side-by-side
+          order books, basis history chart, trade panel and alerts tailored for ${TYPE === 'spot' ? 'Spot / Short' : 'DEX / Short'} mode.
+        </div>
+      </div>
+    </main>
+    <style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}</style>
+  `;
+  (async function () {
+    try {
+      const r = await Auth.apiFetch(SRC);
+      if (!r.ok) return;
+      const j = await r.json();
+      const opps = j.opportunities || [];
+      const row = opps.find(o => o.symbol === SYM &&
+        ((TYPE === 'spot' && o.spot_exchange === LONG) || (TYPE === 'dex')) &&
+        o.short_exchange === SHORT);
+      if (!row) return;
+      const fmt = (p) => p == null ? '—' : p >= 1000 ? '$' + p.toLocaleString('en-US', {maximumFractionDigits: 2}) : p >= 1 ? '$' + p.toFixed(4) : '$' + p.toPrecision(4);
+      const longLabel = TYPE === 'spot'
+        ? (EX_LABEL[row.spot_exchange] || row.spot_exchange)
+        : `${(row.dex_name || 'DEX').toUpperCase()} · ${(row.dex_chain || '').toUpperCase()}`;
+      document.getElementById('pair-sub').textContent = `${longLabel}  →  ${EX_LABEL[row.short_exchange] || row.short_exchange}`;
+      document.getElementById('pair-px-long').textContent  = fmt(TYPE === 'spot' ? row.spot_price : row.dex_price);
+      document.getElementById('pair-px-short').textContent = fmt(row.perp_price);
+      const basis = row.basis_pct || 0;
+      const fund = row.short_funding_8h || 0;
+      const net = row.net_profit || 0;
+      const apr = row.net_apr || 0;
+      document.getElementById('pair-basis').textContent = (basis >= 0 ? '+' : '') + basis.toFixed(4) + '%';
+      document.getElementById('pair-basis').style.color = basis >= 0 ? '#1AFFAB' : '#F87171';
+      document.getElementById('pair-fund').textContent = (fund >= 0 ? '+' : '') + fund.toFixed(4) + '%';
+      document.getElementById('pair-fund').style.color = fund >= 0 ? '#1AFFAB' : '#F87171';
+      document.getElementById('pair-net').textContent = (net >= 0 ? '+' : '') + net.toFixed(4) + '%';
+      document.getElementById('pair-apr').textContent = 'APR ~ ' + (apr > 0 ? apr.toFixed(1) + '%' : '—') + '  ·  Fees: ' + (row.total_fees || 0).toFixed(4) + '%';
+      if (TYPE === 'dex' && row.dex_pair_url) {
+        document.getElementById('pair-link').innerHTML = `<a href="${row.dex_pair_url}" target="_blank" rel="noopener" style="color:#1AFFAB;font-size:12.5px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+          Open on DexScreener
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h8v8M5 11L13 3"/></svg>
+        </a>`;
+      }
+    } catch {}
+  })();
+  throw new Error('_arb_type_gate');  // stop the rest of this script from running
+}
 
 let _opp=null, _longPrices=[], _shortPrices=[], _longHist=[], _shortHist=[];
 let _tf='1h', _infoPeriodH=1, _spreadBuilt=false, _fundBuilt=false;

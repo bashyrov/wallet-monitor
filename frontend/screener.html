@@ -2062,7 +2062,9 @@ function renderDex() {
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       <td>${fmtApr(r.net_apr)}</td>
-      <td></td>
+      <td style="display:flex;gap:4px;align-items:center">
+        <a href="/arb?type=dex&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain)}&long=${esc(r.dex_name)}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address)}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
+      </td>
     </tr>`;
   }).join('');
   renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
@@ -2180,7 +2182,9 @@ function renderSpot() {
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       <td>${fmtApr(r.net_apr)}</td>
-      <td></td>
+      <td style="display:flex;gap:4px;align-items:center">
+        <a href="/arb?type=spot&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
+      </td>
     </tr>`;
   }).join('');
   renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
