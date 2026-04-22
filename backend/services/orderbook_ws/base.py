@@ -23,6 +23,10 @@ class WSAdapter:
     name: str = ""
     url: str = ""
     ping_interval: float = 20.0
+    # Give the server 3× the ping interval before considering the link dead.
+    # Same fix as funding_ws/base.py — ping_timeout == ping_interval killed
+    # otherwise-healthy sessions under traffic spikes with 1011 errors.
+    ping_timeout: float = 60.0
     decompress_gzip: bool = False  # set True for exchanges that gzip WS frames (BingX)
     subscribe_delay: float = 0.0   # seconds between subscribe frames (exchanges with rate limits)
     max_symbols: int | None = None # cap total subscriptions per connection (None = unlimited)
@@ -166,7 +170,7 @@ class WSAdapter:
                 async with websockets.connect(
                     self.url,
                     ping_interval=self.ping_interval,
-                    ping_timeout=self.ping_interval,
+                    ping_timeout=self.ping_timeout,
                     close_timeout=3,
                     open_timeout=20,      # allow slow exchanges to complete TLS + WS handshake
                     max_size=4 * 1024 * 1024,
