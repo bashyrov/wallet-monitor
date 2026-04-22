@@ -1130,6 +1130,7 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       <button class="mode-tab" id="tab-all"     onclick="switchMode('all')">All</button>
       <button class="mode-tab active" id="tab-arb" onclick="switchMode('arb')">Arbitrage</button>
       <button class="mode-tab" id="tab-spot"    onclick="switchMode('spot')">Spot / Short</button>
+      <button class="mode-tab" id="tab-dex"     onclick="switchMode('dex')">DEX / Short</button>
       <button class="mode-tab" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
       <button class="mode-tab" id="tab-alpha"   onclick="switchMode('alpha')">Alpha <span class="wl-count-badge" id="wl-count-badge" style="display:none">★ <span id="wl-count">0</span></span></button>
     </div>
@@ -1393,6 +1394,30 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
       <div class="pager" id="pager-spot"></div>
+    </div>
+
+    <!-- ── DEX / SHORT SECTION (mirrors SPOT layout) ── -->
+    <div id="section-dex" style="display:none">
+      <div class="table-wrap">
+        <table id="tbl-dex">
+          <thead>
+            <tr>
+              <th onclick="sortDex('symbol')"          data-dcol="symbol"          data-tip="Token ticker (exists on a DEX AND on at least one CEX perp)">Token <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('dex_name')"        data-dcol="dex_name"        data-tip="DEX venue + chain (best-liquidity USD-quoted pair). Liquidity · 24h volume shown below.">DEX / Liquidity <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('short_exchange')"  data-dcol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('short_funding_8h')" data-dcol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('basis_pct')"       data-dcol="basis_pct"       data-tip="Basis = (perp − dex) / dex. Positive = perp trades above DEX, you capture the gap at entry">Basis <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('total_fees')"      data-dcol="total_fees"      data-tip="DEX round-trip (~0.8%) + perp round-trip. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('net_profit')"      data-dcol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
+              <th onclick="sortDex('net_apr')"         data-dcol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-dex"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-dex"></div>
+      <div class="pager" id="pager-dex"></div>
     </div>
 
     <!-- ── ALL (combined) SECTION ── -->
@@ -1888,14 +1913,14 @@ function togglePanel() {
 // ── mode switch ────────────────────────────────────────────────────────────────
 function switchMode(mode) {
   _mode = mode;
-  ['all','arb','spot','funding','alpha'].forEach(m => {
+  ['all','arb','spot','dex','funding','alpha'].forEach(m => {
     const t = document.getElementById('tab-' + m);
     if (t) t.classList.toggle('active', mode === m);
     const s = document.getElementById('section-' + m);
     if (s) s.style.display = mode === m ? '' : 'none';
   });
   document.getElementById('lp-filters-funding').style.display   = mode === 'funding' ? '' : 'none';
-  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha' || mode === 'all') ? '' : 'none';
+  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex') ? '' : 'none';
   const mf = document.getElementById('mob-filters-funding'); if (mf) mf.style.display = mode === 'funding' ? '' : 'none';
   const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all') ? '' : 'none';
   const mobSortF = document.getElementById('mobile-sort-funding'); if (mobSortF) mobSortF.style.display = mode === 'funding' ? '' : 'none';
@@ -1907,9 +1932,128 @@ function switchMode(mode) {
   else if (mode === 'alpha') loadAlpha();
   else if (mode === 'funding') applyFilter();
   else if (mode === 'spot') loadSpot();
+  else if (mode === 'dex') loadDex();
   else if (mode === 'all') loadAll();
   else applyArb();
 }
+
+// ── DEX-short arbitrage ──────────────────────────────────────────────────────
+let _dexRows = [];
+let _dexFiltered = [];
+let _dexTimer = null;
+let _pageDX = 0;
+let _dexSort = { col: 'net_profit', dir: 'desc' };
+
+async function loadDex() {
+  if (!_dexRows.length) {
+    document.getElementById('tbody-dex').innerHTML =
+      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
+  }
+  try {
+    const r = await Auth.apiFetch('/screener/dex-arbitrage');
+    if (!r.ok) throw new Error('dex ' + r.status);
+    const j = await r.json();
+    _dexRows = j.opportunities || [];
+    applyDex();
+  } catch (e) {
+    document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+  }
+  clearInterval(_dexTimer);
+  // 30 s — matches fetcher's dex refresh cadence (DexScreener rate-limited)
+  _dexTimer = setInterval(() => { if (_mode === 'dex') loadDex(); }, 30000);
+}
+
+function sortDex(col) {
+  if (_dexSort.col === col) _dexSort.dir = _dexSort.dir === 'desc' ? 'asc' : 'desc';
+  else { _dexSort.col = col; _dexSort.dir = 'desc'; }
+  document.querySelectorAll('#tbl-dex th[data-dcol]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (th.dataset.dcol === col) { th.classList.add('sorted'); if (arrow) arrow.textContent = _dexSort.dir === 'desc' ? '↓' : '↑'; }
+    else { th.classList.remove('sorted'); if (arrow) arrow.textContent = '↕'; }
+  });
+  applyDex();
+}
+
+function applyDex() {
+  const q = (document.getElementById('search').value || '').trim().toUpperCase();
+  const minNet = parseFloat(document.getElementById('f-min-net').value) || null;
+  const minGS  = parseFloat(document.getElementById('f-min-gs').value) || null;
+  const minVol = parseFloat(document.getElementById('f-min-vol').value) || 0;
+  _dexFiltered = _dexRows.filter(r => {
+    if (q && !r.symbol.toUpperCase().includes(q)) return false;
+    if (_exDisabled.has(r.short_exchange)) return false;
+    if (_hiddenTokens.has(r.symbol)) return false;
+    if (minNet != null && r.net_profit < minNet) return false;
+    if (minGS  != null && r.gross < minGS) return false;
+    if (minVol && (r.perp_volume_usd || 0) < minVol) return false;
+    return true;
+  });
+  const dir = _dexSort.dir === 'desc' ? -1 : 1;
+  _dexFiltered.sort((a, b) => {
+    const av = a[_dexSort.col], bv = b[_dexSort.col];
+    if (typeof av === 'string') return (av || '').localeCompare(bv || '') * dir;
+    return ((av ?? 0) - (bv ?? 0)) * dir;
+  });
+  _pageDX = 0;
+  renderDex();
+}
+
+function renderDex() {
+  const tbody = document.getElementById('tbody-dex');
+  const start = _pageDX * PAGE_SIZE;
+  const page = _dexFiltered.slice(start, start + PAGE_SIZE);
+  if (!_dexFiltered.length) {
+    const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
+    return;
+  }
+  tbody.innerHTML = page.map(r => {
+    const netCls  = r.net_profit > 0 ? 'net-pos' : 'net-neg';
+    const netSign = r.net_profit >= 0 ? '+' : '';
+    const basisSign = r.basis_pct >= 0 ? '+' : '';
+    const basisCls  = r.basis_pct >= 0 ? 'rate-neg' : 'rate-pos';
+    const fundSign  = r.short_funding_8h >= 0 ? '+' : '';
+    const fundCls   = r.short_funding_8h >= 0 ? 'rate-pos' : 'rate-neg';
+    const shealth = _exHealth[r.short_exchange] || {};
+    const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange}"></span>`;
+    const dexLabel = (r.dex_name || 'dex').toUpperCase();
+    const chain = (r.dex_chain || '').toUpperCase();
+    const dexLink = r.dex_pair_url ? `<a href="${r.dex_pair_url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--purple);text-decoration:none;font-weight:600">${dexLabel}</a>` : `<span style="color:var(--purple);font-weight:600">${dexLabel}</span>`;
+    return `<tr data-short-ex="${r.short_exchange}">
+      <td class="td-symbol">${esc(r.symbol)}</td>
+      <td>
+        <div class="arb-pair">
+          <div class="arb-ex-rate">
+            <span class="arb-label">dex</span>
+            ${dexLink}${chain ? `<span style="color:var(--text3);font-size:10px;margin-left:6px">${chain}</span>` : ''}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-left:36px">$${fmtPrice(r.dex_price)} · <span style="font-family:var(--mono)">liq ${fmtVol(r.dex_liquidity_usd)}</span></div>
+        </div>
+      </td>
+      <td>
+        <div class="arb-pair">
+          <div class="arb-ex-rate">
+            <span class="arb-label">short</span>
+            ${fmtExRate(r.short_exchange, r.funding_rate, r.symbol)}${sdot}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.perp_price)} · <span style="font-family:var(--mono)">${fmtVol(r.perp_volume_usd)}</span></div>
+        </div>
+      </td>
+      <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
+      <td class="td-spread"><span class="${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span></td>
+      <td class="td-fees">
+        <span title="dex rt: ${r.fee_dex.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
+      </td>
+      <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
+      <td>${fmtApr(r.net_apr)}</td>
+      <td></td>
+    </tr>`;
+  }).join('');
+  renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
+}
+
+function goPageDX(p) { _pageDX = p; renderDex(); }
 
 // ── Spot-short arbitrage (mirrors arb layout + cadence) ──────────────────────
 let _spotRows = [];
@@ -2051,9 +2195,13 @@ function renderAll() {
   const rows = _allRows.filter(r => {
     if (q && !r.symbol.toUpperCase().includes(q)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
-    const longEx = r.type === 'spot_short' ? r.spot_exchange : r.long_exchange;
-    const shortEx = r.type === 'spot_short' ? r.short_exchange : r.short_exchange;
-    if (_exDisabled.has(longEx) || _exDisabled.has(shortEx)) return false;
+    const longEx =
+      r.type === 'spot_short' ? r.spot_exchange :
+      r.type === 'dex_short'  ? null :
+                                r.long_exchange;
+    const shortEx = r.short_exchange;
+    if (longEx && _exDisabled.has(longEx)) return false;
+    if (_exDisabled.has(shortEx)) return false;
     return true;
   });
   const tb = document.getElementById('tbody-all');
@@ -2063,18 +2211,27 @@ function renderAll() {
   }
   tb.innerHTML = rows.slice(0, 300).map(r => {
     const isSpot = r.type === 'spot_short';
-    const longEx = isSpot ? r.spot_exchange : r.long_exchange;
+    const isDex  = r.type === 'dex_short';
+    const longEx =
+      isSpot ? r.spot_exchange :
+      isDex  ? null :
+               r.long_exchange;
     const shortEx = r.short_exchange;
-    const gross = isSpot ? r.gross : (r.gross_funding + (r.price_spread || 0));
+    const gross = (isSpot || isDex) ? r.gross : (r.gross_funding + (r.price_spread || 0));
     const net = r.net_profit || 0;
     const apr = r.net_apr || 0;
-    const typeChip = isSpot
+    const longCell = isDex
+      ? `<span class="ex-chip" style="color:#A78BFA;font-weight:600">${(r.dex_name||'DEX').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()}</span>`
+      : `<span class="ex-chip" style="color:${EX_COLOR[longEx]||'#aaa'}">${EX_LABEL[longEx]||longEx}${isSpot?' (spot)':''}</span>`;
+    const typeChip = isDex
+      ? `<span class="ex-chip" style="color:#A78BFA;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.3);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">DEX/SHORT</span>`
+      : isSpot
       ? `<span class="ex-chip" style="color:#E5C07B;background:rgba(229,192,123,0.08);border:1px solid rgba(229,192,123,0.3);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">SPOT/SHORT</span>`
       : `<span class="ex-chip" style="color:#1AFFAB;background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.3);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;">FUTURES</span>`;
     return `<tr>
       <td>${typeChip}</td>
       <td class="sym-cell">${esc(r.symbol)}</td>
-      <td><span class="ex-chip" style="color:${EX_COLOR[longEx]||'#aaa'}">${EX_LABEL[longEx]||longEx}${isSpot?' (spot)':''}</span></td>
+      <td>${longCell}</td>
       <td><span class="ex-chip" style="color:${EX_COLOR[shortEx]||'#aaa'}">${EX_LABEL[shortEx]||shortEx}</span></td>
       <td class="num ${gross >= 0 ? 'pos' : 'neg'}">${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%</td>
       <td class="num ${net >= 0 ? 'pos' : 'neg'}"><b>${net >= 0 ? '+' : ''}${net.toFixed(4)}%</b></td>

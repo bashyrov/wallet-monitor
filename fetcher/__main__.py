@@ -76,6 +76,13 @@ async def _run() -> None:
     start_spot_refresh_loop()
     logger.info("fetcher: spot refresh loop started")
 
+    # ── DEX-short arbitrage refresh (30 s — DexScreener rate-limited) ─
+    from backend.services.dex_arbitrage_service import (
+        start_dex_refresh_loop, stop_dex_refresh_loop,
+    )
+    start_dex_refresh_loop()
+    logger.info("fetcher: dex refresh loop started")
+
     # ── Alerts (Telegram) — reads funding cache, sends on threshold ──
     from backend.services.alert_service import start_alert_service, stop_alert_service
     start_alert_service()
@@ -117,6 +124,7 @@ async def _run() -> None:
         for name, fn in (
             ("alert_service", stop_alert_service),
             ("tg_bot", stop_tg_bot),
+            ("dex_refresh_loop", stop_dex_refresh_loop),
             ("spot_refresh_loop", stop_spot_refresh_loop),
             ("refresh_loop", stop_refresh_loop),
             ("funding_ws_manager", stop_funding_ws_manager),
