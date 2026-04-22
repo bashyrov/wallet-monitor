@@ -1746,86 +1746,122 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             </div>
           </div>
 
-          <!-- RIGHT: Trade panel + position breakdown -->
+          <!-- RIGHT: Trade panel (matches futures terminal 1:1) -->
           <div class="col-info">
-            <div class="col-info-title">Execute · ${IS_DEX ? 'DEX / Short' : 'Spot / Short'}</div>
-            <div class="pt-info-cards">
+            <div class="col-info-title">Execute trade</div>
+            <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column">
 
-              <!-- DEX / Spot (long) buy card -->
-              <div class="card" id="pt-trade-long" style="border-left:3px solid ${IS_DEX ? '#A78BFA' : 'var(--green)'};padding-bottom:12px">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                  <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;background:${IS_DEX ? 'rgba(167,139,250,.15)' : 'rgba(26,255,171,.12)'};color:${IS_DEX ? '#A78BFA' : 'var(--green)'};letter-spacing:.08em">${IS_DEX ? 'BUY · DEX' : 'BUY · SPOT'}</span>
-                  <span id="pt-trade-long-venue" style="font-size:11px;color:var(--text2);font-weight:600">—</span>
+              <!-- LONG leg: BUY on DEX / Spot venue -->
+              <div class="trade-leg" id="pt-trade-long">
+                <div class="trade-leg-head">
+                  <span class="trade-leg-badge trade-leg-long" style="${IS_DEX ? 'color:#A78BFA;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.35)' : ''}">${IS_DEX ? 'DEX' : 'SPOT'}</span>
+                  <span class="trade-leg-ex" id="pt-trade-long-venue">—</span>
+                  <span class="trade-leg-status" style="color:var(--text3);background:var(--surface3);border:1px solid var(--border)">manual</span>
                 </div>
-                <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:10px">
-                  <span style="font-family:var(--mono);font-size:16px;font-weight:600" id="pt-trade-long-px">—</span>
-                  <span style="font-size:10px;color:var(--text3)">per ${SYM}</span>
+                <div class="trade-leg-body">
+                  <div class="trade-price-row">
+                    <span class="trade-lbl">Last</span>
+                    <span class="trade-last mono" id="pt-trade-long-px">—</span>
+                    <span class="trade-spacer"></span>
+                    <span class="trade-lbl">${IS_DEX ? 'Liq' : 'Vol 24h'}</span>
+                    <span class="trade-bal mono" id="pt-trade-long-meta">—</span>
+                  </div>
+                  <div class="trade-info-rows">
+                    <div class="trade-info-row"><span>Fees (round-trip)</span><span class="mono" id="pt-long-fees">—</span></div>
+                    <div class="trade-info-row"><span>Basis at entry</span><span class="mono" id="pt-long-basis">—</span></div>
+                  </div>
+                  ${IS_DEX
+                    ? `<a id="pt-dex-swap" class="trade-submit trade-long-btn" href="#" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#A78BFA 0%,#8B5CF6 100%);color:#0B0B0E;text-align:center;text-decoration:none;display:block">Open swap on DEX →</a>`
+                    : `<a id="pt-spot-link" class="trade-submit trade-long-btn" href="#" target="_blank" rel="noopener" style="text-align:center;text-decoration:none;display:block">Open on exchange →</a>`
+                  }
+                  <div style="font-size:10.5px;color:var(--text3);line-height:1.45;text-align:center;margin-top:4px">${IS_DEX
+                    ? 'Swap runs in your wallet (MetaMask / Phantom) via DexScreener.'
+                    : 'Native spot order API via connected key — coming next.'}</div>
                 </div>
-                ${IS_DEX
-                  ? `<a id="pt-dex-swap" class="trade-submit" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;background:linear-gradient(135deg,#A78BFA 0%,#8B5CF6 100%);color:#0B0B0E;text-decoration:none;box-shadow:0 4px 14px -4px rgba(167,139,250,.45)">Open swap on DEX →</a>`
-                  : `<div style="font-size:11px;color:var(--text3);line-height:1.5">Спот-трейд с ключей биржи скоро будет. Пока открой биржу отдельно:<a id="pt-spot-link" href="#" target="_blank" rel="noopener" style="display:block;margin-top:8px;color:var(--green);font-weight:600;text-decoration:none">Open on exchange →</a></div>`}
               </div>
 
-              <!-- Perp short trade panel -->
-              <div class="card" id="pt-trade-short" style="border-left:3px solid var(--red);padding:12px 14px">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-                  <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(248,113,113,.14);color:var(--red);letter-spacing:.08em">SHORT · PERP</span>
-                  <span style="font-size:11px;color:var(--text2);font-weight:600">${EX_LABEL[SHORT]||SHORT}</span>
-                  <span id="pt-trade-status" style="margin-left:auto;font-size:10px;color:var(--text3);font-family:var(--mono)">—</span>
+              <!-- SHORT leg: perp short panel (full 1:1 with futures) -->
+              <div class="trade-leg" id="pt-trade-short">
+                <div class="trade-leg-head">
+                  <span class="trade-leg-badge trade-leg-short">SHORT</span>
+                  <span class="trade-leg-ex">${EX_LABEL[SHORT]||SHORT}</span>
+                  <span class="trade-leg-status missing" id="pt-trade-status">—</span>
                 </div>
-
-                <div style="display:flex;gap:6px;margin-bottom:8px">
-                  <span class="trade-dd-chip is-active" id="pt-mm-iso" onclick="_pt_setMM('isolated')" style="flex:1;text-align:center;cursor:pointer;padding:5px 8px;border-radius:5px;background:var(--surface3);color:var(--text);font-size:10.5px;font-weight:600;border:1px solid var(--border)">Isolated</span>
-                  <span class="trade-dd-chip" id="pt-mm-cross" onclick="_pt_setMM('cross')" style="flex:1;text-align:center;cursor:pointer;padding:5px 8px;border-radius:5px;background:var(--surface2);color:var(--text3);font-size:10.5px;font-weight:600;border:1px solid var(--border)">Cross</span>
+                <div class="trade-leg-body">
+                  <div class="trade-row">
+                    <div class="trade-dd">
+                      <span class="trade-dd-chip is-active" id="pt-mm-iso" onclick="_pt_setMM('isolated')">Isolated</span>
+                      <span class="trade-dd-chip" id="pt-mm-cross" onclick="_pt_setMM('cross')">Cross</span>
+                    </div>
+                    <div class="trade-lev">
+                      <button class="trade-lev-btn" onclick="_pt_lev(-1)">−</button>
+                      <span class="trade-lev-val" id="pt-lev-val">3×</span>
+                      <button class="trade-lev-btn" onclick="_pt_lev(1)">+</button>
+                    </div>
+                  </div>
+                  <div class="trade-price-row">
+                    <span class="trade-lbl">Last</span>
+                    <span class="trade-last mono" id="pt-last">—</span>
+                    <span class="trade-spacer"></span>
+                    <span class="trade-lbl">Balance</span>
+                    <span class="trade-bal mono" id="pt-bal">— USDT</span>
+                  </div>
+                  <div class="trade-size-row">
+                    <input class="trade-size-input" id="pt-size" type="number" placeholder="Size" oninput="_pt_updateCalc()">
+                    <div class="trade-unit-toggle">
+                      <button class="trade-unit is-active" id="pt-unit-tok" onclick="_pt_setUnit('token')">TOK</button>
+                      <button class="trade-unit" id="pt-unit-usd" onclick="_pt_setUnit('usdt')">USDT</button>
+                    </div>
+                  </div>
+                  <div class="trade-slider-wrap">
+                    <input type="range" class="trade-slider" min="0" max="100" step="1" value="0" id="pt-slider" oninput="_pt_slide(this.value)">
+                    <div class="trade-slider-ticks">
+                      <button class="trade-tick" onclick="_pt_slide(0)">0</button>
+                      <button class="trade-tick" onclick="_pt_slide(25)">25</button>
+                      <button class="trade-tick" onclick="_pt_slide(50)">50</button>
+                      <button class="trade-tick" onclick="_pt_slide(75)">75</button>
+                      <button class="trade-tick" onclick="_pt_slide(100)">100</button>
+                    </div>
+                  </div>
+                  <div class="trade-info-rows">
+                    <div class="trade-info-row"><span>Position Value</span><span class="mono" id="pt-notional">0.00 USDT</span></div>
+                    <div class="trade-info-row"><span>Margin Used</span><span class="mono" id="pt-margin">0.00 USDT</span></div>
+                  </div>
+                  <button class="trade-submit trade-short-btn" id="pt-submit" onclick="_pt_submit()" disabled>Open Short · —</button>
+                  <div class="trade-err" id="pt-err" style="display:none;padding:6px 10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:5px;color:var(--red);font-size:10.5px;margin-top:2px"></div>
                 </div>
-
-                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-                  <span style="flex:1;font-size:10px;color:var(--text3)">Leverage</span>
-                  <button onclick="_pt_lev(-1)" style="width:24px;height:24px;border-radius:5px;background:var(--surface2);border:1px solid var(--border);color:var(--text);cursor:pointer;font-weight:700">−</button>
-                  <span id="pt-lev-val" style="min-width:36px;text-align:center;font-family:var(--mono);font-size:13px;font-weight:700">3×</span>
-                  <button onclick="_pt_lev(+1)" style="width:24px;height:24px;border-radius:5px;background:var(--surface2);border:1px solid var(--border);color:var(--text);cursor:pointer;font-weight:700">+</button>
-                </div>
-
-                <div style="display:flex;gap:6px;margin-bottom:6px">
-                  <input id="pt-size" type="number" placeholder="Size" oninput="_pt_updateCalc()" style="flex:1;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12.5px;outline:none"/>
-                  <span style="display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:5px;overflow:hidden">
-                    <button id="pt-unit-tok" onclick="_pt_setUnit('token')" style="padding:0 9px;font-size:10px;font-weight:600;background:var(--surface3);color:var(--text);border:none;cursor:pointer">TOK</button>
-                    <button id="pt-unit-usd" onclick="_pt_setUnit('usdt')" style="padding:0 9px;font-size:10px;font-weight:600;background:transparent;color:var(--text3);border:none;cursor:pointer">USDT</button>
-                  </span>
-                </div>
-
-                <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:8px">
-                  <span>Notional · <span class="mono" id="pt-notional">—</span></span>
-                  <span>Margin · <span class="mono" id="pt-margin">—</span></span>
-                </div>
-
-                <button class="trade-submit" id="pt-submit" onclick="_pt_submit()" disabled style="width:100%;background:linear-gradient(135deg,#F87171 0%,#EF4444 100%);color:#FFF;text-align:center;border:none;cursor:pointer">Open Short · add keys</button>
-                <div id="pt-err" style="margin-top:6px;font-size:10.5px;color:var(--red);display:none"></div>
               </div>
 
-              <!-- Position breakdown -->
-              <div class="card">
-                <div class="lb">Basis (perp − ${IS_DEX ? 'dex' : 'spot'}) / ${IS_DEX ? 'dex' : 'spot'}</div>
-                <div class="vl" id="pt-rt-basis">—</div>
-              </div>
-              <div class="card">
-                <div class="lb">Short funding per 8h</div>
-                <div class="vl" id="pt-rt-fund">—</div>
-                <div class="sub" id="pt-rt-fund-sub">native rate × 8/ivl</div>
-              </div>
-              <div class="card">
-                <div class="lb">Gross (basis + short funding)</div>
-                <div class="vl" id="pt-rt-gross">—</div>
-              </div>
-              <div class="card">
-                <div class="lb">Total fees (round-trip)</div>
-                <div class="vl" id="pt-rt-fees">—</div>
-                <div class="sub" id="pt-rt-fees-sub">—</div>
-              </div>
-              <div class="card" style="background:linear-gradient(135deg,rgba(26,255,171,0.08),rgba(26,255,171,0.02));border-color:rgba(26,255,171,0.22);">
-                <div class="lb" style="color:var(--green)">Net profit · 8h</div>
-                <div class="vl pos" id="pt-rt-net">—</div>
-                <div class="sub" id="pt-rt-apr">APR —</div>
+              <!-- Calculator / breakdown -->
+              <div style="padding:10px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border);background:var(--surface2)">
+                <div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:0 2px">P&amp;L calculator · per 8h</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border-radius:6px;overflow:hidden">
+                  <div style="background:var(--surface);padding:8px 10px">
+                    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Basis</div>
+                    <div class="mono" id="pt-rt-basis" style="font-size:12.5px;font-weight:600">—</div>
+                  </div>
+                  <div style="background:var(--surface);padding:8px 10px">
+                    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Short funding</div>
+                    <div class="mono" id="pt-rt-fund" style="font-size:12.5px;font-weight:600">—</div>
+                  </div>
+                  <div style="background:var(--surface);padding:8px 10px">
+                    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Gross</div>
+                    <div class="mono" id="pt-rt-gross" style="font-size:12.5px;font-weight:600">—</div>
+                  </div>
+                  <div style="background:var(--surface);padding:8px 10px">
+                    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Fees</div>
+                    <div class="mono" id="pt-rt-fees" style="font-size:12.5px;font-weight:600">—</div>
+                    <div class="mono" id="pt-rt-fees-sub" style="font-size:9.5px;color:var(--text3);margin-top:2px">—</div>
+                  </div>
+                  <div style="background:linear-gradient(135deg,rgba(26,255,171,.07),transparent);padding:8px 10px;grid-column:1 / -1">
+                    <div style="font-size:9px;color:var(--green);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;font-weight:700">Net / 8h · APR</div>
+                    <div style="display:flex;align-items:baseline;gap:6px">
+                      <span class="mono" id="pt-rt-net" style="font-size:18px;font-weight:700;color:var(--green)">—</span>
+                      <span class="mono" id="pt-rt-apr" style="font-size:11px;color:var(--text2)">—</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="mono" id="pt-rt-fund-sub" style="font-size:9.5px;color:var(--text3);text-align:center">—</div>
               </div>
             </div>
           </div>
@@ -1906,11 +1942,14 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       setCls('pt-ov-apr', 'vl ' + (apr > 0 ? 'pos' : ''));
     }
 
-    // Right-column trade panels
+    // LONG leg card (DEX or Spot)
     setT('pt-trade-long-venue', IS_DEX
       ? `${(r.dex_name||'').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()}`
       : (EX_LABEL[r.spot_exchange] || r.spot_exchange || ''));
     setT('pt-trade-long-px', fmtPxUsd(IS_DEX ? r.dex_price : r.spot_price));
+    setT('pt-trade-long-meta', IS_DEX ? fmtVol(r.dex_liquidity_usd) : fmtVol(r.spot_volume_usd));
+    setT('pt-long-fees', `−${(IS_DEX ? (r.fee_dex||0) : (r.fee_spot||0)).toFixed(3)}%`);
+    setT('pt-long-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`);
     if (IS_DEX) {
       const swap = $('pt-dex-swap');
       if (swap && r.dex_pair_url) swap.href = r.dex_pair_url;
@@ -1918,22 +1957,26 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       const sp = $('pt-spot-link');
       if (sp) sp.href = _ptSpotUrl(r.spot_exchange || LONG, SYM);
     }
+    // SHORT leg Last price (updates every refresh)
+    setT('pt-last', fmtPx(r.perp_price));
     _ptRecalc();
 
-    // Right column position breakdown
-    setT('pt-rt-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(4)}%`);
-    setCls('pt-rt-basis', 'vl ' + (basis >= 0 ? 'pos' : 'neg'));
-    setT('pt-rt-fund', `${fund >= 0 ? '+' : ''}${fund.toFixed(4)}%`);
-    setCls('pt-rt-fund', 'vl ' + (fund >= 0 ? 'pos' : 'neg'));
-    setT('pt-rt-fund-sub', `native ${fundNative.toFixed(4)}% / ${ivl}h`);
-    setT('pt-rt-gross', `${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%`);
-    setCls('pt-rt-gross', 'vl ' + (gross >= 0 ? 'pos' : 'neg'));
-    setT('pt-rt-fees', `−${(r.total_fees||0).toFixed(4)}%`);
+    // Calculator cards — plain text + inline colour (CSS classes kept mono)
+    const setCol = (id, text, isPos) => {
+      const el = $(id);
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = isPos === null ? 'var(--text)' : (isPos ? 'var(--green)' : 'var(--red)');
+    };
+    setCol('pt-rt-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(4)}%`, basis >= 0);
+    setCol('pt-rt-fund',  `${fund  >= 0 ? '+' : ''}${fund.toFixed(4)}%`,  fund  >= 0);
+    setCol('pt-rt-gross', `${gross >= 0 ? '+' : ''}${gross.toFixed(4)}%`, gross >= 0);
+    setCol('pt-rt-fees',  `−${(r.total_fees||0).toFixed(4)}%`, null);
+    setCol('pt-rt-net',   `${net   >= 0 ? '+' : ''}${net.toFixed(4)}%`,   net   >= 0);
+    setT('pt-rt-fund-sub', `native ${fundNative.toFixed(4)}% / ${ivl}h · basis from snapshots`);
     setT('pt-rt-fees-sub', IS_DEX
       ? `DEX rt ${(r.fee_dex||0).toFixed(3)}% + perp rt ${(r.fee_perp||0).toFixed(3)}%`
       : `spot rt ${(r.fee_spot||0).toFixed(3)}% + perp rt ${(r.fee_perp||0).toFixed(3)}%`);
-    setT('pt-rt-net', `${net >= 0 ? '+' : ''}${net.toFixed(4)}%`);
-    setCls('pt-rt-net', 'vl ' + (net >= 0 ? 'pos' : 'neg'));
     setT('pt-rt-apr', `APR ${apr > 0 ? apr.toFixed(1) + '%' : '—'}`);
     if (IS_DEX && r.dex_pair_url) {
       const ext = $('pt-ext-link');
@@ -2192,8 +2235,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   }
   async function _ptFetchStatus() {
     try {
-      // /trade/status requires both legs — pass SHORT on both sides; we only
-      // consume the short result. Same trick works for the spot type too.
       const r = await Auth.apiFetch(`/trade/status?symbol=${SYM}&long_ex=${SHORT}&short_ex=${SHORT}`);
       if (!r.ok) return;
       const j = await r.json();
@@ -2204,13 +2245,14 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       const st = $('pt-trade-status');
       if (st) {
         if (_pt.wallet_id) {
-          st.textContent = `bal ${_pt.balance != null ? (+_pt.balance).toFixed(2) : '—'} USDT`;
-          st.style.color = 'var(--text2)';
+          st.textContent = 'ok';
+          st.className = 'trade-leg-status ok';
         } else {
-          st.textContent = 'no trade keys';
-          st.style.color = 'var(--yellow)';
+          st.textContent = s.status === 'admin_blocked' ? 'blocked' : 'no keys';
+          st.className = 'trade-leg-status ' + (s.status === 'admin_blocked' ? 'disabled' : 'missing');
         }
       }
+      setT('pt-bal', _pt.balance != null ? (+_pt.balance).toFixed(2) + ' USDT' : '— USDT');
       _ptRecalc();
     } catch { /* ignore */ }
   }
@@ -2240,6 +2282,22 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   };
   window._pt_updateCalc = function () {
     _pt.size = parseFloat(($('pt-size').value || '0'));
+    _ptRecalc();
+  };
+  window._pt_slide = function (pct) {
+    const p = Math.max(0, Math.min(100, +pct));
+    $('pt-slider').value = p;
+    const bal = +_pt.balance || 0;
+    const px = +(_row && _row.perp_price) || 0;
+    if (!bal || !px) return;
+    const notional = bal * (p / 100) * _pt.leverage;
+    const tokQty = notional / px;
+    if (_pt.unit === 'token') {
+      $('pt-size').value = tokQty > 0 ? (+tokQty.toFixed(6)).toString() : '';
+    } else {
+      $('pt-size').value = notional > 0 ? (+notional.toFixed(2)).toString() : '';
+    }
+    _pt.size = +($('pt-size').value || 0);
     _ptRecalc();
   };
   function _ptRecalc() {
