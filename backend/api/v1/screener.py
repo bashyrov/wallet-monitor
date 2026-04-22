@@ -1188,17 +1188,12 @@ async def _book_broadcast_loop() -> None:
     `from … import _file_memo` at top level would freeze our reference to
     the initial (empty) dict."""
     from backend.services import orderbook_cache as _ob
-    debug_tick = 0
     while True:
         try:
             await asyncio.sleep(BOOK_BROADCAST_INTERVAL)
             if not _book_ws_subs:
                 continue
             _ob._refresh_file_memo()
-            debug_tick += 1
-            if debug_tick % 20 == 1:  # every ~2s
-                logger.info("book broadcast tick: clients=%d file_memo_keys=%d",
-                            len(_book_ws_subs), len(_ob._file_memo))
             for ws, subs in list(_book_ws_subs.items()):
                 if not subs:
                     continue
@@ -1238,7 +1233,6 @@ def start_book_broadcast_loop() -> None:
     if _book_broadcast_task and not _book_broadcast_task.done():
         return
     _book_broadcast_task = asyncio.create_task(_book_broadcast_loop())
-    logger.info("book broadcaster started (interval=%.2fs)", BOOK_BROADCAST_INTERVAL)
 
 
 def stop_book_broadcast_loop() -> None:
@@ -1278,9 +1272,7 @@ async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
     user_id = decode_token(token) if token else None
     await websocket.accept()
     _book_ws_subs[websocket] = {}
-    logger.info("book WS connect uid=%s subs=%d task_done=%s",
-                user_id, len(_book_ws_subs),
-                _book_broadcast_task.done() if _book_broadcast_task else "None")
+    logger.debug("book WS connect uid=%s (total=%d)", user_id, len(_book_ws_subs))
     try:
         while True:
             raw = await websocket.receive_text()
@@ -1312,8 +1304,8 @@ async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
                         asyncio.create_task(get_cached_orderbook(ex, sym, 50))
                     except Exception:
                         pass
-                logger.info("book WS subscribe uid=%s pairs=%s subs_total=%d",
-                            user_id, pairs[:free], len(subs))
+                logger.debug("book WS subscribe uid=%s pairs=%s total=%d",
+                             user_id, pairs[:free], len(subs))
             elif action == "unsubscribe":
                 for pair in pairs:
                     subs.pop(pair, None)
