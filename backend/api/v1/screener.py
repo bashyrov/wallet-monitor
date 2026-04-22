@@ -1233,6 +1233,7 @@ def start_book_broadcast_loop() -> None:
     if _book_broadcast_task and not _book_broadcast_task.done():
         return
     _book_broadcast_task = asyncio.create_task(_book_broadcast_loop())
+    logger.info("book broadcaster started (interval=%.2fs)", BOOK_BROADCAST_INTERVAL)
 
 
 def stop_book_broadcast_loop() -> None:
@@ -1272,7 +1273,9 @@ async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
     user_id = decode_token(token) if token else None
     await websocket.accept()
     _book_ws_subs[websocket] = {}
-    logger.debug("book WS connect uid=%s (total=%d)", user_id, len(_book_ws_subs))
+    logger.info("book WS connect uid=%s subs=%d task_done=%s",
+                user_id, len(_book_ws_subs),
+                _book_broadcast_task.done() if _book_broadcast_task else "None")
     try:
         while True:
             raw = await websocket.receive_text()
