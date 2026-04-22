@@ -232,17 +232,24 @@ SPOT_EXCHANGES = list(SPOT_FETCHERS.keys())
 
 
 async def get_spot_rows(exchange: str) -> list[dict]:
-    """Cached per-exchange spot tickers."""
+    """Cached per-exchange spot tickers with circuit-breaker protection."""
+    from backend.services._circuit import circuit
     now = _arb._mono()
     cached = _spot_cache.get(exchange)
     if cached and (now - cached[1]) < SPOT_CACHE_TTL:
         return cached[0]
+    # Skip the fetch entirely if this exchange is in cooldown — serve the
+    # cached rows (if any) so downstream arb compute still has data.
+    if not circuit.allow(f"spot:{exchange}"):
+        return cached[0] if cached else []
     fn = SPOT_FETCHERS.get(exchange)
     if not fn:
         return []
     try:
         rows = await asyncio.wait_for(fn(), timeout=15.0)
+        circuit.ok(f"spot:{exchange}")
     except Exception as e:
+        circuit.fail(f"spot:{exchange}")
         logger.warning("spot fetch %s failed: %s", exchange, type(e).__name__)
         rows = cached[0] if cached else []
     _spot_cache[exchange] = (rows, now)

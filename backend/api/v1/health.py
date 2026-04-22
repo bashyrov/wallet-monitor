@@ -80,6 +80,15 @@ def health_feeds():
     except Exception as e:
         out["orderbook_error"] = str(e)
 
+    # Circuit-breaker state (tripped venues + recent-failure counts)
+    try:
+        from backend.services._circuit import circuit
+        cb = circuit.state()
+        if cb:
+            out["circuit"] = cb
+    except Exception as e:
+        out["circuit_error"] = str(e)
+
     # Opportunity counts from the latest cache snapshot
     try:
         from backend.services.arbitrage_service import _read_file_cache
