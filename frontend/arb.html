@@ -3159,6 +3159,7 @@ function setEeTf(el,sec){
   });
   el.classList.add('active');
   _eeNeedsFit=true;
+  if(_eeChart) _eeChart.applyOptions({timeScale:{secondsVisible:sec<=60}});
   renderEntryExitChart();
 }
 function setEeUnit(el,u){
@@ -3229,24 +3230,22 @@ function _eeBucket(ts){
 
 function _eeBuildCandles(){
   const bucket=EE_BUCKET[_eeTfSec]||60;
-  // In = OHLC candles; Out = {time, value} line (mean of samples in bucket).
-  // Mean makes the out-line smooth — using last-sample makes it spike when
-  // orderbooks arrive off-beat between legs and obscures the entry trend.
+  // Both In and Out as OHLC candles — entry and exit divergence read
+  // the same way so a trader can compare bar bodies directly.
   const bIn=new Map();
-  const bOutSum=new Map(), bOutN=new Map();
+  const bOut=new Map();
   for(const p of _eeHist){
     const t=Math.floor(p.ts/bucket)*bucket;
-    const inVal=p.inPct, outVal=p.outPct;
+    const iv=p.inPct, ov=p.outPct;
     let ci=bIn.get(t);
-    if(!ci){ci={time:t,open:inVal,high:inVal,low:inVal,close:inVal};bIn.set(t,ci);}
-    else { if(inVal>ci.high) ci.high=inVal; if(inVal<ci.low) ci.low=inVal; ci.close=inVal; }
-    bOutSum.set(t, (bOutSum.get(t)||0) + outVal);
-    bOutN.set(t, (bOutN.get(t)||0) + 1);
+    if(!ci){ci={time:t,open:iv,high:iv,low:iv,close:iv};bIn.set(t,ci);}
+    else { if(iv>ci.high) ci.high=iv; if(iv<ci.low) ci.low=iv; ci.close=iv; }
+    let co=bOut.get(t);
+    if(!co){co={time:t,open:ov,high:ov,low:ov,close:ov};bOut.set(t,co);}
+    else { if(ov>co.high) co.high=ov; if(ov<co.low) co.low=ov; co.close=ov; }
   }
-  const inArr=[...bIn.values()].sort((a,b)=>a.time-b.time);
-  const outArr=[...bOutSum.keys()].sort((a,b)=>a-b).map(t => ({
-    time: t, value: bOutSum.get(t) / bOutN.get(t),
-  }));
+  const inArr =[...bIn.values()].sort((a,b)=>a.time-b.time);
+  const outArr=[...bOut.values()].sort((a,b)=>a.time-b.time);
   return {inArr,outArr};
 }
 
@@ -3264,11 +3263,15 @@ function _eeThemeColors(){
   return light?{
     bg:'#FFFFFF',text:'#1A1A1A',grid:'#E0E0E0',border:'#000000',cross:'#595959',
     zero:'#8C8C8C',
-    inUp:'#006B3C',inDown:'#8B0000',outUp:'#1A5CC2',outDown:'#1A5CC2',
+    // In = saturated entry colours; Out = muted / translucent so they read
+    // as the secondary series without crowding the In bars.
+    inUp:'#006B3C', inDown:'#8B0000',
+    outUp:'#006B3C55', outDown:'#8B000055', outWickUp:'#006B3C88', outWickDown:'#8B000088',
   }:{
     bg:'#0D0D12',text:'#9B9FAB',grid:'#1F1F28',border:'#22222A',cross:'#3A3A50',
     zero:'#3A3A50',
-    inUp:'#1AFFAB',inDown:'#F87171',outUp:'#6FB2FF',outDown:'#6FB2FF',
+    inUp:'#1AFFAB', inDown:'#F87171',
+    outUp:'#1AFFAB55', outDown:'#F8717155', outWickUp:'#1AFFAB88', outWickDown:'#F8717188',
   };
 }
 function _eeApplyTheme(){
@@ -3286,7 +3289,11 @@ function _eeApplyTheme(){
     borderUpColor:c.inUp, borderDownColor:c.inDown,
     wickUpColor:c.inUp, wickDownColor:c.inDown,
   });
-  _eeOutSeries.applyOptions({color:c.outUp});
+  _eeOutSeries.applyOptions({
+    upColor:c.outUp, downColor:c.outDown,
+    borderUpColor:c.outUp, borderDownColor:c.outDown,
+    wickUpColor:c.outWickUp, wickDownColor:c.outWickDown,
+  });
 }
 function _eeInit(){
   const el=document.getElementById('ee-chart');
@@ -3301,10 +3308,10 @@ function _eeInit(){
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:c.cross,style:2,width:1},horzLine:{color:c.cross,style:2,width:1}},
     localization:{priceFormatter:v=>(v>=0?'+':'')+v.toFixed(4)+'%'},
   });
-  // TradingView-style: single price axis. "In" (entry) as candles — this is
-  // the primary metric for judging an arb entry. "Out" (exit divergence) as
-  // a thin overlay line on the same axis so you can see entry/exit together
-  // without the chart reading like two unrelated plots.
+  // TradingView-style: single price axis. Both In (entry divergence) and
+  // Out (exit divergence) render as candles so the trader can read body
+  // direction/size the same way for each. Out uses a translucent palette
+  // so it stays secondary to In but remains fully structured (OHLC + wicks).
   _eeInSeries=_eeChart.addCandlestickSeries({
     upColor:c.inUp, downColor:c.inDown,
     borderUpColor:c.inUp, borderDownColor:c.inDown,
@@ -3313,8 +3320,11 @@ function _eeInit(){
     priceFormat:{type:'price',precision:4,minMove:0.0001},
     title:'In',
   });
-  _eeOutSeries=_eeChart.addLineSeries({
-    color:c.outUp, lineWidth:1, priceLineVisible:false, lastValueVisible:true,
+  _eeOutSeries=_eeChart.addCandlestickSeries({
+    upColor:c.outUp, downColor:c.outDown,
+    borderUpColor:c.outUp, borderDownColor:c.outDown,
+    wickUpColor:c.outWickUp, wickDownColor:c.outWickDown,
+    priceLineVisible:false, lastValueVisible:true,
     priceFormat:{type:'price',precision:4,minMove:0.0001},
     title:'Out',
   });
