@@ -74,11 +74,23 @@ class SolanaProvider(BaseChainProvider):
     name = "SolanaProvider"
 
     def _rpc_url(self) -> str:
+        """Resolution order:
+        1. SOLANA_RPC env var — explicit override wins (user can point to
+           their own paid node, e.g. Helius / QuickNode).
+        2. ANKR_KEY — same key as the EVM providers; Ankr exposes a standard
+           Solana JSON-RPC at rpc.ankr.com/solana/<key> with a much higher
+           rate limit than the public mainnet-beta.
+        3. Public mainnet-beta — last-ditch fallback (heavily rate-limited;
+           expect 429 under real traffic)."""
         try:
             from settings import settings
-            return settings.SOLANA_RPC or DEFAULT_RPC
+            if settings.SOLANA_RPC:
+                return settings.SOLANA_RPC
+            if settings.ANKR_KEY:
+                return f"https://rpc.ankr.com/solana/{settings.ANKR_KEY}"
         except Exception:
-            return DEFAULT_RPC
+            pass
+        return DEFAULT_RPC
 
     async def fetch_balance(self, wallet) -> BalanceResult:
         if not wallet.address:
