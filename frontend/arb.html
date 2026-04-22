@@ -1686,6 +1686,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         <span class="metric-val" id="pt-basis">—</span>
       </div>
       <div class="metric-block accent">
+        <span class="ib-label">Live Spread</span>
+        <span class="metric-val" id="pt-live-spread">—</span>
+      </div>
+      <div class="metric-block">
         <span class="ib-label">Net / 8h</span>
         <span class="metric-val" id="pt-net">—</span>
       </div>
@@ -1915,17 +1919,124 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     if (frame) frame.src = `https://dexscreener.com/${DEX_CHAIN}/${DEX_PAIR}?embed=1&theme=dark&trades=1&info=0`;
   }
 
-  // Load pair data from shared cache and refresh every 3s
+  // Build the pair row from independent sources — top-200 opps cache often
+  // doesn't contain our exact pair, so rely on primary endpoints directly.
+  async function _fetchDexDirect() {
+    if (!DEX_ADDR) return null;
+    try {
+      const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${DEX_ADDR}`, {cache: 'no-store'});
+      if (!r.ok) return null;
+      const j = await r.json();
+      const pairs = j.pairs || [];
+      const ACCEPTED = new Set(['USDC','USDT','DAI','BUSD','USDC.E','FDUSD','PYUSD','WETH','WBTC','WBNB','WSOL','SOL','ETH','BNB','MATIC','WMATIC']);
+      let best = null, bestLiq = 0;
+      for (const p of pairs) {
+        if (DEX_CHAIN && (p.chainId || '') !== DEX_CHAIN) continue;
+        const base = p.baseToken || {};
+        if ((base.address || '').toLowerCase() !== DEX_ADDR) continue;
+        const q = ((p.quoteToken || {}).symbol || '').toUpperCase();
+        if (!ACCEPTED.has(q)) continue;
+        const liq = +(((p.liquidity || {}).usd) || 0);
+        const vol = +(((p.volume || {}).h24) || 0);
+        const px  = +(p.priceUsd || 0);
+        if (px <= 0) continue;
+        if (liq > bestLiq) {
+          bestLiq = liq;
+          best = { price: px, liquidity_usd: liq, volume_usd: vol, dex: p.dexId || '', chain: p.chainId || '', url: p.url || '', pair_address: p.pairAddress || '' };
+        }
+      }
+      return best;
+    } catch { return null; }
+  }
+
+  async function _fetchPerpData() {
+    try {
+      const r = await Auth.apiFetch(`/screener/all-exchanges-funding?symbol=${SYM}`);
+      if (!r.ok) return null;
+      const j = await r.json();
+      return (j.rates || []).find(x => x.exchange === SHORT) || null;
+    } catch { return null; }
+  }
+
+  async function _fetchSpotData() {
+    // Spot type: look up in /spot-arbitrage first (covers all pairs), then in
+    // the long-side venue's funding row (no spot price endpoint exists today)
+    try {
+      const r = await Auth.apiFetch('/screener/spot-arbitrage');
+      if (!r.ok) return null;
+      const j = await r.json();
+      return (j.opportunities || []).find(o =>
+        o.symbol === SYM && o.spot_exchange === LONG && o.short_exchange === SHORT
+      ) || null;
+    } catch { return null; }
+  }
+
+  function _buildRow(dex, perp) {
+    // Synthesize a row compatible with _paint() from DexScreener + perp feed.
+    if (!dex || !perp) return null;
+    const dexPx = +dex.price;
+    const perpPx = +perp.price;
+    const rate = +perp.rate;
+    const ivl = +perp.interval_h || 8;
+    const short_funding_8h = -rate * (8 / ivl) * 100;
+    const basis_pct = (perpPx - dexPx) / dexPx * 100;
+    const gross = short_funding_8h + basis_pct;
+    const PERP_FEE = { binance:.04, bybit:.055, okx:.05, gate:.05, kucoin:.06, mexc:.02, bitget:.06, hyperliquid:.035, aster:.05, bingx:.05, whitebit:.06 };
+    const fee_perp = (PERP_FEE[SHORT] || .06) * 2;
+    const fee_dex  = IS_DEX ? 0.8 : 0;
+    const total_fees = fee_dex + fee_perp;
+    const net_profit = gross - total_fees;
+    const net_apr = net_profit > 0 ? net_profit * 3 * 365 : 0;
+    return {
+      type: IS_DEX ? 'dex_short' : 'spot_short',
+      symbol: SYM,
+      short_exchange: SHORT,
+      perp_price: perpPx,
+      perp_volume_usd: perp.volume_usd || 0,
+      funding_rate: rate,
+      interval_h: ivl,
+      next_ts: perp.next_ts || 0,
+      short_funding_8h,
+      basis_pct,
+      gross,
+      fee_dex, fee_perp, fee_spot: 0, total_fees,
+      net_profit, net_apr,
+      // DEX-specific
+      dex_chain: dex.chain || '',
+      dex_name: dex.dex || '',
+      dex_pair_url: dex.url || '',
+      dex_price: IS_DEX ? dexPx : undefined,
+      spot_price: IS_DEX ? undefined : dexPx,
+      dex_liquidity_usd: dex.liquidity_usd || 0,
+      dex_volume_usd: dex.volume_usd || 0,
+      spot_volume_usd: dex.volume_usd || 0,
+      spot_exchange: IS_DEX ? undefined : LONG,
+    };
+  }
+
   async function _refreshPair() {
     try {
-      const r = await Auth.apiFetch(SRC);
-      if (!r.ok) return;
-      const j = await r.json();
-      const row = (j.opportunities || []).find(o => o.symbol === SYM &&
-        ((!IS_DEX && o.spot_exchange === LONG) || (IS_DEX && (o.dex_chain === DEX_CHAIN || !DEX_CHAIN))) &&
-        o.short_exchange === SHORT);
+      let row = null;
+      if (IS_DEX) {
+        const [dex, perp] = await Promise.all([_fetchDexDirect(), _fetchPerpData()]);
+        row = _buildRow(dex, perp);
+      } else {
+        row = await _fetchSpotData();
+        if (!row) {
+          // Fallback: synthesize from all-exchanges-funding for both legs
+          const perp = await _fetchPerpData();
+          const longR = perp && SHORT !== LONG
+            ? null // No direct spot endpoint, leave null
+            : null;
+          if (perp) {
+            // Use perp price as proxy for spot when we truly have nothing else,
+            // so the page isn't blank. Clearly degraded case.
+            row = _buildRow({ price: perp.price, volume_usd: perp.volume_usd }, perp);
+          }
+        }
+      }
       if (row) _paint(row);
-    } catch {}
+    } catch (e) { console.error('[pair] refresh error:', e); }
   }
   _refreshPair();
   setInterval(_refreshPair, 3000);
@@ -1990,6 +2101,15 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         const spread = ((bestAsk - bestBid) / mid * 100);
         setT('pt-ob-mid', fmtP(mid));
         setT('pt-ob-spread', `${spread.toFixed(3)}% spread`);
+
+        // Live spread vs DEX/spot long-side price (updates every tick)
+        const longPx = _row && (IS_DEX ? _row.dex_price : _row.spot_price);
+        if (longPx && longPx > 0) {
+          const live = (mid - longPx) / longPx * 100;
+          setT('pt-live-spread', `${live >= 0 ? '+' : ''}${live.toFixed(4)}%`);
+          const el = $('pt-live-spread');
+          if (el) el.style.color = live >= 0 ? 'var(--green)' : 'var(--red)';
+        }
       }
       _obTickCount++;
       if (age) age.textContent = `live · ${_obTickCount} ticks`;
