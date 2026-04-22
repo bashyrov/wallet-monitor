@@ -1579,6 +1579,7 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
 
 <script src="/navbar.js"></script>
 <script src="/auth.js"></script>
+<script src="/exchanges.js"></script>
 <script src="/toast.js"></script>
 <script src="/confirm.js"></script>
 <script src="/theme.js"></script>
@@ -1589,8 +1590,10 @@ const IS_AUTHED = Auth.isLoggedIn();
 
 // ── constants ──────────────────────────────────────────────────────────────────
 const EXCHANGES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx'];
-const EX_LABEL  = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate.io', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', hyperliquid:'Hyperliquid', aster:'Aster', ethereal:'Ethereal', whitebit:'WhiteBIT', bingx:'BingX' };
-const EX_COLOR  = { binance:'#F0B90B', bybit:'#F7A600', okx:'#E0E0E0', gate:'#E40C5B', kucoin:'#00BC8C', mexc:'#00C09A', bitget:'#00B4D8', hyperliquid:'#48CDD8', aster:'#FF8C00', ethereal:'#9370DB', whitebit:'#2DCCCD', bingx:'#1DB8F2' };
+// Kept as legacy aliases for existing call sites; values sourced from the
+// shared /exchanges.js module so the palette never drifts.
+const EX_LABEL = (window.EX && window.EX.labels) || { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', hyperliquid:'Hyperliquid', aster:'Aster', ethereal:'Ethereal', whitebit:'WhiteBIT', bingx:'BingX', backpack:'Backpack', lighter:'Lighter', paradex:'Paradex' };
+const EX_COLOR = (window.EX && window.EX.colors) || { binance:'#F0B90B', bybit:'#F0842D', okx:'#C8C8C8', gate:'#17C684', kucoin:'#09BA86', mexc:'#17D854', bitget:'#00D2C8', hyperliquid:'#64B4FF', aster:'#8A63D2', ethereal:'#C864C8', whitebit:'#2DCCCD', bingx:'#1DB8F2', backpack:'#4ADE80', lighter:'#A78BFA', paradex:'#FF6A6A' };
 
 function exTradeUrl(exchange, symbol) {
   const s = (symbol || '').toUpperCase();
