@@ -109,7 +109,12 @@ async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
             return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
                     "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
         if exchange == "aster":
-            r = await c.get(f"https://fapi.asterdex.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit}")
+            # Aster (Binance-fork) only accepts specific limits: 5/10/20/50/100/500/1000.
+            # Round up from caller's value — returning 20 when the user asked for 12
+            # is strictly better than returning empty.
+            valid = [5, 10, 20, 50, 100, 500, 1000]
+            limit_a = next((v for v in valid if v >= limit), 1000)
+            r = await c.get(f"https://fapi.asterdex.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit_a}")
             d = r.json()
             return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
                     "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
