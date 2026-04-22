@@ -66,3 +66,7 @@ poetry.toml
 Pipfile.lock
 .netlify
 .codspeed
+
+# ── Local-only scratchpads (personal notes, scaffolds) ─
+TODO.md
+frontend-next/
