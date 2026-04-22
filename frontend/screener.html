@@ -1155,9 +1155,9 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
     <!-- ── MODE TABS ── -->
     <div class="mode-tabs">
       <button class="mode-tab" id="tab-all"     onclick="switchMode('all')">All</button>
-      <button class="mode-tab active" id="tab-arb" onclick="switchMode('arb')">Arbitrage</button>
-      <button class="mode-tab" id="tab-spot"    onclick="switchMode('spot')">Spot / Short</button>
-      <button class="mode-tab" id="tab-dex"     onclick="switchMode('dex')">DEX / Short</button>
+      <button class="mode-tab active" id="tab-arb" onclick="switchMode('arb')">Long/Short</button>
+      <button class="mode-tab" id="tab-spot"    onclick="switchMode('spot')">Spot/Short</button>
+      <button class="mode-tab" id="tab-dex"     onclick="switchMode('dex')">DEX/Short</button>
       <button class="mode-tab" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
       <button class="mode-tab" id="tab-alpha"   onclick="switchMode('alpha')">Alpha <span class="wl-count-badge" id="wl-count-badge" style="display:none">★ <span id="wl-count">0</span></span></button>
     </div>
@@ -1307,9 +1307,9 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
           </div>
         </div>
 
-        <!-- Arbitrage filters -->
+        <!-- Long/Short filters -->
         <div id="mob-filters-arb">
-          <div class="lp-title" style="margin-bottom:8px">Arbitrage filters</div>
+          <div class="lp-title" style="margin-bottom:8px">Long/Short filters</div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min net profit %</div>
             <input class="lp-filter-input" id="f-min-net-mob" type="number" step="0.001" placeholder="0%" oninput="document.getElementById('f-min-net').value=this.value;applyArb()">
@@ -1452,15 +1452,15 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
       <div style="display:flex;align-items:center;gap:6px;padding:10px 16px 6px;flex-wrap:wrap">
         <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-right:4px">Show</span>
         <button class="all-type-chip active" data-t="all"      onclick="setAllType('all',this)">All · <span id="all-cnt-all">—</span></button>
-        <button class="all-type-chip"        data-t="futures"  onclick="setAllType('futures',this)">Futures · <span id="all-cnt-fut">—</span></button>
-        <button class="all-type-chip"        data-t="spot_short" onclick="setAllType('spot_short',this)">Spot / Short · <span id="all-cnt-spot">—</span></button>
-        <button class="all-type-chip"        data-t="dex_short"  onclick="setAllType('dex_short',this)">DEX / Short · <span id="all-cnt-dex">—</span></button>
+        <button class="all-type-chip"        data-t="futures"  onclick="setAllType('futures',this)">Long/Short · <span id="all-cnt-fut">—</span></button>
+        <button class="all-type-chip"        data-t="spot_short" onclick="setAllType('spot_short',this)">Spot/Short · <span id="all-cnt-spot">—</span></button>
+        <button class="all-type-chip"        data-t="dex_short"  onclick="setAllType('dex_short',this)">DEX/Short · <span id="all-cnt-dex">—</span></button>
       </div>
       <div class="table-wrap">
         <table id="tbl-all"
           <thead>
             <tr>
-              <th data-tip="Type — Futures arb or Spot/Short cash-and-carry">Type</th>
+              <th data-tip="Type — Long/Short (futures arb) or Spot/Short / DEX/Short cash-and-carry">Type</th>
               <th data-tip="Token">Token</th>
               <th data-tip="Long / Buy-spot venue">Long / Spot</th>
               <th data-tip="Short venue">Short</th>
@@ -1648,14 +1648,27 @@ function symbolLink(symbol, exchange) {
 }
 
 // ── state ──────────────────────────────────────────────────────────────────────
+// URL param 'mode' accepts the canonical names (all / long-short / spot-short /
+// dex-short / funding / alpha) AND the legacy shortcuts (arb / spot / dex) so
+// existing bookmarks still work. Internal mode IDs stay short (arb/spot/dex).
+const _MODE_ALIAS = {
+  'long-short': 'arb', 'longshort': 'arb', 'arbitrage': 'arb',
+  'spot-short': 'spot', 'spotshort': 'spot',
+  'dex-short': 'dex',  'dexshort':  'dex',
+};
 let _mode = (() => {
-  const VALID = ['all','arb','spot','dex','funding','alpha'];
-  const u = new URLSearchParams(location.search).get('mode');
-  if (u && VALID.includes(u)) return u;
+  const VALID = new Set(['all','arb','spot','dex','funding','alpha']);
+  const u = (new URLSearchParams(location.search).get('mode') || '').toLowerCase();
+  if (u) {
+    if (VALID.has(u)) return u;
+    if (_MODE_ALIAS[u]) return _MODE_ALIAS[u];
+  }
   const ls = localStorage.getItem('screener_mode');
-  if (ls && VALID.includes(ls)) return ls;
+  if (ls && VALID.has(ls)) return ls;
   return 'arb';
 })();
+// Canonicalise URL param name for sharing (?mode=long-short not ?mode=arb)
+const _MODE_CANON = {arb:'long-short', spot:'spot-short', dex:'dex-short'};
 let _rows = [];           // funding rows
 let _arbRows = [];                    // flat array for table rendering
 const _arbRowsByKey = new Map();      // key → opp, source of truth for diffs
@@ -1965,7 +1978,9 @@ function switchMode(mode) {
   try { localStorage.setItem('screener_mode', mode); } catch {}
   try {
     const url = new URL(window.location);
-    url.searchParams.set('mode', mode);
+    // Write the canonical param name (long-short / spot-short / dex-short) so
+    // copy-pasted URLs are self-describing. Internal mode stays short.
+    url.searchParams.set('mode', _MODE_CANON[mode] || mode);
     history.replaceState(null, '', url);
   } catch {}
   ['all','arb','spot','dex','funding','alpha'].forEach(m => {
