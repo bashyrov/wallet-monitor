@@ -3364,9 +3364,58 @@ function renderEntryExitChart(){
 }
 
 let _bookInterval=null;
+let _bookWs=null;
+let _bookWsLastMsgTs=0;
+let _bookWsBackoff=1000;
+
+function _bookPairFor(side){
+  return (side==='long'?LONG:SHORT).toLowerCase()+':'+SYM.toUpperCase();
+}
+
+function _openBookWs(){
+  if(_bookWs && (_bookWs.readyState===0 || _bookWs.readyState===1)) return;
+  const proto=location.protocol==='https:'?'wss':'ws';
+  const url=`${proto}://${location.host}/api/screener/ws/book?token=${Auth.getToken()}`;
+  let ws;
+  try{ ws=new WebSocket(url); }catch(_){ return; }
+  _bookWs=ws;
+  ws.onopen=()=>{
+    _bookWsBackoff=1000;
+    try{
+      ws.send(JSON.stringify({action:'subscribe', pairs:[_bookPairFor('long'),_bookPairFor('short')]}));
+    }catch(_){}
+  };
+  ws.onmessage=(e)=>{
+    _bookWsLastMsgTs=Date.now();
+    let msg; try{ msg=JSON.parse(e.data); }catch(_){ return; }
+    const books=msg && msg.books;
+    if(!books) return;
+    const longPair=_bookPairFor('long'), shortPair=_bookPairFor('short');
+    if(books[longPair]){ _lastBookData.long=books[longPair]; renderBook(books[longPair],'long'); }
+    if(books[shortPair]){ _lastBookData.short=books[shortPair]; renderBook(books[shortPair],'short'); }
+  };
+  ws.onclose=()=>{
+    _bookWs=null;
+    // Exponential backoff reconnect, capped at 10s.
+    setTimeout(_openBookWs, Math.min(_bookWsBackoff, 10000));
+    _bookWsBackoff=Math.min(_bookWsBackoff*2, 10000);
+  };
+  ws.onerror=()=>{ try{ ws.close(); }catch(_){} };
+}
+
 function startBooks(){
+  // 1) One HTTP fetch per side for fast first paint. 2) Live WS subscription
+  // replaces the old 150ms polling — the server pushes diffs from books.json
+  // which is maintained by the fetcher. 3) HTTP fallback every 2s if the
+  // WS channel has gone silent (disconnect / proxy timeout).
   fetchBook(LONG,'long'); fetchBook(SHORT,'short');
-  _bookInterval=setInterval(()=>{fetchBook(LONG,'long');fetchBook(SHORT,'short');},150);
+  _openBookWs();
+  _bookInterval=setInterval(()=>{
+    const silentMs=Date.now()-_bookWsLastMsgTs;
+    if(!_bookWs || _bookWs.readyState!==1 || silentMs>3000){
+      fetchBook(LONG,'long'); fetchBook(SHORT,'short');
+    }
+  }, 2000);
 }
 
 // ── Funding history table ─────────────────────────────────────────────────────

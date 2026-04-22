@@ -88,7 +88,9 @@ async def lifespan(app: FastAPI):
 
     # ── Always — cheap, lives in the HTTP process ─────────────────────
     from backend.api.v1.screener import start_broadcast_loop, stop_broadcast_loop
+    from backend.api.v1.screener import start_book_broadcast_loop, stop_book_broadcast_loop
     start_broadcast_loop()
+    start_book_broadcast_loop()
 
     # Price loop runs in EVERY process (web + fetcher + monolith).
     # _prices is in-memory per-process, and balance_service.get_usd_value
@@ -174,6 +176,10 @@ async def lifespan(app: FastAPI):
             stop_broadcast_loop()
         except Exception:
             logger.exception("stop_broadcast_loop failed")
+        try:
+            stop_book_broadcast_loop()
+        except Exception:
+            logger.exception("stop_book_broadcast_loop failed")
         logger.info("Avalant shutting down")
 
 
