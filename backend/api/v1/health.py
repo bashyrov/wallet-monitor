@@ -121,18 +121,23 @@ def health_fetcher():
         return {"mode": "single", "note": "set AVALANT_FETCHER_MODE=multiprocess to enable"}
     workers = data.get("workers") or []
     now = time.time()
-    # Pair each worker with its books.<ex>.json freshness so ops can spot
-    # "process alive but WS stream dead" cases.
+    # Pair each worker with its output file's freshness so ops can spot
+    # "process alive but WS stream dead" cases. Orderbook workers dump
+    # books.<ex>.json; funding workers dump funding_ws.<ex>.json.
     for w in workers:
         ex = w.get("exchange") or ""
-        path = os.path.join("/tmp/avalant_cache", f"books.{ex}.json")
+        kind = w.get("kind") or "orderbook"
+        fname = f"funding_ws.{ex}.json" if kind == "funding" else f"books.{ex}.json"
+        path = os.path.join("/tmp/avalant_cache", fname)
         try:
             st = os.stat(path)
-            w["books_file_age_s"] = round(now - st.st_mtime, 2)
-            w["books_file_size"] = st.st_size
+            w["output_file"] = fname
+            w["output_age_s"] = round(now - st.st_mtime, 2)
+            w["output_size"] = st.st_size
         except OSError:
-            w["books_file_age_s"] = None
-            w["books_file_size"] = 0
+            w["output_file"] = fname
+            w["output_age_s"] = None
+            w["output_size"] = 0
     return {
         "mode": "multiprocess",
         "snapshot_age_s": round(now - (data.get("ts") or 0), 1) if data.get("ts") else None,

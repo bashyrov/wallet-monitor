@@ -73,5 +73,6 @@ def test_health_fetcher_multiprocess_mode(client, monkeypatch):
     assert len(body["workers"]) == 2
     assert {w["exchange"] for w in body["workers"]} == {"binance", "bybit"}
     for w in body["workers"]:
-        assert "books_file_age_s" in w
-        assert "books_file_size" in w
+        assert "output_file" in w
+        assert "output_age_s" in w
+        assert "output_size" in w
