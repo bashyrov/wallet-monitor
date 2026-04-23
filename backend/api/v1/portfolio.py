@@ -1,13 +1,15 @@
 import asyncio
+import csv
+import io
 import json
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_user
-from backend.db.models import Wallet, User, ProviderErrorLog, BalanceHistory
+from backend.db.models import Wallet, User, ProviderErrorLog, BalanceHistory, BalanceSnapshot
 from backend.schemas.portfolio import BalanceFetchRequest, BalanceResponse, TransactionFetchRequest, TransactionResponse
 from backend.services.balance_service import fetch_balances, fetch_balances_stream
 from backend.services.transaction_service import fetch_transactions
@@ -182,3 +184,72 @@ def get_balance_history(
         }
         for r in rows
     ]
+
+
+@router.get("/export")
+def export_balances(
+    format: str = Query("csv", pattern="^(csv|json)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the user's current per-wallet balance snapshot.
+
+    Columns:
+      wallet_id, wallet_name, wallet_type, type_value, asset, amount,
+      snapshot_at, stable_total_usd
+
+    `format=csv` (default) returns text/csv with a filename like
+    avalant-balances-YYYYMMDD.csv. `format=json` returns a compact JSON
+    array — handy for `curl | jq`.
+
+    Only the latest BalanceSnapshot per wallet is emitted. Owner-tagged /
+    unarchived wallets still appear. Empty totals are skipped so the file
+    stays compact.
+    """
+    wallets = (
+        db.query(Wallet)
+        .filter(Wallet.user_id == current_user.id, Wallet.is_archived == False)  # noqa: E712
+        .all()
+    )
+    w_by_id = {w.id: w for w in wallets}
+    snaps = (
+        db.query(BalanceSnapshot)
+        .filter(BalanceSnapshot.user_id == current_user.id)
+        .all()
+    )
+
+    rows: list[dict] = []
+    for s in snaps:
+        w = w_by_id.get(s.wallet_id)
+        if not w:
+            continue
+        totals = s.totals or {}
+        for asset, amount in totals.items():
+            rows.append({
+                "wallet_id": w.id,
+                "wallet_name": w.name,
+                "wallet_type": w.wallet_type,
+                "type_value": w.type_value,
+                "asset": asset,
+                "amount": str(amount),
+                "snapshot_at": s.snapshot_at.strftime("%Y-%m-%d %H:%M:%S") if s.snapshot_at else "",
+                "stable_total_usd": f"{s.stable_total:.2f}" if s.stable_total is not None else "",
+            })
+
+    if format == "json":
+        return rows
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else [
+        "wallet_id", "wallet_name", "wallet_type", "type_value",
+        "asset", "amount", "snapshot_at", "stable_total_usd",
+    ])
+    writer.writeheader()
+    writer.writerows(rows)
+    body = buf.getvalue()
+    fname = f"avalant-balances-{datetime.utcnow():%Y%m%d}.csv"
+    return PlainTextResponse(
+        body,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
