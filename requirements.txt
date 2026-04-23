@@ -41,6 +41,10 @@ redis>=5.0.0
 # Test runner (only needed for CI / local dev, but harmless in prod image)
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+# Hard-kills any test that exceeds the configured timeout (pytest.ini) —
+# without this, a single test that tries to open a real WS from an import
+# side-effect hangs the whole CI job for 12 minutes.
+pytest-timeout>=2.3.0
 
 # Misc
 annotated-types==0.7.0
