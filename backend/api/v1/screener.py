@@ -709,7 +709,7 @@ async def _refresh_loop() -> None:
     (the fetches update _cache asynchronously)."""
     from backend.services.alpha_service import score_opportunities
     from backend.services.arbitrage_service import (
-        FETCHERS, _cache, _arb_result_cache, _compute_arb_sync, _run_compute,
+        FETCHERS, _cache, _arb_result_cache, _compute_arb_sync,
         _write_file_cache, _read_file_cache,
         _write_file_cache_async, _read_file_cache_async,
         get_funding_data, _slim_arb_for_file,
@@ -782,14 +782,12 @@ async def _refresh_loop() -> None:
             rows = _drop_price_outliers(rows)
             if rows and not _compute_lock.locked():
                 # Prevent queue buildup: if the previous compute is still
-                # running, skip this tick. Compute runs in a dedicated
-                # ProcessPoolExecutor (see arbitrage_service._run_compute) so
-                # the subprocess has its own GIL and doesn't starve the
-                # fetcher's main event loop while the Python-bound O(N²)
-                # permutation runs for 0.7-4.7 s.
-                exclude = admin_settings.get_arb_exclude_exchanges()
+                # running (to_thread future hasn't resolved), skip this tick.
+                # Default asyncio to_thread uses a shared threadpool and
+                # Python's GIL, so piling 5+ computes queued doesn't parallelise
+                # — it just starves the event loop until they all drain.
                 async with _compute_lock:
-                    result = await _run_compute(rows, time.time(), exclude)
+                    result = await asyncio.to_thread(_compute_arb_sync, rows, time.time())
                 # Anti-flicker: transient WS / orderbook hiccups can cause the
                 # compute to drop to a fraction of its usual pair count for
                 # 1-2 ticks. Publishing those would make the UI blink "No data

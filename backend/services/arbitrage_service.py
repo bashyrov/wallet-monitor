@@ -1346,63 +1346,6 @@ _opp_last_seen: dict[tuple[str, str, str], float] = {}
 OPP_MIN_LIFETIME_S = 3.0
 OPP_PURGE_AFTER_S = 30.0
 
-
-# ── Compute off-loop subprocess ──────────────────────────────────────────────
-# The arb compute is pure Python, O(N²) over opp pairs, and takes 0.7-4.7 s
-# per tick at steady-state. Running it via `asyncio.to_thread` left the GIL
-# in the main process, blocking the fetcher's asyncio loop from servicing
-# WS frames and REST fetch timers — every minute or two we'd see a burst of
-# `Screener <ex> fetch timeout (>10.0s)` warnings as queued tasks timed out
-# while the loop was busy running compute.
-#
-# ProcessPoolExecutor(max_workers=1) moves compute into its own OS process
-# with its own GIL + CPU slice. Worker is created lazily on first call and
-# lives for the fetcher's lifetime (max_tasks_per_child=None), so the
-# in-worker hysteresis dicts accumulate correctly across ticks.
-#
-# Worker forks from master on Linux → inherits token_registry._registry at
-# fork time (24 h TTL; good enough without a dedicated refresh loop in the
-# worker). The init callback triggers a disk-load fallback for safety.
-_compute_pool = None   # type: ignore[assignment]
-
-
-def _compute_worker_init() -> None:
-    """Runs inside the forked worker before it takes any tasks — ensures
-    token_registry is populated (normally inherited via fork, but this is a
-    no-op defence against spawn-mode or empty-at-fork edge cases)."""
-    try:
-        from backend.services import token_registry as _tr
-        _tr._load_from_disk()
-    except Exception:
-        pass
-
-
-def _get_compute_pool():
-    global _compute_pool
-    if _compute_pool is None:
-        from concurrent.futures import ProcessPoolExecutor
-        _compute_pool = ProcessPoolExecutor(
-            max_workers=1,
-            initializer=_compute_worker_init,
-        )
-    return _compute_pool
-
-
-async def _run_compute(rows: list[dict], ts: float, exclude: set[str]) -> dict:
-    """Schedule `_compute_arb_sync` onto the out-of-process compute pool.
-    Falls back to in-thread compute if the pool isn't available (tests, or
-    a spawn-mode environment where fork isn't supported)."""
-    import asyncio as _asyncio
-    try:
-        pool = _get_compute_pool()
-        loop = _asyncio.get_event_loop()
-        # Pass exclude as a plain set so it pickles cleanly across the process
-        # boundary (admin_settings returns a set already).
-        return await loop.run_in_executor(pool, _compute_arb_sync, rows, ts, set(exclude or set()))
-    except Exception as exc:
-        logger.warning("compute pool failed (%s) — falling back to thread", exc)
-        return await _asyncio.to_thread(_compute_arb_sync, rows, ts, set(exclude or set()))
-
 # Ticker-collision guard — if price_spread exceeds this threshold we
 # cross-check the two venues' contract addresses via the token registry.
 # Mismatch or unknown → drop (prevents ASTEROID-style phantom opps where
@@ -1410,20 +1353,13 @@ async def _run_compute(rows: list[dict], ts: float, exclude: set[str]) -> dict:
 HIGH_SPREAD_THRESHOLD = 0.30   # 30%
 
 
-def _compute_arb_sync(rows: list[dict], ts: float, exclude: set[str] | None = None) -> dict:
-    """CPU-heavy O(n²) arb computation.
-
-    Runs in a `ProcessPoolExecutor` subprocess so its GIL doesn't starve the
-    fetcher's main event loop (0.7-4.7s Python-bound compute was producing
-    bursts of `asyncio.wait_for` timeouts across REST fetchers every minute).
-
+def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
+    """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free.
     Only returns opportunities with net_profit > 0. In/Out percentages come from
     the live orderbook cache when available, else are None.
 
     Filters (applied in order):
-      1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges —
-         caller passes `exclude` explicitly so the worker process doesn't
-         need DB access.
+      1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges.
       2. Volume filter was already applied at the data layer by
          get_funding_data — both legs here already clear min_volume_usd.
       3. interval_h missing on either leg → skip (APR can't be normalised).
@@ -1437,13 +1373,9 @@ def _compute_arb_sync(rows: list[dict], ts: float, exclude: set[str] | None = No
     this drops compute from ~1-2s to ~200-400ms.
     """
     from backend.services.orderbook_cache import top_levels
+    from backend.services import admin_settings
 
-    if exclude is None:
-        # Legacy in-process callers (tests, ad-hoc) — read from admin_settings.
-        # The subprocess path passes `exclude` explicitly so the worker never
-        # hits admin_settings (no DB pool in the worker).
-        from backend.services import admin_settings
-        exclude = admin_settings.get_arb_exclude_exchanges()
+    exclude = admin_settings.get_arb_exclude_exchanges()
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
         if r["exchange"] in exclude:
@@ -1638,11 +1570,10 @@ async def get_arbitrage_opportunities(force: bool = False) -> dict:
                     "opportunities": []}
 
     data = await get_funding_data()
-    # Run CPU-heavy computation in a subprocess pool so the event loop stays
+    # Run CPU-heavy computation in a thread pool so the event loop stays
     # responsive for HTTP/WS during the 1-2s crunch.
-    from backend.services import admin_settings
-    result = await _run_compute(data["rows"], data["ts"],
-                                admin_settings.get_arb_exclude_exchanges())
+    import asyncio
+    result = await asyncio.to_thread(_compute_arb_sync, data["rows"], data["ts"])
     _arb_result_cache["data"] = result
     _arb_result_cache["ts"] = time.time()
     _write_file_cache("arbitrage.json", _slim_arb_for_file(result))
