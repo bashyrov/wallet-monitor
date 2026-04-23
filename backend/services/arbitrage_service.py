@@ -1411,12 +1411,14 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                     except Exception:
                         ok = None
                     if ok is False:
-                        # Explicit contract mismatch — always reject.
+                        # Explicit contract mismatch — drop.
                         continue
-                    if ok is None:
-                        # Unknown (one/both venues not in registry). Be
-                        # conservative at these spread levels.
-                        continue
+                    # ok is True  → verified, emit.
+                    # ok is None → unknown (one/both venues not in registry
+                    # — e.g. MEXC, Bybit, OKX, BingX, Aster). User policy:
+                    # show the row anyway. The 30% threshold only filters
+                    # out PROVEN ticker collisions; genuinely-unknown pairs
+                    # stay visible.
 
                 # Hysteresis: first time we see this opp, stamp first_seen
                 # and skip. Subsequent cycles include it once the

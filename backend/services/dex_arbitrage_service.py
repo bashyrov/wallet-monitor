@@ -47,10 +47,16 @@ _sync_http = httpx.Client(
     http2=False,
 )
 
-# Config
+# Config. DexScreener's `/latest/dex/tokens/<csv>` endpoint caps responses
+# at 30 pairs total regardless of how many addresses are requested — so
+# multi-address batching gives us fewer pools per token, not more, and breaks
+# the cross-pool consensus check. Single-address calls with a thread pool
+# remain the right shape. Public rate limit is 300 req/min; 300 symbols on a
+# 30s cycle = 600 req/min — we occasionally get rate-limited, handled via
+# the flicker guard (retains last good snapshot).
 DEX_REFRESH_INTERVAL = 30.0
-_SYMBOL_BATCH_LIMIT = 900   # fan-out via ThreadPool — 900 / 12 workers × 0.14s ≈ 10s
-_DEX_WORKERS = 12            # parallel DexScreener requests per cycle
+_SYMBOL_BATCH_LIMIT = 900
+_DEX_WORKERS = 12
 MIN_DEX_LIQUIDITY_USD = 50_000.0
 MIN_DEX_VOL_24H = 10_000.0
 MAX_BASIS_PCT = 10.0       # drop ticker-collision outliers
@@ -185,24 +191,42 @@ def _lookup_contract(symbol: str) -> tuple[str, str] | None:
     return (chain, addr)
 
 
-# ── DexScreener sync fetcher ──────────────────────────────────────────────────
-def _fetch_dex_by_contract_sync(chain: str, address: str) -> dict | None:
-    url = f"https://api.dexscreener.com/latest/dex/tokens/{address}"
-    try:
-        r = _sync_http.get(url, timeout=4.0)
-    except Exception as e:
-        logger.debug("dex %s %s: %s", chain, address, e)
-        return None
-    if r.status_code != 200:
-        return None
-    try:
-        pairs = (r.json() or {}).get("pairs") or []
-    except Exception:
-        return None
+# Cross-pool sanity — if the top-liquidity pool's price diverges from the
+# median of the top-N qualifying pools by more than this, the sample looks
+# like a single-pool jitter tick (large swap in a thin pool, outlier quote)
+# and we reject the cycle instead of emitting a phantom opp.
+_POOL_CONSENSUS_MAX_DEV = 0.015   # 1.5% — well inside real arb noise, well outside tick-jitter
+_POOL_CONSENSUS_MIN_POOLS = 2     # need at least 2 qualifying pools to vote
 
-    best: dict | None = None
-    best_liq = 0.0
-    addr_low = address.lower()
+# Hysteresis — an opp has to survive at least one full refresh cycle before
+# emission so that a single-cycle DexScreener tick can't surface a row. Set
+# slightly below DEX_REFRESH_INTERVAL so it trips on the second-consecutive
+# cycle rather than the third.
+DEX_OPP_MIN_LIFETIME_S = 25.0
+DEX_OPP_PURGE_AFTER_S = 300.0
+_dex_opp_first_seen: dict[tuple[str, str], float] = {}
+_dex_opp_last_seen:  dict[tuple[str, str], float] = {}
+
+
+def _purge_stale_dex_opps(now_ts: float) -> None:
+    """Keep the hysteresis dicts bounded — drop entries we haven't seen in
+    a while. Safe to call from the daemon thread (single-threaded writer)."""
+    dead = [k for k, ts in _dex_opp_last_seen.items() if now_ts - ts > DEX_OPP_PURGE_AFTER_S]
+    for k in dead:
+        _dex_opp_first_seen.pop(k, None)
+        _dex_opp_last_seen.pop(k, None)
+
+
+# ── DexScreener sync fetcher ──────────────────────────────────────────────────
+def _pick_best_pool(pairs: list[dict], chain: str, addr_low: str) -> dict | None:
+    """Pick the pool we'd emit for a single (chain, contract), applying
+    the same cross-pool consensus guard as before. Shared between the
+    single-address wrapper (kept for tests) and the batch routing path."""
+    # Collect EVERY pool that matches (same chain, same contract, accepted
+    # quote, >0 price) — not only ones over MIN_DEX_LIQUIDITY_USD. The small
+    # pools are still useful as consensus voters for the cross-pool sanity
+    # check; they just can't win `best` on their own.
+    pools: list[dict] = []
     for p in pairs:
         if (p.get("chainId") or "") != chain:
             continue
@@ -218,22 +242,84 @@ def _fetch_dex_by_contract_sync(chain: str, address: str) -> dict | None:
             price_f = float(p.get("priceUsd") or 0)
         except (TypeError, ValueError):
             continue
-        if price_f <= 0 or liq_f < MIN_DEX_LIQUIDITY_USD or vol_f < MIN_DEX_VOL_24H:
+        if price_f <= 0:
             continue
-        if liq_f > best_liq:
-            best_liq = liq_f
-            best = {
-                "symbol": base.get("symbol", "").upper(),
-                "chain": chain,
-                "dex": p.get("dexId") or "",
-                "price": price_f,
-                "liquidity_usd": liq_f,
-                "volume_usd": vol_f,
-                "pair_address": p.get("pairAddress") or "",
-                "url": p.get("url") or "",
-                "base_address": addr_low,
-            }
-    return best
+        pools.append({
+            "symbol":     base.get("symbol", "").upper(),
+            "dex":        p.get("dexId") or "",
+            "price":      price_f,
+            "liq":        liq_f,
+            "vol":        vol_f,
+            "pair_addr":  p.get("pairAddress") or "",
+            "url":        p.get("url") or "",
+        })
+
+    if not pools:
+        return None
+
+    eligible = [p for p in pools if p["liq"] >= MIN_DEX_LIQUIDITY_USD and p["vol"] >= MIN_DEX_VOL_24H]
+    if not eligible:
+        return None
+
+    # Cross-pool consensus. Take the top-5 by liquidity (so dust pools don't
+    # swing the median) and compute median price. Then pick `best` = the
+    # highest-liquidity pool whose price is within _POOL_CONSENSUS_MAX_DEV
+    # of the median — this way a single broken DexScreener quote (e.g. UNI's
+    # $4.5M WETH-pair tick) doesn't disqualify the whole token, we just skip
+    # past it to the next-best pool.
+    voters = sorted(pools, key=lambda p: -p["liq"])[:5]
+    if len(voters) >= _POOL_CONSENSUS_MIN_POOLS:
+        prices = sorted(v["price"] for v in voters)
+        median = prices[len(prices) // 2]
+        if median <= 0:
+            return None
+        best = None
+        for p in sorted(eligible, key=lambda p: -p["liq"]):
+            if abs(p["price"] - median) / median <= _POOL_CONSENSUS_MAX_DEV:
+                best = p
+                break
+        if best is None:
+            # Every eligible pool disagrees with the median — genuine tick
+            # jitter across the whole token; drop this cycle.
+            logger.debug(
+                "dex sanity drop: %s %s all %d eligible pools outside %.2f%% of median %.6f",
+                chain, addr_low[:10], len(eligible), _POOL_CONSENSUS_MAX_DEV * 100, median,
+            )
+            return None
+    else:
+        # Only one qualifying pool — no consensus possible, accept.
+        best = max(eligible, key=lambda p: p["liq"])
+
+    return {
+        "symbol":         best["symbol"],
+        "chain":          chain,
+        "dex":            best["dex"],
+        "price":          best["price"],
+        "liquidity_usd":  best["liq"],
+        "volume_usd":     best["vol"],
+        "pair_address":   best["pair_addr"],
+        "url":            best["url"],
+        "base_address":   addr_low,
+    }
+
+
+def _fetch_dex_by_contract_sync(chain: str, address: str) -> dict | None:
+    """Single-address convenience wrapper. Kept for the existing test suite
+    and any caller that only needs one lookup — the cycle path uses
+    `_fetch_dex_batch_sync`."""
+    url = f"https://api.dexscreener.com/latest/dex/tokens/{address}"
+    try:
+        r = _sync_http.get(url, timeout=4.0)
+    except Exception as e:
+        logger.debug("dex %s %s: %s", chain, address, e)
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        pairs = (r.json() or {}).get("pairs") or []
+    except Exception:
+        return None
+    return _pick_best_pool(pairs, chain, address.lower())
 
 
 def _dex_fee_rt() -> float:
@@ -278,6 +364,9 @@ def _read_perp_map_sync(min_vol_usd: float) -> dict[str, dict[str, dict]]:
 def _build_opps_sync(dex_by_sym: dict[str, dict], perp_map: dict[str, dict[str, dict]],
                     min_perp_vol_usd: float) -> list[dict]:
     opps: list[dict] = []
+    now_ts = time.time()
+    # Purge stale hysteresis entries so the dicts don't grow unbounded.
+    _purge_stale_dex_opps(now_ts)
     for sym, dex in dex_by_sym.items():
         perp_by_ex = perp_map.get(sym) or {}
         if not perp_by_ex or not dex:
@@ -303,7 +392,25 @@ def _build_opps_sync(dex_by_sym: dict[str, dict], perp_map: dict[str, dict[str, 
                 continue
             gross = short_funding + basis_pct
             if gross <= 0:
+                # Clear any hysteresis state so the opp isn't falsely
+                # treated as "persisted" when it comes back next cycle.
+                _dex_opp_first_seen.pop((sym, perp_ex), None)
+                _dex_opp_last_seen.pop((sym, perp_ex), None)
                 continue
+
+            # Hysteresis: require the opp to survive at least one full
+            # refresh cycle before emission. DexScreener single-pool ticks
+            # die within 30s; real basis windows last minutes.
+            key = (sym, perp_ex)
+            first = _dex_opp_first_seen.get(key)
+            if first is None:
+                _dex_opp_first_seen[key] = now_ts
+                _dex_opp_last_seen[key] = now_ts
+                continue
+            _dex_opp_last_seen[key] = now_ts
+            if now_ts - first < DEX_OPP_MIN_LIFETIME_S:
+                continue
+
             fee_dex_rt = _dex_fee_rt()
             fee_perp_rt = _arb._fee(perp_ex) * 100 * 2
             total_fees = fee_dex_rt + fee_perp_rt
@@ -367,7 +474,7 @@ def _run_cycle_sync(min_perp_vol_usd: float = 100_000.0) -> dict:
 
     # Parallel DexScreener fetch with a bounded thread pool. Each worker has
     # its own connection to _sync_http (httpx.Client is thread-safe) and its
-    # own per-call timeout (4s). 10 workers × ~0.15s/call = ~7s for 500 syms.
+    # own per-call timeout (4s). 12 workers × ~0.15s/call = ~15s for 300 syms.
     dex_by_sym: dict[str, dict] = {}
     def _one(sym: str) -> tuple[str, dict | None]:
         target = _lookup_contract(sym)

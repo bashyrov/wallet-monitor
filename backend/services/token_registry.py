@@ -123,33 +123,28 @@ def _fetch_kucoin() -> dict[str, dict[str, str]]:
 
 
 def _fetch_gate() -> dict[str, dict[str, str]]:
-    """GET /api/v4/wallet/currency_chains (public) — must pass `currency`
-    to get chain/contract. The `spot/currencies` endpoint lists every
-    coin; we pick the subset that looks EVM-ish and query per-symbol in
-    bulk via a second call to reduce round-trips. Cheap at 24h TTL."""
+    """GET /api/v4/spot/currencies — public, rows include chains[] with
+    `name` and `addr`. Single call, no per-symbol iteration needed."""
     try:
-        r = _http.get("https://api.gateio.ws/api/v4/spot/currencies", timeout=10.0)
-        currencies = [c["currency"] for c in (r.json() or []) if c.get("currency")]
+        r = _http.get("https://api.gateio.ws/api/v4/spot/currencies", timeout=12.0)
+        rows = r.json() or []
     except Exception as exc:
-        logger.warning("gate registry list fetch: %s", exc)
+        logger.warning("gate registry fetch: %s", exc)
         return {}
     out: dict[str, dict[str, str]] = {}
-    # Gate's `wallet/currency_chains` can be queried without a currency
-    # arg to get every chain it knows about in one hit. Accept all rows.
-    try:
-        r2 = _http.get("https://api.gateio.ws/api/v4/wallet/currency_chains", timeout=15.0)
-        rows = r2.json() or []
-    except Exception as exc:
-        logger.warning("gate registry chains fetch: %s", exc)
-        return {}
     for row in rows:
         sym = (row.get("currency") or "").upper()
-        chain = _canon_chain(row.get("chain") or "")
-        addr = (row.get("contract_address") or "").strip().lower()
-        if not sym or not chain or not addr:
+        if not sym:
             continue
-        out.setdefault(sym, {})[chain] = addr
-    logger.info("gate registry: %d symbols", len(out))
+        chains = {}
+        for ch in (row.get("chains") or []):
+            addr = (ch.get("addr") or "").strip().lower()
+            chain = _canon_chain(ch.get("name") or "")
+            if addr and chain:
+                chains[chain] = addr
+        if chains:
+            out[sym] = chains
+    logger.info("gate registry: %d symbols with on-chain info", len(out))
     return out
 
 
@@ -178,6 +173,38 @@ def _fetch_bitget() -> dict[str, dict[str, str]]:
     return out
 
 
+def _fetch_binance() -> dict[str, dict[str, str]]:
+    """Binance has no public `/sapi/v1/capital/config/getall` (auth gated)
+    but their website hits a separate public endpoint that returns the
+    same data for every coin — `bapi/capital/v1/public/capital/getNetworkCoinAll`.
+    Each row has networkList[] with `network` + `contractAddress`."""
+    try:
+        r = _http.get(
+            "https://www.binance.com/bapi/capital/v1/public/capital/getNetworkCoinAll",
+            timeout=15.0,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        items = (r.json() or {}).get("data") or []
+    except Exception as exc:
+        logger.warning("binance registry fetch: %s", exc)
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for row in items:
+        sym = (row.get("coin") or "").upper()
+        if not sym:
+            continue
+        chains = {}
+        for n in (row.get("networkList") or []):
+            addr = (n.get("contractAddress") or "").strip().lower()
+            chain = _canon_chain(n.get("network") or "")
+            if addr and chain:
+                chains[chain] = addr
+        if chains:
+            out[sym] = chains
+    logger.info("binance registry: %d symbols with on-chain info", len(out))
+    return out
+
+
 def _fetch_mexc() -> dict[str, dict[str, str]]:
     """MEXC doesn't expose contract info on public v3 coin endpoints; their
     `coinRatings` service is internal. Leaving as a stub so the fetcher
@@ -187,16 +214,16 @@ def _fetch_mexc() -> dict[str, dict[str, str]]:
 
 
 _FETCHERS = {
-    "kucoin": _fetch_kucoin,
-    "gate":   _fetch_gate,
-    "bitget": _fetch_bitget,
-    # Extend as more exchanges expose a public endpoint:
-    # 'binance': …   # /sapi/v1/capital/config/getall — auth required
+    "binance": _fetch_binance,
+    "kucoin":  _fetch_kucoin,
+    "gate":    _fetch_gate,
+    "bitget":  _fetch_bitget,
+    # Unavailable (auth required / no public data):
     # 'bybit': …     # /v5/asset/coin/query-info — auth required
     # 'okx': …       # no public contract info
     # 'mexc': …      # internal endpoint only
-    # 'whitebit': …  # TODO
-    # 'bingx': …     # TODO
+    # 'bingx': …     # auth required
+    # 'whitebit': …  # has chain names only, no contract addresses
 }
 
 
