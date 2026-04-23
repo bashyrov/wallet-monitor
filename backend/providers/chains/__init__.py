@@ -40,5 +40,5 @@ CHAIN_META: dict[str, dict] = {
     "scroll":    {"label": "Scroll",    "enabled": True},
     "mantle":    {"label": "Mantle",    "enabled": True},
     "blast":     {"label": "Blast",     "enabled": True},
-    # fantom / evm — internal aliases, not shown in UI
+    "fantom":    {"label": "Fantom",    "enabled": True},
 }
