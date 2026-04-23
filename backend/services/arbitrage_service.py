@@ -1269,6 +1269,20 @@ _ARB_CACHE_TTL = _env_float("AVALANT_ARB_CACHE_TTL", 0.7)
 # match the refresh loop cadence; just a lower bound for the web-side fast path
 
 
+# Hysteresis state — a (symbol, long_ex, short_ex) opp must be seen for at
+# least OPP_MIN_LIFETIME_S before we expose it to the UI. Kills phantom
+# rows that flash in for one cycle because a single venue's markPrice
+# went stale (e.g. KuCoin RAVE at $0.64 while every other venue prices
+# it at $1.25 → huge spread, net > 0 → flicker).
+#   now_ts = time seen currently
+#   first_seen = earliest ts the key appeared with positive net
+# Purged when a key is missing for OPP_PURGE_AFTER_S.
+_opp_first_seen: dict[tuple[str, str, str], float] = {}
+_opp_last_seen: dict[tuple[str, str, str], float] = {}
+OPP_MIN_LIFETIME_S = 3.0
+OPP_PURGE_AFTER_S = 30.0
+
+
 def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
     """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free.
     Only returns opportunities with net_profit > 0. In/Out percentages come from
@@ -1280,6 +1294,8 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
          get_funding_data — both legs here already clear min_volume_usd.
       3. interval_h missing on either leg → skip (APR can't be normalised).
       4. net ≤ 0 → skip.
+      5. Hysteresis — opp visible for < OPP_MIN_LIFETIME_S → hide
+         (stabilises phantom rows from stale markPrice).
 
     Perf-tuned: per-symbol per-exchange lookups (top_levels, rate normalisation,
     fee) are precomputed once before the inner O(N²) permutation loop so the
@@ -1372,6 +1388,22 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                 net = gross + price_spread - total_fees
                 if net <= 0:
                     continue
+
+                # Hysteresis: first time we see this opp, stamp first_seen
+                # and skip. Subsequent cycles include it once the
+                # stability window has elapsed. Keeps phantom spreads
+                # (stale markPrice on one venue) from flashing in the UI.
+                key = (symbol, long_e["exchange"], short_e["exchange"])
+                now_ts = ts
+                first = _opp_first_seen.get(key)
+                if first is None:
+                    _opp_first_seen[key] = now_ts
+                    _opp_last_seen[key] = now_ts
+                    continue
+                _opp_last_seen[key] = now_ts
+                if now_ts - first < OPP_MIN_LIFETIME_S:
+                    continue
+
                 opportunities.append({
                     "symbol": symbol,
                     "long_exchange":  long_e["exchange"],
@@ -1401,6 +1433,15 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                 })
 
     opportunities.sort(key=lambda x: x["net_profit"], reverse=True)
+
+    # Purge hysteresis entries that haven't been observed in a while —
+    # keeps the dict bounded even when symbols rotate out of the feed.
+    purge_cutoff = ts - OPP_PURGE_AFTER_S
+    stale = [k for k, t in _opp_last_seen.items() if t < purge_cutoff]
+    for k in stale:
+        _opp_first_seen.pop(k, None)
+        _opp_last_seen.pop(k, None)
+
     return {
         "ts": ts,
         "exchanges": list(FETCHERS.keys()),
