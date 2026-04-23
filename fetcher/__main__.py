@@ -92,6 +92,13 @@ async def _run() -> None:
     start_plan_expiry_service()
     logger.info("fetcher: plan expiry service started")
 
+    # ── Token registry — contract-address lookup for ticker-collision guard ──
+    from backend.services.token_registry import (
+        start_token_registry, stop_token_registry,
+    )
+    start_token_registry()
+    logger.info("fetcher: token registry started")
+
     # ── Screener broadcaster's compute half (NOT the WS push half).
     # _refresh_loop writes arbitrage.json every 3s; the push half lives
     # on web workers where the WS client sets live.
@@ -159,6 +166,7 @@ async def _run() -> None:
             ("refresh_loop", stop_refresh_loop),
             ("funding_ws_manager", stop_funding_ws_manager),
             ("plan_expiry", stop_plan_expiry_service),
+            ("token_registry", stop_token_registry),
             ("orderbook_workers", stop_workers_and_merger),
             ("prewarm", stop_prewarm),
             ("price_loop", stop_price_loop),

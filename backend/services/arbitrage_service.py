@@ -1282,6 +1282,12 @@ _opp_last_seen: dict[tuple[str, str, str], float] = {}
 OPP_MIN_LIFETIME_S = 3.0
 OPP_PURGE_AFTER_S = 30.0
 
+# Ticker-collision guard — if price_spread exceeds this threshold we
+# cross-check the two venues' contract addresses via the token registry.
+# Mismatch or unknown → drop (prevents ASTEROID-style phantom opps where
+# two exchanges list DIFFERENT tokens under the same ticker).
+HIGH_SPREAD_THRESHOLD = 0.30   # 30%
+
 
 def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
     """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free.
@@ -1388,6 +1394,29 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
                 net = gross + price_spread - total_fees
                 if net <= 0:
                     continue
+
+                # Ticker-collision guard: abnormally large price_spread is
+                # almost always a sign that the two venues list different
+                # tokens under the same ticker (e.g. "ASTEROID" on Binance
+                # is a different asset than "ASTEROID" on Aster). Verify
+                # via on-chain contract address before we emit the row.
+                # Threshold is ±30% — real funding-arb spreads rarely
+                # exceed ~5%, so 30% is well past the noise floor.
+                if abs(price_spread) > HIGH_SPREAD_THRESHOLD:
+                    try:
+                        from backend.services.token_registry import validate_pair_identity
+                        ok = validate_pair_identity(
+                            symbol, long_e["exchange"], short_e["exchange"],
+                        )
+                    except Exception:
+                        ok = None
+                    if ok is False:
+                        # Explicit contract mismatch — always reject.
+                        continue
+                    if ok is None:
+                        # Unknown (one/both venues not in registry). Be
+                        # conservative at these spread levels.
+                        continue
 
                 # Hysteresis: first time we see this opp, stamp first_seen
                 # and skip. Subsequent cycles include it once the
