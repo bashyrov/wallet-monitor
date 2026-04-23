@@ -243,6 +243,12 @@ def _file_lookup_stale(key: str) -> tuple[dict | None, float]:
 
 # ── Public API ───────────────────────────────────────────────────────────────
 _PENDING_SUBS_FILE = os.path.join(_CACHE_DIR, "pending_subs.json")
+# Long-lived "user hot list" — pairs that at least one active WS client
+# subscribed to in the last USER_SUBS_TTL seconds. The prewarm owner uses it
+# to keep pair WS subscriptions alive across prune cycles so the user's /arb
+# tab doesn't go blank after the top-N list rotates.
+_USER_SUBS_FILE = os.path.join(_CACHE_DIR, "user_subs.json")
+USER_SUBS_TTL = 1200.0  # 20 min
 
 
 def _queue_subscribe_request(exchange: str, symbol: str) -> None:
@@ -282,6 +288,57 @@ def drain_pending_subs() -> dict[str, list[str]]:
         return pending
     except Exception:
         return {}
+
+
+def touch_user_sub(exchange: str, symbol: str) -> None:
+    """Stamp a pair as recently requested by an active WS client. Any web
+    worker can call this — the prewarm owner reads the file on every tick
+    and keeps matching pairs subscribed even when they drop out of the
+    top-N arb hot list. File grows bounded (~few dozen KB) because entries
+    older than USER_SUBS_TTL are pruned on every read."""
+    try:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        key = f"{exchange.lower()}:{symbol.upper()}"
+        now = time.time()
+        data: dict = {}
+        if os.path.exists(_USER_SUBS_FILE):
+            try:
+                with open(_USER_SUBS_FILE) as f:
+                    data = json.load(f) or {}
+            except Exception:
+                data = {}
+        data[key] = now
+        # Opportunistic prune so the file doesn't grow unbounded under load.
+        cutoff = now - USER_SUBS_TTL
+        data = {k: ts for k, ts in data.items() if isinstance(ts, (int, float)) and ts >= cutoff}
+        tmp = _USER_SUBS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, separators=(",", ":"))
+        os.replace(tmp, _USER_SUBS_FILE)
+    except Exception as exc:
+        logger.debug("touch_user_sub failed: %s", exc)
+
+
+def read_user_subs() -> dict[str, list[str]]:
+    """Owner-worker helper — returns the live user-hot-list grouped by exchange.
+    Entries older than USER_SUBS_TTL are filtered out."""
+    try:
+        if not os.path.exists(_USER_SUBS_FILE):
+            return {}
+        with open(_USER_SUBS_FILE) as f:
+            data = json.load(f) or {}
+    except Exception:
+        return {}
+    cutoff = time.time() - USER_SUBS_TTL
+    out: dict[str, list[str]] = {}
+    for key, ts in data.items():
+        if not isinstance(ts, (int, float)) or ts < cutoff:
+            continue
+        ex, _, sym = key.partition(":")
+        if not ex or not sym:
+            continue
+        out.setdefault(ex, []).append(sym)
+    return out
 
 
 _REST_FALLBACK_TTL = 12.0           # memory TTL for a REST fallback fetch
@@ -601,6 +658,18 @@ async def _prewarm_hotlist_loop() -> None:
             pending = drain_pending_subs()
             for ex, syms in pending.items():
                 if not is_ws_supported(ex):
+                    for s in syms:
+                        rest_pairs.add((ex, s))
+
+            # Keep pairs with an active /arb viewer subscribed even if they
+            # drop out of the top-N hot list. Without this, /arb goes blank
+            # every _PRUNE_EVERY ticks when set_symbols() rotates the
+            # subscription set.
+            user_hot = read_user_subs()
+            for ex, syms in user_hot.items():
+                if is_ws_supported(ex):
+                    ws_subs.setdefault(ex, set()).update(syms)
+                else:
                     for s in syms:
                         rest_pairs.add((ex, s))
 
