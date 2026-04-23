@@ -29,6 +29,12 @@ python-dotenv==1.2.2
 httpx>=0.27.0
 websockets>=13.0
 
+# Fast JSON — C-backed, 5-10× the stdlib for encode/decode. Used on the
+# hot path where books.json (4-5 MB) gets rewritten twice a second under
+# heavy CPU pressure. Non-critical for everything else — codebase stays
+# on stdlib `json` unless a call site is measurably CPU-bound on it.
+orjson>=3.10.0
+
 # Event loop acceleration — uvloop in place of asyncio selector loop.
 # 2-4x throughput; critical on the fetcher container where 11 WS + orderbook
 # pollers + arb compute share one loop. Optional: code falls back to stock

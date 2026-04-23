@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing
 import os
 import signal
 import subprocess
@@ -34,6 +35,24 @@ import sys
 import tempfile
 import threading
 import time
+
+# orjson is a C-backed JSON library, ~5-10× stdlib for both encode/decode.
+# Critical on the merger hot path (books.json ~4.5 MB, written twice a
+# second). Falls back to stdlib if orjson isn't installed — code still
+# works, just slower.
+try:
+    import orjson as _json_fast   # type: ignore[import-not-found]
+    def _json_dumps_bytes(obj) -> bytes:
+        return _json_fast.dumps(obj)
+    def _json_loads(b):
+        return _json_fast.loads(b)
+except ImportError:   # pragma: no cover — fallback for local dev without orjson
+    def _json_dumps_bytes(obj) -> bytes:
+        return json.dumps(obj, separators=(",", ":")).encode()
+    def _json_loads(b):
+        if isinstance(b, (bytes, bytearray)):
+            b = b.decode()
+        return json.loads(b)
 
 logger = logging.getLogger("avalant.orderbook_master")
 
@@ -65,36 +84,68 @@ def is_multiprocess_mode() -> bool:
 
 
 # ── Merger ──────────────────────────────────────────────────────────────────
-def _merge_loop(stop_evt: threading.Event, owned: list[str]) -> None:
+def _merge_loop(stop_evt, owned: list[str]) -> None:
     """Every _MERGE_INTERVAL_S: read books.<ex>.json for each owned exchange,
     merge into one dict, write atomically to books.json.
 
-    Cheap — each file is an in-memory dict; merge is O(sum(files)). Runs in a
-    daemon thread, fully decoupled from any event loop."""
-    logger.info("orderbook merger thread started (exchanges=%s)", owned)
+    Runs in its own subprocess (see start_workers_and_merger) with its own
+    GIL so it isn't preempted by the master's asyncio loop + other threads
+    under heavy CPU pressure. Accepts either a threading.Event or an
+    mp.Event — both implement set/wait/is_set.
+
+    Incremental parsing: re-parse a per-exchange file only when its mtime
+    has changed, otherwise reuse the previously parsed dict. Keeps the
+    merge-write cadence honest even when the container is CPU-saturated.
+    """
+    logger.info("orderbook merger process started (exchanges=%s)", owned)
+    per_ex_data: dict[str, dict] = {}
+    per_ex_mtime: dict[str, float] = {}
+    tick = 0
+    last_log = 0.0
     while not stop_evt.is_set():
+        t_start = time.time()
         try:
-            merged: dict[str, dict] = {}
-            cutoff = time.time() - _STALE_SERVE_MAX_S
             for ex in owned:
                 path = os.path.join(_CACHE_DIR, f"books.{ex}.json")
                 try:
-                    with open(path) as f:
-                        data = json.load(f)
-                except (FileNotFoundError, json.JSONDecodeError, OSError):
+                    mt = os.path.getmtime(path)
+                except OSError:
                     continue
-                if not isinstance(data, dict):
+                if per_ex_mtime.get(ex) == mt:
                     continue
+                try:
+                    with open(path, "rb") as f:
+                        data = _json_loads(f.read())
+                except (FileNotFoundError, ValueError, OSError):
+                    continue
+                if isinstance(data, dict):
+                    per_ex_data[ex] = data
+                    per_ex_mtime[ex] = mt
+            # Always rebuild + write so books.json mtime stays fresh. The
+            # merge is cheap (dict copy, thousands of entries) when no
+            # per-exchange file changed this tick.
+            merged: dict[str, dict] = {}
+            cutoff = time.time() - _STALE_SERVE_MAX_S
+            for ex, data in per_ex_data.items():
                 for key, entry in data.items():
                     ts = entry.get("ts", 0) if isinstance(entry, dict) else 0
                     if ts < cutoff:
                         continue
                     merged[key] = entry
-            # Atomic rename keeps concurrent readers consistent.
+            payload = _json_dumps_bytes(merged)
             fd, tmp = tempfile.mkstemp(dir=_CACHE_DIR, prefix="books.", suffix=".tmp")
-            with os.fdopen(fd, "w") as f:
-                json.dump(merged, f, separators=(",", ":"))
+            with os.fdopen(fd, "wb") as f:
+                f.write(payload)
             os.replace(tmp, _BOOKS_FILE)
+            tick += 1
+            now = time.time()
+            if now - last_log >= 30.0:
+                elapsed = now - t_start
+                logger.info(
+                    "orderbook merger: tick #%d keys=%d last_cycle=%.2fs",
+                    tick, len(merged), elapsed,
+                )
+                last_log = now
         except Exception as exc:
             logger.warning("orderbook merger tick failed: %s", exc)
         stop_evt.wait(_MERGE_INTERVAL_S)
@@ -246,7 +297,9 @@ class _WorkerProc:
 
 _workers: list[_WorkerProc] = []
 _supervisor_threads: list[threading.Thread] = []
-_merge_thread: threading.Thread | None = None
+_merge_thread: threading.Thread | None = None   # unused after mp-merger
+_merge_proc: multiprocessing.Process | None = None
+_merge_stop_evt: multiprocessing.synchronize.Event | None = None  # type: ignore[name-defined]
 _funding_merge_thread: threading.Thread | None = None
 _health_thread: threading.Thread | None = None
 _stop_evt: threading.Event | None = None
@@ -321,12 +374,23 @@ def start_workers_and_merger() -> None:
         _workers.append(w)
         _supervisor_threads.append(t)
 
+    # Merger lives in its OWN process so its GIL + CPU slice don't compete
+    # with the master's asyncio loop + spot/dex/alert/alpha threads. Under
+    # prod load (fetcher container at 500%+ CPU across 22 worker procs)
+    # the in-process threading.Thread merger was being preempted 13-18s
+    # mid-json.dump, freezing books.json at 10-20s old even though the
+    # per-exchange files stayed fresh. mp.Event travels across the fork
+    # boundary so the existing stop-protocol still works.
+    global _merge_proc, _merge_stop_evt, _funding_merge_proc
     if ob_exchanges:
-        _merge_thread = threading.Thread(
-            target=_merge_loop, args=(_stop_evt, ob_exchanges),
-            name="orderbook-merger", daemon=True,
+        _merge_stop_evt = multiprocessing.Event()
+        _merge_proc = multiprocessing.Process(
+            target=_merge_loop,
+            args=(_merge_stop_evt, ob_exchanges),
+            name="orderbook-merger",
+            daemon=True,
         )
-        _merge_thread.start()
+        _merge_proc.start()
 
     if fn_exchanges:
         _funding_merge_thread = threading.Thread(
@@ -357,6 +421,15 @@ def stop_workers_and_merger(timeout: float = 5.0) -> None:
     for t in _supervisor_threads:
         t.join(timeout=timeout)
     _supervisor_threads.clear()
+    global _merge_proc, _merge_stop_evt
+    if _merge_stop_evt is not None:
+        _merge_stop_evt.set()
+    if _merge_proc and _merge_proc.is_alive():
+        _merge_proc.join(timeout=timeout)
+        if _merge_proc.is_alive():
+            _merge_proc.terminate()
+    _merge_proc = None
+    _merge_stop_evt = None
     if _merge_thread and _merge_thread.is_alive():
         _merge_thread.join(timeout=timeout)
     _merge_thread = None
