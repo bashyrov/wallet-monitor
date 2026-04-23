@@ -417,23 +417,63 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
 }
 /* ── Phone density (≤560px): trim noise so core arb metrics stay legible ── */
 @media (max-width: 560px) {
+  /* Phone density pass. Trims columns aggressively so the core arb metrics
+     (Long / Short / Net / APR) stay legible on 360px screens. Fee + Spread
+     columns hidden — they're secondary info, reachable on /arb detail. */
   #tbl-arb thead th:nth-child(5),  /* Price spread */
   #tbl-arb thead th:nth-child(6),  /* Fees */
+  #tbl-arb thead th:nth-child(9),  /* Status */
   #tbl-arb tbody td:nth-child(5),
-  #tbl-arb tbody td:nth-child(6) { display: none; }
+  #tbl-arb tbody td:nth-child(6),
+  #tbl-arb tbody td:nth-child(9) { display: none; }
 
+  #tbl-spot thead th:nth-child(5),  /* Basis */
   #tbl-spot thead th:nth-child(6),  /* Fees */
+  #tbl-spot tbody td:nth-child(5),
   #tbl-spot tbody td:nth-child(6),
+  #tbl-dex  thead th:nth-child(5),
   #tbl-dex  thead th:nth-child(6),
+  #tbl-dex  tbody td:nth-child(5),
   #tbl-dex  tbody td:nth-child(6) { display: none; }
 
   #tbl-all thead th:nth-child(5),  /* Gross */
   #tbl-all tbody td:nth-child(5) { display: none; }
 
+  /* Tighter row density */
+  tbody td { padding: 8px 6px; font-size: 12px; }
+  thead th { padding: 6px 6px; font-size: 10px; }
+
+  /* Price + volume second line tiny */
+  .arb-pair > div:nth-child(2) { font-size: 10px !important; margin-left: 28px !important; }
+  .arb-label { font-size: 9px; min-width: 28px; }
+
+  /* Type pills + chips — tighter text */
   .type-pill { font-size: 9px; padding: 2px 5px; letter-spacing: 0; }
   .ex-badge, .ex-chip { font-size: 11px; gap: 4px; }
-  .ex-badge .ex-name, .ex-chip .ex-name { max-width: 10ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
-  .all-type-chip { padding: 5px 9px; font-size: 10.5px; }
+  .ex-badge .ex-name, .ex-chip .ex-name {
+    max-width: 9ch; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; display: inline-block; vertical-align: middle;
+  }
+  .all-type-chip { padding: 4px 8px; font-size: 10px; }
+
+  /* Hide freshness dots on tables — they cost width and screener.css
+     already hides them globally in the non-alpha strip, but some rows
+     still render them inline. */
+  .ex-status-dot { display: none !important; }
+
+  /* Sparkler-style numerics smaller */
+  .td-gross, .td-net, .td-apr, .td-rate { font-size: 12px; }
+  .td-symbol { font-size: 12px; }
+
+  /* Filter bar chips shrink */
+  .lp-filter-row { gap: 6px; flex-wrap: wrap; }
+}
+
+@media (max-width: 420px) {
+  /* Extra-small phones: go one more step */
+  .ex-badge .ex-name, .ex-chip .ex-name { max-width: 7ch; }
+  .type-pill { display: none; }  /* type color already conveyed by row */
+  tbody td { padding: 7px 5px; }
 }
 
 /* Type pills for rows in the All tab — one per row-kind */
