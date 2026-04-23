@@ -181,6 +181,8 @@ def toggle_block(
         raise HTTPException(status_code=404, detail="User not found")
     user.is_blocked = not getattr(user, 'is_blocked', False)
     db.commit()
+    from backend.services.auth_cache import invalidate_user
+    invalidate_user(user.id)
     return {"id": user.id, "username": user.username, "is_blocked": user.is_blocked}
 
 
@@ -220,6 +222,8 @@ def set_plan(
     else:
         user.plan_expires_at = None
     db.commit()
+    from backend.services.auth_cache import invalidate_user
+    invalidate_user(user.id)
     plan = user.plan
     expires = user.plan_expires_at.strftime("%Y-%m-%d") if user.plan_expires_at else None
     return {

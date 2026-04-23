@@ -29,6 +29,9 @@ python-dotenv==1.2.2
 httpx>=0.27.0
 websockets>=13.0
 
+# Redis — auth session cache (optional; code falls back to DB if unreachable)
+redis>=5.0.0
+
 # Misc
 annotated-types==0.7.0
 anyio==4.12.1
