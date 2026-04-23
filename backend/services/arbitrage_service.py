@@ -984,6 +984,23 @@ def _read_file_cache(name: str, max_age: float = 60.0) -> dict | None:
         return None
 
 
+async def _read_file_cache_async(name: str, max_age: float = 60.0) -> dict | None:
+    """Async wrapper for _read_file_cache — offloads the blocking read to a
+    thread so the caller's event loop is not stalled by disk IO + JSON parse.
+    Hot paths like the screener refresh loop (300 ms cadence) were blocking
+    the loop for 20-50 ms per tick on the 1 MB funding.json parse, stacking
+    up to multi-second event-loop stalls that timed out `asyncio.wait_for`
+    on REST fetches."""
+    import asyncio as _asyncio
+    return await _asyncio.to_thread(_read_file_cache, name, max_age)
+
+
+async def _write_file_cache_async(name: str, data: dict) -> None:
+    """Async wrapper for _write_file_cache — same rationale as the read."""
+    import asyncio as _asyncio
+    await _asyncio.to_thread(_write_file_cache, name, data)
+
+
 # ── Price sanity check (cross-exchange anomaly detection) ─────────────────────
 #
 # Some adapters (notoriously KuCoin) occasionally return stale or wrong
@@ -1154,7 +1171,7 @@ async def get_funding_data() -> dict:
     # Web role has no data plane — always read from shared file written by
     # the fetcher sidecar. Avoid kicking off our own REST gather.
     if os.environ.get("AVALANT_ROLE", "").lower() == "web":
-        cached = _read_file_cache("funding.json", max_age=30.0)
+        cached = await _read_file_cache_async("funding.json", max_age=30.0)
         if cached and cached.get("rows"):
             rows = [r for r in cached["rows"] if _keep(r)]
             return {"ts": cached.get("ts", int(time.time())), "exchanges": enabled_ex, "rows": rows}
@@ -1182,7 +1199,7 @@ async def get_funding_data() -> dict:
             global _FAST_PATH_LAST_WRITE
             now_t = time.time()
             if now_t - _FAST_PATH_LAST_WRITE >= 2.0:
-                _write_file_cache("funding.json", out)
+                await _write_file_cache_async("funding.json", out)
                 _FAST_PATH_LAST_WRITE = now_t
             return out
 
@@ -1227,7 +1244,7 @@ async def get_funding_data() -> dict:
         "rows": all_rows,
     }
     # Write to file cache so other workers can read without refetching
-    _write_file_cache("funding.json", out)
+    await _write_file_cache_async("funding.json", out)
     return out
 
 

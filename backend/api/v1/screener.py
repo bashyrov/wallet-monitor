@@ -710,7 +710,9 @@ async def _refresh_loop() -> None:
     from backend.services.alpha_service import score_opportunities
     from backend.services.arbitrage_service import (
         FETCHERS, _cache, _arb_result_cache, _compute_arb_sync,
-        _write_file_cache, _read_file_cache, get_funding_data, _slim_arb_for_file,
+        _write_file_cache, _read_file_cache,
+        _write_file_cache_async, _read_file_cache_async,
+        get_funding_data, _slim_arb_for_file,
         _mono, CACHE_TTL, _drop_price_outliers,
     )
     from backend.services import admin_settings
@@ -740,7 +742,7 @@ async def _refresh_loop() -> None:
             disabled_ex = admin_settings.get_disabled_exchanges()
             hidden_sym = admin_settings.get_hidden_symbols()
             min_volume = admin_settings.get_arb_min_volume_usd()
-            shared = _read_file_cache("funding.json", max_age=30.0) or {}
+            shared = await _read_file_cache_async("funding.json", max_age=30.0) or {}
             shared_rows_by_ex: dict[str, list] = {}
             for r in shared.get("rows", []) or []:
                 shared_rows_by_ex.setdefault(r.get("exchange",""), []).append(r)
@@ -806,7 +808,7 @@ async def _refresh_loop() -> None:
                 else:
                     _arb_result_cache["data"] = result
                     _arb_result_cache["ts"] = time.time()
-                    _write_file_cache("arbitrage.json", _slim_arb_for_file(result))
+                    await _write_file_cache_async("arbitrage.json", _slim_arb_for_file(result))
                     score_opportunities(result.get("opportunities", []))
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)
