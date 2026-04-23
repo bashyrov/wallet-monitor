@@ -1050,7 +1050,10 @@ async function loadSpot() {
   }
   clearInterval(_spotTimer);
   // 2 s — matches fetcher's spot refresh cadence (and futures REST backstop)
-  _spotTimer = setInterval(() => { if (_mode === 'spot') loadSpot(); }, 2000);
+  // Post-upgrade (VPS 40, 12 cores): cycle shortened to 1 s so the Spot/Short
+  // tab feels as live as Long/Short. Backend spot-arb cycle was also dropped
+  // to 1 s, so each poll sees freshly-written data.
+  _spotTimer = setInterval(() => { if (_mode === 'spot') loadSpot(); }, 1000);
 }
 
 function sortSpot(col) {
@@ -1168,7 +1171,7 @@ async function loadAll() {
     }
   }
   clearInterval(_allTimer);
-  _allTimer = setInterval(() => { if (_mode === 'all') loadAll(); }, 6000);
+  _allTimer = setInterval(() => { if (_mode === 'all') loadAll(); }, 2000);
 }
 
 let _allTypeFilter = 'all';

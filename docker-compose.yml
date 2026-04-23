@@ -27,9 +27,13 @@ x-app-env: &app-env
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   # Arb cadence knobs — tune without rebuild via `docker compose restart`.
-  AVALANT_REFRESH_INTERVAL: ${AVALANT_REFRESH_INTERVAL:-0.6}
-  AVALANT_BROADCAST_INTERVAL: ${AVALANT_BROADCAST_INTERVAL:-0.5}
-  AVALANT_ARB_CACHE_TTL: ${AVALANT_ARB_CACHE_TTL:-0.7}
+  # Tightened to live-mode values (0.6 s → 0.3 s) after the post-PR-#104
+  # snapshot optimisation brought compute cycles down to ~300 ms; with the
+  # 12-core upgrade there's headroom to push opp updates every 300 ms
+  # without starving anything else.
+  AVALANT_REFRESH_INTERVAL: ${AVALANT_REFRESH_INTERVAL:-0.3}
+  AVALANT_BROADCAST_INTERVAL: ${AVALANT_BROADCAST_INTERVAL:-0.3}
+  AVALANT_ARB_CACHE_TTL: ${AVALANT_ARB_CACHE_TTL:-0.4}
   AVALANT_PREWARM_HOTLIST_S: ${AVALANT_PREWARM_HOTLIST_S:-2.0}
   AVALANT_PREWARM_DUMP_S: ${AVALANT_PREWARM_DUMP_S:-0.2}
   # "subprocess" spawns a dedicated arb-compute worker so it stops stealing
