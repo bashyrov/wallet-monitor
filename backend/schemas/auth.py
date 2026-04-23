@@ -46,6 +46,7 @@ class UserOut(BaseModel):
     tg_username: Optional[str] = None
     tg_linked: bool = False          # True if tg_chat_id is set (user ran /start)
     created_at: datetime
+    email_verified_at: Optional[datetime] = None  # None = unverified; frontend shows a banner
 
     model_config = {"from_attributes": True}
 

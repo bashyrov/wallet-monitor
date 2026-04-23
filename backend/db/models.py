@@ -28,6 +28,7 @@ class User(Base):
     request_count = Column(Integer, nullable=False, default=0)
     last_active_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    email_verified_at = Column(DateTime, nullable=True)
 
     tg_username = Column(String, nullable=True)
     tg_chat_id = Column(Integer, nullable=True)   # filled after user runs /start to the bot
@@ -252,6 +253,20 @@ class PasswordResetToken(Base):
     token so a DB dump doesn't leak usable reset links. TTL-based cleanup is
     implicit — any row with expires_at < now() or used_at set is rejected."""
     __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class EmailVerifyToken(Base):
+    """Mirror of PasswordResetToken for email-address verification at
+    registration. Separate table so retention / TTL policies can evolve
+    independently (verify tokens live 24h, reset tokens 15m)."""
+    __tablename__ = "email_verify_tokens"
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

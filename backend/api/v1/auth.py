@@ -174,7 +174,7 @@ import os as _os
 import secrets as _secrets
 from datetime import datetime as _dt, timedelta as _td
 
-from backend.db.models import PasswordResetToken
+from backend.db.models import PasswordResetToken, EmailVerifyToken
 
 
 class _PwResetRequest(_BM):
@@ -277,6 +277,84 @@ def password_reset_confirm(body: _PwResetConfirm, request: Request, db: Session 
 
     logger.info("password-reset: password changed for uid=%s", user.id)
     return {"status": "ok"}
+
+
+# ── Email verification ───────────────────────────────────────────────────────
+_EMAIL_VERIFY_TTL_HOURS = 24
+
+
+class _EmailVerifyConfirm(_BM):
+    token: str
+
+
+@router.post("/email-verify/request")
+def email_verify_request(request: Request, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    """Issue a verification token for the current user's email. No-op if
+    already verified — returns {already_verified: True}. Dev mode includes
+    dev_token in the response; prod (mailer configured) only sends the link."""
+    ip = _get_ip(request)
+    _check_rate_limit(ip)
+
+    if current_user.email_verified_at is not None:
+        return {"status": "ok", "already_verified": True}
+
+    db.query(EmailVerifyToken).filter(
+        EmailVerifyToken.user_id == current_user.id,
+        EmailVerifyToken.used_at.is_(None),
+    ).delete(synchronize_session=False)
+
+    raw = _secrets.token_urlsafe(32)
+    row = EmailVerifyToken(
+        user_id=current_user.id,
+        token_hash=_hash_token(raw),
+        expires_at=_dt.utcnow() + _td(hours=_EMAIL_VERIFY_TTL_HOURS),
+    )
+    db.add(row)
+    db.commit()
+
+    out = {"status": "ok", "email": current_user.email}
+    if _mailer_configured():
+        logger.info("email-verify: token issued for uid=%s (mail path)", current_user.id)
+    else:
+        logger.info("email-verify: token issued for uid=%s (dev mode)", current_user.id)
+        out["dev_token"] = raw
+        out["expires_in_hours"] = _EMAIL_VERIFY_TTL_HOURS
+    return out
+
+
+@router.post("/email-verify/confirm")
+def email_verify_confirm(body: _EmailVerifyConfirm, request: Request, db: Session = Depends(get_db)):
+    """Exchange a valid verify-token for email_verified_at=now()."""
+    ip = _get_ip(request)
+    _check_rate_limit(ip)
+
+    if not body.token:
+        raise HTTPException(400, "Token is required")
+
+    h = _hash_token(body.token)
+    row = db.query(EmailVerifyToken).filter(EmailVerifyToken.token_hash == h).first()
+    if not row or row.used_at is not None or row.expires_at < _dt.utcnow():
+        _record_attempt(ip)
+        raise HTTPException(400, "Token invalid or expired")
+
+    user = db.query(User).filter(User.id == row.user_id).first()
+    if not user:
+        raise HTTPException(400, "Token invalid or expired")
+
+    if user.email_verified_at is None:
+        user.email_verified_at = _dt.utcnow()
+    row.used_at = _dt.utcnow()
+    db.commit()
+
+    try:
+        from backend.services.auth_cache import invalidate_user
+        invalidate_user(user.id)
+    except Exception:
+        pass
+
+    logger.info("email-verify: email confirmed for uid=%s", user.id)
+    return {"status": "ok", "email_verified_at": user.email_verified_at.isoformat()}
 
 
 @router.get("/tg-bot-login")
