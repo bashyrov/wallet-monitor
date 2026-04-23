@@ -39,12 +39,25 @@ class FundingWSManager:
         pass
 
     def start_all(self) -> None:
+        # Worker mode: only start the adapter the master assigned us.
+        # Master-also-owns-none mode: start every adapter NOT owned by a worker.
+        worker_list = (os.environ.get("AVALANT_FUNDING_WORKER_EXCHANGES") or "").strip()
+        worker_owned: set[str] = (
+            {e.strip().lower() for e in worker_list.split(",") if e.strip()}
+            if _OWNED_FUNDING_EX is None else set()
+        )
         for ex, cls in ADAPTERS.items():
+            if _OWNED_FUNDING_EX and ex != _OWNED_FUNDING_EX:
+                continue
+            if ex in worker_owned:
+                continue
             if ex not in self._adapters:
                 a = cls(self._update_cb)
                 self._adapters[ex] = a
                 a.start()
-        logger.info("funding WS manager started (%d adapters)", len(self._adapters))
+        logger.info("funding WS manager started (%d adapters%s)",
+                    len(self._adapters),
+                    f", owned={_OWNED_FUNDING_EX}" if _OWNED_FUNDING_EX else "")
 
     def stop_all(self) -> None:
         for a in self._adapters.values():
@@ -94,6 +107,20 @@ _DUMP_EVERY = 0.5
 _STALE_MAX  = 30.0             # file data older than this is ignored
 _LOCK_FILE  = "/tmp/avalant_funding_ws.lock"
 
+# Per-exchange worker mode (M4). When AVALANT_OWNED_FUNDING_EXCHANGE is set,
+# manager.start_all() only starts that adapter, and the dumper writes to
+# funding_ws.<ex>.json. The master process runs a merger that aggregates
+# per-exchange files into the canonical funding_ws.json.
+_OWNED_FUNDING_EX = (os.environ.get("AVALANT_OWNED_FUNDING_EXCHANGE") or "").strip().lower() or None
+_PER_EX_DUMP_FILE = (
+    os.path.join(_CACHE_DIR, f"funding_ws.{_OWNED_FUNDING_EX}.json")
+    if _OWNED_FUNDING_EX else None
+)
+_PER_EX_LOCK = (
+    f"/tmp/avalant_funding_ws.{_OWNED_FUNDING_EX}.lock"
+    if _OWNED_FUNDING_EX else None
+)
+
 
 def _dump_loop_sync(mgr: FundingWSManager, stop_evt: "threading.Event") -> None:
     """Pure-thread dump loop — runs independent of the event loop.
@@ -116,10 +143,11 @@ def _dump_loop_sync(mgr: FundingWSManager, stop_evt: "threading.Event") -> None:
                     if a._last_update_ts
                 }
                 body = {"ts": time.time(), "rows": snapshot, "ts_by_ex": ts_by_ex}
+                out_path = _PER_EX_DUMP_FILE or _DUMP_FILE
                 fd, tmp = tempfile.mkstemp(dir=_CACHE_DIR, suffix=".tmp")
                 with os.fdopen(fd, "w") as f:
                     json.dump(body, f)
-                os.replace(tmp, _DUMP_FILE)
+                os.replace(tmp, out_path)
         except Exception as exc:
             logger.debug("funding_ws dump failed: %s", exc)
         stop_evt.wait(_DUMP_EVERY)
@@ -133,8 +161,9 @@ def start_funding_ws_manager() -> FundingWSManager | None:
     global _manager, _owner_lock_fd, _dump_thread, _dump_stop_evt
     if _manager is not None:
         return _manager
+    lock_path = _PER_EX_LOCK or _LOCK_FILE
     try:
-        _owner_lock_fd = open(_LOCK_FILE, "w")
+        _owner_lock_fd = open(lock_path, "w")
         fcntl.flock(_owner_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (IOError, OSError):
         logger.info("funding WS: another worker holds the lock — reader-only mode")

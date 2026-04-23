@@ -17,6 +17,10 @@ x-app-env: &app-env
   # fresh. Then expand to the full exchange list.
   AVALANT_FETCHER_MODE: ${AVALANT_FETCHER_MODE:-}
   AVALANT_WORKER_EXCHANGES: ${AVALANT_WORKER_EXCHANGES:-}
+  # M4: per-exchange funding-WS workers. Same list format as
+  # AVALANT_WORKER_EXCHANGES but independent — you can run orderbook
+  # workers without funding workers or vice versa.
+  AVALANT_FUNDING_WORKER_EXCHANGES: ${AVALANT_FUNDING_WORKER_EXCHANGES:-}
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
   ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
   ACCESS_TOKEN_EXPIRE_DAYS: ${ACCESS_TOKEN_EXPIRE_DAYS:-30}
