@@ -85,6 +85,13 @@ async def _run() -> None:
     start_funding_ws_manager()
     logger.info("fetcher: funding WS manager started")
 
+    # ── Plan expiry — downgrades users with plan_expires_at < now() ──
+    from backend.services.plan_expiry_service import (
+        start_plan_expiry_service, stop_plan_expiry_service,
+    )
+    start_plan_expiry_service()
+    logger.info("fetcher: plan expiry service started")
+
     # ── Screener broadcaster's compute half (NOT the WS push half).
     # _refresh_loop writes arbitrage.json every 3s; the push half lives
     # on web workers where the WS client sets live.
@@ -151,6 +158,7 @@ async def _run() -> None:
             ("spot_refresh_loop", stop_spot_refresh_loop),
             ("refresh_loop", stop_refresh_loop),
             ("funding_ws_manager", stop_funding_ws_manager),
+            ("plan_expiry", stop_plan_expiry_service),
             ("orderbook_workers", stop_workers_and_merger),
             ("prewarm", stop_prewarm),
             ("price_loop", stop_price_loop),
