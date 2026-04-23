@@ -99,6 +99,21 @@ async def _run() -> None:
     start_token_registry()
     logger.info("fetcher: token registry started")
 
+    # ── Arb compute — optional out-of-process worker ─────────────────────────
+    # Gated by AVALANT_ARB_COMPUTE_MODE. "subprocess" spawns a dedicated
+    # process that reads funding.json and writes arbitrage.json without
+    # competing for the master's GIL. Default (unset / "inline") keeps the
+    # legacy in-master compute path untouched, so this is zero-risk when
+    # disabled — we can toggle on/off via env at any time.
+    from backend.services.arb_compute_service import (
+        start_arb_compute_process, stop_arb_compute_process, is_subprocess_mode,
+    )
+    start_arb_compute_process()
+    if is_subprocess_mode():
+        logger.info("fetcher: arb compute subprocess started")
+    else:
+        logger.info("fetcher: arb compute subprocess disabled (legacy in-master path)")
+
     # ── Screener broadcaster's compute half (NOT the WS push half).
     # _refresh_loop writes arbitrage.json every 3s; the push half lives
     # on web workers where the WS client sets live.
@@ -166,6 +181,7 @@ async def _run() -> None:
             ("refresh_loop", stop_refresh_loop),
             ("funding_ws_manager", stop_funding_ws_manager),
             ("plan_expiry", stop_plan_expiry_service),
+            ("arb_compute_process", stop_arb_compute_process),
             ("token_registry", stop_token_registry),
             ("orderbook_workers", stop_workers_and_merger),
             ("prewarm", stop_prewarm),

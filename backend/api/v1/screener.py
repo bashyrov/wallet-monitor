@@ -780,6 +780,28 @@ async def _refresh_loop() -> None:
                     return False
             rows = [r for r in rows if _keep(r)]
             rows = _drop_price_outliers(rows)
+
+            # Out-of-process compute: if AVALANT_ARB_COMPUTE_MODE=subprocess
+            # AND the worker is alive, skip the in-master compute path
+            # entirely — the subprocess owns arbitrage.json writes. Pick up
+            # its latest result from the file cache so alpha-score + the
+            # in-memory cache for WS broadcasters stays in sync.
+            from backend.services.arb_compute_service import (
+                is_subprocess_mode as _is_sp, is_worker_alive as _worker_alive,
+            )
+            if _is_sp() and _worker_alive():
+                try:
+                    latest = await _read_file_cache_async("arbitrage.json", max_age=10.0)
+                    if latest and latest.get("opportunities") is not None:
+                        _arb_result_cache["data"] = latest
+                        _arb_result_cache["ts"] = time.time()
+                        score_opportunities(latest.get("opportunities", []))
+                except Exception as exc:
+                    logger.debug("pickup arbitrage.json failed: %s", exc)
+                elapsed = asyncio.get_event_loop().time() - started
+                await asyncio.sleep(max(0.1, _REFRESH_INTERVAL - elapsed))
+                continue
+
             if rows and not _compute_lock.locked():
                 # Prevent queue buildup: if the previous compute is still
                 # running (to_thread future hasn't resolved), skip this tick.
