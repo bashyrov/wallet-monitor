@@ -780,9 +780,15 @@ def _prewarm_dump_loop_sync(stop_evt: threading.Event) -> None:
         stop_evt.wait(PREWARM_DUMP_S)
 
 
-def start_prewarm() -> None:
+def start_prewarm(*, dump_books: bool = True) -> None:
     """Attempt to become the prewarm owner. Only one worker wins the lock;
-    others become passive file readers with no added polling load."""
+    others become passive file readers with no added polling load.
+
+    `dump_books=False` disables the books.json writer — used by the
+    multiprocess master, where the orderbook-ws-master merger produces the
+    canonical file by combining per-worker books.<ex>.json slices. Without
+    this we'd have two threads racing to write /tmp/avalant_cache/books.json.
+    """
     global _prewarm_hotlist_task, _prewarm_dump_thread, _prewarm_dump_stop, _prewarm_lock_fd
     if _prewarm_hotlist_task and not _prewarm_hotlist_task.done():
         return
@@ -794,17 +800,19 @@ def start_prewarm() -> None:
         logger.info("orderbook prewarm: another worker holds the lock — file consumer only")
         _prewarm_lock_fd = None
         return
-    logger.info("orderbook prewarm owner started: top=%d, poll=%.1fs, dump=%.1fs",
-                PREWARM_TOP_N, POLL_INTERVAL, PREWARM_DUMP_S)
+    logger.info("orderbook prewarm owner started: top=%d, poll=%.1fs, dump=%s",
+                PREWARM_TOP_N, POLL_INTERVAL,
+                f"{PREWARM_DUMP_S}s" if dump_books else "off (merger owns books.json)")
     _prewarm_hotlist_task = asyncio.create_task(_prewarm_hotlist_loop())
-    _prewarm_dump_stop = threading.Event()
-    _prewarm_dump_thread = threading.Thread(
-        target=_prewarm_dump_loop_sync,
-        args=(_prewarm_dump_stop,),
-        name="orderbook-dump",
-        daemon=True,
-    )
-    _prewarm_dump_thread.start()
+    if dump_books:
+        _prewarm_dump_stop = threading.Event()
+        _prewarm_dump_thread = threading.Thread(
+            target=_prewarm_dump_loop_sync,
+            args=(_prewarm_dump_stop,),
+            name="orderbook-dump",
+            daemon=True,
+        )
+        _prewarm_dump_thread.start()
     # REST backstop DISABLED — 11 adapters × 6-12 workers caused GIL
     # contention that starved the asyncio event loop for the WS adapters,
     # net-regressed arb availability vs pre-fix (opp_count median 83→13,

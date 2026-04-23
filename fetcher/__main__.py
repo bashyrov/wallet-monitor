@@ -51,9 +51,32 @@ async def _run() -> None:
     logger.info("fetcher: price loop started")
 
     # ── Orderbook prewarm: WS streams + file dumper ──────────────────
+    # Two modes:
+    #   single (default)       — one process runs every exchange's WS
+    #                            manager and writes books.json directly.
+    #   multiprocess (opt-in)  — AVALANT_FETCHER_MODE=multiprocess +
+    #                            AVALANT_WORKER_EXCHANGES=list, spawns a
+    #                            child per exchange and merges their
+    #                            per-exchange books.<ex>.json files.
+    from backend.services.orderbook_ws_master import (
+        is_multiprocess_mode, start_workers_and_merger, stop_workers_and_merger,
+        worker_exchanges,
+    )
     from backend.services.orderbook_cache import start_prewarm, stop_prewarm
-    start_prewarm()
-    logger.info("fetcher: orderbook prewarm started")
+
+    if is_multiprocess_mode():
+        start_workers_and_merger()
+        logger.info(
+            "fetcher: multiprocess orderbook workers started (%s)",
+            ",".join(worker_exchanges()),
+        )
+        # Non-WS venues still need REST-prewarm in the master; start it with
+        # dump disabled so we don't race the merger for books.json.
+        start_prewarm(dump_books=False)
+        logger.info("fetcher: orderbook prewarm (REST-only, no dump) alongside workers")
+    else:
+        start_prewarm()
+        logger.info("fetcher: orderbook prewarm started (single-process)")
 
     # ── Funding WS streams — 11 exchanges ────────────────────────────
     from backend.services.funding_ws import (
@@ -128,6 +151,7 @@ async def _run() -> None:
             ("spot_refresh_loop", stop_spot_refresh_loop),
             ("refresh_loop", stop_refresh_loop),
             ("funding_ws_manager", stop_funding_ws_manager),
+            ("orderbook_workers", stop_workers_and_merger),
             ("prewarm", stop_prewarm),
             ("price_loop", stop_price_loop),
         ):
