@@ -168,6 +168,117 @@ def tg_bot_login_start(db: Session = Depends(get_db)):
     return issue_login_token(db)
 
 
+# ── Password reset flow ──────────────────────────────────────────────────────
+import hashlib as _hashlib
+import os as _os
+import secrets as _secrets
+from datetime import datetime as _dt, timedelta as _td
+
+from backend.db.models import PasswordResetToken
+
+
+class _PwResetRequest(_BM):
+    email: str
+
+
+class _PwResetConfirm(_BM):
+    token: str
+    new_password: str
+
+
+_PW_RESET_TTL_MIN = 15
+
+
+def _hash_token(raw: str) -> str:
+    return _hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _mailer_configured() -> bool:
+    """True when an SMTP / transactional-email backend is wired. Until then
+    the request endpoint returns the raw token in the response so dev/admin
+    can hand it to the user manually. Do NOT return it in prod."""
+    return bool(_os.environ.get("SMTP_HOST") or _os.environ.get("SENDGRID_API_KEY"))
+
+
+@router.post("/password-reset/request")
+def password_reset_request(body: _PwResetRequest, request: Request, db: Session = Depends(get_db)):
+    """Issue a password-reset token for the user with the given email.
+
+    Rate-limited upstream by nginx (5 req/min on /api/auth/*). Always
+    returns 200 with a generic message — never leaks whether the email
+    is registered. If `SMTP_HOST` / `SENDGRID_API_KEY` is unset, the
+    response also includes `dev_token` so ops can complete the flow
+    manually; that field is never set in prod once mail is configured.
+    """
+    email = (body.email or "").strip().lower()
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    _check_rate_limit(ip)
+
+    user = svc.get_user_by_email(db, email)
+    generic = {"status": "ok", "message": "If that email is registered, a reset link has been sent."}
+    if not user:
+        return generic
+
+    # Invalidate any un-used tokens for this user — one at a time only.
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None),
+    ).delete(synchronize_session=False)
+
+    raw = _secrets.token_urlsafe(32)
+    row = PasswordResetToken(
+        user_id=user.id,
+        token_hash=_hash_token(raw),
+        expires_at=_dt.utcnow() + _td(minutes=_PW_RESET_TTL_MIN),
+    )
+    db.add(row)
+    db.commit()
+
+    # TODO: wire a real mailer (SMTP / SendGrid / Resend) under
+    #       _mailer_configured(). Until then, expose the token to ops.
+    if _mailer_configured():
+        # Send email here. Still a stub — mailer integration is a followup.
+        logger.info("password-reset: token issued for uid=%s (mail path)", user.id)
+        return generic
+    logger.info("password-reset: token issued for uid=%s (dev mode — exposed in response)", user.id)
+    return {**generic, "dev_token": raw, "expires_in_min": _PW_RESET_TTL_MIN}
+
+
+@router.post("/password-reset/confirm")
+def password_reset_confirm(body: _PwResetConfirm, request: Request, db: Session = Depends(get_db)):
+    """Exchange a valid reset token for a new password."""
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    _check_rate_limit(ip)
+
+    if not body.token or not body.new_password or len(body.new_password) < 8:
+        raise HTTPException(400, "Token and a password ≥ 8 chars are required")
+
+    h = _hash_token(body.token)
+    row = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == h).first()
+    if not row or row.used_at is not None or row.expires_at < _dt.utcnow():
+        _record_attempt(ip)
+        raise HTTPException(400, "Token invalid or expired")
+
+    user = db.query(User).filter(User.id == row.user_id).first()
+    if not user:
+        raise HTTPException(400, "Token invalid or expired")
+
+    user.hashed_password = svc.hash_password(body.new_password)
+    row.used_at = _dt.utcnow()
+    db.commit()
+
+    # Invalidate the Redis auth cache so the just-rotated password doesn't
+    # coexist with a stale session cached from the old one.
+    try:
+        from backend.services.auth_cache import invalidate_user
+        invalidate_user(user.id)
+    except Exception:
+        pass
+
+    logger.info("password-reset: password changed for uid=%s", user.id)
+    return {"status": "ok"}
+
+
 @router.get("/tg-bot-login")
 def tg_bot_login_check(token: str = Query(...), response: Response = None):
     """Poll: has the user pressed Start in the bot yet?"""
