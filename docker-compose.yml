@@ -11,6 +11,12 @@ x-app-env: &app-env
   # Explicit admin seed: only this username becomes admin on register. Leave
   # unset in dev to keep legacy "first user wins" behaviour.
   INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
+  # Opt-in fetcher split (see docs/fetcher-split-rfc.md). Default unset =
+  # legacy single-process path. Set to `multiprocess` on prod AFTER a canary
+  # run with AVALANT_WORKER_EXCHANGES=binance confirms books.json stays
+  # fresh. Then expand to the full exchange list.
+  AVALANT_FETCHER_MODE: ${AVALANT_FETCHER_MODE:-}
+  AVALANT_WORKER_EXCHANGES: ${AVALANT_WORKER_EXCHANGES:-}
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
   ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
   ACCESS_TOKEN_EXPIRE_DAYS: ${ACCESS_TOKEN_EXPIRE_DAYS:-30}
