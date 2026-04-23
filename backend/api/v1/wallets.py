@@ -33,6 +33,7 @@ def _build_wallet_options() -> dict:
             "value": value,
             "label": p.label,
             "needs_api_key": getattr(p, "needs_api_key", False),
+            "needs_api_token": getattr(p, "needs_api_token", False),
             **( {"soon": True} if getattr(p, "soon", False) else {} ),
         }
         for value, p in PERPDEX_PROVIDERS.items()
@@ -120,6 +121,10 @@ async def create_wallet(
     elif body.wallet_type in ("chain", "perpdex"):
         if not body.address:
             raise HTTPException(status_code=422, detail="address is required for chain/perpdex wallets")
+        # Paradex uses Starknet signature auth — balance fetch needs a JWT
+        # (api_token) in addition to the Starknet address.
+        if body.wallet_type == "perpdex" and body.type_value == "paradex" and not body.api_token:
+            raise HTTPException(status_code=422, detail="paradex requires api_token (JWT from paradex.trade)")
     else:
         raise HTTPException(status_code=422, detail="Invalid wallet_type")
 

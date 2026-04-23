@@ -2166,6 +2166,15 @@ async function evSendVerify() {
                   <input class="form-input" name="perpdex_address" placeholder="0x..." spellcheck="false">
                   <div class="field-err" id="err-perpdex_address"></div>
                 </div>
+                <!-- Paradex-only: Starknet JWT (signed-in session token from paradex.trade) -->
+                <div class="form-group" id="perpdex-apitoken-group" style="display:none;">
+                  <label class="form-label">API Token (JWT)</label>
+                  <input class="form-input" name="perpdex_api_token" placeholder="eyJhbGciOi..." spellcheck="false" autocomplete="off">
+                  <div class="form-hint" style="margin-top:4px;font-size:12px;color:var(--text3)">
+                    Get this from the Authorization header on any paradex.trade API call while signed in.
+                  </div>
+                  <div class="field-err" id="err-perpdex_api_token"></div>
+                </div>
                 <div id="perpdex-apikey-group" style="display:none;">
                   <input type="hidden" name="perpdex_purpose" value="portfolio">
                   <div class="purp-selector">
@@ -3758,8 +3767,12 @@ function _onExchangeSelect(opt) {
 }
 function _onPerpdexSelect(opt) {
   const needsKey = opt.needs_api_key;
+  const needsToken = opt.needs_api_token || opt.value === 'paradex';
   document.getElementById('perpdex-address-group').style.display = needsKey ? 'none' : '';
   document.getElementById('perpdex-apikey-group').style.display = needsKey ? '' : 'none';
+  // Paradex-only: additional JWT token field alongside the Starknet address.
+  const tokenGroup = document.getElementById('perpdex-apitoken-group');
+  if (tokenGroup) tokenGroup.style.display = (!needsKey && needsToken) ? '' : 'none';
 }
 function _resetProtoChips() {
   [
@@ -3847,6 +3860,11 @@ function validateWalletForm(form) {
       } else if (dex !== 'paradex' && !RE.evm.test(addr)) {
         _fieldErr('perpdex_address', 'Must be a valid EVM address (0x + 40 hex chars)'); ok = false;
       }
+      if (dex === 'paradex') {
+        const tok = (form.perpdex_api_token?.value || '').trim();
+        if (!tok) { _fieldErr('perpdex_api_token', 'Paradex requires a JWT from paradex.trade'); ok = false; }
+        else if (tok.length < 20) { _fieldErr('perpdex_api_token', 'That does not look like a valid JWT'); ok = false; }
+      }
     }
   }
   return ok;
@@ -3877,6 +3895,10 @@ async function submitAddWallet(e) {
       body.purpose = form.elements['perpdex_purpose']?.value || 'portfolio';
     } else {
       body.address = form.perpdex_address.value.trim();
+      if (body.type_value === 'paradex') {
+        const tok = (form.perpdex_api_token?.value || '').trim();
+        if (tok) body.api_token = tok;
+      }
     }
   }
   const btn = document.getElementById('btn-submit-wallet');

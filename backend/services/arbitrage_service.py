@@ -447,6 +447,51 @@ async def _fetch_kucoin() -> list[dict]:
 
 
 # ── Hyperliquid (perp DEX) ─────────────────────────────────────────────────────
+async def _fetch_paradex() -> list[dict]:
+    """Paradex perp-DEX on Starknet. Public REST — no auth required for the
+    market-summary feed.
+
+    `GET /v1/markets/summary?market=ALL` returns ~600 markets; PERP-only is
+    ~80-100 symbols. funding_rate on this endpoint is the *per-period* rate
+    (period = 8 h confirmed via /v1/funding/data cross-check), so we store
+    it as-is and flag interval_h=8.
+    """
+    r = await _http.get("https://api.prod.paradex.trade/v1/markets/summary?market=ALL")
+    r.raise_for_status()
+    items = (r.json() or {}).get("results") or []
+    out = []
+    # Next funding time is next 8h boundary UTC (Paradex pays on 00/08/16).
+    now_ts = int(time.time())
+    interval_s = 8 * 3600
+    next_ts = (now_ts // interval_s + 1) * interval_s
+    for it in items:
+        sym = (it.get("symbol") or "")
+        if not sym.endswith("-USD-PERP"):
+            continue
+        # "BTC-USD-PERP" → "BTC"
+        base = sym[:-len("-USD-PERP")]
+        if not base:
+            continue
+        try:
+            price = float(it.get("mark_price") or it.get("last_traded_price") or 0)
+            rate = float(it.get("funding_rate") or 0)
+            vol = float(it.get("volume_24h") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price <= 0 or rate == 0:
+            continue
+        out.append({
+            "symbol": base,
+            "exchange": "paradex",
+            "price": price,
+            "rate": rate,
+            "next_ts": next_ts,
+            "interval_h": 8.0,
+            "volume_usd": vol * price,  # Paradex reports volume in base; convert.
+        })
+    return out
+
+
 async def _fetch_hyperliquid() -> list[dict]:
     r = await _http.post(
         "https://api.hyperliquid.xyz/info",
@@ -877,6 +922,7 @@ FETCHERS: dict[str, object] = {
     "ethereal":    _fetch_ethereal,
     "whitebit":    _fetch_whitebit,
     "bingx":       _fetch_bingx,
+    "paradex":     _fetch_paradex,
 }
 
 
@@ -1263,6 +1309,7 @@ EXCHANGE_FEES: dict[str, float] = {
 
     "whitebit":    0.0006,
     "bingx":       0.0005,
+    "paradex":     0.0003,  # taker fee per Paradex public fee schedule
 }
 _DEFAULT_FEE = 0.0006
 

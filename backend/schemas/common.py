@@ -39,6 +39,8 @@ class WalletCreate(BaseModel):
     api_passphrase: str | None = None
     # chain / perpdex fields
     address: str | None = None
+    # perpdex-only (currently Paradex): signed-in JWT from paradex.trade.
+    api_token: str | None = None
 
 
 class WalletUpdate(BaseModel):
@@ -47,6 +49,7 @@ class WalletUpdate(BaseModel):
     api_secret: str | None = None
     api_passphrase: str | None = None
     address: str | None = None
+    api_token: str | None = None
     purpose: Literal["portfolio", "screener", "both"] | None = None
 
 
