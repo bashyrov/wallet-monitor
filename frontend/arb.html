@@ -1439,7 +1439,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     } catch (e) { console.error('[pair] refresh error:', e); }
   }
   _refreshPair();
-  setInterval(_refreshPair, 3000);
+  // Live cadence after the 12-core VPS upgrade: pair metadata refreshes
+  // every 1 s (was 3 s) so In/Out / funding values track the orderbook
+  // updates shown below.
+  setInterval(_refreshPair, 1000);
 
   // ── Order-book polling (futures-style .book-row rendering) ────────────────
   let _obTicks = { long: 0, short: 0 };

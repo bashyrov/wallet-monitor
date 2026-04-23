@@ -100,6 +100,34 @@ def metrics():
     except Exception:
         pass
 
+    # Live-mode observability: screener WS client counts + token registry size.
+    # Used to confirm the post-upgrade broadcast cadence (0.3 s) is being
+    # serviced to every connected client without backpressure.
+    try:
+        from backend.api.v1.screener import _funding_clients, _arb_clients, _book_ws_subs
+        _gauge("avalant_ws_clients", "Currently-connected WS clients per channel")
+        lines.append(f'avalant_ws_clients{{channel="funding"}} {len(_funding_clients)}')
+        lines.append(f'avalant_ws_clients{{channel="arb"}} {len(_arb_clients)}')
+        lines.append(f'avalant_ws_clients{{channel="book"}} {len(_book_ws_subs)}')
+    except Exception:
+        pass
+
+    # Token registry size (PR #102 ticker-collision guard) — number of
+    # symbols with on-chain contract info per exchange.
+    try:
+        from backend.services.token_registry import registry_snapshot
+        snap = registry_snapshot() or {}
+        ex_map = snap.get("exchanges") or {}
+        _gauge("avalant_token_registry_symbols", "Symbols with on-chain contract info per exchange")
+        for ex, count in sorted(ex_map.items()):
+            lines.append(f'avalant_token_registry_symbols{{exchange="{ex}"}} {count}')
+        age_s = snap.get("age_s")
+        if isinstance(age_s, (int, float)):
+            _gauge("avalant_token_registry_age_s", "Seconds since last token registry refresh")
+            lines.append(f'avalant_token_registry_age_s {age_s:.1f}')
+    except Exception:
+        pass
+
     body = "\n".join(lines) + "\n"
     return Response(content=body, media_type="text/plain; version=0.0.4")
 
