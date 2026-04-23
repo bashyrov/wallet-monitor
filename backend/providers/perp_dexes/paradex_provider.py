@@ -13,7 +13,10 @@ class ParadexProvider(BaseWalletProvider):
     name = "ParadexProvider"
     label = "Paradex"
     enabled = True
+    # Paradex uses Starknet signature auth → JWT. We declare it as an
+    # `api_token` credential (not a traditional api_key/secret pair).
     needs_api_key = False
+    needs_api_token = True
     base_url = "https://api.prod.paradex.trade"
 
     def __init__(self):

@@ -78,3 +78,17 @@ class PerpDexWalletSchema(WalletBasicSchema):
         examples=["0x1234567890abcdef1234567890abcdef12345678"],
         description="L1 wallet address"
     )
+    api_token: str | None = Field(
+        default=None,
+        examples=["eyJhbGciOiJ..."],
+        description=(
+            "JWT session token (Paradex only). Paradex uses Starknet signature"
+            " auth; users grab the JWT from a signed-in paradex.trade session."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _require_paradex_token(self):
+        if self.perp_dex == PerpDexType.PARADEX and not self.api_token:
+            raise ValueError("Paradex wallets require an api_token (JWT from paradex.trade)")
+        return self

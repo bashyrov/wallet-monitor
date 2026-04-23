@@ -51,6 +51,9 @@ class PerpDexWallet(WalletBasic):
     address: str = ""
     api_key: str | None = None
     api_secret: str | None = None
+    # Paradex auths via Starknet signature → JWT. Users paste a JWT from an
+    # already-signed-in paradex.trade session; we never sign on their behalf.
+    api_token: str | None = None
 
     def _resolve_provider(self, ) -> str:
         from backend.providers import PERPDEX_PROVIDERS

@@ -130,6 +130,8 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "ba
             raw_creds["api_passphrase"] = body.api_passphrase.strip()
     else:
         raw_creds = {"address": body.address.strip()}
+        if body.wallet_type == "perpdex" and body.type_value == "paradex" and body.api_token:
+            raw_creds["api_token"] = body.api_token.strip()
 
     wallet = Wallet(
         name=body.name,
