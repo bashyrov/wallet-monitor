@@ -66,25 +66,45 @@ def is_multiprocess_mode() -> bool:
 
 # ── Merger ──────────────────────────────────────────────────────────────────
 def _merge_loop(stop_evt: threading.Event, owned: list[str]) -> None:
-    """Every _MERGE_INTERVAL_S: read books.<ex>.json for each owned exchange,
-    merge into one dict, write atomically to books.json.
+    """Every _MERGE_INTERVAL_S: merge per-exchange books.<ex>.json into a
+    single books.json for web readers.
 
-    Cheap — each file is an in-memory dict; merge is O(sum(files)). Runs in a
-    daemon thread, fully decoupled from any event loop."""
+    Incremental: each exchange file is re-parsed ONLY if its mtime changed
+    since the last cycle. Previously we parsed all 11 files on every tick,
+    which at ~300 KB each and high container CPU load (22 worker processes
+    sharing cores) frequently blocked the merger thread for 5-8 s — visible
+    as books.json ages spiking to 8 s+ even though the per-exchange files
+    were themselves fresh.
+    """
     logger.info("orderbook merger thread started (exchanges=%s)", owned)
+    per_ex_data: dict[str, dict] = {}
+    per_ex_mtime: dict[str, float] = {}
     while not stop_evt.is_set():
         try:
-            merged: dict[str, dict] = {}
-            cutoff = time.time() - _STALE_SERVE_MAX_S
+            changed = False
             for ex in owned:
                 path = os.path.join(_CACHE_DIR, f"books.{ex}.json")
+                try:
+                    mt = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if per_ex_mtime.get(ex) == mt:
+                    continue
                 try:
                     with open(path) as f:
                         data = json.load(f)
                 except (FileNotFoundError, json.JSONDecodeError, OSError):
                     continue
-                if not isinstance(data, dict):
-                    continue
+                if isinstance(data, dict):
+                    per_ex_data[ex] = data
+                    per_ex_mtime[ex] = mt
+                    changed = True
+            if not changed:
+                stop_evt.wait(_MERGE_INTERVAL_S)
+                continue
+            merged: dict[str, dict] = {}
+            cutoff = time.time() - _STALE_SERVE_MAX_S
+            for ex, data in per_ex_data.items():
                 for key, entry in data.items():
                     ts = entry.get("ts", 0) if isinstance(entry, dict) else 0
                     if ts < cutoff:
