@@ -1146,6 +1146,107 @@ class HyperliquidFundingWS(FundingWSAdapter):
         return out or None
 
 
+# ── Paradex ───────────────────────────────────────────────────────────────────
+class ParadexFundingWS(FundingWSAdapter):
+    """Paradex Starknet perp. Public WS at
+    `wss://ws.api.prod.paradex.trade/v1`; subscribe to
+    `markets_summary.ALL` and it pushes per-symbol deltas including
+    `mark_price`, `bid`, `ask`, `funding_rate`, `volume_24h`,
+    `open_interest`, `underlying_price`.
+
+    Funding period confirmed 8 h via `/v1/funding/data` cross-check.
+    Volume on WS is in base-asset units (same as REST `/v1/markets/summary`)
+    → multiply by mark_price for USD quote volume.
+
+    Symbol shape is "BTC-USD-PERP" / options like "BTC-USD-24APR26-76500-P"
+    — we keep only the -PERP ones and strip the suffix for normalised
+    row shape.
+    """
+
+    name = "paradex"
+    url = "wss://ws.api.prod.paradex.trade/v1"
+    rest_refresh_interval_s = 2.0
+
+    def build_subscribe(self):
+        return [{
+            "jsonrpc": "2.0",
+            "method": "subscribe",
+            "params": {"channel": "markets_summary.ALL"},
+            "id": 1,
+        }]
+
+    def parse_message(self, msg):
+        if msg.get("method") != "subscription":
+            return None
+        params = msg.get("params") or {}
+        if (params.get("channel") or "") != "markets_summary.ALL":
+            return None
+        data = params.get("data") or {}
+        sym = data.get("symbol") or ""
+        if not sym.endswith("-USD-PERP"):
+            return None
+        base = sym[:-len("-USD-PERP")]
+        if not base:
+            return None
+        try:
+            price = float(data.get("mark_price") or 0)
+            rate = float(data.get("funding_rate") or 0)
+            vol_base = float(data.get("volume_24h") or 0)
+        except (ValueError, TypeError):
+            return None
+        if price <= 0:
+            return None
+        # 8 h window boundary — next funding time = next 00/08/16 UTC.
+        now_ts = int(time.time())
+        interval_s = 8 * 3600
+        next_ts = (now_ts // interval_s + 1) * interval_s
+        return {
+            "symbol":     base,
+            "price":      price,
+            "rate":       rate,
+            "next_ts":    next_ts,
+            "interval_h": 8.0,
+            "volume_usd": vol_base * price,
+        }
+
+    def rest_refresh_sync(self) -> list[dict] | None:
+        try:
+            r = _rest_http.get("https://api.prod.paradex.trade/v1/markets/summary?market=ALL")
+        except Exception:
+            return None
+        if r.status_code != 200:
+            return None
+        items = (r.json() or {}).get("results") or []
+        out: list[dict] = []
+        now_ts = int(time.time())
+        interval_s = 8 * 3600
+        next_ts = (now_ts // interval_s + 1) * interval_s
+        for it in items:
+            sym = (it.get("symbol") or "")
+            if not sym.endswith("-USD-PERP"):
+                continue
+            base = sym[:-len("-USD-PERP")]
+            if not base:
+                continue
+            try:
+                price = float(it.get("mark_price") or it.get("last_traded_price") or 0)
+                rate = float(it.get("funding_rate") or 0)
+                vol = float(it.get("volume_24h") or 0)
+            except (TypeError, ValueError):
+                continue
+            if price <= 0:
+                continue
+            out.append({
+                "symbol":     base,
+                "price":      price,
+                "rate":       rate,
+                "next_ts":    next_ts,
+                "interval_h": 8.0,
+                "volume_usd": vol * price,
+            })
+        return out or None
+
+
 # ── Ethereal Perp ─────────────────────────────────────────────────────────────
 # Ethereal doesn't expose a public ticker WS in their docs. Will stay on REST.
 
@@ -1162,4 +1263,5 @@ ADAPTERS: dict[str, type[FundingWSAdapter]] = {
     "bingx":       BingXFundingWS,
     "whitebit":    WhitebitFundingWS,
     "hyperliquid": HyperliquidFundingWS,
+    "paradex":     ParadexFundingWS,
 }
