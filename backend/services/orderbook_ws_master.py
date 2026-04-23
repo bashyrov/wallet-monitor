@@ -66,22 +66,22 @@ def is_multiprocess_mode() -> bool:
 
 # ── Merger ──────────────────────────────────────────────────────────────────
 def _merge_loop(stop_evt: threading.Event, owned: list[str]) -> None:
-    """Every _MERGE_INTERVAL_S: merge per-exchange books.<ex>.json into a
-    single books.json for web readers.
+    """Every _MERGE_INTERVAL_S: read books.<ex>.json for each owned exchange,
+    merge into one dict, write atomically to books.json.
 
-    Incremental: each exchange file is re-parsed ONLY if its mtime changed
-    since the last cycle. Previously we parsed all 11 files on every tick,
-    which at ~300 KB each and high container CPU load (22 worker processes
-    sharing cores) frequently blocked the merger thread for 5-8 s — visible
-    as books.json ages spiking to 8 s+ even though the per-exchange files
-    were themselves fresh.
+    Incremental parsing: re-parse a per-exchange file only when its mtime
+    has changed, otherwise reuse the previously parsed dict. Keeps the
+    merge-write cadence honest even when the container is CPU-saturated —
+    each tick costs only the atomic write.
     """
     logger.info("orderbook merger thread started (exchanges=%s)", owned)
     per_ex_data: dict[str, dict] = {}
     per_ex_mtime: dict[str, float] = {}
+    tick = 0
+    last_log = 0.0
     while not stop_evt.is_set():
+        t_start = time.time()
         try:
-            changed = False
             for ex in owned:
                 path = os.path.join(_CACHE_DIR, f"books.{ex}.json")
                 try:
@@ -98,10 +98,9 @@ def _merge_loop(stop_evt: threading.Event, owned: list[str]) -> None:
                 if isinstance(data, dict):
                     per_ex_data[ex] = data
                     per_ex_mtime[ex] = mt
-                    changed = True
-            if not changed:
-                stop_evt.wait(_MERGE_INTERVAL_S)
-                continue
+            # Always rebuild + write so books.json mtime stays fresh. The
+            # merge is cheap (dict copy, thousands of entries) when no
+            # per-exchange file changed this tick.
             merged: dict[str, dict] = {}
             cutoff = time.time() - _STALE_SERVE_MAX_S
             for ex, data in per_ex_data.items():
@@ -110,11 +109,19 @@ def _merge_loop(stop_evt: threading.Event, owned: list[str]) -> None:
                     if ts < cutoff:
                         continue
                     merged[key] = entry
-            # Atomic rename keeps concurrent readers consistent.
             fd, tmp = tempfile.mkstemp(dir=_CACHE_DIR, prefix="books.", suffix=".tmp")
             with os.fdopen(fd, "w") as f:
                 json.dump(merged, f, separators=(",", ":"))
             os.replace(tmp, _BOOKS_FILE)
+            tick += 1
+            now = time.time()
+            if now - last_log >= 30.0:
+                elapsed = now - t_start
+                logger.info(
+                    "orderbook merger: tick #%d keys=%d last_cycle=%.2fs",
+                    tick, len(merged), elapsed,
+                )
+                last_log = now
         except Exception as exc:
             logger.warning("orderbook merger tick failed: %s", exc)
         stop_evt.wait(_MERGE_INTERVAL_S)
