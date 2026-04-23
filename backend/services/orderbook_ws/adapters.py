@@ -751,6 +751,117 @@ class BybitSpotWS(BybitWS):
     url = "wss://stream.bybit.com/v5/public/spot"
 
 
+class GateSpotWS(WSAdapter):
+    """Gate.io spot orderbook WS — `spot.order_book` channel, 20 levels
+    per tick at 1000 ms cadence. Independent from futures `fx-ws.gateio.ws`;
+    spot goes through `api.gateio.ws`."""
+    name = "gate_spot"
+    url = "wss://api.gateio.ws/ws/v4/"
+
+    def build_subscribe(self, symbols):
+        import time as _t
+        return [{
+            "time": int(_t.time()),
+            "channel": "spot.order_book",
+            "event": "subscribe",
+            "payload": [f"{s}_USDT", "20", "1000ms"],
+        } for s in symbols]
+
+    def parse_message(self, msg):
+        if msg.get("channel") != "spot.order_book":
+            return None
+        if msg.get("event") not in ("update", "all"):
+            return None
+        result = msg.get("result") or {}
+        pair = result.get("s") or ""
+        if not pair.endswith("_USDT"):
+            return None
+        token = pair[:-5]
+        bids, asks = _to_book(result.get("bids"), result.get("asks"))
+        return token, bids, asks
+
+
+class BitgetSpotWS(WSAdapter):
+    """Bitget V2 spot books — same channel name ('books') as futures but
+    instType=SPOT. Full snapshot + delta protocol, need to maintain a local
+    price→size dict to apply deltas (size='0' removes the level)."""
+    name = "bitget_spot"
+    url = "wss://ws.bitget.com/v2/ws/public"
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
+    def build_subscribe(self, symbols):
+        args = [{"instType": "SPOT", "channel": "books", "instId": f"{s}USDT"} for s in symbols]
+        return {"op": "subscribe", "args": args}
+
+    def parse_message(self, msg):
+        if msg.get("event"):
+            return None
+        arg = msg.get("arg", {})
+        if arg.get("channel") != "books" or arg.get("instType") != "SPOT":
+            return None
+        inst = arg.get("instId", "")
+        if not inst.endswith("USDT"):
+            return None
+        token = inst[:-4]
+        data_list = msg.get("data") or []
+        if not data_list:
+            return None
+        data = data_list[0]
+        action = msg.get("action") or "snapshot"
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}})
+        if action == "snapshot":
+            book["bids"].clear()
+            book["asks"].clear()
+        for side_key in ("bids", "asks"):
+            for lvl in data.get(side_key) or []:
+                try:
+                    price = float(lvl[0])
+                    size = float(lvl[1])
+                except (ValueError, IndexError, TypeError):
+                    continue
+                if size <= 0:
+                    book[side_key].pop(price, None)
+                else:
+                    book[side_key][price] = size
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
+        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
+
+
+class BingXSpotWS(WSAdapter):
+    """BingX spot: different host from futures (open-api-ws vs
+    open-api-swap). `{pair}@depth20` gives a 20-level snapshot per tick.
+    Frames are gzip-compressed — use the base adapter's decompress_gzip
+    flag. No delta merging needed (snapshot-per-tick)."""
+    name = "bingx_spot"
+    url = "wss://open-api-ws.bingx.com/market"
+    decompress_gzip = True
+
+    def build_subscribe(self, symbols):
+        return [
+            {"id": str(i), "reqType": "sub", "dataType": f"{s}-USDT@depth20"}
+            for i, s in enumerate(symbols)
+        ]
+
+    def parse_message(self, msg):
+        dt = msg.get("dataType", "")
+        if "@depth" not in dt:
+            return None
+        pair = dt.split("@")[0]
+        if not pair.endswith("-USDT"):
+            return None
+        token = pair.split("-")[0]
+        data = msg.get("data", {})
+        bids, asks = _to_book(data.get("bids"), data.get("asks"))
+        return token, bids, asks
+
+
 class OKXSpotWS(OKXWS):
     name = "okx_spot"
     url = "wss://ws.okx.com:8443/ws/v5/public"
@@ -814,4 +925,7 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "binance_spot": BinanceSpotWS,
     "bybit_spot":   BybitSpotWS,
     "okx_spot":     OKXSpotWS,
+    "gate_spot":    GateSpotWS,
+    "bitget_spot":  BitgetSpotWS,
+    "bingx_spot":   BingXSpotWS,
 }
