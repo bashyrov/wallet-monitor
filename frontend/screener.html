@@ -901,10 +901,22 @@ async function loadDex() {
     const r = await Auth.apiFetch('/screener/dex-short');
     if (!r.ok) throw new Error('dex ' + r.status);
     const j = await r.json();
-    _dexRows = j.opportunities || [];
+    const incoming = j.opportunities || [];
+    // Anti-flicker: if the server briefly returns 0 opps but we already
+    // have a populated set, keep the old one instead of blanking the UI.
+    // Next cycle (30s max) will replace with the real list.
+    if (incoming.length === 0 && _dexRows.length > 0) {
+      console.debug('[dex] kept last snapshot — server returned 0 opps');
+    } else {
+      _dexRows = incoming;
+    }
     applyDex();
   } catch (e) {
-    document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+    // Network / 5xx — leave the previous table intact, don't stomp on
+    // user's view. Only show "Failed" if we have nothing at all.
+    if (!_dexRows.length) {
+      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+    }
   }
   clearInterval(_dexTimer);
   // 30 s — matches fetcher's dex refresh cadence (DexScreener rate-limited)
@@ -1021,10 +1033,19 @@ async function loadSpot() {
     const r = await Auth.apiFetch('/screener/spot-short');
     if (!r.ok) throw new Error('spot ' + r.status);
     const j = await r.json();
-    _spotRows = j.opportunities || [];
+    const incoming = j.opportunities || [];
+    // Anti-flicker: don't blank a populated table when the server
+    // momentarily returns 0. Next cycle (2s) replaces for real.
+    if (incoming.length === 0 && _spotRows.length > 0) {
+      console.debug('[spot] kept last snapshot — server returned 0 opps');
+    } else {
+      _spotRows = incoming;
+    }
     applySpot();
   } catch (e) {
-    document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+    if (!_spotRows.length) {
+      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+    }
   }
   clearInterval(_spotTimer);
   // 2 s — matches fetcher's spot refresh cadence (and futures REST backstop)
@@ -1133,10 +1154,17 @@ async function loadAll() {
     const r = await Auth.apiFetch('/screener/all-arbitrage');
     if (!r.ok) throw new Error('all ' + r.status);
     const j = await r.json();
-    _allRows = j.opportunities || [];
+    const incoming = j.opportunities || [];
+    if (incoming.length === 0 && _allRows.length > 0) {
+      console.debug('[all] kept last snapshot — server returned 0 opps');
+    } else {
+      _allRows = incoming;
+    }
     renderAll();
   } catch (e) {
-    document.getElementById('tbody-all').innerHTML = `<tr><td colspan="8" class="empty-msg">Failed: ${e.message}</td></tr>`;
+    if (!_allRows.length) {
+      document.getElementById('tbody-all').innerHTML = `<tr><td colspan="8" class="empty-msg">Failed: ${e.message}</td></tr>`;
+    }
   }
   clearInterval(_allTimer);
   _allTimer = setInterval(() => { if (_mode === 'all') loadAll(); }, 6000);

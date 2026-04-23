@@ -420,15 +420,40 @@ def _run_spot_cycle_sync() -> dict:
 
 def _spot_worker_loop() -> None:
     logger.info("Spot worker thread running (interval=%.1fs)", SPOT_REFRESH_INTERVAL)
+    # Same flicker guard as the DEX worker: keep the last valid snapshot
+    # when a cycle degrades ≥80% vs the last good one. Spot's cycle is 2s
+    # so blips are rare, but exchange rate-limits on a bad minute (e.g.
+    # KuCoin 429s) can collapse the set. Window shorter than DEX since
+    # we expect fresher data overall.
+    last_good_count: int = 0
+    last_write_ts: float = 0.0
+    _FLICKER_WINDOW_S = 30.0
+    _MIN_RETAIN_RATIO = 0.20
     while not _spot_stop.is_set():
         t0 = time.time()
         try:
             result = _run_spot_cycle_sync()
-            _arb._write_file_cache("spot_arbitrage.json", result)
-            logger.info(
-                "spot refresh: %d opps, %.1fs",
-                len(result.get("opportunities") or []), time.time() - t0,
+            current = len(result.get("opportunities") or [])
+            now = time.time()
+            too_thin = (
+                last_good_count > 10
+                and (now - last_write_ts) < _FLICKER_WINDOW_S
+                and (current == 0 or current < last_good_count * _MIN_RETAIN_RATIO)
             )
+            if too_thin:
+                logger.info(
+                    "spot refresh skipped (flicker guard): %d vs last_good=%d (%.1fs)",
+                    current, last_good_count, time.time() - t0,
+                )
+            else:
+                _arb._write_file_cache("spot_arbitrage.json", result)
+                if current > 0:
+                    last_good_count = current
+                    last_write_ts = now
+                logger.info(
+                    "spot refresh: %d opps, %.1fs",
+                    current, time.time() - t0,
+                )
         except Exception as exc:
             logger.warning("spot refresh failed: %s", exc)
         remaining = max(0.2, SPOT_REFRESH_INTERVAL - (time.time() - t0))

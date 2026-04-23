@@ -419,18 +419,44 @@ _dex_lock_fd = None
 
 def _worker_loop() -> None:
     logger.info("DEX worker thread running (interval=%.0fs)", DEX_REFRESH_INTERVAL)
+    # Flicker guard — DexScreener periodically rate-limits us and a single
+    # cycle returns 0 opps for ~30s before recovering. The UI would blink
+    # empty for that window if we overwrote the file. Keep the previous
+    # valid snapshot when the current cycle looks degraded (≥80% drop vs
+    # last good OR empty while previous was non-empty). If stay-stale > 2m,
+    # web readers time it out via max_age and we stop serving it anyway.
+    last_good_count: int = 0
+    last_write_ts: float = 0.0
+    _FLICKER_WINDOW_S = 120.0  # abandon the stale-guard after this
+    _MIN_RETAIN_RATIO = 0.20   # write new only if ≥20% of last good
     while not _dex_stop.is_set():
         t0 = time.time()
         try:
             result = _run_cycle_sync()
-            _arb._write_file_cache("dex_arbitrage.json", result)
-            logger.info(
-                "dex refresh: %d opps, %d/%d hits, %.1fs",
-                len(result.get("opportunities") or []),
-                result.get("dex_hits", 0),
-                result.get("symbols_scanned", 0),
-                time.time() - t0,
+            current = len(result.get("opportunities") or [])
+            now = time.time()
+            too_thin = (
+                last_good_count > 10
+                and (now - last_write_ts) < _FLICKER_WINDOW_S
+                and (current == 0 or current < last_good_count * _MIN_RETAIN_RATIO)
             )
+            if too_thin:
+                logger.info(
+                    "dex refresh skipped (flicker guard): %d opps vs last_good=%d (%.1fs)",
+                    current, last_good_count, time.time() - t0,
+                )
+            else:
+                _arb._write_file_cache("dex_arbitrage.json", result)
+                if current > 0:
+                    last_good_count = current
+                    last_write_ts = now
+                logger.info(
+                    "dex refresh: %d opps, %d/%d hits, %.1fs",
+                    current,
+                    result.get("dex_hits", 0),
+                    result.get("symbols_scanned", 0),
+                    time.time() - t0,
+                )
         except Exception as exc:
             logger.warning("dex refresh failed: %s", exc)
         # Sleep in short chunks so stop-event is responsive
