@@ -32,6 +32,10 @@ websockets>=13.0
 # Redis — auth session cache (optional; code falls back to DB if unreachable)
 redis>=5.0.0
 
+# Test runner (only needed for CI / local dev, but harmless in prod image)
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+
 # Misc
 annotated-types==0.7.0
 anyio==4.12.1
