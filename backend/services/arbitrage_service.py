@@ -1353,13 +1353,14 @@ OPP_PURGE_AFTER_S = 30.0
 HIGH_SPREAD_THRESHOLD = 0.30   # 30%
 
 
-def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
+def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None = None) -> dict:
     """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free.
     Only returns opportunities with net_profit > 0. In/Out percentages come from
     the live orderbook cache when available, else are None.
 
     Filters (applied in order):
-      1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges.
+      1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges —
+         caller may pass `exclude` explicitly (subprocess path has no DB pool).
       2. Volume filter was already applied at the data layer by
          get_funding_data — both legs here already clear min_volume_usd.
       3. interval_h missing on either leg → skip (APR can't be normalised).
@@ -1373,9 +1374,10 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
     this drops compute from ~1-2s to ~200-400ms.
     """
     from backend.services.orderbook_cache import top_levels
-    from backend.services import admin_settings
 
-    exclude = admin_settings.get_arb_exclude_exchanges()
+    if exclude is None:
+        from backend.services import admin_settings
+        exclude = admin_settings.get_arb_exclude_exchanges()
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
         if r["exchange"] in exclude:
