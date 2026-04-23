@@ -1200,7 +1200,7 @@ async def arb_ws(websocket: WebSocket, token: str = Query("")) -> None:
 _book_ws_subs: dict[WebSocket, dict[str, float]] = {}
 _book_broadcast_task: asyncio.Task | None = None
 BOOK_BROADCAST_INTERVAL = _env_float("AVALANT_BOOK_BROADCAST_INTERVAL", 0.1)
-BOOK_MAX_PAIRS_PER_CLIENT = 16  # /arb needs 2; 16 is defensive headroom
+BOOK_MAX_PAIRS_PER_CLIENT = 100  # /arb needs 2, /screener live In/Out needs ~80 for top-40 rows
 
 
 async def _book_broadcast_loop() -> None:
