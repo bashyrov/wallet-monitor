@@ -731,6 +731,34 @@ async def _prewarm_hotlist_loop() -> None:
             except Exception as exc:
                 logger.debug("prewarm seed from funding failed: %s", exc)
 
+            # Spot-short opps — subscribe to the spot venue's spot-orderbook
+            # WS where we have a binance_spot / bybit_spot / okx_spot adapter.
+            # Gives the Spot/Short tab live In/Out columns (the 3 venues we
+            # cover hold ~70% of spot-short volume). Ignores other venues
+            # silently — basis_pct falls back to ticker-based math.
+            try:
+                from backend.services.spot_arbitrage_service import (
+                    get_spot_arbitrage_opportunities as _sp_get,
+                )
+                sp_data = await _sp_get()
+                for o in (sp_data.get("opportunities") or [])[:PREWARM_TOP_N]:
+                    sym_s = o.get("symbol")
+                    spot_ex = (o.get("spot_exchange") or "").lower()
+                    short_ex = (o.get("short_exchange") or "").lower()
+                    if not sym_s:
+                        continue
+                    # Subscribe the spot side (if we have a spot adapter)
+                    spot_key = f"{spot_ex}_spot"
+                    if is_ws_supported(spot_key) and (not only_exchange or spot_key == only_exchange) and spot_key not in worker_owned_exchanges:
+                        ws_subs.setdefault(spot_key, set()).add(sym_s)
+                    # Short side is always a perp WS — already handled above,
+                    # but spot opps may have smaller perp venues not in the
+                    # arb top-200; add them explicitly.
+                    if is_ws_supported(short_ex) and (not only_exchange or short_ex == only_exchange) and short_ex not in worker_owned_exchanges:
+                        ws_subs.setdefault(short_ex, set()).add(sym_s)
+            except Exception as exc:
+                logger.debug("prewarm spot-opps failed: %s", exc)
+
             # Pick up any ad-hoc subscribe requests queued by non-owner workers
             pending = drain_pending_subs()
             for ex, syms in pending.items():

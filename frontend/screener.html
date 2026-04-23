@@ -289,14 +289,16 @@
               <th onclick="sortSpot('spot_exchange')"   data-scol="spot_exchange"   data-tip="Spot venue to buy — price + 24h volume">Spot / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('short_exchange')"  data-scol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('short_funding_8h')" data-scol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       data-tip="Basis = (perp − spot) / spot. Positive = perp trades above spot, you capture the gap at entry">Basis <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('in_pct')"          data-scol="in_pct"          data-tip="Entry divergence = (bidPerp − askSpot)/askSpot. Computed from live orderbooks on the 3 covered spot venues (Binance/Bybit/OKX); rows from other venues fall back to basis math.">In <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('out_pct')"         data-scol="out_pct"         data-tip="Exit divergence = (bidSpot − askPerp)/askPerp. Closer to 0 = cheap exit.">Out <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       data-tip="Ticker-based basis = (perp − spot) / spot. Positive = perp trades above spot.">Basis <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('total_fees')"      data-scol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
               <th onclick="sortSpot('net_apr')"         data-scol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-spot"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+          <tbody id="tbody-spot"><tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
@@ -1097,7 +1099,7 @@ function renderSpot() {
   const page = _spotFiltered.slice(start, start + PAGE_SIZE);
   if (!_spotFiltered.length) {
     const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
     return;
   }
@@ -1134,6 +1136,8 @@ function renderSpot() {
         </div>
       </td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
+      <td class="td-spread"><span class="${(typeof r.in_pct === 'number' && r.in_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(typeof r.in_pct === 'number') ? (r.in_pct >= 0 ? '+' : '') + r.in_pct.toFixed(4) + '%' : '—'}</span>${r.book_ok === false ? '<span class="book-stale" title="Only Binance / Bybit / OKX spot orderbooks are streamed. Other venues use ticker-based basis.">·</span>' : ''}</td>
+      <td class="td-spread"><span class="${(typeof r.out_pct === 'number' && r.out_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(typeof r.out_pct === 'number') ? (r.out_pct >= 0 ? '+' : '') + r.out_pct.toFixed(4) + '%' : '—'}</span></td>
       <td class="td-spread"><span class="${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span></td>
       <td class="td-fees">
         <span title="spot rt: ${r.fee_spot.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
