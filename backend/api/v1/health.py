@@ -104,3 +104,37 @@ def health_feeds():
         out["counts_error"] = str(e)
 
     return out
+
+
+@router.get("/health/fetcher")
+def health_fetcher():
+    """Per-worker status of the multiprocess fetcher (M5 observability).
+
+    Reads /tmp/avalant_cache/fetcher_workers.json written by the orchestrator
+    every 5s. Falls back to `{mode: "single"}` when the fetcher runs in the
+    legacy single-process mode (no workers, nothing to observe here — use
+    /health/feeds instead).
+    """
+    from backend.services.orderbook_ws_master import read_workers_health
+    data = read_workers_health()
+    if not data:
+        return {"mode": "single", "note": "set AVALANT_FETCHER_MODE=multiprocess to enable"}
+    workers = data.get("workers") or []
+    now = time.time()
+    # Pair each worker with its books.<ex>.json freshness so ops can spot
+    # "process alive but WS stream dead" cases.
+    for w in workers:
+        ex = w.get("exchange") or ""
+        path = os.path.join("/tmp/avalant_cache", f"books.{ex}.json")
+        try:
+            st = os.stat(path)
+            w["books_file_age_s"] = round(now - st.st_mtime, 2)
+            w["books_file_size"] = st.st_size
+        except OSError:
+            w["books_file_age_s"] = None
+            w["books_file_size"] = 0
+    return {
+        "mode": "multiprocess",
+        "snapshot_age_s": round(now - (data.get("ts") or 0), 1) if data.get("ts") else None,
+        "workers": workers,
+    }
