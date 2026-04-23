@@ -27,7 +27,9 @@ jobs:
 
       - name: Run pytest
         env:
-          SECRET_KEY: ci-secret-key-not-real
-          ENCRYPTION_KEY: ci-encryption-key-not-real
-          DATABASE_URL: sqlite:///:memory:
+          SECRET_KEY: "ci-secret-key-not-real"
+          ENCRYPTION_KEY: "ci-encryption-key-not-real"
+          # Quoted because multiple colons in sqlite:///:memory: make YAML
+          # try to interpret the value as a nested mapping → parse error.
+          DATABASE_URL: "sqlite:///:memory:"
         run: python -m pytest -q --tb=short
