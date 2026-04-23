@@ -1867,6 +1867,54 @@
 <!-- ══ TOPBAR ══════════════════════════════════════════════════════════ -->
 <header class="topbar"><app-navbar page="app"></app-navbar></header>
 
+<!-- Email-verified banner (only rendered when /auth/me returns null) -->
+<div id="ev-banner" style="display:none;padding:10px 16px;background:rgba(229,192,123,0.08);border-bottom:1px solid rgba(229,192,123,0.28);color:#E5C07B;font-size:13px;text-align:center;line-height:1.5">
+  <span>Your email is not verified yet.</span>
+  <button id="ev-send" onclick="evSendVerify()" style="margin-left:10px;padding:4px 12px;border-radius:6px;background:#E5C07B;color:#1A1612;border:none;font:inherit;font-size:12px;font-weight:700;cursor:pointer">Send confirmation</button>
+  <span id="ev-status" style="margin-left:10px;color:rgba(255,255,255,0.75);font-size:12px"></span>
+</div>
+<script>
+// Defer to DOMContentLoaded so auth.js (loaded later in the body) has
+// already set up window.Auth by the time we call Auth.getToken().
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    if (typeof Auth === 'undefined') return;
+    const token = Auth.getToken();
+    if (!token) return;
+    const r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token }});
+    if (!r.ok) return;
+    const me = await r.json();
+    if (me.email_verified_at) return;
+    document.getElementById('ev-banner').style.display = 'block';
+  } catch {}
+});
+
+async function evSendVerify() {
+  const token = Auth.getToken();
+  const btn = document.getElementById('ev-send');
+  const st  = document.getElementById('ev-status');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const r = await fetch('/api/auth/email-verify/request', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const j = await r.json();
+    if (j.already_verified) {
+      st.textContent = '✓ already verified — refresh';
+      document.getElementById('ev-banner').style.display = 'none';
+    } else if (j.dev_token) {
+      st.innerHTML = 'dev link: <a href="/verify-email?token=' + encodeURIComponent(j.dev_token) + '" style="color:#1AFFAB">open</a>';
+    } else {
+      st.textContent = 'Check your inbox';
+    }
+  } catch {
+    st.textContent = 'Network error';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send confirmation';
+  }
+}
+</script>
+
 
 
 <!-- ══ MAIN ═══════════════════════════════════════════════════════════ -->
