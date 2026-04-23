@@ -652,6 +652,89 @@ class KuCoinWS(WSAdapter):
             await self._session("A")
 
 
+# ── Paradex Perp orderbook ──────────────────────────────────────────────────
+class ParadexWS(WSAdapter):
+    """Paradex Starknet perp. Public WS at `wss://ws.api.prod.paradex.trade/v1`.
+
+    Channel naming: `order_book.{market}.snapshot@15@100ms` — 15 levels
+    per side, 100 ms broadcast cadence. Messages carry either snapshot
+    (`update_type=s`) or delta (`update_type=d`) arrays of
+    `{side, price, size}` objects. We keep a running dict per symbol.
+    """
+
+    name = "paradex"
+    url = "wss://ws.api.prod.paradex.trade/v1"
+    ping_interval = 20.0
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
+    def build_subscribe(self, symbols):
+        # One subscribe frame per symbol (Paradex is JSON-RPC; most
+        # implementations accept one id per request).
+        return [
+            {
+                "jsonrpc": "2.0",
+                "method":  "subscribe",
+                "params":  {"channel": f"order_book.{s}-USD-PERP.snapshot@15@100ms"},
+                "id":      i + 1,
+            }
+            for i, s in enumerate(symbols)
+        ]
+
+    def parse_message(self, msg):
+        if msg.get("method") != "subscription":
+            return None
+        params = msg.get("params") or {}
+        channel = params.get("channel") or ""
+        # `order_book.{market}.snapshot@15@100ms` → extract market
+        if not channel.startswith("order_book."):
+            return None
+        try:
+            market = channel.split(".")[1]  # e.g. "BTC-USD-PERP"
+        except IndexError:
+            return None
+        if not market.endswith("-USD-PERP"):
+            return None
+        base = market[:-len("-USD-PERP")]
+        data = params.get("data") or {}
+        update_type = data.get("update_type") or "s"
+        book = self._books.setdefault(base, {"bids": {}, "asks": {}})
+        if update_type == "s":
+            book["bids"].clear()
+            book["asks"].clear()
+        for entry in (data.get("inserts") or []):
+            try:
+                price = float(entry["price"])
+                size = float(entry["size"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            side = entry.get("side", "").upper()
+            key = "bids" if side == "BUY" else "asks" if side == "SELL" else None
+            if key is None:
+                continue
+            if size <= 0:
+                book[key].pop(price, None)
+            else:
+                book[key][price] = size
+        for entry in (data.get("deletes") or []):
+            try:
+                price = float(entry["price"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            side = entry.get("side", "").upper()
+            key = "bids" if side == "BUY" else "asks" if side == "SELL" else None
+            if key is not None:
+                book[key].pop(price, None)
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:15]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:15]
+        return base, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
+
+
 # ── Spot orderbook WS — for Spot/Short In/Out ───────────────────────────────
 # Same wire format as the futures adapters on the big-3 venues, just pointing
 # at the spot endpoints. Registered under distinct names so the in-memory
@@ -724,6 +807,7 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "whitebit":     WhitebitWS,
     "hyperliquid":  HyperliquidWS,
     "kucoin":       KuCoinWS,
+    "paradex":      ParadexWS,
     # Spot — only on the big-3 venues for now (covers ~70-80% of spot-short
     # opp volume). Extending to the rest needs per-venue WS work (kucoin has
     # an odd token-auth flow, gate uses different sub format, etc.).
