@@ -55,14 +55,36 @@ def get_user_by_id(db: Session, user_id: int) -> User | None:
 
 
 def register_user(db: Session, username: str, email: str, password: str) -> User:
+    """Register a new user.
+
+    Admin seeding:
+      - In an empty DB (dev / local), the first user is seeded as admin +
+        unlim so you have working access immediately.
+      - In production, set INITIAL_ADMIN_USERNAME so only that specific
+        username becomes admin — removes the "whoever registers first wins"
+        race that the legacy logic had.
+    """
+    import os
     from sqlalchemy import func
+
+    uname = username.lower().strip()
     is_first = db.query(func.count(User.id)).scalar() == 0
+    seed_name = (os.environ.get("INITIAL_ADMIN_USERNAME") or "").lower().strip()
+
+    if seed_name:
+        # Explicit admin seed: only this username gets admin, even on an
+        # empty DB. Random race-winner registrations stay on `basic`.
+        make_admin = (uname == seed_name)
+    else:
+        # Legacy first-wins behavior — kept for dev/local where seed isn't set.
+        make_admin = is_first
+
     user = User(
-        username=username.lower().strip(),
+        username=uname,
         email=email.lower().strip(),
         hashed_password=hash_password(password),
-        is_admin=is_first,
-        plan="unlim" if is_first else "basic",
+        is_admin=make_admin,
+        plan="unlim" if make_admin else "basic",
     )
     db.add(user)
     db.commit()

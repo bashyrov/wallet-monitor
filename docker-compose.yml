@@ -8,6 +8,9 @@ x-app-env: &app-env
   DATABASE_URL: postgresql://wallet:${POSTGRES_PASSWORD:-changeme}@pgbouncer:5432/avalant
   # Auth session + hot lookups. Optional — if unset, code falls back to DB.
   REDIS_URL: redis://redis:6379/0
+  # Explicit admin seed: only this username becomes admin on register. Leave
+  # unset in dev to keep legacy "first user wins" behaviour.
+  INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
   ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
   ACCESS_TOKEN_EXPIRE_DAYS: ${ACCESS_TOKEN_EXPIRE_DAYS:-30}

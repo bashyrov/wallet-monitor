@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest + import smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          # Dummy values — tests use in-memory SQLite and never reach prod infra.
+          SECRET_KEY: ci-secret-key-not-real
+          ENCRYPTION_KEY: ci-encryption-key-not-real
+          DATABASE_URL: sqlite:///:memory:
+        run: |
+          python -m pytest -q --tb=short
+
+  build:
+    name: docker build (app + fetcher)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t wallet-monitor:${{ github.sha }} .
