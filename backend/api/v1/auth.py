@@ -387,6 +387,43 @@ def tg_unlink(current_user: User = Depends(get_current_user), db: Session = Depe
     return Response(status_code=204)
 
 
+class _DeleteMeBody(_BM):
+    password: str
+
+
+@router.delete("/me")
+def delete_me(body: _DeleteMeBody, response: Response,
+              current_user: User = Depends(get_current_user),
+              db: Session = Depends(get_db)):
+    """Self-service account deletion. Requires current password as a
+    second factor so a stolen session token alone can't nuke the
+    account. Admins cannot delete themselves via this endpoint — they
+    have to demote first. Cascade drops wallets, tags, snapshots, and
+    arb alerts via the FKs defined in models.py."""
+    if current_user.is_admin:
+        raise HTTPException(status_code=400, detail="Admins cannot self-delete; demote first")
+    if not svc.verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Password incorrect")
+
+    uid = current_user.id
+    username = current_user.username
+    db.delete(current_user)
+    db.commit()
+
+    # Clear Redis auth cache so the just-deleted user's token stops
+    # resolving to a phantom row.
+    try:
+        from backend.services.auth_cache import invalidate_user
+        invalidate_user(uid)
+    except Exception:
+        pass
+
+    # Drop the session cookie
+    response.delete_cookie("session")
+    logger.info("user self-deleted: uid=%s username=%s", uid, username)
+    return {"status": "ok", "deleted_user_id": uid}
+
+
 import re as _re
 _TG_USERNAME_RE = _re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")  # 5-32, must start with letter
 
