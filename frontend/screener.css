@@ -789,6 +789,20 @@ a.ex-badge:hover { color: var(--green); }
 .rate-pos  { color: var(--red); }
 .rate-neg  { color: var(--green); }
 .rate-zero { color: var(--text3); }
+
+/* In/Out columns: yellow dot when compute fell back to mark prices (no
+ * orderbook subscription yet — pair will light up once prewarm picks it up
+ * on the next cycle). Small visual hint, not a warning. */
+.book-stale {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--yellow);
+  margin-left: 4px;
+  vertical-align: middle;
+  opacity: 0.75;
+}
 .td-apr { font-family: var(--mono); font-weight: 700; }
 .td-next { font-family: var(--mono); color: var(--text3); font-size: 12px; }
 .next-soon { color: var(--yellow); }

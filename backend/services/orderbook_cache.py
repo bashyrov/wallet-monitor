@@ -583,7 +583,11 @@ def freshness_by_exchange() -> dict[str, dict]:
 
 
 # ── Prewarm owner loops (single worker) ──────────────────────────────────────
-PREWARM_TOP_N        = 80
+# Top-N opps by net_profit that get orderbook subscriptions. Bumped from 80
+# so the screener's new In/Out columns have live quotes on more rows —
+# 200 × both sides = ~40 subs per exchange on a 10-venue mix, well within
+# Binance/Bybit per-connection limits (~200 each).
+PREWARM_TOP_N        = 200
 def _env_float(name: str, default: float) -> float:
     try:
         v = os.environ.get(name)
@@ -591,9 +595,16 @@ def _env_float(name: str, default: float) -> float:
     except (TypeError, ValueError):
         return default
 
-PREWARM_HOTLIST_S    = _env_float("AVALANT_PREWARM_HOTLIST_S", 4.0)
-# refresh hot list in lockstep with arb broadcast (3-4s)
-PREWARM_DUMP_S       = _env_float("AVALANT_PREWARM_DUMP_S", 0.5)
+# How often we re-pick the hot-list from current arb opportunities. Lowered
+# from 4s so a pair that just entered the top-N starts receiving WS frames
+# in ≤2s instead of ≤4s, keeping the In/Out column's `book_ok` flag aligned
+# with the actual row visibility.
+PREWARM_HOTLIST_S    = _env_float("AVALANT_PREWARM_HOTLIST_S", 2.0)
+# How often we atomically-dump the merged `books.json` for web readers.
+# Dropped from 500 ms to 200 ms so cross-process consumers (web role, arb
+# detail page) see sub-quarter-second book updates — was our main lever for
+# "orderbook не должен отставать" hitting ≤0.5 s floor-to-ceiling.
+PREWARM_DUMP_S       = _env_float("AVALANT_PREWARM_DUMP_S", 0.2)
 # snapshot to file
 # Prune WS subscriptions down to the current hot-list every N ticks.
 # At PREWARM_HOTLIST_S=4s, _PRUNE_EVERY=30 → prune roughly every 2 minutes.
