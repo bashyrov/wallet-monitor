@@ -1534,13 +1534,18 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       setT('pt-book-' + side + '-age', 'offline');
     }
   }
-  // Perp book — always present
+  // Perp book — always present. 300 ms polling keeps the on-screen book
+  // within the 0.5 s freshness budget the screener is promising now.
+  // _bookInflight gate in fetchBook() ensures a slow response doesn't
+  // queue requests.
   _refreshBook('short');
-  setInterval(() => _refreshBook('short'), 500);
-  // Spot book — only when type=spot
+  setInterval(() => _refreshBook('short'), 300);
+  // Spot book — only when type=spot. Gate/OKX/BingX spot REST can be
+  // 500-800ms slow under load; keep this slightly looser than the perp
+  // side so slow spot venues don't block the perp refresh loop.
   if (!IS_DEX) {
     _refreshBook('long');
-    setInterval(() => _refreshBook('long'), 800);
+    setInterval(() => _refreshBook('long'), 400);
   }
 
   // ── Trade panel (short leg on CEX perp) ───────────────────────────────────
