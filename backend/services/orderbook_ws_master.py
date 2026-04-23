@@ -39,7 +39,9 @@ logger = logging.getLogger("avalant.orderbook_master")
 
 _CACHE_DIR = "/tmp/avalant_cache"
 _BOOKS_FILE = os.path.join(_CACHE_DIR, "books.json")
+_HEALTH_FILE = os.path.join(_CACHE_DIR, "fetcher_workers.json")
 _MERGE_INTERVAL_S = 0.2   # merge + write cadence
+_HEALTH_DUMP_INTERVAL_S = 5.0  # fetcher_workers.json refresh cadence
 _STALE_SERVE_MAX_S = 30.0 # drop entries older than this from the merged file
 _RESTART_COOLDOWN_S = 5.0 # wait this long before respawning a crashed worker
 _MAX_RESTARTS_PER_MIN = 6
@@ -100,7 +102,26 @@ class _WorkerProc:
         self.exchange = exchange
         self._proc: subprocess.Popen | None = None
         self._restart_window: list[float] = []  # timestamps of recent starts
+        self._started_at: float = 0.0
+        self._exit_count: int = 0
+        self._last_exit_rc: int | None = None
         self._stop = False
+
+    def snapshot(self) -> dict:
+        """Return a JSON-safe view for /api/health/fetcher."""
+        p = self._proc
+        return {
+            "exchange": self.exchange,
+            "pid": p.pid if p else None,
+            "alive": bool(p and p.poll() is None),
+            "started_at": self._started_at,
+            "uptime_s": round(time.time() - self._started_at, 1) if self._started_at else 0,
+            "restarts_1m": len([
+                t for t in self._restart_window if t >= time.time() - 60.0
+            ]),
+            "exit_count": self._exit_count,
+            "last_exit_rc": self._last_exit_rc,
+        }
 
     def _spawn(self) -> None:
         env = os.environ.copy()
@@ -114,7 +135,9 @@ class _WorkerProc:
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
-        self._restart_window.append(time.time())
+        now = time.time()
+        self._restart_window.append(now)
+        self._started_at = now
         logger.info("spawned worker for %s (pid=%d)", self.exchange, self._proc.pid)
 
     def _too_many_restarts(self) -> bool:
@@ -134,6 +157,8 @@ class _WorkerProc:
             if stop_evt.is_set() or self._stop:
                 break
             rc = self._proc.returncode
+            self._exit_count += 1
+            self._last_exit_rc = rc
             logger.warning("worker %s exited code=%s — will restart", self.exchange, rc)
             if self._too_many_restarts():
                 logger.error(
@@ -160,7 +185,41 @@ class _WorkerProc:
 _workers: list[_WorkerProc] = []
 _supervisor_threads: list[threading.Thread] = []
 _merge_thread: threading.Thread | None = None
+_health_thread: threading.Thread | None = None
 _stop_evt: threading.Event | None = None
+
+
+def _health_dump_loop(stop_evt: threading.Event) -> None:
+    """Every _HEALTH_DUMP_INTERVAL_S write fetcher_workers.json so the web
+    role can surface /api/health/fetcher without IPC. Small — 11 entries,
+    a few hundred bytes total."""
+    logger.info("health dump thread started")
+    while not stop_evt.is_set():
+        try:
+            snap = {
+                "ts": time.time(),
+                "workers": [w.snapshot() for w in _workers],
+            }
+            fd, tmp = tempfile.mkstemp(dir=_CACHE_DIR, prefix="fw.", suffix=".tmp")
+            with os.fdopen(fd, "w") as f:
+                json.dump(snap, f, separators=(",", ":"))
+            os.replace(tmp, _HEALTH_FILE)
+        except Exception as exc:
+            logger.debug("health dump failed: %s", exc)
+        stop_evt.wait(_HEALTH_DUMP_INTERVAL_S)
+
+
+def read_workers_health() -> dict:
+    """Web-role reader. Never raises — returns empty dict on any issue so
+    the /api/health/fetcher endpoint degrades gracefully."""
+    try:
+        with open(_HEALTH_FILE) as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {}
+        return data
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
 
 
 def start_workers_and_merger() -> None:
@@ -192,7 +251,16 @@ def start_workers_and_merger() -> None:
         name="orderbook-merger", daemon=True,
     )
     _merge_thread.start()
-    logger.info("multiprocess fetcher up: %d worker(s), merger running", len(exchanges))
+
+    global _health_thread
+    _health_thread = threading.Thread(
+        target=_health_dump_loop, args=(_stop_evt,),
+        name="orderbook-health", daemon=True,
+    )
+    _health_thread.start()
+
+    logger.info("multiprocess fetcher up: %d worker(s), merger + health running",
+                len(exchanges))
 
 
 def stop_workers_and_merger(timeout: float = 5.0) -> None:
@@ -209,5 +277,9 @@ def stop_workers_and_merger(timeout: float = 5.0) -> None:
     if _merge_thread and _merge_thread.is_alive():
         _merge_thread.join(timeout=timeout)
     _merge_thread = None
+    global _health_thread
+    if _health_thread and _health_thread.is_alive():
+        _health_thread.join(timeout=timeout)
+    _health_thread = None
     _stop_evt = None
     logger.info("multiprocess fetcher stopped")
