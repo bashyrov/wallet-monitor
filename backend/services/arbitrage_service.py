@@ -1388,42 +1388,20 @@ def _get_compute_pool():
     return _compute_pool
 
 
-_compute_tick = 0
-_compute_last_log = 0.0
-
-
 async def _run_compute(rows: list[dict], ts: float, exclude: set[str]) -> dict:
     """Schedule `_compute_arb_sync` onto the out-of-process compute pool.
     Falls back to in-thread compute if the pool isn't available (tests, or
-    a spawn-mode environment where fork isn't supported).
-
-    Logs one cumulative summary line every 30 s so we can see whether the
-    subprocess path is actually keeping up with the 300 ms refresh cadence.
-    """
+    a spawn-mode environment where fork isn't supported)."""
     import asyncio as _asyncio
-    import time as _time
-    global _compute_tick, _compute_last_log
-
-    t0 = _time.time()
     try:
         pool = _get_compute_pool()
         loop = _asyncio.get_event_loop()
-        result = await loop.run_in_executor(pool, _compute_arb_sync, rows, ts, set(exclude or set()))
+        # Pass exclude as a plain set so it pickles cleanly across the process
+        # boundary (admin_settings returns a set already).
+        return await loop.run_in_executor(pool, _compute_arb_sync, rows, ts, set(exclude or set()))
     except Exception as exc:
         logger.warning("compute pool failed (%s) — falling back to thread", exc)
-        result = await _asyncio.to_thread(_compute_arb_sync, rows, ts, set(exclude or set()))
-
-    elapsed = _time.time() - t0
-    _compute_tick += 1
-    now = _time.time()
-    if now - _compute_last_log >= 30.0:
-        opps = len(result.get("opportunities") or [])
-        logger.info(
-            "compute tick #%d: %.2fs  opps=%d  rows=%d",
-            _compute_tick, elapsed, opps, len(rows),
-        )
-        _compute_last_log = now
-    return result
+        return await _asyncio.to_thread(_compute_arb_sync, rows, ts, set(exclude or set()))
 
 # Ticker-collision guard — if price_spread exceeds this threshold we
 # cross-check the two venues' contract addresses via the token registry.
