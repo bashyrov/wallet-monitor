@@ -1353,13 +1353,14 @@ OPP_PURGE_AFTER_S = 30.0
 HIGH_SPREAD_THRESHOLD = 0.30   # 30%
 
 
-def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
+def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None = None) -> dict:
     """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free.
     Only returns opportunities with net_profit > 0. In/Out percentages come from
     the live orderbook cache when available, else are None.
 
     Filters (applied in order):
-      1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges.
+      1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges —
+         caller may pass `exclude` explicitly (subprocess path has no DB pool).
       2. Volume filter was already applied at the data layer by
          get_funding_data — both legs here already clear min_volume_usd.
       3. interval_h missing on either leg → skip (APR can't be normalised).
@@ -1372,10 +1373,19 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
     hot path is mostly dict reads and arithmetic. For ~4500 rows / ~3000 pairs
     this drops compute from ~1-2s to ~200-400ms.
     """
-    from backend.services.orderbook_cache import top_levels
-    from backend.services import admin_settings
+    from backend.services.orderbook_cache import top_levels, _load_books_snapshot
 
-    exclude = admin_settings.get_arb_exclude_exchanges()
+    if exclude is None:
+        from backend.services import admin_settings
+        exclude = admin_settings.get_arb_exclude_exchanges()
+
+    # Snapshot books.json ONCE at the start of the cycle. `top_levels` was
+    # re-parsing the 4.5 MB file up to ~15 times per cycle because the merger
+    # rewrites it every 200 ms → `_refresh_file_memo` kept picking up mtime
+    # changes mid-loop. cProfile showed 81 % of cycle time burnt in
+    # `json.loads`. Feeding a frozen snapshot to top_levels cuts cycle time
+    # from ~11 s → ~300 ms.
+    _book_snap = _load_books_snapshot()
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
         if r["exchange"] in exclude:
@@ -1400,7 +1410,24 @@ def _compute_arb_sync(rows: list[dict], ts: float) -> dict:
             ivl = e["interval_h"]
             rate_norm = e["rate"] * (8.0 / ivl)
             fee = _fee(ex)
-            lv = top_levels(ex, symbol)
+            # Use the frozen books snapshot (loaded once at start of cycle)
+            # instead of calling top_levels() — that would re-parse books.json
+            # dozens of times per cycle under the merger's 200 ms mtime churn.
+            lv = None
+            if _book_snap is not None:
+                entry = _book_snap.get(f"{ex}:{symbol}")
+                if entry:
+                    data = entry.get("data") or entry
+                    bids = data.get("bids") or []
+                    asks = data.get("asks") or []
+                    if bids and asks:
+                        try:
+                            lv = (float(bids[0][0]), float(asks[0][0]))
+                        except (TypeError, ValueError, IndexError):
+                            lv = None
+            if lv is None:
+                # Fallback path if snapshot was missing (fetcher cold-start).
+                lv = top_levels(ex, symbol)
             if lv:
                 bid, ask = lv
                 if ask > 0 and bid > 0:
