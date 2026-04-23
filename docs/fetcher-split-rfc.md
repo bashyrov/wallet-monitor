@@ -88,11 +88,37 @@ to the owning worker via a per-worker input file
 
 | # | Milestone | ETA | Done? |
 |---|-----------|-----|-------|
-| M1 | POC: one exchange (Binance) in a child process, `books.binance.json`, master merges to `books.json` | 1 day | — |
-| M2 | Master process manager: spawn, health, restart on crash | 1 day | — |
+| M1 | Standalone per-exchange worker entrypoint + per-exchange `books.<ex>.json` output path | 1 day | ✓ (`backend/services/orderbook_ws_worker.py`, `AVALANT_OWNED_EXCHANGE` env) |
+| M2 | Master process manager: spawn, health, restart on crash; merger collects `books.*.json` → `books.json` | 1 day | — |
 | M3 | Move all 11 orderbook-WS adapters to workers | 0.5 day | — |
 | M4 | Move funding-WS adapters to workers (same pattern) | 0.5 day | — |
 | M5 | Observability: `/api/health/fetcher` lists workers + last-tick each | 0.5 day | — |
+
+### M1 — what shipped
+
+- New module `backend/services/orderbook_ws_worker.py`: a single-exchange
+  entrypoint that opens a WSManager, seeds symbols from
+  `AVALANT_WORKER_SYMBOLS`, drains `pending_subs.json` for its exchange,
+  and writes its slice of the orderbook cache to
+  `/tmp/avalant_cache/books.<exchange>.json`.
+- `orderbook_cache` reads `AVALANT_OWNED_EXCHANGE` at import time; when set,
+  the thread-based dumper narrows its snapshot to that exchange's keys and
+  redirects output to the per-exchange file. When unset (legacy single-
+  process fetcher), behaviour is unchanged.
+- Graceful shutdown via SIGTERM / SIGINT; 2s `pending_subs.json` drain
+  cadence for /ws/book routing.
+- Standalone testable: `AVALANT_OWNED_EXCHANGE=binance python -m
+  backend.services.orderbook_ws_worker` runs without the master.
+
+### M2 — what's next
+
+Master process additions in `fetcher/__main__.py`, gated by
+`AVALANT_FETCHER_MODE=multiprocess`:
+1. Spawn a child for each exchange listed in `AVALANT_WORKER_EXCHANGES`.
+2. A thread-loop merges `books.*.json` files (per-worker) + any exchanges
+   the master still owns → canonical `books.json`.
+3. Health: if a child exits, log + respawn with exponential backoff.
+4. `pending_subs.json` drain stays as-is — workers self-serve.
 
 Total ~3-4 days engineering + integration time.
 

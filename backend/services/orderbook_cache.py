@@ -57,6 +57,17 @@ _CACHE_DIR   = "/tmp/avalant_cache"
 _BOOKS_FILE  = os.path.join(_CACHE_DIR, "books.json")
 _LOCK_FILE   = "/tmp/avalant_prewarm.lock"
 
+# When running as a per-exchange worker process (see orderbook_ws_worker),
+# the dumper narrows its output to a single exchange and writes to
+# books.<exchange>.json. The master process then merges those files into
+# books.json for web-role readers. Controlled by env var, default off so
+# legacy single-process setups are unaffected.
+#   AVALANT_OWNED_EXCHANGE=binance python -m backend.services.orderbook_ws_worker
+_OWNED_EXCHANGE = os.environ.get("AVALANT_OWNED_EXCHANGE", "").strip().lower() or None
+_PER_EX_BOOKS_FILE = (
+    os.path.join(_CACHE_DIR, f"books.{_OWNED_EXCHANGE}.json") if _OWNED_EXCHANGE else None
+)
+
 _book_cache: dict[str, dict] = {}        # key → {"data": dict, "ts": float, "last_request": float}
 _pollers: dict[str, asyncio.Task] = {}
 _lock = asyncio.Lock()
@@ -734,7 +745,13 @@ def _prewarm_dump_loop_sync(stop_evt: threading.Event) -> None:
             snapshot: dict[str, dict] = {}
             total_entries = len(_book_cache)
             stale_kept = 0
+            # When run as a per-exchange worker, only dump entries for our
+            # assigned exchange — the master merges our file with every
+            # other worker's to produce books.json.
+            prefix = (_OWNED_EXCHANGE + ":") if _OWNED_EXCHANGE else None
             for key, entry in list(_book_cache.items()):
+                if prefix and not key.startswith(prefix):
+                    continue
                 ts = entry.get("ts", 0)
                 if ts < cutoff:
                     continue
@@ -744,10 +761,11 @@ def _prewarm_dump_loop_sync(stop_evt: threading.Event) -> None:
                 if not data:
                     continue
                 snapshot[key] = {"data": data, "ts": ts}
-            tmp = _BOOKS_FILE + ".tmp"
+            out_path = _PER_EX_BOOKS_FILE or _BOOKS_FILE
+            tmp = out_path + ".tmp"
             with open(tmp, "w") as f:
                 json.dump(snapshot, f, separators=(",", ":"))
-            os.replace(tmp, _BOOKS_FILE)
+            os.replace(tmp, out_path)
             # Stats once every 30s — lets us see if the WS stream is
             # healthy without grepping for individual pair updates.
             now = time.time()
