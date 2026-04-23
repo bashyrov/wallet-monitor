@@ -651,14 +651,26 @@ def _prewarm_dump_loop_sync(stop_evt: threading.Event) -> None:
     event loop.
     """
     os.makedirs(_CACHE_DIR, exist_ok=True)
+    _last_stats_log = 0.0
     while not stop_evt.is_set():
         try:
-            cutoff = time.time() - FILE_FRESH_MAX
+            # Use STALE_SERVE_MAX (30s) as the cutoff — not FILE_FRESH_MAX (5s).
+            # WS adapters drop every 30-60s (1011 keepalive / handshake bursts
+            # affect several venues at once). With the old 5s cutoff the file
+            # went to {} during those bursts, which made the UI orderbook
+            # panel empty and the /ws/book broadcaster had nothing to push.
+            # Readers already have `ts` on every entry and apply their own
+            # freshness logic, so including up to 30s-old entries is safe.
+            cutoff = time.time() - STALE_SERVE_MAX
             snapshot: dict[str, dict] = {}
+            total_entries = len(_book_cache)
+            stale_kept = 0
             for key, entry in list(_book_cache.items()):
                 ts = entry.get("ts", 0)
                 if ts < cutoff:
                     continue
+                if ts < time.time() - FILE_FRESH_MAX:
+                    stale_kept += 1
                 data = entry.get("data")
                 if not data:
                     continue
@@ -667,6 +679,15 @@ def _prewarm_dump_loop_sync(stop_evt: threading.Event) -> None:
             with open(tmp, "w") as f:
                 json.dump(snapshot, f, separators=(",", ":"))
             os.replace(tmp, _BOOKS_FILE)
+            # Stats once every 30s — lets us see if the WS stream is
+            # healthy without grepping for individual pair updates.
+            now = time.time()
+            if now - _last_stats_log >= 30.0:
+                _last_stats_log = now
+                logger.info(
+                    "orderbook dump: %d fresh + %d stale = %d entries in cache (%d in file)",
+                    len(snapshot) - stale_kept, stale_kept, total_entries, len(snapshot),
+                )
         except Exception as exc:
             logger.warning("prewarm dump error: %s", exc)
         stop_evt.wait(PREWARM_DUMP_S)

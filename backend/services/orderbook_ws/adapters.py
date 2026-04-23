@@ -254,6 +254,10 @@ class AsterWS(BinanceWS):
     name = "aster"
     url = "wss://fstream.asterdex.com/ws"
     _rest_depth_url = "https://fapi.asterdex.com/fapi/v1/depth"
+    # Aster throws 3002 ("request frequency exceeds limit") on rapid subscribe
+    # bursts. Space frames out so the full set of ~60 symbols (12 frames of 5)
+    # takes ~3.6s instead of firing instantly.
+    subscribe_delay = 0.3
 
     def build_subscribe(self, symbols):
         # Aster rejects large single-frame subscribes under load — chunk by 5
