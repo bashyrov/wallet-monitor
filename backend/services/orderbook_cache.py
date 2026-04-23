@@ -236,6 +236,28 @@ def _refresh_file_memo() -> None:
         pass
 
 
+def _load_books_snapshot() -> dict | None:
+    """One-shot read of `books.json` that returns the entire decoded dict.
+
+    Used by the arb compute loop so it can iterate thousands of symbol-
+    exchange combos without re-parsing the file each time. Reading once is
+    ~600 ms on a 4.5 MB file, vs `_refresh_file_memo` re-reading up to
+    15× per compute under the 200 ms merger mtime churn (profile showed
+    that was 81 % of compute time).
+    """
+    try:
+        st = os.stat(_BOOKS_FILE)
+        # If the file is older than our hard stale ceiling, pretend it isn't
+        # there — caller falls back to `top_levels`, which applies its own
+        # staleness rules.
+        if time.time() - st.st_mtime > STALE_SERVE_MAX:
+            return None
+        with open(_BOOKS_FILE, "rb") as f:
+            return json.loads(f.read())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
 def _file_lookup(key: str, max_age: float = FILE_FRESH_MAX) -> dict | None:
     """Return file-cache data for key if younger than max_age, else None."""
     _refresh_file_memo()
