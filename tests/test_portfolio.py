@@ -7,6 +7,40 @@ import pytest
 from backend.domain.models import BalanceResult, ExchangeWallet, ChainWallet, PerpDexWallet
 
 
+@pytest.fixture(autouse=True)
+def _stub_network_calls(monkeypatch):
+    """Two stubs, applied to every test in this file:
+
+    1. `adapter.validate_key` on every exchange — wallet-create would
+       otherwise call the real API from the GH runner (Binance 451, etc).
+    2. `balance_service._fetch_single` — POST /portfolio/balance runs real
+       provider fetches by default, which hang on network timeouts. The
+       stub returns a generic successful result; tests that need specific
+       error behaviour override it with their own `with patch(...)`.
+
+    Keeps focus on route/schema/aggregation logic."""
+    from backend.services import trade_adapters, balance_service
+    from backend.domain.models import BalanceResult
+
+    ok = {"can_read": True, "can_trade": True, "error": None}
+    for _name, adapter in (trade_adapters.ADAPTERS or {}).items():
+        if hasattr(adapter, "validate_key"):
+            monkeypatch.setattr(adapter, "validate_key", AsyncMock(return_value=ok))
+
+    async def _default_fetch_single(wallet):
+        """Generic mock — tests override with `with patch(...)` when needed."""
+        return (
+            BalanceResult(
+                wallet=MagicMock(), provider="mock",
+                totals={"USDT": "100.00"}, details={},
+            ),
+            None,   # error
+            None,   # error_type
+        )
+    monkeypatch.setattr(balance_service, "_fetch_single", _default_fetch_single)
+    yield
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_wallet(client, auth, wtype="exchange", tval="binance"):
