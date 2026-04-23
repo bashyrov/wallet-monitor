@@ -36,6 +36,24 @@ import tempfile
 import threading
 import time
 
+# orjson is a C-backed JSON library, ~5-10× stdlib for both encode/decode.
+# Critical on the merger hot path (books.json ~4.5 MB, written twice a
+# second). Falls back to stdlib if orjson isn't installed — code still
+# works, just slower.
+try:
+    import orjson as _json_fast   # type: ignore[import-not-found]
+    def _json_dumps_bytes(obj) -> bytes:
+        return _json_fast.dumps(obj)
+    def _json_loads(b):
+        return _json_fast.loads(b)
+except ImportError:   # pragma: no cover — fallback for local dev without orjson
+    def _json_dumps_bytes(obj) -> bytes:
+        return json.dumps(obj, separators=(",", ":")).encode()
+    def _json_loads(b):
+        if isinstance(b, (bytes, bytearray)):
+            b = b.decode()
+        return json.loads(b)
+
 logger = logging.getLogger("avalant.orderbook_master")
 
 _CACHE_DIR = "/tmp/avalant_cache"
@@ -96,9 +114,9 @@ def _merge_loop(stop_evt, owned: list[str]) -> None:
                 if per_ex_mtime.get(ex) == mt:
                     continue
                 try:
-                    with open(path) as f:
-                        data = json.load(f)
-                except (FileNotFoundError, json.JSONDecodeError, OSError):
+                    with open(path, "rb") as f:
+                        data = _json_loads(f.read())
+                except (FileNotFoundError, ValueError, OSError):
                     continue
                 if isinstance(data, dict):
                     per_ex_data[ex] = data
@@ -114,9 +132,10 @@ def _merge_loop(stop_evt, owned: list[str]) -> None:
                     if ts < cutoff:
                         continue
                     merged[key] = entry
+            payload = _json_dumps_bytes(merged)
             fd, tmp = tempfile.mkstemp(dir=_CACHE_DIR, prefix="books.", suffix=".tmp")
-            with os.fdopen(fd, "w") as f:
-                json.dump(merged, f, separators=(",", ":"))
+            with os.fdopen(fd, "wb") as f:
+                f.write(payload)
             os.replace(tmp, _BOOKS_FILE)
             tick += 1
             now = time.time()
