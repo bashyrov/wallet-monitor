@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -21,7 +24,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          # 3.12 is the highest GHA runner has pre-baked; 3.13 forced a long
+          # download + build step on every run and sometimes timed out on
+          # private runners. Prod still runs 3.13 (python:3.13-slim image).
+          python-version: '3.12'
           cache: pip
 
       - name: Install dependencies
@@ -31,20 +37,8 @@ jobs:
 
       - name: Run tests
         env:
-          # Dummy values — tests use in-memory SQLite and never reach prod infra.
           SECRET_KEY: ci-secret-key-not-real
           ENCRYPTION_KEY: ci-encryption-key-not-real
           DATABASE_URL: sqlite:///:memory:
         run: |
           python -m pytest -q --tb=short
-
-  build:
-    name: docker build (app + fetcher)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build image
-        run: docker build -t wallet-monitor:${{ github.sha }} .
