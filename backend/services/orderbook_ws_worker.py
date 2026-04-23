@@ -69,13 +69,20 @@ async def _run(exchange: str) -> None:
     mgr = start_ws_manager()
 
     # Optional seed symbols — kicks the subscribe immediately rather than
-    # waiting for the master to write pending_subs.json.
+    # waiting for the hotlist loop to hit its first tick.
     seed = (os.environ.get("AVALANT_WORKER_SYMBOLS") or "").strip()
     if seed:
         symbols = [s.upper() for s in seed.split() if s.strip()]
         if symbols:
             mgr.subscribe(exchange, symbols)
             logger.info("worker seeded %d symbols: %s", len(symbols), symbols[:10])
+
+    # Run the standard prewarm hotlist loop — scoped to our exchange via the
+    # AVALANT_OWNED_EXCHANGE env check inside _prewarm_hotlist_loop. This is
+    # what lands the top-N arb symbols in our WSManager; without it the
+    # worker would sit idle waiting for /ws/book subscribes.
+    from backend.services.orderbook_cache import _prewarm_hotlist_loop
+    hotlist_task = asyncio.create_task(_prewarm_hotlist_loop())
 
     # Reuse the pure-thread dumper from orderbook_cache. The _OWNED_EXCHANGE
     # env var (picked up at module import) narrows its output to our
@@ -129,6 +136,7 @@ async def _run(exchange: str) -> None:
     finally:
         logger.info("worker %s shutting down", exchange)
         pending_task.cancel()
+        hotlist_task.cancel()
         stop_evt.set()
         stop_ws_manager()
         dump_thread.join(timeout=3.0)

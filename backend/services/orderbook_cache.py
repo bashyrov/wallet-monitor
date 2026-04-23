@@ -622,6 +622,18 @@ async def _prewarm_hotlist_loop() -> None:
     from backend.services.arbitrage_service import get_arbitrage_opportunities, get_funding_data
     from backend.services.orderbook_ws import is_ws_supported, start_ws_manager
     from collections import defaultdict
+
+    # Exchanges owned by a child worker — we must NOT subscribe to them
+    # from the master's in-process WSManager, otherwise we duplicate the
+    # WS stream (wasted bandwidth + the master's _book_cache fills but its
+    # dump is disabled, so the merger sees stale-looking output).
+    # Inverse: when running AS a worker (AVALANT_OWNED_EXCHANGE is set),
+    # only subscribe to that exchange — ignore the rest.
+    raw_workers = (os.environ.get("AVALANT_WORKER_EXCHANGES") or "").strip()
+    worker_owned_exchanges: set[str] = {
+        e.strip().lower() for e in raw_workers.split(",") if e.strip()
+    } if _OWNED_EXCHANGE is None else set()
+    only_exchange = _OWNED_EXCHANGE
     while True:
         try:
             data = await get_arbitrage_opportunities()
@@ -632,6 +644,13 @@ async def _prewarm_hotlist_loop() -> None:
                 sym = o["symbol"]
                 for ex in (o.get("long_exchange"), o.get("short_exchange")):
                     if not ex:
+                        continue
+                    ex_lc = ex.lower()
+                    # Worker scope: only our assigned exchange.
+                    if only_exchange and ex_lc != only_exchange:
+                        continue
+                    # Master scope: skip exchanges a worker owns.
+                    if ex_lc in worker_owned_exchanges:
                         continue
                     if is_ws_supported(ex):
                         ws_subs.setdefault(ex, set()).add(sym)
@@ -657,6 +676,11 @@ async def _prewarm_hotlist_loop() -> None:
                     for r in rs:
                         ex = r.get("exchange")
                         if not ex:
+                            continue
+                        ex_lc = ex.lower()
+                        if only_exchange and ex_lc != only_exchange:
+                            continue
+                        if ex_lc in worker_owned_exchanges:
                             continue
                         if is_ws_supported(ex):
                             ws_subs.setdefault(ex, set()).add(sym)
