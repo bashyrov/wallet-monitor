@@ -170,6 +170,15 @@ async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
             d = r.json()
             return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
                     "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+        if exchange == "paradex":
+            # Paradex returns "asks" / "bids" sorted best-first with string
+            # price+size tuples. `depth` caps each side; pass at least 20 so
+            # we have enough levels for consensus-style checks elsewhere.
+            lim = max(20, min(50, int(limit)))
+            r = await c.get(f"https://api.prod.paradex.trade/v1/orderbook/{symbol}-USD-PERP?depth={lim}")
+            d = r.json() or {}
+            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
     except Exception as exc:
         logger.debug("orderbook fetch %s/%s failed: %s", exchange, symbol, exc)
     return None
