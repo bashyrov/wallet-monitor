@@ -1,7 +1,13 @@
 # Shared env block — both `app` (uvicorn, HTTP/WS) and `fetcher`
 # (data plane) use identical env. Top-level YAML anchor keeps it DRY.
+#
+# DATABASE_URL routes through pgbouncer (session pool). App/alembic can stay
+# session-mode so SQLAlchemy's statement cache keeps working unchanged;
+# pgbouncer limits the backend Postgres connection count under load.
 x-app-env: &app-env
-  DATABASE_URL: postgresql://wallet:${POSTGRES_PASSWORD:-changeme}@db:5432/avalant
+  DATABASE_URL: postgresql://wallet:${POSTGRES_PASSWORD:-changeme}@pgbouncer:5432/avalant
+  # Auth session + hot lookups. Optional — if unset, code falls back to DB.
+  REDIS_URL: redis://redis:6379/0
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
   ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
   ACCESS_TOKEN_EXPIRE_DAYS: ${ACCESS_TOKEN_EXPIRE_DAYS:-30}
@@ -50,6 +56,47 @@ services:
       timeout: 5s
       retries: 10
 
+  # Connection pool for Postgres. Session mode keeps SQLAlchemy's statement
+  # cache + migrations working without code changes. MAX_CLIENT_CONN=500 lets
+  # us accept ~500 concurrent HTTP/WS users while DEFAULT_POOL_SIZE caps real
+  # backend connections — Postgres default is 100, we're consuming 20 tops.
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: wallet
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      DB_NAME: avalant
+      POOL_MODE: session
+      MAX_CLIENT_CONN: 500
+      DEFAULT_POOL_SIZE: 20
+      RESERVE_POOL_SIZE: 5
+      AUTH_TYPE: scram-sha-256
+      LISTEN_PORT: 5432
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # In-memory cache — used for /auth/me session validation so hot paths don't
+  # round-trip to Postgres on every authenticated request. Code falls back to
+  # DB if Redis is unreachable (see backend/services/auth_cache.py).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--appendonly", "no", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   app:
     build: .
     restart: unless-stopped
@@ -57,7 +104,9 @@ services:
     expose:
       - "8000"
     depends_on:
-      db:
+      pgbouncer:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       <<: *app-env
@@ -73,7 +122,7 @@ services:
     build: .
     restart: unless-stopped
     depends_on:
-      db:
+      pgbouncer:
         condition: service_healthy
     command: ["python", "-m", "fetcher"]
     environment:
