@@ -1,7 +1,7 @@
 import os
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 router = APIRouter(tags=["health"])
 
@@ -9,6 +9,99 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@router.get("/metrics")
+def metrics():
+    """Prometheus-format metrics endpoint — plaintext, no deps.
+
+    Exposed:
+      · avalant_fetcher_mode            {mode}           info
+      · avalant_orderbook_fresh_count   {exchange}       gauge, # of fresh pairs
+      · avalant_orderbook_min_age_s     {exchange}       gauge, freshest book age
+      · avalant_funding_age_s           {exchange}       gauge, per-venue funding staleness
+      · avalant_opp_count               {type}           gauge, arb opps per feed
+      · avalant_fetcher_worker_alive    {kind,exchange}  gauge, 1 or 0
+      · avalant_fetcher_worker_uptime_s {kind,exchange}  gauge
+
+    Scrape with:
+      scrape_config:
+        - job_name: avalant
+          static_configs: [{ targets: ['avalant.xyz'] }]
+          metrics_path: /api/metrics
+          scheme: https
+    """
+    lines: list[str] = []
+
+    def _gauge(name: str, help_: str) -> None:
+        lines.append(f"# HELP {name} {help_}")
+        lines.append(f"# TYPE {name} gauge")
+
+    # Fetcher mode
+    from backend.services.orderbook_ws_master import is_multiprocess_mode
+    _gauge("avalant_fetcher_mode", "1 when multiprocess fetcher is active, 0 otherwise")
+    lines.append(f"avalant_fetcher_mode {1 if is_multiprocess_mode() else 0}")
+
+    # Orderbook freshness per exchange
+    try:
+        from backend.services.orderbook_cache import freshness_by_exchange
+        fr = freshness_by_exchange() or {}
+        _gauge("avalant_orderbook_fresh_count", "Number of pairs with orderbook age ≤ 5s")
+        for ex, v in sorted(fr.items()):
+            lines.append(f'avalant_orderbook_fresh_count{{exchange="{ex}"}} {int(v.get("fresh") or 0)}')
+        _gauge("avalant_orderbook_min_age_s", "Age of the freshest book on this exchange (seconds)")
+        for ex, v in sorted(fr.items()):
+            age = v.get("min_age_s")
+            if isinstance(age, (int, float)) and age < 1e9:
+                lines.append(f'avalant_orderbook_min_age_s{{exchange="{ex}"}} {age:.3f}')
+    except Exception:
+        pass
+
+    # Funding freshness
+    try:
+        from backend.services.arbitrage_service import get_exchange_health
+        eh = get_exchange_health() or {}
+        _gauge("avalant_funding_age_s", "Per-venue funding feed staleness (seconds)")
+        for ex, v in sorted(eh.items()):
+            age = v.get("age_s")
+            if isinstance(age, (int, float)):
+                lines.append(f'avalant_funding_age_s{{exchange="{ex}"}} {age:.2f}')
+    except Exception:
+        pass
+
+    # Opp counts
+    try:
+        from backend.services.arbitrage_service import _read_file_cache
+        _gauge("avalant_opp_count", "Opportunity count per arbitrage feed")
+        for label, fname in (
+            ("futures", "arbitrage.json"),
+            ("spot_short", "spot_arbitrage.json"),
+            ("dex_short", "dex_arbitrage.json"),
+        ):
+            d = _read_file_cache(fname, max_age=120.0) or {}
+            lines.append(f'avalant_opp_count{{type="{label}"}} {len(d.get("opportunities") or [])}')
+    except Exception:
+        pass
+
+    # Fetcher workers
+    try:
+        from backend.services.orderbook_ws_master import read_workers_health
+        wh = read_workers_health()
+        _gauge("avalant_fetcher_worker_alive", "1 if the worker subprocess is alive")
+        _gauge("avalant_fetcher_worker_uptime_s", "Worker uptime since last respawn")
+        _gauge("avalant_fetcher_worker_restarts_1m", "Worker restarts in the last 60s")
+        for w in wh.get("workers") or []:
+            kind = w.get("kind") or "?"
+            ex = w.get("exchange") or "?"
+            labels = f'{{kind="{kind}",exchange="{ex}"}}'
+            lines.append(f'avalant_fetcher_worker_alive{labels} {1 if w.get("alive") else 0}')
+            lines.append(f'avalant_fetcher_worker_uptime_s{labels} {w.get("uptime_s") or 0}')
+            lines.append(f'avalant_fetcher_worker_restarts_1m{labels} {w.get("restarts_1m") or 0}')
+    except Exception:
+        pass
+
+    body = "\n".join(lines) + "\n"
+    return Response(content=body, media_type="text/plain; version=0.0.4")
 
 
 @router.get("/providers")
