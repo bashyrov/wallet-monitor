@@ -138,6 +138,18 @@ async def _run() -> None:
 
 
 def main() -> None:
+    # uvloop: drop-in replacement for asyncio's selector loop with 2-4× the
+    # throughput. Measurable fix for the fetcher's event-loop saturation —
+    # 11 WS adapters + orderbook pollers + arb compute + dumps were bumping
+    # into scheduler overhead on the default selector loop. Falls through
+    # to stock asyncio if uvloop isn't available (e.g. on macOS some CI).
+    try:
+        import uvloop
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        logger.info("fetcher: uvloop active")
+    except Exception as exc:
+        logger.info("fetcher: uvloop unavailable (%s) — using stock asyncio", exc)
+
     try:
         asyncio.run(_run())
     except KeyboardInterrupt:
