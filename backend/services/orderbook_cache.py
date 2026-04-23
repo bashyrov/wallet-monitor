@@ -632,10 +632,10 @@ def _env_float(name: str, default: float) -> float:
 # with the actual row visibility.
 PREWARM_HOTLIST_S    = _env_float("AVALANT_PREWARM_HOTLIST_S", 2.0)
 # How often we atomically-dump the merged `books.json` for web readers.
-# Dropped from 500 ms to 200 ms so cross-process consumers (web role, arb
-# detail page) see sub-quarter-second book updates — was our main lever for
-# "orderbook не должен отставать" hitting ≤0.5 s floor-to-ceiling.
-PREWARM_DUMP_S       = _env_float("AVALANT_PREWARM_DUMP_S", 0.2)
+# Live-mode: 100 ms. Each worker writes ~300 KB/dump × 11 workers = ~33 MB/s
+# to tmpfs — fine on NVMe. Combined with 100 ms master merge + 100 ms WS
+# broadcast, end-to-end orderbook latency is ~300 ms (was 500-700 ms).
+PREWARM_DUMP_S       = _env_float("AVALANT_PREWARM_DUMP_S", 0.1)
 # snapshot to file
 # Prune WS subscriptions down to the current hot-list every N ticks.
 # At PREWARM_HOTLIST_S=4s, _PRUNE_EVERY=30 → prune roughly every 2 minutes.
@@ -874,7 +874,7 @@ def _prewarm_dump_loop_sync(stop_evt: threading.Event) -> None:
         stop_evt.wait(PREWARM_DUMP_S)
 
 
-def start_prewarm(*, dump_books: bool = True) -> None:
+def start_prewarm(*, dump_books: bool = True, dump_to_master_file: bool = False) -> None:
     """Attempt to become the prewarm owner. Only one worker wins the lock;
     others become passive file readers with no added polling load.
 
@@ -882,6 +882,12 @@ def start_prewarm(*, dump_books: bool = True) -> None:
     multiprocess master, where the orderbook-ws-master merger produces the
     canonical file by combining per-worker books.<ex>.json slices. Without
     this we'd have two threads racing to write /tmp/avalant_cache/books.json.
+
+    `dump_to_master_file=True` (multiprocess master only) enables a dump
+    thread that writes `books.master.json` — the merger picks this file up
+    the same way it picks up worker files, so any orderbooks that live only
+    in master's `_book_cache` (spot WS adapters, Paradex, etc.) reach the
+    shared books.json without racing the merger.
     """
     global _prewarm_hotlist_task, _prewarm_dump_thread, _prewarm_dump_stop, _prewarm_lock_fd
     if _prewarm_hotlist_task and not _prewarm_hotlist_task.done():
@@ -894,12 +900,22 @@ def start_prewarm(*, dump_books: bool = True) -> None:
         logger.info("orderbook prewarm: another worker holds the lock — file consumer only")
         _prewarm_lock_fd = None
         return
+    dump_mode = (
+        f"{PREWARM_DUMP_S}s (books.master.json)" if dump_to_master_file
+        else f"{PREWARM_DUMP_S}s" if dump_books
+        else "off (merger owns books.json)"
+    )
     logger.info("orderbook prewarm owner started: top=%d, poll=%.1fs, dump=%s",
-                PREWARM_TOP_N, POLL_INTERVAL,
-                f"{PREWARM_DUMP_S}s" if dump_books else "off (merger owns books.json)")
+                PREWARM_TOP_N, POLL_INTERVAL, dump_mode)
     _prewarm_hotlist_task = asyncio.create_task(_prewarm_hotlist_loop())
-    if dump_books:
+    if dump_books or dump_to_master_file:
         _prewarm_dump_stop = threading.Event()
+        # Override output path when running alongside the merger — keeps us
+        # out of its write lane on books.json while still surfacing master-
+        # only entries (spot WS, paradex) to consumers via books.master.json.
+        if dump_to_master_file:
+            global _PER_EX_BOOKS_FILE
+            _PER_EX_BOOKS_FILE = os.path.join(_CACHE_DIR, "books.master.json")
         _prewarm_dump_thread = threading.Thread(
             target=_prewarm_dump_loop_sync,
             args=(_prewarm_dump_stop,),

@@ -72,7 +72,12 @@ async def _run() -> None:
         )
         # Non-WS venues still need REST-prewarm in the master; start it with
         # dump disabled so we don't race the merger for books.json.
-        start_prewarm(dump_books=False)
+        # Multiprocess mode: workers dump books.<ex>.json for their assigned
+        # exchanges, the master's prewarm dumps books.master.json for the
+        # rest (spot WS adapters, Paradex — anything that lives only in
+        # master's _book_cache). Merger reads both sets and produces the
+        # canonical books.json.
+        start_prewarm(dump_books=False, dump_to_master_file=True)
         logger.info("fetcher: orderbook prewarm (REST-only, no dump) alongside workers")
     else:
         start_prewarm()

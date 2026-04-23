@@ -39,7 +39,7 @@ x-app-env: &app-env
   AVALANT_BROADCAST_INTERVAL: ${AVALANT_BROADCAST_INTERVAL:-0.2}
   AVALANT_ARB_CACHE_TTL: ${AVALANT_ARB_CACHE_TTL:-0.4}
   AVALANT_PREWARM_HOTLIST_S: ${AVALANT_PREWARM_HOTLIST_S:-2.0}
-  AVALANT_PREWARM_DUMP_S: ${AVALANT_PREWARM_DUMP_S:-0.2}
+  AVALANT_PREWARM_DUMP_S: ${AVALANT_PREWARM_DUMP_S:-0.1}
   # "subprocess" spawns a dedicated arb-compute worker so it stops stealing
   # the fetcher's main-loop GIL. Default unset = legacy in-master compute.
   # Opt-in per-env, can be toggled off by unsetting and restarting fetcher.

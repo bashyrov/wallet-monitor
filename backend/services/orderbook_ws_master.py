@@ -60,7 +60,7 @@ _CACHE_DIR = "/tmp/avalant_cache"
 _BOOKS_FILE = os.path.join(_CACHE_DIR, "books.json")
 _FUNDING_WS_FILE = os.path.join(_CACHE_DIR, "funding_ws.json")
 _HEALTH_FILE = os.path.join(_CACHE_DIR, "fetcher_workers.json")
-_MERGE_INTERVAL_S = 0.2   # orderbook merge + write cadence
+_MERGE_INTERVAL_S = 0.1   # orderbook merge + write cadence (live mode)
 _FUNDING_MERGE_INTERVAL_S = 0.5  # funding_ws merge + write cadence
 _HEALTH_DUMP_INTERVAL_S = 5.0  # fetcher_workers.json refresh cadence
 _STALE_SERVE_MAX_S = 30.0 # drop entries older than this from the merged file
@@ -384,9 +384,13 @@ def start_workers_and_merger() -> None:
     global _merge_proc, _merge_stop_evt, _funding_merge_proc
     if ob_exchanges:
         _merge_stop_evt = multiprocessing.Event()
+        # Include "master" so the merger picks up books.master.json written
+        # by the master process's own dump thread — carries spot WS / paradex
+        # books that don't live in any per-exchange worker.
+        merger_owned = list(ob_exchanges) + ["master"]
         _merge_proc = multiprocessing.Process(
             target=_merge_loop,
-            args=(_merge_stop_evt, ob_exchanges),
+            args=(_merge_stop_evt, merger_owned),
             name="orderbook-merger",
             daemon=True,
         )

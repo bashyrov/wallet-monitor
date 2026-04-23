@@ -803,6 +803,18 @@ a.ex-badge:hover { color: var(--green); }
   vertical-align: middle;
   opacity: 0.75;
 }
+
+/* Brief pulse whenever an In/Out cell is updated from the live orderbook
+ * WS — lets the user see values are ticking in sub-second. 200 ms keeps
+ * pulses from overlapping even under heavy updates. */
+.live-tick {
+  animation: live-tick-pulse 200ms ease-out;
+}
+@keyframes live-tick-pulse {
+  0%   { background-color: rgba(26, 255, 171, 0.25); }
+  100% { background-color: transparent; }
+}
+
 .td-apr { font-family: var(--mono); font-weight: 700; }
 .td-next { font-family: var(--mono); color: var(--text3); font-size: 12px; }
 .next-soon { color: var(--yellow); }
