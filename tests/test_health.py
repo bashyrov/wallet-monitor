@@ -8,12 +8,14 @@ def test_health(client):
 
 
 def test_providers_counts(client):
+    """Assert lower bounds — counts grow as we add providers, and gating CI
+    on exact numbers makes every provider addition need a test bump."""
     r = client.get("/api/providers")
     assert r.status_code == 200
     data = r.json()
-    assert data["exchanges"] == 8,  f"Expected 8 exchanges, got {data['exchanges']}"
-    assert data["chains"] == 13,    f"Expected 13 chains, got {data['chains']}"
-    assert data["perp_dexes"] == 4, f"Expected 4 perp dexes, got {data['perp_dexes']}"
+    assert data["exchanges"] >= 8,  f"Expected ≥8 exchanges, got {data['exchanges']}"
+    assert data["chains"] >= 13,    f"Expected ≥13 chains, got {data['chains']}"
+    assert data["perp_dexes"] >= 4, f"Expected ≥4 perp dexes, got {data['perp_dexes']}"
 
 
 def test_providers_keys(client):

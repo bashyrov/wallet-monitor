@@ -1,4 +1,5 @@
 """Admin endpoints: stats, user list, toggle admin."""
+import pytest
 from tests.conftest import _register
 
 
@@ -55,6 +56,7 @@ def test_stats_wallets_count(client, admin_token, admin_auth):
     assert data["wallets_count"] >= 1
 
 
+@pytest.mark.skip(reason="creates a Binance wallet which validates the key against the live exchange; GH runners are geo-blocked (451). Needs provider-level mocking.")
 def test_stats_by_type_structure(client, admin_auth):
     # Add wallets of each type so by_type is populated
     client.post("/api/wallets", json={
@@ -92,7 +94,13 @@ def test_users_list_has_fields(client, admin_auth):
 
 
 # ── Toggle admin ──────────────────────────────────────────────────────────────
+# Tests below reference the legacy PATCH /api/admin/users/{id}/admin
+# endpoint that has since been replaced by /block and /plan. They pass
+# through a 405 on current main.
+# TODO: drop or rewrite against /block + /plan once we decide whether
+#       per-flag toggles should return (they were never used in the UI).
 
+@pytest.mark.skip(reason="legacy endpoint /admin removed; use /block + /plan")
 def test_toggle_admin(client, admin_auth):
     t = _register(client, "target", "target@test.com", "pass1234")
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {t}"}).json()
@@ -107,6 +115,7 @@ def test_toggle_admin(client, admin_auth):
     assert r.json()["is_admin"] is False
 
 
+@pytest.mark.skip(reason="legacy endpoint /admin removed; use /block + /plan")
 def test_cannot_toggle_own_admin(client, admin_auth, admin_token):
     me = client.get("/api/auth/me", headers=admin_auth).json()
     r = client.patch(f"/api/admin/users/{me['id']}/admin", headers=admin_auth)
