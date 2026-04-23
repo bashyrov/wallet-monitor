@@ -652,16 +652,82 @@ class KuCoinWS(WSAdapter):
             await self._session("A")
 
 
+# ── Spot orderbook WS — for Spot/Short In/Out ───────────────────────────────
+# Same wire format as the futures adapters on the big-3 venues, just pointing
+# at the spot endpoints. Registered under distinct names so the in-memory
+# _book_cache stores spot books keyed "binance_spot:BTC" etc. without
+# colliding with the futures books.
+class BinanceSpotWS(BinanceWS):
+    name = "binance_spot"
+    url = "wss://stream.binance.com:9443/ws"
+    _rest_depth_url = "https://api.binance.com/api/v3/depth"
+
+
+class BybitSpotWS(BybitWS):
+    name = "bybit_spot"
+    url = "wss://stream.bybit.com/v5/public/spot"
+
+
+class OKXSpotWS(OKXWS):
+    name = "okx_spot"
+    url = "wss://ws.okx.com:8443/ws/v5/public"
+
+    def build_subscribe(self, symbols):
+        # Spot: instId is "BTC-USDT" (no -SWAP suffix).
+        args = [{"channel": "books", "instId": f"{s}-USDT"} for s in symbols]
+        return {"op": "subscribe", "args": args}
+
+    def parse_message(self, msg):
+        if msg.get("event"):
+            return None
+        arg = msg.get("arg", {})
+        if arg.get("channel") != "books":
+            return None
+        inst = arg.get("instId", "")
+        if not inst.endswith("-USDT"):
+            return None
+        token = inst.split("-")[0]
+        data_list = msg.get("data") or []
+        if not data_list:
+            return None
+        data = data_list[0]
+        action = msg.get("action") or data.get("action") or "snapshot"
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}})
+        if action == "snapshot":
+            book["bids"].clear()
+            book["asks"].clear()
+        for side_key in ("bids", "asks"):
+            for lvl in data.get(side_key) or []:
+                try:
+                    price = float(lvl[0])
+                    size = float(lvl[1])
+                except (ValueError, IndexError, TypeError):
+                    continue
+                if size <= 0:
+                    book[side_key].pop(price, None)
+                else:
+                    book[side_key][price] = size
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
+        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
+
+
 ADAPTERS: dict[str, type[WSAdapter]] = {
-    "binance":     BinanceWS,
-    "bybit":       BybitWS,
-    "okx":         OKXWS,
-    "bitget":      BitgetWS,
-    "bingx":       BingXWS,
-    "aster":       AsterWS,
-    "gate":        GateWS,
-    "mexc":        MEXCWS,
-    "whitebit":    WhitebitWS,
-    "hyperliquid": HyperliquidWS,
-    "kucoin":      KuCoinWS,
+    "binance":      BinanceWS,
+    "bybit":        BybitWS,
+    "okx":          OKXWS,
+    "bitget":       BitgetWS,
+    "bingx":        BingXWS,
+    "aster":        AsterWS,
+    "gate":         GateWS,
+    "mexc":         MEXCWS,
+    "whitebit":     WhitebitWS,
+    "hyperliquid":  HyperliquidWS,
+    "kucoin":       KuCoinWS,
+    # Spot — only on the big-3 venues for now (covers ~70-80% of spot-short
+    # opp volume). Extending to the rest needs per-venue WS work (kucoin has
+    # an odd token-auth flow, gate uses different sub format, etc.).
+    "binance_spot": BinanceSpotWS,
+    "bybit_spot":   BybitSpotWS,
+    "okx_spot":     OKXSpotWS,
 }

@@ -352,6 +352,33 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
                 net_apr = net * (365.0 * 3) if net > 0 else 0.0
                 if gross <= 0:
                     continue
+
+                # In/Out from the live orderbook cache. Spot side reads the
+                # "<ex>_spot:<sym>" book (populated by BinanceSpotWS/
+                # BybitSpotWS/OKXSpotWS); perp side reads the existing
+                # "<ex>:<sym>" book. When neither side has a WS-cached book
+                # yet (cold prewarm), in_pct / out_pct are left None and the
+                # frontend shows a placeholder.
+                in_pct: float | None = None
+                out_pct: float | None = None
+                book_ok = False
+                try:
+                    from backend.services.orderbook_cache import top_levels
+                    spot_lv = top_levels(f"{spot_ex}_spot", sym)
+                    perp_lv = top_levels(perp_ex, sym)
+                    if spot_lv and perp_lv:
+                        bid_sp, ask_sp = spot_lv
+                        bid_pr, ask_pr = perp_lv
+                        if ask_sp > 0 and ask_pr > 0 and bid_sp > 0 and bid_pr > 0:
+                            # long spot at ask_sp, short perp at bid_pr
+                            # In:  (bid_perp − ask_spot) / ask_spot  — entry divergence
+                            # Out: (bid_spot − ask_perp) / ask_perp  — exit divergence
+                            in_pct  = (bid_pr - ask_sp) / ask_sp * 100
+                            out_pct = (bid_sp - ask_pr) / ask_pr * 100
+                            book_ok = True
+                except Exception:
+                    pass
+
                 opps.append({
                     "type": "spot_short",
                     "symbol": sym,
@@ -364,6 +391,9 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
                     "funding_rate": rate_f,
                     "short_funding_8h": short_funding,
                     "basis_pct": basis_pct,
+                    "in_pct":  round(in_pct, 4)  if in_pct  is not None else None,
+                    "out_pct": round(out_pct, 4) if out_pct is not None else None,
+                    "book_ok": book_ok,
                     "gross": gross,
                     "fee_spot": fee_spot_rt,
                     "fee_perp": fee_perp_rt,
