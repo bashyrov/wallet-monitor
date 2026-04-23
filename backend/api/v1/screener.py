@@ -1297,11 +1297,16 @@ async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
                 free = max(0, BOOK_MAX_PAIRS_PER_CLIENT - len(subs))
                 for pair in pairs[:free]:
                     subs[pair] = 0.0
-                    # Kick the prewarm poller so non-top-N pairs populate quickly.
                     ex, _, sym = pair.partition(":")
                     try:
-                        from backend.services.orderbook_cache import get_cached_orderbook
+                        from backend.services.orderbook_cache import (
+                            get_cached_orderbook, touch_user_sub,
+                        )
+                        # Fire REST fallback on this worker for instant first paint.
                         asyncio.create_task(get_cached_orderbook(ex, sym, 50))
+                        # Record the pair in the cross-worker user-hot-list so the
+                        # prewarm owner keeps the WS subscribed across prune cycles.
+                        touch_user_sub(ex, sym)
                     except Exception:
                         pass
                 logger.debug("book WS subscribe uid=%s pairs=%s total=%d",
