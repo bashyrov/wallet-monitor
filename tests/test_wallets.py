@@ -1,5 +1,22 @@
 """Wallet CRUD — all 8 exchanges, 13 chains, 4 perp DEXes, archive, tags."""
+from unittest.mock import AsyncMock
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _stub_exchange_validate_key(monkeypatch):
+    """Wallet-create calls `adapter.validate_key(creds)` against the live
+    exchange. That's network-dependent (Binance 451 on GH runners, MEXC 500s,
+    etc) and not what we're testing here. Stub every known adapter's
+    validate_key to report a clean key so the route runs through to
+    create_wallet() and we can assert persistence / display masking.
+    """
+    from backend.services import trade_adapters
+    ok = {"can_read": True, "can_trade": True, "error": None}
+    for name, adapter in (trade_adapters.ADAPTERS or {}).items():
+        if hasattr(adapter, "validate_key"):
+            monkeypatch.setattr(adapter, "validate_key", AsyncMock(return_value=ok))
+    yield
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

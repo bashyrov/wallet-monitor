@@ -77,8 +77,8 @@ def test_balance_response_structure(client, auth):
 
 def test_balance_provider_error_doesnt_crash_others(client, auth):
     """return_exceptions=True: one provider failure should not affect others."""
-    w1 = _make_wallet(client, auth, "exchange", "binance")
-    w2 = _make_wallet(client, auth, "chain", "ethereum")
+    _make_wallet(client, auth, "exchange", "binance")
+    _make_wallet(client, auth, "chain", "ethereum")
 
     call_count = 0
 
@@ -86,16 +86,21 @@ def test_balance_provider_error_doesnt_crash_others(client, auth):
         nonlocal call_count
         call_count += 1
         if wallet.wallet_type == "exchange":
-            return None, "API error"
-        return None, "RPC error"
+            return None, "API error", "unknown"
+        return None, "RPC error", "unknown"
 
-    with patch("backend.services.balance_service._fetch_single", side_effect=side_effect):
+    # `new_callable=AsyncMock` ensures the patched callable IS a coroutine
+    # function, so caller `await` works. `side_effect=async_func` alone made
+    # a MagicMock whose __call__ couldn't be awaited reliably — previous
+    # version of this test hung CI on `asyncio.gather`.
+    with patch("backend.services.balance_service._fetch_single",
+               new_callable=AsyncMock, side_effect=side_effect):
         r = client.post("/api/portfolio/balance", json={"wallet_ids": []}, headers=auth)
 
     assert r.status_code == 200
     assert call_count == 2
     results = r.json()["results"]
-    assert all(r["error"] is not None for r in results)
+    assert all(row["error"] is not None for row in results)
 
 
 def test_balance_aggregates_stablecoins(client, auth):

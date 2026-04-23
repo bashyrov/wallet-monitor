@@ -1,6 +1,19 @@
 """Admin endpoints: stats, user list, toggle admin."""
+from unittest.mock import AsyncMock
 import pytest
 from tests.conftest import _register
+
+
+@pytest.fixture(autouse=True)
+def _stub_exchange_validate_key(monkeypatch):
+    """Same reason as in test_wallets.py — stats tests that create exchange
+    wallets would otherwise hit real APIs from GH runners."""
+    from backend.services import trade_adapters
+    ok = {"can_read": True, "can_trade": True, "error": None}
+    for _name, adapter in (trade_adapters.ADAPTERS or {}).items():
+        if hasattr(adapter, "validate_key"):
+            monkeypatch.setattr(adapter, "validate_key", AsyncMock(return_value=ok))
+    yield
 
 
 def _second_token(client):
@@ -56,7 +69,6 @@ def test_stats_wallets_count(client, admin_token, admin_auth):
     assert data["wallets_count"] >= 1
 
 
-@pytest.mark.skip(reason="creates a Binance wallet which validates the key against the live exchange; GH runners are geo-blocked (451). Needs provider-level mocking.")
 def test_stats_by_type_structure(client, admin_auth):
     # Add wallets of each type so by_type is populated
     client.post("/api/wallets", json={
