@@ -15,6 +15,13 @@ def _make_engine():
     else:
         kwargs["pool_size"] = 5
         kwargs["max_overflow"] = 10
+        # Recycle every 30 min so SQLAlchemy's own pool drops connections
+        # before pgbouncer reaps them for `server_lifetime` (default 60 min).
+        # Without this, SQLAlchemy occasionally checks out a connection that
+        # pgbouncer has already closed upstream → "server closed connection
+        # unexpectedly" on the next query. pool_pre_ping catches most of these
+        # but a race remains when pgbouncer closes mid-transaction.
+        kwargs["pool_recycle"] = 1800
     return create_engine(url, **kwargs)
 
 

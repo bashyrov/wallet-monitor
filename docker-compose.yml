@@ -84,8 +84,18 @@ services:
       DB_NAME: avalant
       POOL_MODE: session
       MAX_CLIENT_CONN: 500
-      DEFAULT_POOL_SIZE: 20
-      RESERVE_POOL_SIZE: 5
+      # Session-mode pins one Postgres connection per SQLAlchemy session for
+      # its whole lifetime. fetcher + web both open many short-lived sessions
+      # across background loops (prewarm hot-list, alerts, plan expiry, admin
+      # settings reads). 20 was exhausting under normal load and produced
+      # bursts of "OperationalError: server closed the connection unexpectedly"
+      # as clients timed out after 120s waiting for a backend. 60 gives ~3×
+      # headroom without pressuring Postgres's default max_connections=100.
+      DEFAULT_POOL_SIZE: 60
+      RESERVE_POOL_SIZE: 20
+      # Fail-fast: if a client can't acquire a backend within 10s, drop it
+      # immediately so the app can retry, instead of queueing for 2 minutes.
+      QUERY_WAIT_TIMEOUT: 10
       AUTH_TYPE: scram-sha-256
       LISTEN_PORT: 5432
     depends_on:
