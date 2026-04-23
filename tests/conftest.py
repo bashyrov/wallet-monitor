@@ -18,6 +18,17 @@ _engine = create_engine(
 )
 _Session = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
+# Monkey-patch the prod engine / SessionLocal BEFORE any service imports
+# them. Services like admin_settings call `SessionLocal()` directly (not via
+# the get_db dep), so without this they hit a separate in-memory DB where
+# `Base.metadata.create_all` never ran — tests error with `no such table`.
+#
+# Safe to do at import time because pytest loads conftest.py first; services
+# haven't captured the old binding yet.
+import backend.db.base as _db_base  # noqa: E402
+_db_base.engine = _engine
+_db_base.SessionLocal = _Session
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _create_tables():
