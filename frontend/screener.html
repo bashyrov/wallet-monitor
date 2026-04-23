@@ -1633,56 +1633,16 @@ function renderStats(data) {
 }
 
 // ── format helpers ─────────────────────────────────────────────────────────────
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function fmtPrice(p) {
-  if (!p) return '—';
-  if (p >= 1000) return '$' + p.toLocaleString('en-US', {maximumFractionDigits: 2});
-  if (p >= 1)    return '$' + p.toFixed(4);
-  return '$' + p.toPrecision(4);
-}
-
-function fmtRate(rate, interval_h) {
-  const pct = (rate * 100).toFixed(4);
-  const sign = rate >= 0 ? '+' : '';
-  const cls  = rate > 0 ? 'rate-pos' : rate < 0 ? 'rate-neg' : 'rate-zero';
-  const lbl  = interval_h === 1 ? '1h' : `${interval_h}h`;
-  return `<span class="td-rate ${cls}">${sign}${pct}%<span style="font-weight:400;color:var(--text3);font-size:11px"> /${lbl}</span></span>`;
-}
-
-function fmtApr(apr) {
-  if (apr == null) return '—';
-  const sign = apr >= 0 ? '+' : '';
-  const cls  = apr > 0 ? 'rate-pos' : apr < 0 ? 'rate-neg' : 'rate-zero';
-  return `<span class="td-apr ${cls}">${sign}${Math.abs(apr).toFixed(2)}%</span>`;
-}
-
-function fmtCountdown(ts) {
-  if (!ts) return '—';
-  const diff = ts - Math.floor(Date.now() / 1000);
-  if (diff <= 0) return '<span class="next-soon">now</span>';
-  const h = Math.floor(diff / 3600), m = Math.floor((diff % 3600) / 60), s = diff % 60;
-  const cls = diff < 600 ? 'next-soon' : '';
-  if (h > 0) return `<span class="${cls}">${h}h ${m}m</span>`;
-  if (m > 0) return `<span class="${cls}">${m}m ${s}s</span>`;
-  return `<span class="next-soon">${s}s</span>`;
-}
-
-function fmtVol(v) {
-  if (!v || v === 0) return '<span style="color:var(--text3)">—</span>';
-  if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
-  if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
-  if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'K';
-  return '$' + v.toFixed(0);
-}
-
-function fmtPct(v, decimals = 4) {
-  if (v == null) return '—';
-  const sign = v >= 0 ? '+' : '';
-  return `${sign}${v.toFixed(decimals)}%`;
-}
+// Delegated to /formatters.js (window.FMT). The module exports the same
+// helpers used inline here; keeping these names as thin aliases avoids
+// rewriting ~80 callsites in this file.
+const esc          = window.FMT.esc;
+const fmtPrice     = window.FMT.price;
+const fmtRate      = window.FMT.rate;
+const fmtApr       = window.FMT.apr;
+const fmtCountdown = window.FMT.countdown;
+const fmtVol       = window.FMT.volume;
+const fmtPct       = window.FMT.pct;
 
 function fmtExRate(ex, rate_pct, symbol) {
   const sign = rate_pct >= 0 ? '+' : '';
