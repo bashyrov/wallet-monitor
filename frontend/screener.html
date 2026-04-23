@@ -1336,18 +1336,24 @@ function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) 
 }
 
 // ── Throttle control (user-configurable refresh cadence) ─────────────────────
-let _throttle = localStorage.getItem('screener-throttle') || 'live';   // 'live'|'10'|'30'|'60'|'pause'
+// Throttle mode: live|3|10|15|30. Old values (60 / pause) from before the
+// mode-set trim get auto-migrated to their nearest neighbour so users don't
+// end up stuck on a removed option.
+let _throttle = (() => {
+  const saved = localStorage.getItem('screener-throttle') || 'live';
+  const valid = new Set(['live', '3', '10', '15', '30']);
+  return valid.has(saved) ? saved : (saved === 'pause' ? '30' : saved === '60' ? '30' : 'live');
+})();
 let _pendingFunding = null;  // latest unrendered funding payload
 let _pendingArb = null;      // latest unrendered arb payload
 let _throttleTimer = null;
 
 const THROTTLE_OPTS = [
-  { mode: 'live',  label: 'Live',    sub: 'realtime' },
-  { mode: '3',     label: '3s',      sub: 'every 3s' },
-  { mode: '10',    label: '10s',     sub: 'every 10s' },
-  { mode: '30',    label: '30s',     sub: 'every 30s' },
-  { mode: '60',    label: '1 min',   sub: 'every 60s' },
-  { mode: 'pause', label: 'Paused',  sub: 'frozen' },
+  { mode: 'live',  label: 'Live',  sub: '<3s' },
+  { mode: '3',     label: '3s',    sub: 'every 3s' },
+  { mode: '10',    label: '10s',   sub: 'every 10s' },
+  { mode: '15',    label: '15s',   sub: 'every 15s' },
+  { mode: '30',    label: '30s',   sub: 'every 30s' },
 ];
 
 function _throttleBtnLabel(mode) {
@@ -1410,8 +1416,8 @@ function setThrottle(mode) {
   renderThrottle('throttle-desk');
   renderThrottle('throttle-mob');
   clearInterval(_throttleTimer); _throttleTimer = null;
-  if (mode === 'live' || mode === 'pause') {
-    if (mode === 'live') flushPending();
+  if (mode === 'live') {
+    flushPending();
     return;
   }
   const ms = parseInt(mode) * 1000;

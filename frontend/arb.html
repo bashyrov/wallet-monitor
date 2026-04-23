@@ -88,6 +88,51 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
 <!-- Navbar (shared) -->
 <header class="topbar"><app-navbar page="arb"></app-navbar></header>
 
+<!-- Update-rate throttle (mirrors /screener) — fixed floating pill,
+     sits below the navbar top-right so it doesn't overlap live data. -->
+<div id="arb-throttle" class="arb-throttle"></div>
+<style>
+.arb-throttle {
+  position: fixed; top: 60px; right: 16px; z-index: 50;
+  font-family: var(--font, 'Inter', system-ui, sans-serif);
+}
+.arb-thr-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px;
+  background: var(--surface, #131217); border: 1px solid var(--border, #22222A);
+  border-radius: 8px;
+  color: var(--text2, #9B9FAB); font-size: 11px; font-weight: 500; font-family: inherit;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.arb-thr-btn:hover { color: var(--text, #E6E8E3); border-color: var(--green, #1AFFAB); }
+.arb-thr-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green, #1AFFAB); box-shadow: 0 0 6px rgba(26,255,171,.55);
+}
+.arb-throttle.open .arb-thr-btn { border-color: var(--green, #1AFFAB); color: var(--text, #E6E8E3); }
+.arb-thr-menu {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  min-width: 140px;
+  background: var(--surface, #131217); border: 1px solid var(--border, #22222A);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.5);
+  padding: 4px;
+  opacity: 0; pointer-events: none; transform: translateY(-4px);
+  transition: opacity .12s, transform .12s;
+}
+.arb-throttle.open .arb-thr-menu { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.arb-thr-opt {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 6px 10px; border-radius: 5px;
+  color: var(--text2, #9B9FAB); font-size: 12px; cursor: pointer;
+  transition: background .1s, color .1s;
+}
+.arb-thr-opt:hover { background: var(--surface2, #17171C); color: var(--text, #E6E8E3); }
+.arb-thr-opt.active { color: var(--green, #1AFFAB); }
+.arb-thr-opt-sub { color: var(--text3, #676B7E); font-size: 10px; font-family: var(--mono, monospace); }
+</style>
+
 <!-- Info bar -->
 <div class="infobar">
   <!-- Hero: symbol + exchanges -->
@@ -773,6 +818,61 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
 </div>
 
 <script>
+// ── Update-rate throttle (applies across book / pair polls on this page) ──
+// Mode values mirror screener.html: 'live' | '3' | '10' | '15' | '30'.
+// 'live' = no extra gating (native cadence); others = min ms between
+// render/re-fetch calls per key. Keyed so book-long and book-short tick
+// independently of pt-pair.
+let _arbThrottle = (() => {
+  const saved = localStorage.getItem('arb-throttle') || 'live';
+  return ['live','3','10','15','30'].includes(saved) ? saved : 'live';
+})();
+const _arbThrottleLast = {};
+function _arbThrottleShouldFire(key) {
+  if (_arbThrottle === 'live') return true;
+  const ms = parseInt(_arbThrottle) * 1000;
+  const now = Date.now();
+  const last = _arbThrottleLast[key] || 0;
+  if (now - last < ms) return false;
+  _arbThrottleLast[key] = now;
+  return true;
+}
+const ARB_THROTTLE_OPTS = [
+  { mode:'live',  label:'Live',  sub:'<3s' },
+  { mode:'3',     label:'3s',    sub:'every 3s' },
+  { mode:'10',    label:'10s',   sub:'every 10s' },
+  { mode:'15',    label:'15s',   sub:'every 15s' },
+  { mode:'30',    label:'30s',   sub:'every 30s' },
+];
+function setArbThrottle(mode) {
+  _arbThrottle = mode;
+  localStorage.setItem('arb-throttle', mode);
+  renderArbThrottleBtn();
+}
+function renderArbThrottleBtn() {
+  const el = document.getElementById('arb-throttle');
+  if (!el) return;
+  const cur = ARB_THROTTLE_OPTS.find(o => o.mode === _arbThrottle) || ARB_THROTTLE_OPTS[0];
+  el.innerHTML = `
+    <button class="arb-thr-btn" onclick="document.getElementById('arb-throttle').classList.toggle('open');event.stopPropagation();">
+      <span class="arb-thr-dot"></span>
+      <span class="arb-thr-lbl">${cur.label}</span>
+      <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </button>
+    <div class="arb-thr-menu">
+      ${ARB_THROTTLE_OPTS.map(o => `
+        <div class="arb-thr-opt${o.mode===_arbThrottle?' active':''}" onclick="setArbThrottle('${o.mode}');document.getElementById('arb-throttle').classList.remove('open');event.stopPropagation();">
+          <span class="arb-thr-opt-lbl">${o.label}</span>
+          <span class="arb-thr-opt-sub">${o.sub}</span>
+        </div>`).join('')}
+    </div>`;
+}
+document.addEventListener('click', () => {
+  const el = document.getElementById('arb-throttle');
+  if (el) el.classList.remove('open');
+});
+document.addEventListener('DOMContentLoaded', renderArbThrottleBtn);
+
 // Single source of truth lives in /exchanges.js — the local consts are just
 // thin aliases so existing call sites keep working.
 const EX_LABEL = (window.EX && window.EX.labels) || {binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate',kucoin:'KuCoin',mexc:'MEXC',bitget:'Bitget',hyperliquid:'Hyperliquid',aster:'Aster',ethereal:'Ethereal',whitebit:'WhiteBIT',bingx:'BingX',backpack:'Backpack',lighter:'Lighter',paradex:'Paradex'};
@@ -1440,9 +1540,8 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   }
   _refreshPair();
   // Live cadence after the 12-core VPS upgrade: pair metadata refreshes
-  // every 1 s (was 3 s) so In/Out / funding values track the orderbook
-  // updates shown below.
-  setInterval(_refreshPair, 1000);
+  // every 1 s. User-throttle can slow this down via _arbThrottleShouldFire.
+  setInterval(() => { if (_arbThrottleShouldFire('pt-pair')) _refreshPair(); }, 1000);
 
   // ── Order-book polling (futures-style .book-row rendering) ────────────────
   let _obTicks = { long: 0, short: 0 };
@@ -1540,15 +1639,12 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // Perp book — always present. 300 ms polling keeps the on-screen book
   // within the 0.5 s freshness budget the screener is promising now.
   // _bookInflight gate in fetchBook() ensures a slow response doesn't
-  // queue requests.
+  // queue requests. User-throttle gate applied via _arbThrottleShouldFire().
   _refreshBook('short');
-  setInterval(() => _refreshBook('short'), 300);
-  // Spot book — only when type=spot. Gate/OKX/BingX spot REST can be
-  // 500-800ms slow under load; keep this slightly looser than the perp
-  // side so slow spot venues don't block the perp refresh loop.
+  setInterval(() => { if (_arbThrottleShouldFire('pt-short')) _refreshBook('short'); }, 300);
   if (!IS_DEX) {
     _refreshBook('long');
-    setInterval(() => _refreshBook('long'), 400);
+    setInterval(() => { if (_arbThrottleShouldFire('pt-long')) _refreshBook('long'); }, 400);
   }
 
   // ── Trade panel (short leg on CEX perp) ───────────────────────────────────
@@ -2269,6 +2365,11 @@ async function fetchBook(exchange,side){
 }
 
 function renderBook(d,side){
+  // Throttle gate — in non-live modes we keep the latest data in memory
+  // (already cached in _lastBookData by caller) but skip the DOM update
+  // until the mode interval elapses. Keeps CPU / layout flat when user
+  // switches to 10s+.
+  if (!_arbThrottleShouldFire('book-' + side)) return;
   const rawAsks=(d.asks||[]);
   const rawBids=(d.bids||[]);
   if(!rawAsks.length&&!rawBids.length){
