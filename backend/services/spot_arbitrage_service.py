@@ -383,7 +383,11 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
 
 
 # ── Background refresh loop (dedicated daemon thread, own event loop) ────────
-SPOT_REFRESH_INTERVAL = 2.0  # s — match the futures REST backstop cadence
+# Live-mode cadence after the 12-core upgrade: spot-short ticks every 1 s
+# instead of 2 s, matching funding WS REST backstops. Cycle usually takes
+# ~0.5-1 s; we just skip writes if it overruns (remaining >= 0.2s floor in
+# the worker loop).
+SPOT_REFRESH_INTERVAL = 1.0
 
 _spot_thread: Any | None = None
 _spot_stop = None          # threading.Event — created lazily
