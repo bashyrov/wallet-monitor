@@ -441,7 +441,7 @@ def _build_opps_sync(dex_by_sym: dict[str, dict], perp_map: dict[str, dict[str, 
     return opps[:200]
 
 
-def _run_cycle_sync(min_perp_vol_usd: float = 100_000.0) -> dict:
+def _run_cycle_sync(min_perp_vol_usd: float = 10_000.0) -> dict:
     _refresh_cg_cache_sync()
     perp_map = _read_perp_map_sync(min_perp_vol_usd)
     if not perp_map:
@@ -497,7 +497,7 @@ def _run_cycle_sync(min_perp_vol_usd: float = 100_000.0) -> dict:
 
 
 # ── API consumer (async, used by the FastAPI endpoint) ────────────────────────
-async def get_dex_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> dict:
+async def get_dex_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dict:
     """Web role reads the file cache; fetcher occasionally falls through here
     for a cold probe. Never runs the heavy sync cycle from an async request."""
     cached = _arb._read_file_cache("dex_arbitrage.json", max_age=120.0)

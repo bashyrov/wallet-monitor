@@ -285,7 +285,7 @@ async def get_spot_rows(exchange: str) -> list[dict]:
     return rows
 
 
-async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> dict:
+async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dict:
     """Cross-exchange spot-short cash-and-carry opportunities.
 
     Returns every spread (positive AND negative gross) sorted by net
