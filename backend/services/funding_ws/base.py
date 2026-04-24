@@ -163,12 +163,16 @@ class FundingWSAdapter:
                 rows = self.rest_refresh_sync()
                 _circuit.ok(ck)
             except Exception as exc:
-                logger.warning("%s REST refresh exception: %s", self.name, exc)
-                _circuit.fail(ck)
                 msg = str(exc)
-                if "429" in msg or "Too Many Requests" in msg:
-                    for _ in range(3):
-                        _circuit.fail(ck)
+                if "418" in msg or "I'm a teapot" in msg or "Client Error (418)" in msg:
+                    _circuit.hard_fail(ck, cooldown_s=180.0)
+                    logger.warning("%s REST backstop: HTTP 418 — opening circuit 180s", self.name)
+                elif "429" in msg or "Too Many Requests" in msg:
+                    _circuit.hard_fail(ck, cooldown_s=60.0)
+                    logger.warning("%s REST backstop: HTTP 429 — opening circuit 60s", self.name)
+                else:
+                    _circuit.fail(ck)
+                    logger.warning("%s REST refresh exception: %s", self.name, exc)
                 rows = None
             if rows:
                 now = time.time()

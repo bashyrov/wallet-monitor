@@ -75,6 +75,19 @@ class _CircuitBreaker:
                     exchange, self.threshold, self.window_s, self.cooldown_s,
                 )
 
+    def hard_fail(self, exchange: str, cooldown_s: float | None = None) -> None:
+        """Immediately open the circuit for an explicit cooldown. Use for
+        unambiguous bans (HTTP 418) or aggressive rate limits (HTTP 429)
+        where one hit is enough signal — waiting for the threshold to
+        accumulate just wastes requests we already know will fail.
+        """
+        now = time.time()
+        cd = cooldown_s if cooldown_s is not None else self.cooldown_s
+        with self._lock:
+            self._open_until[exchange] = now + cd
+            self._failures.pop(exchange, None)
+        logger.warning("circuit: %s HARD-OPEN for %.0fs", exchange, cd)
+
     def ok(self, exchange: str) -> None:
         # A success halves the remembered failure count — so a transient
         # 5xx doesn't compound forever, but a genuinely flapping venue

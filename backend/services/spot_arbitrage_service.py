@@ -249,8 +249,16 @@ async def get_spot_rows(exchange: str) -> list[dict]:
         rows = await asyncio.wait_for(fn(), timeout=15.0)
         circuit.ok(f"spot:{exchange}")
     except Exception as e:
-        circuit.fail(f"spot:{exchange}")
-        logger.warning("spot fetch %s failed: %s", exchange, type(e).__name__)
+        msg = str(e)
+        if "418" in msg or "I'm a teapot" in msg or "Client Error (418)" in msg:
+            circuit.hard_fail(f"spot:{exchange}", cooldown_s=180.0)
+            logger.warning("spot %s: HTTP 418 — opening circuit 180s", exchange)
+        elif "429" in msg or "Too Many Requests" in msg:
+            circuit.hard_fail(f"spot:{exchange}", cooldown_s=60.0)
+            logger.warning("spot %s: HTTP 429 — opening circuit 60s", exchange)
+        else:
+            circuit.fail(f"spot:{exchange}")
+            logger.warning("spot fetch %s failed: %s", exchange, type(e).__name__)
         rows = cached[0] if cached else []
     _spot_cache[exchange] = (rows, now)
     return rows

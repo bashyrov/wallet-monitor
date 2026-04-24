@@ -999,13 +999,20 @@ async def _get_rows(exchange: str) -> list[dict]:
         logger.warning("Screener %s fetch timeout (>%ss) — using cached", exchange, _FETCHER_TIMEOUT)
         return cached_rows
     except Exception as exc:
-        _circuit.fail(f"rest:{exchange}")
-        # 429 → burn the circuit more aggressively so we're not the ones
-        # causing the rate-limit spiral. 4 failures in window instead of 1.
         msg = str(exc)
+        # 418 = Binance/Aster IP ban (can last 2-10 min). Open circuit
+        # immediately with a long cooldown so we don't keep triggering the
+        # ban and starving the shared pool with doomed retries.
+        if "418" in msg or "I'm a teapot" in msg or "Client Error (418)" in msg:
+            _circuit.hard_fail(f"rest:{exchange}", cooldown_s=180.0)
+            logger.warning("Screener %s: HTTP 418 — opening circuit 180s", exchange)
+            return cached_rows
+        # 429 — same idea, shorter cooldown.
         if "429" in msg or "Too Many Requests" in msg:
-            for _ in range(3):
-                _circuit.fail(f"rest:{exchange}")
+            _circuit.hard_fail(f"rest:{exchange}", cooldown_s=60.0)
+            logger.warning("Screener %s: HTTP 429 — opening circuit 60s", exchange)
+            return cached_rows
+        _circuit.fail(f"rest:{exchange}")
         logger.warning("Screener %s fetch failed: %s: %r", exchange, type(exc).__name__, exc)
         return cached_rows
 
