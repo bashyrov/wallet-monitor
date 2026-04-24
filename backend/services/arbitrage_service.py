@@ -983,15 +983,29 @@ async def _get_rows(exchange: str) -> list[dict]:
     cached_rows, cached_at = _cache.get(exchange, ([], 0.0))
     if _mono() - cached_at < CACHE_TTL and cached_rows:
         return cached_rows
+    # Circuit breaker — skip REST entirely when the venue is in cooldown.
+    # Serves last-known cache instead of hammering a flaky endpoint.
+    from backend.services._circuit import circuit as _circuit
+    if not _circuit.allow(f"rest:{exchange}"):
+        return cached_rows
     try:
         rows = await asyncio.wait_for(FETCHERS[exchange](), timeout=_FETCHER_TIMEOUT)
         _cache[exchange] = (rows, _mono())
+        _circuit.ok(f"rest:{exchange}")
         logger.debug("Screener %s: %d contracts (REST)", exchange, len(rows))
         return rows
     except asyncio.TimeoutError:
+        _circuit.fail(f"rest:{exchange}")
         logger.warning("Screener %s fetch timeout (>%ss) — using cached", exchange, _FETCHER_TIMEOUT)
         return cached_rows
     except Exception as exc:
+        _circuit.fail(f"rest:{exchange}")
+        # 429 → burn the circuit more aggressively so we're not the ones
+        # causing the rate-limit spiral. 4 failures in window instead of 1.
+        msg = str(exc)
+        if "429" in msg or "Too Many Requests" in msg:
+            for _ in range(3):
+                _circuit.fail(f"rest:{exchange}")
         logger.warning("Screener %s fetch failed: %s: %r", exchange, type(exc).__name__, exc)
         return cached_rows
 
