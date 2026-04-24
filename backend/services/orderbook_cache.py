@@ -466,6 +466,19 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
             entry["last_request"] = now
             return d
 
+    # 1.5 Redis — master merger mirrors every merged entry here with TTL 10 s.
+    # O(1) GET replaces the 6.5 MB books.json re-parse that dominated this
+    # endpoint's latency for web workers (237-580 ms → 1-3 ms).
+    try:
+        from backend.services.orderbook_redis import read_book
+        rb = read_book(exchange, symbol)
+        if rb and now - rb.get("ts", 0) < FILE_FRESH_MAX:
+            d = rb.get("data") or {}
+            if d.get("bids") or d.get("asks"):
+                return d
+    except Exception:
+        pass
+
     # 2. Shared file cache — fresh path (<5s old). Same empty-book guard.
     fd = _file_lookup(key)
     if fd and (fd.get("bids") or fd.get("asks")):

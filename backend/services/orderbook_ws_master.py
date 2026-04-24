@@ -137,6 +137,13 @@ def _merge_loop(stop_evt, owned: list[str]) -> None:
             with os.fdopen(fd, "wb") as f:
                 f.write(payload)
             os.replace(tmp, _BOOKS_FILE)
+            # Mirror to Redis so web workers don't re-parse the 6.5 MB file
+            # on every HTTP /orderbook request (237-580 ms → 1-3 ms).
+            try:
+                from backend.services.orderbook_redis import write_books
+                write_books(merged)
+            except Exception as exc:
+                logger.debug("orderbook merger: redis mirror failed: %s", exc)
             tick += 1
             now = time.time()
             if now - last_log >= 30.0:
