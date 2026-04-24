@@ -2,9 +2,9 @@
 from sqlalchemy.orm import Session
 
 from backend.crypto import encrypt_credentials, decrypt_credentials
-from backend.db.models import Wallet, Tag, WalletAddress
+from backend.db.models import Wallet, Tag, WalletAddress, User
 from backend.domain.errors import WalletNotFound, TagNotFound, TagAlreadyExists, TagLimitReached
-from backend.plans import wallet_limit
+from backend.services import plan_service
 from backend.schemas.common import WalletCreate, WalletUpdate, WalletOut, TagCreate, TagUpdate, TagOut, WalletAddressCreate, WalletAddressOut
 
 
@@ -28,11 +28,52 @@ def wallet_to_out(wallet: Wallet) -> WalletOut:
         is_archived=bool(wallet.is_archived),
         can_trade=bool(wallet.can_trade),
         purpose=wallet.purpose or "portfolio",
+        is_main=bool(getattr(wallet, "is_main", False)),
         created_at=wallet.created_at,
         tags=[TagOut(id=t.id, name=t.name, color=t.color) for t in wallet.tags],
         addresses=[WalletAddressOut(id=a.id, wallet_id=a.wallet_id, name=a.name, address=a.address)
                    for a in wallet.addresses],
     )
+
+
+# ── Limit enforcement helpers ─────────────────────────────────────────────────
+def _portfolio_count(db: Session, user_id: int) -> int:
+    return (
+        db.query(Wallet)
+        .filter(
+            Wallet.user_id == user_id,
+            Wallet.is_archived == False,  # noqa: E712
+            Wallet.purpose.in_(("portfolio", "both")),
+        )
+        .count()
+    )
+
+
+def _exchange_keys_for_venue(db: Session, user_id: int, type_value: str) -> int:
+    return (
+        db.query(Wallet)
+        .filter(
+            Wallet.user_id == user_id,
+            Wallet.is_archived == False,  # noqa: E712
+            Wallet.wallet_type == "exchange",
+            Wallet.type_value == type_value,
+        )
+        .count()
+    )
+
+
+def _has_main_for_venue(db: Session, user_id: int, type_value: str) -> bool:
+    return (
+        db.query(Wallet)
+        .filter(
+            Wallet.user_id == user_id,
+            Wallet.is_archived == False,  # noqa: E712
+            Wallet.wallet_type == "exchange",
+            Wallet.type_value == type_value,
+            Wallet.is_main == True,  # noqa: E712
+        )
+        .count()
+    ) > 0
 
 
 def _get_wallet(db: Session, wallet_id: int, user_id: int) -> Wallet:
@@ -71,55 +112,46 @@ def archive_wallet(db: Session, wallet_id: int, user_id: int) -> WalletOut:
     return wallet_to_out(wallet)
 
 
-def unarchive_wallet(db: Session, wallet_id: int, user_id: int, plan: str = "basic") -> WalletOut:
+def unarchive_wallet(db: Session, wallet_id: int, user_id: int, user: User | None = None) -> WalletOut:
     wallet = db.query(Wallet).filter(
         Wallet.id == wallet_id, Wallet.user_id == user_id
     ).first()
     if not wallet:
         raise WalletNotFound(wallet_id)
-    limit = wallet_limit(plan)
-    if limit is not None:
-        active_count = db.query(Wallet).filter(
-            Wallet.user_id == user_id,
-            Wallet.is_archived == False,
-        ).count()
-        if active_count >= limit:
+    if user is None:
+        user = db.query(User).filter(User.id == user_id).first()
+    limits = plan_service.effective_limits(db, user)
+    if (wallet.purpose or "portfolio") in ("portfolio", "both"):
+        if _portfolio_count(db, user_id) >= limits.portfolio_limit:
             from backend.domain.errors import WalletLimitReached
-            raise WalletLimitReached(limit)
+            raise WalletLimitReached(limits.portfolio_limit)
     wallet.is_archived = False
     db.commit()
     db.refresh(wallet)
     return wallet_to_out(wallet)
 
 
-def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "basic") -> WalletOut:
-    limit = wallet_limit(plan)
-    if limit is not None:
-        count = db.query(Wallet).filter(
-            Wallet.user_id == user_id, Wallet.is_archived == False
-        ).count()
-        if count >= limit:
-            from backend.domain.errors import WalletLimitReached
-            raise WalletLimitReached(limit)
+def create_wallet(db: Session, body: WalletCreate, user_id: int, user: User | None = None) -> WalletOut:
+    if user is None:
+        user = db.query(User).filter(User.id == user_id).first()
+    limits = plan_service.effective_limits(db, user)
 
     purpose = body.purpose if body.wallet_type == "exchange" else "portfolio"
 
-    # Screener / both: only one trading-eligible key per exchange per user
-    if purpose in ("screener", "both") and body.wallet_type == "exchange":
-        existing = (
-            db.query(Wallet)
-            .filter(
-                Wallet.user_id == user_id,
-                Wallet.wallet_type == "exchange",
-                Wallet.type_value == body.type_value,
-                Wallet.purpose.in_(("screener", "both")),
-                Wallet.is_archived == False,  # noqa: E712
-            )
-            .first()
-        )
-        if existing:
+    # Portfolio limit only applies when the new wallet would count as portfolio.
+    if purpose in ("portfolio", "both"):
+        if _portfolio_count(db, user_id) >= limits.portfolio_limit:
+            from backend.domain.errors import WalletLimitReached
+            raise WalletLimitReached(limits.portfolio_limit)
+
+    # Per-venue exchange-key cap: 1 for free / 3 for paid (configurable per plan).
+    # Existing wallets are always grandfathered — the cap is checked before
+    # *adding* a new one, never retroactively.
+    if body.wallet_type == "exchange":
+        existing_for_venue = _exchange_keys_for_venue(db, user_id, body.type_value)
+        if existing_for_venue >= limits.exchange_keys_per_venue:
             from backend.domain.errors import DuplicateScreenerKey
-            raise DuplicateScreenerKey(body.type_value, existing.id)
+            raise DuplicateScreenerKey(body.type_value, 0)
 
     if body.wallet_type == "exchange" or (body.wallet_type == "perpdex" and body.type_value == "aster"):
         raw_creds = {
@@ -133,6 +165,13 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "ba
         if body.wallet_type == "perpdex" and body.type_value == "paradex" and body.api_token:
             raw_creds["api_token"] = body.api_token.strip()
 
+    # First exchange key for a venue is automatically the main one — second
+    # and third additions stay non-main until the user explicitly switches.
+    auto_main = (
+        body.wallet_type == "exchange"
+        and not _has_main_for_venue(db, user_id, body.type_value)
+    )
+
     wallet = Wallet(
         name=body.name,
         wallet_type=body.wallet_type,
@@ -141,8 +180,30 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, plan: str = "ba
         user_id=user_id,
         purpose=purpose,
         can_trade=(purpose in ("screener", "both")),
+        is_main=auto_main,
     )
     db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+    return wallet_to_out(wallet)
+
+
+def set_main_wallet(db: Session, wallet_id: int, user_id: int) -> WalletOut:
+    """Designate this exchange wallet as the main trading key for its venue.
+
+    Clears `is_main` on every other wallet (same user, same venue) and sets
+    it on the target. No-ops cleanly if the wallet is already main.
+    """
+    wallet = _get_wallet(db, wallet_id, user_id)
+    if wallet.wallet_type != "exchange":
+        raise ValueError("only exchange wallets can be marked as main")
+    db.query(Wallet).filter(
+        Wallet.user_id == user_id,
+        Wallet.wallet_type == "exchange",
+        Wallet.type_value == wallet.type_value,
+        Wallet.id != wallet.id,
+    ).update({Wallet.is_main: False}, synchronize_session=False)
+    wallet.is_main = True
     db.commit()
     db.refresh(wallet)
     return wallet_to_out(wallet)

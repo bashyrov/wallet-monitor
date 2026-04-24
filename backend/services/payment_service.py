@@ -1,0 +1,291 @@
+"""CryptoCloud payment lifecycle.
+
+Flow:
+  1. User clicks "Buy" on /checkout → POST /api/payments/checkout with
+     {plan_id, billing_cycle, promo_code?}.
+  2. We compute final_amount_usd = base × (1 - discount_pct/100), round
+     to 2 decimals, persist a `payments` row with status='pending',
+     then call CryptoCloud `/v2/invoice/create` to obtain an invoice URL.
+  3. CryptoCloud hosts the payment page; we redirect the user there.
+  4. CryptoCloud calls our webhook (status=paid) — we verify the JWT
+     signature, mark `payments.status='paid'`, set `paid_at`, compute
+     `activated_until = now + 30d / 365d`, and flip the user's
+     `plan_id` + `plan_expires_at`.
+
+CryptoCloud public docs: https://docs.cryptocloud.plus/
+
+Webhook auth: each invoice carries a `token` (JWT signed with
+SECRET_API_KEY). We verify with PyJWT and the configured shop secret.
+
+All amounts in USD; CryptoCloud handles the FX conversion to the actual
+crypto the user pays in.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Any
+
+import httpx
+from sqlalchemy.orm import Session
+
+from backend.db.models import Payment, Plan, PromoCode, PromoCodeUsage, User
+from backend.services import plan_service, promo_service
+from settings import settings
+
+logger = logging.getLogger("avalant.payment_service")
+
+CRYPTOCLOUD_API_BASE = "https://api.cryptocloud.plus"
+
+
+# ── Money helpers ─────────────────────────────────────────────────────────────
+def _round_money(amount: Decimal | float | int) -> Decimal:
+    return Decimal(amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def compute_pricing(
+    plan: Plan,
+    billing_cycle: str,
+    promo: PromoCode | None,
+) -> dict[str, Decimal]:
+    """Server-authoritative price calculation. Frontend may show any
+    intermediate UI, but the actual money is computed here from the DB
+    rows so a tampered request can't sneak through."""
+    if billing_cycle == "annual":
+        base = Decimal(plan.price_usd_annual or 0)
+    else:
+        base = Decimal(plan.price_usd_monthly or 0)
+    base = _round_money(base)
+    discount_pct = Decimal(promo.discount_pct) if promo else Decimal("0")
+    final = _round_money(base * (Decimal("100") - discount_pct) / Decimal("100"))
+    return {
+        "base_amount_usd": base,
+        "discount_pct": discount_pct,
+        "final_amount_usd": final,
+    }
+
+
+def _activation_window(billing_cycle: str) -> timedelta:
+    return timedelta(days=365) if billing_cycle == "annual" else timedelta(days=30)
+
+
+# ── CryptoCloud HTTP ──────────────────────────────────────────────────────────
+def _cc_headers() -> dict[str, str]:
+    if not settings.CRYPTOCLOUD_API_KEY:
+        raise RuntimeError("CRYPTOCLOUD_API_KEY is not configured")
+    return {
+        "Authorization": f"Token {settings.CRYPTOCLOUD_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+async def _cc_create_invoice(
+    *,
+    amount_usd: Decimal,
+    order_id: str,
+    description: str,
+) -> dict[str, Any]:
+    if not settings.CRYPTOCLOUD_SHOP_ID:
+        raise RuntimeError("CRYPTOCLOUD_SHOP_ID is not configured")
+    payload = {
+        "shop_id": settings.CRYPTOCLOUD_SHOP_ID,
+        "amount": float(amount_usd),
+        "currency": "USD",
+        "order_id": order_id,
+        "description": description,
+        "success_url": settings.CRYPTOCLOUD_SUCCESS_URL,
+        "fail_url": settings.CRYPTOCLOUD_FAIL_URL,
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(
+            f"{CRYPTOCLOUD_API_BASE}/v2/invoice/create",
+            json=payload,
+            headers=_cc_headers(),
+        )
+    if r.status_code >= 400:
+        raise RuntimeError(f"cryptocloud invoice create failed {r.status_code}: {r.text}")
+    data = r.json()
+    if data.get("status") not in ("success", None):
+        # API returns {"status": "error", "result": {...}} on rejection.
+        raise RuntimeError(f"cryptocloud rejected: {data}")
+    result = data.get("result") or data
+    invoice_uuid = result.get("uuid") or result.get("invoice_id") or result.get("id")
+    invoice_url = result.get("link") or result.get("url") or result.get("payment_url")
+    if not invoice_uuid or not invoice_url:
+        raise RuntimeError(f"cryptocloud response missing uuid/link: {result}")
+    return {"uuid": str(invoice_uuid), "url": invoice_url, "raw": result}
+
+
+# ── Checkout entrypoint ───────────────────────────────────────────────────────
+async def create_checkout(
+    db: Session,
+    user: User,
+    plan_id: int,
+    billing_cycle: str,
+    promo_code_str: str | None = None,
+) -> dict[str, Any]:
+    if billing_cycle not in ("monthly", "annual"):
+        raise ValueError("billing_cycle must be monthly or annual")
+    plan = plan_service.get_plan(db, plan_id)
+    if not plan or not plan.is_active:
+        raise ValueError("plan not found")
+    if plan.is_free:
+        raise ValueError("free plan does not require checkout")
+
+    promo: PromoCode | None = None
+    if promo_code_str:
+        promo = promo_service.validate_for_plan(db, promo_code_str, plan.id)
+        if not promo:
+            raise ValueError("invalid promo code")
+
+    pricing = compute_pricing(plan, billing_cycle, promo)
+    if pricing["final_amount_usd"] <= 0:
+        raise ValueError("computed amount is zero — refusing to create invoice")
+
+    payment = Payment(
+        user_id=user.id,
+        plan_id=plan.id,
+        billing_cycle=billing_cycle,
+        base_amount_usd=pricing["base_amount_usd"],
+        discount_pct=pricing["discount_pct"],
+        final_amount_usd=pricing["final_amount_usd"],
+        promo_code_id=promo.id if promo else None,
+        provider="cryptocloud",
+        status="pending",
+    )
+    db.add(payment)
+    db.flush()  # need payment.id for order_id
+
+    invoice = await _cc_create_invoice(
+        amount_usd=pricing["final_amount_usd"],
+        order_id=f"avalant-{payment.id}",
+        description=f"Avalant {plan.name} ({billing_cycle})",
+    )
+    payment.provider_invoice_id = invoice["uuid"]
+    payment.provider_invoice_url = invoice["url"]
+    db.commit()
+    db.refresh(payment)
+    return {
+        "payment_id": payment.id,
+        "invoice_url": invoice["url"],
+        "amount_usd": float(pricing["final_amount_usd"]),
+        "discount_pct": float(pricing["discount_pct"]),
+    }
+
+
+# ── Webhook handler ───────────────────────────────────────────────────────────
+def _activate_user(db: Session, payment: Payment) -> None:
+    user = db.query(User).filter(User.id == payment.user_id).first()
+    if not user:
+        return
+    user.plan_id = payment.plan_id
+    plan = plan_service.get_plan(db, payment.plan_id)
+    if plan:
+        user.plan = plan.slug  # legacy mirror
+    base_until = max(user.plan_expires_at or datetime.utcnow(), datetime.utcnow())
+    payment.activated_until = base_until + _activation_window(payment.billing_cycle)
+    user.plan_expires_at = payment.activated_until
+    db.commit()
+
+
+def verify_and_apply_webhook(
+    db: Session,
+    invoice_uuid: str,
+    status: str,
+    raw: dict[str, Any],
+) -> Payment | None:
+    """Webhook lifecycle. CryptoCloud sends status='paid' on success,
+    'partial'/'canceled'/'failed' otherwise. We tolerate unknown statuses
+    by leaving the payment in 'pending' so a manual reconcile can fix it.
+    """
+    payment = (
+        db.query(Payment)
+        .filter(Payment.provider_invoice_id == invoice_uuid)
+        .first()
+    )
+    if not payment:
+        logger.warning("webhook for unknown invoice %s — ignoring", invoice_uuid)
+        return None
+    s = (status or "").lower()
+    now = datetime.utcnow()
+    if s in ("paid", "success"):
+        if payment.status == "paid":
+            # Idempotent — repeated webhook delivery shouldn't double-extend.
+            return payment
+        payment.status = "paid"
+        payment.paid_at = now
+        # Promo usage ledger + counter bump.
+        if payment.promo_code_id:
+            promo = (
+                db.query(PromoCode)
+                .filter(PromoCode.id == payment.promo_code_id)
+                .first()
+            )
+            if promo:
+                db.add(PromoCodeUsage(
+                    promo_code_id=promo.id,
+                    user_id=payment.user_id,
+                    payment_id=payment.id,
+                    plan_id=payment.plan_id,
+                    discount_pct=payment.discount_pct,
+                ))
+                promo.used_count = (promo.used_count or 0) + 1
+        _activate_user(db, payment)
+    elif s in ("canceled", "cancelled", "expired", "failed"):
+        if payment.status == "pending":
+            payment.status = "failed" if s == "failed" else "expired"
+            db.commit()
+    else:
+        logger.info("webhook unknown status %s for invoice %s — leaving pending", s, invoice_uuid)
+    return payment
+
+
+def verify_webhook_signature(token: str | None) -> bool:
+    """CryptoCloud signs each webhook with a JWT in the `token` field.
+    We verify with the configured secret. Missing/invalid → False so
+    the route returns 401 without touching DB."""
+    if not token:
+        return False
+    if not settings.CRYPTOCLOUD_WEBHOOK_SECRET:
+        # Misconfigured — refuse to accept anonymous webhooks.
+        logger.error("CRYPTOCLOUD_WEBHOOK_SECRET unset, rejecting webhook")
+        return False
+    try:
+        import jwt
+        jwt.decode(
+            token,
+            settings.CRYPTOCLOUD_WEBHOOK_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+        return True
+    except Exception as exc:
+        logger.warning("webhook signature invalid: %s", exc)
+        return False
+
+
+def list_user_payments(db: Session, user_id: int, limit: int = 25) -> list[Payment]:
+    return (
+        db.query(Payment)
+        .filter(Payment.user_id == user_id)
+        .order_by(Payment.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def serialize_payment(p: Payment) -> dict[str, Any]:
+    return {
+        "id": p.id,
+        "plan_id": p.plan_id,
+        "billing_cycle": p.billing_cycle,
+        "base_amount_usd": float(p.base_amount_usd),
+        "discount_pct": float(p.discount_pct or 0),
+        "final_amount_usd": float(p.final_amount_usd),
+        "status": p.status,
+        "invoice_url": p.provider_invoice_url,
+        "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+        "activated_until": p.activated_until.isoformat() if p.activated_until else None,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+    }

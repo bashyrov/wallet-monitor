@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, JSON, Boolean, Float, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, JSON, Boolean, Float, Numeric, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.db.base import Base
@@ -23,7 +23,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_admin = Column(Boolean, nullable=False, default=False)
     is_blocked = Column(Boolean, nullable=False, default=False)
-    plan = Column(String, nullable=False, default="basic")  # basic | pro | platinum | enterprise | unlim
+    plan = Column(String, nullable=False, default="basic")  # legacy slug — kept for old deserializers, source of truth is plan_id
+    plan_id = Column(Integer, ForeignKey("plans.id", ondelete="SET NULL"), nullable=True, index=True)
     plan_expires_at = Column(DateTime, nullable=True)
     request_count = Column(Integer, nullable=False, default=0)
     last_active_at = Column(DateTime, nullable=True)
@@ -49,6 +50,7 @@ class Wallet(Base):
     is_archived = Column(Boolean, nullable=False, default=False)
     can_trade = Column(Boolean, nullable=False, default=False)  # legacy — mirrors purpose='screener'
     purpose = Column(String, nullable=False, default="portfolio")  # 'portfolio' (read-only) | 'screener' (trading)
+    is_main = Column(Boolean, nullable=False, default=False)  # main trading key for the venue (one per (user, venue))
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
@@ -274,3 +276,146 @@ class EmailVerifyToken(Base):
     expires_at = Column(DateTime, nullable=False, index=True)
     used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ── Pricing / monetisation ──────────────────────────────────────────────
+class Plan(Base):
+    """Admin-editable subscription plan. All limits and pricing live here so
+    they can change without a redeploy. `features.perks` and `features.limits`
+    are arbitrary string lists rendered on the pricing page."""
+    __tablename__ = "plans"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String, nullable=False, unique=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    price_usd_monthly = Column(Numeric(10, 2), nullable=False, default=0)
+    price_usd_annual = Column(Numeric(10, 2), nullable=False, default=0)
+    portfolio_limit = Column(Integer, nullable=False, default=5)
+    portfolio_limit_grace = Column(Integer, nullable=False, default=5)
+    exchange_keys_per_venue = Column(Integer, nullable=False, default=1)
+    trade_delay_ms = Column(Integer, nullable=False, default=0)
+    features = Column(JSON, nullable=True)
+    is_free = Column(Boolean, nullable=False, default=False)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PromoCode(Base):
+    """Admin-managed discount codes. `applies_to_plan_ids` = JSON list of
+    plan ids; null/empty list means 'every paid plan'. `discount_pct` is a
+    Numeric(5,2) — frontend renders rounded to 2 decimals already, but the
+    final cart amount is computed server-side to keep the discount honest."""
+    __tablename__ = "promo_codes"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String, nullable=False, unique=True, index=True)
+    discount_pct = Column(Numeric(5, 2), nullable=False)
+    max_uses = Column(Integer, nullable=True)
+    used_count = Column(Integer, nullable=False, default=0)
+    applies_to_plan_ids = Column(JSON, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class Payment(Base):
+    """Single CryptoCloud invoice lifecycle row. Created at /checkout, moved
+    to status='paid' by the webhook, then `activated_until` is computed and
+    the user's plan_id flipped. Failed/expired invoices stay in the table
+    for the audit trail."""
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer,
+                     ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    plan_id = Column(Integer,
+                     ForeignKey("plans.id", ondelete="RESTRICT"),
+                     nullable=False)
+    billing_cycle = Column(String, nullable=False)            # "monthly" | "annual"
+    base_amount_usd = Column(Numeric(10, 2), nullable=False)
+    discount_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    final_amount_usd = Column(Numeric(10, 2), nullable=False)
+    promo_code_id = Column(Integer,
+                           ForeignKey("promo_codes.id", ondelete="SET NULL"),
+                           nullable=True)
+    provider = Column(String, nullable=False, default="cryptocloud")
+    provider_invoice_id = Column(String, nullable=True, unique=True, index=True)
+    provider_invoice_url = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="pending", index=True)  # pending | paid | failed | expired
+    paid_at = Column(DateTime, nullable=True)
+    activated_until = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PromoCodeUsage(Base):
+    """Append-only ledger — one row per successful checkout that used a
+    promo. Powers the per-promo stats endpoint (count, total revenue,
+    avg discount). Never delete — even after the promo itself is removed
+    we want the historic numbers."""
+    __tablename__ = "promo_code_usages"
+
+    id = Column(Integer, primary_key=True)
+    promo_code_id = Column(Integer,
+                           ForeignKey("promo_codes.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    user_id = Column(Integer,
+                     ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    payment_id = Column(Integer,
+                        ForeignKey("payments.id", ondelete="CASCADE"),
+                        nullable=False)
+    plan_id = Column(Integer,
+                     ForeignKey("plans.id", ondelete="RESTRICT"),
+                     nullable=False)
+    discount_pct = Column(Numeric(5, 2), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Popup(Base):
+    """Admin-defined promotion popup. `target_type` controls audience (all
+    or single user); `frequency_type` controls re-show cadence after a
+    dismiss (`once` = forever, `every_n_min` = wait `frequency_minutes`
+    after dismiss before re-eligibility)."""
+    __tablename__ = "popups"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
+    body = Column(String, nullable=False)
+    button_text = Column(String, nullable=False, default="View pricing")
+    button_url = Column(String, nullable=False, default="/pricing")
+    target_type = Column(String, nullable=False, default="all")          # "all" | "user"
+    target_user_id = Column(Integer,
+                            ForeignKey("users.id", ondelete="CASCADE"),
+                            nullable=True, index=True)
+    frequency_type = Column(String, nullable=False, default="once")      # "once" | "every_n_min"
+    frequency_minutes = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PopupDismissal(Base):
+    """Per-user dismissal log. `dismissed_at` lets the popup_service decide
+    whether `every_n_min` cadence has elapsed since the last close. Unique
+    on (popup_id, user_id) so we always update the timestamp instead of
+    accumulating rows."""
+    __tablename__ = "popup_dismissals"
+
+    id = Column(Integer, primary_key=True)
+    popup_id = Column(Integer,
+                      ForeignKey("popups.id", ondelete="CASCADE"),
+                      nullable=False)
+    user_id = Column(Integer,
+                     ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    dismissed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("popup_id", "user_id", name="uq_popup_dismissals_user_popup"),
+    )

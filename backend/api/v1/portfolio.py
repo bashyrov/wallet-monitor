@@ -23,13 +23,29 @@ async def check_balance(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(Wallet).filter(Wallet.user_id == current_user.id)
+    # Portfolio balance check: only wallets actually flagged as portfolio
+    # (purpose ∈ {portfolio, both}) — screener-only keys are intentionally
+    # excluded so users can keep many trading keys without inflating their
+    # portfolio scan.
+    query = db.query(Wallet).filter(
+        Wallet.user_id == current_user.id,
+        Wallet.purpose.in_(("portfolio", "both")),
+        Wallet.is_archived == False,  # noqa: E712
+    )
     if body.wallet_ids:
         query = query.filter(Wallet.id.in_(body.wallet_ids))
     wallets = query.all()
 
+    # Cap to the user's effective portfolio limit. Existing wallets stay in
+    # the DB even after a downgrade — we just stop checking the surplus
+    # ones (sorted oldest first wins; user can archive then re-pick).
+    from backend.services import plan_service
+    limits = plan_service.effective_limits(db, current_user)
+    if len(wallets) > limits.portfolio_limit:
+        wallets = sorted(wallets, key=lambda w: w.created_at or datetime.utcnow())[: limits.portfolio_limit]
+
     if not wallets:
-        raise HTTPException(status_code=404, detail="No wallets found")
+        raise HTTPException(status_code=404, detail="No portfolio wallets")
 
     try:
         current_user.request_count = (current_user.request_count or 0) + len(wallets)
@@ -47,13 +63,29 @@ async def check_balance_stream(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = db.query(Wallet).filter(Wallet.user_id == current_user.id)
+    # Portfolio balance check: only wallets actually flagged as portfolio
+    # (purpose ∈ {portfolio, both}) — screener-only keys are intentionally
+    # excluded so users can keep many trading keys without inflating their
+    # portfolio scan.
+    query = db.query(Wallet).filter(
+        Wallet.user_id == current_user.id,
+        Wallet.purpose.in_(("portfolio", "both")),
+        Wallet.is_archived == False,  # noqa: E712
+    )
     if body.wallet_ids:
         query = query.filter(Wallet.id.in_(body.wallet_ids))
     wallets = query.all()
 
+    # Cap to the user's effective portfolio limit. Existing wallets stay in
+    # the DB even after a downgrade — we just stop checking the surplus
+    # ones (sorted oldest first wins; user can archive then re-pick).
+    from backend.services import plan_service
+    limits = plan_service.effective_limits(db, current_user)
+    if len(wallets) > limits.portfolio_limit:
+        wallets = sorted(wallets, key=lambda w: w.created_at or datetime.utcnow())[: limits.portfolio_limit]
+
     if not wallets:
-        raise HTTPException(status_code=404, detail="No wallets found")
+        raise HTTPException(status_code=404, detail="No portfolio wallets")
 
     try:
         current_user.request_count = (current_user.request_count or 0) + len(wallets)

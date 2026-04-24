@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from backend.api.v1 import health, wallets, tags, portfolio, auth, admin, screener, alerts, alpha, trade
+from backend.api.v1 import health, wallets, tags, portfolio, auth, admin, screener, alerts, alpha, trade, billing
 
 router = APIRouter(prefix="/api")
 
@@ -14,3 +14,4 @@ router.include_router(screener.router)
 router.include_router(alerts.router)
 router.include_router(alpha.router)
 router.include_router(trade.router)
+router.include_router(billing.router)

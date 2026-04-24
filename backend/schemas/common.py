@@ -76,6 +76,7 @@ class WalletOut(BaseModel):
     is_archived: bool = False
     can_trade: bool = False
     purpose: str = "portfolio"
+    is_main: bool = False
     created_at: datetime
     tags: list[TagOut] = []
     addresses: list[WalletAddressOut] = []

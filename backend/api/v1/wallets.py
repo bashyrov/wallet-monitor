@@ -129,7 +129,7 @@ async def create_wallet(
         raise HTTPException(status_code=422, detail="Invalid wallet_type")
 
     try:
-        return svc.create_wallet(db, body, current_user.id, plan=getattr(current_user, 'plan', 'basic'))
+        return svc.create_wallet(db, body, current_user.id, user=current_user)
     except WalletLimitReached as e:
         raise HTTPException(status_code=402, detail=str(e))
     except Exception as e:
@@ -166,7 +166,7 @@ def unarchive_wallet(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        return svc.unarchive_wallet(db, wallet_id, current_user.id, plan=getattr(current_user, 'plan', 'basic'))
+        return svc.unarchive_wallet(db, wallet_id, current_user.id, user=current_user)
     except WalletNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     except WalletLimitReached as e:
@@ -186,6 +186,20 @@ def update_wallet(
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         # Purpose validation (unsupported trade venue / duplicate screener key)
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{wallet_id}/main", response_model=WalletOut)
+def set_main_wallet(
+    wallet_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return svc.set_main_wallet(db, wallet_id, current_user.id)
+    except WalletNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 

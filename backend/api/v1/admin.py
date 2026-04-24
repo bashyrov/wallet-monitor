@@ -506,3 +506,200 @@ def admin_logs_roles(_: User = Depends(get_admin_user)):
                 "full_bytes":   full.stat().st_size if full.exists() else 0,
             })
     return {"root": str(base), "roles": roles}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Pricing / promos / popups admin CRUD
+# ═════════════════════════════════════════════════════════════════════════════
+from backend.services import (
+    plan_service as _plan_service,
+    promo_service as _promo_service,
+    popup_service as _popup_service,
+)
+from backend.db.models import Plan as _Plan, PromoCode as _PromoCode, Popup as _Popup
+
+
+# ── Plans ────────────────────────────────────────────────────────────────────
+@router.get("/plans")
+def admin_list_plans(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    rows = _plan_service.list_plans(db, only_active=False)
+    return {"plans": [_plan_service.serialize_plan(p) for p in rows]}
+
+
+@router.post("/plans")
+def admin_create_plan(
+    body: dict,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    slug = (body.get("slug") or "").strip().lower()
+    if not slug or not slug.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(status_code=422, detail="slug is required (alnum / -_ only)")
+    if _plan_service.get_plan_by_slug(db, slug):
+        raise HTTPException(status_code=409, detail="slug already exists")
+    plan = _plan_service.create_plan(db, slug, body)
+    return _plan_service.serialize_plan(plan)
+
+
+@router.patch("/plans/{plan_id}")
+def admin_update_plan(
+    plan_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    plan = _plan_service.get_plan(db, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="plan not found")
+    _plan_service.update_plan(db, plan, body)
+    return _plan_service.serialize_plan(plan)
+
+
+@router.delete("/plans/{plan_id}")
+def admin_delete_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    plan = _plan_service.get_plan(db, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="plan not found")
+    try:
+        _plan_service.delete_plan(db, plan)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+# ── Promo codes ──────────────────────────────────────────────────────────────
+@router.get("/promos")
+def admin_list_promos(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    rows = _promo_service.list_codes(db, only_active=False)
+    return {"promos": [_promo_service.serialize_code(p) for p in rows]}
+
+
+@router.get("/promos/stats")
+def admin_promo_stats(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    return {"stats": _promo_service.stats(db)}
+
+
+@router.post("/promos")
+def admin_create_promo(
+    body: dict,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    code = (body.get("code") or "").strip()
+    try:
+        promo = _promo_service.create_code(db, code, body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _promo_service.serialize_code(promo)
+
+
+@router.patch("/promos/{promo_id}")
+def admin_update_promo(
+    promo_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    promo = db.query(_PromoCode).filter(_PromoCode.id == promo_id).first()
+    if not promo:
+        raise HTTPException(status_code=404, detail="promo not found")
+    _promo_service.update_code(db, promo, body)
+    return _promo_service.serialize_code(promo)
+
+
+@router.delete("/promos/{promo_id}")
+def admin_delete_promo(
+    promo_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    promo = db.query(_PromoCode).filter(_PromoCode.id == promo_id).first()
+    if not promo:
+        raise HTTPException(status_code=404, detail="promo not found")
+    _promo_service.delete_code(db, promo)
+    return {"ok": True}
+
+
+# ── Popups ───────────────────────────────────────────────────────────────────
+@router.get("/popups")
+def admin_list_popups(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    rows = _popup_service.list_popups(db, only_active=False)
+    return {"popups": [_popup_service.serialize_popup(p) for p in rows]}
+
+
+@router.post("/popups")
+def admin_create_popup(
+    body: dict,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    try:
+        popup = _popup_service.create_popup(db, body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _popup_service.serialize_popup(popup)
+
+
+@router.patch("/popups/{popup_id}")
+def admin_update_popup(
+    popup_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    popup = db.query(_Popup).filter(_Popup.id == popup_id).first()
+    if not popup:
+        raise HTTPException(status_code=404, detail="popup not found")
+    _popup_service.update_popup(db, popup, body)
+    return _popup_service.serialize_popup(popup)
+
+
+@router.delete("/popups/{popup_id}")
+def admin_delete_popup(
+    popup_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    popup = db.query(_Popup).filter(_Popup.id == popup_id).first()
+    if not popup:
+        raise HTTPException(status_code=404, detail="popup not found")
+    _popup_service.delete_popup(db, popup)
+    return {"ok": True}
+
+
+@router.get("/users/search")
+def admin_users_search(
+    q: str = "",
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    """Lightweight typeahead for the popup target picker."""
+    qs = (q or "").strip().lower()
+    if not qs:
+        return {"users": []}
+    rows = (
+        db.query(User)
+        .filter(
+            (User.username.ilike(f"%{qs}%")) | (User.email.ilike(f"%{qs}%"))
+        )
+        .order_by(User.username.asc())
+        .limit(20)
+        .all()
+    )
+    return {"users": [{"id": u.id, "username": u.username, "email": u.email} for u in rows]}

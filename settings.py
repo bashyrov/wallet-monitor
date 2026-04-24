@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     HTX_SPOT_BASE_URL: str = "https://api.huobi.pro"
     HTX_FUTURES_BASE_URL: str = "https://api.hbdm.com"
 
+    # ── CryptoCloud (https://api.cryptocloud.plus) ─────────────────────
+    CRYPTOCLOUD_API_KEY: str | None = None
+    CRYPTOCLOUD_SHOP_ID: str | None = None
+    CRYPTOCLOUD_WEBHOOK_SECRET: str | None = None
+    # Where users land after a successful checkout (sets the invoice's
+    # success_url field on creation).
+    CRYPTOCLOUD_SUCCESS_URL: str = "https://avalant.xyz/checkout?status=success"
+    CRYPTOCLOUD_FAIL_URL: str = "https://avalant.xyz/checkout?status=fail"
+
     ETHEREUM_RPC: str | None = None
     BSC_RPC: str | None = None
     POLYGON_RPC: str | None = None

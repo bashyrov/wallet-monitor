@@ -153,6 +153,16 @@ async def place_open_order(
     if ex not in SUPPORTED_EXCHANGES:
         raise ValueError(f"{ex} not supported yet")
 
+    # Plan-based trade delay: free tier orders sleep `trade_delay_ms` before
+    # signing. Configurable per plan in DB (free=500ms, paid=0ms).
+    from backend.db.models import User as _User
+    from backend.services import plan_service as _ps
+    _user = db.query(_User).filter(_User.id == user_id).first()
+    if _user is not None:
+        _limits = _ps.effective_limits(db, _user)
+        if _limits.trade_delay_ms > 0:
+            await asyncio.sleep(_limits.trade_delay_ms / 1000.0)
+
     # Admin-configured trade block — the exchange still serves screener /
     # funding / portfolio, but new position opens are refused from our
     # side (e.g. during a maintenance window or an integration audit).
