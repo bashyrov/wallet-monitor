@@ -4,10 +4,12 @@ from backend.providers.exchanges.bitget_provider import BitgetProvider
 from backend.providers.exchanges.bingx_provider import BingXProvider
 from backend.providers.exchanges.bybit_provider import BybitProvider
 from backend.providers.exchanges.gate_provider import GateProvider
+from backend.providers.exchanges.htx_provider import HTXProvider
 from backend.providers.exchanges.kraken_provider import KrakenProvider
 from backend.providers.exchanges.kucoin_provider import KucoinProvider
 from backend.providers.exchanges.mexc_provider import MexcProvider
 from backend.providers.exchanges.okx_provider import OKXProvider
+from backend.providers.exchanges.ourbit_provider import OurbitProvider
 from backend.providers.exchanges.whitebit_provider import WhiteBITProvider
 
 EXCHANGE_PROVIDERS = {
@@ -22,4 +24,6 @@ EXCHANGE_PROVIDERS = {
     "kraken": KrakenProvider,
     "whitebit": WhiteBITProvider,
     "bingx": BingXProvider,
+    "htx": HTXProvider,
+    "ourbit": OurbitProvider,
 }

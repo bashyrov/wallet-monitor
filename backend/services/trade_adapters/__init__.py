@@ -22,6 +22,8 @@ from .backpack import BackpackAdapter
 from .hyperliquid import HyperliquidAdapter
 from .aster import AsterAdapter
 from .ethereal import EtherealAdapter
+from .htx import HtxAdapter
+from .ourbit import OurbitAdapter
 from .readonly import make_readonly_adapter
 
 # ── All exchanges/DEXes with full trade adapters ────────────────────────────
@@ -32,6 +34,8 @@ TRADE_SUPPORTED: set[str] = {
     "bingx", "whitebit",
     # Perp DEX (3) — require private key / API wallet
     "hyperliquid", "aster", "ethereal",
+    # Spot-only — futures NOT implemented, leverage/close_position raise
+    "htx", "ourbit",
 }
 
 ADAPTERS: dict[str, type] = {
@@ -46,6 +50,8 @@ ADAPTERS: dict[str, type] = {
     "bingx":        BingxAdapter,
     "whitebit":     WhitebitAdapter,
     "backpack":     BackpackAdapter,
+    "htx":          HtxAdapter,
+    "ourbit":       OurbitAdapter,
     # Perp DEX
     "hyperliquid":  HyperliquidAdapter,
     "aster":        AsterAdapter,

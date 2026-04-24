@@ -14,6 +14,8 @@ class ExchangeType(str, Enum):
     KRAKEN = "kraken"
     WHITEBIT = "whitebit"
     BINGX = "bingx"
+    HTX = "htx"
+    OURBIT = "ourbit"
 
     LIGHTER = "lighter"
     HYPERLIQUID = "hyperliquid"
