@@ -905,6 +905,97 @@ async def _fetch_bingx() -> list[dict]:
     return out
 
 
+# ── HTX (Huobi) Perp Futures (public) ─────────────────────────────────────────
+# USDT-M Linear swap: funding is typically 8h across the board.
+async def _fetch_htx() -> list[dict]:
+    fund_r, tick_r = await asyncio.gather(
+        _http.get("https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate"),
+        _http.get("https://api.hbdm.com/linear-swap-ex/market/detail/batch_merged"),
+    )
+    fund_r.raise_for_status()
+    rates: dict[str, dict] = {}
+    for it in (fund_r.json().get("data") or []):
+        cc = it.get("contract_code") or ""
+        if not cc.endswith("-USDT"):
+            continue
+        token = cc[:-5]
+        try:
+            rate = float(it.get("funding_rate") or 0)
+        except (TypeError, ValueError):
+            continue
+        if rate == 0:
+            continue
+        next_ms = int(it.get("funding_time") or 0)
+        rates[token] = {"rate": rate, "next_ts": next_ms // 1000 if next_ms else 0}
+    tick_r.raise_for_status()
+    ticks = (tick_r.json().get("ticks") or tick_r.json().get("data") or [])
+    prices: dict[str, tuple[float, float]] = {}
+    for t in ticks:
+        cc = t.get("contract_code") or ""
+        if not cc.endswith("-USDT"):
+            continue
+        token = cc[:-5]
+        try:
+            price = float(t.get("close") or 0)
+            vol_usd = float(t.get("trade_turnover") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price <= 0:
+            continue
+        prices[token] = (price, vol_usd)
+    out = []
+    for token, fr in rates.items():
+        pv = prices.get(token)
+        if not pv:
+            continue
+        price, vol = pv
+        out.append({
+            "symbol": token,
+            "exchange": "htx",
+            "price": price,
+            "rate": fr["rate"],
+            "next_ts": fr["next_ts"],
+            "interval_h": 8.0,
+            "volume_usd": vol,
+        })
+    return out
+
+
+# ── Extended (Starknet perpetual DEX, public) ─────────────────────────────────
+# Hourly funding across all USD-collateralised markets.
+async def _fetch_extended() -> list[dict]:
+    r = await _http.get("https://api.starknet.extended.exchange/api/v1/info/markets")
+    r.raise_for_status()
+    out = []
+    for m in (r.json().get("data") or []):
+        if m.get("status") != "ACTIVE" or not m.get("active"):
+            continue
+        name = m.get("name") or ""
+        if not name.endswith("-USD"):
+            continue
+        token = name[:-4]
+        stats = m.get("marketStats") or {}
+        try:
+            price = float(stats.get("lastPrice") or stats.get("markPrice") or 0)
+            rate = float(stats.get("fundingRate") or 0)
+            vol_usd = float(stats.get("dailyVolume") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price <= 0 or rate == 0:
+            continue
+        next_ms = int(stats.get("nextFundingRate") or 0)
+        out.append({
+            "symbol": token,
+            "exchange": "extended",
+            "price": price,
+            "rate": rate,
+            "next_ts": next_ms // 1000 if next_ms else 0,
+            "interval_h": 1.0,
+            "volume_usd": vol_usd,
+        })
+    return out
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Dispatcher
 # ══════════════════════════════════════════════════════════════════════════════
@@ -923,6 +1014,8 @@ FETCHERS: dict[str, object] = {
     "whitebit":    _fetch_whitebit,
     "bingx":       _fetch_bingx,
     "paradex":     _fetch_paradex,
+    "htx":         _fetch_htx,
+    "extended":    _fetch_extended,
 }
 
 

@@ -217,6 +217,26 @@ async def _fetch_bingx_spot() -> list[dict]:
     return out
 
 
+async def _fetch_htx_spot() -> list[dict]:
+    r = await _http.get("https://api.huobi.pro/market/tickers")
+    if r.status_code != 200:
+        return []
+    j = r.json()
+    out: list[dict] = []
+    for x in (j.get("data") or []):
+        s = (x.get("symbol") or "").lower()
+        if not s.endswith("usdt"):
+            continue
+        try:
+            price = float(x.get("close") or 0)
+            vol = float(x.get("vol") or 0)  # quote volume (USDT) on HTX
+        except (TypeError, ValueError):
+            continue
+        if price > 0 and vol > 0:
+            out.append({"symbol": s[:-4].upper(), "price": price, "volume_usd": vol})
+    return out
+
+
 SPOT_FETCHERS = {
     "binance": _fetch_binance_spot,
     "bybit":   _fetch_bybit_spot,
@@ -226,6 +246,7 @@ SPOT_FETCHERS = {
     "mexc":    _fetch_mexc_spot,
     "bitget":  _fetch_bitget_spot,
     "bingx":   _fetch_bingx_spot,
+    "htx":     _fetch_htx_spot,
 }
 
 SPOT_EXCHANGES = list(SPOT_FETCHERS.keys())
