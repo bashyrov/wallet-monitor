@@ -267,16 +267,17 @@ wallet-monitor/
 | PATCH | `/api/alerts/{id}/toggle` | Bearer | Toggle alert enabled/disabled |
 | DELETE | `/api/alerts/{id}` | Bearer | Delete alert |
 | GET | `/api/screener/funding` | Bearer | All funding rates (cached 6s per exchange) |
-| GET | `/api/screener/arbitrage` | Bearer | Cross-exchange arb opportunities with net P&L |
-| GET | `/api/screener/spot-arbitrage` | Bearer | Spot-short cash-and-carry opps (buy spot A, short perp B). Refresh 2s, served from file cache on web |
-| GET | `/api/screener/all-arbitrage` | Bearer | Combined futures + spot-short, sorted by net profit desc |
+| GET | `/api/screener/long-short` | Bearer | **Canonical.** Cross-exchange perp-vs-perp funding arb with net P&L. Legacy alias: `/arbitrage`. |
+| GET | `/api/screener/spot-short` | Bearer | **Canonical.** Spot-short cash-and-carry (buy spot A, short perp B). Refresh 2s, file-cache on web. Legacy alias: `/spot-arbitrage`. |
+| GET | `/api/screener/dex-short` | Bearer | **Canonical.** DEX-spot + CEX-perp cash-and-carry. Legacy alias: `/dex-arbitrage`. |
+| GET | `/api/screener/all-arbitrage` | Bearer | Combined long-short + spot-short + dex-short, sorted by net profit desc |
 | GET | `/api/screener/orderbook?symbol=&exchange=&limit=` | Bearer | Order book for a symbol on an exchange |
 | GET | `/api/screener/arb-price-history?symbol=&long_ex=&short_ex=` | Bearer | 1h OHLCV klines for two exchanges |
 | GET | `/api/screener/arb-history?symbol=&long_ex=&short_ex=` | Bearer | Funding rate history for two exchanges |
 | GET | `/api/screener/all-exchanges-funding?symbol=` | Bearer | Current funding rate for symbol across all exchanges |
 | GET | `/api/screener/open-interest?symbol=&long_ex=&short_ex=` | Bearer | Open interest for both exchanges |
 | WS | `/api/screener/ws/funding?token=` | Bearer (query) | Live funding rates pushed every 5s |
-| WS | `/api/screener/ws/arb?token=` | Bearer (query) | Live arb opportunities pushed every 5s |
+| WS | `/api/screener/ws/long-short?token=` | Bearer (query) | **Canonical.** Live long-short opps (delta-encoded). Legacy alias: `/ws/arb`. |
 
 ---
 
@@ -960,10 +961,10 @@ Tabs: Overview · All Users · Provider Errors
 35. **Alert service** reads spreads from `get_cached_rates()` (no new HTTP calls). If `TG_BOT_TOKEN` is not set, alert service starts but silently skips all sends. User must set `tg_username` on their profile to receive messages.
 36. **Orderbook endpoint** reuses the shared `_arb_http` client (persistent keepalive connections) — do NOT create a new `httpx.AsyncClient` inside the handler, it causes TCP handshake overhead on every 500ms poll.
 37. **Aster price cache** — `_aster_price_cache` (5s TTL) separate from `_aster_vol_cache` (60s TTL). Both live in `arbitrage_service.py`. The price is `lastPrice` from `/ticker/24hr`; volume is `quoteVolume` from the same endpoint but cached longer.
-38. **`arb.html` URL params** — `?symbol=BTC&long=binance&short=aster`. All three required; missing params render an error div instead of the page.
+38. **`arb.html` URL params** — `?symbol=BTC&long=binance&short=aster&type=long-short`. Canonical `type` values: `long-short / spot-short / dex-short`. Legacy `type=futures` is still parsed for back-compat. Missing symbol/long/short renders an error div.
 39. **`arb.html` theme** — dark/light toggle saved to `localStorage` key `arb-theme`. Light theme applied via `body.light` CSS class.
-40. **`screener.html`** — the ↗ button on each arb row links to `/arb?symbol=...&long=...&short=...`.
-41. **Screener modes** are now 5: `all / arb / spot / funding / alpha`. `switchMode(mode)` toggles each `tab-{mode}` active class and each `section-{mode}` display. Loader per mode: `loadAll() · loadArb() · loadSpot() · applyFilter() · loadAlpha()`. Filter inputs shared across arb/spot/all (Min net, Min G+S, Min volume, Hidden tokens, Exchange selector).
+40. **`screener.html`** — the ↗ button on each arb row links to `/arb?type=long-short&symbol=...&long=...&short=...`. Spot/DEX rows use `type=spot-short` / `type=dex-short` respectively.
+41. **Screener modes** are 6: `all / arb / spot / dex / funding / alpha`. Canonical URL param mapping (`_MODE_CANON`): `arb→long-short`, `spot→spot-short`, `dex→dex-short`. Legacy aliases (`_MODE_ALIAS`) still parsed: `arb`, `arbitrage`, `longshort`, `spotshort`, `dexshort`. `switchMode(mode)` toggles each `tab-{mode}` active class and each `section-{mode}` display. Filter inputs shared across arb/spot/dex/all (Min net, Min G+S, Min volume, Hidden tokens, Exchange selector).
 42. **Spot-Short tab visually mirrors Arbitrage**: same pair cell pattern (side label + exchange chip + price/volume), same PAGE_SIZE pagination, same sort helpers (`sortSpot()`), same health dots. "Long" here is the spot venue, "Short" is the perp venue.
 43. **All tab** (`loadAll()`) merges futures arb rows + spot-short rows, sorts by `net_profit` desc, renders with a type pill (FUTURES/SPOT-SHORT). Uses `GET /api/screener/all-arbitrage`.
 44. **Spot cache must NEVER share with arb `_http`**: gave them separate `httpx.AsyncClient` instances. Shared pool caused 8s timeouts on `gather(8 spots)` under load. If you add more spot venues, keep the dedicated client.
@@ -1374,6 +1375,7 @@ CSS: fixed bottom, 12px inset, 64px tall, glassmorphic, `z-index:300`, backdrop-
 Add these to your mental model of the repo:
 - `frontend/toast.js`
 - `frontend/theme.js`
+- `frontend/exchanges.js` — single source of truth for exchange labels + brand colours. Loaded before any page script; exposes `window.EX.{labels, colors, dot, chip}`. Palette matches `arb.html` values (muted). Don't re-declare `EX_COLOR` / `EX_LABEL` in new pages — consume `window.EX`. Local fallbacks in screener.html / arb.html only run if the module didn't load.
 - `frontend/landing.html` — full-bleed landing (pre-launch lock)
 - `frontend/avashare.html` — AvaShare cashback page (UI-only, localStorage)
 - `backend/providers/exchanges/bingx_provider.py`
