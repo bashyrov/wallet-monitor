@@ -845,6 +845,25 @@ async def _refresh_loop() -> None:
 _last_arb_broadcast: dict[tuple, dict] = {}
 _last_arb_meta: dict = {"ts": 0.0, "fees": {}, "exchanges": []}
 
+# ── Funding diff state (per worker) ──────────────────────────────────────────
+# Funding payloads are ~1 MB per tick at ~5 000 rows. Full push at 0.3 s
+# broadcast cadence = ~3 MB/s × N clients — blows through 800 Mbps fast.
+# Keyed by (exchange, symbol), diff shape matches the arb diff so the
+# frontend gets a single update/remove path.
+_last_funding_broadcast: dict[tuple, dict] = {}
+_FUNDING_DIFF_FIELDS = ("rate", "price", "volume_usd", "next_ts", "interval_h", "apr")
+
+
+def _funding_key(r: dict) -> tuple:
+    return (r.get("exchange"), r.get("symbol"))
+
+
+def _funding_differs(a: dict, b: dict) -> bool:
+    for k in _FUNDING_DIFF_FIELDS:
+        if a.get(k) != b.get(k):
+            return True
+    return False
+
 # Fields that matter for an "updated" decision. Everything else is either
 # derivative (apr) or identity (symbol, exchanges — already the key).
 _ARB_DIFF_FIELDS = (
@@ -888,6 +907,54 @@ def _build_arb_snapshot_payload(data: dict) -> str:
 
 
 _last_arb_broadcast_at: float = 0.0
+
+
+def _build_funding_snapshot_payload(data: dict) -> str:
+    """Full snapshot for new funding WS clients. Same envelope the frontend
+    has always parsed — keep the `rows` + meta fields, add a `type` tag."""
+    payload = {
+        "type": "snapshot",
+        "ts": data.get("ts"),
+        "rows": data.get("rows") or [],
+        "exchanges": data.get("exchanges", []),
+    }
+    return json.dumps(payload)
+
+
+def _build_funding_diff(curr: dict) -> dict | None:
+    """Delta against `_last_funding_broadcast`. On big drops (likely WS
+    dropout), suppress the push so the user doesn't see rows flicker out
+    and back in."""
+    global _last_funding_broadcast
+    curr_rows = curr.get("rows") or []
+    curr_by_key = {_funding_key(r): r for r in curr_rows if r.get("symbol") and r.get("exchange")}
+
+    prev_count = len(_last_funding_broadcast)
+    new_count = len(curr_by_key)
+    if prev_count > 100 and new_count < prev_count * 0.5:
+        # Same empty-guard pattern as arb broadcast: don't trust a
+        # transient drop to more than half the row count.
+        return None
+
+    added, updated = [], []
+    for k, r in curr_by_key.items():
+        prev = _last_funding_broadcast.get(k)
+        if prev is None:
+            added.append(r)
+        elif _funding_differs(prev, r):
+            updated.append(r)
+    removed = [list(k) for k in _last_funding_broadcast.keys() if k not in curr_by_key]
+
+    if not added and not updated and not removed:
+        return None
+
+    payload: dict = {"type": "diff", "ts": curr.get("ts") or time.time()}
+    if added:   payload["added"]   = added
+    if updated: payload["updated"] = updated
+    if removed: payload["removed"] = removed
+
+    _last_funding_broadcast = curr_by_key
+    return payload
 
 
 def _build_arb_diff(curr: dict) -> dict | None:
@@ -1029,15 +1096,19 @@ async def _broadcast_loop() -> None:
 
     while True:
         await asyncio.sleep(BROADCAST_INTERVAL)
-        # Funding payload — unchanged (still a full snapshot every tick;
-        # the funding page itself is less hot than arb).
+        # Funding payload — diff-only. Previously we pushed the full ~1 MB
+        # snapshot every BROADCAST_INTERVAL (3 MB/s × N clients). Now we
+        # track last-seen rows per-worker and send only rate/price/volume
+        # updates, mirroring the arb diff shape.
         try:
             if _funding_clients:
                 fd = _read_file_cache("funding.json", max_age=60)
                 if not fd:
                     fd = await get_funding_data()
                 if fd:
-                    await _push(_funding_clients, json.dumps(fd))
+                    diff = _build_funding_diff(fd)
+                    if diff is not None:
+                        await _push(_funding_clients, json.dumps(diff))
         except Exception as exc:
             logger.debug("Funding push skipped: %s", exc)
         # Arb payload — send diff-only (massively smaller than a full snapshot
@@ -1166,7 +1237,10 @@ async def _ws_handler(websocket: WebSocket, clients: set[WebSocket], token: str,
 
 @router.websocket("/ws/funding")
 async def funding_ws(websocket: WebSocket, token: str = Query("")) -> None:
-    await _ws_handler(websocket, _funding_clients, token, get_funding_data, "funding")
+    await _ws_handler(
+        websocket, _funding_clients, token, get_funding_data, "funding",
+        snapshot_builder=_build_funding_snapshot_payload,
+    )
 
 
 @router.websocket("/ws/long-short")
