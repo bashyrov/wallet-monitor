@@ -67,7 +67,10 @@ class BybitWS(WSAdapter):
         self._books: dict[str, dict[str, dict]] = {}  # sym → {"bids": {p:q}, "asks": {p:q}}
 
     def build_subscribe(self, symbols):
-        args = [f"orderbook.200.{s}USDT" for s in symbols]
+        # orderbook.50 = snapshot stream at 20 ms cadence (vs 100 ms delta on
+        # .200). 50 levels is plenty for /arb display (shows 14) and arb
+        # compute (top-of-book). Trades 5× message rate for 5× freshness.
+        args = [f"orderbook.50.{s}USDT" for s in symbols]
         # Bybit limits 10 topics per subscribe frame
         frames = []
         for i in range(0, len(args), 10):
@@ -81,7 +84,7 @@ class BybitWS(WSAdapter):
         if msg.get("op") or msg.get("success") is not None:
             return None
         topic = msg.get("topic", "")
-        if not topic.startswith("orderbook.200."):
+        if not topic.startswith("orderbook.50."):
             return None
         sym_pair = topic.split(".")[-1]  # BTCUSDT
         if not sym_pair.endswith("USDT"):
@@ -90,6 +93,8 @@ class BybitWS(WSAdapter):
         data = msg.get("data", {})
         msg_type = msg.get("type", "")
 
+        # .50 sends one snapshot then deltas at 20 ms; the delta patch logic
+        # is identical to .200 so we reuse it.
         book = self._books.setdefault(token, {"bids": {}, "asks": {}})
         if msg_type == "snapshot":
             book["bids"] = {float(p): float(q) for p, q in data.get("b", [])}
@@ -103,8 +108,8 @@ class BybitWS(WSAdapter):
                     else:
                         book[key][fp] = fq
 
-        bids = sorted(((p, q) for p, q in book["bids"].items()), key=lambda x: -x[0])[:200]
-        asks = sorted(((p, q) for p, q in book["asks"].items()), key=lambda x: x[0])[:200]
+        bids = sorted(((p, q) for p, q in book["bids"].items()), key=lambda x: -x[0])[:50]
+        asks = sorted(((p, q) for p, q in book["asks"].items()), key=lambda x: x[0])[:50]
         return token, [list(x) for x in bids], [list(x) for x in asks]
 
 
