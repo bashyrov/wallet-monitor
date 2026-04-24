@@ -138,8 +138,15 @@ class FundingWSAdapter:
         """Pure-sync REST backstop. Runs in a dedicated daemon thread so
         event-loop starvation cannot delay the refresh. Writes directly
         to self._rows — dict mutation is GIL-protected, so the WS task
-        reading/writing on the event loop thread stays safe."""
+        reading/writing on the event loop thread stays safe.
+
+        Rate-limit awareness: piggy-backs on the global circuit breaker so
+        a flaky / 429'd venue gets cooled off instead of hammered tick-by-
+        tick. We keep reading WS rows for the adapter during cooldown —
+        the circuit only gates the REST side here.
+        """
         import random
+        from backend.services._circuit import circuit as _circuit
         time.sleep(random.uniform(0.0, self.rest_refresh_interval_s))
         logger.info("%s REST backstop started (thread, interval=%.1fs)",
                     self.name, self.rest_refresh_interval_s)
@@ -147,10 +154,21 @@ class FundingWSAdapter:
         fail_streak = 0
         while not self._stop:
             started = time.time()
+            ck = f"backstop:{self.name}"
+            if not _circuit.allow(ck):
+                # In cooldown — skip this tick, sleep the interval.
+                time.sleep(self.rest_refresh_interval_s)
+                continue
             try:
                 rows = self.rest_refresh_sync()
+                _circuit.ok(ck)
             except Exception as exc:
                 logger.warning("%s REST refresh exception: %s", self.name, exc)
+                _circuit.fail(ck)
+                msg = str(exc)
+                if "429" in msg or "Too Many Requests" in msg:
+                    for _ in range(3):
+                        _circuit.fail(ck)
                 rows = None
             if rows:
                 now = time.time()
