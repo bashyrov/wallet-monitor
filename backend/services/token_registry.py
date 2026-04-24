@@ -213,17 +213,50 @@ def _fetch_mexc() -> dict[str, dict[str, str]]:
     return {}
 
 
+def _fetch_htx() -> dict[str, dict[str, str]]:
+    """GET /v2/reference/currencies — public, rows include chains[] with
+    baseChain (ETH / ARB / SOL / …) and contractAddress. 1400+ currencies
+    including every token HTX lists on spot."""
+    try:
+        r = _http.get("https://api.huobi.pro/v2/reference/currencies", timeout=15.0)
+        items = (r.json() or {}).get("data") or []
+    except Exception as exc:
+        logger.warning("htx registry fetch: %s", exc)
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for c in items:
+        sym = (c.get("currency") or "").upper()
+        if not sym:
+            continue
+        chains: dict[str, str] = {}
+        for ch in (c.get("chains") or []):
+            addr = (ch.get("contractAddress") or "").strip().lower()
+            # HTX uses `baseChain` (ETH, ARB, SOL, BSC, TRC20 …) which the
+            # alias map collapses to canonical names.
+            chain = _canon_chain(ch.get("baseChain") or ch.get("chain") or "")
+            if addr and chain:
+                chains[chain] = addr
+        if chains:
+            out[sym] = chains
+    logger.info("htx registry: %d symbols with on-chain info", len(out))
+    return out
+
+
 _FETCHERS = {
     "binance": _fetch_binance,
     "kucoin":  _fetch_kucoin,
     "gate":    _fetch_gate,
     "bitget":  _fetch_bitget,
+    "htx":     _fetch_htx,
     # Unavailable (auth required / no public data):
     # 'bybit': …     # /v5/asset/coin/query-info — auth required
     # 'okx': …       # no public contract info
     # 'mexc': …      # internal endpoint only
     # 'bingx': …     # auth required
     # 'whitebit': …  # has chain names only, no contract addresses
+    # 'aster', 'hyperliquid', 'paradex', 'extended', 'ethereal', 'lighter':
+    #   derivatives-only venues; symbols are synthetic perp contracts
+    #   not tied to a specific spot token listing on that venue.
 }
 
 

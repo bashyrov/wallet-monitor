@@ -59,7 +59,8 @@ _SYMBOL_BATCH_LIMIT = 900
 _DEX_WORKERS = 12
 MIN_DEX_LIQUIDITY_USD = 50_000.0
 MIN_DEX_VOL_24H = 10_000.0
-MAX_BASIS_PCT = 30.0       # drop obvious ticker-collision outliers only
+MAX_BASIS_PCT = 100.0      # only drop the most extreme collisions; rely on
+                            # token_registry contract-address verify downstream
 # Market-cap rank ceiling. Was 1_000 — too tight: CoinGecko has ~5-10k tokens
 # with real DEX+CEX liquidity and mid-cap (rank 1000-5000) names routinely
 # surface the most interesting basis opportunities. 5000 expands the candidate

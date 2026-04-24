@@ -1474,7 +1474,8 @@ OPP_PURGE_AFTER_S = 30.0
 # cross-check the two venues' contract addresses via the token registry.
 # Mismatch or unknown → drop (prevents ASTEROID-style phantom opps where
 # two exchanges list DIFFERENT tokens under the same ticker).
-HIGH_SPREAD_THRESHOLD = 0.30   # 30%
+HIGH_SPREAD_THRESHOLD = 1.00   # 100% — only the most extreme spreads
+                                # trigger the contract-address verify step
 
 
 def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None = None) -> dict:

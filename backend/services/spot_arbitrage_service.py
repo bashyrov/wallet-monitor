@@ -367,12 +367,24 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
                 # Short perp → we pay if funding>0, receive if funding<0
                 short_funding = -rate_8h
                 basis_pct = (perp_price - spot_price) / spot_price * 100
-                # Collision guard: raised 5% → 30% so real cash-and-carry
-                # spreads (e.g. VANRY +20-24%) survive while obvious ticker
-                # collisions (MEXC "META" ≠ KuCoin "META", usually 50-100%+
-                # mismatches) still get dropped.
-                if abs(basis_pct) > 30.0:
+                # Collision guard: 100% catches only the most extreme cases
+                # (genuinely-different tokens with 2×+ price gaps). Everything
+                # below that gets a look — the token-registry contract check
+                # below is what actually rejects verified collisions.
+                if abs(basis_pct) > 100.0:
                     continue
+                # For suspicious basis (>5%, typical cash-and-carry is ±2%),
+                # cross-check the token's contract address across the two
+                # venues via token_registry. If registry says they're
+                # demonstrably different tokens → drop. Unknown → pass.
+                if abs(basis_pct) > 5.0:
+                    try:
+                        from backend.services.token_registry import validate_pair_identity
+                        verdict = validate_pair_identity(sym, spot_ex, perp_ex)
+                    except Exception:
+                        verdict = None
+                    if verdict is False:
+                        continue
                 gross = short_funding + basis_pct
                 fee_spot_rt = _spot_fee(spot_ex) * 100 * 2  # round-trip, %
                 fee_perp_rt = _arb._fee(perp_ex) * 100 * 2
