@@ -238,7 +238,20 @@ _IVL_FETCHERS = {
 }
 
 
-_ivl_locks: dict[str, asyncio.Lock] = {}
+# Locks are keyed by (exchange, loop_id) because the spot / dex refresh
+# loops spin up fresh event loops per cycle — reusing an asyncio.Lock
+# created in a previous loop raises "bound to a different event loop".
+_ivl_locks: dict[tuple[str, int], asyncio.Lock] = {}
+
+
+def _get_ivl_lock(exchange: str) -> asyncio.Lock:
+    loop = asyncio.get_event_loop()
+    key = (exchange, id(loop))
+    lock = _ivl_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _ivl_locks[key] = lock
+    return lock
 
 
 async def _refresh_interval(exchange: str) -> None:
@@ -246,11 +259,10 @@ async def _refresh_interval(exchange: str) -> None:
     fetcher = _IVL_FETCHERS.get(exchange)
     if not fetcher:
         return
-    if exchange not in _ivl_locks:
-        _ivl_locks[exchange] = asyncio.Lock()
-    if _ivl_locks[exchange].locked():
+    lock = _get_ivl_lock(exchange)
+    if lock.locked():
         return
-    async with _ivl_locks[exchange]:
+    async with lock:
         try:
             result = await fetcher()
             _ivl_cache[exchange] = (result, _mono())
@@ -275,14 +287,13 @@ async def _get_interval_map(exchange: str, *, allow_blocking: bool = True) -> di
     fetcher = _IVL_FETCHERS.get(exchange)
     if not fetcher:
         return cached
-    if exchange not in _ivl_locks:
-        _ivl_locks[exchange] = asyncio.Lock()
+    lock = _get_ivl_lock(exchange)
     # Slow fetchers: never block user-facing requests
     if exchange in _SLOW_IVL and not allow_blocking:
-        if not _ivl_locks[exchange].locked():
+        if not lock.locked():
             asyncio.create_task(_refresh_interval(exchange))
         return cached
-    async with _ivl_locks[exchange]:
+    async with lock:
         # Re-check after acquiring lock — another coroutine may have filled it
         cached, at = _ivl_cache.get(exchange, ({}, 0.0))
         if _mono() - at < IVL_TTL and cached:
@@ -1050,9 +1061,8 @@ async def _get_rows(exchange: str) -> list[dict]:
             # path otherwise never triggers _fetch_aster → ivl_map stays {}.
             ttl = IVL_TTL_BY_EX.get("aster", IVL_TTL)
             if (_mono() - ivl_at) > ttl or not ivl_map:
-                if "aster" not in _ivl_locks:
-                    _ivl_locks["aster"] = asyncio.Lock()
-                if not _ivl_locks["aster"].locked():
+                lock = _get_ivl_lock("aster")
+                if not lock.locked():
                     asyncio.create_task(_refresh_interval("aster"))
             if ivl_map:
                 aster_tradable = {k[:-4] for k in ivl_map.keys() if k.endswith("USDT")}
