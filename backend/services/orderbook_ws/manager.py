@@ -24,20 +24,37 @@ def is_ws_supported(exchange: str) -> bool:
     return exchange.lower() in ADAPTERS
 
 
+_REDIS_MIN_INTERVAL_S = 0.05  # cap per-symbol Redis writes — 20 Hz is
+# more than the 150 ms frontend poll; anything above is wasted Redis load.
+
+
 class WSManager:
     def __init__(self):
         self._adapters: dict[str, WSAdapter] = {}
+        self._last_redis_write: dict[str, float] = {}
 
     def _update_cb(self, exchange: str, symbol: str, bids: list, asks: list) -> None:
         """Called by each adapter on every incoming book update."""
         from backend.services.orderbook_cache import _book_cache
         key = f"{exchange}:{symbol}"
         entry = _book_cache.setdefault(key, {})
+        now = time.time()
         entry["data"] = {"bids": bids, "asks": asks}
-        entry["ts"] = time.time()
+        entry["ts"] = now
         # keep last_request fresh so file-dumper includes it
-        if "last_request" not in entry or time.time() - entry.get("last_request", 0) > 5:
-            entry["last_request"] = time.time()
+        if "last_request" not in entry or now - entry.get("last_request", 0) > 5:
+            entry["last_request"] = now
+        # Publish to Redis at WS cadence — HTTP /orderbook no longer waits
+        # for the 100-230 ms merger tick to propagate. Throttled per symbol
+        # so bybit's 20 ms snapshot stream doesn't pound Redis at 12 K/s.
+        last_r = self._last_redis_write.get(key, 0.0)
+        if now - last_r >= _REDIS_MIN_INTERVAL_S:
+            try:
+                from backend.services.orderbook_redis import write_single
+                write_single(key, {"ts": now, "data": {"bids": bids, "asks": asks}})
+                self._last_redis_write[key] = now
+            except Exception:
+                pass
 
     def subscribe(self, exchange: str, symbols: list[str]) -> None:
         """Ensure an adapter for `exchange` is running and subscribed to `symbols`."""

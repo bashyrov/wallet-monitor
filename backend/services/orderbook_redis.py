@@ -71,6 +71,22 @@ def _get_client():
         return None
 
 
+def write_single(key: str, entry: dict) -> bool:
+    """Single SETEX — called from WS adapter processes on every book update.
+
+    Bypasses the merger/file path: HTTP /orderbook sees updates at WS
+    cadence (20-300 ms) instead of waiting for the 100-230 ms merger tick.
+    """
+    c = _get_client()
+    if c is None:
+        return False
+    try:
+        c.setex(f"ob:{key}", _TTL_S, _dumps(entry))
+        return True
+    except Exception:
+        return False
+
+
 def write_books(merged: dict) -> int:
     """Pipeline-write every merged entry. Returns number of keys written."""
     c = _get_client()
