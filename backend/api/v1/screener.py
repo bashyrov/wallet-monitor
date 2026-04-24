@@ -1,6 +1,19 @@
 import asyncio
 import json
 import logging
+
+# orjson is a C-backed JSON serialiser — ~5× faster than stdlib on our
+# typical payloads (arb diff ~200 rows, funding diff ~500 rows). Critical
+# for the broadcast hot path: at 0.3s BROADCAST_INTERVAL × N WS clients,
+# every ms we shave off the encode is multiplicative. Fallback keeps the
+# code working in dev envs without orjson installed.
+try:
+    import orjson as _orjson
+    def _fast_dumps(obj) -> str:
+        return _orjson.dumps(obj).decode()
+except ImportError:  # pragma: no cover
+    def _fast_dumps(obj) -> str:
+        return json.dumps(obj, separators=(",", ":"))
 import os as _os
 import time
 
@@ -1108,7 +1121,7 @@ async def _broadcast_loop() -> None:
                 if fd:
                     diff = _build_funding_diff(fd)
                     if diff is not None:
-                        await _push(_funding_clients, json.dumps(diff))
+                        await _push(_funding_clients, _fast_dumps(diff))
         except Exception as exc:
             logger.debug("Funding push skipped: %s", exc)
         # Arb payload — send diff-only (massively smaller than a full snapshot
@@ -1121,7 +1134,7 @@ async def _broadcast_loop() -> None:
             if data and _arb_clients:
                 diff = _build_arb_diff(data)
                 if diff is not None:
-                    await _push(_arb_clients, json.dumps(diff))
+                    await _push(_arb_clients, _fast_dumps(diff))
         except Exception as exc:
             logger.debug("Arb push skipped: %s", exc)
 
