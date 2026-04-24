@@ -1424,12 +1424,32 @@ function setThrottle(mode) {
   _throttleTimer = setInterval(flushPending, ms);
 }
 
+// Map-keyed source of truth for funding rows — mirrors _arbRowsByKey so we
+// can apply diff patches (added / updated / removed) in-place rather than
+// re-rendering from scratch. Key = "exchange:symbol".
+const _rowsByKey = new Map();
+
+function _applyFundingPayload(d) {
+  if (d && d.type === 'diff') {
+    if (Array.isArray(d.added))   for (const r of d.added)   _rowsByKey.set(`${r.exchange}:${r.symbol}`, r);
+    if (Array.isArray(d.updated)) for (const r of d.updated) _rowsByKey.set(`${r.exchange}:${r.symbol}`, r);
+    if (Array.isArray(d.removed)) for (const k of d.removed) _rowsByKey.delete(`${k[0]}:${k[1]}`);
+  } else {
+    // snapshot OR legacy full-rows payload
+    _rowsByKey.clear();
+    for (const r of (d.rows || [])) {
+      if (r && r.exchange && r.symbol) _rowsByKey.set(`${r.exchange}:${r.symbol}`, r);
+    }
+  }
+  _rows = Array.from(_rowsByKey.values());
+}
+
 function flushPending() {
   let applied = false;
   if (_pendingFunding) {
     const d = _pendingFunding; _pendingFunding = null;
-    _rows = d.rows || [];
-    renderStats(d);
+    _applyFundingPayload(d);
+    renderStats({ rows: _rows, ts: d.ts });
     applyFilter(true);
     applied = true;
   }
