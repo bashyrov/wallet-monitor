@@ -59,7 +59,7 @@ _SYMBOL_BATCH_LIMIT = 900
 _DEX_WORKERS = 12
 MIN_DEX_LIQUIDITY_USD = 50_000.0
 MIN_DEX_VOL_24H = 10_000.0
-MAX_BASIS_PCT = 10.0       # drop ticker-collision outliers
+MAX_BASIS_PCT = 30.0       # drop obvious ticker-collision outliers only
 # Market-cap rank ceiling. Was 1_000 — too tight: CoinGecko has ~5-10k tokens
 # with real DEX+CEX liquidity and mid-cap (rank 1000-5000) names routinely
 # surface the most interesting basis opportunities. 5000 expands the candidate
@@ -391,12 +391,8 @@ def _build_opps_sync(dex_by_sym: dict[str, dict], perp_map: dict[str, dict[str, 
             if abs(basis_pct) > MAX_BASIS_PCT:
                 continue
             gross = short_funding + basis_pct
-            if gross <= 0:
-                # Clear any hysteresis state so the opp isn't falsely
-                # treated as "persisted" when it comes back next cycle.
-                _dex_opp_first_seen.pop((sym, perp_ex), None)
-                _dex_opp_last_seen.pop((sym, perp_ex), None)
-                continue
+            # No gross<=0 filter — show every spread. Hysteresis state is
+            # updated per-cycle below regardless of sign.
 
             # Hysteresis: require the opp to survive at least one full
             # refresh cycle before emission. DexScreener single-pool ticks

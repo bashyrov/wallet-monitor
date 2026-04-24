@@ -1469,8 +1469,11 @@ HIGH_SPREAD_THRESHOLD = 0.30   # 30%
 
 def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None = None) -> dict:
     """CPU-heavy O(n²) arb computation — runs in a thread so the event loop stays free.
-    Only returns opportunities with net_profit > 0. In/Out percentages come from
-    the live orderbook cache when available, else are None.
+    Returns every cross-exchange spread (positive AND negative net), sorted by
+    net_profit descending; the frontend colours negative net red. Ticker-
+    collision rows (>30% price_spread with proven contract mismatch) are still
+    dropped. In/Out percentages come from the live orderbook cache when
+    available, else are None.
 
     Filters (applied in order):
       1. Exclude exchanges listed in admin_settings.arb_exclude_exchanges —
@@ -1597,8 +1600,9 @@ def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None =
                     book_ok = False
 
                 net = gross + price_spread - total_fees
-                if net <= 0:
-                    continue
+                # No net>0 filter — user wants to see every spread, even the
+                # ones where fees eat the funding carry. Frontend colours
+                # negative net red so the filter is visible at a glance.
 
                 # Ticker-collision guard: abnormally large price_spread is
                 # almost always a sign that the two venues list different

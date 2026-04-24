@@ -288,8 +288,9 @@ async def get_spot_rows(exchange: str) -> list[dict]:
 async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> dict:
     """Cross-exchange spot-short cash-and-carry opportunities.
 
-    Returns rows with positive gross (basis + inverted funding > 0) only,
-    sorted by net profit descending.
+    Returns every spread (positive AND negative gross) sorted by net
+    profit descending — the frontend colours negative net red. Only
+    obvious ticker collisions (|basis| > 30%) are still dropped.
 
     Web role reads from the shared file cache that the fetcher writes every
     2 s — same pattern as the futures arbitrage feed.
@@ -366,11 +367,11 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
                 # Short perp → we pay if funding>0, receive if funding<0
                 short_funding = -rate_8h
                 basis_pct = (perp_price - spot_price) / spot_price * 100
-                # Sanity filter: |basis| > 5% means the "same" ticker is almost
-                # certainly a different token (e.g. MEXC "META" is Metaverse,
-                # KuCoin "META" is Meta Pool). Real cash-and-carry basis for
-                # a live USDT pair never exceeds a couple of percent.
-                if abs(basis_pct) > 5.0:
+                # Collision guard: raised 5% → 30% so real cash-and-carry
+                # spreads (e.g. VANRY +20-24%) survive while obvious ticker
+                # collisions (MEXC "META" ≠ KuCoin "META", usually 50-100%+
+                # mismatches) still get dropped.
+                if abs(basis_pct) > 30.0:
                     continue
                 gross = short_funding + basis_pct
                 fee_spot_rt = _spot_fee(spot_ex) * 100 * 2  # round-trip, %
@@ -379,8 +380,8 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 100_000.0) -> di
                 net = gross - total_fees
                 # Annualized: 8h window repeats 3 × 365 = 1095 times/year
                 net_apr = net * (365.0 * 3) if net > 0 else 0.0
-                if gross <= 0:
-                    continue
+                # No gross<=0 filter — show every spread, frontend styles
+                # negatives differently.
 
                 # In/Out from the live orderbook cache. Spot side reads the
                 # "<ex>_spot:<sym>" book (populated by BinanceSpotWS/
