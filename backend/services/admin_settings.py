@@ -29,6 +29,8 @@ KEY_PORTFOLIO_DISABLED = "portfolio_disabled"
 KEY_TRADE_DISABLED_EXCHANGES = "trade_disabled_exchanges"
 KEY_ARB_MIN_VOLUME_USD = "arb_min_volume_usd"
 KEY_ARB_EXCLUDE_EXCHANGES = "arb_exclude_exchanges"
+KEY_EXPIRY_NOTICE_DAYS = "expiry_notice_days"
+KEY_EXPIRY_NOTICE_INTERVAL_HOURS = "expiry_notice_interval_hours"
 
 _DEFAULTS: dict[str, Any] = {
     KEY_HIDDEN_SYMBOLS: [],
@@ -50,6 +52,12 @@ _DEFAULTS: dict[str, Any] = {
     # funding / portfolio sides). Historically we've excluded Kraken
     # for spread-quality reasons.
     KEY_ARB_EXCLUDE_EXCHANGES: ["kraken"],
+    # Expiry notification policy. Reminder fires when plan_expires_at is
+    # less than `days` away, then re-fires every `interval_hours` until
+    # expiry (or until the user cancels auto_renew, in which case we go
+    # silent). 3 days × 24 h = "ping every morning starting 3 days before".
+    KEY_EXPIRY_NOTICE_DAYS: 3,
+    KEY_EXPIRY_NOTICE_INTERVAL_HOURS: 24,
 }
 
 
@@ -147,3 +155,24 @@ def get_arb_min_volume_usd() -> float:
 
 def get_arb_exclude_exchanges() -> set[str]:
     return _as_lower_set(KEY_ARB_EXCLUDE_EXCHANGES)
+
+
+def get_expiry_notice_days() -> int:
+    """How many days before plan_expires_at the notifier starts pinging
+    the user. Hard floor 0 (disables notices), ceiling 60 (anything beyond
+    is spammy)."""
+    try:
+        v = int(get(KEY_EXPIRY_NOTICE_DAYS) or 0)
+    except (TypeError, ValueError):
+        v = int(_DEFAULTS[KEY_EXPIRY_NOTICE_DAYS])
+    return max(0, min(60, v))
+
+
+def get_expiry_notice_interval_hours() -> int:
+    """Hours between consecutive expiry reminders for the same user. Floor
+    1 h, ceiling 168 h (one week)."""
+    try:
+        v = int(get(KEY_EXPIRY_NOTICE_INTERVAL_HOURS) or 0)
+    except (TypeError, ValueError):
+        v = int(_DEFAULTS[KEY_EXPIRY_NOTICE_INTERVAL_HOURS])
+    return max(1, min(168, v))

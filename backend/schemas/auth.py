@@ -50,6 +50,7 @@ class UserOut(BaseModel):
     tg_username: Optional[str] = None
     tg_linked: bool = False          # True if tg_chat_id is set (user ran /start)
     totp_enabled: bool = False       # True when admin has armed TOTP 2FA
+    auto_renew: bool = True          # False = user clicked Cancel — we stop expiry pings
     created_at: datetime
     email_verified_at: Optional[datetime] = None  # None = unverified; frontend shows a banner
 

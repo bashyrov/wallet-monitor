@@ -253,6 +253,7 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
     out = UserOut.model_validate(current_user)
     out.tg_linked = bool(current_user.tg_chat_id)
     out.totp_enabled = bool(getattr(current_user, "totp_verified_at", None))
+    out.auto_renew = bool(getattr(current_user, "auto_renew", True))
     # Enrich with effective limits so the frontend picker / pricing page
     # can show the right cap without round-tripping to /api/plans.
     try:
@@ -562,6 +563,30 @@ def tg_unlink(current_user: User = Depends(get_current_user), db: Session = Depe
     return Response(status_code=204)
 
 
+# ── Subscription auto-renew toggle ──────────────────────────────────────────
+@router.post("/me/subscription/cancel")
+def cancel_subscription(current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """Disable auto-renewal. The user keeps their plan until plan_expires_at;
+    we just stop nagging them about renewal and won't auto-bill them. Going
+    back is a one-tap call to /resume — no support ticket needed."""
+    current_user.auto_renew = False
+    db.commit()
+    logger.info("Subscription auto-renew cancelled: user=%s", current_user.id)
+    return {"auto_renew": False, "plan_expires_at": current_user.plan_expires_at.isoformat() if current_user.plan_expires_at else None}
+
+
+@router.post("/me/subscription/resume")
+def resume_subscription(current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """Re-enable auto-renewal — the user changed their mind. Doesn't
+    extend plan_expires_at on its own; that still requires a real payment."""
+    current_user.auto_renew = True
+    db.commit()
+    logger.info("Subscription auto-renew resumed: user=%s", current_user.id)
+    return {"auto_renew": True}
+
+
 class _DeleteMeBody(_BM):
     password: str
 
@@ -619,4 +644,5 @@ def patch_me(body: _UserPatch, current_user: User = Depends(get_current_user), d
     out = UserOut.model_validate(current_user)
     out.tg_linked = bool(current_user.tg_chat_id)
     out.totp_enabled = bool(getattr(current_user, "totp_verified_at", None))
+    out.auto_renew = bool(getattr(current_user, "auto_renew", True))
     return out

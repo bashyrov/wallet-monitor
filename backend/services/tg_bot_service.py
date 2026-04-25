@@ -125,6 +125,22 @@ async def _handle_update(bot_token: str, bot_label: str, upd: dict) -> None:
     db = SessionLocal()
     reply_markup: dict | None = None
     try:
+        # Telegram usernames can change at any time; chat_id + tg_id stay stable.
+        # Refresh tg_username for any user we already know by tg_id so an
+        # @-handle swap doesn't break the legacy username-fallback path.
+        if tg_id:
+            try:
+                u = db.query(User).filter(User.tg_id == int(tg_id)).first()
+                if u is not None:
+                    new_uname = (username.lstrip("@").lower() or None)
+                    if new_uname and (u.tg_username or "").lstrip("@").lower() != new_uname:
+                        u.tg_username = new_uname
+                    if u.tg_chat_id != int(chat_id):
+                        u.tg_chat_id = int(chat_id)
+                    db.commit()
+            except Exception:
+                db.rollback()
+
         # ── Login-by-bot flow (no auth required) ──
         if payload.startswith("auth-"):
             token = payload[len("auth-"):]

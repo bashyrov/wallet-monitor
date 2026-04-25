@@ -272,6 +272,8 @@ class ScreenerConfigIn(BaseModel):
     trade_disabled_exchanges: list[str] | None = None
     arb_min_volume_usd: float | None = None
     arb_exclude_exchanges: list[str] | None = None
+    expiry_notice_days: int | None = None
+    expiry_notice_interval_hours: int | None = None
 
 
 def _trade_supported_set() -> set[str]:
@@ -292,6 +294,8 @@ def screener_config_get(_: User = Depends(get_admin_user)):
         "trade_supported_exchanges": sorted(_trade_supported_set()),
         "arb_min_volume_usd": admin_settings.get_arb_min_volume_usd(),
         "arb_exclude_exchanges": sorted(admin_settings.get_arb_exclude_exchanges()),
+        "expiry_notice_days": admin_settings.get_expiry_notice_days(),
+        "expiry_notice_interval_hours": admin_settings.get_expiry_notice_interval_hours(),
     }
 
 
@@ -332,6 +336,12 @@ def screener_config_patch(
             if str(s).strip().lower() in known_ex
         })
         admin_settings.set_value(admin_settings.KEY_ARB_EXCLUDE_EXCHANGES, cleaned, user_id=user.id)
+    if body.expiry_notice_days is not None:
+        v = max(0, min(60, int(body.expiry_notice_days)))
+        admin_settings.set_value(admin_settings.KEY_EXPIRY_NOTICE_DAYS, v, user_id=user.id)
+    if body.expiry_notice_interval_hours is not None:
+        v = max(1, min(168, int(body.expiry_notice_interval_hours)))
+        admin_settings.set_value(admin_settings.KEY_EXPIRY_NOTICE_INTERVAL_HOURS, v, user_id=user.id)
     return screener_config_get(user)
 
 
@@ -858,3 +868,92 @@ def admin_audit_log(
         q = q.filter(_AuditLogEntry.target_type == target_type)
     rows = q.limit(limit).all()
     return {"entries": [audit_log.serialize(e) for e in rows]}
+
+
+# ── Admin broadcast: send a TG message via the auth bot ───────────────────────
+class _BroadcastBody(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    target: str = Field(default="all", description="'all' | 'user'")
+    target_user_id: int | None = None
+    parse_mode: str = Field(default="HTML")
+
+
+@router.post("/broadcast")
+async def admin_broadcast(
+    body: _BroadcastBody,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    """Send a Telegram message via the auth bot to every linked user (target='all')
+    or a single user (target='user', target_user_id required). HTML parse mode by
+    default — admin can paste <b>, <i>, <a href>, etc. Replies use the auth bot
+    so the user-facing alerts firehose stays separate from system announcements.
+    Returns {sent, failed} counts; never raises on per-recipient send failures
+    so a single banned chat doesn't abort the whole batch."""
+    from settings import settings as _settings
+    import httpx, asyncio
+
+    token = (_settings.TG_AUTH_BOT_TOKEN or _settings.TG_BOT_TOKEN or "").strip()
+    if not token:
+        raise HTTPException(status_code=503, detail="No TG bot token configured on server")
+
+    parse_mode = (body.parse_mode or "").strip()
+    if parse_mode not in ("HTML", "MarkdownV2", ""):
+        raise HTTPException(status_code=400, detail="parse_mode must be HTML or MarkdownV2 (or empty)")
+
+    target = (body.target or "all").lower()
+    if target == "user":
+        if not body.target_user_id:
+            raise HTTPException(status_code=422, detail="target_user_id required when target='user'")
+        rows = (
+            db.query(User.id, User.tg_chat_id, User.username)
+            .filter(User.id == body.target_user_id, User.tg_chat_id.isnot(None))
+            .all()
+        )
+    elif target == "all":
+        rows = (
+            db.query(User.id, User.tg_chat_id, User.username)
+            .filter(User.tg_chat_id.isnot(None), User.is_blocked.is_(False))
+            .all()
+        )
+    else:
+        raise HTTPException(status_code=400, detail="target must be 'all' or 'user'")
+
+    if not rows:
+        return {"sent": 0, "failed": 0, "skipped": "no eligible recipients"}
+
+    async def _one(chat_id: int) -> bool:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {
+            "chat_id": chat_id, "text": body.text,
+            "disable_web_page_preview": True,
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.post(url, json=payload)
+                return bool(r.json().get("ok"))
+        except Exception:
+            return False
+
+    # Cap concurrency so we don't trip TG flood-wait at scale.
+    sem = asyncio.Semaphore(20)
+    async def _bounded(chat_id: int) -> bool:
+        async with sem:
+            return await _one(chat_id)
+
+    results = await asyncio.gather(*(_bounded(int(r.tg_chat_id)) for r in rows),
+                                   return_exceptions=True)
+    sent = sum(1 for r in results if r is True)
+    failed = len(rows) - sent
+
+    audit_log.record(
+        db, request=request, actor=current_admin,
+        action="admin.broadcast", target_type="users", target_id=None,
+        delta={"target": target, "target_user_id": body.target_user_id,
+               "recipients": len(rows), "sent": sent, "failed": failed,
+               "preview": body.text[:120]},
+    )
+    return {"sent": sent, "failed": failed, "recipients": len(rows)}

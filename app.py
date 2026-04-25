@@ -149,6 +149,14 @@ async def lifespan(app: FastAPI):
         start_tg_bot()
         _stop_fns.append(stop_tg_bot)
 
+        # Subscription-expiry reminders (auth bot). Loop sleeps 30 min
+        # between scans and respects users.auto_renew + per-user throttle.
+        from backend.services.expiry_notifier_service import (
+            start_expiry_notifier, stop_expiry_notifier,
+        )
+        start_expiry_notifier()
+        _stop_fns.append(stop_expiry_notifier)
+
         from backend.services.orderbook_cache import start_prewarm, stop_prewarm
         start_prewarm()
         _stop_fns.append(stop_prewarm)

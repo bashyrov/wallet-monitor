@@ -571,6 +571,24 @@
           </div>
           <a href="/pricing" style="padding:0 14px;height:30px;border-radius:8px;background:var(--green);color:#09090B;font-size:12px;font-weight:500;text-decoration:none;display:flex;align-items:center;transition:all .15s;white-space:nowrap;" onmouseover="this.style.background='#00E89A'" onmouseout="this.style.background='var(--green)'">Upgrade →</a>
         </div>
+
+        <!-- Subscription controls — hidden until /api/auth/me reports a paid
+             plan (filled in JS by _renderPlanCard). Renew opens /pricing with
+             the current plan preselected; Cancel hits /api/auth/me/subscription/cancel
+             and stops expiry-reminders without ending the paid period. -->
+        <div id="sub-controls" style="display:none;margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--surface2)">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+            <div style="font-size:12.5px;color:var(--text2);line-height:1.55">
+              <div id="sub-state-line" style="color:var(--text);font-weight:600;font-size:13.5px;margin-bottom:2px">Active</div>
+              <div id="sub-detail-line">Auto-renewal is on. We'll remind you before your plan expires.</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <a id="sub-renew-btn" href="/pricing" class="btn-primary" style="height:34px;padding:0 14px;border-radius:8px;background:var(--green);color:#09090B;font-size:13px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px">↻ Renew</a>
+              <button id="sub-cancel-btn" type="button" onclick="cancelSubscription()" class="btn-secondary" style="height:34px;padding:0 14px;border-radius:8px;background:var(--surface3);color:var(--text);border:1px solid var(--border2);font-size:13px;font-weight:500;cursor:pointer">Cancel renewal</button>
+              <button id="sub-resume-btn" type="button" onclick="resumeSubscription()" class="btn-primary" style="display:none;height:34px;padding:0 14px;border-radius:8px;background:var(--green);color:#09090B;font-size:13px;font-weight:600;border:0;cursor:pointer">Resume</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1079,6 +1097,69 @@ function _renderPlanCard(me) {
   const upgradeCard = document.getElementById('plan-upgrade-card');
   if (upgradeCard) {
     upgradeCard.style.display = (plan === 'unlim' || plan === 'enterprise' || plan === 'full') ? 'none' : '';
+  }
+  _renderSubControls(me);
+}
+
+function _renderSubControls(me) {
+  const wrap = document.getElementById('sub-controls');
+  if (!wrap) return;
+  // Subscription controls only make sense when the user has a paid plan
+  // with a real expiry. Free / unlim users don't have a renewal flow.
+  const isPaid = me.plan_expires_at && me.plan && me.plan !== 'free' && me.plan !== 'unlim';
+  if (!isPaid) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  const expiry = new Date(me.plan_expires_at);
+  const expFmt = expiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const stateEl  = document.getElementById('sub-state-line');
+  const detailEl = document.getElementById('sub-detail-line');
+  const renewBtn  = document.getElementById('sub-renew-btn');
+  const cancelBtn = document.getElementById('sub-cancel-btn');
+  const resumeBtn = document.getElementById('sub-resume-btn');
+
+  // Renew button preselects the current plan + the user's last billing
+  // period (defaults: monthly). Pricing page parses ?renew=<slug> and
+  // highlights the matching card.
+  renewBtn.href = '/pricing?renew=' + encodeURIComponent(me.plan);
+
+  if (me.auto_renew === false) {
+    stateEl.textContent  = 'Auto-renewal cancelled';
+    stateEl.style.color  = '#F87171';
+    detailEl.innerHTML   = `Plan stays active until <b style="color:var(--text)">${expFmt}</b>. You won't get expiry reminders. Resume anytime.`;
+    cancelBtn.style.display = 'none';
+    resumeBtn.style.display = '';
+  } else {
+    stateEl.textContent  = 'Active';
+    stateEl.style.color  = 'var(--green)';
+    detailEl.innerHTML   = `Renews around <b style="color:var(--text)">${expFmt}</b>. Telegram reminders fire ${(window._expiryNoticeDays||3)} days before expiry.`;
+    cancelBtn.style.display = '';
+    resumeBtn.style.display = 'none';
+  }
+}
+
+async function cancelSubscription() {
+  if (!confirm('Cancel auto-renewal? Your plan stays active until the paid period ends, but we will stop sending reminders.')) return;
+  try {
+    const r = await Auth.apiFetch('/auth/me/subscription/cancel', { method: 'POST' });
+    if (!r.ok) throw new Error('cancel ' + r.status);
+    if (window.toast) toast('Auto-renewal cancelled', 'success', 'Plan stays active until expiry');
+    const me = await (await Auth.apiFetch('/auth/me')).json();
+    _renderPlanCard(me);
+  } catch (e) {
+    if (window.toast) toast('Failed to cancel — try again', 'error');
+  }
+}
+
+async function resumeSubscription() {
+  try {
+    const r = await Auth.apiFetch('/auth/me/subscription/resume', { method: 'POST' });
+    if (!r.ok) throw new Error('resume ' + r.status);
+    if (window.toast) toast('Auto-renewal resumed', 'success');
+    const me = await (await Auth.apiFetch('/auth/me')).json();
+    _renderPlanCard(me);
+  } catch (e) {
+    if (window.toast) toast('Failed to resume — try again', 'error');
   }
 }
 

@@ -43,6 +43,15 @@ class User(Base):
     totp_secret_enc = Column(String, nullable=True)
     totp_verified_at = Column(DateTime, nullable=True)
 
+    # Subscription auto-renewal. False = user clicked Cancel from /profile —
+    # the plan keeps running until plan_expires_at, but expiry notifications
+    # stop firing and we don't auto-bill on the next cycle. Defaults True so
+    # legacy users keep getting reminders without an explicit opt-in.
+    auto_renew = Column(Boolean, nullable=False, default=True)
+    # Throttle key for the expiry notifier so a daemon-restart can't fire
+    # a duplicate "expires in 2 days" message minutes after the previous one.
+    expiry_notice_last_sent_at = Column(DateTime, nullable=True)
+
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")
 
