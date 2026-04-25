@@ -58,6 +58,12 @@ class WSAdapter:
         """Return a text frame to send as heartbeat, or None for default ping."""
         return None
 
+    async def get_url(self) -> str:
+        """Return the WS URL to connect to. Default: static `self.url`.
+        Override for venues like KuCoin that mint a short-lived token URL
+        via a REST call before each connect."""
+        return self.url
+
     def on_reconnect(self) -> None:
         """Hook for adapters that maintain local book state — called when a
         fresh WS connection is opened, so the snapshot-+-delta stream starts
@@ -167,8 +173,9 @@ class WSAdapter:
         while not self._stop:
             hb_task: asyncio.Task | None = None
             try:
+                connect_url = await self.get_url()
                 async with websockets.connect(
-                    self.url,
+                    connect_url,
                     ping_interval=self.ping_interval,
                     ping_timeout=self.ping_timeout,
                     close_timeout=3,

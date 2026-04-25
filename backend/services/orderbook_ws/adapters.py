@@ -911,6 +911,251 @@ class OKXSpotWS(OKXWS):
         return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
+# ── KuCoin Spot (token-auth bullet flow) ─────────────────────────────────────
+class KuCoinSpotWS(WSAdapter):
+    """KuCoin spot orderbook via the token-authed `bullet-public` flow.
+
+    Boot sequence:
+      1. POST /api/v1/bullet-public (no creds) → {token, instanceServers[].endpoint}
+      2. Connect `<endpoint>?token=<t>&connectId=<n>`. Token TTL is 24h.
+      3. Subscribe `/spotMarket/level2Depth50:<SYM>-USDT` — snapshot stream
+         every push, no delta merging needed. Top 50 bids/asks per tick.
+      4. Server PINGs every 18 s; respond with `{"id":"<ts>","type":"pong"}`.
+
+    We re-mint the token on every reconnect so a stale token can't lock us
+    out. Cost is one HTTP POST per (re)connect, negligible.
+    """
+    name = "kucoin_spot"
+
+    # KuCoin spot caps at ~100 topics per connection in practice; we cap
+    # below that to leave headroom for the prewarm rotation.
+    max_symbols: int | None = 80
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._connect_id = 0
+
+    async def get_url(self) -> str:
+        import httpx
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.post("https://api.kucoin.com/api/v1/bullet-public")
+            r.raise_for_status()
+            j = r.json()
+        data = j.get("data") or {}
+        instances = data.get("instanceServers") or []
+        token = data.get("token")
+        if not (token and instances):
+            raise RuntimeError("kucoin bullet-public returned no token / endpoints")
+        endpoint = instances[0].get("endpoint")
+        self._connect_id += 1
+        # connectId must be unique per session.
+        return f"{endpoint}?token={token}&connectId=avalant-{self._connect_id}"
+
+    def heartbeat_frame(self) -> str | None:
+        import time as _t
+        # KuCoin requires a JSON ping; library-level WebSocket pings won't
+        # do because the server expects {"id":..., "type":"ping"}.
+        return None  # we send pongs reactively in parse_message
+
+    def build_subscribe(self, symbols):
+        # 100-topic frame is fine, but we still split into chunks of 50 to
+        # keep individual ack messages small.
+        topics = [f"{s.upper()}-USDT" for s in symbols]
+        frames = []
+        chunk = 50
+        for i in range(0, len(topics), chunk):
+            frames.append({
+                "id": str(int(__import__("time").time() * 1000)) + str(i),
+                "type": "subscribe",
+                "topic": "/spotMarket/level2Depth50:" + ",".join(topics[i:i + chunk]),
+                "privateChannel": False,
+                "response": True,
+            })
+        return frames
+
+    def parse_message(self, msg):
+        # KuCoin sends pings — answer them via the WS stream so the
+        # session stays alive. We get the ws handle in the run loop, not
+        # here, so we squirrel the ping into the per-adapter pong queue
+        # via the heartbeat path: simplest workaround is to maintain the
+        # session via the library-level keepalive, but KuCoin will close
+        # if we don't pong. So intercept ping/pong here.
+        msg_type = msg.get("type")
+        if msg_type == "ping":
+            # respond inline
+            try:
+                if self._ws:
+                    import asyncio as _a
+                    pong = json.dumps({"id": msg.get("id") or "0", "type": "pong"})
+                    _a.ensure_future(self._ws.send(pong))
+            except Exception:
+                pass
+            return None
+        if msg_type != "message":
+            return None
+        topic = msg.get("topic", "")
+        if not topic.startswith("/spotMarket/level2Depth50:"):
+            return None
+        sym_pair = topic.split(":", 1)[1]
+        if not sym_pair.endswith("-USDT"):
+            return None
+        token = sym_pair.split("-")[0]
+        data = msg.get("data", {})
+        # Each frame carries its own complete top-50 snapshot.
+        bids, asks = _to_book(data.get("bids"), data.get("asks"))
+        if not bids and not asks:
+            return None
+        return token, bids, asks
+
+
+# ── HTX Spot (Huobi) — gzip-compressed, per-symbol depth.step0 ───────────────
+class HtxSpotWS(WSAdapter):
+    """HTX (Huobi) spot books. WS frames are gzip-compressed JSON; the
+    base adapter handles decompression via decompress_gzip=True.
+
+    One topic per symbol — ``market.<sym>usdt.depth.step0`` gives a top-150
+    snapshot every push (~100 ms). Server sends ``{"ping":<ts>}``; we must
+    respond with ``{"pong":<ts>}`` or get disconnected.
+    """
+    name = "htx_spot"
+    url = "wss://api.huobi.pro/ws"
+    decompress_gzip = True
+    subscribe_delay = 0.04  # 25 subs/sec is well under HTX's per-conn cap
+
+    def build_subscribe(self, symbols):
+        return [
+            {"sub": f"market.{s.lower()}usdt.depth.step0", "id": f"avalant_{i}"}
+            for i, s in enumerate(symbols)
+        ]
+
+    def parse_message(self, msg):
+        # Reactive ping/pong — HTX ping carries a timestamp; the response
+        # must be {"pong": <same ts>}. We dispatch on the ws handle from
+        # within the parse callback (same trick as KuCoin above).
+        ping_ts = msg.get("ping")
+        if ping_ts is not None:
+            try:
+                if self._ws:
+                    import asyncio as _a
+                    _a.ensure_future(self._ws.send(json.dumps({"pong": ping_ts})))
+            except Exception:
+                pass
+            return None
+        ch = msg.get("ch", "")
+        if not ch.startswith("market.") or not ch.endswith(".depth.step0"):
+            return None
+        # ch = "market.btcusdt.depth.step0" → token = BTC
+        sym_part = ch.split(".")[1]
+        if not sym_part.endswith("usdt"):
+            return None
+        token = sym_part[:-4].upper()
+        tick = msg.get("tick", {}) or {}
+        bids, asks = _to_book(tick.get("bids"), tick.get("asks"))
+        if not bids and not asks:
+            return None
+        return token, bids, asks
+
+
+# ── Ourbit Spot (Binance-fork: @depth20@100ms snapshot stream) ──────────────
+class OurbitSpotWS(WSAdapter):
+    """Ourbit spot WS — Binance-compatible payload shape, dedicated host
+    `wbs.ourbit.com`. ``<symbol>@depth20@100ms`` gives a 20-level snapshot
+    every 100 ms; no delta merging needed."""
+    name = "ourbit_spot"
+    url = "wss://wbs.ourbit.com/ws"
+
+    def build_subscribe(self, symbols):
+        # Combined-stream subscribe in one frame.
+        params = [f"{s.lower()}usdt@depth20@100ms" for s in symbols]
+        return {"method": "SUBSCRIBE", "params": params, "id": 1}
+
+    def parse_message(self, msg):
+        # Binance-style direct payload OR nested under 'data' for combined-
+        # stream — handle both.
+        data = msg.get("data") if "data" in msg and isinstance(msg.get("data"), dict) else msg
+        if not isinstance(data, dict):
+            return None
+        # Per Binance schema: 's' = symbol, 'b' = bids, 'a' = asks. Some
+        # forks also send 'lastUpdateId' top-level; we don't need it.
+        sym = data.get("s") or ""
+        if not sym.endswith("USDT"):
+            # Combined-stream wraps the symbol in 'stream' = "btcusdt@depth20@100ms"
+            stream = msg.get("stream") or ""
+            sym_part = stream.split("@")[0].upper() if stream else ""
+            if not sym_part.endswith("USDT"):
+                return None
+            sym = sym_part
+        token = sym[:-4]
+        bids, asks = _to_book(data.get("bids") or data.get("b"),
+                              data.get("asks") or data.get("a"))
+        if not bids and not asks:
+            return None
+        return token, bids, asks
+
+
+# ── MEXC Spot (v3 API, JSON depth.v3) ────────────────────────────────────────
+class MexcSpotWS(WSAdapter):
+    """MEXC spot books via the v3 WS endpoint. Channel
+    ``spot@public.limit.depth.v3.api@<SYM>USDT@20`` gives a top-20 snapshot
+    every push.
+
+    Avoid the new ``aggre.depth`` channel which forces protobuf encoding —
+    the JSON-friendly ``limit.depth`` works without a protobuf dependency.
+    """
+    name = "mexc_spot"
+    url = "wss://wbs-api.mexc.com/ws"
+    subscribe_delay = 0.05
+
+    def build_subscribe(self, symbols):
+        # MEXC accepts 30 channels per SUBSCRIPTION frame, batch accordingly.
+        chunk = 25
+        frames = []
+        topics = [f"spot@public.limit.depth.v3.api@{s.upper()}USDT@20" for s in symbols]
+        for i in range(0, len(topics), chunk):
+            frames.append({"method": "SUBSCRIPTION", "params": topics[i:i + chunk]})
+        return frames
+
+    def parse_message(self, msg):
+        # MEXC server pings: payload is the literal string "PING" — base
+        # adapter decodes JSON, so a non-JSON "PING" surfaces as a ValueError
+        # in the parent and is already silently ignored. The library-level
+        # websocket ping/pong keeps the session alive.
+        ch = msg.get("c") or msg.get("channel") or ""
+        if not ch.startswith("spot@public.limit.depth.v3.api@"):
+            return None
+        try:
+            sym = ch.split("@")[3]
+        except IndexError:
+            return None
+        if not sym.endswith("USDT"):
+            return None
+        token = sym[:-4]
+        data = msg.get("d") or msg.get("data") or {}
+        bids = data.get("bids") or data.get("b") or []
+        asks = data.get("asks") or data.get("a") or []
+        # MEXC returns objects {"p": "<price>", "v": "<size>"} or arrays.
+        def _norm(arr):
+            out = []
+            for x in arr:
+                if isinstance(x, dict):
+                    p = x.get("p") or x.get("price")
+                    v = x.get("v") or x.get("vol") or x.get("quantity")
+                else:
+                    p, v = (x[0], x[1]) if isinstance(x, (list, tuple)) and len(x) >= 2 else (None, None)
+                if p is None or v is None:
+                    continue
+                try:
+                    out.append([float(p), float(v)])
+                except (TypeError, ValueError):
+                    continue
+            return out
+        bids = _norm(bids)
+        asks = _norm(asks)
+        if not bids and not asks:
+            return None
+        return token, bids, asks
+
+
 ADAPTERS: dict[str, type[WSAdapter]] = {
     "binance":      BinanceWS,
     "bybit":        BybitWS,
@@ -933,4 +1178,8 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "gate_spot":    GateSpotWS,
     "bitget_spot":  BitgetSpotWS,
     "bingx_spot":   BingXSpotWS,
+    "kucoin_spot":  KuCoinSpotWS,
+    "htx_spot":     HtxSpotWS,
+    "ourbit_spot":  OurbitSpotWS,
+    "mexc_spot":    MexcSpotWS,
 }
