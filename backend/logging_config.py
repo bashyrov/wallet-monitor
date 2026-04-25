@@ -41,6 +41,45 @@ def _default_log_dir() -> Path:
 _FMT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
 
+
+class JsonFormatter(logging.Formatter):
+    """One JSON object per record. Drops the same fields a textual
+    Formatter would (asctime / level / name / message) plus any extras
+    attached via `logger.<level>(..., extra={...})` so structured fields
+    survive aggregation.
+
+    Used when AVALANT_LOG_FORMAT=json is set — handy for piping into
+    Loki / Datadog without parsing the text format.
+    """
+    _BUILTIN = {
+        "name", "msg", "args", "levelname", "levelno", "pathname",
+        "filename", "module", "exc_info", "exc_text", "stack_info",
+        "lineno", "funcName", "created", "msecs", "relativeCreated",
+        "thread", "threadName", "processName", "process",
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+        out = {
+            "ts": _dt.fromtimestamp(record.created, tz=_tz.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info:
+            out["exc"] = self.formatException(record.exc_info)
+        # Surface anything passed as `extra={...}` — e.g. user_id, ip.
+        for k, v in record.__dict__.items():
+            if k in self._BUILTIN or k.startswith("_"):
+                continue
+            try:
+                _json.dumps(v)  # only include JSON-serialisable
+                out[k] = v
+            except (TypeError, ValueError):
+                continue
+        return _json.dumps(out, separators=(",", ":"), default=str)
+
 # 10 MB × 5 files per channel = 50 MB cap per role
 _MAX_BYTES = 10 * 1024 * 1024
 _BACKUP_COUNT = 5
@@ -85,7 +124,14 @@ def setup_logging(role: str = "monolith", *, level: str | None = None) -> Path |
     for h in list(root.handlers):
         root.removeHandler(h)
 
-    formatter = logging.Formatter(_FMT, datefmt=_DATEFMT)
+    # Format selector — text (default, easy to read in `docker logs`) or
+    # json (structured, easy to ship to log aggregators). Set
+    # AVALANT_LOG_FORMAT=json on the prod fetcher / app to switch.
+    fmt_kind = (os.environ.get("AVALANT_LOG_FORMAT") or "text").strip().lower()
+    if fmt_kind == "json":
+        formatter = JsonFormatter()
+    else:
+        formatter = logging.Formatter(_FMT, datefmt=_DATEFMT)
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(lvl)
