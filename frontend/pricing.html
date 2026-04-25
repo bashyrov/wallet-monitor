@@ -1,323 +1,804 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Pricing — Avalant</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Avalant: Full Screener + Portfolio plan from $65/mo, Screener-only $55/mo. Pay monthly, quarterly, semi-annually, or yearly with up to 25% off.">
-<link rel="icon" href="/avalant_favicon.svg">
-<link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <meta charset="UTF-8">
+
+  <link rel="icon" type="image/png" sizes="48x48" href="/avalant_favicon-48.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="/avalant_favicon-96.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/avalant_favicon-192.png">
+  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pricing — Avalant Screener &amp; Portfolio</title>
+  <meta name="description" content="Avalant plans: full Screener + Portfolio from $65/mo. Pay monthly, quarterly, semi-annually or yearly with up to 25% off. Screener-only plans save another $10.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://avalant.xyz/pricing">
+  <meta property="og:type"        content="website">
+  <meta property="og:url"         content="https://avalant.xyz/pricing">
+  <meta property="og:title"       content="Avalant Pricing — Screener &amp; Portfolio">
+  <meta property="og:description" content="Pay monthly, quarterly, for six months or a full year. Save up to 25%.">
+  <meta property="og:image"       content="https://avalant.xyz/og-image.jpg">
+  <meta property="og:image:type"  content="image/jpeg">
+  <meta property="og:image:width"  content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:site_name"   content="Avalant">
+  <meta name="twitter:card"        content="summary_large_image">
+  <meta name="twitter:title"       content="Avalant Pricing">
+  <meta name="twitter:description" content="Pay monthly, quarterly, for six months or a full year. Save up to 25%.">
+  <meta name="twitter:image"       content="https://avalant.xyz/og-image.jpg">
+  <link rel="stylesheet" href="/navbar.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:        #0E0E11;
+      --surface:   #131217;
+      --surface2:  #17171C;
+      --surface3:  #202028;
+      --border:    #22222A;
+      --text:      #E6E8E3;
+      --text2:     #9B9FAB;
+      --text3:     #676B7E;
+      --text4:     #393B47;
+      --green:     #1AFFAB;
+      --teal:      #06B6D4;
+      --yellow:    #E5C07B;
+      --purple:    #925BD6;
+      --red:       #F87171;
+      --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    ::selection { background: rgba(26,255,171,0.15); color: var(--green); }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--font); font-size: 14px; line-height: 1.55;
+      min-height: 100vh; -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 52px 52px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 100%);
+    }
+    body::after {
+      content: ''; position: fixed; top: -200px; left: 50%; transform: translateX(-50%);
+      width: 900px; height: 600px; z-index: 0; pointer-events: none;
+      background: radial-gradient(ellipse, rgba(26,255,171,0.1) 0%, transparent 70%);
+    }
+
+    /* ─── BUTTONS ─── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 14px; height: 34px; border-radius: 8px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--text2); cursor: pointer;
+      font-family: var(--font); font-size: 13px; font-weight: 500;
+      transition: all 0.15s ease; text-decoration: none; white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--surface3); color: var(--text); background: var(--surface3); }
+    .btn-primary {
+      background: var(--green); border-color: var(--green); color: #09090B; font-weight: 600;
+    }
+    .btn-primary:hover {
+      background: #00E89A; border-color: #00E89A;
+      box-shadow: 0 0 20px rgba(26,255,171,0.25);
+    }
+    .topbar-right .btn-primary { border-radius: 8px; height: 30px; padding: 0 12px; font-size: 13px; }
+
+    /* ─── HERO ─── */
+    .main { position: relative; z-index: 1; }
+    .hero {
+      max-width: 1180px; margin: 0 auto;
+      padding: 80px 40px 32px;
+      text-align: center;
+    }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 5px 12px; border-radius: 99px;
+      border: 1px solid rgba(26,255,171,0.22);
+      background: rgba(26,255,171,0.05);
+      color: var(--green); font-size: 11px; font-weight: 600;
+      letter-spacing: .5px; font-family: var(--mono);
+      margin-bottom: 24px;
+      box-shadow: 0 0 24px rgba(26,255,171,0.08), inset 0 0 0 1px rgba(26,255,171,0.12);
+    }
+    .hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; box-shadow: 0 0 6px rgba(26,255,171,0.7); }
+    @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(.8); } }
+
+    .hero-h1 {
+      font-size: clamp(34px, 5vw, 58px); font-weight: 800;
+      letter-spacing: -2.2px; line-height: 1.05; margin-bottom: 18px;
+    }
+    .hero-h1 em {
+      font-style: normal;
+      background: linear-gradient(120deg, var(--green) 0%, var(--teal) 50%, var(--green) 100%);
+      background-size: 200% auto;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: shimmer 4s linear infinite;
+    }
+    @keyframes shimmer { to { background-position: 200% center; } }
+    .hero-sub { font-size: 16px; color: var(--text2); max-width: 560px; margin: 0 auto; line-height: 1.65; }
+
+    /* ─── TOGGLE: Full vs Screener-only ─── */
+    .config-row {
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      margin: 36px auto 44px; max-width: 1180px; padding: 0 40px;
+    }
+    .toggle-wrap {
+      display: inline-flex; padding: 4px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; gap: 2px;
+    }
+    .toggle-btn {
+      padding: 10px 20px; border-radius: 9px;
+      background: transparent; border: none;
+      color: var(--text3); font-family: inherit; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all .15s;
+      display: inline-flex; align-items: center; gap: 10px;
+    }
+    .toggle-btn:hover { color: var(--text2); }
+    .toggle-btn.active {
+      background: rgba(26,255,171,0.12);
+      color: var(--green);
+      box-shadow: inset 0 0 0 1px rgba(26,255,171,0.25);
+    }
+    .toggle-btn .sub {
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
+      padding: 2px 7px; border-radius: 99px;
+      background: rgba(155,159,171,.1); color: var(--text3);
+    }
+    .toggle-btn.active .sub { background: rgba(26,255,171,0.15); color: var(--green); }
+
+    /* ─── PLANS GRID ─── */
+    .plans-wrap {
+      max-width: 1280px; margin: 0 auto;
+      padding: 0 24px 64px;
+      position: relative; z-index: 1;
+    }
+    .plans-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    }
+    @media (max-width: 1020px) { .plans-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 560px) { .plans-grid { grid-template-columns: 1fr; } }
+
+    .plan {
+      position: relative;
+      background: linear-gradient(145deg, var(--surface) 0%, #0F0E13 100%);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 24px 24px;
+      display: flex; flex-direction: column; gap: 16px;
+      transition: all .25s cubic-bezier(0.16,1,0.3,1);
+    }
+    .plan::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+    }
+    .plan:hover {
+      transform: translateY(-4px);
+      border-color: rgba(255,255,255,0.08);
+      box-shadow: 0 24px 64px rgba(0,0,0,.5);
+    }
+    .plan.featured {
+      border-color: rgba(26,255,171,0.3);
+      box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(26,255,171,0.1), 0 0 48px rgba(26,255,171,0.1);
+    }
+    .plan.featured::before {
+      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.45), transparent);
+      height: 2px;
+    }
+    .plan.featured::after {
+      content: 'Most popular'; position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+      font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      padding: 3px 10px; border-radius: 99px;
+      background: var(--green); color: #09090B; text-transform: uppercase;
+      box-shadow: 0 0 16px rgba(26,255,171,.45);
+    }
+    .plan.best::after {
+      content: 'Best value'; position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+      font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      padding: 3px 10px; border-radius: 99px;
+      background: linear-gradient(135deg, var(--green), var(--teal)); color: #09090B; text-transform: uppercase;
+      box-shadow: 0 0 16px rgba(26,255,171,.35);
+    }
+
+    .plan-head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+    }
+    .plan-name {
+      font-family: var(--mono); font-size: 11px; font-weight: 700;
+      color: var(--green); text-transform: uppercase; letter-spacing: 1.6px;
+    }
+    .plan-term {
+      display: inline-flex; align-items: center; padding: 3px 8px;
+      border: 1px solid var(--border); border-radius: 6px;
+      font-family: var(--mono); font-size: 10px; color: var(--text3); letter-spacing: .3px;
+    }
+
+    .plan-title { font-size: 22px; font-weight: 700; letter-spacing: -.6px; line-height: 1.2; }
+    .plan-desc { font-size: 13px; color: var(--text3); line-height: 1.55; }
+
+    .price-row {
+      display: flex; align-items: baseline; gap: 8px; margin-top: 4px;
+    }
+    .price-currency { font-size: 20px; color: var(--text3); font-weight: 500; }
+    .price-num {
+      font-family: var(--mono); font-weight: 600; letter-spacing: -2px;
+      font-size: 48px; color: var(--text);
+      line-height: 1; font-variant-numeric: tabular-nums;
+    }
+    .price-period { font-size: 13px; color: var(--text3); font-family: var(--mono); }
+    .price-effective {
+      font-size: 11.5px; color: var(--text3); font-family: var(--mono);
+      margin-top: 4px;
+    }
+    .price-original {
+      font-size: 11.5px; color: var(--text4); font-family: var(--mono);
+      text-decoration: line-through; margin-top: 2px;
+    }
+    .price-save {
+      display: inline-flex; align-items: center; gap: 5px;
+      margin-top: 10px; padding: 4px 10px; border-radius: 99px;
+      background: rgba(26,255,171,0.08);
+      border: 1px solid rgba(26,255,171,0.22);
+      color: var(--green); font-size: 11px; font-weight: 700;
+      font-family: var(--mono); letter-spacing: .3px;
+      align-self: flex-start;
+    }
+    .price-save .amount { font-weight: 800; }
+
+    .plan-cta {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      padding: 0 16px; height: 42px; border-radius: 10px;
+      background: var(--surface3); border: 1px solid var(--border);
+      color: var(--text); font-size: 13px; font-weight: 600;
+      text-decoration: none; transition: all .15s;
+      margin-top: auto;
+    }
+    .plan-cta:hover {
+      background: var(--green); border-color: var(--green); color: #09090B;
+      box-shadow: 0 0 22px rgba(26,255,171,0.3);
+    }
+    .plan.featured .plan-cta, .plan.best .plan-cta {
+      background: var(--green); border-color: var(--green); color: #09090B;
+    }
+    .plan.featured .plan-cta:hover, .plan.best .plan-cta:hover {
+      background: #00E89A; transform: translateY(-1px);
+    }
+
+    .plan-features {
+      display: flex; flex-direction: column; gap: 8px;
+      padding-top: 16px; border-top: 1px solid var(--border);
+    }
+    .plan-feat {
+      display: flex; align-items: flex-start; gap: 9px;
+      font-size: 12.5px; color: var(--text2); line-height: 1.5;
+    }
+    .plan-feat svg { color: var(--green); flex-shrink: 0; margin-top: 2px; }
+    .plan-feat.muted { color: var(--text4); }
+    .plan-feat.muted svg { color: var(--text4); }
+    .plan-feat b { color: var(--text); font-weight: 600; }
+
+    /* ─── INCLUDED / COMPARE ─── */
+    .compare-section {
+      max-width: 1180px; margin: 40px auto 0;
+      padding: 0 40px 80px;
+    }
+    .compare-head { text-align: center; margin-bottom: 32px; }
+    .compare-eyebrow {
+      font-size: 11px; font-weight: 600; letter-spacing: 1.6px;
+      text-transform: uppercase; color: var(--green); margin-bottom: 10px;
+      font-family: var(--mono);
+    }
+    .compare-title { font-size: clamp(22px, 3vw, 32px); font-weight: 700; letter-spacing: -.8px; margin-bottom: 8px; }
+    .compare-sub { font-size: 14px; color: var(--text2); max-width: 520px; margin: 0 auto; }
+
+    .compare-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
+      border-radius: 16px; overflow: hidden;
+      background: var(--border);
+      margin-top: 32px;
+    }
+    @media (max-width: 720px) { .compare-grid { grid-template-columns: 1fr; } }
+    .compare-col {
+      background: var(--surface); padding: 28px 28px 24px;
+    }
+    .col-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .col-name { font-size: 13px; font-weight: 700; font-family: var(--mono); letter-spacing: .6px; text-transform: uppercase; color: var(--green); }
+    .col-title { font-size: 18px; font-weight: 700; letter-spacing: -.3px; color: var(--text); }
+    .col-list { display: flex; flex-direction: column; gap: 10px; }
+    .col-item { display: flex; gap: 10px; font-size: 13px; color: var(--text2); line-height: 1.55; }
+    .col-item svg { color: var(--green); flex-shrink: 0; margin-top: 3px; }
+    .col-item b { color: var(--text); font-weight: 600; }
+    .col-note {
+      margin-top: 20px; padding: 10px 12px; border-radius: 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      font-size: 11.5px; color: var(--text3); font-family: var(--mono);
+    }
+
+    /* ─── FAQ strip ─── */
+    .faq-strip {
+      max-width: 860px; margin: 0 auto;
+      padding: 24px 40px 100px;
+    }
+    .faq-title {
+      text-align: center; font-size: 22px; font-weight: 700;
+      margin-bottom: 22px; letter-spacing: -.5px;
+    }
+    .faq-list { display: flex; flex-direction: column; gap: 8px; }
+    .faq-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+      transition: all .2s;
+    }
+    .faq-item[open] { border-color: rgba(26,255,171,0.22); }
+    .faq-item summary {
+      padding: 14px 18px; list-style: none; cursor: pointer;
+      display: flex; align-items: center; gap: 14px;
+      font-size: 14px; font-weight: 500; color: var(--text);
+    }
+    .faq-item summary::-webkit-details-marker { display: none; }
+    .faq-item summary:hover { color: var(--green); }
+    .faq-q { flex: 1; }
+    .faq-plus {
+      width: 20px; height: 20px; border-radius: 6px;
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text3); font-size: 14px; line-height: 1;
+      transition: all .2s; flex-shrink: 0;
+    }
+    .faq-item[open] .faq-plus {
+      background: rgba(26,255,171,0.1); border-color: rgba(26,255,171,0.3);
+      color: var(--green); transform: rotate(45deg);
+    }
+    .faq-body {
+      padding: 0 18px 16px 18px;
+      font-size: 13px; color: var(--text2); line-height: 1.7;
+    }
+    .faq-body code {
+      font-family: var(--mono); font-size: 12px;
+      background: var(--surface3); color: var(--green);
+      padding: 1px 6px; border-radius: 4px;
+    }
+
+    /* ─── FOOTER ─── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px 40px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: relative; z-index: 1; gap: 16px; flex-wrap: wrap;
+    }
+    .footer-brand { font-size: 13px; color: var(--text3); }
+    .footer-brand b { color: var(--text2); font-weight: 500; }
+    .footer-links { display: flex; gap: 18px; }
+    .footer-link { font-size: 13px; color: var(--text3); text-decoration: none; transition: color .15s; }
+    .footer-link:hover { color: var(--text); }
+
+    /* Bottom nav (mobile) */
+    .bottom-nav { display: none; position: fixed; bottom: 12px; left: 12px; right: 12px;
+      height: 64px; background: rgba(13,13,16,0.82);
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 20px; z-index: 300;
+      align-items: center; justify-content: space-around;
+      padding: 0 4px; box-shadow: 0 8px 32px rgba(0,0,0,0.45); }
+    .bnav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 14px; border-radius: 12px;
+      text-decoration: none; color: var(--text3); font-size: 10px; font-weight: 500;
+      transition: color 0.15s; flex: 1; max-width: 80px;
+    white-space: nowrap; min-width: 0; flex: 1 1 0; text-align: center;
+    }
+    .bnav-item svg { opacity: .45; }
+    .bnav-item.active { color: var(--green); }
+    .bnav-item.active svg { opacity: 1; }
+
+    @media (max-width: 768px) {
+      .bottom-nav { display: flex; }
+      body { padding-bottom: 88px; }
+      .hero { padding: 44px 16px 16px; }
+      .config-row { padding: 0 16px; margin: 24px auto 28px; }
+      .plans-wrap { padding: 0 16px 40px; }
+      .compare-section { padding: 0 16px 56px; }
+      .faq-strip { padding: 16px 16px 80px; }
+      footer { flex-direction: column; gap: 10px; padding: 24px 20px; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="topbar"><app-navbar page="pricing"></app-navbar></header>
+
+<main class="main">
+
+  <!-- ═══ HERO ═══ -->
+  <section class="hero">
+    <div class="hero-eyebrow"><span class="dot"></span>Simple &amp; honest pricing</div>
+    <h1 class="hero-h1">One flat price.<br><em>Save more the longer you commit.</em></h1>
+    <p class="hero-sub">
+      Avalant is a single product: Screener for live arbitrage, Portfolio for every balance you own.
+      Pay monthly or lock in savings for a quarter, six months, or a full year.
+    </p>
+  </section>
+
+  <!-- ═══ CONFIG TOGGLE ═══ -->
+  <div class="config-row">
+    <div class="toggle-wrap" role="tablist" aria-label="Package composition">
+      <button class="toggle-btn active" id="btn-full" onclick="setMode('full')">
+        Screener + Portfolio
+        <span class="sub">up to 30 wallets</span>
+      </button>
+      <button class="toggle-btn" id="btn-sc" onclick="setMode('screener')">
+        Screener only
+        <span class="sub">−$10/mo</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══ PLANS GRID ═══ -->
+  <section class="plans-wrap">
+    <div class="plans-grid" id="plans-grid">
+      <!-- populated by JS -->
+    </div>
+  </section>
+
+  <!-- ═══ WHAT'S INCLUDED ═══ -->
+  <section class="compare-section">
+    <div class="compare-head">
+      <div class="compare-eyebrow">In every plan</div>
+      <h2 class="compare-title">Two products, same subscription</h2>
+      <p class="compare-sub">Your plan unlocks both the Screener and the Portfolio. Optionally skip Portfolio and save $10/mo.</p>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-col">
+        <div class="col-head">
+          <span class="col-name">◈ Screener</span>
+          <span class="col-title">Live funding-rate &amp; arbitrage</span>
+        </div>
+        <div class="col-list">
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><b>11 exchanges</b>, 4&nbsp;000+ contracts via live WebSocket</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Cross-exchange <b>arbitrage scanner</b> with net /8h, fees, spread</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><b>Alpha score</b> 0-100 ranking funding + spread + liquidity + stability</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Pair detail: <b>Entry/Exit chart</b>, live orderbook, funding history</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><b>Telegram alerts</b> on spread thresholds, unlimited</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Watchlist &amp; custom exchange filters</div></div>
+        </div>
+      </div>
+
+      <div class="compare-col">
+        <div class="col-head">
+          <span class="col-name">◈ Portfolio</span>
+          <span class="col-title">Every balance in one dashboard</span>
+        </div>
+        <div class="col-list">
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Up to <b>30 wallets</b>: CEX, on-chain, perp DEXes</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><b>Parallel fetch</b> — 10+ sources in under 3 seconds</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Per-wallet and aggregate <b>PnL</b> vs previous snapshot</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><b>Custom tags</b> &amp; filters — strategy, risk, person</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Last <b>transactions</b> per wallet; address book</div></div>
+          <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><b>Fernet-encrypted</b> credentials, read-only API recommended</div></div>
+        </div>
+        <div class="col-note" id="col-note-sc">
+          Skip Portfolio on the Screener-only plan and save <b style="color:var(--green)">$10/mo</b>.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FAQ ═══ -->
+  <section class="faq-strip">
+    <div class="faq-title">Common questions</div>
+    <div class="faq-list">
+      <details class="faq-item">
+        <summary>
+          <span class="faq-q">How does billing work?</span>
+          <span class="faq-plus">+</span>
+        </summary>
+        <div class="faq-body">
+          You're charged upfront for the whole period. Monthly plans renew every 30 days; quarterly, six-month and annual plans renew at the end of the chosen term. Cancel anytime — you keep access until the end of the paid period.
+        </div>
+      </details>
+      <details class="faq-item">
+        <summary>
+          <span class="faq-q">What's the difference between the two packages?</span>
+          <span class="faq-plus">+</span>
+        </summary>
+        <div class="faq-body">
+          <b>Screener + Portfolio</b> is the default and gives you both products. If you only need the Screener (no wallet tracking), pick <b>Screener only</b> — same four billing periods, $10/mo cheaper.
+        </div>
+      </details>
+      <details class="faq-item">
+        <summary>
+          <span class="faq-q">Why lock in for longer?</span>
+          <span class="faq-plus">+</span>
+        </summary>
+        <div class="faq-body">
+          Pure value. Quarterly saves <b>10%</b>, six months <b>18%</b>, annual <b>25%</b>. No feature differences — every plan is the full product. The longer commit only buys you a lower effective monthly rate.
+        </div>
+      </details>
+      <details class="faq-item">
+        <summary>
+          <span class="faq-q">How do you keep my API keys safe?</span>
+          <span class="faq-plus">+</span>
+        </summary>
+        <div class="faq-body">
+          Every credential you paste is encrypted with <code>Fernet</code> (AES-128-CBC + HMAC-SHA256). The Fernet key is derived via PBKDF2-HMAC-SHA256 with 260&nbsp;000 iterations. API responses always mask keys to <code>abcd****wxyz</code>. Read-only keys are recommended everywhere.
+        </div>
+      </details>
+      <details class="faq-item">
+        <summary>
+          <span class="faq-q">Do you route trades or move funds?</span>
+          <span class="faq-plus">+</span>
+        </summary>
+        <div class="faq-body">
+          No. Ever. We only <em>read</em> data — balances, positions, funding rates, orderbooks. Never trade, never withdraw.
+        </div>
+      </details>
+      <details class="faq-item">
+        <summary>
+          <span class="faq-q">Can I switch or cancel later?</span>
+          <span class="faq-plus">+</span>
+        </summary>
+        <div class="faq-body">
+          Yes. Cancel any time; your access runs until the period ends. Upgrade to a longer term mid-cycle and we prorate the remaining time onto the new plan.
+        </div>
+      </details>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="footer-brand"><b>avalant<span style="color:var(--green)">_</span></b> · screener &amp; portfolio for serious crypto traders</div>
+  <div class="footer-links">
+    <a href="/screener" class="footer-link">Screener</a>
+    <a href="/app" class="footer-link">Portfolio</a>
+    <a href="/pricing" class="footer-link">Pricing</a>
+  </div>
+</footer>
+
+<nav class="bottom-nav">
+  <a href="/screener" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M3 5h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Screener
+  </a>
+  <a href="/app" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
+    Portfolio
+  </a>
+  <a href="/pricing" class="bnav-item active">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
+    Pricing
+  </a>
+  <a href="/profile" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Profile
+  </a>
+</nav>
+
+<script src="/navbar.js"></script>
 <script src="/auth.js"></script>
 <script src="/theme.js"></script>
 <script src="/toast.js"></script>
 <script src="/popup.js" defer></script>
-<script src="/navbar.js" defer></script>
-<style>
-  :root{
-    --bg:#0E0E11; --surface:#131217; --surface2:#17171C; --surface3:#202028;
-    --border:#22222A; --border2:#3A3A50;
-    --text:#E6E8E3; --text2:#9B9FAB; --text3:#676B7E;
-    --green:#1AFFAB; --teal:#06B6D4; --purple:#925BD6; --yellow:#E5C07B;
-    --red:#F87171;
-    --mono:'JetBrains Mono',monospace;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased}
-
-  body::before{
-    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
-    background:
-      radial-gradient(circle at 18% 12%, rgba(26,255,171,0.07) 0%, transparent 38%),
-      radial-gradient(circle at 86% 78%, rgba(146,91,214,0.06) 0%, transparent 42%),
-      radial-gradient(circle at 50% 100%, rgba(6,182,212,0.05) 0%, transparent 50%);
-  }
-  .main{position:relative;z-index:1}
-
-  /* HERO */
-  .hero{max-width:1180px;margin:0 auto;padding:72px 30px 24px;text-align:center}
-  .hero-eyebrow{
-    display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:99px;
-    border:1px solid rgba(26,255,171,0.22);background:rgba(26,255,171,0.05);
-    color:var(--green);font-size:11px;font-weight:600;letter-spacing:.5px;
-    font-family:var(--mono);margin-bottom:22px;
-    box-shadow:0 0 24px rgba(26,255,171,0.08), inset 0 0 0 1px rgba(26,255,171,0.12);
-  }
-  .hero-eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;box-shadow:0 0 6px rgba(26,255,171,0.7)}
-  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
-  .hero h1{font-size:clamp(34px,5vw,58px);font-weight:800;letter-spacing:-2.2px;line-height:1.05;margin:0 0 18px}
-  .hero h1 em{font-style:normal;background:linear-gradient(120deg,var(--green) 0%,var(--teal) 50%,var(--green) 100%);background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:shimmer 4s linear infinite}
-  @keyframes shimmer{to{background-position:200% center}}
-  .hero p{font-size:16px;color:var(--text2);max-width:580px;margin:0 auto;line-height:1.6}
-
-  /* PLAN MODE TOGGLE */
-  .config-row{display:flex;justify-content:center;margin:32px auto 32px;flex-direction:column;align-items:center;gap:14px}
-  .toggle-wrap{display:inline-flex;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:12px;gap:2px}
-  .toggle-btn{padding:11px 22px;border-radius:9px;background:transparent;border:0;color:var(--text3);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:10px}
-  .toggle-btn:hover{color:var(--text2)}
-  .toggle-btn.active{background:rgba(26,255,171,0.12);color:var(--green);box-shadow:inset 0 0 0 1px rgba(26,255,171,0.25)}
-  .toggle-btn .sub{font-family:var(--mono);font-size:11px;font-weight:500;padding:2px 7px;border-radius:99px;background:rgba(155,159,171,.1);color:var(--text3)}
-  .toggle-btn.active .sub{background:rgba(26,255,171,0.15);color:var(--green)}
-
-  /* PLANS GRID — one card per billing period */
-  .plans-wrap{max-width:1280px;margin:0 auto;padding:0 24px 36px}
-  .plans-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
-  @media (max-width:1020px){.plans-grid{grid-template-columns:1fr 1fr}}
-  @media (max-width:560px){.plans-grid{grid-template-columns:1fr}}
-
-  .plan{position:relative;background:linear-gradient(145deg,var(--surface) 0%,#0F0E13 100%);border:1px solid var(--border);border-radius:18px;padding:28px 24px 24px;display:flex;flex-direction:column;gap:14px;transition:all .25s cubic-bezier(0.16,1,0.3,1)}
-  .plan::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.06),transparent)}
-  .plan:hover{transform:translateY(-4px);border-color:rgba(255,255,255,0.08);box-shadow:0 24px 64px rgba(0,0,0,.5)}
-  .plan.featured{border-color:rgba(26,255,171,0.3);box-shadow:0 20px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(26,255,171,0.1), 0 0 48px rgba(26,255,171,0.1)}
-  .plan.featured::before{background:linear-gradient(90deg,transparent,rgba(26,255,171,0.45),transparent);height:2px}
-  .plan.featured::after{content:'Best value';position:absolute;top:-11px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:99px;background:linear-gradient(135deg,var(--green),var(--teal));color:#09090B;text-transform:uppercase;box-shadow:0 0 16px rgba(26,255,171,.35)}
-
-  .plan-head{display:flex;justify-content:space-between;align-items:flex-start}
-  .plan-name{font-size:18px;font-weight:700;letter-spacing:-0.4px;margin:0}
-  .plan-tag{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px}
-
-  .plan-price-row{display:flex;align-items:baseline;gap:5px;margin-top:6px}
-  .plan-currency{font-size:18px;color:var(--text3);font-weight:500}
-  .plan-num{font-family:var(--mono);font-size:42px;font-weight:600;letter-spacing:-1.5px;line-height:1}
-  .plan-period{font-family:var(--mono);font-size:13px;color:var(--text3)}
-  .plan-effective{color:var(--text2);font-size:12px}
-  .plan-effective b{color:var(--text);font-family:var(--mono)}
-  .plan-original{color:var(--text3);font-size:12px;text-decoration:line-through}
-  .plan-saved{color:var(--green);font-size:12px;font-weight:600}
-
-  .plan-cta{margin-top:auto;display:block;text-align:center;text-decoration:none;padding:13px 18px;border-radius:11px;background:var(--green);color:#000;font-weight:700;font-size:13.5px;font-family:inherit;border:0;cursor:pointer;transition:.18s}
-  .plan-cta:hover{filter:brightness(1.06)}
-  .plan-cta.is-current{background:var(--surface3);color:var(--text2);cursor:default;pointer-events:none}
-
-  .plan-loading{padding:80px 0;text-align:center;color:var(--text3);grid-column:1/-1}
-
-  /* FEATURE CARD (single block) below the period grid */
-  .feat-card{
-    max-width:1280px;margin:8px auto 12px;padding:0 24px;
-  }
-  .feat-card-inner{
-    background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:24px 28px;
-    display:grid;grid-template-columns:1fr 1fr;gap:20px;
-  }
-  @media (max-width:760px){.feat-card-inner{grid-template-columns:1fr}}
-  .feat-card-inner h3{margin:0 0 10px;font-size:14px;font-weight:600;color:var(--text2);letter-spacing:.04em;text-transform:uppercase}
-  .feat-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
-  .feat-list li{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--text);line-height:1.5}
-  .feat-list li.lim{color:var(--text2)}
-  .feat-list .ico{color:var(--green);flex-shrink:0;margin-top:2px}
-  .feat-list .ico-x{color:var(--red);flex-shrink:0;margin-top:2px}
-
-  /* FREE callout */
-  .free-card{max-width:1280px;margin:0 auto 56px;padding:0 24px}
-  .free-card-inner{
-    background:linear-gradient(135deg,rgba(255,255,255,0.02),rgba(255,255,255,0.005));
-    border:1px solid var(--border);border-radius:14px;padding:18px 22px;
-    display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
-  }
-  .free-card-inner .lbl{font-weight:700;font-size:14px}
-  .free-card-inner .desc{color:var(--text2);font-size:13px;margin-top:2px}
-  .free-card-inner a{color:var(--green);font-weight:600;font-size:13px;text-decoration:none;border:1px solid rgba(26,255,171,0.32);padding:10px 16px;border-radius:9px;transition:.18s}
-  .free-card-inner a:hover{background:rgba(26,255,171,0.06)}
-
-  /* FAQ */
-  .faq-wrap{max-width:1080px;margin:0 auto;padding:0 24px 80px}
-  .faq-wrap h2{font-size:22px;font-weight:700;letter-spacing:-0.4px}
-  .faq{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:14px}
-  .faq .q{font-weight:600;margin:0 0 4px;font-size:14px;color:var(--text)}
-  .faq .a{color:var(--text2);font-size:13px;line-height:1.6;margin:0}
-
-  body.light{background:#FFFFFF;color:#000}
-  body.light::before{display:none}
-  body.light .plan,body.light .feat-card-inner,body.light .free-card-inner{background:#FFFFFF;border-color:#BABABA}
-  body.light .plan-num,body.light .plan-name{color:#000}
-  body.light .plan-currency,body.light .plan-period,body.light .plan-effective,body.light .plan-original{color:#595959}
-  body.light .toggle-wrap{background:#F4F4F4;border-color:#BABABA}
-  body.light .toggle-btn.active{background:rgba(0,107,60,0.10);color:#006B3C}
-  body.light .plan-cta{background:#006B3C;color:#FFF}
-  body.light .free-card-inner a{color:#006B3C;border-color:rgba(0,107,60,0.4)}
-  body.light .hero h1 em{background:linear-gradient(120deg,#006B3C 0%,#0c5e88 50%,#006B3C 100%);-webkit-background-clip:text;background-clip:text}
-</style>
-</head>
-<body>
-<app-navbar page="pricing"></app-navbar>
-
-<main class="main">
-  <section class="hero">
-    <span class="hero-eyebrow"><span class="dot"></span>One flat price · save the longer you commit</span>
-    <h1>Trade smarter,<br><em>not louder.</em></h1>
-    <p>Live cross-exchange arbitrage scanner, multi-exchange portfolio tracker, and one-click trading on 14+ venues. Pick a plan that fits your style — switch any time.</p>
-  </section>
-
-  <div class="config-row">
-    <div class="toggle-wrap" role="tablist" aria-label="Plan mode" id="mode-toggle"></div>
-    <div style="font-size:12px;color:var(--text3);max-width:540px;text-align:center">
-      Skip Portfolio on the <b>Screener-only</b> plan and save $10/mo.
-    </div>
-  </div>
-
-  <section class="plans-wrap">
-    <div class="plans-grid" id="plans-grid">
-      <div class="plan-loading">Loading plans…</div>
-    </div>
-  </section>
-
-  <div class="feat-card">
-    <div class="feat-card-inner">
-      <div>
-        <h3>What you get</h3>
-        <ul class="feat-list" id="perks-list"></ul>
-      </div>
-      <div>
-        <h3>Limits</h3>
-        <ul class="feat-list" id="limits-list"></ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="free-card">
-    <div class="free-card-inner">
-      <div>
-        <div class="lbl">Or stay on Free — try Avalant before you commit</div>
-        <div class="desc">5 portfolio wallets · 1 API key per exchange · live screener with a 2-min anonymous preview · spread alerts via Telegram. Trading orders run with a +500 ms delay vs paid plans.</div>
-      </div>
-      <a id="free-cta" href="/register">Sign up free</a>
-    </div>
-  </div>
-
-  <section class="faq-wrap">
-    <h2>FAQ</h2>
-    <div class="faq">
-      <div><p class="q">What payment methods do you accept?</p><p class="a">USDT / BTC / ETH and a few other coins via CryptoCloud — pick one at checkout, send the exact amount, plan activates within minutes of confirmation.</p></div>
-      <div><p class="q">How does the portfolio limit work?</p><p class="a">You can save unlimited keys, but only the wallets you tag as "Portfolio" count against your plan limit (5 on Free, 30 on Full). Switching a key from Portfolio to Screener-only frees a slot.</p></div>
-      <div><p class="q">What happens after my plan expires?</p><p class="a">Your data stays put. The portfolio-balance scan drops back to 5 wallets and trading orders run with the Free-tier 500 ms delay until you renew — but your wallets and history remain visible.</p></div>
-      <div><p class="q">Why pick Screener-only?</p><p class="a">It saves you $10/mo if all you want is the live arb scanner + trading. The Portfolio tracker is the difference between Screener-only and Full.</p></div>
-      <div><p class="q">Are promo codes stackable?</p><p class="a">No — exactly one code per checkout. Codes apply to the cart total (after the period discount) and round to two decimals.</p></div>
-      <div><p class="q">Can I switch plans?</p><p class="a">Yes. Upgrade anytime — your remaining time prorates onto the new tier. Downgrades take effect at the next billing date.</p></div>
-    </div>
-  </section>
-</main>
-
 <script>
-let _plans = [];
-let _periods = [];
-let _activeMode = 'full';   // 'full' | 'screener'
-let _me = null;
+// ─── Pricing model — driven from /api/plans + /api/billing-periods ───
+// BASE.full / BASE.screener pulled from the two paid plans (the one
+// with has_portfolio=true is "full", the other "screener"). PLANS is
+// a derived view of billing_periods rows with copy that matches the
+// original mono+title layout: name (small green caps), title (big),
+// desc (one line). featured = quarterly (3mo), best = yearly (12mo).
+const BASE = { full: 0, screener: 0 };
+const _PLAN_ID = { full: null, screener: null };
+let PLANS = [];
+let _ME = null;
 
-function _isAuthed(){ try { return !!localStorage.getItem('wm_token'); } catch { return false; } }
-function _esc(s){ return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
-function _money(n){ return '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+const _PERIOD_COPY = {
+  1:  { name: 'Scout',    title: 'Month-to-month', desc: 'Try the full stack, cancel any time.' },
+  3:  { name: 'Operator', title: 'Quarterly',      desc: 'Same tools, one full trading quarter.' },
+  6:  { name: 'Season',   title: '6 months',       desc: 'Half a year at a sharper monthly rate.' },
+  12: { name: 'Desk',     title: 'Annual',         desc: 'Biggest saving — lock it in for a year.' },
+};
 
-async function _load(){
+function fmtMoney(n) {
+  const rounded = Math.round(n);
+  return '$' + rounded.toLocaleString('en-US');
+}
+
+async function _loadFromApi() {
+  let plansResp;
   try {
-    const r = await fetch('/api/plans');
-    const j = await r.json();
-    _plans = (j.plans || []).filter(p => p.is_active && !p.is_free);
-    _periods = (j.billing_periods || []).filter(p => p.is_active);
-    _periods.sort((a,b) => a.sort_order - b.sort_order || a.months - b.months);
-  } catch (e){
-    document.getElementById('plans-grid').innerHTML = '<div class="plan-loading">Failed to load plans — try again in a moment.</div>';
-    return;
+    plansResp = await (await fetch('/api/plans')).json();
+  } catch (e) {
+    document.getElementById('plans-grid').innerHTML =
+      '<div style="padding:60px;text-align:center;color:var(--text3)">Failed to load plans — try again in a moment.</div>';
+    return false;
   }
-  if (_isAuthed()){
+  const allPlans = (plansResp.plans || []).filter(p => p.is_active && !p.is_free);
+  const periods = (plansResp.billing_periods || [])
+    .filter(p => p.is_active)
+    .sort((a, b) => a.sort_order - b.sort_order || a.months - b.months);
+
+  const fullPlan     = allPlans.find(p => p.has_portfolio);
+  const screenerPlan = allPlans.find(p => !p.has_portfolio);
+  if (fullPlan) {
+    BASE.full = Number(fullPlan.price_usd_monthly || 0);
+    _PLAN_ID.full = fullPlan.id;
+  }
+  if (screenerPlan) {
+    BASE.screener = Number(screenerPlan.price_usd_monthly || 0);
+    _PLAN_ID.screener = screenerPlan.id;
+  }
+
+  // Pick "featured" + "best" — quarterly + yearly if present, else fall
+  // back to indexes 1 + last.
+  const byMonths = months => periods.find(p => p.months === months);
+  const featuredId = (byMonths(3) || periods[Math.min(1, periods.length - 1)] || {}).id;
+  const bestId = (byMonths(12) || periods[periods.length - 1] || {}).id;
+
+  PLANS = periods.map(p => {
+    const copy = _PERIOD_COPY[p.months] || { name: p.label, title: p.label, desc: '' };
+    return {
+      id: p.id,
+      slug: p.slug,
+      months: p.months,
+      discount: Number(p.discount_pct || 0) / 100,
+      name: copy.name,
+      title: copy.title,
+      desc: copy.desc,
+      featured: p.id === featuredId,
+      best:     p.id === bestId,
+    };
+  });
+
+  // Best should win over featured if both happen to fall on the same row.
+  if (featuredId === bestId) PLANS = PLANS.map(p => ({ ...p, featured: false }));
+
+  // /api/auth/me — used by the CTA copy ("Current plan" vs "Choose").
+  if (localStorage.getItem('wm_token')) {
     try {
-      _me = await (await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('wm_token') } })).json();
+      const r = await fetch('/api/auth/me', {
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('wm_token') },
+      });
+      if (r.ok) _ME = await r.json();
     } catch {}
-    document.getElementById('free-cta').textContent = 'Continue with Free';
-    document.getElementById('free-cta').setAttribute('href', '/app');
   }
-  _renderModeToggle();
-  _render();
+  return true;
 }
 
-function _renderModeToggle(){
-  const wrap = document.getElementById('mode-toggle');
-  const full = _plans.find(p => p.has_portfolio);
-  const screener = _plans.find(p => !p.has_portfolio);
-  if (!full && !screener){ wrap.innerHTML = ''; return; }
-  let html = '';
-  if (full){
-    html += `<button class="toggle-btn ${_activeMode==='full'?'active':''}" onclick="setMode('full')">${_esc(full.name)} <span class="sub">$${full.price_usd_monthly}/mo</span></button>`;
-  }
-  if (screener){
-    html += `<button class="toggle-btn ${_activeMode==='screener'?'active':''}" onclick="setMode('screener')">${_esc(screener.name)} <span class="sub">$${screener.price_usd_monthly}/mo · −$10</span></button>`;
-  }
-  wrap.innerHTML = html;
-  // Default to whichever exists if user picked the wrong one
-  if (_activeMode === 'full' && !full) _activeMode = 'screener';
-  if (_activeMode === 'screener' && !screener) _activeMode = 'full';
+function _isCurrentPlan(planId) {
+  return !!(_ME && _ME.plan_id === planId);
 }
 
-function setMode(m){ _activeMode = m; _renderModeToggle(); _render(); }
-
-function _activePlan(){
-  if (_activeMode === 'screener') return _plans.find(p => !p.has_portfolio);
-  return _plans.find(p => p.has_portfolio);
-}
-
-function _isCurrentPlan(p){
-  if (!_me) return false;
-  return _me.plan_id === p.id;
-}
-
-function _ctaButton(plan, period){
-  if (_isCurrentPlan(plan)) return `<button class="plan-cta is-current" disabled>Current plan</button>`;
-  const url = `/checkout?plan_id=${plan.id}&period_id=${period.id}`;
-  if (!_me){
-    const next = encodeURIComponent(url);
-    return `<a class="plan-cta" href="/login?next=${next}">Choose ${_esc(period.label)}</a>`;
-  }
-  return `<a class="plan-cta" href="${url}">Choose ${_esc(period.label)}</a>`;
-}
-
-function _render(){
-  const plan = _activePlan();
+function render() {
+  const mode = document.body.dataset.mode || 'full';
+  const base = BASE[mode];
+  const planId = _PLAN_ID[mode];
   const grid = document.getElementById('plans-grid');
-  const perksUl = document.getElementById('perks-list');
-  const limitsUl = document.getElementById('limits-list');
-  if (!plan || !_periods.length){
-    grid.innerHTML = '<div class="plan-loading">No plans configured.</div>';
+  if (!base || !planId || !PLANS.length) {
+    grid.innerHTML =
+      `<div style="padding:60px;text-align:center;color:var(--text3);grid-column:1/-1">No active plans for this mode.</div>`;
     return;
   }
-  // Best-value badge: longest term among the periods we have.
-  const bestId = _periods.reduce((a, b) => (b.months > (a?.months || 0) ? b : a), null)?.id;
+  grid.innerHTML = PLANS.map(p => {
+    const fullPrice = base * p.months;
+    const discounted = fullPrice * (1 - p.discount);
+    const savings = fullPrice - discounted;
+    const effMonthly = discounted / p.months;
 
-  grid.innerHTML = _periods.map(p => {
-    const months = p.months;
-    const discount = Number(p.discount_pct || 0);
-    const baseMonthly = Number(plan.price_usd_monthly || 0);
-    const total = Math.round(baseMonthly * months * (100 - discount) / 100);
-    const effMonthly = Math.round(total / months);
-    const fullCost = baseMonthly * months;
-    const saved = Math.max(0, Math.round(fullCost - total));
-    const featuredCls = p.id === bestId ? ' featured' : '';
+    const saveBadge = p.discount > 0
+      ? `<span class="price-save">Save <span class="amount">${fmtMoney(savings)}</span> · −${Math.round(p.discount*100)}%</span>`
+      : '';
+
+    const origLine = p.discount > 0
+      ? `<div class="price-original">${fmtMoney(fullPrice)} without discount</div>`
+      : '';
+
+    const effLine = p.months > 1
+      ? `<div class="price-effective">${fmtMoney(effMonthly)}/mo effective rate</div>`
+      : '';
+
+    const cls = p.featured ? 'plan featured' : (p.best ? 'plan best' : 'plan');
+
+    const features = [
+      mode === 'full'
+        ? '<b>Screener + Portfolio</b> (up to 30 wallets)'
+        : '<b>Screener only</b> — no Portfolio',
+      '11 exchanges · live WebSocket feed',
+      'Unlimited Telegram spread alerts',
+      'Entry/Exit chart · live orderbooks',
+      mode === 'full' ? 'Fernet-encrypted credentials · read-only API' : 'Encrypted settings vault',
+    ];
+
+    const featList = features.map(f => `
+      <div class="plan-feat">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>${f}</span>
+      </div>
+    `).join('');
+
+    const isCurrent = _isCurrentPlan(planId);
+    const ctaUrl = (_ME)
+      ? `/checkout?plan_id=${planId}&period_id=${p.id}`
+      : `/login?next=${encodeURIComponent('/checkout?plan_id=' + planId + '&period_id=' + p.id)}`;
+    const ctaLabel = isCurrent ? 'Current plan' : ('Choose ' + p.name);
+    const ctaTag = isCurrent
+      ? `<span class="plan-cta" style="background:var(--surface3);border-color:var(--border);color:var(--text2);cursor:default;pointer-events:none">${ctaLabel}</span>`
+      : `<a href="${ctaUrl}" class="plan-cta">
+            ${ctaLabel}
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+         </a>`;
+
     return `
-      <article class="plan${featuredCls}" data-period-id="${p.id}">
+      <div class="${cls}">
         <div class="plan-head">
-          <h3 class="plan-name">${_esc(p.label)}</h3>
-          <span class="plan-tag">${months}&nbsp;mo</span>
+          <span class="plan-name">${p.name}</span>
+          <span class="plan-term">${p.months}&nbsp;mo</span>
         </div>
-        <div class="plan-price-row">
-          <span class="plan-currency">$</span>
-          <span class="plan-num">${total.toLocaleString('en-US')}</span>
-          <span class="plan-period">/ ${months === 1 ? 'month' : months + 'mo'}</span>
+        <div>
+          <div class="plan-title">${p.title}</div>
+          <div class="plan-desc">${p.desc}</div>
         </div>
-        ${months > 1 ? `<div class="plan-effective">Effective <b>${_money(effMonthly)}/mo</b></div>` : ''}
-        ${discount > 0 ? `<div class="plan-saved">Save ${_money(saved)} · −${discount}%</div>` : ''}
-        ${months > 1 && discount > 0 ? `<div class="plan-original">${_money(fullCost)} without discount</div>` : ''}
-        ${_ctaButton(plan, p)}
-      </article>`;
+        <div>
+          <div class="price-row">
+            <span class="price-currency">$</span>
+            <span class="price-num">${Math.round(discounted).toLocaleString('en-US')}</span>
+            <span class="price-period">/ ${p.months === 1 ? 'month' : p.months + 'mo'}</span>
+          </div>
+          ${effLine}
+          ${origLine}
+          ${saveBadge}
+        </div>
+        <div class="plan-features">${featList}</div>
+        ${ctaTag}
+      </div>
+    `;
   }).join('');
 
-  const features = plan.features || { perks: [], limits: [] };
-  perksUl.innerHTML = (features.perks || []).map(t =>
-    `<li><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="4 12 10 18 20 6"/></svg>${_esc(t)}</li>`
-  ).join('') || '<li class="lim">—</li>';
-  limitsUl.innerHTML = (features.limits || []).map(t =>
-    `<li class="lim"><svg class="ico-x" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>${_esc(t)}</li>`
-  ).join('') || '<li class="lim" style="color:var(--text3)">No restrictions on this plan.</li>';
+  // Toggle note visibility
+  const note = document.getElementById('col-note-sc');
+  if (note) note.style.display = mode === 'full' ? '' : 'none';
 }
 
-_load();
+function setMode(mode) {
+  document.body.dataset.mode = mode;
+  document.getElementById('btn-full').classList.toggle('active', mode === 'full');
+  document.getElementById('btn-sc').classList.toggle('active', mode === 'screener');
+  try { localStorage.setItem('avalant-pricing-mode', mode); } catch {}
+  render();
+}
+
+(async function init() {
+  const ok = await _loadFromApi();
+  if (!ok) return;
+  let saved = 'full';
+  try { saved = localStorage.getItem('avalant-pricing-mode') || 'full'; } catch {}
+  // If the saved mode points at a missing plan (e.g. admin disabled
+  // Screener-only), fall back to whichever exists.
+  if (saved === 'screener' && !_PLAN_ID.screener) saved = 'full';
+  if (saved === 'full' && !_PLAN_ID.full) saved = 'screener';
+  setMode(saved);
+})();
 </script>
 </body>
 </html>
