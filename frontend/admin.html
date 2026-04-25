@@ -1075,6 +1075,63 @@
 </div>
 
 <style>
+/* ── Buttons (used across Monetisation tabs + editors) ───────────────────── */
+.btn-primary, .btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 34px; padding: 0 14px;
+  border-radius: 8px; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: -.01em;
+  transition: background .15s, border-color .15s, color .15s, box-shadow .15s, transform .05s;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--green); color: #09090B; border: 1px solid var(--green);
+}
+.btn-primary:hover { background: #00E89A; border-color: #00E89A; box-shadow: 0 0 14px rgba(26,255,171,.30); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-primary:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+
+.btn-secondary {
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--surface3); border-color: var(--border2); }
+.btn-secondary:active { transform: translateY(1px); }
+.btn-secondary:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ── Inputs / textareas / selects in admin editors ───────────────────────── */
+.inp {
+  width: 100%;
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  padding: 9px 11px; border-radius: 7px;
+  font: inherit; font-family: 'Inter', system-ui, sans-serif; font-size: 13px;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.inp::placeholder { color: var(--text3); }
+.inp:hover { border-color: var(--border2); }
+.inp:focus { outline: 0; border-color: var(--green); box-shadow: 0 0 0 3px rgba(26,255,171,.12); }
+.inp:disabled { opacity: .6; cursor: not-allowed; }
+textarea.inp { resize: vertical; min-height: 70px; line-height: 1.45; }
+select.inp { appearance: none; padding-right: 32px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%239B9FAB' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+input[type="checkbox"] { accent-color: var(--green); width: 14px; height: 14px; cursor: pointer; }
+
+/* ── Monetisation list rows ──────────────────────────────────────────────── */
+.mn-row {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; transition: border-color .15s, background .15s;
+}
+.mn-row:hover { border-color: var(--border2); background: var(--surface2); }
+.mn-row .mn-actions { display: flex; flex-direction: column; gap: 6px; }
+.mn-row .mn-actions .btn-secondary { height: 30px; padding: 0 12px; font-size: 12px; }
+
+/* ── Modal action row ─────────────────────────────────────────────────────── */
+.modal-actions {
+  display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;
+  padding-top: 14px; border-top: 1px solid var(--border);
+}
+
 .toggle { position:relative; display:inline-block; width:44px; height:24px; }
 .toggle input { opacity:0; width:0; height:0; }
 .toggle-slider {
@@ -1762,7 +1819,7 @@ async function loadPlansAdmin(){
     const j = await r.json();
     _adminPlans = j.plans || [];
     list.innerHTML = _adminPlans.map(p => `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+      <div class="mn-row">
         <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start">
           <div>
             <div style="font-size:16px;font-weight:600">${_esc(p.name)} <span style="color:var(--text3);font-size:12px;font-weight:400">— /${_esc(p.slug)}${p.is_free?' · FREE':''}${p.is_active?'':' · INACTIVE'}</span></div>
@@ -1776,7 +1833,7 @@ async function loadPlansAdmin(){
               ${_row('Trade delay', p.trade_delay_ms + ' ms', true)}
             </div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="mn-actions">
             <button class="btn-secondary" onclick='openPlanEditor(${p.id})'>Edit</button>
             ${p.is_free ? '' : `<button class="btn-secondary" style="color:var(--red)" onclick="deletePlan(${p.id})">Disable</button>`}
           </div>
@@ -1829,11 +1886,10 @@ function openPlanEditor(planId){
     <textarea id="ed-perks" class="inp" rows="4">${_esc((features.perks||[]).join('\n'))}</textarea>
     <label style="display:block;font-size:12px;color:var(--text3);margin:10px 0 4px">Limits (one per line)</label>
     <textarea id="ed-limits" class="inp" rows="3">${_esc((features.limits||[]).join('\n'))}</textarea>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <div class="modal-actions">
       <button class="btn-secondary" onclick="_closeModal()">Cancel</button>
       <button class="btn-primary" onclick="savePlan(${p?p.id:0})">${isNew?'Create':'Save'}</button>
     </div>
-    <style>.inp{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:7px;font:inherit;font-family:'Inter';font-size:13px}.inp:focus{outline:0;border-color:var(--border2)}</style>
   `);
 }
 
@@ -1905,7 +1961,7 @@ async function loadPromosAdmin(){
       const expired = p.expires_at && new Date(p.expires_at) <= new Date();
       const usesLeft = p.max_uses == null ? '∞' : Math.max(0, p.max_uses - p.used_count);
       return `
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+        <div class="mn-row">
           <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start">
             <div>
               <div style="font-size:18px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em">${_esc(p.code)} <span style="color:var(--green);font-size:13px">−${p.discount_pct.toFixed(2)}%</span> ${p.is_active?'':'<span style="color:var(--text3);font-size:12px">· INACTIVE</span>'} ${expired?'<span style="color:var(--red);font-size:12px">· EXPIRED</span>':''}</div>
@@ -1916,7 +1972,7 @@ async function loadPromosAdmin(){
                 <div>Expires: <span>${p.expires_at? new Date(p.expires_at).toLocaleDateString() : 'never'}</span></div>
               </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:6px">
+            <div class="mn-actions">
               <button class="btn-secondary" onclick="openPromoEditor(${p.id})">Edit</button>
               <button class="btn-secondary" style="color:var(--red)" onclick="deletePromo(${p.id})">Delete</button>
             </div>
@@ -1947,11 +2003,10 @@ function openPromoEditor(promoId){
     </div>
     <label style="display:block;font-size:12px;color:var(--text3);margin:14px 0 4px">Applies to plans (none checked = all paid plans)</label>
     <div id="pe-plans" style="border:1px solid var(--border);border-radius:7px;padding:8px 10px;max-height:160px;overflow:auto">${planOpts}</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <div class="modal-actions">
       <button class="btn-secondary" onclick="_closeModal()">Cancel</button>
       <button class="btn-primary" onclick="savePromo(${p?p.id:0})">${isNew?'Create':'Save'}</button>
     </div>
-    <style>.inp{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:7px;font:inherit;font-family:'Inter';font-size:13px}.inp:focus{outline:0;border-color:var(--border2)}</style>
   `);
 }
 
@@ -2007,7 +2062,7 @@ async function loadPopupsAdmin(){
       return;
     }
     list.innerHTML = _adminPopups.map(p => `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+      <div class="mn-row">
         <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start">
           <div style="flex:1;min-width:0">
             <div style="font-size:16px;font-weight:600">${_esc(p.title)} ${p.is_active?'':'<span style="color:var(--text3);font-size:12px">· INACTIVE</span>'}</div>
@@ -2018,7 +2073,7 @@ async function loadPopupsAdmin(){
               CTA: <code style="color:var(--text)">${_esc(p.button_text)} → ${_esc(p.button_url)}</code>
             </div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="mn-actions">
             <button class="btn-secondary" onclick="openPopupEditor(${p.id})">Edit</button>
             <button class="btn-secondary" style="color:var(--red)" onclick="deletePopup(${p.id})">Delete</button>
           </div>
@@ -2073,11 +2128,10 @@ function openPopupEditor(popupId){
       </div>
     </div>
     <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:14px"><input id="up-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <div class="modal-actions">
       <button class="btn-secondary" onclick="_closeModal()">Cancel</button>
       <button class="btn-primary" onclick="savePopup(${p?p.id:0})">${isNew?'Create':'Save'}</button>
     </div>
-    <style>.inp{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:7px;font:inherit;font-family:'Inter';font-size:13px}.inp:focus{outline:0;border-color:var(--border2)}</style>
   `);
 }
 
@@ -2163,7 +2217,7 @@ async function loadPeriodsAdmin(){
       return;
     }
     list.innerHTML = _adminPeriods.map(p => `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+      <div class="mn-row">
         <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start">
           <div>
             <div style="font-size:16px;font-weight:600">${_esc(p.label)} <span style="color:var(--text3);font-size:12px;font-weight:400">— /${_esc(p.slug)}${p.is_active?'':' · INACTIVE'}</span></div>
@@ -2173,7 +2227,7 @@ async function loadPeriodsAdmin(){
               <div>Sort order: <b style="color:var(--text)">${p.sort_order}</b></div>
             </div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="mn-actions">
             <button class="btn-secondary" onclick='openPeriodEditor(${p.id})'>Edit</button>
             <button class="btn-secondary" style="color:var(--red)" onclick="deletePeriod(${p.id})">Disable</button>
           </div>
@@ -2199,11 +2253,10 @@ function openPeriodEditor(periodId){
       <div><label style="font-size:12px;color:var(--text3)">Sort order</label><input id="bp-sort" class="inp" type="number" value="${p?.sort_order??0}"></div>
       <div style="display:flex;align-items:flex-end;grid-column:span 2"><label style="display:flex;align-items:center;gap:6px"><input id="bp-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label></div>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <div class="modal-actions">
       <button class="btn-secondary" onclick="_closeModal()">Cancel</button>
       <button class="btn-primary" onclick="savePeriod(${p?p.id:0})">${isNew?'Create':'Save'}</button>
     </div>
-    <style>.inp{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:7px;font:inherit;font-family:'Inter';font-size:13px}.inp:focus{outline:0;border-color:var(--border2)}</style>
   `);
 }
 
