@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 
@@ -951,11 +952,12 @@ class KuCoinSpotWS(WSAdapter):
         # connectId must be unique per session.
         return f"{endpoint}?token={token}&connectId=avalant-{self._connect_id}"
 
-    def heartbeat_frame(self) -> str | None:
-        import time as _t
-        # KuCoin requires a JSON ping; library-level WebSocket pings won't
-        # do because the server expects {"id":..., "type":"ping"}.
-        return None  # we send pongs reactively in parse_message
+    def pong_for(self, msg):
+        # KuCoin sends {"id":"<srvid>", "type":"ping"}; respond with
+        # {"id":"<same>", "type":"pong"}.
+        if isinstance(msg, dict) and msg.get("type") == "ping":
+            return json.dumps({"id": msg.get("id") or "0", "type": "pong"})
+        return None
 
     def build_subscribe(self, symbols):
         # 100-topic frame is fine, but we still split into chunks of 50 to
@@ -974,23 +976,8 @@ class KuCoinSpotWS(WSAdapter):
         return frames
 
     def parse_message(self, msg):
-        # KuCoin sends pings — answer them via the WS stream so the
-        # session stays alive. We get the ws handle in the run loop, not
-        # here, so we squirrel the ping into the per-adapter pong queue
-        # via the heartbeat path: simplest workaround is to maintain the
-        # session via the library-level keepalive, but KuCoin will close
-        # if we don't pong. So intercept ping/pong here.
+        # ping/welcome/ack handled by base via pong_for().
         msg_type = msg.get("type")
-        if msg_type == "ping":
-            # respond inline
-            try:
-                if self._ws:
-                    import asyncio as _a
-                    pong = json.dumps({"id": msg.get("id") or "0", "type": "pong"})
-                    _a.ensure_future(self._ws.send(pong))
-            except Exception:
-                pass
-            return None
         if msg_type != "message":
             return None
         topic = msg.get("topic", "")
@@ -1018,9 +1005,14 @@ class HtxSpotWS(WSAdapter):
     respond with ``{"pong":<ts>}`` or get disconnected.
     """
     name = "htx_spot"
-    url = "wss://api.huobi.pro/ws"
+    url = "wss://api-aws.huobi.pro/ws"  # AWS endpoint is friendlier from EU IPs
     decompress_gzip = True
     subscribe_delay = 0.04  # 25 subs/sec is well under HTX's per-conn cap
+    # HTX implements its own JSON ping/pong; the WebSocket-protocol-level
+    # ping the websockets lib sends gets no response and HTX kills the
+    # connection with 1003. Disable lib pings entirely.
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
 
     def build_subscribe(self, symbols):
         return [
@@ -1028,19 +1020,13 @@ class HtxSpotWS(WSAdapter):
             for i, s in enumerate(symbols)
         ]
 
-    def parse_message(self, msg):
-        # Reactive ping/pong — HTX ping carries a timestamp; the response
-        # must be {"pong": <same ts>}. We dispatch on the ws handle from
-        # within the parse callback (same trick as KuCoin above).
-        ping_ts = msg.get("ping")
+    def pong_for(self, msg):
+        ping_ts = msg.get("ping") if isinstance(msg, dict) else None
         if ping_ts is not None:
-            try:
-                if self._ws:
-                    import asyncio as _a
-                    _a.ensure_future(self._ws.send(json.dumps({"pong": ping_ts})))
-            except Exception:
-                pass
-            return None
+            return json.dumps({"pong": ping_ts})
+        return None
+
+    def parse_message(self, msg):
         ch = msg.get("ch", "")
         if not ch.startswith("market.") or not ch.endswith(".depth.step0"):
             return None

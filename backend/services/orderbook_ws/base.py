@@ -64,6 +64,14 @@ class WSAdapter:
         via a REST call before each connect."""
         return self.url
 
+    def pong_for(self, msg) -> str | None:
+        """Synchronous app-level ping responder. Return the JSON/text to
+        send back when `msg` is the venue's ping frame (HTX, KuCoin),
+        else None to let the message flow into parse_message().
+        The base run loop awaits the send before reading the next frame
+        so we never race with the receive coroutine."""
+        return None
+
     def on_reconnect(self) -> None:
         """Hook for adapters that maintain local book state — called when a
         fresh WS connection is opened, so the snapshot-+-delta stream starts
@@ -213,6 +221,19 @@ class WSAdapter:
                         try:
                             msg = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
                         except (ValueError, TypeError):
+                            continue
+                        # App-level ping (HTX `{"ping":<ts>}`, KuCoin
+                        # `{"type":"ping","id":...}`): respond inline so
+                        # the venue doesn't time us out on its keepalive.
+                        try:
+                            pong = self.pong_for(msg)
+                        except Exception:
+                            pong = None
+                        if pong:
+                            try:
+                                await ws.send(pong)
+                            except Exception:
+                                pass
                             continue
                         try:
                             parsed = self.parse_message(msg)
