@@ -231,20 +231,44 @@
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
   }
 
-  async function _dismiss(id){
-    if (!_isAuthed()) return;
+  // Anonymous-dismiss store (single key — never grows past ~hundreds of ids).
+  const _ANON_KEY = 'avalant_popup_anon_dismissed';
+  function _loadAnonDismissed(){
     try {
-      await Auth.apiFetch(`/popups/${id}/dismiss`, { method: 'POST' });
-    } catch {}
+      const raw = localStorage.getItem(_ANON_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? new Set(arr.map(Number)) : new Set();
+    } catch { return new Set(); }
+  }
+  function _saveAnonDismissed(set){
+    try { localStorage.setItem(_ANON_KEY, JSON.stringify([...set])); } catch {}
+  }
+
+  async function _dismiss(id){
+    if (_isAuthed()){
+      try { await Auth.apiFetch(`/popups/${id}/dismiss`, { method: 'POST' }); } catch {}
+    } else {
+      const s = _loadAnonDismissed();
+      s.add(Number(id));
+      _saveAnonDismissed(s);
+    }
   }
 
   async function load(){
-    if (!_isAuthed()) return;
     try {
-      const r = await Auth.apiFetch('/popups/pending');
+      // /popups/pending is now auth-optional — anonymous visitors get
+      // 'everyone' + 'anonymous' popups, logged-in get auth/user-scoped.
+      const opts = _isAuthed()
+        ? { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('wm_token') } }
+        : {};
+      const r = await fetch('/api/popups/pending', opts);
       if (!r.ok) return;
       const j = await r.json();
-      const popups = j.popups || [];
+      let popups = j.popups || [];
+      if (!_isAuthed() && popups.length){
+        const dismissed = _loadAnonDismissed();
+        popups = popups.filter(p => !dismissed.has(Number(p.id)));
+      }
       if (!popups.length) return;
       _queue = popups.slice(1);
       show(popups[0]);

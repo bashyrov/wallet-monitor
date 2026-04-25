@@ -143,10 +143,31 @@ def promo_validate(
 # ── Popups ────────────────────────────────────────────────────────────────────
 @router.get("/popups/pending")
 def popups_pending(
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    return {"popups": popup_service.get_pending_for_user(db, current_user)}
+    """Public — returns active popups for the visitor.
+
+    Logged-in: 'everyone' + 'authenticated' + matching 'user'. Server filters
+    out anything the user already dismissed via PopupDismissal.
+
+    Anonymous: 'everyone' + 'anonymous'. Server returns the full eligible set
+    and the JS loader filters with localStorage — no DB row to track dismissal
+    for an anonymous visitor.
+    """
+    auth = request.headers.get("Authorization") or ""
+    if auth.startswith("Bearer "):
+        token = auth[7:]
+        try:
+            from backend.services.auth_service import decode_payload, get_user_by_id
+            payload = decode_payload(token)
+            if payload and not payload.get("scope"):
+                user = get_user_by_id(db, int(payload.get("sub", 0)))
+                if user and not getattr(user, "is_blocked", False):
+                    return {"popups": popup_service.get_pending_for_user(db, user)}
+        except Exception:
+            pass
+    return {"popups": popup_service.get_pending_for_anonymous(db)}
 
 
 @router.post("/popups/{popup_id}/dismiss")

@@ -1,16 +1,20 @@
 """Promotional popups — admin-managed, per-user dismiss state.
 
 Targeting:
-  · target_type='all'    — every authenticated user is eligible.
-  · target_type='user'   — only the named target_user_id sees it.
+  · target_type='everyone'      — both authenticated AND anonymous visitors
+  · target_type='authenticated' — every logged-in user (legacy 'all' maps here)
+  · target_type='anonymous'     — only logged-out visitors
+  · target_type='user'          — only the named target_user_id sees it
 
 Frequency:
   · 'once'              — once dismissed, never re-shows.
   · 'every_n_min'       — re-eligible after `frequency_minutes` since the
                           last dismiss.
 
-Anonymous users do NOT receive popups (the anon screener gate has its own
-logic). Admins still see popups so they can preview their own creations.
+Anonymous users have no DB row to track dismissals — the loader caches
+dismissed ids in localStorage instead. So the server returns every
+eligible 'anonymous'/'everyone' popup; the client filters out ones the
+visitor already closed.
 """
 from __future__ import annotations
 
@@ -47,13 +51,14 @@ def _is_dismissed(
 
 
 def get_pending_for_user(db: Session, user: User) -> list[dict[str, Any]]:
-    """Return active popups eligible to show to this user right now."""
+    """Return active popups eligible to show to this logged-in user right now.
+    Includes legacy 'all' rows in case the migration hasn't run yet."""
     now = datetime.utcnow()
     q = (
         db.query(Popup)
         .filter(Popup.is_active.is_(True))
         .filter(
-            (Popup.target_type == "all")
+            Popup.target_type.in_(("everyone", "authenticated", "all"))
             | ((Popup.target_type == "user") & (Popup.target_user_id == user.id))
         )
         .order_by(Popup.created_at.asc())
@@ -64,6 +69,20 @@ def get_pending_for_user(db: Session, user: User) -> list[dict[str, Any]]:
             continue
         out.append(serialize_popup(popup))
     return out
+
+
+def get_pending_for_anonymous(db: Session) -> list[dict[str, Any]]:
+    """Return active popups eligible to show to a logged-out visitor.
+    Caller (the JS loader) is responsible for filtering out ones the visitor
+    has already dismissed via localStorage — the server has no dismiss row
+    to consult since there's no user_id."""
+    q = (
+        db.query(Popup)
+        .filter(Popup.is_active.is_(True))
+        .filter(Popup.target_type.in_(("everyone", "anonymous")))
+        .order_by(Popup.created_at.asc())
+    )
+    return [serialize_popup(p) for p in q.all()]
 
 
 def dismiss(db: Session, popup_id: int, user_id: int) -> bool:
@@ -108,11 +127,17 @@ def create_popup(db: Session, fields: dict[str, Any]) -> Popup:
     body = (fields.get("body") or "").strip()
     if not title or not body:
         raise ValueError("title and body are required")
-    target_type = fields.get("target_type") or "all"
-    if target_type not in ("all", "user"):
-        raise ValueError("target_type must be 'all' or 'user'")
+    target_type = fields.get("target_type") or "authenticated"
+    if target_type == "all":
+        target_type = "authenticated"  # legacy alias
+    if target_type not in ("everyone", "authenticated", "anonymous", "user"):
+        raise ValueError(
+            "target_type must be one of 'everyone' | 'authenticated' | 'anonymous' | 'user'"
+        )
     if target_type == "user" and not fields.get("target_user_id"):
         raise ValueError("target_user_id is required when target_type='user'")
+    if target_type != "user":
+        fields["target_user_id"] = None  # clear stale id when targeting broadly
     frequency_type = fields.get("frequency_type") or "once"
     if frequency_type not in ("once", "every_n_min"):
         raise ValueError("frequency_type must be 'once' or 'every_n_min'")
@@ -137,6 +162,17 @@ def create_popup(db: Session, fields: dict[str, Any]) -> Popup:
 
 
 def update_popup(db: Session, popup: Popup, fields: dict[str, Any]) -> Popup:
+    if fields.get("target_type") == "all":
+        fields["target_type"] = "authenticated"  # legacy alias
+    new_tt = fields.get("target_type", popup.target_type)
+    if new_tt not in (None, "everyone", "authenticated", "anonymous", "user"):
+        raise ValueError(
+            "target_type must be one of 'everyone' | 'authenticated' | 'anonymous' | 'user'"
+        )
+    if new_tt and new_tt != "user":
+        # Audience widened — drop the stale user pin so the row can't accidentally
+        # behave like a user-targeted popup later.
+        fields["target_user_id"] = None
     for k, v in fields.items():
         if k in _EDITABLE_FIELDS:
             setattr(popup, k, v)

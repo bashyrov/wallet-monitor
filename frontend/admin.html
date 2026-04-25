@@ -2068,7 +2068,13 @@ async function loadPopupsAdmin(){
             <div style="font-size:16px;font-weight:600">${_esc(p.title)} ${p.is_active?'':'<span style="color:var(--text3);font-size:12px">· INACTIVE</span>'}</div>
             <div style="color:var(--text2);font-size:13px;margin-top:4px;white-space:pre-wrap">${_esc(p.body)}</div>
             <div style="font-size:12px;color:var(--text3);margin-top:8px">
-              Target: <b style="color:var(--text)">${p.target_type === 'all' ? 'all users' : 'user #' + p.target_user_id}</b> ·
+              Target: <b style="color:var(--text)">${({
+                everyone: 'everyone (auth + anon)',
+                authenticated: 'all logged-in',
+                all: 'all logged-in',
+                anonymous: 'logged-out visitors',
+                user: 'user #' + p.target_user_id,
+              })[p.target_type] || p.target_type}</b> ·
               Frequency: <b style="color:var(--text)">${p.frequency_type === 'once' ? 'once' : 'every ' + p.frequency_minutes + ' min'}</b> ·
               CTA: <code style="color:var(--text)">${_esc(p.button_text)} → ${_esc(p.button_url)}</code>
             </div>
@@ -2100,10 +2106,12 @@ function openPopupEditor(popupId){
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
       <div>
-        <label style="font-size:12px;color:var(--text3)">Target</label>
+        <label style="font-size:12px;color:var(--text3)">Target audience</label>
         <select id="up-target" class="inp" onchange="document.getElementById('up-userwrap').style.display=this.value==='user'?'':'none'">
-          <option value="all" ${p?.target_type!=='user'?'selected':''}>Everyone</option>
-          <option value="user" ${p?.target_type==='user'?'selected':''}>Specific user</option>
+          <option value="everyone"      ${p?.target_type==='everyone'?'selected':''}>Everyone (auth + anon)</option>
+          <option value="authenticated" ${(!p?.target_type || p?.target_type==='authenticated' || p?.target_type==='all')?'selected':''}>All logged-in users</option>
+          <option value="anonymous"     ${p?.target_type==='anonymous'?'selected':''}>Logged-out visitors</option>
+          <option value="user"          ${p?.target_type==='user'?'selected':''}>Specific user</option>
         </select>
       </div>
       <div id="up-userwrap" style="display:${p?.target_type==='user'?'':'none'}">
