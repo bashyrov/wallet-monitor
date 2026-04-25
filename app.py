@@ -256,15 +256,36 @@ def _maintenance_on() -> bool:
         return False
 
 
+# Paths blocked by per-section maintenance flags. /api/admin/* and the
+# auth/health endpoints are intentionally NEVER in either set so admins can
+# always toggle the flags back off and uptime monitors keep working.
 _SCREENER_PATHS = ("/screener", "/arb", "/watchlist")
 _SCREENER_API_PREFIXES = ("/api/screener/",)
-_PORTFOLIO_PATHS = ("/app", "/archive", "/profile")
-_PORTFOLIO_API_PREFIXES = ("/api/wallets", "/api/portfolio", "/api/alerts", "/api/trade")
+# Portfolio scope covers everything that touches a user's wallet/account
+# data — but DOES NOT include /pricing or /checkout so a user with a near-
+# expired plan can still renew while we're working on the portfolio side.
+_PORTFOLIO_PATHS = ("/app", "/archive", "/profile", "/avashare")
+_PORTFOLIO_API_PREFIXES = (
+    "/api/wallets", "/api/portfolio", "/api/alerts", "/api/trade",
+    "/api/popups",  # popups are tied to the logged-in experience
+)
 
 
-def _section_maintenance_html(section: str, title: str, body: str) -> str:
-    # Standalone inline page — no dependency on static assets so it works even
-    # during maintenance. Matches avalant visual language.
+def _section_maintenance_html(section: str, title: str, body: str,
+                              ends_at: str | None = None, tz: str | None = None,
+                              scope: str = "screener") -> str:
+    """Standalone inline page — no static-asset deps, so it renders even
+    during full-site maintenance. ETA + countdown render only when ends_at
+    is a future ISO datetime; client polls /api/maintenance/status every
+    15 s and reloads when scope flips back on."""
+    eta_block = ""
+    if ends_at:
+        eta_block = f"""
+  <div class="eta">
+    <div class="eta-lbl">Expected to end</div>
+    <div class="eta-time" id="eta-abs">—</div>
+    <div class="eta-count" id="eta-cd">—</div>
+  </div>"""
     return f"""<!DOCTYPE html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>{title} · avalant_</title>
@@ -273,11 +294,15 @@ def _section_maintenance_html(section: str, title: str, body: str) -> str:
 <style>
 html,body{{margin:0;padding:0;background:#0E0E11;color:#E6E8E3;font-family:Inter,system-ui,sans-serif;height:100%;-webkit-font-smoothing:antialiased;}}
 .wrap{{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}}
-.card{{max-width:440px;width:100%;background:#131217;border:1px solid #22222A;border-radius:14px;padding:32px 28px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.45);}}
+.card{{max-width:460px;width:100%;background:#131217;border:1px solid #22222A;border-radius:14px;padding:32px 28px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,0.45);}}
 .icon{{width:52px;height:52px;margin:0 auto 18px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:rgba(229,192,123,0.12);border:1px solid rgba(229,192,123,0.4);color:#E5C07B;}}
 .section{{display:inline-block;font-size:10px;font-weight:700;letter-spacing:0.14em;padding:3px 9px;border-radius:5px;background:rgba(26,255,171,0.08);color:#1AFFAB;border:1px solid rgba(26,255,171,0.3);text-transform:uppercase;margin-bottom:10px;}}
 h1{{margin:0 0 10px;font-size:21px;letter-spacing:-0.01em;font-weight:700;}}
-p{{margin:0 0 22px;color:#9B9FAB;font-size:13.5px;line-height:1.55;}}
+p{{margin:0 0 16px;color:#9B9FAB;font-size:13.5px;line-height:1.55;}}
+.eta{{margin:18px 0 22px;padding:14px;background:rgba(26,255,171,0.04);border:1px solid rgba(26,255,171,0.18);border-radius:10px;}}
+.eta-lbl{{font-size:10px;font-weight:700;letter-spacing:0.12em;color:#1AFFAB;text-transform:uppercase;margin-bottom:6px;}}
+.eta-time{{font-family:'JetBrains Mono',monospace;font-size:15px;color:#E6E8E3;font-weight:600;letter-spacing:-0.01em;}}
+.eta-count{{font-family:'JetBrains Mono',monospace;font-size:12px;color:#9B9FAB;margin-top:6px;}}
 .cta{{display:inline-block;padding:10px 22px;border-radius:9px;background:#1AFFAB;color:#0a0a0f;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:-0.005em;transition:transform .15s,box-shadow .15s;}}
 .cta:hover{{transform:translateY(-1px);box-shadow:0 6px 18px rgba(26,255,171,0.25);}}
 .brand{{margin-top:26px;font-weight:800;font-size:14px;letter-spacing:-0.02em;color:#676B7E;}}
@@ -288,10 +313,59 @@ p{{margin:0 0 22px;color:#9B9FAB;font-size:13.5px;line-height:1.55;}}
   <div class=icon><svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
   <div class=section>{section}</div>
   <h1>{title}</h1>
-  <p>{body}</p>
+  <p>{body}</p>{eta_block}
   <a class=cta href="/">Back to home</a>
   <div class=brand>avalant<span>_</span></div>
 </div></div>
+<script>
+(function(){{
+  var endsAt = {f'"{ends_at}"' if ends_at else 'null'};
+  var tzName = {f'"{tz or "Europe/Warsaw"}"'};
+  var scope  = "{scope}";
+
+  function fmtAbs(iso){{
+    try{{
+      var d = new Date(iso);
+      // Format in target TZ. Falls back gracefully if browser doesn't know
+      // the IANA name (very old builds), in which case it just shows local.
+      var opts = {{ timeZone: tzName, hour: '2-digit', minute: '2-digit',
+                    day: '2-digit', month: 'short', hour12: false }};
+      return d.toLocaleString('en-GB', opts) + " (" + tzName + ")";
+    }}catch(e){{ return new Date(iso).toLocaleString(); }}
+  }}
+  function fmtCd(iso){{
+    var diff = (new Date(iso).getTime() - Date.now()) / 1000;
+    if (diff <= 0) return "Wrapping up…";
+    var h = Math.floor(diff / 3600);
+    var m = Math.floor((diff % 3600) / 60);
+    var s = Math.floor(diff % 60);
+    return (h ? h + "h " : "") + (m < 10 ? "0" + m : m) + "m " + (s < 10 ? "0" + s : s) + "s remaining";
+  }}
+  function tick(){{
+    if (!endsAt) return;
+    var abs = document.getElementById('eta-abs');
+    var cd  = document.getElementById('eta-cd');
+    if (abs) abs.textContent = fmtAbs(endsAt);
+    if (cd)  cd.textContent  = fmtCd(endsAt);
+  }}
+  tick();
+  if (endsAt) setInterval(tick, 1000);
+
+  async function poll(){{
+    try{{
+      var r = await fetch('/api/maintenance/status', {{cache:'no-store'}});
+      if (!r.ok) return;
+      var s = await r.json();
+      var stillBlocked =
+        (scope === 'site'      && s.maintenance) ||
+        (scope === 'screener'  && (s.maintenance || s.screener_disabled)) ||
+        (scope === 'portfolio' && (s.maintenance || s.portfolio_disabled));
+      if (!stillBlocked) location.reload();
+    }}catch(_){{}}
+  }}
+  setInterval(poll, 15000);
+}})();
+</script>
 </body></html>"""
 
 
@@ -312,19 +386,29 @@ async def maintenance_gate(request: Request, call_next) -> Response:
     path = request.url.path
 
     if _maintenance_on():
-        # Allow monitor hits + static assets needed by the maintenance page
+        # Allow monitor hits + the new public status endpoint (so the
+        # maintenance page can poll-and-reload) + admin API + static assets
+        # needed by the rendered HTML.
         allow = path in ("/maintenance", "/maintenance.html") or \
+                path == "/api/maintenance/status" or \
                 path.startswith(_MAINT_BYPASS_PREFIXES) or \
                 path.startswith("/api/admin/")
         if not allow:
-            return _FR(
-                "frontend/maintenance.html",
+            try:
+                from backend.services import admin_settings
+                ends_at = admin_settings.get_maintenance_ends_at()
+                tz = admin_settings.get_maintenance_tz()
+            except Exception:
+                ends_at, tz = None, "Europe/Warsaw"
+            return HTMLResponse(
+                _section_maintenance_html(
+                    "Full-site maintenance",
+                    "We're working on the site",
+                    "All sections are paused while we ship updates. The page will reload itself when we're back.",
+                    ends_at=ends_at, tz=tz, scope="site",
+                ),
                 status_code=503,
-                media_type="text/html",
-                headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Retry-After": "600",
-                },
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Retry-After": "300"},
             )
 
     # Per-section soft maintenance — /api/admin/* always stays reachable so
@@ -332,6 +416,7 @@ async def maintenance_gate(request: Request, call_next) -> Response:
     if not path.startswith("/api/admin/"):
         try:
             from backend.services import admin_settings
+            tz = admin_settings.get_maintenance_tz()
             if admin_settings.is_screener_disabled() and _is_screener_path(path):
                 if path.startswith("/api/"):
                     return JSONResponse({"detail": "Screener temporarily disabled"}, status_code=503)
@@ -340,9 +425,11 @@ async def maintenance_gate(request: Request, call_next) -> Response:
                         "Screener",
                         "Screener temporarily unavailable",
                         "We're doing scheduled maintenance on the screener and arbitrage pages. Funding rates and pair pages will be back shortly.",
+                        ends_at=admin_settings.get_screener_disabled_ends_at(),
+                        tz=tz, scope="screener",
                     ),
                     status_code=503,
-                    headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Retry-After": "600"},
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Retry-After": "300"},
                 )
             if admin_settings.is_portfolio_disabled() and _is_portfolio_path(path):
                 if path.startswith("/api/"):
@@ -352,9 +439,11 @@ async def maintenance_gate(request: Request, call_next) -> Response:
                         "Portfolio",
                         "Portfolio temporarily unavailable",
                         "Your portfolio, balance fetches, and alerts are paused for maintenance. The screener stays available.",
+                        ends_at=admin_settings.get_portfolio_disabled_ends_at(),
+                        tz=tz, scope="portfolio",
                     ),
                     status_code=503,
-                    headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Retry-After": "600"},
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Retry-After": "300"},
                 )
         except Exception:
             pass

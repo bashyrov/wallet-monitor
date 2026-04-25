@@ -31,6 +31,13 @@ KEY_ARB_MIN_VOLUME_USD = "arb_min_volume_usd"
 KEY_ARB_EXCLUDE_EXCHANGES = "arb_exclude_exchanges"
 KEY_EXPIRY_NOTICE_DAYS = "expiry_notice_days"
 KEY_EXPIRY_NOTICE_INTERVAL_HOURS = "expiry_notice_interval_hours"
+# Maintenance ETAs — ISO strings stored alongside the boolean flags. When
+# set, the lockout page renders a countdown + "ends at HH:MM <TZ>" string.
+KEY_MAINTENANCE_ENDS_AT = "maintenance_ends_at"
+KEY_SCREENER_DISABLED_ENDS_AT = "screener_disabled_ends_at"
+KEY_PORTFOLIO_DISABLED_ENDS_AT = "portfolio_disabled_ends_at"
+# Display TZ for maintenance pages. IANA name, e.g. Europe/Warsaw.
+KEY_MAINTENANCE_TZ = "maintenance_tz"
 
 _DEFAULTS: dict[str, Any] = {
     KEY_HIDDEN_SYMBOLS: [],
@@ -58,6 +65,12 @@ _DEFAULTS: dict[str, Any] = {
     # silent). 3 days × 24 h = "ping every morning starting 3 days before".
     KEY_EXPIRY_NOTICE_DAYS: 3,
     KEY_EXPIRY_NOTICE_INTERVAL_HOURS: 24,
+    KEY_MAINTENANCE_ENDS_AT: None,
+    KEY_SCREENER_DISABLED_ENDS_AT: None,
+    KEY_PORTFOLIO_DISABLED_ENDS_AT: None,
+    # Default to Poland (Warsaw). Owner is in PL/UA timezones; users see this
+    # as "Tech work ends at 13:00 (Europe/Warsaw)".
+    KEY_MAINTENANCE_TZ: "Europe/Warsaw",
 }
 
 
@@ -176,3 +189,38 @@ def get_expiry_notice_interval_hours() -> int:
     except (TypeError, ValueError):
         v = int(_DEFAULTS[KEY_EXPIRY_NOTICE_INTERVAL_HOURS])
     return max(1, min(168, v))
+
+
+def get_maintenance_tz() -> str:
+    v = (get(KEY_MAINTENANCE_TZ) or "").strip()
+    return v or "Europe/Warsaw"
+
+
+def _ends_at(key: str) -> str | None:
+    """Read an ISO datetime string from settings, drop it if it's already
+    in the past so stale ETAs don't mislead users."""
+    raw = (get(key) or "")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if dt <= datetime.now(timezone.utc):
+            return None
+        return dt.isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def get_maintenance_ends_at() -> str | None:
+    return _ends_at(KEY_MAINTENANCE_ENDS_AT)
+
+
+def get_screener_disabled_ends_at() -> str | None:
+    return _ends_at(KEY_SCREENER_DISABLED_ENDS_AT)
+
+
+def get_portfolio_disabled_ends_at() -> str | None:
+    return _ends_at(KEY_PORTFOLIO_DISABLED_ENDS_AT)

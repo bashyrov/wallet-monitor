@@ -274,6 +274,12 @@ class ScreenerConfigIn(BaseModel):
     arb_exclude_exchanges: list[str] | None = None
     expiry_notice_days: int | None = None
     expiry_notice_interval_hours: int | None = None
+    # Maintenance ETAs — ISO datetime (UTC) or null to clear. Admin can also
+    # pass duration_minutes via the dedicated /maintenance endpoint.
+    maintenance_ends_at: str | None = None
+    screener_disabled_ends_at: str | None = None
+    portfolio_disabled_ends_at: str | None = None
+    maintenance_tz: str | None = None
 
 
 def _trade_supported_set() -> set[str]:
@@ -296,6 +302,10 @@ def screener_config_get(_: User = Depends(get_admin_user)):
         "arb_exclude_exchanges": sorted(admin_settings.get_arb_exclude_exchanges()),
         "expiry_notice_days": admin_settings.get_expiry_notice_days(),
         "expiry_notice_interval_hours": admin_settings.get_expiry_notice_interval_hours(),
+        "maintenance_ends_at": admin_settings.get_maintenance_ends_at(),
+        "screener_disabled_ends_at": admin_settings.get_screener_disabled_ends_at(),
+        "portfolio_disabled_ends_at": admin_settings.get_portfolio_disabled_ends_at(),
+        "maintenance_tz": admin_settings.get_maintenance_tz(),
     }
 
 
@@ -342,6 +352,58 @@ def screener_config_patch(
     if body.expiry_notice_interval_hours is not None:
         v = max(1, min(168, int(body.expiry_notice_interval_hours)))
         admin_settings.set_value(admin_settings.KEY_EXPIRY_NOTICE_INTERVAL_HOURS, v, user_id=user.id)
+    # Each ETA is a JSON-passable ISO string ("2026-04-26T13:00:00+00:00")
+    # or empty string / null to clear. The admin can also use the dedicated
+    # POST /admin/maintenance endpoint below to set "kick off + duration"
+    # in a single round-trip.
+    for body_field, key in (
+        ("maintenance_ends_at",          admin_settings.KEY_MAINTENANCE_ENDS_AT),
+        ("screener_disabled_ends_at",    admin_settings.KEY_SCREENER_DISABLED_ENDS_AT),
+        ("portfolio_disabled_ends_at",   admin_settings.KEY_PORTFOLIO_DISABLED_ENDS_AT),
+    ):
+        v = getattr(body, body_field, None)
+        if v is None:
+            continue
+        v = (v or "").strip() or None
+        admin_settings.set_value(key, v, user_id=user.id)
+    if body.maintenance_tz is not None:
+        tz = (body.maintenance_tz or "").strip() or "Europe/Warsaw"
+        admin_settings.set_value(admin_settings.KEY_MAINTENANCE_TZ, tz, user_id=user.id)
+    return screener_config_get(user)
+
+
+# Convenience: flip a maintenance scope on with a duration in minutes,
+# computed server-side so we don't ship `now()` to the client. POST so
+# accidental refreshes don't re-trigger.
+class _MaintenanceBody(BaseModel):
+    scope: str  # "site" | "screener" | "portfolio"
+    enabled: bool
+    duration_minutes: int | None = None
+    tz: str | None = None
+
+
+@router.post("/maintenance")
+def maintenance_kick(
+    body: _MaintenanceBody,
+    user: User = Depends(get_admin_user),
+):
+    from datetime import datetime, timezone, timedelta
+    scope = (body.scope or "").strip().lower()
+    if scope not in ("site", "screener", "portfolio"):
+        raise HTTPException(status_code=400, detail="scope must be 'site' | 'screener' | 'portfolio'")
+    flag_key, ends_key = {
+        "site":      (admin_settings.KEY_MAINTENANCE,         admin_settings.KEY_MAINTENANCE_ENDS_AT),
+        "screener":  (admin_settings.KEY_SCREENER_DISABLED,   admin_settings.KEY_SCREENER_DISABLED_ENDS_AT),
+        "portfolio": (admin_settings.KEY_PORTFOLIO_DISABLED,  admin_settings.KEY_PORTFOLIO_DISABLED_ENDS_AT),
+    }[scope]
+    admin_settings.set_value(flag_key, bool(body.enabled), user_id=user.id)
+    if body.enabled and body.duration_minutes and body.duration_minutes > 0:
+        ends = datetime.now(timezone.utc) + timedelta(minutes=int(body.duration_minutes))
+        admin_settings.set_value(ends_key, ends.isoformat(), user_id=user.id)
+    elif not body.enabled:
+        admin_settings.set_value(ends_key, None, user_id=user.id)
+    if body.tz:
+        admin_settings.set_value(admin_settings.KEY_MAINTENANCE_TZ, body.tz, user_id=user.id)
     return screener_config_get(user)
 
 

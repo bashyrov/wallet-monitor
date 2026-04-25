@@ -11,6 +11,25 @@ def health():
     return {"status": "ok"}
 
 
+@router.get("/maintenance/status")
+def maintenance_status():
+    """Public — single source of truth the maintenance/section-blocked HTML
+    pages poll every 15 s to auto-reload when ops flips a flag back off
+    (or when the ETA passes). Always returns 200 even during full-site
+    maintenance so the page can recover without a manual refresh."""
+    from backend.services import admin_settings as _s
+    return {
+        "maintenance":         _s.is_maintenance(),
+        "screener_disabled":   _s.is_screener_disabled(),
+        "portfolio_disabled":  _s.is_portfolio_disabled(),
+        "ends_at":             _s.get_maintenance_ends_at(),
+        "screener_ends_at":    _s.get_screener_disabled_ends_at(),
+        "portfolio_ends_at":   _s.get_portfolio_disabled_ends_at(),
+        "tz":                  _s.get_maintenance_tz(),
+        "ts":                  int(time.time()),
+    }
+
+
 @router.get("/metrics")
 def metrics():
     """Prometheus-format metrics endpoint — plaintext, no deps.

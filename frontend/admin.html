@@ -984,12 +984,28 @@
       <div class="page-title">Maintenance</div>
       <div class="page-sub">Kill switches for the whole site or individual sections. Changes apply within ~15s. <span class="mono">/api/admin/*</span> always stays reachable.</div>
 
+      <div class="mn-row" style="margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:480px">
+          <div>
+            <label style="font-size:12px;color:var(--text3)">Display timezone (IANA)</label>
+            <input id="maint-tz" class="inp" placeholder="Europe/Warsaw">
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <button class="btn-secondary" onclick="saveMaintTz()">Save TZ</button>
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px">
+          Used in the user-facing lockout pages: "Tech work ends at 13:00 (Europe/Warsaw)". Examples: <code>Europe/Warsaw</code> · <code>Europe/Kyiv</code> · <code>UTC</code>.
+        </div>
+      </div>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
-        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-          <div class="card-head"><span class="card-title">Full-site maintenance</span></div>
-          <div style="color:var(--text3);font-size:13px;line-height:1.5">
+
+        <div class="mn-row" style="display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:14px;font-weight:600">Full-site maintenance</div>
+          <div style="color:var(--text3);font-size:12.5px;line-height:1.5">
             Hard kill switch — every page returns a 503 maintenance screen.
-            File flag <span class="mono">/tmp/avalant_maintenance</span> still works as a fallback.
+            <code>/api/admin/*</code> stays reachable. File flag <code>/tmp/avalant_maintenance</code> still works as a fallback.
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <label class="toggle">
@@ -998,13 +1014,18 @@
             </label>
             <span id="maint-state" style="font-size:13px;color:var(--text2)">—</span>
           </div>
+          <div style="display:flex;gap:6px;align-items:flex-end">
+            <div style="flex:1"><label style="font-size:11.5px;color:var(--text3)">Duration (min)</label>
+              <input id="maint-duration" class="inp" type="number" min="0" max="1440" placeholder="60"></div>
+            <button class="btn-primary" onclick="kickMaintenance('site')">Apply</button>
+          </div>
+          <div id="maint-eta" style="font-size:11.5px;color:var(--text3);min-height:14px"></div>
         </div>
 
-        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-          <div class="card-head"><span class="card-title">Screener section</span></div>
-          <div style="color:var(--text3);font-size:13px;line-height:1.5">
-            Blocks <span class="mono">/screener</span>, <span class="mono">/arb</span>, <span class="mono">/watchlist</span>, and <span class="mono">/api/screener/*</span>.
-            Portfolio and admin keep running.
+        <div class="mn-row" style="display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:14px;font-weight:600">Screener section</div>
+          <div style="color:var(--text3);font-size:12.5px;line-height:1.5">
+            Blocks <code>/screener</code>, <code>/arb</code>, <code>/watchlist</code>, and <code>/api/screener/*</code>. Portfolio and admin keep running.
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <label class="toggle">
@@ -1013,13 +1034,18 @@
             </label>
             <span id="scr-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
           </div>
+          <div style="display:flex;gap:6px;align-items:flex-end">
+            <div style="flex:1"><label style="font-size:11.5px;color:var(--text3)">Duration (min)</label>
+              <input id="scr-duration" class="inp" type="number" min="0" max="1440" placeholder="60"></div>
+            <button class="btn-primary" onclick="kickMaintenance('screener')">Apply</button>
+          </div>
+          <div id="scr-eta" style="font-size:11.5px;color:var(--text3);min-height:14px"></div>
         </div>
 
-        <div class="card card-padded" style="display:flex;flex-direction:column;gap:12px">
-          <div class="card-head"><span class="card-title">Portfolio section</span></div>
-          <div style="color:var(--text3);font-size:13px;line-height:1.5">
-            Blocks <span class="mono">/app</span>, <span class="mono">/archive</span>, <span class="mono">/profile</span>, and wallet/alert/trade APIs.
-            Screener keeps running.
+        <div class="mn-row" style="display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:14px;font-weight:600">Portfolio section</div>
+          <div style="color:var(--text3);font-size:12.5px;line-height:1.5">
+            Blocks <code>/app</code>, <code>/archive</code>, <code>/profile</code>, <code>/avashare</code>, and wallet/alert/trade APIs. <b>Pricing + checkout stay open</b> so users can renew.
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <label class="toggle">
@@ -1028,6 +1054,12 @@
             </label>
             <span id="pf-disabled-state" style="font-size:13px;color:var(--text2)">—</span>
           </div>
+          <div style="display:flex;gap:6px;align-items:flex-end">
+            <div style="flex:1"><label style="font-size:11.5px;color:var(--text3)">Duration (min)</label>
+              <input id="pf-duration" class="inp" type="number" min="0" max="1440" placeholder="60"></div>
+            <button class="btn-primary" onclick="kickMaintenance('portfolio')">Apply</button>
+          </div>
+          <div id="pf-eta" style="font-size:11.5px;color:var(--text3);min-height:14px"></div>
         </div>
       </div>
     </div>
@@ -1675,6 +1707,20 @@ const _syncScreenerDisabledUi = on => _syncToggle('scr-disabled-toggle', 'scr-di
 const _syncPortfolioDisabledUi = on => _syncToggle('pf-disabled-toggle', 'pf-disabled-state', on,
   'ON — portfolio pages + APIs return 503', 'OFF — portfolio is serving');
 
+function _fmtEta(iso, tz) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const opts = { timeZone: tz || 'Europe/Warsaw', hour:'2-digit', minute:'2-digit', day:'2-digit', month:'short', hour12:false };
+    const abs = d.toLocaleString('en-GB', opts);
+    const diff = (d - Date.now()) / 1000;
+    if (diff <= 0) return `expired (was ${abs} ${tz || 'Europe/Warsaw'})`;
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    return `Ends at ${abs} (${tz || 'Europe/Warsaw'}) — ${h ? h + 'h ' : ''}${m}m left`;
+  } catch (_) { return iso; }
+}
+
 function renderScreenerConfig() {
   const c = _screenerCfg;
   if (!c) return;
@@ -1682,6 +1728,13 @@ function renderScreenerConfig() {
   _syncMaintenanceUi(c.maintenance_mode);
   _syncScreenerDisabledUi(c.screener_disabled);
   _syncPortfolioDisabledUi(c.portfolio_disabled);
+
+  const tzInput = document.getElementById('maint-tz');
+  if (tzInput) tzInput.value = c.maintenance_tz || 'Europe/Warsaw';
+  const setEta = (id, iso) => { const el = document.getElementById(id); if (el) el.textContent = _fmtEta(iso, c.maintenance_tz); };
+  setEta('maint-eta',  c.maintenance_ends_at);
+  setEta('scr-eta',    c.screener_disabled_ends_at);
+  setEta('pf-eta',     c.portfolio_disabled_ends_at);
 
   // Hidden symbols
   const hid = c.hidden_symbols || [];
@@ -1783,6 +1836,33 @@ async function saveMaintenance(on) {
 async function saveSectionToggle(key, on) {
   const label = { screener_disabled: 'Screener', portfolio_disabled: 'Portfolio' }[key] || key;
   await patchScreener({ [key]: on }, on ? `${label} disabled` : `${label} re-enabled`);
+}
+
+async function saveMaintTz() {
+  const tz = (document.getElementById('maint-tz').value || '').trim() || 'Europe/Warsaw';
+  await patchScreener({ maintenance_tz: tz }, `Timezone saved: ${tz}`);
+}
+
+async function kickMaintenance(scope) {
+  const idMap = { site: 'maint-duration', screener: 'scr-duration', portfolio: 'pf-duration' };
+  const dur = parseInt(document.getElementById(idMap[scope]).value || '0', 10) || 0;
+  if (dur < 0 || dur > 1440) { toast('Duration must be 0..1440 min', 'error'); return; }
+  try {
+    const r = await Auth.apiFetch('/admin/maintenance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scope, enabled: true, duration_minutes: dur || null,
+      }),
+    });
+    if (!r.ok) throw new Error('http ' + r.status);
+    toast(scope === 'site' ? 'Site maintenance kicked'
+                            : `${scope} maintenance kicked`, 'success',
+          dur ? `Auto-ETA ${dur} min from now` : 'No ETA set');
+    loadScreenerConfig();
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+  }
 }
 
 document.getElementById('hid-input')?.addEventListener('keydown', e => {
