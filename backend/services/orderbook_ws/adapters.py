@@ -1143,5 +1143,12 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "kucoin_spot":  KuCoinSpotWS,
     "htx_spot":     HtxSpotWS,
     "ourbit_spot":  OurbitSpotWS,
-    "mexc_spot":    MexcSpotWS,
+    # NOTE on `mexc_spot`: the v3 spot WS replies with
+    # `Reason： Blocked!` to subscribe frames coming from the Contabo /
+    # AWS EU IP range (probed live and confirmed, same on wbs.mexc.com
+    # and wbs-api.mexc.com). The MexcSpotWS class works fine when the
+    # IP is allowed — Ourbit (a MEXC fork on a different host) inherits
+    # it and runs without issue. Until we route through a residential
+    # proxy or AWS-AP region, MEXC spot In/Out columns fall back to the
+    # ticker-based basis instead of streaming books.
 }
