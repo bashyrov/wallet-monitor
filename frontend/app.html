@@ -413,6 +413,16 @@
     .wallet-type-badge .dot {
       width: 5px; height: 5px; border-radius: 50%; background: currentColor;
     }
+    .wallet-err-badge {
+      font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+      letter-spacing: 0.05em; color: var(--red);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      background: rgba(248, 113, 113, 0.08);
+      padding: 2px 6px; border-radius: 5px;
+      display: inline-flex; align-items: center; gap: 2px;
+      cursor: help;
+    }
+    .wallet-row.has-error { border-left: 2px solid var(--red); }
 
     .wallet-meta {
       display: flex; align-items: center; gap: 8px;
@@ -2384,6 +2394,20 @@ const S = {
   _progressLabel: '',
   _progressSub: '',
   _progressTimer: null,
+  _walletErrors: (() => {
+    // Pulls back the last error map written by checkBalance() so a
+    // page reload still surfaces the warning badge on failed wallets.
+    try {
+      const raw = localStorage.getItem('avalant_wallet_errors');
+      const obj = raw ? JSON.parse(raw) : {};
+      const cutoff = Date.now() - 24 * 3600 * 1000;
+      const fresh = {};
+      for (const [id, info] of Object.entries(obj)) {
+        if (info && info.when > cutoff) fresh[id] = info;
+      }
+      return fresh;
+    } catch { return {}; }
+  })(),
 };
 
 // ═══════════════════════════════════════════════════
@@ -2634,13 +2658,20 @@ function walletRow(w, idx = 0) {
   const addrCount = (w.addresses || []).length;
   const addrBtnTitle = `Addresses${addrCount ? ' (' + addrCount + ')' : ''}`;
 
-  return `<div class="wallet-row${ck?' selected':''}" id="wr-${w.id}" style="--wr-accent:${color}">
+  // Wallet-row error indicator: balance check stores its last result in
+  // S._walletErrors[id] = { error: str, when: ts }. Stays for 24h after
+  // the failed fetch so users see the issue when they revisit /app.
+  const errInfo = (S._walletErrors || {})[w.id];
+  const errBadge = errInfo ? `<span class="wallet-err-badge has-tip" data-tip="${esc('Last balance check failed: ' + (errInfo.error || 'unknown'))}">⚠ error</span>` : '';
+
+  return `<div class="wallet-row${ck?' selected':''}${errInfo?' has-error':''}" id="wr-${w.id}" style="--wr-accent:${color}">
     ${w.can_trade ? '<span class="trade-live-dot" title="Live trading enabled"></span>' : ''}
     <input type="checkbox" ${ck?'checked':''} onchange="toggleW(${w.id},this.checked)">
     <div class="wallet-body">
       <div class="wallet-head">
         <span class="wallet-name">${esc(w.name)}</span>
         <span class="wallet-type-badge" style="color:${color}"><span class="dot"></span>${label}</span>
+        ${errBadge}
       </div>
       <div class="wallet-meta">
         <span class="meta-dim">${esc(w.type_value)}</span>
@@ -3597,7 +3628,32 @@ async function checkBalance() {
     toast('Balance check failed: ' + err.message, 'error');
   } finally {
     S.loadingBalance = false; btn.disabled = false; if (btnTx) btnTx.disabled = false;
+    // Persist per-wallet error state into S._walletErrors so the wallet
+    // list shows a "⚠ error" badge on rows that failed even after the
+    // balance result panel scrolls away. localStorage carries the state
+    // across reloads for 24h so the warning survives a refresh.
+    try {
+      const map = {};
+      for (const r of (S.results?.results || [])) {
+        if (r && r.error && r.wallet?.id != null) {
+          map[r.wallet.id] = { error: String(r.error).slice(0, 240), when: Date.now() };
+        }
+      }
+      // Merge: keep any errors that didn't appear this run only if they
+      // are < 24h old; clear all wallets that succeeded.
+      const prev = S._walletErrors || {};
+      const merged = { ...map };
+      const cutoff = Date.now() - 24 * 3600 * 1000;
+      for (const [id, info] of Object.entries(prev)) {
+        if (!(id in merged) && info.when > cutoff && !S.results?.results?.some(r => r.wallet?.id == id && !r.error)) {
+          merged[id] = info;
+        }
+      }
+      S._walletErrors = merged;
+      try { localStorage.setItem('avalant_wallet_errors', JSON.stringify(merged)); } catch {}
+    } catch {}
     renderResults();
+    renderWallets();
   }
 }
 
