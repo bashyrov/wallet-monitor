@@ -118,9 +118,21 @@ def logout(response: Response):
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)):
+def me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     out = UserOut.model_validate(current_user)
     out.tg_linked = bool(current_user.tg_chat_id)
+    # Enrich with effective limits so the frontend picker / pricing page
+    # can show the right cap without round-tripping to /api/plans.
+    try:
+        from backend.services import plan_service as _ps
+        lim = _ps.effective_limits(db, current_user)
+        out.plan_id = lim.plan_id
+        out.portfolio_limit = lim.portfolio_limit
+        out.exchange_keys_per_venue = lim.exchange_keys_per_venue
+        out.is_plan_expired = lim.is_expired
+        out.wallet_limit = lim.portfolio_limit
+    except Exception:
+        pass
     return out
 
 

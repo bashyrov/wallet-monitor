@@ -1,872 +1,266 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-
-  <link rel="icon" type="image/png" sizes="48x48" href="/avalant_favicon-48.png">
-  <link rel="icon" type="image/png" sizes="96x96" href="/avalant_favicon-96.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="/avalant_favicon-192.png">
-  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
-  <link rel="shortcut icon" href="/favicon.ico">
-  <link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Checkout — Avalant</title>
-  <link rel="stylesheet" href="/navbar.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
-    rel="stylesheet">
-  <style>
-    :root {
-      --bg: #0E0E11;
-      --surface: #131217;
-      --surface2: #17171C;
-      --surface3: #202028;
-      --border: #22222A;
-      --text: #E6E8E3;
-      --text2: #9B9FAB;
-      --text3: #676B7E;
-      --text4: #393B47;
-      --green: #1AFFAB;
-      --green-dim: rgba(26, 255, 171, 0.08);
-      --green-glow: rgba(26, 255, 171, 0.22);
-      --teal: #06B6D4;
-      --red: #F87171;
-      --red-dim: rgba(248, 113, 113, 0.08);
-      --font: 'Inter', system-ui, sans-serif;
-      --mono: 'JetBrains Mono', monospace;
-    }
-
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    ::selection {
-      background: var(--green-dim);
-      color: var(--green);
-    }
-
-    html, body { overflow-x: hidden; max-width: 100%; }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--font);
-      font-size: 14px;
-      line-height: 1.5;
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      background-image:
-        linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-      background-size: 52px 52px;
-      mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, black 20%, transparent 100%);
-    }
-
-    /* ── TOPBAR ── */
-
-      50% {
-        opacity: 0
-      }
-    }
-
-    .topbar-right .btn-primary {
-      border-radius: 8px;
-      height: 30px;
-      padding: 0 12px;
-      font-size: 13px;
-      transition: box-shadow 0.2s, background 0.15s;
-    }
-
-    .topbar-right .btn-primary:hover { color: #09090B;
-      background: #00E89A;
-      box-shadow: 0 0 14px rgba(26, 255, 171, 0.35);
-      transform: none;
-    }
-
-    /* ── PAGE ── */
-    .page {
-      position: relative;
-      z-index: 1;
-      max-width: 860px;
-      margin: 0 auto;
-      padding: 52px 24px 80px;
-      display: grid;
-      grid-template-columns: 1fr 400px;
-      gap: 28px;
-      align-items: start;
-    }
-
-    @media (max-width: 700px) {
-      .page {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    @keyframes fadeUp {
-      from {
-        opacity: 0;
-        transform: translateY(16px)
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0)
-      }
-    }
-
-    /* ── ORDER SUMMARY ── */
-    .summary {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 28px;
-      position: sticky;
-      top: 72px;
-      animation: fadeUp .4s ease both;
-    }
-
-    .summary::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(26, 255, 171, 0.15), transparent);
-      border-radius: 16px 16px 0 0;
-    }
-
-    .summary-title {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 1.4px;
-      text-transform: uppercase;
-      color: var(--text3);
-      margin-bottom: 20px;
-    }
-
-    .summary-plan {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 16px;
-      background: var(--green-dim);
-      border: 1px solid rgba(26, 255, 171, 0.15);
-      border-radius: 10px;
-      margin-bottom: 16px;
-    }
-
-    .summary-plan-name {
-      font-size: 14px;
-      font-weight: 600;
-    }
-
-    .summary-plan-badge {
-      padding: 3px 10px;
-      border-radius: 99px;
-      background: var(--green);
-      color: #09090B;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .summary-rows {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-
-    .summary-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 13px;
-      color: var(--text2);
-    }
-
-    .summary-row.total {
-      padding-top: 14px;
-      border-top: 1px solid var(--border);
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text);
-    }
-
-    .summary-row.total .val {
-      color: var(--green);
-      font-family: var(--mono);
-    }
-
-    .summary-note {
-      font-size: 11px;
-      color: var(--text4);
-      text-align: center;
-      margin-top: 14px;
-      line-height: 1.6;
-    }
-
-    /* ── CHECKOUT FORM ── */
-    .checkout {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      animation: fadeUp .4s .08s ease both;
-    }
-
-    .checkout-title {
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: -.4px;
-      margin-bottom: 6px;
-    }
-
-    .checkout-sub {
-      font-size: 13px;
-      color: var(--text3);
-      margin-bottom: 28px;
-    }
-
-    .section-label {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 1.3px;
-      text-transform: uppercase;
-      color: var(--text3);
-      margin-bottom: 12px;
-      margin-top: 24px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .section-label::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border);
-    }
-
-    .form-row {
-      display: grid;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-
-    .form-row.two {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-
-    .form-lbl {
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: .7px;
-      text-transform: uppercase;
-      color: var(--text3);
-    }
-
-    .form-input {
-      padding: 10px 13px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface2);
-      color: var(--text);
-      font-family: var(--font);
-      font-size: 14px;
-      outline: none;
-      transition: border-color .15s, box-shadow .15s;
-      width: 100%;
-    }
-
-    .form-input:focus {
-      border-color: var(--green);
-      box-shadow: 0 0 0 3px rgba(26, 255, 171, 0.1);
-    }
-
-    .form-input::placeholder {
-      color: var(--text4);
-    }
-
-    /* card number fancy */
-    .card-field {
-      display: flex;
-      align-items: center;
-      padding: 10px 13px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface2);
-      gap: 10px;
-      transition: border-color .15s, box-shadow .15s;
-    }
-
-    .card-field:focus-within {
-      border-color: var(--green);
-      box-shadow: 0 0 0 3px rgba(26, 255, 171, 0.1);
-    }
-
-    .card-field input {
-      flex: 1;
-      background: none;
-      border: none;
-      outline: none;
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 14px;
-      letter-spacing: .5px;
-    }
-
-    .card-field input::placeholder {
-      color: var(--text4);
-      font-family: var(--font);
-      letter-spacing: 0;
-    }
-
-    .card-icons {
-      display: flex;
-      gap: 5px;
-      flex-shrink: 0;
-    }
-
-    .card-icon {
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: .3px;
-      background: var(--surface3);
-      color: var(--text3);
-    }
-
-    .secure-note {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      color: var(--text4);
-      margin-top: 6px;
-    }
-
-    .secure-note svg {
-      flex-shrink: 0;
-    }
-
-    .btn-pay {
-      width: 100%;
-      height: 48px;
-      border-radius: 10px;
-      background: var(--green);
-      color: #09090B;
-      border: none;
-      font-family: var(--font);
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all .15s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      margin-top: 20px;
-    }
-
-    .btn-pay:hover {
-      background: #00E89A;
-      box-shadow: 0 0 32px var(--green-glow);
-      transform: translateY(-1px);
-    }
-
-    .btn-pay:active {
-      transform: translateY(0);
-      box-shadow: none;
-    }
-
-    /* ── SUCCESS STATE ── */
-    .success-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 200;
-      background: rgba(9, 9, 11, 0.85);
-      backdrop-filter: blur(6px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity .3s;
-    }
-
-    .success-overlay.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    .success-card {
-      background: var(--surface);
-      border: 1px solid rgba(26, 255, 171, 0.25);
-      border-radius: 20px;
-      padding: 40px;
-      text-align: center;
-      max-width: 380px;
-      width: 100%;
-      box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6);
-      transform: translateY(20px);
-      transition: transform .4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .success-overlay.show .success-card {
-      transform: translateY(0);
-    }
-
-    .success-icon {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      background: var(--green-dim);
-      border: 2px solid rgba(26, 255, 171, 0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 20px;
-      font-size: 28px;
-    }
-
-    .success-title {
-      font-size: 22px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-
-    .success-sub {
-      font-size: 14px;
-      color: var(--text3);
-      margin-bottom: 28px;
-      line-height: 1.6;
-    }
-
-    .btn-continue {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 0 22px;
-      height: 44px;
-      border-radius: 10px;
-      background: var(--green);
-      color: #09090B;
-      font-size: 14px;
-      font-weight: 700;
-      text-decoration: none;
-      transition: all .15s;
-    }
-
-    .btn-continue:hover {
-      background: #00E89A;
-      box-shadow: 0 0 24px var(--green-glow);
-      transform: translateY(-1px);
-    }
-
-    ::-webkit-scrollbar {
-      width: 4px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: var(--surface3);
-      border-radius: 2px;
-    }
-
-    /* ── BOTTOM NAV ── */
-    .bottom-nav {
-      display: none;
-      position: fixed;
-      bottom: 12px;
-      left: 12px;
-      right: 12px;
-      height: 64px;
-      background: rgba(13, 13, 16, 0.82);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 20px;
-      z-index: 300;
-      align-items: center;
-      justify-content: space-around;
-      padding: 0 4px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    }
-
-    .bnav-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 3px;
-      padding: 8px 14px;
-      border-radius: 12px;
-      text-decoration: none;
-      color: var(--text3);
-      font-size: 10px;
-      font-weight: 500;
-      transition: color 0.15s;
-      flex: 1;
-      max-width: 80px;
-    }
-
-    .bnav-item svg {
-      flex-shrink: 0;
-      opacity: 0.45;
-      transition: opacity 0.15s;
-    }
-
-    .bnav-item:hover {
-      color: var(--text2);
-    }
-
-    .bnav-item:hover svg {
-      opacity: 0.7;
-    }
-
-    .bnav-item.active {
-      color: var(--green);
-    }
-
-    .bnav-item.active svg {
-      opacity: 1;
-    }
-
-    @media (max-width: 768px) {
-      .bottom-nav {
-        display: flex;
-      }
-
-      body {
-        padding-bottom: 88px;
-      }
-    }
-
-    /* ── PROMO BANNER ── */
-    .promo-banner {
-      background: rgba(26, 255, 171, 0.05);
-      border-bottom: 1px solid rgba(26, 255, 171, 0.1);
-      padding: 9px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--green);
-      position: relative;
-      z-index: 101;
-    }
-
-    .banner-close {
-      position: absolute;
-      right: 16px;
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: var(--green);
-      opacity: 0.5;
-      display: flex;
-      align-items: center;
-      padding: 4px;
-      border-radius: 4px;
-      transition: opacity 0.15s;
-    }
-
-    .banner-close:hover {
-      opacity: 1;
-    }
-
-    @media (max-width: 768px) {
-      .promo-banner {
-        font-size: 12px;
-        padding: 9px 44px 9px 16px;
-      }
-    }
-
-    /* ── Free Banner ── */
-    .free-banner {
-      position: fixed;
-      top: 60px;
-      left: 12px;
-      right: 12px;
-      z-index: 98;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: 9px 20px;
-      background: rgba(14, 14, 17, 0.92);
-      border: 1px solid rgba(26, 255, 171, 0.18);
-      border-radius: 12px;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      font-size: 13px;
-      color: var(--text2);
-      letter-spacing: 0.01em;
-      animation: bannerIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
-      animation-delay: 0.7s;
-      opacity: 0;
-    }
-
-    .free-banner-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 7px rgba(26, 255, 171, 0.65);
-      flex-shrink: 0;
-    }
-
-    .free-banner em {
-      font-style: normal;
-      color: var(--text);
-      font-weight: 500;
-    }
-
-    .free-banner-close {
-      position: absolute;
-      right: 12px;
-      background: none;
-      border: none;
-      color: var(--text3);
-      font-size: 15px;
-      line-height: 1;
-      cursor: pointer;
-      padding: 4px 5px;
-      border-radius: 6px;
-      transition: color 0.15s, background 0.15s;
-    }
-
-    .free-banner-close:hover {
-      color: var(--text);
-      background: var(--surface3);
-    }
-
-    @keyframes bannerIn {
-      from {
-        transform: translateY(-14px);
-        opacity: 0;
-      }
-
-      to {
-        transform: translateY(0);
-        opacity: 1;
-      }
-    }
-  </style>
-<script src="/toast.js"></script>
+<meta charset="UTF-8">
+<title>Checkout — Avalant</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/avalant_favicon.svg">
+<link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="/auth.js"></script>
 <script src="/theme.js"></script>
+<script src="/toast.js"></script>
+<script src="/popup.js" defer></script>
+<script src="/navbar.js" defer></script>
+<style>
+  :root{
+    --bg:#0E0E11; --surface:#131217; --surface2:#17171C; --surface3:#202028;
+    --border:#22222A; --border2:#3A3A50;
+    --text:#E6E8E3; --text2:#9B9FAB; --text3:#676B7E;
+    --green:#1AFFAB; --red:#F87171;
+    --mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  .wrap{max-width:780px;margin:0 auto;padding:32px 22px 80px}
+  h1{font-size:32px;font-weight:800;letter-spacing:-0.02em;margin:0 0 24px}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:26px;margin-bottom:18px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+  .row:last-child{border-bottom:0}
+  .row .lbl{color:var(--text2);font-size:13px}
+  .row .val{font-family:var(--mono);font-weight:600}
+  .total{font-size:24px}
+  .cycle-toggle{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:14px}
+  .cycle-toggle button{background:transparent;border:0;color:var(--text2);font:inherit;font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;cursor:pointer}
+  .cycle-toggle button.active{background:var(--surface3);color:var(--text)}
+  .promo-row{display:flex;gap:8px;margin-top:6px}
+  .promo-row input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:11px 13px;border-radius:8px;font:inherit;font-family:var(--mono)}
+  .promo-row input:focus{outline:0;border-color:var(--border2)}
+  .promo-row button{background:var(--surface3);border:1px solid var(--border2);color:var(--text);padding:11px 18px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+  .promo-feedback{font-size:12px;color:var(--text3);margin-top:8px;min-height:16px}
+  .promo-feedback.ok{color:var(--green)}
+  .promo-feedback.err{color:var(--red)}
+  .pay-btn{width:100%;background:var(--green);color:#000;border:0;padding:15px;border-radius:10px;font:inherit;font-weight:700;font-size:15px;cursor:pointer;margin-top:6px;transition:.18s}
+  .pay-btn:hover{filter:brightness(1.05)}
+  .pay-btn[disabled]{background:var(--surface3);color:var(--text3);cursor:not-allowed}
+  .footer{color:var(--text3);font-size:12px;line-height:1.55;margin-top:14px}
+  body.light{background:#FFFFFF;color:#000}
+  body.light .panel{background:#FFFFFF;border-color:#BABABA}
+  body.light .row{border-color:#E8E8E8}
+  body.light .row .lbl{color:#595959}
+  body.light .pay-btn{background:#006B3C;color:#FFF}
+  body.light .promo-row input,body.light .promo-row button{background:#F4F4F4;border-color:#BABABA;color:#000}
+  body.light .cycle-toggle{background:#F4F4F4;border-color:#BABABA}
+  body.light .cycle-toggle button.active{background:#FFFFFF;color:#000}
+</style>
 </head>
-
 <body>
+<app-navbar page="checkout"></app-navbar>
+<main class="wrap">
+  <h1>Checkout</h1>
+  <div id="state-loading" class="panel">Loading plan…</div>
+  <div id="state-error" class="panel" style="display:none;color:var(--red)"></div>
 
-  <header class="topbar"><app-navbar page="checkout"></app-navbar></header>
-
-
-
-  <div class="page">
-
-    <!-- Checkout Form -->
-    <div class="checkout">
-      <div class="checkout-title">Complete your upgrade</div>
-      <div class="checkout-sub">Secure checkout — cancel anytime — instant access</div>
-
-      <div class="section-label">Contact</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-lbl">Email</label>
-          <input class="form-input" type="email" placeholder="you@example.com" value="user@example.com">
-        </div>
-      </div>
-
-      <div class="section-label">Payment</div>
-      <div class="form-row" style="margin-bottom:10px">
-        <div class="form-group">
-          <label class="form-lbl">Card number</label>
-          <div class="card-field">
-            <input type="text" placeholder="1234 5678 9012 3456" maxlength="19" id="card-num"
-              oninput="formatCard(this)">
-            <div class="card-icons">
-              <span class="card-icon">VISA</span>
-              <span class="card-icon">MC</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="form-row two">
-        <div class="form-group">
-          <label class="form-lbl">Expiry</label>
-          <input class="form-input" type="text" placeholder="MM / YY" maxlength="7" oninput="formatExpiry(this)">
-        </div>
-        <div class="form-group">
-          <label class="form-lbl">CVC</label>
-          <input class="form-input" type="text" placeholder="123" maxlength="4">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-lbl">Cardholder name</label>
-          <input class="form-input" type="text" placeholder="Full name on card">
-        </div>
-      </div>
-
-      <div class="secure-note">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M6 1L2 3v3c0 2.5 1.8 4.7 4 5 2.2-.3 4-2.5 4-5V3L6 1z" stroke="#676B7E" stroke-width="1.2"
-            stroke-linejoin="round" />
-        </svg>
-        Your payment is encrypted and secure. We never store card details.
-      </div>
-
-      <button class="btn-pay" onclick="handlePay()">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M8 1L10.5 6L16 6.9L12 10.8L12.9 16L8 13.3L3.1 16L4 10.8L0 6.9L5.5 6L8 1Z" fill="currentColor"
-            opacity=".8" />
-        </svg>
-        Pay now — <span id="pay-price">$9/mo</span>
-      </button>
-    </div>
-
-    <!-- Order Summary -->
-    <div class="summary">
-      <div class="summary-title">Order summary</div>
-
-      <div class="summary-plan">
-        <span class="summary-plan-name" id="sum-plan-name">Pro Plan</span>
-        <span class="summary-plan-badge" id="sum-plan-badge">PRO</span>
-      </div>
-
-      <div class="summary-rows">
-        <div class="summary-row"><span>Plan</span><span id="sum-price">$9.00</span></div>
-        <div class="summary-row"><span>Billing</span><span>Monthly</span></div>
-        <div class="summary-row"><span>Tax</span><span>$0.00</span></div>
-        <div class="summary-row total"><span>Total today</span><span class="val" id="sum-total">$9.00</span></div>
-      </div>
-
-      <div class="summary-note">
-        You'll be billed $9/month. Cancel anytime from your profile — no questions asked.
-      </div>
-    </div>
-
+  <div id="state-success" class="panel" style="display:none">
+    <h2 style="margin:0 0 8px">Payment successful</h2>
+    <p style="color:var(--text2);font-size:14px;margin:0 0 14px">Your plan is active. Open the app to start scanning.</p>
+    <a href="/app" class="pay-btn" style="display:inline-block;text-align:center;text-decoration:none;width:auto;padding:11px 22px">Go to app →</a>
   </div>
 
-  <!-- Success Overlay -->
-  <div class="success-overlay" id="success-overlay">
-    <div class="success-card">
-      <div class="success-icon">🎉</div>
-      <div class="success-title">Welcome to Pro!</div>
-      <div class="success-sub">Your account has been upgraded. Unlimited wallets, balance history, and API access are
-        now active.</div>
-      <a href="/app" class="btn-continue">
-        Go to dashboard
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
-            stroke-linejoin="round" />
-        </svg>
-      </a>
-    </div>
+  <div id="state-fail" class="panel" style="display:none">
+    <h2 style="margin:0 0 8px">Payment did not complete</h2>
+    <p style="color:var(--text2);font-size:14px;margin:0 0 14px">No charge was made. You can retry anytime.</p>
+    <a href="/pricing" class="pay-btn" style="display:inline-block;text-align:center;text-decoration:none;width:auto;padding:11px 22px">Back to pricing →</a>
   </div>
 
-  <script>
-    (function () {
-      if (localStorage.getItem('promo_dismissed')) {
-        var b = document.getElementById('promo-banner');
-        if (b) b.style.display = 'none';
-      }
-    })();
-    function dismissBanner() {
-      var b = document.getElementById('promo-banner');
-      if (b) b.style.display = 'none';
-      localStorage.setItem('promo_dismissed', '1');
-    }
-    // Read plan from URL
-    const params = new URLSearchParams(location.search);
-    const plan = params.get('plan') || 'pro';
+  <div id="state-checkout" class="panel" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:11px;letter-spacing:0.06em;color:var(--text3);text-transform:uppercase">Plan</div>
+        <div id="plan-name" style="font-size:22px;font-weight:700;margin-top:2px"></div>
+        <div id="plan-desc" style="color:var(--text2);font-size:13px;margin-top:4px"></div>
+      </div>
+      <div class="cycle-toggle">
+        <button id="cyc-monthly" onclick="setCycle('monthly')">Monthly</button>
+        <button id="cyc-annual" onclick="setCycle('annual')">Annual</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:18px">
+      <span class="lbl">Base price</span>
+      <span class="val" id="row-base">—</span>
+    </div>
+    <div class="row" id="row-discount-wrap" style="display:none">
+      <span class="lbl">Discount (<span id="row-discount-pct"></span>%)</span>
+      <span class="val" style="color:var(--green)" id="row-discount">—</span>
+    </div>
+    <div class="row total">
+      <span class="lbl" style="color:var(--text);font-size:14px">Total</span>
+      <span class="val" id="row-total">—</span>
+    </div>
 
-    const PLANS = {
-      pro: { name: 'Pro Plan', badge: 'PRO', price: '$9.00', monthly: '$9/mo' },
-      annual: { name: 'Pro Annual', badge: 'PRO', price: '$79.00', monthly: '$79/yr' },
-    };
-    const p = PLANS[plan] || PLANS.pro;
-    document.getElementById('sum-plan-name').textContent = p.name;
-    document.getElementById('sum-plan-badge').textContent = p.badge;
-    document.getElementById('sum-price').textContent = p.price;
-    document.getElementById('sum-total').textContent = p.price;
-    document.getElementById('pay-price').textContent = p.monthly;
+    <div style="margin-top:18px">
+      <label style="font-size:12px;color:var(--text2);font-weight:600;letter-spacing:0.04em;text-transform:uppercase">Promo code</label>
+      <div class="promo-row">
+        <input id="promo-input" type="text" placeholder="e.g. EARLY20" autocomplete="off">
+        <button id="promo-apply" onclick="applyPromo()">Apply</button>
+      </div>
+      <div id="promo-feedback" class="promo-feedback"></div>
+    </div>
 
-    function formatCard(el) {
-      let v = el.value.replace(/\D/g, '').slice(0, 16);
-      el.value = v.match(/.{1,4}/g)?.join(' ') || v;
-    }
-    function formatExpiry(el) {
-      let v = el.value.replace(/\D/g, '').slice(0, 4);
-      if (v.length >= 2) v = v.slice(0, 2) + ' / ' + v.slice(2);
-      el.value = v;
-    }
-    function handlePay() {
-      document.getElementById('success-overlay').classList.add('show');
-    }
-  </script>
+    <button id="pay-btn" class="pay-btn" onclick="pay()">Pay with crypto →</button>
+    <div class="footer">
+      Powered by CryptoCloud — accepts USDT, BTC, ETH, and other coins. After clicking Pay, you'll land on a hosted invoice page; once the network confirms your payment your plan activates automatically.
+    </div>
+  </div>
+</main>
 
-  <nav class="bottom-nav">
-    <a href="/" class="bnav-item">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path d="M3 9.5L10 3l7 6.5V17a1 1 0 01-1 1h-4v-4H8v4H4a1 1 0 01-1-1V9.5z" stroke="currentColor"
-          stroke-width="1.5" stroke-linejoin="round" />
-      </svg>
-      Home
-    </a>
-    <a href="/app" class="bnav-item">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45" />
-        <rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7" />
-        <rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor" />
-      </svg>
-      Portfolio
-    </a>
-    <a href="/pricing" class="bnav-item active">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-        <circle cx="7" cy="7" r="1.2" fill="currentColor" />
-      </svg>
-      Pricing
-    </a>
-    <a href="/profile" class="bnav-item">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5" />
-        <path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5"
-          stroke-linecap="round" />
-      </svg>
-      Profile
-    </a>
-  </nav>
-<script src="/navbar.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const status = params.get('status');
+const planId = parseInt(params.get('plan_id') || '0', 10) || null;
+let _cycle = (params.get('cycle') === 'annual') ? 'annual' : 'monthly';
+let _plan = null;
+let _promo = null;
+
+function show(panelId){
+  ['state-loading','state-error','state-checkout','state-success','state-fail'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = id === panelId ? '' : 'none';
+  });
+}
+
+function _money(n){ return '$' + Number(n || 0).toFixed(2); }
+
+async function _load(){
+  if (status === 'success'){ show('state-success'); return; }
+  if (status === 'fail'){ show('state-fail'); return; }
+
+  if (!Auth.isLoggedIn()){
+    location.href = `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+    return;
+  }
+  if (!planId){
+    document.getElementById('state-error').textContent = 'Missing plan_id';
+    show('state-error'); return;
+  }
+  try {
+    const r = await fetch('/api/plans');
+    const j = await r.json();
+    _plan = (j.plans || []).find(p => p.id === planId);
+    if (!_plan){
+      document.getElementById('state-error').textContent = 'Plan not found';
+      show('state-error'); return;
+    }
+    if (_plan.is_free){
+      location.href = '/app';
+      return;
+    }
+    show('state-checkout');
+    setCycle(_cycle);
+    document.getElementById('plan-name').textContent = _plan.name;
+    document.getElementById('plan-desc').textContent = _plan.description || '';
+  } catch (e){
+    document.getElementById('state-error').textContent = 'Failed to load plan: ' + e.message;
+    show('state-error');
+  }
+}
+
+function setCycle(c){
+  _cycle = c;
+  document.getElementById('cyc-monthly').classList.toggle('active', c === 'monthly');
+  document.getElementById('cyc-annual').classList.toggle('active', c === 'annual');
+  // Reset promo if applied to keep server-recomputed amount honest.
+  _promo = null;
+  document.getElementById('promo-feedback').textContent = '';
+  document.getElementById('promo-feedback').className = 'promo-feedback';
+  _renderTotals();
+}
+
+function _renderTotals(){
+  if (!_plan) return;
+  const base = _cycle === 'annual' ? Number(_plan.price_usd_annual || 0) : Number(_plan.price_usd_monthly || 0);
+  document.getElementById('row-base').textContent = _money(base);
+  if (_promo){
+    document.getElementById('row-discount-wrap').style.display = '';
+    document.getElementById('row-discount-pct').textContent = _promo.discount_pct.toFixed(2);
+    document.getElementById('row-discount').textContent = '−' + _money(base - _promo.final_amount_usd);
+    document.getElementById('row-total').textContent = _money(_promo.final_amount_usd);
+  } else {
+    document.getElementById('row-discount-wrap').style.display = 'none';
+    document.getElementById('row-total').textContent = _money(base);
+  }
+}
+
+async function applyPromo(){
+  const codeRaw = (document.getElementById('promo-input').value || '').trim();
+  if (!codeRaw){ return; }
+  const fb = document.getElementById('promo-feedback');
+  fb.textContent = 'Validating…';
+  fb.className = 'promo-feedback';
+  try {
+    const r = await Auth.apiFetch('/promo/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: codeRaw, plan_id: _plan.id, billing_cycle: _cycle }),
+    });
+    if (!r.ok){
+      const j = await r.json().catch(() => ({}));
+      fb.className = 'promo-feedback err';
+      fb.textContent = j.detail || 'Failed to validate';
+      return;
+    }
+    const j = await r.json();
+    if (!j.valid){
+      _promo = null;
+      fb.className = 'promo-feedback err';
+      fb.textContent = 'Code not accepted (expired, used up, or not for this plan).';
+      _renderTotals();
+      return;
+    }
+    _promo = j;
+    fb.className = 'promo-feedback ok';
+    fb.textContent = `Applied — ${j.discount_pct.toFixed(2)}% off`;
+    _renderTotals();
+  } catch (e){
+    fb.className = 'promo-feedback err';
+    fb.textContent = 'Network error: ' + e.message;
+  }
+}
+
+async function pay(){
+  const btn = document.getElementById('pay-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating invoice…';
+  try {
+    const r = await Auth.apiFetch('/payments/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plan_id: _plan.id,
+        billing_cycle: _cycle,
+        promo_code: (document.getElementById('promo-input').value || '').trim() || null,
+      }),
+    });
+    if (!r.ok){
+      const j = await r.json().catch(() => ({}));
+      toast(j.detail || 'Failed to create invoice', 'error');
+      btn.disabled = false; btn.textContent = 'Pay with crypto →';
+      return;
+    }
+    const j = await r.json();
+    if (j.invoice_url){
+      location.href = j.invoice_url;
+      return;
+    }
+    toast('Invoice URL missing — contact support', 'error');
+    btn.disabled = false; btn.textContent = 'Pay with crypto →';
+  } catch (e){
+    toast('Network error: ' + e.message, 'error');
+    btn.disabled = false; btn.textContent = 'Pay with crypto →';
+  }
+}
+
+_load();
+</script>
 </body>
-
 </html>

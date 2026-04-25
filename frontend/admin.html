@@ -635,6 +635,9 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 3.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Maintenance
     </a>
+    <a class="drawer-item" href="#" onclick="showTab('plans',this);loadPlansAdmin();closeDrawer();return false;">Plans</a>
+    <a class="drawer-item" href="#" onclick="showTab('promos',this);loadPromosAdmin();closeDrawer();return false;">Promo codes</a>
+    <a class="drawer-item" href="#" onclick="showTab('popups',this);loadPopupsAdmin();closeDrawer();return false;">Popups</a>
     <div class="drawer-sep"></div>
     <a class="drawer-item" href="/app">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 2H2a1 1 0 00-1 1v9a1 1 0 001 1h10a1 1 0 001-1V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8 1h5v5M13 1L7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -671,6 +674,19 @@
     <a class="sidebar-item" href="#" onclick="showTab('maintenance',this);loadScreenerConfig();return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 3.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Maintenance
+    </a>
+    <div class="sidebar-section" style="margin-top:14px">Monetisation</div>
+    <a class="sidebar-item" href="#" onclick="showTab('plans',this);loadPlansAdmin();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 1h6l3 3v9H3V1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M3 6h7M3 9h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Plans
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('promos',this);loadPromosAdmin();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7l5-5 5 5-5 5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="5" cy="5" r="0.7" fill="currentColor"/></svg>
+      Promo codes
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('popups',this);loadPopupsAdmin();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2" width="11" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 10v2M9 10v2M4 12h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Popups
     </a>
   </aside>
 
@@ -1006,6 +1022,39 @@
       </div>
     </div>
 
+    <!-- ══ PLANS TAB ══ -->
+    <div id="tab-plans" style="display:none">
+      <div class="page-title">Plans</div>
+      <div class="page-sub">Pricing tiers, limits and feature lists. Free plan can't be deleted.</div>
+      <div style="display:flex;gap:10px;align-items:center;margin:14px 0">
+        <button class="btn-primary" onclick="openPlanEditor()">+ New plan</button>
+        <button class="btn-secondary" onclick="loadPlansAdmin()">Refresh</button>
+      </div>
+      <div id="plans-list" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <!-- ══ PROMOS TAB ══ -->
+    <div id="tab-promos" style="display:none">
+      <div class="page-title">Promo codes</div>
+      <div class="page-sub">One code per checkout. Discount % rounds to 2 decimals at the cart level.</div>
+      <div style="display:flex;gap:10px;align-items:center;margin:14px 0">
+        <button class="btn-primary" onclick="openPromoEditor()">+ New code</button>
+        <button class="btn-secondary" onclick="loadPromosAdmin()">Refresh</button>
+      </div>
+      <div id="promos-list" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <!-- ══ POPUPS TAB ══ -->
+    <div id="tab-popups" style="display:none">
+      <div class="page-title">Popups</div>
+      <div class="page-sub">Promotional popups for logged-in users. Frequency=once means one show per user; every-N-min re-shows after the dismiss timer elapses.</div>
+      <div style="display:flex;gap:10px;align-items:center;margin:14px 0">
+        <button class="btn-primary" onclick="openPopupEditor()">+ New popup</button>
+        <button class="btn-secondary" onclick="loadPopupsAdmin()">Refresh</button>
+      </div>
+      <div id="popups-list" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
   </main>
 </div>
 
@@ -1058,7 +1107,7 @@
 <script>
 Auth.requireAdmin('/app');
 
-const TABS = ['dashboard', 'users', 'errors', 'screener', 'portfolio', 'maintenance'];
+const TABS = ['dashboard', 'users', 'errors', 'screener', 'portfolio', 'maintenance', 'plans', 'promos', 'popups'];
 const PERPDEX_EXCHANGES = new Set(['hyperliquid', 'aster', 'ethereal', 'lighter', 'paradex']);
 function showTab(tab, el) {
   TABS.forEach(t => {
@@ -1669,6 +1718,415 @@ async function togglePortfolio(key, value, enable) {
   _pfCfg = await r.json();
   renderPortfolioConfig();
   toast(enable ? `${value} enabled` : `${value} disabled`, 'success');
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PLANS / PROMOS / POPUPS — admin
+// ═════════════════════════════════════════════════════════════════════════════
+function _esc(s){ return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+function _row(label, value, mono){
+  return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:3px 0">
+    <span style="color:var(--text3)">${label}</span>
+    <span ${mono?'style="font-family:var(--mono)"':''}>${value}</span>
+  </div>`;
+}
+
+// ── Plans ─────────────────────────────────────────────────────────────────
+let _adminPlans = [];
+
+async function loadPlansAdmin(){
+  const list = document.getElementById('plans-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:var(--text3);padding:14px">Loading…</div>';
+  try {
+    const r = await Auth.apiFetch('/admin/plans');
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    _adminPlans = j.plans || [];
+    list.innerHTML = _adminPlans.map(p => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start">
+          <div>
+            <div style="font-size:16px;font-weight:600">${_esc(p.name)} <span style="color:var(--text3);font-size:12px;font-weight:400">— /${_esc(p.slug)}${p.is_free?' · FREE':''}${p.is_active?'':' · INACTIVE'}</span></div>
+            <div style="color:var(--text2);font-size:13px;margin-top:2px">${_esc(p.description||'')}</div>
+            <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:4px 18px">
+              ${_row('Monthly', '$' + p.price_usd_monthly.toFixed(2), true)}
+              ${_row('Annual', '$' + p.price_usd_annual.toFixed(2), true)}
+              ${_row('Portfolio limit', p.portfolio_limit, true)}
+              ${_row('Grace limit', p.portfolio_limit_grace, true)}
+              ${_row('Keys/venue', p.exchange_keys_per_venue, true)}
+              ${_row('Trade delay', p.trade_delay_ms + ' ms', true)}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn-secondary" onclick='openPlanEditor(${p.id})'>Edit</button>
+            ${p.is_free ? '' : `<button class="btn-secondary" style="color:var(--red)" onclick="deletePlan(${p.id})">Disable</button>`}
+          </div>
+        </div>
+      </div>
+    `).join('');
+    if (!_adminPlans.length){
+      list.innerHTML = '<div style="color:var(--text3);padding:14px">No plans yet — create one.</div>';
+    }
+  } catch (e){
+    list.innerHTML = '<div style="color:var(--red);padding:14px">Failed to load: ' + e.message + '</div>';
+  }
+}
+
+function _openModal(html){
+  let m = document.getElementById('admin-modal');
+  if (m) m.remove();
+  m = document.createElement('div');
+  m.id = 'admin-modal';
+  m.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:18px';
+  m.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;max-width:520px;width:100%;padding:24px;max-height:90vh;overflow:auto">${html}</div>`;
+  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+  document.body.appendChild(m);
+}
+function _closeModal(){ const m = document.getElementById('admin-modal'); if (m) m.remove(); }
+
+function openPlanEditor(planId){
+  const p = planId ? _adminPlans.find(x => x.id === planId) : null;
+  const isNew = !p;
+  const features = p?.features || { perks: [], limits: [] };
+  _openModal(`
+    <h2 style="margin:0 0 14px;font-size:20px">${isNew?'New plan':'Edit plan'}</h2>
+    ${isNew ? `<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:4px">Slug (lowercase, alnum/-_)</label>
+      <input id="ed-slug" class="inp" value="" placeholder="e.g. lite">` : ''}
+    <label style="display:block;font-size:12px;color:var(--text3);margin:10px 0 4px">Name</label>
+    <input id="ed-name" class="inp" value="${_esc(p?.name||'')}">
+    <label style="display:block;font-size:12px;color:var(--text3);margin:10px 0 4px">Description</label>
+    <input id="ed-desc" class="inp" value="${_esc(p?.description||'')}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <div><label style="font-size:12px;color:var(--text3)">Monthly USD</label><input id="ed-mo" class="inp" type="number" step="0.01" value="${p?.price_usd_monthly??0}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Annual USD</label><input id="ed-yr" class="inp" type="number" step="0.01" value="${p?.price_usd_annual??0}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Portfolio limit</label><input id="ed-pf" class="inp" type="number" value="${p?.portfolio_limit??30}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Grace limit</label><input id="ed-grace" class="inp" type="number" value="${p?.portfolio_limit_grace??5}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Keys / venue</label><input id="ed-keys" class="inp" type="number" value="${p?.exchange_keys_per_venue??1}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Trade delay (ms)</label><input id="ed-delay" class="inp" type="number" value="${p?.trade_delay_ms??0}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Sort order</label><input id="ed-sort" class="inp" type="number" value="${p?.sort_order??0}"></div>
+      <div style="display:flex;align-items:flex-end;gap:8px"><label style="display:flex;align-items:center;gap:6px;font-size:13px"><input id="ed-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label></div>
+    </div>
+    <label style="display:block;font-size:12px;color:var(--text3);margin:10px 0 4px">Perks (one per line)</label>
+    <textarea id="ed-perks" class="inp" rows="4">${_esc((features.perks||[]).join('\n'))}</textarea>
+    <label style="display:block;font-size:12px;color:var(--text3);margin:10px 0 4px">Limits (one per line)</label>
+    <textarea id="ed-limits" class="inp" rows="3">${_esc((features.limits||[]).join('\n'))}</textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn-secondary" onclick="_closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="savePlan(${p?p.id:0})">${isNew?'Create':'Save'}</button>
+    </div>
+    <style>.inp{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:7px;font:inherit;font-family:'Inter';font-size:13px}.inp:focus{outline:0;border-color:var(--border2)}</style>
+  `);
+}
+
+async function savePlan(planId){
+  const splitLines = s => (s||'').split('\n').map(x => x.trim()).filter(Boolean);
+  const body = {
+    name: document.getElementById('ed-name').value.trim(),
+    description: document.getElementById('ed-desc').value.trim(),
+    price_usd_monthly: parseFloat(document.getElementById('ed-mo').value || '0'),
+    price_usd_annual: parseFloat(document.getElementById('ed-yr').value || '0'),
+    portfolio_limit: parseInt(document.getElementById('ed-pf').value || '5', 10),
+    portfolio_limit_grace: parseInt(document.getElementById('ed-grace').value || '5', 10),
+    exchange_keys_per_venue: parseInt(document.getElementById('ed-keys').value || '1', 10),
+    trade_delay_ms: parseInt(document.getElementById('ed-delay').value || '0', 10),
+    sort_order: parseInt(document.getElementById('ed-sort').value || '0', 10),
+    is_active: document.getElementById('ed-active').checked,
+    features: { perks: splitLines(document.getElementById('ed-perks').value),
+                limits: splitLines(document.getElementById('ed-limits').value) },
+  };
+  const slugEl = document.getElementById('ed-slug');
+  const path = planId ? `/admin/plans/${planId}` : '/admin/plans';
+  if (!planId){ body.slug = (slugEl?.value || '').trim().toLowerCase(); }
+  const r = await Auth.apiFetch(path, {
+    method: planId ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok){
+    const j = await r.json().catch(() => ({}));
+    toast('Save failed: ' + (j.detail || r.status), 'error'); return;
+  }
+  _closeModal();
+  toast('Plan saved', 'success');
+  loadPlansAdmin();
+}
+
+async function deletePlan(planId){
+  if (!confirm('Disable this plan? It stays in the DB for historic payments but new sign-ups can\'t pick it.')) return;
+  const r = await Auth.apiFetch(`/admin/plans/${planId}`, { method: 'DELETE' });
+  if (!r.ok){ toast('Delete failed', 'error'); return; }
+  toast('Plan disabled', 'success');
+  loadPlansAdmin();
+}
+
+
+// ── Promo codes ───────────────────────────────────────────────────────────
+let _adminPromos = [];
+let _adminPromosStats = [];
+
+async function loadPromosAdmin(){
+  const list = document.getElementById('promos-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:var(--text3);padding:14px">Loading…</div>';
+  try {
+    const [r1, r2] = await Promise.all([
+      Auth.apiFetch('/admin/promos'),
+      Auth.apiFetch('/admin/promos/stats'),
+    ]);
+    const j1 = await r1.json();
+    const j2 = await r2.json();
+    _adminPromos = j1.promos || [];
+    _adminPromosStats = j2.stats || [];
+    if (!_adminPromos.length){
+      list.innerHTML = '<div style="color:var(--text3);padding:14px">No promo codes yet.</div>';
+      return;
+    }
+    list.innerHTML = _adminPromos.map(p => {
+      const stat = _adminPromosStats.find(s => s.id === p.id) || {};
+      const expired = p.expires_at && new Date(p.expires_at) <= new Date();
+      const usesLeft = p.max_uses == null ? '∞' : Math.max(0, p.max_uses - p.used_count);
+      return `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+          <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start">
+            <div>
+              <div style="font-size:18px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em">${_esc(p.code)} <span style="color:var(--green);font-size:13px">−${p.discount_pct.toFixed(2)}%</span> ${p.is_active?'':'<span style="color:var(--text3);font-size:12px">· INACTIVE</span>'} ${expired?'<span style="color:var(--red);font-size:12px">· EXPIRED</span>':''}</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:4px 14px;margin-top:8px;font-size:12px;color:var(--text3)">
+                <div>Used: <b style="color:var(--text)">${p.used_count}</b></div>
+                <div>Remaining: <b style="color:var(--text)">${usesLeft}</b></div>
+                <div>Revenue: <b style="color:var(--text)">$${(stat.paid_revenue_usd||0).toFixed(2)}</b></div>
+                <div>Expires: <span>${p.expires_at? new Date(p.expires_at).toLocaleDateString() : 'never'}</span></div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <button class="btn-secondary" onclick="openPromoEditor(${p.id})">Edit</button>
+              <button class="btn-secondary" style="color:var(--red)" onclick="deletePromo(${p.id})">Delete</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e){
+    list.innerHTML = '<div style="color:var(--red);padding:14px">Failed to load: ' + e.message + '</div>';
+  }
+}
+
+function openPromoEditor(promoId){
+  const p = promoId ? _adminPromos.find(x => x.id === promoId) : null;
+  const isNew = !p;
+  const planOpts = _adminPlans.filter(pl => !pl.is_free).map(pl =>
+    `<label style="display:block;font-size:13px;margin:3px 0"><input type="checkbox" data-plan-id="${pl.id}" ${(p?.applies_to_plan_ids||[]).includes(pl.id)?'checked':''}> ${_esc(pl.name)}</label>`
+  ).join('');
+  _openModal(`
+    <h2 style="margin:0 0 14px;font-size:20px">${isNew?'New promo':'Edit promo'}</h2>
+    ${isNew ? `<label style="font-size:12px;color:var(--text3)">Code</label>
+      <input id="pe-code" class="inp" value="" placeholder="EARLY20">` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <div><label style="font-size:12px;color:var(--text3)">Discount %</label><input id="pe-pct" class="inp" type="number" step="0.01" min="0" max="100" value="${p?.discount_pct??10}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Max uses (blank = ∞)</label><input id="pe-max" class="inp" type="number" min="0" value="${p?.max_uses??''}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Expires (YYYY-MM-DD)</label><input id="pe-exp" class="inp" type="date" value="${p?.expires_at? new Date(p.expires_at).toISOString().slice(0,10):''}"></div>
+      <div style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:6px"><input id="pe-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label></div>
+    </div>
+    <label style="display:block;font-size:12px;color:var(--text3);margin:14px 0 4px">Applies to plans (none checked = all paid plans)</label>
+    <div id="pe-plans" style="border:1px solid var(--border);border-radius:7px;padding:8px 10px;max-height:160px;overflow:auto">${planOpts}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn-secondary" onclick="_closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="savePromo(${p?p.id:0})">${isNew?'Create':'Save'}</button>
+    </div>
+    <style>.inp{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:7px;font:inherit;font-family:'Inter';font-size:13px}.inp:focus{outline:0;border-color:var(--border2)}</style>
+  `);
+}
+
+async function savePromo(promoId){
+  const planIds = [...document.querySelectorAll('#pe-plans input:checked')].map(el => parseInt(el.dataset.planId, 10));
+  const expRaw = document.getElementById('pe-exp').value;
+  const body = {
+    discount_pct: parseFloat(document.getElementById('pe-pct').value || '0'),
+    max_uses: document.getElementById('pe-max').value ? parseInt(document.getElementById('pe-max').value, 10) : null,
+    is_active: document.getElementById('pe-active').checked,
+    expires_at: expRaw ? expRaw + 'T23:59:59' : null,
+    applies_to_plan_ids: planIds.length ? planIds : null,
+  };
+  if (!promoId){ body.code = (document.getElementById('pe-code').value || '').trim().toUpperCase(); }
+  const path = promoId ? `/admin/promos/${promoId}` : '/admin/promos';
+  const r = await Auth.apiFetch(path, {
+    method: promoId ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok){
+    const j = await r.json().catch(() => ({}));
+    toast('Save failed: ' + (j.detail || r.status), 'error'); return;
+  }
+  _closeModal();
+  toast('Promo saved', 'success');
+  loadPromosAdmin();
+}
+
+async function deletePromo(promoId){
+  if (!confirm('Delete this promo? Historic usage stats stay but the code is gone.')) return;
+  const r = await Auth.apiFetch(`/admin/promos/${promoId}`, { method: 'DELETE' });
+  if (!r.ok){ toast('Delete failed', 'error'); return; }
+  toast('Promo deleted', 'success');
+  loadPromosAdmin();
+}
+
+
+// ── Popups ────────────────────────────────────────────────────────────────
+let _adminPopups = [];
+
+async function loadPopupsAdmin(){
+  const list = document.getElementById('popups-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:var(--text3);padding:14px">Loading…</div>';
+  try {
+    const r = await Auth.apiFetch('/admin/popups');
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    _adminPopups = j.popups || [];
+    if (!_adminPopups.length){
+      list.innerHTML = '<div style="color:var(--text3);padding:14px">No popups yet.</div>';
+      return;
+    }
+    list.innerHTML = _adminPopups.map(p => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:16px;font-weight:600">${_esc(p.title)} ${p.is_active?'':'<span style="color:var(--text3);font-size:12px">· INACTIVE</span>'}</div>
+            <div style="color:var(--text2);font-size:13px;margin-top:4px;white-space:pre-wrap">${_esc(p.body)}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:8px">
+              Target: <b style="color:var(--text)">${p.target_type === 'all' ? 'all users' : 'user #' + p.target_user_id}</b> ·
+              Frequency: <b style="color:var(--text)">${p.frequency_type === 'once' ? 'once' : 'every ' + p.frequency_minutes + ' min'}</b> ·
+              CTA: <code style="color:var(--text)">${_esc(p.button_text)} → ${_esc(p.button_url)}</code>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn-secondary" onclick="openPopupEditor(${p.id})">Edit</button>
+            <button class="btn-secondary" style="color:var(--red)" onclick="deletePopup(${p.id})">Delete</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  } catch (e){
+    list.innerHTML = '<div style="color:var(--red);padding:14px">Failed to load: ' + e.message + '</div>';
+  }
+}
+
+function openPopupEditor(popupId){
+  const p = popupId ? _adminPopups.find(x => x.id === popupId) : null;
+  const isNew = !p;
+  _openModal(`
+    <h2 style="margin:0 0 14px;font-size:20px">${isNew?'New popup':'Edit popup'}</h2>
+    <label style="font-size:12px;color:var(--text3)">Title</label>
+    <input id="up-title" class="inp" value="${_esc(p?.title||'')}">
+    <label style="display:block;font-size:12px;color:var(--text3);margin:10px 0 4px">Body</label>
+    <textarea id="up-body" class="inp" rows="4">${_esc(p?.body||'')}</textarea>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <div><label style="font-size:12px;color:var(--text3)">Button text</label><input id="up-bt" class="inp" value="${_esc(p?.button_text||'View pricing')}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Button URL</label><input id="up-bu" class="inp" value="${_esc(p?.button_url||'/pricing')}"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <div>
+        <label style="font-size:12px;color:var(--text3)">Target</label>
+        <select id="up-target" class="inp" onchange="document.getElementById('up-userwrap').style.display=this.value==='user'?'':'none'">
+          <option value="all" ${p?.target_type!=='user'?'selected':''}>Everyone</option>
+          <option value="user" ${p?.target_type==='user'?'selected':''}>Specific user</option>
+        </select>
+      </div>
+      <div id="up-userwrap" style="display:${p?.target_type==='user'?'':'none'}">
+        <label style="font-size:12px;color:var(--text3)">User search</label>
+        <input id="up-usearch" class="inp" placeholder="username or email" oninput="searchUsersForPopup(this.value)">
+        <div id="up-uresults" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin-top:4px;max-height:120px;overflow:auto;display:none"></div>
+        <input id="up-userid" type="hidden" value="${p?.target_user_id||''}">
+        <div id="up-pickedlbl" style="font-size:12px;color:var(--green);margin-top:4px">${p?.target_user_id?('Selected user #' + p.target_user_id):''}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <div>
+        <label style="font-size:12px;color:var(--text3)">Frequency</label>
+        <select id="up-freq" class="inp" onchange="document.getElementById('up-minwrap').style.display=this.value==='every_n_min'?'':'none'">
+          <option value="once" ${p?.frequency_type!=='every_n_min'?'selected':''}>Once</option>
+          <option value="every_n_min" ${p?.frequency_type==='every_n_min'?'selected':''}>Every N minutes</option>
+        </select>
+      </div>
+      <div id="up-minwrap" style="display:${p?.frequency_type==='every_n_min'?'':'none'}">
+        <label style="font-size:12px;color:var(--text3)">Minutes between shows</label>
+        <input id="up-min" class="inp" type="number" min="1" value="${p?.frequency_minutes||60}">
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:14px"><input id="up-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn-secondary" onclick="_closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="savePopup(${p?p.id:0})">${isNew?'Create':'Save'}</button>
+    </div>
+    <style>.inp{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:7px;font:inherit;font-family:'Inter';font-size:13px}.inp:focus{outline:0;border-color:var(--border2)}</style>
+  `);
+}
+
+let _userSearchTimer = null;
+async function searchUsersForPopup(q){
+  clearTimeout(_userSearchTimer);
+  const wrap = document.getElementById('up-uresults');
+  if (!q || q.trim().length < 2){ wrap.style.display = 'none'; return; }
+  _userSearchTimer = setTimeout(async () => {
+    const r = await Auth.apiFetch('/admin/users/search?q=' + encodeURIComponent(q));
+    if (!r.ok){ return; }
+    const j = await r.json();
+    if (!j.users.length){ wrap.style.display='none'; return; }
+    wrap.innerHTML = j.users.map(u => `
+      <div style="padding:7px 10px;cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background='transparent'" onclick="pickUserForPopup(${u.id},'${_esc(u.username).replace(/'/g,"\\'")}')">
+        <b>${_esc(u.username)}</b> <span style="color:var(--text3)">${_esc(u.email)}</span>
+      </div>
+    `).join('');
+    wrap.style.display = '';
+  }, 200);
+}
+
+function pickUserForPopup(id, name){
+  document.getElementById('up-userid').value = id;
+  document.getElementById('up-pickedlbl').textContent = `Selected: ${name} (#${id})`;
+  document.getElementById('up-uresults').style.display = 'none';
+  document.getElementById('up-usearch').value = name;
+}
+
+async function savePopup(popupId){
+  const targetType = document.getElementById('up-target').value;
+  const userId = parseInt(document.getElementById('up-userid').value || '0', 10) || null;
+  if (targetType === 'user' && !userId){ toast('Pick a user', 'error'); return; }
+  const body = {
+    title: document.getElementById('up-title').value.trim(),
+    body: document.getElementById('up-body').value.trim(),
+    button_text: document.getElementById('up-bt').value.trim() || 'View pricing',
+    button_url: document.getElementById('up-bu').value.trim() || '/pricing',
+    target_type: targetType,
+    target_user_id: targetType === 'user' ? userId : null,
+    frequency_type: document.getElementById('up-freq').value,
+    frequency_minutes: parseInt(document.getElementById('up-min').value || '0', 10),
+    is_active: document.getElementById('up-active').checked,
+  };
+  const path = popupId ? `/admin/popups/${popupId}` : '/admin/popups';
+  const r = await Auth.apiFetch(path, {
+    method: popupId ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok){
+    const j = await r.json().catch(() => ({}));
+    toast('Save failed: ' + (j.detail || r.status), 'error'); return;
+  }
+  _closeModal();
+  toast('Popup saved', 'success');
+  loadPopupsAdmin();
+}
+
+async function deletePopup(popupId){
+  if (!confirm('Delete this popup?')) return;
+  const r = await Auth.apiFetch(`/admin/popups/${popupId}`, { method: 'DELETE' });
+  if (!r.ok){ toast('Delete failed', 'error'); return; }
+  toast('Popup deleted', 'success');
+  loadPopupsAdmin();
 }
 </script>
 

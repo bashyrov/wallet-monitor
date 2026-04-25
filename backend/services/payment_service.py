@@ -252,7 +252,7 @@ def verify_webhook_signature(token: str | None) -> bool:
         logger.error("CRYPTOCLOUD_WEBHOOK_SECRET unset, rejecting webhook")
         return False
     try:
-        import jwt
+        from jose import jwt
         jwt.decode(
             token,
             settings.CRYPTOCLOUD_WEBHOOK_SECRET,

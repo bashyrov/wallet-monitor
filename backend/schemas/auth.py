@@ -41,8 +41,12 @@ class UserOut(BaseModel):
     email: str
     is_admin: bool
     plan: str = "basic"
+    plan_id: Optional[int] = None
     plan_expires_at: Optional[datetime] = None
-    wallet_limit: Optional[int] = None   # None = unlimited; computed from plan
+    wallet_limit: Optional[int] = None   # alias for portfolio_limit (legacy)
+    portfolio_limit: Optional[int] = None
+    exchange_keys_per_venue: Optional[int] = None
+    is_plan_expired: bool = False
     tg_username: Optional[str] = None
     tg_linked: bool = False          # True if tg_chat_id is set (user ran /start)
     created_at: datetime
@@ -52,6 +56,12 @@ class UserOut(BaseModel):
 
     @model_validator(mode="after")
     def _fill_derived(self) -> "UserOut":
-        from backend.plans import wallet_limit
-        self.wallet_limit = wallet_limit(self.plan)
+        # Legacy fallback: wallet_limit was hard-coded by plan slug. With
+        # the DB-driven plan system the source of truth is /api/plans;
+        # downstream callers that pre-date plan_id keep working via the
+        # `plan` slug → static lookup, but if /api/auth/me is enriched
+        # with plan_service.effective_limits in the route handler the
+        # wallet_limit / portfolio_limit fields end up identical.
+        if self.wallet_limit is None and self.portfolio_limit is not None:
+            self.wallet_limit = self.portfolio_limit
         return self
