@@ -165,10 +165,17 @@ services:
       # so two replicas don't race the alembic_version row.
       AVALANT_RUN_MIGRATIONS: "true"
     # Shared cache — fetcher writes, web reads (funding.json,
-    # arbitrage.json, books.json, funding_ws.json, pending_subs.json)
+    # arbitrage.json, books.json, funding_ws.json, pending_subs.json).
+    # Frontend bind-mount: host edits to ./frontend land in the container
+    # the moment they're saved (FastAPI's StaticFiles re-reads on every
+    # request), so a copy/edit/git-pull of HTML/JS/CSS lights up without
+    # a container restart. Cache-Control max-age=60 on JS/CSS means old
+    # browser caches refresh within a minute — for a hard cut-over flip
+    # full-site maintenance, deploy, flip back.
     volumes:
       - avalant_cache:/tmp/avalant_cache
       - avalant_logs:/var/log/avalant
+      - ./frontend:/app/frontend:ro
 
   # Second uvicorn replica behind nginx round-robin so a rolling deploy
   # never drops traffic. Identical to `app` except it doesn't run
@@ -193,6 +200,7 @@ services:
     volumes:
       - avalant_cache:/tmp/avalant_cache
       - avalant_logs:/var/log/avalant
+      - ./frontend:/app/frontend:ro
 
   fetcher:
     build: .
@@ -208,6 +216,10 @@ services:
     volumes:
       - avalant_cache:/tmp/avalant_cache
       - avalant_logs:/var/log/avalant
+      # Fetcher itself doesn't serve frontend, but bind-mounting keeps
+      # the image identical to web replicas — handy for ad-hoc debug
+      # (e.g. dumping a frontend asset from the fetcher container).
+      - ./frontend:/app/frontend:ro
 
   nginx:
     image: nginx:alpine
