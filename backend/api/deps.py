@@ -26,6 +26,11 @@ def get_current_user(
     payload = decode_payload(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    # Scoped tokens (e.g. `totp_challenge`) are only valid on the matching
+    # second-factor route, never as a session credential. Bounce them here
+    # so a leaked challenge can't masquerade as a full session.
+    if payload.get("scope"):
+        raise HTTPException(status_code=401, detail="Token scope insufficient for this resource")
     jti = payload.get("jti")
     if jti and token_blacklist.is_revoked(jti):
         raise HTTPException(status_code=401, detail="Session revoked")

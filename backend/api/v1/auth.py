@@ -104,11 +104,104 @@ def login(body: UserLogin, request: Request, response: Response, db: Session = D
     if getattr(user, 'is_blocked', False):
         logger.warning("Blocked user login attempt: %s from IP %s", user.username, ip)
         raise HTTPException(status_code=403, detail="Your account has been blocked. Please contact support.")
+    # Admin TOTP gate. If the admin has armed 2FA, the password+username
+    # exchange does NOT yield a session token directly; instead we issue
+    # a short-lived "challenge" token + ask for the OTP via
+    # POST /auth/login/totp.
+    if user.is_admin and user.totp_verified_at is not None and user.totp_secret_enc:
+        _record_attempt(ip)  # gentle anti-bruteforce on the password leg
+        challenge = svc.create_token(user.id, ttl_minutes=5, scope="totp_challenge")
+        return Token(access_token=challenge, token_type="totp_challenge")
     _clear_attempts(ip)
     logger.info("User logged in: %s (id=%d) from IP %s", user.username, user.id, ip)
     token = svc.create_token(user.id)
     _set_session_cookie(response, token)
     return Token(access_token=token)
+
+
+@router.post("/login/totp", response_model=Token)
+def login_totp(body: dict, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Second-factor leg of the admin login flow. Body = {challenge, code}.
+    Returns a regular session token on success, 401 on bad code."""
+    from backend.services import totp as _totp
+    ip = _get_ip(request)
+    _check_rate_limit(ip)
+    challenge = (body.get("challenge") or "").strip()
+    code = (body.get("code") or "").strip()
+    if not challenge or not code:
+        raise HTTPException(status_code=422, detail="challenge and code required")
+    try:
+        payload = svc.decode_payload(challenge)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired challenge")
+    if payload.get("scope") != "totp_challenge":
+        raise HTTPException(status_code=401, detail="Bad challenge scope")
+    user = db.query(User).filter(User.id == int(payload.get("sub", 0) or 0)).first()
+    if not user or not user.is_admin or not user.totp_secret_enc:
+        raise HTTPException(status_code=401, detail="No 2FA configured")
+    try:
+        secret = _totp.decrypt_secret(user.totp_secret_enc)
+    except Exception:
+        raise HTTPException(status_code=500, detail="2FA secret unreadable; contact ops")
+    if not _totp.verify_code(secret, code):
+        _record_attempt(ip)
+        raise HTTPException(status_code=401, detail="Invalid code")
+    _clear_attempts(ip)
+    token = svc.create_token(user.id)
+    _set_session_cookie(response, token)
+    logger.info("Admin 2FA login OK: %s (id=%d)", user.username, user.id)
+    return Token(access_token=token)
+
+
+@router.post("/me/2fa/setup")
+def me_2fa_setup(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Admin-only — generate (but DO NOT arm) a fresh TOTP secret. The
+    admin enters the QR code in their authenticator and then calls
+    /me/2fa/verify with a generated code to arm the secret."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    from backend.services import totp as _totp
+    secret = _totp.generate_secret()
+    current_user.totp_secret_enc = _totp.encrypt_secret(secret)
+    current_user.totp_verified_at = None
+    db.commit()
+    uri = _totp.provisioning_uri(secret, account=current_user.email or current_user.username)
+    return {"otpauth_uri": uri, "secret": secret}
+
+
+@router.post("/me/2fa/verify")
+def me_2fa_verify(body: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Admin enters the first valid code from their authenticator —
+    flips totp_verified_at so future logins start requiring it."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if not current_user.totp_secret_enc:
+        raise HTTPException(status_code=400, detail="Run /me/2fa/setup first")
+    from backend.services import totp as _totp
+    code = (body.get("code") or "").strip()
+    secret = _totp.decrypt_secret(current_user.totp_secret_enc)
+    if not _totp.verify_code(secret, code):
+        raise HTTPException(status_code=400, detail="Invalid code")
+    current_user.totp_verified_at = _dt.utcnow()
+    db.commit()
+    logger.info("Admin 2FA armed: uid=%d", current_user.id)
+    return {"ok": True}
+
+
+@router.post("/me/2fa/disable")
+def me_2fa_disable(body: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Disarm 2FA. Requires the current password to prevent a stolen
+    session from undoing protection silently."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    pwd = body.get("password") or ""
+    if not svc.verify_password(pwd, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Password mismatch")
+    current_user.totp_secret_enc = None
+    current_user.totp_verified_at = None
+    db.commit()
+    logger.info("Admin 2FA disabled: uid=%d", current_user.id)
+    return {"ok": True}
 
 
 @router.post("/logout")
@@ -139,6 +232,7 @@ def logout(
 def me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     out = UserOut.model_validate(current_user)
     out.tg_linked = bool(current_user.tg_chat_id)
+    out.totp_enabled = bool(getattr(current_user, "totp_verified_at", None))
     # Enrich with effective limits so the frontend picker / pricing page
     # can show the right cap without round-tripping to /api/plans.
     try:
@@ -505,4 +599,5 @@ def patch_me(body: _UserPatch, current_user: User = Depends(get_current_user), d
         db.refresh(current_user)
     out = UserOut.model_validate(current_user)
     out.tg_linked = bool(current_user.tg_chat_id)
+    out.totp_enabled = bool(getattr(current_user, "totp_verified_at", None))
     return out

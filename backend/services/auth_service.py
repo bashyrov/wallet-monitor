@@ -26,13 +26,22 @@ def verify_password(plain: str, hashed: str) -> bool:
 _ALGORITHM = "HS256"
 
 
-def create_token(user_id: int) -> str:
+def create_token(user_id: int, *, ttl_minutes: int | None = None, scope: str | None = None) -> str:
     import uuid
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
+    if ttl_minutes is None:
+        expire = datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
     # `jti` is a unique token id — feeds the revocation list so a
     # logout / admin block can invalidate this exact session without
     # touching any other still-valid token for the same user.
-    payload = {"sub": str(user_id), "exp": expire, "jti": uuid.uuid4().hex}
+    payload: dict = {"sub": str(user_id), "exp": expire, "jti": uuid.uuid4().hex}
+    if scope:
+        # Scope marks short-lived tokens (e.g. "totp_challenge") so
+        # downstream `get_current_user` can refuse them on regular
+        # endpoints — only the matching second-factor route accepts
+        # the challenge.
+        payload["scope"] = scope
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=_ALGORITHM)
 
 

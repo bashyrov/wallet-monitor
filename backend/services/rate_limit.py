@@ -1,18 +1,18 @@
 """Generic rate-limiter for non-auth endpoints.
 
-Sister module to the inline limiter in `api/v1/auth.py` — that one stays
-tied to login/register state, this one is reusable across services. Per
-(bucket, ip) sliding-window counter, in-memory only (single-process app
-container), with a clear `RateLimited` exception on overflow that the
-FastAPI handler converts to 429.
+Sister module to the inline limiter in `api/v1/auth.py`. Two backends:
+
+  · **Redis** — primary. Survives restart, shared across the 2 app
+    replicas (without it the user could just round-robin between
+    upstreams to skirt the cap). Sliding-window via SETEX + INCR on
+    a per-(bucket, key) hash: `rl:<bucket>:<key>:<window-floor>`.
+    Auto-expires after `window_sec` seconds.
+
+  · **In-memory** — fallback when Redis is unreachable. Same dict +
+    lock pattern as before so we never fail-open on a Redis blip.
 
 Buckets keep their own thresholds — payments-checkout is allowed less
 frequently than promo-validate, both well below auth.
-
-Move to Redis-backed counters when we scale past a single uvicorn
-process. The dict + lock approach is fine for the current 1× app
-container and survives a restart by intentionally resetting (no
-persisted hostility).
 """
 from __future__ import annotations
 
@@ -85,6 +85,76 @@ def client_key(request: Request, *, suffix: str | None = None) -> str:
     return ip
 
 
+# ── Redis-backed counters (primary path) ──────────────────────────────────────
+import os as _os
+
+_REDIS_URL = _os.environ.get("REDIS_URL") or ""
+_redis_client = None
+_redis_failed_ts: float = 0.0
+_REDIS_BACKOFF_S = 10.0
+
+
+def _get_redis():
+    """Lazy Redis client. Falls back to None (→ in-memory) when the
+    server is down + recently failed."""
+    global _redis_client, _redis_failed_ts
+    if not _REDIS_URL:
+        return None
+    if _redis_client is not None:
+        return _redis_client
+    if time.time() - _redis_failed_ts < _REDIS_BACKOFF_S:
+        return None
+    try:
+        import redis
+        _redis_client = redis.from_url(
+            _REDIS_URL,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+            health_check_interval=30,
+        )
+        _redis_client.ping()
+        return _redis_client
+    except Exception as exc:
+        _redis_client = None
+        _redis_failed_ts = time.time()
+        logger.warning("rate_limit redis connect failed: %s — falling back in-mem", exc)
+        return None
+
+
+def _redis_check_and_record(bucket: str, b: _Bucket, key: str) -> None:
+    """Atomic INCR + EXPIRE on Redis. Raises 429 when over threshold."""
+    r = _get_redis()
+    if r is None:
+        b.check(key)
+        b.record(key)
+        return
+    # Window-floor key keeps each request into its own bucket so we get
+    # a true sliding window without LUA. After window_sec the key
+    # auto-expires.
+    floor = int(time.time() // max(1, b.window_sec)) * b.window_sec
+    redis_key = f"rl:{bucket}:{key}:{floor}"
+    try:
+        pipe = r.pipeline(transaction=False)
+        pipe.incr(redis_key, 1)
+        pipe.expire(redis_key, b.window_sec + 5)  # +5 s grace for clock skew
+        count, _ = pipe.execute()
+    except Exception as exc:
+        logger.warning("rate_limit redis op failed (%s) — fallback in-mem", exc)
+        b.check(key)
+        b.record(key)
+        return
+    if int(count) > b.max_attempts:
+        logger.warning(
+            "rate-limit hit (redis): bucket=%s key=%s count=%d window=%ds",
+            bucket, key, count, b.window_sec,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests — slow down and try again in a minute.",
+            headers={"Retry-After": str(b.block_sec)},
+        )
+
+
 def enforce(bucket: str, request: Request, *, suffix: str | None = None) -> None:
     """Single call site for every protected endpoint.
 
@@ -100,5 +170,4 @@ def enforce(bucket: str, request: Request, *, suffix: str | None = None) -> None
         logger.warning("rate_limit.enforce called with unknown bucket %r", bucket)
         return
     key = client_key(request, suffix=suffix)
-    b.check(key)
-    b.record(key)
+    _redis_check_and_record(bucket, b, key)

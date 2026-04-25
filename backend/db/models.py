@@ -35,6 +35,14 @@ class User(Base):
     tg_chat_id = Column(Integer, nullable=True)   # filled after user runs /start to the bot
     tg_id = Column(Integer, nullable=True, index=True, unique=True)  # Telegram numeric user id (from widget / bot update)
 
+    # Admin TOTP 2FA. Secret is Fernet-encrypted at rest. `totp_verified_at`
+    # acts as the "armed" flag — the secret is meaningful only after the
+    # admin proves they configured their authenticator by entering one
+    # valid code. Login flow gates admin sessions on a second-factor
+    # check whenever totp_verified_at is set.
+    totp_secret_enc = Column(String, nullable=True)
+    totp_verified_at = Column(DateTime, nullable=True)
+
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")
 

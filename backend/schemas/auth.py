@@ -49,6 +49,7 @@ class UserOut(BaseModel):
     is_plan_expired: bool = False
     tg_username: Optional[str] = None
     tg_linked: bool = False          # True if tg_chat_id is set (user ran /start)
+    totp_enabled: bool = False       # True when admin has armed TOTP 2FA
     created_at: datetime
     email_verified_at: Optional[datetime] = None  # None = unverified; frontend shows a banner
 
