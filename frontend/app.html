@@ -2334,6 +2334,7 @@ async function evSendVerify() {
 <script src="/auth.js"></script>
 <script src="/toast.js"></script>
 <script src="/popup.js" defer></script>
+<script src="/expiry-banner.js" defer></script>
 <script src="/confirm.js"></script>
 <script src="/theme.js"></script>
 <script>
@@ -2453,10 +2454,13 @@ async function init() {
     S.tags = tags; S.options = options;
     if (meRes && meRes.ok) {
       const me = await meRes.json();
-      const PLAN_LIMITS = { basic: 4, pro: 30, platinum: 70, enterprise: null, unlim: null };
-      const lim = PLAN_LIMITS[me.plan];
-      if (lim != null) FREE_WALLET_LIMIT = lim;
-      else FREE_WALLET_LIMIT = Infinity;
+      // /api/auth/me already returns the resolved portfolio_limit from
+      // plan_service.effective_limits — no need to re-derive from a
+      // hardcoded slug map. Fallback to wallet_limit (legacy alias) and
+      // finally to Infinity if the API is older.
+      const lim = me.portfolio_limit ?? me.wallet_limit ?? Infinity;
+      FREE_WALLET_LIMIT = lim;
+      S.me = me;
     }
     populateSelects();
     loadAddressBook();
@@ -2574,7 +2578,21 @@ function renderWallets() {
   const ex = S.wallets.filter(w => w.wallet_type==='exchange').length;
   const ch = S.wallets.filter(w => w.wallet_type==='chain').length;
   const px = S.wallets.filter(w => w.wallet_type==='perpdex').length;
+  // Portfolio capacity badge — count wallets that count against the cap
+  // (purpose='portfolio' or 'both') and render N/M with a colour cue
+  // when within 80%/100% of the limit.
+  const portfolioUsed = S.wallets.filter(w => (w.purpose || 'portfolio') !== 'screener').length;
+  const lim = (FREE_WALLET_LIMIT === Infinity) ? null : FREE_WALLET_LIMIT;
+  let capPill = '';
+  if (lim != null && lim > 0) {
+    const ratio = portfolioUsed / lim;
+    const colour = ratio >= 1 ? 'var(--red)' : (ratio >= 0.8 ? 'var(--yellow)' : 'var(--text2)');
+    const tip = ratio >= 1 ? 'Limit reached — upgrade or archive a wallet to add more' :
+                ratio >= 0.8 ? 'Almost at the portfolio limit' : 'Portfolio wallets in use';
+    capPill = `<span class="type-pill has-tip" data-tip="${tip}" style="color:${colour};border-color:rgba(155,159,171,0.18)">${portfolioUsed}/${lim} portfolio</span>`;
+  }
   document.getElementById('type-pills').innerHTML = [
+    capPill,
     ex ? `<span class="type-pill"><span class="tpd" style="background:#E5C07B"></span>${ex} EX</span>` : '',
     ch ? `<span class="type-pill"><span class="tpd" style="background:#06B6D4"></span>${ch} CH</span>` : '',
     px ? `<span class="type-pill"><span class="tpd" style="background:#925BD6"></span>${px} PX</span>` : '',

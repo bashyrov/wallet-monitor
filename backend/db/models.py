@@ -423,6 +423,24 @@ class Popup(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class AuditLogEntry(Base):
+    """Append-only ledger of destructive admin / billing actions. Never
+    UPDATE, never DELETE — incident-response truth source."""
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True)
+    actor_user_id = Column(Integer,
+                           ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True)
+    actor_ip = Column(String, nullable=True)
+    actor_user_agent = Column(String, nullable=True)
+    action = Column(String, nullable=False, index=True)
+    target_type = Column(String, nullable=True, index=True)
+    target_id = Column(Integer, nullable=True)
+    delta = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class PopupDismissal(Base):
     """Per-user dismissal log. `dismissed_at` lets the popup_service decide
     whether `every_n_min` cadence has elapsed since the last close. Unique

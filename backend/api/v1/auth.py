@@ -3,7 +3,7 @@ import time
 from collections import defaultdict
 from threading import Lock
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -112,8 +112,26 @@ def login(body: UserLogin, request: Request, response: Response, db: Session = D
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(
+    response: Response,
+    authorization: str | None = Header(default=None),
+):
+    """Logout invalidates the session cookie AND revokes the JWT itself
+    via the Redis-backed blacklist. Subsequent requests carrying the old
+    Bearer token will get 401, even though it'd otherwise still verify."""
     response.delete_cookie("session", path="/")
+    if authorization and authorization.startswith("Bearer "):
+        from backend.services.auth_service import decode_payload
+        from backend.services import token_blacklist
+        from datetime import datetime, timezone
+        payload = decode_payload(authorization[7:])
+        if payload:
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            if jti and exp:
+                ttl = max(0, int(exp - datetime.now(timezone.utc).timestamp()))
+                if ttl > 0:
+                    token_blacklist.revoke(jti, ttl)
     return {"ok": True}
 
 

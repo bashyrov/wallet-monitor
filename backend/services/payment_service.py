@@ -213,10 +213,18 @@ def verify_and_apply_webhook(
     """Webhook lifecycle. CryptoCloud sends status='paid' on success,
     'partial'/'canceled'/'failed' otherwise. We tolerate unknown statuses
     by leaving the payment in 'pending' so a manual reconcile can fix it.
+
+    Idempotency: SELECT ... FOR UPDATE locks the payments row so two
+    concurrent webhook deliveries can't both pass the
+    `if payment.status == "paid": return` guard and double-extend
+    `plan_expires_at`. With a single-row lock the second webhook
+    serialises behind the first and exits cleanly on the early-return
+    branch.
     """
     payment = (
         db.query(Payment)
         .filter(Payment.provider_invoice_id == invoice_uuid)
+        .with_for_update()
         .first()
     )
     if not payment:

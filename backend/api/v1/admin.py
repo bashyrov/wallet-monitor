@@ -1,7 +1,7 @@
 import os
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -9,7 +9,7 @@ from sqlalchemy import func
 from backend.api.deps import get_admin_user, get_db
 from backend.db.models import User, Wallet, Tag, ProviderErrorLog
 from backend.plans import PLAN_LIMITS, VALID_PLANS, ADMIN_ONLY_PLANS, wallet_limit
-from backend.services import admin_settings
+from backend.services import admin_settings, audit_log
 from backend.services.arbitrage_service import FETCHERS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -532,8 +532,9 @@ def admin_list_plans(
 @router.post("/plans")
 def admin_create_plan(
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     slug = (body.get("slug") or "").strip().lower()
     if not slug or not slug.replace("-", "").replace("_", "").isalnum():
@@ -541,6 +542,9 @@ def admin_create_plan(
     if _plan_service.get_plan_by_slug(db, slug):
         raise HTTPException(status_code=409, detail="slug already exists")
     plan = _plan_service.create_plan(db, slug, body)
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="plan.create", target_type="plan", target_id=plan.id,
+                     delta={"slug": slug, "fields": {k: body.get(k) for k in body if k != "features"}})
     return _plan_service.serialize_plan(plan)
 
 
@@ -548,21 +552,26 @@ def admin_create_plan(
 def admin_update_plan(
     plan_id: int,
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     plan = _plan_service.get_plan(db, plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan not found")
     _plan_service.update_plan(db, plan, body)
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="plan.update", target_type="plan", target_id=plan.id,
+                     delta={k: body.get(k) for k in body if k != "features"})
     return _plan_service.serialize_plan(plan)
 
 
 @router.delete("/plans/{plan_id}")
 def admin_delete_plan(
     plan_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     plan = _plan_service.get_plan(db, plan_id)
     if not plan:
@@ -571,6 +580,9 @@ def admin_delete_plan(
         _plan_service.delete_plan(db, plan)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="plan.delete", target_type="plan", target_id=plan.id,
+                     delta={"slug": plan.slug, "name": plan.name})
     return {"ok": True}
 
 
@@ -595,14 +607,18 @@ def admin_promo_stats(
 @router.post("/promos")
 def admin_create_promo(
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     code = (body.get("code") or "").strip()
     try:
         promo = _promo_service.create_code(db, code, body)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="promo.create", target_type="promo", target_id=promo.id,
+                     delta={"code": promo.code, "discount_pct": float(promo.discount_pct)})
     return _promo_service.serialize_code(promo)
 
 
@@ -610,26 +626,35 @@ def admin_create_promo(
 def admin_update_promo(
     promo_id: int,
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     promo = db.query(_PromoCode).filter(_PromoCode.id == promo_id).first()
     if not promo:
         raise HTTPException(status_code=404, detail="promo not found")
     _promo_service.update_code(db, promo, body)
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="promo.update", target_type="promo", target_id=promo.id,
+                     delta=body)
     return _promo_service.serialize_code(promo)
 
 
 @router.delete("/promos/{promo_id}")
 def admin_delete_promo(
     promo_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     promo = db.query(_PromoCode).filter(_PromoCode.id == promo_id).first()
     if not promo:
         raise HTTPException(status_code=404, detail="promo not found")
+    code_str = promo.code
     _promo_service.delete_code(db, promo)
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="promo.delete", target_type="promo", target_id=promo_id,
+                     delta={"code": code_str})
     return {"ok": True}
 
 
@@ -646,13 +671,17 @@ def admin_list_popups(
 @router.post("/popups")
 def admin_create_popup(
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     try:
         popup = _popup_service.create_popup(db, body)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="popup.create", target_type="popup", target_id=popup.id,
+                     delta={"title": popup.title, "target": popup.target_type})
     return _popup_service.serialize_popup(popup)
 
 
@@ -660,26 +689,34 @@ def admin_create_popup(
 def admin_update_popup(
     popup_id: int,
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     popup = db.query(_Popup).filter(_Popup.id == popup_id).first()
     if not popup:
         raise HTTPException(status_code=404, detail="popup not found")
     _popup_service.update_popup(db, popup, body)
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="popup.update", target_type="popup", target_id=popup.id, delta=body)
     return _popup_service.serialize_popup(popup)
 
 
 @router.delete("/popups/{popup_id}")
 def admin_delete_popup(
     popup_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     popup = db.query(_Popup).filter(_Popup.id == popup_id).first()
     if not popup:
         raise HTTPException(status_code=404, detail="popup not found")
+    title = popup.title
     _popup_service.delete_popup(db, popup)
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="popup.delete", target_type="popup", target_id=popup_id,
+                     delta={"title": title})
     return {"ok": True}
 
 
@@ -722,14 +759,18 @@ def admin_list_billing_periods(
 @router.post("/billing-periods")
 def admin_create_billing_period(
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     slug = (body.get("slug") or "").strip().lower()
     try:
         period = _bp_service.create(db, slug, body)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="billing_period.create", target_type="billing_period",
+                     target_id=period.id, delta={"slug": slug, "months": period.months})
     return _bp_service.serialize(period)
 
 
@@ -737,24 +778,57 @@ def admin_create_billing_period(
 def admin_update_billing_period(
     period_id: int,
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     period = _bp_service.get_period(db, period_id)
     if not period:
         raise HTTPException(status_code=404, detail="period not found")
     _bp_service.update(db, period, body)
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="billing_period.update", target_type="billing_period",
+                     target_id=period.id, delta=body)
     return _bp_service.serialize(period)
 
 
 @router.delete("/billing-periods/{period_id}")
 def admin_delete_billing_period(
     period_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_admin_user),
+    current_admin: User = Depends(get_admin_user),
 ):
     period = _bp_service.get_period(db, period_id)
     if not period:
         raise HTTPException(status_code=404, detail="period not found")
+    slug = period.slug
     _bp_service.delete(db, period)
+    audit_log.record(db, request=request, actor=current_admin,
+                     action="billing_period.delete", target_type="billing_period",
+                     target_id=period_id, delta={"slug": slug})
     return {"ok": True}
+
+
+# ── Audit log read-only endpoint for admins ───────────────────────────────
+from backend.db.models import AuditLogEntry as _AuditLogEntry
+
+
+@router.get("/audit-log")
+def admin_audit_log(
+    limit: int = Query(100, ge=1, le=500),
+    action: str | None = None,
+    actor_user_id: int | None = None,
+    target_type: str | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    q = db.query(_AuditLogEntry).order_by(_AuditLogEntry.created_at.desc())
+    if action:
+        q = q.filter(_AuditLogEntry.action == action)
+    if actor_user_id:
+        q = q.filter(_AuditLogEntry.actor_user_id == actor_user_id)
+    if target_type:
+        q = q.filter(_AuditLogEntry.target_type == target_type)
+    rows = q.limit(limit).all()
+    return {"entries": [audit_log.serialize(e) for e in rows]}

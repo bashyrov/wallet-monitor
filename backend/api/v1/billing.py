@@ -27,6 +27,7 @@ from backend.services import (
     popup_service,
     promo_service,
     billing_period_service,
+    rate_limit,
 )
 
 logger = logging.getLogger("avalant.billing")
@@ -49,9 +50,11 @@ def list_plans(db: Session = Depends(get_db)) -> dict[str, Any]:
 @router.post("/payments/checkout")
 async def checkout(
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    rate_limit.enforce("payments_checkout", request, suffix=str(current_user.id))
     plan_id = body.get("plan_id")
     billing_period_id = body.get("billing_period_id")
     promo_code = body.get("promo_code") or None
@@ -108,9 +111,11 @@ def my_payments(
 @router.post("/promo/validate")
 def promo_validate(
     body: dict,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    rate_limit.enforce("promo_validate", request, suffix=str(current_user.id))
     code = (body.get("code") or "").strip()
     plan_id = body.get("plan_id")
     billing_period_id = body.get("billing_period_id")

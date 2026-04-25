@@ -27,15 +27,33 @@ _ALGORITHM = "HS256"
 
 
 def create_token(user_id: int) -> str:
+    import uuid
     expire = datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
-    payload = {"sub": str(user_id), "exp": expire}
+    # `jti` is a unique token id — feeds the revocation list so a
+    # logout / admin block can invalidate this exact session without
+    # touching any other still-valid token for the same user.
+    payload = {"sub": str(user_id), "exp": expire, "jti": uuid.uuid4().hex}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=_ALGORITHM)
 
 
 def decode_token(token: str) -> int | None:
+    """Backward-compat thin wrapper — returns just the user_id. Callers
+    that need the jti / exp use `decode_payload`."""
+    payload = decode_payload(token)
+    if not payload:
+        return None
+    try:
+        return int(payload.get("sub"))
+    except (TypeError, ValueError):
+        return None
+
+
+def decode_payload(token: str) -> dict | None:
+    """Full payload decode — used by middleware that wants the jti for
+    revocation checks + exp for TTL computation on logout."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[_ALGORITHM])
-        return int(payload["sub"])
+        return payload
     except (JWTError, KeyError, ValueError):
         return None
 

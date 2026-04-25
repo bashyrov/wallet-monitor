@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_user
@@ -78,9 +78,12 @@ def get_all_addresses(
 @router.post("", response_model=WalletOut, status_code=201)
 async def create_wallet(
     body: WalletCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from backend.services import rate_limit as _rl
+    _rl.enforce("wallets_create", request, suffix=str(current_user.id))
     # Honour admin-disabled providers without leaking stale UI into the DB.
     tv = (body.type_value or "").lower()
     if body.wallet_type == "exchange" and tv in admin_settings.get_disabled_wallet_exchanges():

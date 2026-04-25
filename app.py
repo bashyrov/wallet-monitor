@@ -23,22 +23,34 @@ _INSECURE_DEFAULTS = {
 
 
 def _check_security():
-    """Warn loudly if dangerous default secrets are in use."""
+    """Refuse to boot when dangerous default secrets are in use.
+
+    The previous behaviour was a warning that boots anyway — easy to
+    miss in CI logs and easy to ship with. Production-readiness audit
+    upgrades it to a hard fail. The local-dev `wallet_monitor.db` path
+    on SQLite is the one allowed exception (no real prod data at risk).
+    """
     issues = []
     if settings.SECRET_KEY in _INSECURE_DEFAULTS:
         issues.append("SECRET_KEY is using the default insecure value")
     if settings.ENCRYPTION_KEY in _INSECURE_DEFAULTS:
         issues.append("ENCRYPTION_KEY is using the default insecure value")
-    if issues:
-        msg = (
-            "\n" + "=" * 60 +
-            "\n  ⚠  SECURITY WARNING\n" +
-            "\n".join(f"  • {i}" for i in issues) +
-            "\n  Set these in your .env file before deploying!" +
-            "\n" + "=" * 60
+    if not issues:
+        return
+    is_local_sqlite = "sqlite:" in (settings.DATABASE_URL or "").lower()
+    msg = (
+        "\n" + "=" * 60 +
+        "\n  ⚠  SECURITY:\n" +
+        "\n".join(f"  • {i}" for i in issues) +
+        "\n  Set these in your .env file before deploying!" +
+        "\n" + "=" * 60
+    )
+    logger.error(msg)
+    if not is_local_sqlite:
+        raise RuntimeError(
+            "Refusing to start with default secrets on a non-SQLite database. "
+            "Override SECRET_KEY and ENCRYPTION_KEY in .env."
         )
-        warnings.warn(msg, stacklevel=2)
-        logger.warning(msg)
 
 
 def run_migrations():
@@ -372,7 +384,16 @@ async def serve_page(page: str, request: Request, db: Session = Depends(get_db))
     if "." in page.split("/")[-1]:
         filepath = os.path.join("frontend", page)
         if os.path.exists(filepath):
-            return FileResponse(filepath)
+            # Cache-bust window: 60 s on text assets so a deploy-fix
+            # propagates within a minute even to clients that didn't
+            # hard-reload. Images / fonts get the longer default since
+            # they rarely change.
+            ext = page.rsplit(".", 1)[-1].lower()
+            if ext in ("js", "css", "html"):
+                headers = {"Cache-Control": "public, max-age=60"}
+            else:
+                headers = {"Cache-Control": "public, max-age=86400"}
+            return FileResponse(filepath, headers=headers)
         raise HTTPException(status_code=404)
 
     base = page.split("/")[0] if page else ""
