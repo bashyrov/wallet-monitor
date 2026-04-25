@@ -47,11 +47,28 @@ LINK_TOKEN_TTL = 15 * 60      # seconds — deep-link token validity
 MAX_OUTSTANDING_PER_USER = 5  # prune to this count per user on issue
 
 
+# ── Bot identity (auth bot vs notification bot) ──────────────────────────────
+#
+# Two-bot deployments: TG_AUTH_BOT_TOKEN/USERNAME drive login + link flows so
+# users sign in via a dedicated @auth_bot, while TG_BOT_TOKEN keeps doing
+# alerts. Single-bot deployments leave the auth-bot vars unset and everything
+# falls back to TG_BOT_TOKEN.
+
+def _auth_bot_token() -> str:
+    return (settings.TG_AUTH_BOT_TOKEN or settings.TG_BOT_TOKEN or "").strip()
+
+
+def _auth_bot_username() -> str:
+    return (settings.TG_AUTH_BOT_USERNAME or settings.TG_BOT_USERNAME or "avalant_bot").lstrip("@")
+
+
 # ── Widget hash verification ─────────────────────────────────────────────────
 
 def _bot_secret_key() -> bytes:
-    """Widget signs with sha256(bot_token) as the HMAC secret."""
-    token = (settings.TG_BOT_TOKEN or "").encode()
+    """Widget signs with sha256(bot_token) as the HMAC secret. Uses the auth
+    bot's token when configured, otherwise the notification bot — must match
+    whichever bot the login widget is wired to."""
+    token = _auth_bot_token().encode()
     if not token:
         raise ValueError("TG_BOT_TOKEN not configured")
     return hashlib.sha256(token).digest()
@@ -191,7 +208,7 @@ def issue_link_token(db: Session, user_id: int) -> dict[str, Any]:
     db.add(row)
     db.commit()
 
-    bot_username = settings.TG_BOT_USERNAME or "avalant_bot"
+    bot_username = _auth_bot_username()
     return {
         "token": raw,  # return to caller; never stored plain anywhere else
         "deep_link": f"https://t.me/{bot_username}?start=link-{raw}",
@@ -323,7 +340,7 @@ def issue_login_token(db: Session) -> dict[str, Any]:
         except Exception:
             pass
 
-    bot_username = settings.TG_BOT_USERNAME or "avalant_bot"
+    bot_username = _auth_bot_username()
     return {
         "token": raw,
         "deep_link": f"https://t.me/{bot_username}?start=auth-{raw}",

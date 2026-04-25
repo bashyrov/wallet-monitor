@@ -4,6 +4,11 @@ Users can't receive bot messages by @username alone — Telegram requires a nume
 chat_id, obtainable only after the user initiates the dialog with the bot. This
 service long-polls getUpdates; on /start it looks up the Avalant user by the
 sender's @username and stores the chat_id on that user row.
+
+Two-bot mode: when TG_AUTH_BOT_TOKEN is set we long-poll both bots concurrently.
+Login + link flows happen on whichever bot the user messages — replies go back
+through the same bot, so deep-links pointing at the auth bot keep landing in the
+auth bot's chat. Alerts continue to fan out from TG_BOT_TOKEN regardless.
 """
 from __future__ import annotations
 
@@ -16,14 +21,15 @@ from settings import settings
 
 logger = logging.getLogger("avalant.tg")
 
-_task: asyncio.Task | None = None
-_offset: int = 0
+# Per-bot poller state — keyed by token so adding a third bot is a one-line change.
+_tasks: dict[str, asyncio.Task] = {}
+_offsets: dict[str, int] = {}
 
 
-async def _tg_post(method: str, payload: dict) -> dict | None:
-    if not settings.TG_BOT_TOKEN:
+async def _tg_post(token: str, method: str, payload: dict) -> dict | None:
+    if not token:
         return None
-    url = f"https://api.telegram.org/bot{settings.TG_BOT_TOKEN}/{method}"
+    url = f"https://api.telegram.org/bot{token}/{method}"
     try:
         async with httpx.AsyncClient(timeout=35) as c:
             r = await c.post(url, json=payload)
@@ -37,7 +43,7 @@ async def _tg_post(method: str, payload: dict) -> dict | None:
         return None
 
 
-async def _handle_update(upd: dict) -> None:
+async def _handle_update(bot_token: str, bot_label: str, upd: dict) -> None:
     msg = upd.get("message") or upd.get("edited_message")
     if not msg:
         return
@@ -109,7 +115,8 @@ async def _handle_update(upd: dict) -> None:
                     f"✅ <b>Linked!</b>\n\n"
                     f"Avalant account <code>{match.username}</code> is now connected to this chat."
                 )
-                logger.info("TG chat linked via username: user_id=%s chat_id=%s @%s", match.id, chat_id, uname)
+                logger.info("TG chat linked via username (%s): user_id=%s chat_id=%s @%s",
+                            bot_label, match.id, chat_id, uname)
             else:
                 reply = (
                     f"Hi {first}! 👋\n\n"
@@ -123,12 +130,12 @@ async def _handle_update(upd: dict) -> None:
                 f"Open <b>Profile</b> on Avalant and tap <b>Link Telegram</b> to generate a one-time link."
             )
     except Exception as exc:
-        logger.warning("TG handle /start error: %s", exc)
+        logger.warning("TG handle /start error (%s): %s", bot_label, exc)
         reply = "Something went wrong. Try again in a moment."
     finally:
         db.close()
 
-    await _tg_post("sendMessage", {
+    await _tg_post(bot_token, "sendMessage", {
         "chat_id": chat_id,
         "text": reply,
         "parse_mode": "HTML",
@@ -136,46 +143,60 @@ async def _handle_update(upd: dict) -> None:
     })
 
 
-async def _poll_loop() -> None:
-    global _offset
-    logger.info("TG bot polling started")
+async def _poll_loop(bot_token: str, bot_label: str) -> None:
+    logger.info("TG bot polling started (%s)", bot_label)
 
     # On startup, drain any pending updates to avoid replaying old ones
-    init = await _tg_post("getUpdates", {"offset": -1, "timeout": 0})
+    init = await _tg_post(bot_token, "getUpdates", {"offset": -1, "timeout": 0})
     if init and init.get("result"):
-        _offset = init["result"][-1]["update_id"] + 1
+        _offsets[bot_token] = init["result"][-1]["update_id"] + 1
+    else:
+        _offsets[bot_token] = 0
 
     while True:
         try:
-            j = await _tg_post("getUpdates", {"offset": _offset, "timeout": 25})
+            j = await _tg_post(bot_token, "getUpdates", {
+                "offset": _offsets.get(bot_token, 0),
+                "timeout": 25,
+            })
             if not j:
                 await asyncio.sleep(5)
                 continue
             for upd in j.get("result", []):
-                _offset = max(_offset, upd["update_id"] + 1)
+                _offsets[bot_token] = max(_offsets.get(bot_token, 0), upd["update_id"] + 1)
                 try:
-                    await _handle_update(upd)
+                    await _handle_update(bot_token, bot_label, upd)
                 except Exception as exc:
-                    logger.warning("TG update handler error: %s", exc)
+                    logger.warning("TG update handler error (%s): %s", bot_label, exc)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.warning("TG poll loop error: %s", exc)
+            logger.warning("TG poll loop error (%s): %s", bot_label, exc)
             await asyncio.sleep(5)
 
 
 def start_tg_bot() -> None:
-    global _task
-    if not settings.TG_BOT_TOKEN:
-        logger.info("TG bot token not set — bot polling disabled")
+    """Start one poller per configured bot. Auth bot (if set) and notification
+    bot are independent tasks; either can be missing without breaking the other."""
+    bots: list[tuple[str, str]] = []
+    if settings.TG_AUTH_BOT_TOKEN and settings.TG_AUTH_BOT_TOKEN != settings.TG_BOT_TOKEN:
+        bots.append((settings.TG_AUTH_BOT_TOKEN, "auth"))
+    if settings.TG_BOT_TOKEN:
+        bots.append((settings.TG_BOT_TOKEN, "alerts"))
+
+    if not bots:
+        logger.info("TG bot tokens not set — bot polling disabled")
         return
-    if _task and not _task.done():
-        return
-    _task = asyncio.create_task(_poll_loop())
+
+    for token, label in bots:
+        existing = _tasks.get(token)
+        if existing and not existing.done():
+            continue
+        _tasks[token] = asyncio.create_task(_poll_loop(token, label))
 
 
 def stop_tg_bot() -> None:
-    global _task
-    if _task:
-        _task.cancel()
-        _task = None
+    for token, task in list(_tasks.items()):
+        task.cancel()
+    _tasks.clear()
+    _offsets.clear()

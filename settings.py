@@ -76,4 +76,14 @@ class Settings(BaseSettings):
     TG_BOT_TOKEN: str | None = None
     TG_BOT_USERNAME: str = "avalant_bot"    # used for deep links + login widget
 
+    # Optional second bot for login / registration only. When set, the
+    # tg_auth_service generates deep links pointing at *this* bot and
+    # validates login-widget HMACs against this token; the existing
+    # TG_BOT_TOKEN keeps doing alerts / notifications. Both unset →
+    # everything stays on TG_BOT_TOKEN. Useful when you want the
+    # public-facing auth bot to live on a separate username (e.g.
+    # @avalant_login_bot) without giving it the alert-firehose role.
+    TG_AUTH_BOT_TOKEN: str | None = None
+    TG_AUTH_BOT_USERNAME: str | None = None
+
 settings = Settings()
