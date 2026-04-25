@@ -1042,43 +1042,6 @@ class HtxSpotWS(WSAdapter):
         return token, bids, asks
 
 
-# ── Ourbit Spot (Binance-fork: @depth20@100ms snapshot stream) ──────────────
-class OurbitSpotWS(WSAdapter):
-    """Ourbit spot WS — Binance-compatible payload shape, dedicated host
-    `wbs.ourbit.com`. ``<symbol>@depth20@100ms`` gives a 20-level snapshot
-    every 100 ms; no delta merging needed."""
-    name = "ourbit_spot"
-    url = "wss://wbs.ourbit.com/ws"
-
-    def build_subscribe(self, symbols):
-        # Combined-stream subscribe in one frame.
-        params = [f"{s.lower()}usdt@depth20@100ms" for s in symbols]
-        return {"method": "SUBSCRIBE", "params": params, "id": 1}
-
-    def parse_message(self, msg):
-        # Binance-style direct payload OR nested under 'data' for combined-
-        # stream — handle both.
-        data = msg.get("data") if "data" in msg and isinstance(msg.get("data"), dict) else msg
-        if not isinstance(data, dict):
-            return None
-        # Per Binance schema: 's' = symbol, 'b' = bids, 'a' = asks. Some
-        # forks also send 'lastUpdateId' top-level; we don't need it.
-        sym = data.get("s") or ""
-        if not sym.endswith("USDT"):
-            # Combined-stream wraps the symbol in 'stream' = "btcusdt@depth20@100ms"
-            stream = msg.get("stream") or ""
-            sym_part = stream.split("@")[0].upper() if stream else ""
-            if not sym_part.endswith("USDT"):
-                return None
-            sym = sym_part
-        token = sym[:-4]
-        bids, asks = _to_book(data.get("bids") or data.get("b"),
-                              data.get("asks") or data.get("a"))
-        if not bids and not asks:
-            return None
-        return token, bids, asks
-
-
 # ── MEXC Spot (v3 API, JSON depth.v3) ────────────────────────────────────────
 class MexcSpotWS(WSAdapter):
     """MEXC spot books via the v3 WS endpoint. Channel
@@ -1140,6 +1103,15 @@ class MexcSpotWS(WSAdapter):
         if not bids and not asks:
             return None
         return token, bids, asks
+
+
+# ── Ourbit Spot — MEXC fork on wbs.ourbit.com ───────────────────────────────
+class OurbitSpotWS(MexcSpotWS):
+    """Ourbit's spot WS turned out to be a clone of MEXC's wbs-api protocol
+    (probed live: SUBSCRIPTION method + spot@public.limit.depth.v3.api@SYM@N
+    works verbatim). Just swap the host."""
+    name = "ourbit_spot"
+    url = "wss://wbs.ourbit.com/ws"
 
 
 ADAPTERS: dict[str, type[WSAdapter]] = {
