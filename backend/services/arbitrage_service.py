@@ -313,6 +313,35 @@ async def _get_interval_map(exchange: str, *, allow_blocking: bool = True) -> di
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Binance Futures ────────────────────────────────────────────────────────────
+# Binance keeps delisted perps in /fapi/v1/premiumIndex with status=SETTLING
+# (e.g. NTRN), so we cross-check against /fapi/v1/exchangeInfo's TRADING
+# set. Cached for 10 min — exchangeInfo changes a few times a day.
+_binance_perp_trading_cache: tuple[set[str], float] = (set(), 0.0)
+_BINANCE_PERP_INFO_TTL = 600.0
+
+
+async def _binance_perp_trading_set() -> set[str]:
+    global _binance_perp_trading_cache
+    syms, ts = _binance_perp_trading_cache
+    if syms and (time.time() - ts) < _BINANCE_PERP_INFO_TTL:
+        return syms
+    try:
+        r = await _http.get("https://fapi.binance.com/fapi/v1/exchangeInfo")
+        if r.status_code != 200:
+            return syms
+        fresh = {
+            s["symbol"]
+            for s in (r.json().get("symbols") or [])
+            if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL"
+        }
+        if fresh:
+            _binance_perp_trading_cache = (fresh, time.time())
+            return fresh
+    except Exception as exc:
+        logger.debug("binance fapi exchangeInfo failed: %s", exc)
+    return syms
+
+
 async def _fetch_binance() -> list[dict]:
     prem_r, tick_r = await asyncio.gather(
         _http.get("https://fapi.binance.com/fapi/v1/premiumIndex"),
@@ -321,11 +350,16 @@ async def _fetch_binance() -> list[dict]:
     prem_r.raise_for_status()
     tick_r.raise_for_status()
     ivl = await _get_interval_map("binance")
+    trading = await _binance_perp_trading_set()
     tick_map: dict[str, dict] = {t["symbol"]: t for t in tick_r.json()}
     out = []
     for item in prem_r.json():
         sym = item.get("symbol", "")
         if not sym.endswith("USDT"):
+            continue
+        # Drop SETTLING / BREAK perps. Empty trading set (API hiccup) means
+        # no filtering — better than an empty arb feed during a Binance blip.
+        if trading and sym not in trading:
             continue
         token = sym[:-4]
         rate = float(item.get("lastFundingRate") or 0)

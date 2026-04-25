@@ -59,14 +59,52 @@ def _spot_fee(exchange: str) -> float:
 
 
 # ── Per-exchange spot fetchers ────────────────────────────────────────────────
+
+# /api/v3/ticker/24hr keeps returning delisted/halted symbols (e.g. NTRN
+# stayed in the feed with status=BREAK long after spot trading was paused),
+# so we cross-check every ticker against /api/v3/exchangeInfo's
+# status=="TRADING" set. exchangeInfo changes a few times per day; cache it
+# for 10 min so the spot fetch stays cheap.
+_binance_trading_cache: tuple[set[str], float] = (set(), 0.0)
+_BINANCE_INFO_TTL = 600.0
+
+
+async def _binance_trading_set() -> set[str]:
+    global _binance_trading_cache
+    syms, ts = _binance_trading_cache
+    if syms and (time.time() - ts) < _BINANCE_INFO_TTL:
+        return syms
+    try:
+        r = await _http.get("https://api.binance.com/api/v3/exchangeInfo")
+        if r.status_code != 200:
+            return syms  # fall back to whatever we cached last
+        fresh = {
+            s["symbol"]
+            for s in (r.json().get("symbols") or [])
+            if s.get("status") == "TRADING" and s.get("isSpotTradingAllowed")
+        }
+        if fresh:
+            _binance_trading_cache = (fresh, time.time())
+            return fresh
+    except Exception as exc:
+        logger.debug("binance exchangeInfo fetch failed: %s", exc)
+    return syms
+
+
 async def _fetch_binance_spot() -> list[dict]:
     r = await _http.get("https://api.binance.com/api/v3/ticker/24hr")
     if r.status_code != 200:
         return []
+    trading = await _binance_trading_set()
     out: list[dict] = []
     for x in r.json():
         s = x.get("symbol", "")
         if not s.endswith("USDT"):
+            continue
+        # Drop delisted / halted symbols. If the trading-set fetch failed and
+        # we have no cached snapshot yet, fall back to the raw ticker list so
+        # the feed doesn't go empty during a Binance API hiccup.
+        if trading and s not in trading:
             continue
         try:
             price = float(x.get("lastPrice") or 0)

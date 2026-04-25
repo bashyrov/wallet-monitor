@@ -62,12 +62,49 @@ class BinanceFundingWS(FundingWSAdapter):
       · !markPrice@arr@1s  → mark, funding rate, next funding time
       · !ticker@arr         → 24h quote volume
     Binance allows a combined stream URL with /stream?streams=a/b.
+
+    Delisted symbols (status=SETTLING / BREAK, e.g. NTRN) keep being pushed
+    on the broadcast streams long after spot/perp trading is paused. We
+    refresh /fapi/v1/exchangeInfo every 10 min and filter both the WS
+    push and the REST backstop by status=="TRADING".
     """
 
     name = "binance"
     url = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
     rest_refresh_interval_s = 2.0
     _rest_base = "https://fapi.binance.com"
+    _INFO_TTL_S = 600.0  # 10 min — exchangeInfo barely moves
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._trading_set: set[str] = set()
+        self._trading_set_ts: float = 0.0
+
+    def _refresh_trading_set_sync(self) -> None:
+        """Pull /fapi/v1/exchangeInfo and rebuild the TRADING perpetual set.
+        Called from the same thread as rest_refresh_sync, so safe to write
+        instance state without a lock."""
+        if (time.time() - self._trading_set_ts) < self._INFO_TTL_S and self._trading_set:
+            return
+        try:
+            r = _rest_http.get(f"{self._rest_base}/fapi/v1/exchangeInfo", timeout=8.0)
+            if r.status_code != 200:
+                return
+            fresh = {
+                s.get("symbol")
+                for s in (r.json().get("symbols") or [])
+                if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL"
+            }
+            if fresh:
+                self._trading_set = fresh
+                self._trading_set_ts = time.time()
+        except Exception as exc:
+            logger.debug("%s exchangeInfo refresh failed: %s", self.name, exc)
+
+    def _is_tradable(self, sym: str) -> bool:
+        # Empty set = first-time hiccup; let everything through so we don't
+        # blank the feed until exchangeInfo responds at least once.
+        return not self._trading_set or sym in self._trading_set
 
     def build_subscribe(self):
         return None  # streams are in the URL
@@ -81,7 +118,7 @@ class BinanceFundingWS(FundingWSAdapter):
             out = []
             for item in data if isinstance(data, list) else []:
                 sym = item.get("s", "")
-                if not sym.endswith("USDT"):
+                if not sym.endswith("USDT") or not self._is_tradable(sym):
                     continue
                 try:
                     out.append({
@@ -98,7 +135,7 @@ class BinanceFundingWS(FundingWSAdapter):
             out = []
             for item in data if isinstance(data, list) else []:
                 sym = item.get("s", "")
-                if not sym.endswith("USDT"):
+                if not sym.endswith("USDT") or not self._is_tradable(sym):
                     continue
                 try:
                     out.append({
@@ -112,6 +149,9 @@ class BinanceFundingWS(FundingWSAdapter):
 
 
     def rest_refresh_sync(self) -> list[dict] | None:
+        # Piggyback the exchangeInfo refresh on the 2 s REST tick — the TTL
+        # gate means the actual HTTP fetch only fires every ~10 min.
+        self._refresh_trading_set_sync()
         try:
             prem = _rest_http.get(f"{self._rest_base}/fapi/v1/premiumIndex")
             tick = _rest_http.get(f"{self._rest_base}/fapi/v1/ticker/24hr")
@@ -128,7 +168,7 @@ class BinanceFundingWS(FundingWSAdapter):
         out: list[dict] = []
         for d in (prem.json() or []):
             sym = d.get("symbol", "")
-            if not sym.endswith("USDT"):
+            if not sym.endswith("USDT") or not self._is_tradable(sym):
                 continue
             try:
                 out.append({
