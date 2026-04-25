@@ -1,4 +1,5 @@
 """Authentication: password hashing, JWT creation and verification."""
+import logging
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.db.models import User
 from settings import settings
 
+logger = logging.getLogger("avalant.auth_service")
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -84,27 +86,30 @@ def get_user_by_id(db: Session, user_id: int) -> User | None:
 def register_user(db: Session, username: str, email: str, password: str) -> User:
     """Register a new user.
 
-    Admin seeding:
-      - In an empty DB (dev / local), the first user is seeded as admin +
-        unlim so you have working access immediately.
-      - In production, set INITIAL_ADMIN_USERNAME so only that specific
-        username becomes admin — removes the "whoever registers first wins"
-        race that the legacy logic had.
+    Admin promotion happens ONLY through one of these paths:
+      1. INITIAL_ADMIN_USERNAME env matches the username being registered
+         (set on the server, never via the API).
+      2. AVALANT_ALLOW_FIRST_USER_ADMIN=1 env is explicitly set AND the
+         users table is empty — strictly a dev/local convenience that has
+         to be opted in. Production must NEVER set this.
+      3. Manual SQL on the host: UPDATE users SET is_admin=TRUE WHERE …
+
+    Every user registered via the public API is otherwise basic — no
+    "first registration wins" races, no client-controlled flag, no
+    admin-grant via this entry point.
     """
     import os
     from sqlalchemy import func
 
     uname = username.lower().strip()
-    is_first = db.query(func.count(User.id)).scalar() == 0
     seed_name = (os.environ.get("INITIAL_ADMIN_USERNAME") or "").lower().strip()
+    allow_first = (os.environ.get("AVALANT_ALLOW_FIRST_USER_ADMIN") or "").strip() == "1"
 
-    if seed_name:
-        # Explicit admin seed: only this username gets admin, even on an
-        # empty DB. Random race-winner registrations stay on `basic`.
-        make_admin = (uname == seed_name)
-    else:
-        # Legacy first-wins behavior — kept for dev/local where seed isn't set.
-        make_admin = is_first
+    make_admin = False
+    if seed_name and uname == seed_name:
+        make_admin = True
+    elif allow_first and db.query(func.count(User.id)).scalar() == 0:
+        make_admin = True
 
     user = User(
         username=uname,
@@ -116,6 +121,11 @@ def register_user(db: Session, username: str, email: str, password: str) -> User
     db.add(user)
     db.commit()
     db.refresh(user)
+    if make_admin:
+        logger.warning(
+            "ADMIN seeded via register_user: username=%s seed_name=%s allow_first=%s",
+            uname, seed_name or "<unset>", allow_first,
+        )
     return user
 
 

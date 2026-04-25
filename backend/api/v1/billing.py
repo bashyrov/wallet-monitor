@@ -87,8 +87,17 @@ async def cryptocloud_webhook(request: Request, db: Session = Depends(get_db)):
         # CryptoCloud sometimes sends form-encoded; fall back.
         form = await request.form()
         payload = dict(form)
+    # Strict validation: refuse the webhook if signing isn't fully configured.
+    # Logs a critical signal so ops gets paged the first time a webhook lands
+    # on a misconfigured deploy.
+    from settings import settings as _settings
+    if not _settings.CRYPTOCLOUD_WEBHOOK_SECRET:
+        logger.critical("CRYPTOCLOUD_WEBHOOK_SECRET unset — refusing webhook (would-be plan upgrade blocked)")
+        raise HTTPException(status_code=503, detail="webhook not configured")
     token = payload.get("token") or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     if not payment_service.verify_webhook_signature(token):
+        ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (request.client.host if request.client else "?")
+        logger.warning("CryptoCloud webhook with bad/missing signature from ip=%s payload_keys=%s", ip, list(payload.keys()))
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
     invoice_id = (
         payload.get("invoice_id") or payload.get("uuid") or payload.get("id")
