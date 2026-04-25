@@ -1072,8 +1072,12 @@ class MexcSpotWS(WSAdapter):
         ch = msg.get("c") or msg.get("channel") or ""
         if not ch.startswith("spot@public.limit.depth.v3.api@"):
             return None
+        # Channel layout: 'spot@public.limit.depth.v3.api@BTCUSDT@20'
+        # → split('@') = ['spot', 'public...api', 'BTCUSDT', '20']. The
+        # symbol lives at index 2 (the 4th tag is the depth count, NOT a
+        # token).
         try:
-            sym = ch.split("@")[3]
+            sym = ch.split("@")[2]
         except IndexError:
             return None
         if not sym.endswith("USDT"):
