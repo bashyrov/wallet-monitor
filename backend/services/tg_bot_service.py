@@ -109,6 +109,12 @@ async def _handle_update(bot_token: str, bot_label: str, upd: dict) -> None:
     text = (msg.get("text") or "").strip()
     if not text.startswith("/start"):
         return
+    _t0 = time.time()
+    # Server-side message timestamp from TG (seconds). If our handler runs
+    # more than ~2 s after the user actually pressed Start, we want to know
+    # — that's the bug class the user reported.
+    _msg_ts = msg.get("date") or 0
+    _wire_lag = (_t0 - _msg_ts) if _msg_ts else None
 
     chat = msg.get("chat") or {}
     frm  = msg.get("from") or {}
@@ -239,7 +245,17 @@ async def _handle_update(bot_token: str, bot_label: str, upd: dict) -> None:
     }
     if reply_markup:
         msg_payload["reply_markup"] = reply_markup
+    _t_send = time.time()
     await _tg_post(bot_token, "sendMessage", msg_payload)
+    # Total: handle_update entry → reply sent. Wire-lag is the gap between
+    # the user's physical /start tap and our handler running, which catches
+    # bot-leader flaps + TG long-poll quirks.
+    logger.info(
+        "TG /start handled (%s): handler=%.2fs send=%.2fs wire_lag=%s payload=%r",
+        bot_label, _t_send - _t0, time.time() - _t_send,
+        f"{_wire_lag:.2f}s" if _wire_lag is not None else "?",
+        payload[:30] if payload else "<no-payload>",
+    )
 
 
 async def _drain_offset(bot_token: str) -> None:
