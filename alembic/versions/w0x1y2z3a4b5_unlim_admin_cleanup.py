@@ -26,7 +26,7 @@ import sqlalchemy as sa
 import json as _json
 
 revision = 'w0x1y2z3a4b5'
-down_revision = 'v8w9x0y1z2a3'
+down_revision = 'w9x0y1z2a3b4'
 branch_labels = None
 depends_on = None
 
