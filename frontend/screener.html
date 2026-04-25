@@ -972,6 +972,7 @@ function renderDex() {
     const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
     tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
+    renderDexCards();
     return;
   }
   tbody.innerHTML = page.map(r => {
@@ -1019,6 +1020,87 @@ function renderDex() {
     </tr>`;
   }).join('');
   renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
+  renderDexCards();
+}
+
+function renderDexCards() {
+  const wrap = document.getElementById('cards-dex');
+  if (!wrap) return;
+  if (!_dexFiltered.length) {
+    const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
+    wrap.innerHTML = `<div class="empty-msg">${msg}</div>`;
+    return;
+  }
+  const start = _pageDX * PAGE_SIZE;
+  const page  = _dexFiltered.slice(start, start + PAGE_SIZE);
+  wrap.innerHTML = page.map(r => {
+    const netCls   = r.net_profit > 0 ? 'net-pos' : 'net-neg';
+    const netSign  = r.net_profit >= 0 ? '+' : '';
+    const basisCls = r.basis_pct >= 0 ? 'rate-neg' : 'rate-pos';
+    const basisSign = r.basis_pct >= 0 ? '+' : '';
+    const fundCls  = r.short_funding_8h >= 0 ? 'rate-pos' : 'rate-neg';
+    const fundSign = r.short_funding_8h >= 0 ? '+' : '';
+    const aprCls   = r.net_apr > 0 ? 'rate-pos' : r.net_apr < 0 ? 'rate-neg' : 'rate-zero';
+    const aprSign  = r.net_apr >= 0 ? '+' : '';
+    const dexLabel = (r.dex_name || 'DEX').toUpperCase();
+    const chain    = (r.dex_chain || '').toUpperCase();
+    const dexChip  = `<span class="ex-chip"><span class="ex-dot" style="background:#A78BFA"></span><span class="ex-name">${dexLabel}${chain ? ` <span style="color:var(--text3);font-weight:500">· ${chain}</span>` : ''}</span></span>`;
+    const detailUrl = `/arb?type=dex-short&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
+    const key = `dex|${r.symbol}|${r.dex_name}|${r.short_exchange}`;
+    const isOpen = _openArbKey === key;
+    return `
+    <div class="card${isOpen?' open':''}" onclick="toggleCard(this)" data-key="${key}">
+      <div class="card-head">
+        <span class="type-pill tp-dex" style="margin-right:6px">DEX</span>
+        ${symbolLink(r.symbol, r.short_exchange)}
+        <div class="card-badges">
+          ${dexChip}
+          <span style="color:var(--text3);font-size:11px">→</span>
+          ${exBadge(r.short_exchange, r.symbol)}
+        </div>
+        <div class="card-right">
+          <span class="card-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span>
+          <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">net / 8h</span>
+        </div>
+        <span class="card-chevron">▼</span>
+      </div>
+      <div class="card-body">
+        <div class="card-row">
+          <span class="card-lbl">DEX</span>
+          <div class="card-exrow">
+            <div class="card-exrow-item">${dexChip}</div>
+            <div style="font-size:11px;color:var(--text3)">${fmtPrice(r.dex_price)} · liq ${fmtVol(r.dex_liquidity_usd)}</div>
+          </div>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Short</span>
+          <div class="card-exrow">
+            <div class="card-exrow-item">${exBadge(r.short_exchange, r.symbol)}</div>
+            <div style="font-size:11px;color:var(--text3)">${fmtPrice(r.perp_price)} · ${fmtVol(r.perp_volume_usd)}</div>
+          </div>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Funding / 8h</span>
+          <span class="card-val ${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Basis</span>
+          <span class="card-val ${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Fees</span>
+          <span class="card-val" style="color:var(--text3)">−${r.total_fees.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Net APR</span>
+          <span class="card-val ${aprCls}">${aprSign}${r.net_apr.toFixed(2)}%</span>
+        </div>
+        <div style="margin-top:12px">
+          <a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;background:var(--surface3);color:var(--text2);font-size:12px;font-weight:600;text-decoration:none">↗ Open detail</a>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function goPageDX(p) { _pageDX = p; renderDex(); }
@@ -1104,6 +1186,7 @@ function renderSpot() {
     const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
     tbody.innerHTML = `<tr><td colspan="11" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
+    renderSpotCards();
     return;
   }
   tbody.innerHTML = page.map(r => {
@@ -1153,6 +1236,97 @@ function renderSpot() {
     </tr>`;
   }).join('');
   renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
+  renderSpotCards();
+}
+
+function renderSpotCards() {
+  const wrap = document.getElementById('cards-spot');
+  if (!wrap) return;
+  if (!_spotFiltered.length) {
+    const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
+    wrap.innerHTML = `<div class="empty-msg">${msg}</div>`;
+    return;
+  }
+  const start = _pageSP * PAGE_SIZE;
+  const page  = _spotFiltered.slice(start, start + PAGE_SIZE);
+  wrap.innerHTML = page.map(r => {
+    const netCls   = r.net_profit > 0 ? 'net-pos' : 'net-neg';
+    const netSign  = r.net_profit >= 0 ? '+' : '';
+    const basisCls = r.basis_pct >= 0 ? 'rate-neg' : 'rate-pos';
+    const basisSign = r.basis_pct >= 0 ? '+' : '';
+    const fundCls  = r.short_funding_8h >= 0 ? 'rate-pos' : 'rate-neg';
+    const fundSign = r.short_funding_8h >= 0 ? '+' : '';
+    const aprCls   = r.net_apr > 0 ? 'rate-pos' : r.net_apr < 0 ? 'rate-neg' : 'rate-zero';
+    const aprSign  = r.net_apr >= 0 ? '+' : '';
+    const inPct  = (typeof r.in_pct  === 'number') ? r.in_pct  : null;
+    const outPct = (typeof r.out_pct === 'number') ? r.out_pct : null;
+    const inSign  = (inPct  != null && inPct  >= 0) ? '+' : '';
+    const outSign = (outPct != null && outPct >= 0) ? '+' : '';
+    const inCls  = (inPct  != null && inPct  > 0) ? 'rate-neg' : 'rate-pos';
+    const outCls = (outPct != null && outPct > 0) ? 'rate-neg' : 'rate-pos';
+    const key = `spot|${r.symbol}|${r.spot_exchange}|${r.short_exchange}`;
+    const isOpen = _openArbKey === key;
+    return `
+    <div class="card${isOpen?' open':''}" onclick="toggleCard(this)" data-key="${key}">
+      <div class="card-head">
+        <span class="type-pill tp-spot" style="margin-right:6px">SPOT</span>
+        ${symbolLink(r.symbol, r.spot_exchange)}
+        <div class="card-badges">
+          ${exBadge(r.spot_exchange, r.symbol)}
+          <span style="color:var(--text3);font-size:11px">→</span>
+          ${exBadge(r.short_exchange, r.symbol)}
+        </div>
+        <div class="card-right">
+          <span class="card-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span>
+          <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">net / 8h</span>
+        </div>
+        <span class="card-chevron">▼</span>
+      </div>
+      <div class="card-body">
+        <div class="card-row">
+          <span class="card-lbl">Spot</span>
+          <div class="card-exrow">
+            <div class="card-exrow-item">${exBadge(r.spot_exchange, r.symbol)}</div>
+            <div style="font-size:11px;color:var(--text3)">${fmtPrice(r.spot_price)} · ${fmtVol(r.spot_volume_usd)}</div>
+          </div>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Short</span>
+          <div class="card-exrow">
+            <div class="card-exrow-item">${exBadge(r.short_exchange, r.symbol)}</div>
+            <div style="font-size:11px;color:var(--text3)">${fmtPrice(r.perp_price)} · ${fmtVol(r.perp_volume_usd)}</div>
+          </div>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Funding / 8h</span>
+          <span class="card-val ${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Basis</span>
+          <span class="card-val ${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">In</span>
+          <span class="card-val ${inCls}">${inPct != null ? inSign+inPct.toFixed(4)+'%' : '—'}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Out</span>
+          <span class="card-val ${outCls}">${outPct != null ? outSign+outPct.toFixed(4)+'%' : '—'}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Fees</span>
+          <span class="card-val" style="color:var(--text3)">−${r.total_fees.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Net APR</span>
+          <span class="card-val ${aprCls}">${aprSign}${r.net_apr.toFixed(2)}%</span>
+        </div>
+        <div style="margin-top:12px">
+          <a href="/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(r.short_exchange)}" target="_blank" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;background:var(--surface3);color:var(--text2);font-size:12px;font-weight:600;text-decoration:none">↗ Open detail</a>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function goPageSP(p) { _pageSP = p; renderSpot(); }
@@ -1219,6 +1393,7 @@ function renderAll() {
   const tb = document.getElementById('tbody-all');
   if (!rows.length) {
     tb.innerHTML = `<tr><td colspan="8" class="empty-msg">No opportunities found.</td></tr>`;
+    renderAllCards(rows);
     return;
   }
   tb.innerHTML = rows.slice(0, 300).map(r => {
@@ -1267,6 +1442,94 @@ function renderAll() {
       <td>${fmtApr(apr)}</td>
       <td><a href="${detailUrl}" target="_blank" class="arb-detail-btn" onclick="event.stopPropagation()" title="Open detail">↗</a></td>
     </tr>`;
+  }).join('');
+  renderAllCards(rows);
+}
+
+function renderAllCards(rows) {
+  const wrap = document.getElementById('cards-all');
+  if (!wrap) return;
+  if (!rows || !rows.length) {
+    wrap.innerHTML = '<div class="empty-msg">No opportunities found.</div>';
+    return;
+  }
+  wrap.innerHTML = rows.slice(0, 300).map(r => {
+    const isSpot = r.type === 'spot_short';
+    const isDex  = r.type === 'dex_short';
+    const shortEx = r.short_exchange;
+    const gross = (isSpot || isDex) ? (r.gross || 0) : ((r.gross_funding || 0) + (r.price_spread || 0));
+    const net   = r.net_profit || 0;
+    const apr   = r.net_apr || 0;
+    const grossSign = gross >= 0 ? '+' : '';
+    const netCls    = net > 0 ? 'net-pos' : 'net-neg';
+    const netSign   = net >= 0 ? '+' : '';
+    const aprCls    = apr > 0 ? 'rate-pos' : apr < 0 ? 'rate-neg' : 'rate-zero';
+    const aprSign   = apr >= 0 ? '+' : '';
+
+    let longCell;
+    if (isDex) {
+      const dexName  = (r.dex_name  || 'DEX').toUpperCase();
+      const dexChain = (r.dex_chain || '').toUpperCase();
+      longCell = `<span class="ex-chip"><span class="ex-dot" style="background:#A78BFA"></span><span class="ex-name">${dexName}${dexChain ? ` <span style="color:var(--text3);font-weight:500">· ${dexChain}</span>` : ''}</span></span>`;
+    } else if (isSpot) {
+      longCell = window.EX.chip(r.spot_exchange);
+    } else {
+      longCell = window.EX.chip(r.long_exchange);
+    }
+
+    const typeChip = isDex
+      ? `<span class="type-pill tp-dex">DEX/SHORT</span>`
+      : isSpot
+      ? `<span class="type-pill tp-spot">SPOT/SHORT</span>`
+      : `<span class="type-pill tp-ls">LONG/SHORT</span>`;
+
+    const detailUrl = isDex
+      ? `/arb?type=dex-short&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(shortEx)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`
+      : isSpot
+      ? `/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(shortEx)}`
+      : `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(shortEx)}`;
+
+    const longLbl = isDex ? 'DEX' : isSpot ? 'Spot' : 'Long';
+    const key = `all|${r.type || 'futures'}|${r.symbol}|${r.long_exchange || r.spot_exchange || r.dex_name}|${shortEx}`;
+    const isOpen = _openArbKey === key;
+    return `
+    <div class="card${isOpen?' open':''}" onclick="toggleCard(this)" data-key="${key}">
+      <div class="card-head">
+        ${typeChip}
+        ${symbolLink(r.symbol, shortEx)}
+        <div class="card-badges">
+          ${longCell}
+          <span style="color:var(--text3);font-size:11px">→</span>
+          ${window.EX.chip(shortEx)}
+        </div>
+        <div class="card-right">
+          <span class="card-net ${netCls}">${netSign}${net.toFixed(4)}%</span>
+          <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">net / 8h</span>
+        </div>
+        <span class="card-chevron">▼</span>
+      </div>
+      <div class="card-body">
+        <div class="card-row">
+          <span class="card-lbl">${longLbl}</span>
+          <span>${longCell}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Short</span>
+          <span>${window.EX.chip(shortEx)}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Gross</span>
+          <span class="card-val">${grossSign}${gross.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Net APR</span>
+          <span class="card-val ${aprCls}">${aprSign}${apr.toFixed(2)}%</span>
+        </div>
+        <div style="margin-top:12px">
+          <a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;background:var(--surface3);color:var(--text2);font-size:12px;font-weight:600;text-decoration:none">↗ Open detail</a>
+        </div>
+      </div>
+    </div>`;
   }).join('');
 }
 
