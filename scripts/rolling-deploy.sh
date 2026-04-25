@@ -79,10 +79,22 @@ docker compose up -d --build app2
 ensure_healthy app2
 
 step "Reloading nginx so it sees fresh upstream IPs"
-docker compose exec -T nginx nginx -s reload || {
-  echo "  nginx reload failed — falling back to restart" >&2
-  docker compose restart nginx
-}
+# nginx -s reload picks up the new IPs but doesn't pick up nginx.conf
+# changes when the bind mount points at an inode that was replaced by
+# a sed-style atomic edit. Compare md5 of the host file vs the
+# container view; if they differ, we have to recreate the container so
+# the mount sees the new file. Reload is otherwise enough.
+HOST_MD5=$(md5sum nginx/nginx.conf | awk '{print $1}')
+CTR_MD5=$(docker compose exec -T nginx md5sum /etc/nginx/nginx.conf 2>/dev/null | awk '{print $1}' || echo missing)
+if [ "$HOST_MD5" != "$CTR_MD5" ]; then
+  echo "  nginx.conf inode changed — recreating nginx container"
+  docker compose up -d --force-recreate nginx >/dev/null
+else
+  docker compose exec -T nginx nginx -s reload || {
+    echo "  nginx reload failed — falling back to restart" >&2
+    docker compose restart nginx
+  }
+fi
 
 step "Smoke test"
 sleep 2
