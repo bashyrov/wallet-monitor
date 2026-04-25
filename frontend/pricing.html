@@ -428,8 +428,8 @@
     </p>
   </section>
 
-  <!-- ═══ CONFIG TOGGLE ═══ -->
-  <div class="config-row">
+  <!-- ═══ CONFIG TOGGLE — hidden until a second plan is active ═══ -->
+  <div class="config-row" id="config-row" style="display:none">
     <div class="toggle-wrap" role="tablist" aria-label="Package composition">
       <button class="toggle-btn active" id="btn-full" onclick="setMode('full')">
         Screener + Portfolio
@@ -797,6 +797,12 @@ function setMode(mode) {
   // Screener-only), fall back to whichever exists.
   if (saved === 'screener' && !_PLAN_ID.screener) saved = 'full';
   if (saved === 'full' && !_PLAN_ID.full) saved = 'screener';
+  // Show the Full / Screener toggle only when BOTH plans are live.
+  // With a single active plan there's nothing to switch between, so
+  // hiding it removes a dead control from the page.
+  const both = !!(_PLAN_ID.full && _PLAN_ID.screener);
+  const cfg = document.getElementById('config-row');
+  if (cfg) cfg.style.display = both ? '' : 'none';
   setMode(saved);
 })();
 </script>
