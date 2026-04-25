@@ -26,6 +26,7 @@ from backend.services import (
     payment_service,
     popup_service,
     promo_service,
+    billing_period_service,
 )
 
 logger = logging.getLogger("avalant.billing")
@@ -37,7 +38,11 @@ router = APIRouter(tags=["billing"])
 @router.get("/plans")
 def list_plans(db: Session = Depends(get_db)) -> dict[str, Any]:
     plans = plan_service.list_plans(db, only_active=True)
-    return {"plans": [plan_service.serialize_plan(p) for p in plans]}
+    periods = billing_period_service.list_periods(db, only_active=True)
+    return {
+        "plans": [plan_service.serialize_plan(p) for p in plans],
+        "billing_periods": [billing_period_service.serialize(p) for p in periods],
+    }
 
 
 # ── Checkout / payments ───────────────────────────────────────────────────────
@@ -48,13 +53,13 @@ async def checkout(
     current_user: User = Depends(get_current_user),
 ):
     plan_id = body.get("plan_id")
-    billing_cycle = body.get("billing_cycle") or "monthly"
+    billing_period_id = body.get("billing_period_id")
     promo_code = body.get("promo_code") or None
-    if not plan_id:
-        raise HTTPException(status_code=422, detail="plan_id is required")
+    if not plan_id or not billing_period_id:
+        raise HTTPException(status_code=422, detail="plan_id and billing_period_id are required")
     try:
         return await payment_service.create_checkout(
-            db, current_user, int(plan_id), billing_cycle, promo_code,
+            db, current_user, int(plan_id), int(billing_period_id), promo_code,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -108,13 +113,17 @@ def promo_validate(
 ):
     code = (body.get("code") or "").strip()
     plan_id = body.get("plan_id")
-    if not code or not plan_id:
-        raise HTTPException(status_code=422, detail="code and plan_id are required")
+    billing_period_id = body.get("billing_period_id")
+    if not code or not plan_id or not billing_period_id:
+        raise HTTPException(status_code=422, detail="code, plan_id, billing_period_id are required")
     promo = promo_service.validate_for_plan(db, code, int(plan_id))
     if not promo:
         return {"valid": False}
     plan = plan_service.get_plan(db, int(plan_id))
-    pricing = payment_service.compute_pricing(plan, body.get("billing_cycle") or "monthly", promo)
+    period = billing_period_service.get_period(db, int(billing_period_id))
+    if not plan or not period:
+        return {"valid": False}
+    pricing = payment_service.compute_pricing(plan, period, promo)
     return {
         "valid": True,
         "code": promo.code,

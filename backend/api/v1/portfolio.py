@@ -39,8 +39,15 @@ async def check_balance(
     # Cap to the user's effective portfolio limit. Existing wallets stay in
     # the DB even after a downgrade — we just stop checking the surplus
     # ones (sorted oldest first wins; user can archive then re-pick).
+    # Plans where has_portfolio=False (e.g. Screener-only) get 402 here
+    # so the UI shows the upgrade pitch.
     from backend.services import plan_service
     limits = plan_service.effective_limits(db, current_user)
+    if not limits.has_portfolio:
+        raise HTTPException(
+            status_code=402,
+            detail="Your plan does not include portfolio tracking — upgrade to Full to access this.",
+        )
     if len(wallets) > limits.portfolio_limit:
         wallets = sorted(wallets, key=lambda w: w.created_at or datetime.utcnow())[: limits.portfolio_limit]
 
@@ -79,8 +86,15 @@ async def check_balance_stream(
     # Cap to the user's effective portfolio limit. Existing wallets stay in
     # the DB even after a downgrade — we just stop checking the surplus
     # ones (sorted oldest first wins; user can archive then re-pick).
+    # Plans where has_portfolio=False (e.g. Screener-only) get 402 here
+    # so the UI shows the upgrade pitch.
     from backend.services import plan_service
     limits = plan_service.effective_limits(db, current_user)
+    if not limits.has_portfolio:
+        raise HTTPException(
+            status_code=402,
+            detail="Your plan does not include portfolio tracking — upgrade to Full to access this.",
+        )
     if len(wallets) > limits.portfolio_limit:
         wallets = sorted(wallets, key=lambda w: w.created_at or datetime.utcnow())[: limits.portfolio_limit]
 

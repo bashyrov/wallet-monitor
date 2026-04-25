@@ -295,10 +295,30 @@ class Plan(Base):
     portfolio_limit_grace = Column(Integer, nullable=False, default=5)
     exchange_keys_per_venue = Column(Integer, nullable=False, default=1)
     trade_delay_ms = Column(Integer, nullable=False, default=0)
+    has_portfolio = Column(Boolean, nullable=False, default=True)
+    is_subscription = Column(Boolean, nullable=False, default=True)
     features = Column(JSON, nullable=True)
     is_free = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class BillingPeriod(Base):
+    """Admin-tunable billing-period catalogue. Each row is one
+    commitment length (1, 3, 6, 12 months) with a discount %. Changing
+    the discount column updates everyone's checkout flow without a
+    deploy."""
+    __tablename__ = "billing_periods"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String, nullable=False, unique=True, index=True)
+    label = Column(String, nullable=False)
+    months = Column(Integer, nullable=False)
+    discount_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -336,7 +356,10 @@ class Payment(Base):
     plan_id = Column(Integer,
                      ForeignKey("plans.id", ondelete="RESTRICT"),
                      nullable=False)
-    billing_cycle = Column(String, nullable=False)            # "monthly" | "annual"
+    billing_cycle = Column(String, nullable=True)             # legacy free-text mirror; new flows use billing_period_id
+    billing_period_id = Column(Integer,
+                               ForeignKey("billing_periods.id", ondelete="RESTRICT"),
+                               nullable=True)
     base_amount_usd = Column(Numeric(10, 2), nullable=False)
     discount_pct = Column(Numeric(5, 2), nullable=False, default=0)
     final_amount_usd = Column(Numeric(10, 2), nullable=False)

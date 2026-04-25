@@ -30,8 +30,8 @@ from typing import Any
 import httpx
 from sqlalchemy.orm import Session
 
-from backend.db.models import Payment, Plan, PromoCode, PromoCodeUsage, User
-from backend.services import plan_service, promo_service
+from backend.db.models import Payment, Plan, PromoCode, PromoCodeUsage, User, BillingPeriod
+from backend.services import plan_service, promo_service, billing_period_service
 from settings import settings
 
 logger = logging.getLogger("avalant.payment_service")
@@ -46,17 +46,21 @@ def _round_money(amount: Decimal | float | int) -> Decimal:
 
 def compute_pricing(
     plan: Plan,
-    billing_cycle: str,
+    period: BillingPeriod,
     promo: PromoCode | None,
 ) -> dict[str, Decimal]:
-    """Server-authoritative price calculation. Frontend may show any
-    intermediate UI, but the actual money is computed here from the DB
-    rows so a tampered request can't sneak through."""
-    if billing_cycle == "annual":
-        base = Decimal(plan.price_usd_annual or 0)
-    else:
-        base = Decimal(plan.price_usd_monthly or 0)
-    base = _round_money(base)
+    """Server-authoritative price calculation.
+
+    Pricing model:
+      base_total = plan.price_usd_monthly × period.months × (1 - period.discount_pct / 100)
+      final     = base_total × (1 - promo.discount_pct / 100)
+
+    Both rounded to 2 decimals (HALF_UP) at the end so the user sees a
+    clean number on the invoice page. Frontend may show any intermediate
+    UI, but the actual money is computed here from the DB rows so a
+    tampered request can't sneak through.
+    """
+    base = billing_period_service.compute_total(plan.price_usd_monthly, period)
     discount_pct = Decimal(promo.discount_pct) if promo else Decimal("0")
     final = _round_money(base * (Decimal("100") - discount_pct) / Decimal("100"))
     return {
@@ -66,8 +70,8 @@ def compute_pricing(
     }
 
 
-def _activation_window(billing_cycle: str) -> timedelta:
-    return timedelta(days=365) if billing_cycle == "annual" else timedelta(days=30)
+def _activation_window(period: BillingPeriod) -> timedelta:
+    return timedelta(days=int(period.months) * 30)
 
 
 # ── CryptoCloud HTTP ──────────────────────────────────────────────────────────
@@ -122,16 +126,18 @@ async def create_checkout(
     db: Session,
     user: User,
     plan_id: int,
-    billing_cycle: str,
+    billing_period_id: int,
     promo_code_str: str | None = None,
 ) -> dict[str, Any]:
-    if billing_cycle not in ("monthly", "annual"):
-        raise ValueError("billing_cycle must be monthly or annual")
     plan = plan_service.get_plan(db, plan_id)
     if not plan or not plan.is_active:
         raise ValueError("plan not found")
     if plan.is_free:
         raise ValueError("free plan does not require checkout")
+
+    period = billing_period_service.get_period(db, billing_period_id)
+    if not period or not period.is_active:
+        raise ValueError("billing period not found")
 
     promo: PromoCode | None = None
     if promo_code_str:
@@ -139,14 +145,15 @@ async def create_checkout(
         if not promo:
             raise ValueError("invalid promo code")
 
-    pricing = compute_pricing(plan, billing_cycle, promo)
+    pricing = compute_pricing(plan, period, promo)
     if pricing["final_amount_usd"] <= 0:
         raise ValueError("computed amount is zero — refusing to create invoice")
 
     payment = Payment(
         user_id=user.id,
         plan_id=plan.id,
-        billing_cycle=billing_cycle,
+        billing_period_id=period.id,
+        billing_cycle=period.slug,
         base_amount_usd=pricing["base_amount_usd"],
         discount_pct=pricing["discount_pct"],
         final_amount_usd=pricing["final_amount_usd"],
@@ -160,7 +167,7 @@ async def create_checkout(
     invoice = await _cc_create_invoice(
         amount_usd=pricing["final_amount_usd"],
         order_id=f"avalant-{payment.id}",
-        description=f"Avalant {plan.name} ({billing_cycle})",
+        description=f"Avalant {plan.name} · {period.label}",
     )
     payment.provider_invoice_id = invoice["uuid"]
     payment.provider_invoice_url = invoice["url"]
@@ -184,7 +191,15 @@ def _activate_user(db: Session, payment: Payment) -> None:
     if plan:
         user.plan = plan.slug  # legacy mirror
     base_until = max(user.plan_expires_at or datetime.utcnow(), datetime.utcnow())
-    payment.activated_until = base_until + _activation_window(payment.billing_cycle)
+    period = None
+    if payment.billing_period_id:
+        period = billing_period_service.get_period(db, payment.billing_period_id)
+    if period:
+        payment.activated_until = base_until + _activation_window(period)
+    else:
+        # Legacy payment with no billing_period_id — fall back to 30 days
+        # so we don't accidentally hand out a free year.
+        payment.activated_until = base_until + timedelta(days=30)
     user.plan_expires_at = payment.activated_until
     db.commit()
 
@@ -279,6 +294,7 @@ def serialize_payment(p: Payment) -> dict[str, Any]:
     return {
         "id": p.id,
         "plan_id": p.plan_id,
+        "billing_period_id": p.billing_period_id,
         "billing_cycle": p.billing_cycle,
         "base_amount_usd": float(p.base_amount_usd),
         "discount_pct": float(p.discount_pct or 0),

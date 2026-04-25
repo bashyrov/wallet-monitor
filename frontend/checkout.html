@@ -30,9 +30,6 @@
   .row .lbl{color:var(--text2);font-size:13px}
   .row .val{font-family:var(--mono);font-weight:600}
   .total{font-size:24px}
-  .cycle-toggle{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:14px}
-  .cycle-toggle button{background:transparent;border:0;color:var(--text2);font:inherit;font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;cursor:pointer}
-  .cycle-toggle button.active{background:var(--surface3);color:var(--text)}
   .promo-row{display:flex;gap:8px;margin-top:6px}
   .promo-row input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:11px 13px;border-radius:8px;font:inherit;font-family:var(--mono)}
   .promo-row input:focus{outline:0;border-color:var(--border2)}
@@ -50,8 +47,6 @@
   body.light .row .lbl{color:#595959}
   body.light .pay-btn{background:#006B3C;color:#FFF}
   body.light .promo-row input,body.light .promo-row button{background:#F4F4F4;border-color:#BABABA;color:#000}
-  body.light .cycle-toggle{background:#F4F4F4;border-color:#BABABA}
-  body.light .cycle-toggle button.active{background:#FFFFFF;color:#000}
 </style>
 </head>
 <body>
@@ -74,23 +69,18 @@
   </div>
 
   <div id="state-checkout" class="panel" style="display:none">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
-      <div>
-        <div style="font-size:11px;letter-spacing:0.06em;color:var(--text3);text-transform:uppercase">Plan</div>
-        <div id="plan-name" style="font-size:22px;font-weight:700;margin-top:2px"></div>
-        <div id="plan-desc" style="color:var(--text2);font-size:13px;margin-top:4px"></div>
-      </div>
-      <div class="cycle-toggle">
-        <button id="cyc-monthly" onclick="setCycle('monthly')">Monthly</button>
-        <button id="cyc-annual" onclick="setCycle('annual')">Annual</button>
-      </div>
+    <div>
+      <div style="font-size:11px;letter-spacing:0.06em;color:var(--text3);text-transform:uppercase">Plan</div>
+      <div id="plan-name" style="font-size:22px;font-weight:700;margin-top:2px"></div>
+      <div id="plan-desc" style="color:var(--text2);font-size:13px;margin-top:4px"></div>
+      <div id="period-summary" style="margin-top:12px;color:var(--text2);font-size:13px"></div>
     </div>
     <div class="row" style="margin-top:18px">
-      <span class="lbl">Base price</span>
+      <span class="lbl">Subtotal (with period discount)</span>
       <span class="val" id="row-base">—</span>
     </div>
     <div class="row" id="row-discount-wrap" style="display:none">
-      <span class="lbl">Discount (<span id="row-discount-pct"></span>%)</span>
+      <span class="lbl">Promo (<span id="row-discount-pct"></span>%)</span>
       <span class="val" style="color:var(--green)" id="row-discount">—</span>
     </div>
     <div class="row total">
@@ -118,8 +108,9 @@
 const params = new URLSearchParams(location.search);
 const status = params.get('status');
 const planId = parseInt(params.get('plan_id') || '0', 10) || null;
-let _cycle = (params.get('cycle') === 'annual') ? 'annual' : 'monthly';
+const periodId = parseInt(params.get('period_id') || '0', 10) || null;
 let _plan = null;
+let _period = null;
 let _promo = null;
 
 function show(panelId){
@@ -134,51 +125,53 @@ function _money(n){ return '$' + Number(n || 0).toFixed(2); }
 async function _load(){
   if (status === 'success'){ show('state-success'); return; }
   if (status === 'fail'){ show('state-fail'); return; }
-
-  if (!Auth.isLoggedIn()){
+  if (!localStorage.getItem('wm_token')){
     location.href = `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
     return;
   }
-  if (!planId){
-    document.getElementById('state-error').textContent = 'Missing plan_id';
+  if (!planId || !periodId){
+    document.getElementById('state-error').textContent = 'Missing plan_id or period_id';
     show('state-error'); return;
   }
   try {
     const r = await fetch('/api/plans');
     const j = await r.json();
     _plan = (j.plans || []).find(p => p.id === planId);
-    if (!_plan){
-      document.getElementById('state-error').textContent = 'Plan not found';
+    _period = (j.billing_periods || []).find(p => p.id === periodId);
+    if (!_plan || !_period){
+      document.getElementById('state-error').textContent = 'Plan or billing period not found';
       show('state-error'); return;
     }
-    if (_plan.is_free){
-      location.href = '/app';
-      return;
-    }
+    if (_plan.is_free){ location.href = '/app'; return; }
     show('state-checkout');
-    setCycle(_cycle);
     document.getElementById('plan-name').textContent = _plan.name;
     document.getElementById('plan-desc').textContent = _plan.description || '';
+    const base = Number(_plan.price_usd_monthly || 0);
+    const months = _period.months;
+    const discount = Number(_period.discount_pct || 0);
+    const total = Math.round(base * months * (100 - discount) / 100);
+    const eff = Math.round(total / months);
+    document.getElementById('period-summary').innerHTML =
+      `Billing: <b style="color:var(--text);font-family:var(--mono)">${_period.label}</b> · ${months}&nbsp;mo · ` +
+      (discount > 0 ? `<span style="color:var(--green)">−${discount}%</span> · ` : '') +
+      `effective <b style="color:var(--text);font-family:var(--mono)">$${eff}/mo</b>`;
+    _renderTotals();
   } catch (e){
-    document.getElementById('state-error').textContent = 'Failed to load plan: ' + e.message;
+    document.getElementById('state-error').textContent = 'Failed to load: ' + e.message;
     show('state-error');
   }
 }
 
-function setCycle(c){
-  _cycle = c;
-  document.getElementById('cyc-monthly').classList.toggle('active', c === 'monthly');
-  document.getElementById('cyc-annual').classList.toggle('active', c === 'annual');
-  // Reset promo if applied to keep server-recomputed amount honest.
-  _promo = null;
-  document.getElementById('promo-feedback').textContent = '';
-  document.getElementById('promo-feedback').className = 'promo-feedback';
-  _renderTotals();
+function _baseTotal(){
+  const base = Number(_plan.price_usd_monthly || 0);
+  const months = _period.months;
+  const discount = Number(_period.discount_pct || 0);
+  return Math.round(base * months * (100 - discount) / 100);
 }
 
 function _renderTotals(){
-  if (!_plan) return;
-  const base = _cycle === 'annual' ? Number(_plan.price_usd_annual || 0) : Number(_plan.price_usd_monthly || 0);
+  if (!_plan || !_period) return;
+  const base = _baseTotal();
   document.getElementById('row-base').textContent = _money(base);
   if (_promo){
     document.getElementById('row-discount-wrap').style.display = '';
@@ -201,7 +194,7 @@ async function applyPromo(){
     const r = await Auth.apiFetch('/promo/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: codeRaw, plan_id: _plan.id, billing_cycle: _cycle }),
+      body: JSON.stringify({ code: codeRaw, plan_id: _plan.id, billing_period_id: _period.id }),
     });
     if (!r.ok){
       const j = await r.json().catch(() => ({}));
@@ -237,7 +230,7 @@ async function pay(){
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         plan_id: _plan.id,
-        billing_cycle: _cycle,
+        billing_period_id: _period.id,
         promo_code: (document.getElementById('promo-input').value || '').trim() || null,
       }),
     });
@@ -248,10 +241,7 @@ async function pay(){
       return;
     }
     const j = await r.json();
-    if (j.invoice_url){
-      location.href = j.invoice_url;
-      return;
-    }
+    if (j.invoice_url){ location.href = j.invoice_url; return; }
     toast('Invoice URL missing — contact support', 'error');
     btn.disabled = false; btn.textContent = 'Pay with crypto →';
   } catch (e){

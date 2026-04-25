@@ -703,3 +703,58 @@ def admin_users_search(
         .all()
     )
     return {"users": [{"id": u.id, "username": u.username, "email": u.email} for u in rows]}
+
+
+# ── Billing periods ───────────────────────────────────────────────────────
+from backend.services import billing_period_service as _bp_service
+from backend.db.models import BillingPeriod as _BillingPeriod
+
+
+@router.get("/billing-periods")
+def admin_list_billing_periods(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    rows = _bp_service.list_periods(db, only_active=False)
+    return {"billing_periods": [_bp_service.serialize(p) for p in rows]}
+
+
+@router.post("/billing-periods")
+def admin_create_billing_period(
+    body: dict,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    slug = (body.get("slug") or "").strip().lower()
+    try:
+        period = _bp_service.create(db, slug, body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _bp_service.serialize(period)
+
+
+@router.patch("/billing-periods/{period_id}")
+def admin_update_billing_period(
+    period_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    period = _bp_service.get_period(db, period_id)
+    if not period:
+        raise HTTPException(status_code=404, detail="period not found")
+    _bp_service.update(db, period, body)
+    return _bp_service.serialize(period)
+
+
+@router.delete("/billing-periods/{period_id}")
+def admin_delete_billing_period(
+    period_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    period = _bp_service.get_period(db, period_id)
+    if not period:
+        raise HTTPException(status_code=404, detail="period not found")
+    _bp_service.delete(db, period)
+    return {"ok": True}

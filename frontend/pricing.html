@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>Pricing — Avalant</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Avalant plans: Free / Pro / Platinum / Enterprise. Live arbitrage scanner, multi-exchange portfolio tracking, one-click trading.">
+<meta name="description" content="Avalant: Full Screener + Portfolio plan from $65/mo, Screener-only $55/mo. Pay monthly, quarterly, semi-annually, or yearly with up to 25% off.">
 <link rel="icon" href="/avalant_favicon.svg">
 <link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -25,8 +25,6 @@
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased}
 
-  /* Background ambient — same gradient mood as the old page so the
-     overall vibe is preserved even though the content is data-driven now. */
   body::before{
     content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     background:
@@ -37,10 +35,9 @@
   .main{position:relative;z-index:1}
 
   /* HERO */
-  .hero{max-width:1180px;margin:0 auto;padding:72px 30px 28px;text-align:center}
+  .hero{max-width:1180px;margin:0 auto;padding:72px 30px 24px;text-align:center}
   .hero-eyebrow{
-    display:inline-flex;align-items:center;gap:7px;
-    padding:5px 12px;border-radius:99px;
+    display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:99px;
     border:1px solid rgba(26,255,171,0.22);background:rgba(26,255,171,0.05);
     color:var(--green);font-size:11px;font-weight:600;letter-spacing:.5px;
     font-family:var(--mono);margin-bottom:22px;
@@ -48,22 +45,22 @@
   }
   .hero-eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;box-shadow:0 0 6px rgba(26,255,171,0.7)}
   @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
-  .hero h1{font-size:clamp(34px,5vw,56px);font-weight:800;letter-spacing:-2px;line-height:1.05;margin:0 0 16px}
+  .hero h1{font-size:clamp(34px,5vw,58px);font-weight:800;letter-spacing:-2.2px;line-height:1.05;margin:0 0 18px}
   .hero h1 em{font-style:normal;background:linear-gradient(120deg,var(--green) 0%,var(--teal) 50%,var(--green) 100%);background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:shimmer 4s linear infinite}
   @keyframes shimmer{to{background-position:200% center}}
   .hero p{font-size:16px;color:var(--text2);max-width:580px;margin:0 auto;line-height:1.6}
 
-  /* BILLING TOGGLE */
-  .config-row{display:flex;justify-content:center;margin:32px auto 36px}
+  /* PLAN MODE TOGGLE */
+  .config-row{display:flex;justify-content:center;margin:32px auto 32px;flex-direction:column;align-items:center;gap:14px}
   .toggle-wrap{display:inline-flex;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:12px;gap:2px}
-  .toggle-btn{padding:10px 20px;border-radius:9px;background:transparent;border:0;color:var(--text3);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:8px}
+  .toggle-btn{padding:11px 22px;border-radius:9px;background:transparent;border:0;color:var(--text3);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:10px}
   .toggle-btn:hover{color:var(--text2)}
   .toggle-btn.active{background:rgba(26,255,171,0.12);color:var(--green);box-shadow:inset 0 0 0 1px rgba(26,255,171,0.25)}
   .toggle-btn .sub{font-family:var(--mono);font-size:11px;font-weight:500;padding:2px 7px;border-radius:99px;background:rgba(155,159,171,.1);color:var(--text3)}
   .toggle-btn.active .sub{background:rgba(26,255,171,0.15);color:var(--green)}
 
-  /* PLANS GRID */
-  .plans-wrap{max-width:1280px;margin:0 auto;padding:0 24px 64px}
+  /* PLANS GRID — one card per billing period */
+  .plans-wrap{max-width:1280px;margin:0 auto;padding:0 24px 36px}
   .plans-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
   @media (max-width:1020px){.plans-grid{grid-template-columns:1fr 1fr}}
   @media (max-width:560px){.plans-grid{grid-template-columns:1fr}}
@@ -73,40 +70,57 @@
   .plan:hover{transform:translateY(-4px);border-color:rgba(255,255,255,0.08);box-shadow:0 24px 64px rgba(0,0,0,.5)}
   .plan.featured{border-color:rgba(26,255,171,0.3);box-shadow:0 20px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(26,255,171,0.1), 0 0 48px rgba(26,255,171,0.1)}
   .plan.featured::before{background:linear-gradient(90deg,transparent,rgba(26,255,171,0.45),transparent);height:2px}
-  .plan.featured::after{content:'Most popular';position:absolute;top:-11px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:99px;background:var(--green);color:#09090B;text-transform:uppercase;box-shadow:0 0 16px rgba(26,255,171,.45)}
-  .plan.is-current{outline:1px dashed rgba(255,255,255,0.18)}
+  .plan.featured::after{content:'Best value';position:absolute;top:-11px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:99px;background:linear-gradient(135deg,var(--green),var(--teal));color:#09090B;text-transform:uppercase;box-shadow:0 0 16px rgba(26,255,171,.35)}
 
   .plan-head{display:flex;justify-content:space-between;align-items:flex-start}
-  .plan-name{font-size:20px;font-weight:700;letter-spacing:-0.4px;margin:0}
+  .plan-name{font-size:18px;font-weight:700;letter-spacing:-0.4px;margin:0}
   .plan-tag{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px}
 
-  .plan-desc{color:var(--text2);font-size:13px;line-height:1.5;margin:0;min-height:38px}
-
-  .plan-price-row{display:flex;align-items:baseline;gap:5px;margin-top:4px}
+  .plan-price-row{display:flex;align-items:baseline;gap:5px;margin-top:6px}
   .plan-currency{font-size:18px;color:var(--text3);font-weight:500}
   .plan-num{font-family:var(--mono);font-size:42px;font-weight:600;letter-spacing:-1.5px;line-height:1}
   .plan-period{font-family:var(--mono);font-size:13px;color:var(--text3)}
-  .plan-was{font-size:12px;color:var(--text3);text-decoration:line-through;margin-left:auto}
-  .plan-saved{color:var(--green);font-size:11px;font-weight:600}
-
-  .plan-features{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px;list-style:none;padding:0}
-  .plan-features li{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--text);line-height:1.45}
-  .plan-features li.lim{color:var(--text2)}
-  .plan-features .ico{color:var(--green);flex-shrink:0;margin-top:2px}
-  .plan-features .ico-x{color:var(--red);flex-shrink:0;margin-top:2px}
+  .plan-effective{color:var(--text2);font-size:12px}
+  .plan-effective b{color:var(--text);font-family:var(--mono)}
+  .plan-original{color:var(--text3);font-size:12px;text-decoration:line-through}
+  .plan-saved{color:var(--green);font-size:12px;font-weight:600}
 
   .plan-cta{margin-top:auto;display:block;text-align:center;text-decoration:none;padding:13px 18px;border-radius:11px;background:var(--green);color:#000;font-weight:700;font-size:13.5px;font-family:inherit;border:0;cursor:pointer;transition:.18s}
   .plan-cta:hover{filter:brightness(1.06)}
   .plan-cta.is-current{background:var(--surface3);color:var(--text2);cursor:default;pointer-events:none}
-  .plan-cta.is-free{background:transparent;border:1px solid var(--border2);color:var(--text)}
-  .plan-cta.is-free:hover{background:var(--surface3)}
-  .plan-cta.is-enterprise{background:linear-gradient(135deg,var(--purple),var(--teal));color:#fff}
-  .plan-cta.is-enterprise:hover{filter:brightness(1.08)}
 
   .plan-loading{padding:80px 0;text-align:center;color:var(--text3);grid-column:1/-1}
 
+  /* FEATURE CARD (single block) below the period grid */
+  .feat-card{
+    max-width:1280px;margin:8px auto 12px;padding:0 24px;
+  }
+  .feat-card-inner{
+    background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:24px 28px;
+    display:grid;grid-template-columns:1fr 1fr;gap:20px;
+  }
+  @media (max-width:760px){.feat-card-inner{grid-template-columns:1fr}}
+  .feat-card-inner h3{margin:0 0 10px;font-size:14px;font-weight:600;color:var(--text2);letter-spacing:.04em;text-transform:uppercase}
+  .feat-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+  .feat-list li{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--text);line-height:1.5}
+  .feat-list li.lim{color:var(--text2)}
+  .feat-list .ico{color:var(--green);flex-shrink:0;margin-top:2px}
+  .feat-list .ico-x{color:var(--red);flex-shrink:0;margin-top:2px}
+
+  /* FREE callout */
+  .free-card{max-width:1280px;margin:0 auto 56px;padding:0 24px}
+  .free-card-inner{
+    background:linear-gradient(135deg,rgba(255,255,255,0.02),rgba(255,255,255,0.005));
+    border:1px solid var(--border);border-radius:14px;padding:18px 22px;
+    display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+  }
+  .free-card-inner .lbl{font-weight:700;font-size:14px}
+  .free-card-inner .desc{color:var(--text2);font-size:13px;margin-top:2px}
+  .free-card-inner a{color:var(--green);font-weight:600;font-size:13px;text-decoration:none;border:1px solid rgba(26,255,171,0.32);padding:10px 16px;border-radius:9px;transition:.18s}
+  .free-card-inner a:hover{background:rgba(26,255,171,0.06)}
+
   /* FAQ */
-  .faq-wrap{max-width:1080px;margin:0 auto;padding:30px 24px 80px}
+  .faq-wrap{max-width:1080px;margin:0 auto;padding:0 24px 80px}
   .faq-wrap h2{font-size:22px;font-weight:700;letter-spacing:-0.4px}
   .faq{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:14px}
   .faq .q{font-weight:600;margin:0 0 4px;font-size:14px;color:var(--text)}
@@ -114,14 +128,13 @@
 
   body.light{background:#FFFFFF;color:#000}
   body.light::before{display:none}
-  body.light .plan{background:#FFFFFF;border-color:#BABABA}
+  body.light .plan,body.light .feat-card-inner,body.light .free-card-inner{background:#FFFFFF;border-color:#BABABA}
   body.light .plan-num,body.light .plan-name{color:#000}
-  body.light .plan-desc,body.light .plan-period,body.light .plan-currency{color:#595959}
+  body.light .plan-currency,body.light .plan-period,body.light .plan-effective,body.light .plan-original{color:#595959}
   body.light .toggle-wrap{background:#F4F4F4;border-color:#BABABA}
   body.light .toggle-btn.active{background:rgba(0,107,60,0.10);color:#006B3C}
   body.light .plan-cta{background:#006B3C;color:#FFF}
-  body.light .plan-cta.is-free{background:#FFF;color:#000;border-color:#8C8C8C}
-  body.light .plan-cta.is-enterprise{background:#000;color:#FFF}
+  body.light .free-card-inner a{color:#006B3C;border-color:rgba(0,107,60,0.4)}
   body.light .hero h1 em{background:linear-gradient(120deg,#006B3C 0%,#0c5e88 50%,#006B3C 100%);-webkit-background-clip:text;background-clip:text}
 </style>
 </head>
@@ -130,15 +143,15 @@
 
 <main class="main">
   <section class="hero">
-    <span class="hero-eyebrow"><span class="dot"></span>Pricing — pay only when you need it</span>
+    <span class="hero-eyebrow"><span class="dot"></span>One flat price · save the longer you commit</span>
     <h1>Trade smarter,<br><em>not louder.</em></h1>
-    <p>Live cross-exchange arbitrage, portfolio tracker, one-click trading across 14+ venues. Pick the plan that fits your style — switch any time.</p>
+    <p>Live cross-exchange arbitrage scanner, multi-exchange portfolio tracker, and one-click trading on 14+ venues. Pick a plan that fits your style — switch any time.</p>
   </section>
 
   <div class="config-row">
-    <div class="toggle-wrap" role="tablist" aria-label="Billing cycle">
-      <button id="cyc-monthly" class="toggle-btn active" onclick="setCycle('monthly')">Monthly</button>
-      <button id="cyc-annual" class="toggle-btn" onclick="setCycle('annual')">Annual <span class="sub">save up to 20%</span></button>
+    <div class="toggle-wrap" role="tablist" aria-label="Plan mode" id="mode-toggle"></div>
+    <div style="font-size:12px;color:var(--text3);max-width:540px;text-align:center">
+      Skip Portfolio on the <b>Screener-only</b> plan and save $10/mo.
     </div>
   </div>
 
@@ -148,14 +161,37 @@
     </div>
   </section>
 
+  <div class="feat-card">
+    <div class="feat-card-inner">
+      <div>
+        <h3>What you get</h3>
+        <ul class="feat-list" id="perks-list"></ul>
+      </div>
+      <div>
+        <h3>Limits</h3>
+        <ul class="feat-list" id="limits-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="free-card">
+    <div class="free-card-inner">
+      <div>
+        <div class="lbl">Or stay on Free — try Avalant before you commit</div>
+        <div class="desc">5 portfolio wallets · 1 API key per exchange · live screener with a 2-min anonymous preview · spread alerts via Telegram. Trading orders run with a +500 ms delay vs paid plans.</div>
+      </div>
+      <a id="free-cta" href="/register">Sign up free</a>
+    </div>
+  </div>
+
   <section class="faq-wrap">
     <h2>FAQ</h2>
     <div class="faq">
       <div><p class="q">What payment methods do you accept?</p><p class="a">USDT / BTC / ETH and a few other coins via CryptoCloud — pick one at checkout, send the exact amount, plan activates within minutes of confirmation.</p></div>
-      <div><p class="q">How does the portfolio limit work?</p><p class="a">You can save unlimited keys, but only the wallets you tag as "Portfolio" count against your plan limit (5 on Free, 30 on paid). Switching a key from Portfolio to Screener-only frees a slot.</p></div>
+      <div><p class="q">How does the portfolio limit work?</p><p class="a">You can save unlimited keys, but only the wallets you tag as "Portfolio" count against your plan limit (5 on Free, 30 on Full). Switching a key from Portfolio to Screener-only frees a slot.</p></div>
       <div><p class="q">What happens after my plan expires?</p><p class="a">Your data stays put. The portfolio-balance scan drops back to 5 wallets and trading orders run with the Free-tier 500 ms delay until you renew — but your wallets and history remain visible.</p></div>
-      <div><p class="q">Why only 1 API key per exchange on Free?</p><p class="a">Paid plans let you store up to 3 keys per venue and pick which one is "main" for trading — handy if you keep a separate read-only key. Free covers the basics with one key per exchange.</p></div>
-      <div><p class="q">Are promo codes stackable?</p><p class="a">No — exactly one code per checkout. Codes apply to the plan's base price (annual or monthly) before tax and round to two decimals.</p></div>
+      <div><p class="q">Why pick Screener-only?</p><p class="a">It saves you $10/mo if all you want is the live arb scanner + trading. The Portfolio tracker is the difference between Screener-only and Full.</p></div>
+      <div><p class="q">Are promo codes stackable?</p><p class="a">No — exactly one code per checkout. Codes apply to the cart total (after the period discount) and round to two decimals.</p></div>
       <div><p class="q">Can I switch plans?</p><p class="a">Yes. Upgrade anytime — your remaining time prorates onto the new tier. Downgrades take effect at the next billing date.</p></div>
     </div>
   </section>
@@ -163,117 +199,122 @@
 
 <script>
 let _plans = [];
-let _cycle = (new URLSearchParams(location.search).get('cycle') === 'annual') ? 'annual' : 'monthly';
+let _periods = [];
+let _activeMode = 'full';   // 'full' | 'screener'
 let _me = null;
 
 function _isAuthed(){ try { return !!localStorage.getItem('wm_token'); } catch { return false; } }
-
 function _esc(s){ return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function _money(n){ return '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
 
 async function _load(){
   try {
     const r = await fetch('/api/plans');
     const j = await r.json();
-    _plans = (j.plans || []).filter(p => p.is_active);
-    _plans.sort((a,b) => (a.sort_order - b.sort_order) || a.id - b.id);
+    _plans = (j.plans || []).filter(p => p.is_active && !p.is_free);
+    _periods = (j.billing_periods || []).filter(p => p.is_active);
+    _periods.sort((a,b) => a.sort_order - b.sort_order || a.months - b.months);
   } catch (e){
-    document.getElementById('plans-grid').innerHTML =
-      '<div class="plan-loading">Failed to load plans — try again in a moment.</div>';
+    document.getElementById('plans-grid').innerHTML = '<div class="plan-loading">Failed to load plans — try again in a moment.</div>';
     return;
   }
   if (_isAuthed()){
-    try { _me = await (await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('wm_token') } })).json(); } catch {}
+    try {
+      _me = await (await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('wm_token') } })).json();
+    } catch {}
+    document.getElementById('free-cta').textContent = 'Continue with Free';
+    document.getElementById('free-cta').setAttribute('href', '/app');
   }
-  setCycle(_cycle);
-}
-
-function setCycle(c){
-  _cycle = c;
-  document.getElementById('cyc-monthly').classList.toggle('active', c === 'monthly');
-  document.getElementById('cyc-annual').classList.toggle('active', c === 'annual');
+  _renderModeToggle();
   _render();
 }
 
-function _priceLabel(p){
-  if (p.is_free) return { num: '0', period: 'forever', was: null, hint: null, isCustom: false };
-  if (p.slug === 'enterprise') return { num: 'Custom', period: 'tailored', was: null, hint: 'Contact sales for volume pricing', isCustom: true };
-  const m = Number(p.price_usd_monthly || 0);
-  const y = Number(p.price_usd_annual || 0);
-  if (_cycle === 'annual'){
-    const eff = y > 0 ? Math.round(y / 12) : 0;
-    const wasYearly = m * 12;
-    const saved = wasYearly > 0 ? Math.round(((wasYearly - y) / wasYearly) * 100) : 0;
-    return {
-      num: String(eff), period: '/mo',
-      was: wasYearly > 0 ? '$' + wasYearly + '/yr' : null,
-      hint: saved > 0 ? `Save ${saved}% · billed $${y}/yr` : `billed $${y}/yr`,
-      isCustom: false,
-    };
+function _renderModeToggle(){
+  const wrap = document.getElementById('mode-toggle');
+  const full = _plans.find(p => p.has_portfolio);
+  const screener = _plans.find(p => !p.has_portfolio);
+  if (!full && !screener){ wrap.innerHTML = ''; return; }
+  let html = '';
+  if (full){
+    html += `<button class="toggle-btn ${_activeMode==='full'?'active':''}" onclick="setMode('full')">${_esc(full.name)} <span class="sub">$${full.price_usd_monthly}/mo</span></button>`;
   }
-  return { num: String(Math.round(m)), period: '/mo', was: null, hint: null, isCustom: false };
+  if (screener){
+    html += `<button class="toggle-btn ${_activeMode==='screener'?'active':''}" onclick="setMode('screener')">${_esc(screener.name)} <span class="sub">$${screener.price_usd_monthly}/mo · −$10</span></button>`;
+  }
+  wrap.innerHTML = html;
+  // Default to whichever exists if user picked the wrong one
+  if (_activeMode === 'full' && !full) _activeMode = 'screener';
+  if (_activeMode === 'screener' && !screener) _activeMode = 'full';
+}
+
+function setMode(m){ _activeMode = m; _renderModeToggle(); _render(); }
+
+function _activePlan(){
+  if (_activeMode === 'screener') return _plans.find(p => !p.has_portfolio);
+  return _plans.find(p => p.has_portfolio);
 }
 
 function _isCurrentPlan(p){
   if (!_me) return false;
-  if (_me.plan_id === p.id) return true;
-  if (!_me.plan_id && p.is_free) return true;
-  return false;
+  return _me.plan_id === p.id;
 }
 
-function _ctaButton(p){
-  if (_isCurrentPlan(p)){
-    return `<button class="plan-cta is-current" disabled>Current plan</button>`;
-  }
-  if (p.slug === 'enterprise'){
-    return `<a class="plan-cta is-enterprise" href="mailto:hello@avalant.xyz?subject=Enterprise%20plan">Contact sales</a>`;
-  }
-  if (p.is_free){
-    if (_me) return `<a class="plan-cta is-free" href="/app">Continue with Free</a>`;
-    return `<a class="plan-cta is-free" href="/register">Sign up free</a>`;
-  }
+function _ctaButton(plan, period){
+  if (_isCurrentPlan(plan)) return `<button class="plan-cta is-current" disabled>Current plan</button>`;
+  const url = `/checkout?plan_id=${plan.id}&period_id=${period.id}`;
   if (!_me){
-    const next = encodeURIComponent(`/checkout?plan_id=${p.id}&cycle=${_cycle}`);
-    return `<a class="plan-cta" href="/login?next=${next}">Choose ${_esc(p.name)}</a>`;
+    const next = encodeURIComponent(url);
+    return `<a class="plan-cta" href="/login?next=${next}">Choose ${_esc(period.label)}</a>`;
   }
-  return `<a class="plan-cta" href="/checkout?plan_id=${p.id}&cycle=${_cycle}">Choose ${_esc(p.name)}</a>`;
+  return `<a class="plan-cta" href="${url}">Choose ${_esc(period.label)}</a>`;
 }
 
 function _render(){
-  const wrap = document.getElementById('plans-grid');
-  if (!_plans.length){ wrap.innerHTML = '<div class="plan-loading">No active plans configured.</div>'; return; }
-  // The "Most popular" badge: pick the paid plan with the lowest price > 0.
-  const paidByPrice = _plans.filter(p => !p.is_free && p.slug !== 'enterprise');
-  paidByPrice.sort((a,b) => Number(a.price_usd_monthly||0) - Number(b.price_usd_monthly||0));
-  const popularId = paidByPrice[0]?.id;
+  const plan = _activePlan();
+  const grid = document.getElementById('plans-grid');
+  const perksUl = document.getElementById('perks-list');
+  const limitsUl = document.getElementById('limits-list');
+  if (!plan || !_periods.length){
+    grid.innerHTML = '<div class="plan-loading">No plans configured.</div>';
+    return;
+  }
+  // Best-value badge: longest term among the periods we have.
+  const bestId = _periods.reduce((a, b) => (b.months > (a?.months || 0) ? b : a), null)?.id;
 
-  wrap.innerHTML = _plans.map(p => {
-    const price = _priceLabel(p);
-    const features = p.features || { perks: [], limits: [] };
-    const perks = (features.perks || []).map(t =>
-      `<li><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="4 12 10 18 20 6"/></svg>${_esc(t)}</li>`
-    ).join('');
-    const limits = (features.limits || []).map(t =>
-      `<li class="lim"><svg class="ico-x" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>${_esc(t)}</li>`
-    ).join('');
-    const featuredCls = p.id === popularId ? ' featured' : '';
-    const currentCls = _isCurrentPlan(p) ? ' is-current' : '';
+  grid.innerHTML = _periods.map(p => {
+    const months = p.months;
+    const discount = Number(p.discount_pct || 0);
+    const baseMonthly = Number(plan.price_usd_monthly || 0);
+    const total = Math.round(baseMonthly * months * (100 - discount) / 100);
+    const effMonthly = Math.round(total / months);
+    const fullCost = baseMonthly * months;
+    const saved = Math.max(0, Math.round(fullCost - total));
+    const featuredCls = p.id === bestId ? ' featured' : '';
     return `
-      <article class="plan${featuredCls}${currentCls}" data-plan-id="${p.id}">
+      <article class="plan${featuredCls}" data-period-id="${p.id}">
         <div class="plan-head">
-          <h3 class="plan-name">${_esc(p.name)}</h3>
-          <span class="plan-tag">${p.is_free ? 'free' : (p.slug === 'enterprise' ? 'custom' : (_cycle === 'annual' ? 'annual' : 'monthly'))}</span>
+          <h3 class="plan-name">${_esc(p.label)}</h3>
+          <span class="plan-tag">${months}&nbsp;mo</span>
         </div>
-        <p class="plan-desc">${_esc(p.description || '')}</p>
         <div class="plan-price-row">
-          ${price.isCustom
-            ? `<span class="plan-num" style="font-size:30px">${price.num}</span><span class="plan-period">${price.period}</span>`
-            : `<span class="plan-currency">$</span><span class="plan-num">${price.num}</span><span class="plan-period">${price.period}</span>${price.was ? `<span class="plan-was">${price.was}</span>` : ''}`}
+          <span class="plan-currency">$</span>
+          <span class="plan-num">${total.toLocaleString('en-US')}</span>
+          <span class="plan-period">/ ${months === 1 ? 'month' : months + 'mo'}</span>
         </div>
-        ${price.hint ? `<div class="plan-saved">${price.hint}</div>` : ''}
-        <ul class="plan-features">${perks}${limits}</ul>
-        ${_ctaButton(p)}
+        ${months > 1 ? `<div class="plan-effective">Effective <b>${_money(effMonthly)}/mo</b></div>` : ''}
+        ${discount > 0 ? `<div class="plan-saved">Save ${_money(saved)} · −${discount}%</div>` : ''}
+        ${months > 1 && discount > 0 ? `<div class="plan-original">${_money(fullCost)} without discount</div>` : ''}
+        ${_ctaButton(plan, p)}
       </article>`;
   }).join('');
+
+  const features = plan.features || { perks: [], limits: [] };
+  perksUl.innerHTML = (features.perks || []).map(t =>
+    `<li><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="4 12 10 18 20 6"/></svg>${_esc(t)}</li>`
+  ).join('') || '<li class="lim">—</li>';
+  limitsUl.innerHTML = (features.limits || []).map(t =>
+    `<li class="lim"><svg class="ico-x" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>${_esc(t)}</li>`
+  ).join('') || '<li class="lim" style="color:var(--text3)">No restrictions on this plan.</li>';
 }
 
 _load();

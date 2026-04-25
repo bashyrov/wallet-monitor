@@ -44,6 +44,7 @@ class EffectiveLimits:
     plan_name: str
     is_free: bool
     is_expired: bool
+    has_portfolio: bool
     portfolio_limit: int
     exchange_keys_per_venue: int
     trade_delay_ms: int
@@ -109,6 +110,7 @@ def effective_limits(db: Session, user: User) -> EffectiveLimits:
         plan_name=plan.name,
         is_free=bool(plan.is_free),
         is_expired=is_expired,
+        has_portfolio=bool(getattr(plan, "has_portfolio", True)),
         portfolio_limit=int(portfolio_limit),
         exchange_keys_per_venue=int(exchange_keys_per_venue),
         trade_delay_ms=int(trade_delay_ms),
@@ -129,6 +131,8 @@ def serialize_plan(plan: Plan) -> dict[str, Any]:
         "portfolio_limit_grace": plan.portfolio_limit_grace,
         "exchange_keys_per_venue": plan.exchange_keys_per_venue,
         "trade_delay_ms": plan.trade_delay_ms,
+        "has_portfolio": bool(getattr(plan, "has_portfolio", True)),
+        "is_subscription": bool(getattr(plan, "is_subscription", True)),
         "features": plan.features or {"perks": [], "limits": []},
         "is_free": bool(plan.is_free),
         "is_active": bool(plan.is_active),
@@ -149,6 +153,7 @@ _EDITABLE_FIELDS = {
     "price_usd_monthly", "price_usd_annual",
     "portfolio_limit", "portfolio_limit_grace",
     "exchange_keys_per_venue", "trade_delay_ms",
+    "has_portfolio", "is_subscription",
     "features", "is_active", "sort_order",
 }
 
