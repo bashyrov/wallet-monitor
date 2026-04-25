@@ -48,7 +48,7 @@ async def check_balance(
             status_code=402,
             detail="Your plan does not include portfolio tracking — upgrade to Full to access this.",
         )
-    if len(wallets) > limits.portfolio_limit:
+    if not limits.portfolio_unlimited and len(wallets) > limits.portfolio_limit:
         wallets = sorted(wallets, key=lambda w: w.created_at or datetime.utcnow())[: limits.portfolio_limit]
 
     if not wallets:
@@ -95,7 +95,7 @@ async def check_balance_stream(
             status_code=402,
             detail="Your plan does not include portfolio tracking — upgrade to Full to access this.",
         )
-    if len(wallets) > limits.portfolio_limit:
+    if not limits.portfolio_unlimited and len(wallets) > limits.portfolio_limit:
         wallets = sorted(wallets, key=lambda w: w.created_at or datetime.utcnow())[: limits.portfolio_limit]
 
     if not wallets:

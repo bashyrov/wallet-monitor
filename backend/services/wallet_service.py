@@ -122,7 +122,7 @@ def unarchive_wallet(db: Session, wallet_id: int, user_id: int, user: User | Non
         user = db.query(User).filter(User.id == user_id).first()
     limits = plan_service.effective_limits(db, user)
     if (wallet.purpose or "portfolio") in ("portfolio", "both"):
-        if _portfolio_count(db, user_id) >= limits.portfolio_limit:
+        if not limits.portfolio_unlimited and _portfolio_count(db, user_id) >= limits.portfolio_limit:
             from backend.domain.errors import WalletLimitReached
             raise WalletLimitReached(limits.portfolio_limit)
     wallet.is_archived = False
@@ -140,14 +140,14 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, user: User | No
 
     # Portfolio limit only applies when the new wallet would count as portfolio.
     if purpose in ("portfolio", "both"):
-        if _portfolio_count(db, user_id) >= limits.portfolio_limit:
+        if not limits.portfolio_unlimited and _portfolio_count(db, user_id) >= limits.portfolio_limit:
             from backend.domain.errors import WalletLimitReached
             raise WalletLimitReached(limits.portfolio_limit)
 
-    # Per-venue exchange-key cap: 1 for free / 3 for paid (configurable per plan).
-    # Existing wallets are always grandfathered — the cap is checked before
-    # *adding* a new one, never retroactively.
-    if body.wallet_type == "exchange":
+    # Per-venue exchange-key cap: 1 for free / unlimited for paid (configurable
+    # per plan; -1 means unlimited). Existing wallets are always grandfathered —
+    # the cap is checked before *adding* a new one, never retroactively.
+    if body.wallet_type == "exchange" and not limits.keys_unlimited:
         existing_for_venue = _exchange_keys_for_venue(db, user_id, body.type_value)
         if existing_for_venue >= limits.exchange_keys_per_venue:
             from backend.domain.errors import DuplicateScreenerKey

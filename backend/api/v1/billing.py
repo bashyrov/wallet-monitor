@@ -38,7 +38,9 @@ router = APIRouter(tags=["billing"])
 # ── Plans (public) ────────────────────────────────────────────────────────────
 @router.get("/plans")
 def list_plans(db: Session = Depends(get_db)) -> dict[str, Any]:
-    plans = plan_service.list_plans(db, only_active=True)
+    # Public surface — `is_admin_only=True` plans (e.g. Unlim) stay
+    # behind /api/admin/plans only.
+    plans = plan_service.list_plans(db, only_active=True, public_only=True)
     periods = billing_period_service.list_periods(db, only_active=True)
     return {
         "plans": [plan_service.serialize_plan(p) for p in plans],

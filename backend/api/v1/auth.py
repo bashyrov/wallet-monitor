@@ -143,12 +143,24 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
     # can show the right cap without round-tripping to /api/plans.
     try:
         from backend.services import plan_service as _ps
+        # Lazy-enforce wallet quota — if the user just dropped below
+        # their portfolio cap (downgraded plan, expired subscription),
+        # surplus wallets get archived right here. Cheap; bails out
+        # immediately when the user is within cap or on Unlim.
+        try:
+            from backend.services import wallet_quota as _wq
+            _wq.enforce_for_user(db, current_user)
+        except Exception:
+            pass
         lim = _ps.effective_limits(db, current_user)
         out.plan_id = lim.plan_id
-        out.portfolio_limit = lim.portfolio_limit
-        out.exchange_keys_per_venue = lim.exchange_keys_per_venue
+        # -1 in the DB ≡ unlimited; surface as null on the wire so the
+        # frontend just renders "∞" / hides counters instead of negative
+        # math.
+        out.portfolio_limit = None if lim.portfolio_unlimited else lim.portfolio_limit
+        out.exchange_keys_per_venue = None if lim.keys_unlimited else lim.exchange_keys_per_venue
         out.is_plan_expired = lim.is_expired
-        out.wallet_limit = lim.portfolio_limit
+        out.wallet_limit = out.portfolio_limit
     except Exception:
         pass
     return out
@@ -270,8 +282,22 @@ def password_reset_request(body: _PwResetRequest, request: Request, db: Session 
         # Send email here. Still a stub — mailer integration is a followup.
         logger.info("password-reset: token issued for uid=%s (mail path)", user.id)
         return generic
-    logger.info("password-reset: token issued for uid=%s (dev mode — exposed in response)", user.id)
-    return {**generic, "dev_token": raw, "expires_in_min": _PW_RESET_TTL_MIN}
+    # Mailer NOT configured. Never leak the raw reset token in the
+    # response — that would let anyone reset any email's password by
+    # just calling /password-reset/request. The token now only goes to
+    # the server log (visible to ops) and to the response IFF the
+    # explicit dev-toggle env var is set.
+    import os as _os_dev
+    if _os_dev.environ.get("AVALANT_AUTH_DEV_EXPOSE_TOKEN", "").strip().lower() in ("1", "true", "yes"):
+        logger.info("password-reset: token issued for uid=%s (DEV-EXPOSE)", user.id)
+        return {**generic, "dev_token": raw, "expires_in_min": _PW_RESET_TTL_MIN}
+    logger.warning(
+        "password-reset: token issued for uid=%s but mailer not configured — token only in logs",
+        user.id,
+    )
+    logger.warning("password-reset DEV-LOG token uid=%s value=%s ttl=%dmin",
+                   user.id, raw, _PW_RESET_TTL_MIN)
+    return generic
 
 
 @router.post("/password-reset/confirm")
@@ -346,10 +372,16 @@ def email_verify_request(request: Request, current_user: User = Depends(get_curr
     out = {"status": "ok", "email": current_user.email}
     if _mailer_configured():
         logger.info("email-verify: token issued for uid=%s (mail path)", current_user.id)
-    else:
-        logger.info("email-verify: token issued for uid=%s (dev mode)", current_user.id)
+        return out
+    # Same dev-leak protection as password-reset above.
+    import os as _os_dev
+    if _os_dev.environ.get("AVALANT_AUTH_DEV_EXPOSE_TOKEN", "").strip().lower() in ("1", "true", "yes"):
+        logger.info("email-verify: token issued for uid=%s (DEV-EXPOSE)", current_user.id)
         out["dev_token"] = raw
         out["expires_in_hours"] = _EMAIL_VERIFY_TTL_HOURS
+    else:
+        logger.warning("email-verify DEV-LOG token uid=%s value=%s ttl=%dh",
+                       current_user.id, raw, _EMAIL_VERIFY_TTL_HOURS)
     return out
 
 

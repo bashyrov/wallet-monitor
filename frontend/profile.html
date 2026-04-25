@@ -563,16 +563,6 @@
           </div>
         </div>
 
-        <div class="plan-limits" id="plan-limits">
-          <div class="plan-limit">
-            <span class="plan-limit-label">Wallets</span>
-            <div class="plan-limit-bar-wrap">
-              <div class="plan-limit-bar" id="limit-bar" style="width:0%"></div>
-            </div>
-            <span class="plan-limit-val" id="limit-val">0 / —</span>
-          </div>
-        </div>
-
         <div class="plan-pro-card" id="plan-upgrade-card">
           <span class="plan-pro-badge">Pro</span>
           <div class="plan-pro-info">
@@ -1045,61 +1035,57 @@ async function saveTgUsername() {
   } catch(e) {}
 }
 
-const _PLAN_INFO = {
-  basic:      { label: 'Basic',      name: 'Basic Plan',      limit: 4,    desc: '4 wallets · Free' },
-  pro:        { label: 'Pro',        name: 'Pro Plan',        limit: 30,   desc: '30 wallets · $5/mo' },
-  platinum:   { label: 'Platinum',   name: 'Platinum Plan',   limit: 70,   desc: '70 wallets · $10/mo' },
-  enterprise: { label: 'Enterprise', name: 'Enterprise Plan', limit: null, desc: 'Custom wallets · Custom pricing' },
-  unlim:      { label: 'Unlimited',  name: 'Unlimited',       limit: null, desc: 'No limits · Admin' },
+// Plan-card cosmetics. The actual limits are pulled from /api/auth/me
+// (portfolio_limit / exchange_keys_per_venue) so the badge is just colour
+// + display name now.
+const _PLAN_COLORS = {
+  free:     { c: '#676B7E', bg: 'rgba(103,107,126,0.1)' },
+  screener: { c: '#3B82F6', bg: 'rgba(59,130,246,0.1)' },
+  full:     { c: '#925BD6', bg: 'rgba(146,91,214,0.1)' },
+  pro:      { c: '#3B82F6', bg: 'rgba(59,130,246,0.1)' },
+  platinum: { c: '#925BD6', bg: 'rgba(146,91,214,0.1)' },
+  enterprise: { c: '#E5C07B', bg: 'rgba(229,192,123,0.1)' },
+  unlim:    { c: '#1AFFAB', bg: 'rgba(26,255,171,0.1)' },
 };
 
+function _fmtLimit(v){ return (v == null || v < 0) ? '∞' : String(v); }
+
 function _renderPlanCard(me) {
-  const plan = me.plan || 'basic';
-  const info = _PLAN_INFO[plan] || _PLAN_INFO.basic;
+  const plan = me.plan || 'free';
+  const cols = _PLAN_COLORS[plan] || _PLAN_COLORS.free;
+  const label = (plan.charAt(0).toUpperCase() + plan.slice(1));
+  const portfolio = _fmtLimit(me.portfolio_limit);
+  const keysPerVenue = _fmtLimit(me.exchange_keys_per_venue);
+
   const badgeEl = document.getElementById('plan-badge-label');
   const nameEl  = document.getElementById('plan-name-text');
   const descEl  = document.getElementById('plan-desc-text');
-  const planColors = { basic:'#676B7E', pro:'#3B82F6', platinum:'#925BD6', enterprise:'#E5C07B', unlim:'#1AFFAB' };
-  const planBgs    = { basic:'rgba(103,107,126,0.1)', pro:'rgba(59,130,246,0.1)', platinum:'rgba(146,91,214,0.1)', enterprise:'rgba(229,192,123,0.1)', unlim:'rgba(26,255,171,0.1)' };
   if (badgeEl) {
-    badgeEl.textContent = info.label;
-    badgeEl.style.color = planColors[plan] || planColors.basic;
-    badgeEl.style.background = planBgs[plan] || planBgs.basic;
-    badgeEl.style.border = `1px solid ${(planColors[plan] || planColors.basic)}33`;
+    badgeEl.textContent = label;
+    badgeEl.style.color = cols.c;
+    badgeEl.style.background = cols.bg;
+    badgeEl.style.border = `1px solid ${cols.c}33`;
   }
-  if (nameEl)  nameEl.textContent  = info.name;
+  if (nameEl) nameEl.textContent = label + ' Plan';
   if (descEl) {
-    let d = info.desc;
+    let d = `${portfolio} portfolio · ${keysPerVenue} keys per exchange`;
     if (me.plan_expires_at) {
       const exp = new Date(me.plan_expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       d += ` · Paid until ${exp}`;
     }
     descEl.textContent = d;
   }
-  // Hide upgrade card if unlimited/enterprise/unlim
+  // Hide upgrade card on unlimited / admin tiers.
   const upgradeCard = document.getElementById('plan-upgrade-card');
-  if (upgradeCard) upgradeCard.style.display = (plan === 'unlim' || plan === 'enterprise') ? 'none' : '';
-  // Store limit for use in loadProfile
-  window._planLimit = info.limit;
-}
-
-async function loadProfile() {
-  try {
-    const token = localStorage.getItem('wm_token');
-    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-    const wallets = await (await fetch('/api/wallets', { headers })).json();
-
-    const total = wallets.length;
-
-    // Plan usage bar
-    const planLimit = window._planLimit != null ? window._planLimit : null;
-    const pct = planLimit ? Math.min((total / planLimit) * 100, 100) : 0;
-    const lb = document.getElementById('limit-bar'); if (lb) lb.style.width = pct + '%';
-    const lv = document.getElementById('limit-val'); if (lv) lv.textContent = planLimit ? `${total} / ${planLimit}` : `${total} / ∞`;
-  } catch(e) {
-    console.error(e);
+  if (upgradeCard) {
+    upgradeCard.style.display = (plan === 'unlim' || plan === 'enterprise' || plan === 'full') ? 'none' : '';
   }
 }
+
+// Wallet-count UI was removed — the only thing that matters now is the
+// plan limit shown in the badge above. Keep the function as a stub so any
+// stale `loadProfile()` call sites in inlined event handlers don't throw.
+async function loadProfile() {}
 
 function animNum(id, to, duration = 700) {
   const el = document.getElementById(id);

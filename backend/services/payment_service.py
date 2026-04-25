@@ -202,6 +202,15 @@ def _activate_user(db: Session, payment: Payment) -> None:
         payment.activated_until = base_until + timedelta(days=30)
     user.plan_expires_at = payment.activated_until
     db.commit()
+    # If the new plan is _smaller_ than the previous one (rare but
+    # possible: admin manually flipped plan_id then user paid for a
+    # cheaper tier), enforce the wallet cap right here so the user's
+    # next /balance call doesn't 402 and also doesn't run on stale data.
+    try:
+        from backend.services import wallet_quota as _wq
+        _wq.enforce_for_user(db, user)
+    except Exception:
+        pass
 
 
 def verify_and_apply_webhook(

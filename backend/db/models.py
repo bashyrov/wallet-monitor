@@ -297,6 +297,7 @@ class Plan(Base):
     trade_delay_ms = Column(Integer, nullable=False, default=0)
     has_portfolio = Column(Boolean, nullable=False, default=True)
     is_subscription = Column(Boolean, nullable=False, default=True)
+    is_admin_only = Column(Boolean, nullable=False, default=False)
     features = Column(JSON, nullable=True)
     is_free = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True, index=True)

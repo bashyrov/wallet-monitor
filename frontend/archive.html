@@ -67,7 +67,8 @@
       width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
     }
     .wallet-body { flex: 1; min-width: 0; }
-    .wallet-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wallet-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display:flex; align-items:center; gap:8px; }
+    .archive-purpose { font-family: var(--mono); font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; letter-spacing: 0.06em; flex-shrink: 0; }
     .wallet-meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 12px; color: var(--text3); }
     .wallet-addr { font-family: var(--mono); font-size: 11px; color: var(--text4); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .archived-date { font-size: 11px; color: var(--text4); white-space: nowrap; flex-shrink: 0; font-family: var(--mono); }
@@ -455,11 +456,22 @@ async function loadArchive() {
     listEl.innerHTML = wallets.map((w, i) => {
       const color = typeColor(w.wallet_type, w.type_value);
       const label = typeLabel(w.wallet_type);
+      // Purpose badge — shows whether the wallet was used for portfolio
+      // tracking, screener / trading, or both. Helps users decide which
+      // archived keys to restore first when downgrading and being forced
+      // back to a smaller cap.
+      const purpose = (w.purpose || 'portfolio').toLowerCase();
+      const purposeMeta = {
+        portfolio: { lbl: 'PORTFOLIO', c: '#3B82F6', bg: 'rgba(59,130,246,0.10)' },
+        screener:  { lbl: 'SCREENER',  c: '#1AFFAB', bg: 'rgba(26,255,171,0.10)' },
+        both:      { lbl: 'BOTH',      c: '#925BD6', bg: 'rgba(146,91,214,0.10)' },
+      }[purpose] || { lbl: purpose.toUpperCase(), c: '#9B9FAB', bg: 'rgba(155,159,171,0.10)' };
+      const purposeBadge = `<span class="archive-purpose" style="background:${purposeMeta.bg};color:${purposeMeta.c};border:1px solid ${purposeMeta.c}33">${purposeMeta.lbl}</span>`;
       return `
         <div class="wallet-card" id="wc-${w.id}" style="animation-delay:${i * 30}ms">
           <div class="wallet-type-dot" style="background:${color}"></div>
           <div class="wallet-body">
-            <div class="wallet-name">${esc(w.name)}</div>
+            <div class="wallet-name">${esc(w.name)} ${purposeBadge}</div>
             <div class="wallet-meta">
               <span style="color:${color};font-weight:600;letter-spacing:.4px">${label}</span>
               <span style="color:var(--border)">·</span>

@@ -37,6 +37,17 @@ from backend.db.models import Plan, User
 logger = logging.getLogger("avalant.plan_service")
 
 
+# Sentinel used in DB for "unlimited" — Plan.portfolio_limit = -1 means
+# the user can keep adding wallets forever; `is_unlimited()` below makes
+# the read-side intent explicit and adapts every consumer (wallet limit
+# checks, frontend pills, /balance truncation).
+UNLIM = -1
+
+
+def is_unlimited(value: int | None) -> bool:
+    return value is None or value < 0
+
+
 @dataclass
 class EffectiveLimits:
     plan_id: int
@@ -45,10 +56,21 @@ class EffectiveLimits:
     is_free: bool
     is_expired: bool
     has_portfolio: bool
+    # portfolio_limit / exchange_keys_per_venue == -1 means "unlimited";
+    # call sites should prefer the helper rather than treating the int
+    # value directly.
     portfolio_limit: int
     exchange_keys_per_venue: int
     trade_delay_ms: int
     expires_at: datetime | None
+
+    @property
+    def portfolio_unlimited(self) -> bool:
+        return is_unlimited(self.portfolio_limit)
+
+    @property
+    def keys_unlimited(self) -> bool:
+        return is_unlimited(self.exchange_keys_per_venue)
 
 
 def get_plan(db: Session, plan_id: int) -> Plan | None:
@@ -133,6 +155,7 @@ def serialize_plan(plan: Plan) -> dict[str, Any]:
         "trade_delay_ms": plan.trade_delay_ms,
         "has_portfolio": bool(getattr(plan, "has_portfolio", True)),
         "is_subscription": bool(getattr(plan, "is_subscription", True)),
+        "is_admin_only": bool(getattr(plan, "is_admin_only", False)),
         "features": plan.features or {"perks": [], "limits": []},
         "is_free": bool(plan.is_free),
         "is_active": bool(plan.is_active),
@@ -140,10 +163,12 @@ def serialize_plan(plan: Plan) -> dict[str, Any]:
     }
 
 
-def list_plans(db: Session, *, only_active: bool = True) -> list[Plan]:
+def list_plans(db: Session, *, only_active: bool = True, public_only: bool = False) -> list[Plan]:
     q = db.query(Plan)
     if only_active:
         q = q.filter(Plan.is_active.is_(True))
+    if public_only:
+        q = q.filter(Plan.is_admin_only.is_(False))
     return q.order_by(Plan.sort_order.asc(), Plan.id.asc()).all()
 
 
