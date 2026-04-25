@@ -211,6 +211,14 @@ def _activate_user(db: Session, payment: Payment) -> None:
         _wq.enforce_for_user(db, user)
     except Exception:
         pass
+    # Admin push-notification — fire-and-forget, never blocks the webhook.
+    try:
+        from backend.services.admin_alert_service import alert_payment
+        amount = float(payment.amount_usd or 0)
+        slug = (plan.slug if plan else (user.plan or "?"))
+        alert_payment(user, slug, amount)
+    except Exception:
+        pass
 
 
 def verify_and_apply_webhook(

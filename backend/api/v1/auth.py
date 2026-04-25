@@ -160,6 +160,11 @@ def login_totp(body: dict, request: Request, response: Response, db: Session = D
         raise HTTPException(status_code=500, detail="2FA secret unreadable; contact ops")
     if not _totp.verify_code(secret, code):
         _record_attempt(ip)
+        try:
+            from backend.services.admin_alert_service import alert_admin_security
+            alert_admin_security(user, "Failed 2FA code on login", ip)
+        except Exception:
+            pass
         raise HTTPException(status_code=401, detail="Invalid code")
     _clear_attempts(ip)
     token = svc.create_token(user.id)

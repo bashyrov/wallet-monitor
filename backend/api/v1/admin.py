@@ -183,6 +183,12 @@ def toggle_block(
     db.commit()
     from backend.services.auth_cache import invalidate_user
     invalidate_user(user.id)
+    if user.is_blocked:
+        try:
+            from backend.services.admin_alert_service import alert_user_blocked
+            alert_user_blocked(user, f"by admin {current_admin.username}")
+        except Exception:
+            pass
     return {"id": user.id, "username": user.username, "is_blocked": user.is_blocked}
 
 
