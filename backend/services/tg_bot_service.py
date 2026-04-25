@@ -69,15 +69,36 @@ async def _handle_update(bot_token: str, bot_label: str, upd: dict) -> None:
     from backend.db.models import User
 
     db = SessionLocal()
+    reply_markup: dict | None = None
     try:
         # ── Login-by-bot flow (no auth required) ──
         if payload.startswith("auth-"):
             token = payload[len("auth-"):]
             from backend.services.tg_auth_service import consume_login_token
             uname = username.lstrip("@").lower() or None
-            reply = consume_login_token(db, token, int(tg_id), int(chat_id), uname, first)
-            if not reply:
+            outcome = consume_login_token(db, token, int(tg_id), int(chat_id), uname, first)
+            if outcome is None:
                 reply = "🔒 This login link has expired or was already used. Generate a new one from the login page."
+            elif outcome.startswith("Your account is blocked"):
+                reply = "⛔ Your account is blocked. Contact support."
+            else:
+                # consume_login_token already wrote status=ok with the JWT.
+                # Hand the user a clickable button that opens a fresh tab on
+                # the website. Mobile browsers freeze the originating /login
+                # tab when Telegram launches, killing the 2s poll for minutes
+                # — the button-driven redirect bypasses that entirely.
+                base = (settings.PUBLIC_BASE_URL or "https://avalant.xyz").rstrip("/")
+                redeem_url = f"{base}/tg-done?t={token}"
+                reply = (
+                    f"✅ <b>Logged in</b>\n\n"
+                    f"Tap the button below to open Avalant. "
+                    f"The link is single-use and expires in 5 minutes."
+                )
+                reply_markup = {
+                    "inline_keyboard": [[
+                        {"text": "🔓 Open Avalant", "url": redeem_url}
+                    ]]
+                }
         # ── Preferred flow: deep-link token from profile ──
         elif payload.startswith("link-"):
             token = payload[len("link-"):]
@@ -135,12 +156,15 @@ async def _handle_update(bot_token: str, bot_label: str, upd: dict) -> None:
     finally:
         db.close()
 
-    await _tg_post(bot_token, "sendMessage", {
+    msg_payload: dict = {
         "chat_id": chat_id,
         "text": reply,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-    })
+    }
+    if reply_markup:
+        msg_payload["reply_markup"] = reply_markup
+    await _tg_post(bot_token, "sendMessage", msg_payload)
 
 
 async def _poll_loop(bot_token: str, bot_label: str) -> None:

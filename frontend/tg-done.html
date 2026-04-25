@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Signing you in… · Avalant</title>
+<link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+<style>
+  :root { color-scheme: dark; --bg:#0E0E11; --surface:#131217; --border:#22222A; --text:#E6E8E3; --text2:#9B9FAB; --green:#1AFFAB; --red:#F87171; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:Inter,system-ui,sans-serif; }
+  .wrap { min-height:100dvh; display:grid; place-items:center; padding:24px; }
+  .card { width:100%; max-width:380px; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:32px 24px; text-align:center; }
+  .brand { font-family:Inter,sans-serif; font-weight:800; font-size:18px; letter-spacing:-0.02em; margin-bottom:24px; }
+  .brand .underscore { color:var(--green); animation: blink 1s infinite step-end; }
+  @keyframes blink { 50% { opacity:0; } }
+  .spinner { width:40px; height:40px; margin:0 auto 16px; border:3px solid var(--border); border-top-color:var(--green); border-radius:50%; animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .title { font-size:15px; font-weight:600; margin:0 0 6px; }
+  .sub { font-size:12.5px; color:var(--text2); margin:0; }
+  .err { color:var(--red); font-size:13px; margin-top:12px; }
+  a.retry { display:inline-block; margin-top:16px; padding:10px 18px; background:var(--green); color:#001a0d; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand">avalant<span class="underscore">_</span></div>
+    <div class="spinner" id="sp"></div>
+    <p class="title" id="title">Signing you in…</p>
+    <p class="sub" id="sub">One moment.</p>
+    <div id="err" class="err" style="display:none"></div>
+    <a id="retry" class="retry" href="/login" style="display:none">Back to login</a>
+  </div>
+</div>
+<script src="/auth.js"></script>
+<script>
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const t = params.get('t');
+  const fail = (msg) => {
+    document.getElementById('sp').style.display = 'none';
+    document.getElementById('title').textContent = 'Login failed';
+    document.getElementById('sub').style.display = 'none';
+    const e = document.getElementById('err'); e.textContent = msg; e.style.display = 'block';
+    document.getElementById('retry').style.display = 'inline-block';
+  };
+  if (!t) return fail('Missing login token.');
+  try {
+    const r = await fetch('/api/auth/tg-bot-login?token=' + encodeURIComponent(t), { credentials: 'include' });
+    const j = await r.json();
+    if (j.status !== 'ok' || !j.access_token) {
+      return fail(j.status === 'expired'
+        ? 'This link has expired. Open the bot and tap Start again.'
+        : 'Login link is invalid.');
+    }
+    // Pull profile so /app can show the right avatar/plan immediately.
+    const meR = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + j.access_token } });
+    const me = meR.ok ? await meR.json() : { id: j.user_id, username: j.username || 'user', email: '' };
+    Auth.setSession(j.access_token, me);
+    location.replace('/app');
+  } catch (e) {
+    fail('Network error. Try again.');
+  }
+})();
+</script>
+</body>
+</html>

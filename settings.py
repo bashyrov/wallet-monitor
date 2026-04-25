@@ -86,4 +86,10 @@ class Settings(BaseSettings):
     TG_AUTH_BOT_TOKEN: str | None = None
     TG_AUTH_BOT_USERNAME: str | None = None
 
+    # Public base URL — used by the TG auth bot to build the "Open Avalant"
+    # button URL it hands to users on /start. MUST be the user-visible host;
+    # the button opens in a fresh browser tab so a backgrounded login tab
+    # is no longer load-bearing for the redeem step.
+    PUBLIC_BASE_URL: str = "https://avalant.xyz"
+
 settings = Settings()
