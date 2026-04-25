@@ -1549,8 +1549,10 @@ function toggleCrossOnly() {
 
 // ── WebSocket helpers ──────────────────────────────────────────────────────────
 function _wsUrl(path) {
+  // Token is sent via the first frame after onopen — keeping it out of the
+  // URL stops nginx from logging session JWTs.
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${location.host}/api/screener/ws/${path}?token=${Auth.getToken()}`;
+  return `${proto}://${location.host}/api/screener/ws/${path}`;
 }
 
 function setWsStatus(state) {
@@ -1572,6 +1574,8 @@ function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) 
     const ws = new WebSocket(_wsUrl(path));
 
     ws.onopen = () => {
+      // First-frame auth — required by the server within 5 s of accept.
+      try { ws.send(JSON.stringify({ auth: Auth.getToken() })); } catch {}
       retryRef.val = 0;
       clearInterval(pingRef.val);
       pingRef.val = setInterval(() => {
@@ -1793,10 +1797,13 @@ function _openBookWs() {
   const token = Auth.getToken();
   if (!token) return;
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${scheme}://${location.host}/api/screener/ws/book?token=${encodeURIComponent(token)}`;
+  const url = `${scheme}://${location.host}/api/screener/ws/book`;
   _bookWs = new WebSocket(url);
   _bookWs.onopen = () => {
     _bookWsRetry = 0;
+    // First-frame auth (replaces the old ?token= query — kept the JWT
+    // out of nginx access logs).
+    try { _bookWs.send(JSON.stringify({ auth: token })); } catch {}
     if (_bookWsSubs.size > 0) {
       _bookWs.send(JSON.stringify({ action: 'subscribe', pairs: [..._bookWsSubs] }));
     }

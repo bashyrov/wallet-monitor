@@ -2773,7 +2773,8 @@ let _ws=null;
 function connectWs(){
   const token=Auth.getToken();if(!token)return;
   const proto=location.protocol==='https:'?'wss':'ws';
-  _ws=new WebSocket(`${proto}://${location.host}/api/screener/ws/long-short?token=${encodeURIComponent(token)}`);
+  _ws=new WebSocket(`${proto}://${location.host}/api/screener/ws/long-short`);
+  _ws.onopen=()=>{ try{ _ws.send(JSON.stringify({auth:token})); }catch{} };
   _ws.onmessage=ev=>{
     try{
       const data=JSON.parse(ev.data);

@@ -1217,11 +1217,48 @@ def stop_screener_broadcaster() -> None:
     _refresh_task = None
 
 
-async def _ws_handler(websocket: WebSocket, clients: set[WebSocket], token: str,
+async def _ws_authenticate(websocket: WebSocket, label: str) -> int | None:
+    """Auth via first-frame {"auth": "<JWT>"} after accept().
+
+    The JWT used to be passed as ?token= in the URL — that put it into nginx
+    access logs (token leak). First-frame auth keeps the token in the WS
+    payload only. 5 s wait window; on timeout / bad payload the socket is
+    closed with code 4401 and we never reach the streaming loop.
+    """
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        try: await websocket.close(code=4401, reason="auth timeout")
+        except Exception: pass
+        return None
+    token = ""
+    try:
+        msg = json.loads(raw)
+        if isinstance(msg, dict):
+            token = str(msg.get("auth") or "").strip()
+    except (ValueError, TypeError):
+        pass
+    if not token:
+        try: await websocket.close(code=4401, reason="auth required")
+        except Exception: pass
+        logger.debug("%s WS rejected — no auth frame", label)
+        return None
+    user_id = decode_token(token)
+    if not user_id:
+        try: await websocket.close(code=4401, reason="invalid token")
+        except Exception: pass
+        logger.debug("%s WS rejected — invalid token", label)
+        return None
+    return user_id
+
+
+async def _ws_handler(websocket: WebSocket, clients: set[WebSocket],
                       fetch_fn, label: str,
                       snapshot_builder=None) -> None:
-    user_id = decode_token(token) if token else None
     await websocket.accept()
+    user_id = await _ws_authenticate(websocket, label)
+    if user_id is None:
+        return
     clients.add(websocket)
     logger.debug("Screener %s WS connect uid=%s (total=%d)", label, user_id, len(clients))
 
@@ -1249,28 +1286,28 @@ async def _ws_handler(websocket: WebSocket, clients: set[WebSocket], token: str,
 
 
 @router.websocket("/ws/funding")
-async def funding_ws(websocket: WebSocket, token: str = Query("")) -> None:
+async def funding_ws(websocket: WebSocket) -> None:
     await _ws_handler(
-        websocket, _funding_clients, token, get_funding_data, "funding",
+        websocket, _funding_clients, get_funding_data, "funding",
         snapshot_builder=_build_funding_snapshot_payload,
     )
 
 
 @router.websocket("/ws/long-short")
-async def long_short_ws(websocket: WebSocket, token: str = Query("")) -> None:
+async def long_short_ws(websocket: WebSocket) -> None:
     """Canonical WS for the Long/Short feed."""
     await _ws_handler(
-        websocket, _arb_clients, token, get_arbitrage_opportunities, "long-short",
+        websocket, _arb_clients, get_arbitrage_opportunities, "long-short",
         snapshot_builder=_build_arb_snapshot_payload,
     )
 
 
 @router.websocket("/ws/arb")
-async def arb_ws(websocket: WebSocket, token: str = Query("")) -> None:
+async def arb_ws(websocket: WebSocket) -> None:
     """Legacy alias for /ws/long-short. Kept so existing frontend connections
     don't break while we roll out the rename."""
     await _ws_handler(
-        websocket, _arb_clients, token, get_arbitrage_opportunities, "arb",
+        websocket, _arb_clients, get_arbitrage_opportunities, "arb",
         snapshot_builder=_build_arb_snapshot_payload,
     )
 
@@ -1368,11 +1405,12 @@ def _normalize_pair(raw: str) -> str | None:
 
 
 @router.websocket("/ws/book")
-async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
+async def book_ws(websocket: WebSocket) -> None:
     """Live orderbook push for /arb.
 
     Protocol:
-      Client → {"action": "subscribe",   "pairs": ["binance:BTC", "bybit:BTC"]}
+      Client → {"auth": "<JWT>"}                              (first frame, required)
+              {"action": "subscribe",   "pairs": ["binance:BTC", "bybit:BTC"]}
               {"action": "unsubscribe", "pairs": [...]}
               (text "ping" → text "pong" heartbeat accepted too)
       Server → {"books": {"<ex>:<SYM>": {ts, bids, asks}, ...}}
@@ -1380,8 +1418,10 @@ async def book_ws(websocket: WebSocket, token: str = Query("")) -> None:
     Subscribing a pair also kicks the orderbook prewarm poller so pairs
     outside the top-N prewarm set start flowing into books.json within one
     POLL_INTERVAL (~500ms)."""
-    user_id = decode_token(token) if token else None
     await websocket.accept()
+    user_id = await _ws_authenticate(websocket, "book")
+    if user_id is None:
+        return
     _book_ws_subs[websocket] = {}
     logger.debug("book WS connect uid=%s (total=%d)", user_id, len(_book_ws_subs))
     try:

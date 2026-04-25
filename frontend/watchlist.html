@@ -549,7 +549,8 @@ function connectWs(){
   try { _ws && _ws.close(); } catch(_){}
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const tok = Auth.getToken();
-  _ws = new WebSocket(`${proto}://${location.host}/api/screener/ws/long-short?token=${encodeURIComponent(tok)}`);
+  _ws = new WebSocket(`${proto}://${location.host}/api/screener/ws/long-short`);
+  _ws.onopen = () => { try { _ws.send(JSON.stringify({ auth: tok })); } catch(_) {} };
   _ws.onmessage = ev => {
     try {
       const data = JSON.parse(ev.data);
