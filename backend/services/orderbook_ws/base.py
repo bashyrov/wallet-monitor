@@ -212,12 +212,21 @@ class WSAdapter:
                             except Exception:
                                 pass
                         # Some exchanges use "Ping"/"Pong" plain-text frames
-                        if isinstance(raw, (bytes, str)) and raw in (b"Ping", "Ping"):
-                            try:
-                                await ws.send("Pong")
-                            except Exception:
-                                pass
-                            continue
+                        # (Binance lowercase, KuCoin uppercase, Bitget v2
+                        # mixed). Canonicalise so we always reply with the
+                        # same case the venue used.
+                        if isinstance(raw, (bytes, str)):
+                            _r = raw.decode("utf-8", "ignore") if isinstance(raw, bytes) else raw
+                            _rl = _r.lower()
+                            if _rl == "ping":
+                                try:
+                                    await ws.send("pong" if _r == _rl else "Pong")
+                                except Exception:
+                                    pass
+                                continue
+                            if _rl == "pong":
+                                # Server's reply to our heartbeat — drop quietly.
+                                continue
                         try:
                             msg = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
                         except (ValueError, TypeError):

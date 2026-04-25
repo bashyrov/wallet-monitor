@@ -790,9 +790,17 @@ class GateSpotWS(WSAdapter):
 class BitgetSpotWS(WSAdapter):
     """Bitget V2 spot books — same channel name ('books') as futures but
     instType=SPOT. Full snapshot + delta protocol, need to maintain a local
-    price→size dict to apply deltas (size='0' removes the level)."""
+    price→size dict to apply deltas (size='0' removes the level).
+
+    Bitget V2 expects the CLIENT to send a literal `ping` text frame
+    every 30 s; the server replies with `pong`. Without that the server
+    closes the socket with "no close frame received" after ~25 s — what
+    we were observing in production. heartbeat_frame() returns the raw
+    `ping` text and the base loop fires it on the configured interval.
+    """
     name = "bitget_spot"
     url = "wss://ws.bitget.com/v2/ws/public"
+    ping_interval = 25.0  # under Bitget's 30 s server-side timeout
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -800,6 +808,9 @@ class BitgetSpotWS(WSAdapter):
 
     def on_reconnect(self) -> None:
         self._books.clear()
+
+    def heartbeat_frame(self) -> str | None:
+        return "ping"
 
     def build_subscribe(self, symbols):
         args = [{"instType": "SPOT", "channel": "books", "instId": f"{s}USDT"} for s in symbols]
@@ -931,10 +942,19 @@ class KuCoinSpotWS(WSAdapter):
     # KuCoin spot caps at ~100 topics per connection in practice; we cap
     # below that to leave headroom for the prewarm rotation.
     max_symbols: int | None = 80
+    # KuCoin requires the CLIENT to ping every `pingInterval` (default
+    # 18 s) — we use 15 s to stay clear of jitter. Without this the
+    # server closes the socket with no error message after ~20 s.
+    ping_interval = 15.0
+    ping_timeout = None  # type: ignore[assignment]  # KuCoin only does app-level
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
         self._connect_id = 0
+
+    def heartbeat_frame(self) -> str | None:
+        # Client-initiated ping. KuCoin's docs say `{"id":"<int>","type":"ping"}`.
+        return json.dumps({"id": "hb", "type": "ping"})
 
     async def get_url(self) -> str:
         import httpx
@@ -1005,7 +1025,16 @@ class HtxSpotWS(WSAdapter):
     respond with ``{"pong":<ts>}`` or get disconnected.
     """
     name = "htx_spot"
-    url = "wss://api-aws.huobi.pro/ws"  # AWS endpoint is friendlier from EU IPs
+    # Two known endpoints — AWS is the documented "international"
+    # gateway that's reachable from European IPs without rate-limit
+    # surprises, but it also has periodic regional outages where the
+    # opening handshake just times out. Round-robin so a flaky AWS
+    # host doesn't keep us offline indefinitely.
+    _hosts = (
+        "wss://api-aws.huobi.pro/ws",
+        "wss://api.huobi.pro/ws",
+    )
+    url = _hosts[0]
     decompress_gzip = True
     subscribe_delay = 0.04  # 25 subs/sec is well under HTX's per-conn cap
     # HTX implements its own JSON ping/pong; the WebSocket-protocol-level
@@ -1013,6 +1042,18 @@ class HtxSpotWS(WSAdapter):
     # connection with 1003. Disable lib pings entirely.
     ping_interval = None  # type: ignore[assignment]
     ping_timeout = None   # type: ignore[assignment]
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._host_idx = 0
+
+    async def get_url(self) -> str:
+        host = self._hosts[self._host_idx % len(self._hosts)]
+        # Rotate for the NEXT (re)connect so a hung host gets retired
+        # for one cycle on every reconnection — eventual recovery
+        # within `len(_hosts)` retries.
+        self._host_idx += 1
+        return host
 
     def build_subscribe(self, symbols):
         return [
