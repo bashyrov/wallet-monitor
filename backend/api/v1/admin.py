@@ -204,16 +204,24 @@ def set_plan(
 ):
     if body.plan not in VALID_PLANS:
         raise HTTPException(status_code=400, detail=f"Invalid plan. Valid: {', '.join(sorted(VALID_PLANS))}")
-    if body.plan in ADMIN_ONLY_PLANS:
-        target = db.query(User).filter(User.id == user_id).first()
-        if not target:
-            raise HTTPException(status_code=404, detail="User not found")
-        if not target.is_admin:
-            raise HTTPException(status_code=400, detail="Plan 'unlim' can only be assigned to admin users")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    user.plan = body.plan
+    if body.plan in ADMIN_ONLY_PLANS and not user.is_admin:
+        raise HTTPException(status_code=400, detail="Plan 'unlim' can only be assigned to admin users")
+
+    # Resolve the slug to a real Plan row — `user.plan_id` is the source of
+    # truth for plan_service.get_user_plan(); the legacy string column was
+    # being written alone, leaving plan_id stale and silently no-oping every
+    # admin plan change. Fix: update both, prefer plan_id semantics.
+    from backend.db.models import Plan
+    plan_row = db.query(Plan).filter(Plan.slug == body.plan).first()
+    if not plan_row:
+        raise HTTPException(status_code=400, detail=f"Plan slug '{body.plan}' not in DB")
+
+    user.plan = body.plan          # legacy string — kept for old serializers
+    user.plan_id = plan_row.id     # source of truth for limits
+
     if body.plan_expires_at:
         try:
             user.plan_expires_at = _dt.strptime(body.plan_expires_at, "%Y-%m-%d")
@@ -222,8 +230,20 @@ def set_plan(
     else:
         user.plan_expires_at = None
     db.commit()
+
+    # Invalidate the auth cache so the next /me read sees the new plan.
     from backend.services.auth_cache import invalidate_user
     invalidate_user(user.id)
+
+    # Auto-archive surplus wallets if the new plan has a smaller portfolio
+    # quota — without this, a downgrade leaves the user above the cap until
+    # their next /me hit and any new-wallet attempt 402s confusingly.
+    try:
+        from backend.services import wallet_quota
+        wallet_quota.enforce_for_user(db, user)
+    except Exception as exc:
+        logger.warning("wallet_quota.enforce_for_user failed for user_id=%s: %s", user.id, exc)
+
     plan = user.plan
     expires = user.plan_expires_at.strftime("%Y-%m-%d") if user.plan_expires_at else None
     return {

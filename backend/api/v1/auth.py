@@ -60,12 +60,27 @@ def _get_ip(request: Request) -> str:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+def _cookie_secure() -> bool:
+    """`secure=True` outside of localhost dev. Override via env if you ever
+    need to test the prod cookie path locally without HTTPS."""
+    import os
+    raw = (os.environ.get("AVALANT_COOKIE_SECURE") or "").strip().lower()
+    if raw in ("0", "false", "no"):
+        return False
+    if raw in ("1", "true", "yes"):
+        return True
+    # Default: secure cookies. Anything other than literal localhost dev
+    # MUST set the Secure flag — otherwise the JWT can leak over HTTP.
+    return True
+
+
 def _set_session_cookie(response: Response, token: str) -> None:
     from settings import settings
     response.set_cookie(
         key="session",
         value=token,
         httponly=True,
+        secure=_cookie_secure(),
         samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
         path="/",
@@ -290,7 +305,7 @@ def tg_login(body: _TgWidgetAuth, request: Request, response: Response, db: Sess
         _record_attempt(ip)
         logger.info("TG login rejected from %s: %s", ip, e)
         raise HTTPException(401, "Telegram authentication failed")
-    response.set_cookie("session", token, httponly=True, secure=False, samesite="lax", max_age=60*60*24*30)
+    _set_session_cookie(response, token)
     logger.info("TG login: user_id=%s created=%s tg_id=%s", user.id, created, user.tg_id)
     return Token(access_token=token, token_type="bearer")
 
@@ -519,8 +534,7 @@ def tg_bot_login_check(token: str = Query(...), response: Response = None):
     from backend.services.tg_auth_service import check_login_token
     result = check_login_token(token)
     if result.get("status") == "ok" and result.get("access_token"):
-        response.set_cookie("session", result["access_token"],
-                            httponly=True, secure=False, samesite="lax", max_age=60*60*24*30)
+        _set_session_cookie(response, result["access_token"])
     return result
 
 
