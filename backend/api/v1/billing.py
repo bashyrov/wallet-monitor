@@ -135,6 +135,7 @@ def promo_validate(
         "valid": True,
         "code": promo.code,
         "discount_pct": float(promo.discount_pct),
+        "bonus_days": int(getattr(promo, "bonus_days", 0) or 0),
         "base_amount_usd": float(pricing["base_amount_usd"]),
         "final_amount_usd": float(pricing["final_amount_usd"]),
     }

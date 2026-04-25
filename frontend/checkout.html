@@ -83,6 +83,10 @@
       <span class="lbl">Promo (<span id="row-discount-pct"></span>%)</span>
       <span class="val" style="color:var(--green)" id="row-discount">—</span>
     </div>
+    <div class="row" id="row-bonus-wrap" style="display:none">
+      <span class="lbl">Bonus days</span>
+      <span class="val" style="color:#925BD6" id="row-bonus">—</span>
+    </div>
     <div class="row total">
       <span class="lbl" style="color:var(--text);font-size:14px">Total</span>
       <span class="val" id="row-total">—</span>
@@ -173,13 +177,25 @@ function _renderTotals(){
   if (!_plan || !_period) return;
   const base = _baseTotal();
   document.getElementById('row-base').textContent = _money(base);
+  const bonusWrap = document.getElementById('row-bonus-wrap');
   if (_promo){
-    document.getElementById('row-discount-wrap').style.display = '';
-    document.getElementById('row-discount-pct').textContent = _promo.discount_pct.toFixed(2);
-    document.getElementById('row-discount').textContent = '−' + _money(base - _promo.final_amount_usd);
+    if ((_promo.discount_pct || 0) > 0) {
+      document.getElementById('row-discount-wrap').style.display = '';
+      document.getElementById('row-discount-pct').textContent = _promo.discount_pct.toFixed(2);
+      document.getElementById('row-discount').textContent = '−' + _money(base - _promo.final_amount_usd);
+    } else {
+      document.getElementById('row-discount-wrap').style.display = 'none';
+    }
+    if ((_promo.bonus_days || 0) > 0) {
+      bonusWrap.style.display = '';
+      document.getElementById('row-bonus').textContent = '+' + _promo.bonus_days + ' days';
+    } else {
+      bonusWrap.style.display = 'none';
+    }
     document.getElementById('row-total').textContent = _money(_promo.final_amount_usd);
   } else {
     document.getElementById('row-discount-wrap').style.display = 'none';
+    bonusWrap.style.display = 'none';
     document.getElementById('row-total').textContent = _money(base);
   }
 }
@@ -212,7 +228,10 @@ async function applyPromo(){
     }
     _promo = j;
     fb.className = 'promo-feedback ok';
-    fb.textContent = `Applied — ${j.discount_pct.toFixed(2)}% off`;
+    const pieces = [];
+    if (j.discount_pct > 0) pieces.push(`${j.discount_pct.toFixed(2)}% off`);
+    if (j.bonus_days > 0)  pieces.push(`+${j.bonus_days} bonus days`);
+    fb.textContent = 'Applied — ' + (pieces.join(' · ') || 'promo accepted');
     _renderTotals();
   } catch (e){
     fb.className = 'promo-feedback err';

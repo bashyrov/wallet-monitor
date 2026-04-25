@@ -61,7 +61,7 @@ def validate_for_plan(db: Session, code: str, plan_id: int) -> PromoCode | None:
 
 # ── Admin CRUD ────────────────────────────────────────────────────────────────
 _EDITABLE_FIELDS = {
-    "discount_pct", "max_uses", "applies_to_plan_ids",
+    "discount_pct", "bonus_days", "max_uses", "applies_to_plan_ids",
     "is_active", "expires_at",
 }
 
@@ -73,6 +73,18 @@ def list_codes(db: Session, *, only_active: bool = False) -> list[PromoCode]:
     return q.order_by(PromoCode.created_at.desc()).all()
 
 
+def _coerce_bonus_days(raw: Any) -> int:
+    try:
+        n = int(raw or 0)
+    except (TypeError, ValueError):
+        raise ValueError("bonus_days must be an integer")
+    if n < 0:
+        raise ValueError("bonus_days must be >= 0")
+    if n > 3650:  # 10y guard against fat-finger
+        raise ValueError("bonus_days too large (max 3650)")
+    return n
+
+
 def create_code(db: Session, code: str, fields: dict[str, Any]) -> PromoCode:
     code_n = _normalize(code)
     if not code_n:
@@ -80,11 +92,15 @@ def create_code(db: Session, code: str, fields: dict[str, Any]) -> PromoCode:
     if get_by_code(db, code_n):
         raise ValueError("code already exists")
     discount = Decimal(str(fields.get("discount_pct") or 0)).quantize(Decimal("0.01"))
-    if discount <= 0 or discount > 100:
-        raise ValueError("discount_pct must be in (0, 100]")
+    if discount < 0 or discount > 100:
+        raise ValueError("discount_pct must be in [0, 100]")
+    bonus_days = _coerce_bonus_days(fields.get("bonus_days"))
+    if discount == 0 and bonus_days == 0:
+        raise ValueError("promo must grant either a discount_pct > 0 or bonus_days > 0 (or both)")
     promo = PromoCode(
         code=code_n,
         discount_pct=discount,
+        bonus_days=bonus_days,
         max_uses=fields.get("max_uses"),
         applies_to_plan_ids=fields.get("applies_to_plan_ids") or None,
         is_active=bool(fields.get("is_active", True)),
@@ -97,6 +113,19 @@ def create_code(db: Session, code: str, fields: dict[str, Any]) -> PromoCode:
 
 
 def update_code(db: Session, promo: PromoCode, fields: dict[str, Any]) -> PromoCode:
+    if "bonus_days" in fields:
+        fields["bonus_days"] = _coerce_bonus_days(fields["bonus_days"])
+    if "discount_pct" in fields and fields["discount_pct"] is not None:
+        d = Decimal(str(fields["discount_pct"])).quantize(Decimal("0.01"))
+        if d < 0 or d > 100:
+            raise ValueError("discount_pct must be in [0, 100]")
+        fields["discount_pct"] = d
+    # After applying potential changes we need to ensure at least one of
+    # discount_pct / bonus_days remains > 0 — same invariant as create.
+    next_discount = fields.get("discount_pct", promo.discount_pct)
+    next_bonus    = fields.get("bonus_days",   promo.bonus_days or 0)
+    if Decimal(str(next_discount or 0)) == 0 and int(next_bonus or 0) == 0:
+        raise ValueError("promo must grant either a discount_pct > 0 or bonus_days > 0 (or both)")
     for k, v in fields.items():
         if k in _EDITABLE_FIELDS:
             setattr(promo, k, v)
@@ -121,6 +150,7 @@ def stats(db: Session) -> list[dict[str, Any]]:
         PromoCode.id,
         PromoCode.code,
         PromoCode.discount_pct,
+        PromoCode.bonus_days,
         PromoCode.max_uses,
         PromoCode.used_count,
         PromoCode.is_active,
@@ -141,6 +171,7 @@ def stats(db: Session) -> list[dict[str, Any]]:
             "id": r.id,
             "code": r.code,
             "discount_pct": float(r.discount_pct),
+            "bonus_days": int(r.bonus_days or 0),
             "max_uses": r.max_uses,
             "used_count": r.used_count or 0,
             "is_active": bool(r.is_active),
@@ -156,6 +187,7 @@ def serialize_code(p: PromoCode) -> dict[str, Any]:
         "id": p.id,
         "code": p.code,
         "discount_pct": float(p.discount_pct),
+        "bonus_days": int(p.bonus_days or 0),
         "max_uses": p.max_uses,
         "used_count": p.used_count or 0,
         "applies_to_plan_ids": p.applies_to_plan_ids or None,

@@ -341,7 +341,10 @@ class PromoCode(Base):
 
     id = Column(Integer, primary_key=True)
     code = Column(String, nullable=False, unique=True, index=True)
-    discount_pct = Column(Numeric(5, 2), nullable=False)
+    discount_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    # Bonus subscription days — added to activated_until on payment activation.
+    # A promo may have discount=0 + bonus_days>0 (pure bonus) or any combo.
+    bonus_days = Column(Integer, nullable=False, default=0)
     max_uses = Column(Integer, nullable=True)
     used_count = Column(Integer, nullable=False, default=0)
     applies_to_plan_ids = Column(JSON, nullable=True)

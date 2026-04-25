@@ -1964,7 +1964,7 @@ async function loadPromosAdmin(){
         <div class="mn-row">
           <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start">
             <div>
-              <div style="font-size:18px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em">${_esc(p.code)} <span style="color:var(--green);font-size:13px">−${p.discount_pct.toFixed(2)}%</span> ${p.is_active?'':'<span style="color:var(--text3);font-size:12px">· INACTIVE</span>'} ${expired?'<span style="color:var(--red);font-size:12px">· EXPIRED</span>':''}</div>
+              <div style="font-size:18px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em">${_esc(p.code)} ${(p.discount_pct||0)>0 ? `<span style="color:var(--green);font-size:13px">−${p.discount_pct.toFixed(2)}%</span>` : ''}${(p.bonus_days||0)>0 ? `<span style="color:#925BD6;font-size:13px;margin-left:6px">+${p.bonus_days} days</span>` : ''} ${p.is_active?'':'<span style="color:var(--text3);font-size:12px">· INACTIVE</span>'} ${expired?'<span style="color:var(--red);font-size:12px">· EXPIRED</span>':''}</div>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:4px 14px;margin-top:8px;font-size:12px;color:var(--text3)">
                 <div>Used: <b style="color:var(--text)">${p.used_count}</b></div>
                 <div>Remaining: <b style="color:var(--text)">${usesLeft}</b></div>
@@ -1996,10 +1996,14 @@ function openPromoEditor(promoId){
     ${isNew ? `<label style="font-size:12px;color:var(--text3)">Code</label>
       <input id="pe-code" class="inp" value="" placeholder="EARLY20">` : ''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
-      <div><label style="font-size:12px;color:var(--text3)">Discount %</label><input id="pe-pct" class="inp" type="number" step="0.01" min="0" max="100" value="${p?.discount_pct??10}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Discount %</label><input id="pe-pct" class="inp" type="number" step="0.01" min="0" max="100" value="${p?.discount_pct??0}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Bonus days <span style="color:var(--text3);font-weight:400">(extends sub)</span></label><input id="pe-bonus" class="inp" type="number" min="0" max="3650" value="${p?.bonus_days??0}"></div>
       <div><label style="font-size:12px;color:var(--text3)">Max uses (blank = ∞)</label><input id="pe-max" class="inp" type="number" min="0" value="${p?.max_uses??''}"></div>
       <div><label style="font-size:12px;color:var(--text3)">Expires (YYYY-MM-DD)</label><input id="pe-exp" class="inp" type="date" value="${p?.expires_at? new Date(p.expires_at).toISOString().slice(0,10):''}"></div>
       <div style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:6px"><input id="pe-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.5">
+      Set <b>at least one of</b> Discount % or Bonus days. <code>EARLY7</code> example: 0% + 7 days = pure trial extension. <code>SAVE20</code> example: 20% + 0 days = price drop only.
     </div>
     <label style="display:block;font-size:12px;color:var(--text3);margin:14px 0 4px">Applies to plans (none checked = all paid plans)</label>
     <div id="pe-plans" style="border:1px solid var(--border);border-radius:7px;padding:8px 10px;max-height:160px;overflow:auto">${planOpts}</div>
@@ -2015,6 +2019,7 @@ async function savePromo(promoId){
   const expRaw = document.getElementById('pe-exp').value;
   const body = {
     discount_pct: parseFloat(document.getElementById('pe-pct').value || '0'),
+    bonus_days: parseInt(document.getElementById('pe-bonus').value || '0', 10) || 0,
     max_uses: document.getElementById('pe-max').value ? parseInt(document.getElementById('pe-max').value, 10) : null,
     is_active: document.getElementById('pe-active').checked,
     expires_at: expRaw ? expRaw + 'T23:59:59' : null,

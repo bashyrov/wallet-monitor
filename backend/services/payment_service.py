@@ -200,6 +200,18 @@ def _activate_user(db: Session, payment: Payment) -> None:
         # Legacy payment with no billing_period_id — fall back to 30 days
         # so we don't accidentally hand out a free year.
         payment.activated_until = base_until + timedelta(days=30)
+    # Promo bonus days — granted on top of the regular billing-period window.
+    # A 3-month plan + EARLY7 (7 bonus days) = 97 days of access. Stays
+    # honest after server-side validate_for_plan, so bonus days only land
+    # for promos that were actually eligible at checkout time.
+    if payment.promo_code_id:
+        from backend.db.models import PromoCode as _PC
+        promo = db.query(_PC).filter(_PC.id == payment.promo_code_id).first()
+        bonus = int(getattr(promo, "bonus_days", 0) or 0)
+        if bonus > 0:
+            payment.activated_until = payment.activated_until + timedelta(days=bonus)
+            logger.info("promo bonus_days=%d added to payment %s (user=%s)",
+                        bonus, payment.id, payment.user_id)
     user.plan_expires_at = payment.activated_until
     db.commit()
     # If the new plan is _smaller_ than the previous one (rare but
