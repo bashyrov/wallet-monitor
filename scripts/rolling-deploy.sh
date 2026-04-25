@@ -78,6 +78,13 @@ step "Rebuilding app2 (secondary, skips migrations)"
 docker compose up -d --build app2
 ensure_healthy app2
 
+# fetcher uses the same code as app/app2. There's no replica — restart
+# in-place is the best we can do, but we still need to rebuild the image
+# so background-job changes (TG bot, expiry notifier, alert service)
+# actually ship.
+step "Rebuilding fetcher (data-plane sidecar)"
+docker compose up -d --build fetcher
+
 step "Reloading nginx so it sees fresh upstream IPs"
 # nginx -s reload picks up the new IPs but doesn't pick up nginx.conf
 # changes when the bind mount points at an inode that was replaced by
