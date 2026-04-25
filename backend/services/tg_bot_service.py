@@ -9,11 +9,25 @@ Two-bot mode: when TG_AUTH_BOT_TOKEN is set we long-poll both bots concurrently.
 Login + link flows happen on whichever bot the user messages — replies go back
 through the same bot, so deep-links pointing at the auth bot keep landing in the
 auth bot's chat. Alerts continue to fan out from TG_BOT_TOKEN regardless.
+
+Multi-replica safety: Telegram returns each update to exactly one long-poll
+client, so two replicas calling getUpdates would race — half the updates would
+land on each, and the other replica would silently sit on its 25 s timeout.
+Solution: every poll loop tries to acquire a Redis lock keyed by bot_token
+hash (TTL 30 s, renewed every 10 s). Only the leader polls; followers sleep
+and retry. If the leader crashes the lock expires and the next replica picks
+it up within ~30 s. Without Redis we fall back to single-replica polling
+(every replica polls — same race as before, but at least nothing is dropped
+on a single-instance dev box).
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import os
+import time
+import uuid
 
 import httpx
 
@@ -24,6 +38,46 @@ logger = logging.getLogger("avalant.tg")
 # Per-bot poller state — keyed by token so adding a third bot is a one-line change.
 _tasks: dict[str, asyncio.Task] = {}
 _offsets: dict[str, int] = {}
+
+# Stable id for this process — printed in lock-acquired logs so multi-replica
+# leader transitions are debuggable.
+_INSTANCE_ID = uuid.uuid4().hex[:12]
+
+# ── Redis-backed leader election ─────────────────────────────────────────────
+_LOCK_TTL_S = 30
+_LOCK_RENEW_S = 10
+_LOCK_RETRY_S = 8
+_redis_client = None
+
+
+def _get_redis():
+    """Lazy + cached. Single-replica dev with no REDIS_URL → returns None and
+    polling proceeds without leader election (the only replica IS the leader)."""
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    url = os.environ.get("REDIS_URL") or ""
+    if not url:
+        return None
+    try:
+        import redis
+        _redis_client = redis.from_url(
+            url,
+            socket_connect_timeout=1.0,
+            socket_timeout=1.5,
+            health_check_interval=30,
+        )
+        _redis_client.ping()
+        return _redis_client
+    except Exception as exc:
+        logger.warning("tg_bot_service: redis unavailable (%s) — leader election disabled", exc)
+        _redis_client = None
+        return None
+
+
+def _lock_key(bot_token: str) -> str:
+    """Stable 16-hex digest of the bot token. Token never written in cleartext."""
+    return "tg_bot_lock:" + hashlib.sha256(bot_token.encode()).hexdigest()[:16]
 
 
 async def _tg_post(token: str, method: str, payload: dict) -> dict | None:
@@ -167,36 +221,122 @@ async def _handle_update(bot_token: str, bot_label: str, upd: dict) -> None:
     await _tg_post(bot_token, "sendMessage", msg_payload)
 
 
-async def _poll_loop(bot_token: str, bot_label: str) -> None:
-    logger.info("TG bot polling started (%s)", bot_label)
-
-    # On startup, drain any pending updates to avoid replaying old ones
+async def _drain_offset(bot_token: str) -> None:
+    """One-time drain of pending updates so we don't replay old ones on a
+    fresh leader takeover. Called once when this replica becomes leader."""
     init = await _tg_post(bot_token, "getUpdates", {"offset": -1, "timeout": 0})
     if init and init.get("result"):
         _offsets[bot_token] = init["result"][-1]["update_id"] + 1
-    else:
+    elif bot_token not in _offsets:
         _offsets[bot_token] = 0
 
+
+def _try_acquire(redis_client, key: str) -> bool:
+    """SET NX EX — atomic lock acquire."""
+    try:
+        return bool(redis_client.set(key, _INSTANCE_ID, nx=True, ex=_LOCK_TTL_S))
+    except Exception as exc:
+        logger.warning("tg_bot_service: redis SET NX failed (%s)", exc)
+        return False
+
+
+def _renew_lock(redis_client, key: str) -> bool:
+    """Extend TTL only if we still hold the lock. Compare-and-set via Lua so
+    we never accidentally renew a key a different replica took over."""
+    lua = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('pexpire', KEYS[1], ARGV[2])
+    else
+      return 0
+    end
+    """
+    try:
+        return bool(redis_client.eval(lua, 1, key, _INSTANCE_ID, _LOCK_TTL_S * 1000))
+    except Exception as exc:
+        logger.warning("tg_bot_service: redis renew failed (%s)", exc)
+        return False
+
+
+def _release_lock(redis_client, key: str) -> None:
+    """Compare-and-delete — only release if we still own it."""
+    lua = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('del', KEYS[1])
+    else
+      return 0
+    end
+    """
+    try:
+        redis_client.eval(lua, 1, key, _INSTANCE_ID)
+    except Exception:
+        pass
+
+
+async def _lead_and_poll(bot_token: str, bot_label: str, redis_client, lock_key: str) -> None:
+    """Run the actual long-poll loop while periodically renewing the lock.
+    Exits when renewal fails (lost leadership) or asyncio cancels us."""
+    await _drain_offset(bot_token)
+    last_renew = time.time()
     while True:
         try:
             j = await _tg_post(bot_token, "getUpdates", {
                 "offset": _offsets.get(bot_token, 0),
                 "timeout": 25,
             })
-            if not j:
-                await asyncio.sleep(5)
-                continue
-            for upd in j.get("result", []):
-                _offsets[bot_token] = max(_offsets.get(bot_token, 0), upd["update_id"] + 1)
-                try:
-                    await _handle_update(bot_token, bot_label, upd)
-                except Exception as exc:
-                    logger.warning("TG update handler error (%s): %s", bot_label, exc)
+            if j:
+                for upd in j.get("result", []):
+                    _offsets[bot_token] = max(_offsets.get(bot_token, 0), upd["update_id"] + 1)
+                    try:
+                        await _handle_update(bot_token, bot_label, upd)
+                    except Exception as exc:
+                        logger.warning("TG update handler error (%s): %s", bot_label, exc)
+            else:
+                await asyncio.sleep(2)
+
+            # Renew the lease so a flapping leader doesn't lose leadership
+            # mid-cycle. If we can't renew, step down — the next replica's
+            # acquire-loop picks up within _LOCK_RETRY_S.
+            if redis_client is not None and (time.time() - last_renew) >= _LOCK_RENEW_S:
+                if not _renew_lock(redis_client, lock_key):
+                    logger.warning("TG bot %s lost leader lock — stepping down", bot_label)
+                    return
+                last_renew = time.time()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.warning("TG poll loop error (%s): %s", bot_label, exc)
             await asyncio.sleep(5)
+
+
+async def _poll_loop(bot_token: str, bot_label: str) -> None:
+    """Outer loop. With Redis: try to become leader, lead, repeat on step-down.
+    Without Redis: just lead forever (single-replica fallback)."""
+    redis_client = _get_redis()
+    lock_key = _lock_key(bot_token)
+    if redis_client is None:
+        logger.info("TG bot %s polling started (no leader election — Redis unavailable)", bot_label)
+        await _lead_and_poll(bot_token, bot_label, None, lock_key)
+        return
+
+    while True:
+        try:
+            if _try_acquire(redis_client, lock_key):
+                logger.info("TG bot %s leader acquired (instance=%s)", bot_label, _INSTANCE_ID)
+                try:
+                    await _lead_and_poll(bot_token, bot_label, redis_client, lock_key)
+                finally:
+                    _release_lock(redis_client, lock_key)
+                # We just stepped down — don't busy-loop trying to reacquire.
+                await asyncio.sleep(2)
+            else:
+                # Someone else holds the lock. Wait for it to expire, then retry.
+                await asyncio.sleep(_LOCK_RETRY_S)
+        except asyncio.CancelledError:
+            _release_lock(redis_client, lock_key)
+            raise
+        except Exception as exc:
+            logger.warning("TG bot %s outer loop error: %s", bot_label, exc)
+            await asyncio.sleep(_LOCK_RETRY_S)
 
 
 def start_tg_bot() -> None:
