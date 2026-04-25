@@ -86,8 +86,15 @@ async def lifespan(app: FastAPI):
     install_asyncio_hook()
     _check_security()
     logger.info("Starting Avalant")
-    run_migrations()
-    _ensure_system_tags()
+    # Only one instance runs alembic — set AVALANT_RUN_MIGRATIONS=false
+    # on the secondary `app2` so two replicas don't race the
+    # alembic_version row (we've seen "0 found" errors during rolling
+    # deploys when both started at once).
+    if (_os_boot.environ.get("AVALANT_RUN_MIGRATIONS", "true").strip().lower() != "false"):
+        run_migrations()
+        _ensure_system_tags()
+    else:
+        logger.info("Migrations skipped (AVALANT_RUN_MIGRATIONS=false)")
     logger.info("Migrations applied — server ready")
 
     # Role decides what runs here. Default (empty/monolith) = everything, for

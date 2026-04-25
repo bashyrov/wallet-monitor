@@ -147,8 +147,35 @@ services:
       <<: *app-env
       AVALANT_ROLE: web
       AVALANT_LOG_DIR: /var/log/avalant
+      # The primary instance owns the alembic upgrade — app2 skips it
+      # so two replicas don't race the alembic_version row.
+      AVALANT_RUN_MIGRATIONS: "true"
     # Shared cache — fetcher writes, web reads (funding.json,
     # arbitrage.json, books.json, funding_ws.json, pending_subs.json)
+    volumes:
+      - avalant_cache:/tmp/avalant_cache
+      - avalant_logs:/var/log/avalant
+
+  # Second uvicorn replica behind nginx round-robin so a rolling deploy
+  # never drops traffic. Identical to `app` except it doesn't run
+  # migrations — only one instance does that.
+  app2:
+    build: .
+    restart: unless-stopped
+    expose:
+      - "8000"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_started
+    environment:
+      <<: *app-env
+      AVALANT_ROLE: web
+      AVALANT_LOG_DIR: /var/log/avalant
+      AVALANT_RUN_MIGRATIONS: "false"
     volumes:
       - avalant_cache:/tmp/avalant_cache
       - avalant_logs:/var/log/avalant
@@ -180,6 +207,7 @@ services:
       - certbot_www:/var/www/certbot:ro
     depends_on:
       - app
+      - app2
 
   certbot:
     image: certbot/certbot:latest
