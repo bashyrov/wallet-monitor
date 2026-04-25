@@ -261,6 +261,17 @@ async def close_position(
     if ex not in SUPPORTED_EXCHANGES:
         raise ValueError(f"{ex} not supported yet")
 
+    # Apply the same plan-based trade_delay_ms as place_open_order — without
+    # this a Free user could close instantly even though their open path is
+    # throttled, which defeats the latency tier.
+    from backend.db.models import User as _User
+    from backend.services import plan_service as _ps
+    _user = db.query(_User).filter(_User.id == user_id).first()
+    if _user is not None:
+        _limits = _ps.effective_limits(db, _user)
+        if _limits.trade_delay_ms > 0:
+            await asyncio.sleep(_limits.trade_delay_ms / 1000.0)
+
     creds = decrypt_credentials(w.credentials or {})
     return await ADAPTERS[ex].close_position(creds, symbol, side or "")
 

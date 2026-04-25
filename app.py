@@ -354,6 +354,29 @@ async def maintenance_gate(request: Request, call_next) -> Response:
     return await call_next(request)
 
 
+# Content-Security-Policy. The frontend ships inline <script>/<style> blocks
+# everywhere, so 'unsafe-inline' has to stay until we move to a build step
+# with hashes/nonces. Even with that caveat, locking down origins narrows
+# the XSS blast radius — only avalant origins, the Google Fonts pair, and
+# unpkg (Lightweight Charts CDN) can serve resources to a logged-in user.
+_CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://unpkg.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    # img-src must allow exchange logos/avatars + base64 inline + telegram CDN.
+    "img-src 'self' data: blob: https:",
+    # WS connections + same-origin XHR; tighten to wss://avalant.xyz once we
+    # confirm no other endpoints are dialled.
+    "connect-src 'self' https: wss:",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "upgrade-insecure-requests",
+])
+
+
 # ── Security headers ──────────────────────────────────────────────────────────
 @app.middleware("http")
 async def security_headers(request: Request, call_next) -> Response:
@@ -363,6 +386,10 @@ async def security_headers(request: Request, call_next) -> Response:
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+    # Skip CSP on /api/* — only HTML pages need it, API responses are JSON
+    # and a stray header here can break clients that parse it strictly.
+    if not request.url.path.startswith("/api"):
+        response.headers["Content-Security-Policy"] = _CSP
     # Remove server fingerprint
     if "server" in response.headers:
         del response.headers["server"]
