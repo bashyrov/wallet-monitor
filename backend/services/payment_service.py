@@ -141,7 +141,7 @@ async def create_checkout(
 
     promo: PromoCode | None = None
     if promo_code_str:
-        promo = promo_service.validate_for_plan(db, promo_code_str, plan.id)
+        promo = promo_service.validate_for_plan(db, promo_code_str, plan.id, user_id=user.id)
         if not promo:
             raise ValueError("invalid promo code")
 

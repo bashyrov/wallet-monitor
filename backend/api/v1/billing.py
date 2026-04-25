@@ -132,7 +132,7 @@ def promo_validate(
     billing_period_id = body.get("billing_period_id")
     if not code or not plan_id or not billing_period_id:
         raise HTTPException(status_code=422, detail="code, plan_id, billing_period_id are required")
-    promo = promo_service.validate_for_plan(db, code, int(plan_id))
+    promo = promo_service.validate_for_plan(db, code, int(plan_id), user_id=current_user.id)
     if not promo:
         return {"valid": False}
     plan = plan_service.get_plan(db, int(plan_id))

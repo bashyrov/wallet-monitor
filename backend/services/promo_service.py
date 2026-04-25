@@ -30,7 +30,8 @@ def get_by_code(db: Session, code: str) -> PromoCode | None:
     return db.query(PromoCode).filter(PromoCode.code == _normalize(code)).first()
 
 
-def is_eligible(promo: PromoCode | None, plan_id: int) -> bool:
+def is_eligible(promo: PromoCode | None, plan_id: int, user_id: int | None = None,
+                db: Session | None = None) -> bool:
     if not promo:
         return False
     if not promo.is_active:
@@ -38,6 +39,10 @@ def is_eligible(promo: PromoCode | None, plan_id: int) -> bool:
     if promo.expires_at and promo.expires_at <= datetime.utcnow():
         return False
     if promo.max_uses is not None and (promo.used_count or 0) >= promo.max_uses:
+        return False
+    # Targeted promo — only the named user may redeem it.
+    target = getattr(promo, "target_user_id", None)
+    if target is not None and (user_id is None or int(user_id) != int(target)):
         return False
     applies = promo.applies_to_plan_ids
     if applies:  # explicit list — must contain this plan
@@ -47,14 +52,32 @@ def is_eligible(promo: PromoCode | None, plan_id: int) -> bool:
             allowed = set()
         if plan_id not in allowed:
             return False
+    # Per-user usage cap — count rows in PromoCodeUsage for this (code, user).
+    per_user = getattr(promo, "per_user_max_uses", None)
+    if per_user is not None and per_user > 0 and user_id is not None and db is not None:
+        from sqlalchemy import func as _func
+        used = (
+            db.query(_func.count(PromoCodeUsage.id))
+            .filter(PromoCodeUsage.promo_code_id == promo.id)
+            .filter(PromoCodeUsage.user_id == user_id)
+            .scalar()
+        ) or 0
+        if used >= int(per_user):
+            return False
     return True
 
 
-def validate_for_plan(db: Session, code: str, plan_id: int) -> PromoCode | None:
+def validate_for_plan(db: Session, code: str, plan_id: int,
+                      user_id: int | None = None) -> PromoCode | None:
     """Public surface for /api/promo/validate and the checkout flow.
-    Returns the PromoCode row when usable, else None."""
+    Returns the PromoCode row when usable, else None.
+
+    `user_id` enables per-user-cap and target-user enforcement; pass it
+    from any auth-gated caller. Anonymous callers get the legacy behaviour
+    (target/per-user always treated as unmet — codes that require user
+    context can't be claimed without a session)."""
     promo = get_by_code(db, code)
-    if not is_eligible(promo, plan_id):
+    if not is_eligible(promo, plan_id, user_id=user_id, db=db):
         return None
     return promo
 
@@ -63,6 +86,7 @@ def validate_for_plan(db: Session, code: str, plan_id: int) -> PromoCode | None:
 _EDITABLE_FIELDS = {
     "discount_pct", "bonus_days", "max_uses", "applies_to_plan_ids",
     "is_active", "expires_at",
+    "per_user_max_uses", "target_user_id",
 }
 
 
@@ -85,6 +109,21 @@ def _coerce_bonus_days(raw: Any) -> int:
     return n
 
 
+def _coerce_per_user(raw: Any) -> int | None:
+    """Empty/None/0 → unlimited. Otherwise positive integer ≤ 100."""
+    if raw in (None, "", 0, "0"):
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("per_user_max_uses must be an integer or null")
+    if n < 0:
+        raise ValueError("per_user_max_uses must be >= 0")
+    if n > 100:
+        raise ValueError("per_user_max_uses too large (max 100)")
+    return n
+
+
 def create_code(db: Session, code: str, fields: dict[str, Any]) -> PromoCode:
     code_n = _normalize(code)
     if not code_n:
@@ -102,6 +141,8 @@ def create_code(db: Session, code: str, fields: dict[str, Any]) -> PromoCode:
         discount_pct=discount,
         bonus_days=bonus_days,
         max_uses=fields.get("max_uses"),
+        per_user_max_uses=_coerce_per_user(fields.get("per_user_max_uses")),
+        target_user_id=fields.get("target_user_id") or None,
         applies_to_plan_ids=fields.get("applies_to_plan_ids") or None,
         is_active=bool(fields.get("is_active", True)),
         expires_at=fields.get("expires_at"),
@@ -115,6 +156,17 @@ def create_code(db: Session, code: str, fields: dict[str, Any]) -> PromoCode:
 def update_code(db: Session, promo: PromoCode, fields: dict[str, Any]) -> PromoCode:
     if "bonus_days" in fields:
         fields["bonus_days"] = _coerce_bonus_days(fields["bonus_days"])
+    if "per_user_max_uses" in fields:
+        fields["per_user_max_uses"] = _coerce_per_user(fields["per_user_max_uses"])
+    if "target_user_id" in fields:
+        v = fields["target_user_id"]
+        if v in (None, "", 0, "0"):
+            fields["target_user_id"] = None
+        else:
+            try:
+                fields["target_user_id"] = int(v)
+            except (TypeError, ValueError):
+                raise ValueError("target_user_id must be an integer or null")
     if "discount_pct" in fields and fields["discount_pct"] is not None:
         d = Decimal(str(fields["discount_pct"])).quantize(Decimal("0.01"))
         if d < 0 or d > 100:
@@ -190,6 +242,8 @@ def serialize_code(p: PromoCode) -> dict[str, Any]:
         "bonus_days": int(p.bonus_days or 0),
         "max_uses": p.max_uses,
         "used_count": p.used_count or 0,
+        "per_user_max_uses": getattr(p, "per_user_max_uses", None),
+        "target_user_id": getattr(p, "target_user_id", None),
         "applies_to_plan_ids": p.applies_to_plan_ids or None,
         "is_active": bool(p.is_active),
         "expires_at": p.expires_at.isoformat() if p.expires_at else None,

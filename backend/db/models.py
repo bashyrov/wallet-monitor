@@ -356,6 +356,15 @@ class PromoCode(Base):
     bonus_days = Column(Integer, nullable=False, default=0)
     max_uses = Column(Integer, nullable=True)
     used_count = Column(Integer, nullable=False, default=0)
+    # null = unlimited per user (legacy); 1 = "once per user", 2+ = capped.
+    # Enforced against PromoCodeUsage at validate time.
+    per_user_max_uses = Column(Integer, nullable=True)
+    # null = anyone with the code can redeem; set = ONLY this user. Useful
+    # for one-off comp grants where the code is shared but only one
+    # specific account should be allowed to use it.
+    target_user_id = Column(Integer,
+                            ForeignKey("users.id", ondelete="SET NULL"),
+                            nullable=True, index=True)
     applies_to_plan_ids = Column(JSON, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     expires_at = Column(DateTime, nullable=True)

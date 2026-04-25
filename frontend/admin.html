@@ -2133,12 +2133,20 @@ function openPromoEditor(promoId){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
       <div><label style="font-size:12px;color:var(--text3)">Discount %</label><input id="pe-pct" class="inp" type="number" step="0.01" min="0" max="100" value="${p?.discount_pct??0}"></div>
       <div><label style="font-size:12px;color:var(--text3)">Bonus days <span style="color:var(--text3);font-weight:400">(extends sub)</span></label><input id="pe-bonus" class="inp" type="number" min="0" max="3650" value="${p?.bonus_days??0}"></div>
-      <div><label style="font-size:12px;color:var(--text3)">Max uses (blank = ∞)</label><input id="pe-max" class="inp" type="number" min="0" value="${p?.max_uses??''}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Max uses total (blank = ∞)</label><input id="pe-max" class="inp" type="number" min="0" value="${p?.max_uses??''}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Per-user max (blank = ∞, 1 = once per user)</label><input id="pe-peruser" class="inp" type="number" min="0" max="100" value="${p?.per_user_max_uses??''}"></div>
       <div><label style="font-size:12px;color:var(--text3)">Expires (YYYY-MM-DD)</label><input id="pe-exp" class="inp" type="date" value="${p?.expires_at? new Date(p.expires_at).toISOString().slice(0,10):''}"></div>
       <div style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:6px"><input id="pe-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label></div>
     </div>
-    <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.5">
-      Set <b>at least one of</b> Discount % or Bonus days. <code>EARLY7</code> example: 0% + 7 days = pure trial extension. <code>SAVE20</code> example: 20% + 0 days = price drop only.
+
+    <label style="display:block;font-size:12px;color:var(--text3);margin:14px 0 4px">Target user <span style="color:var(--text3);font-weight:400">(blank = anyone with the code can redeem)</span></label>
+    <input id="pe-tu-search" class="inp" placeholder="username or email — leave blank for public code" oninput="searchUsersForPromo(this.value)" value="${p?.target_user_id ? '#' + p.target_user_id : ''}">
+    <div id="pe-tu-results" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin-top:4px;max-height:120px;overflow:auto;display:none"></div>
+    <input id="pe-target-user-id" type="hidden" value="${p?.target_user_id??''}">
+    <div id="pe-tu-pickedlbl" style="font-size:12px;color:var(--green);margin-top:4px">${p?.target_user_id ? ('Restricted to user #' + p.target_user_id) : ''}</div>
+
+    <div style="font-size:11.5px;color:var(--text3);margin-top:10px;line-height:1.5">
+      Set <b>at least one of</b> Discount % or Bonus days. Examples: <code>EARLY7</code> = 0% + 7 days (trial extension). <code>SAVE20</code> = 20% + 0 days. <code>WELCOME</code> = once per user (per-user max=1). <code>VIP_42</code> = target user #42 only.
     </div>
     <label style="display:block;font-size:12px;color:var(--text3);margin:14px 0 4px">Applies to plans (none checked = all paid plans)</label>
     <div id="pe-plans" style="border:1px solid var(--border);border-radius:7px;padding:8px 10px;max-height:160px;overflow:auto">${planOpts}</div>
@@ -2156,6 +2164,8 @@ async function savePromo(promoId){
     discount_pct: parseFloat(document.getElementById('pe-pct').value || '0'),
     bonus_days: parseInt(document.getElementById('pe-bonus').value || '0', 10) || 0,
     max_uses: document.getElementById('pe-max').value ? parseInt(document.getElementById('pe-max').value, 10) : null,
+    per_user_max_uses: document.getElementById('pe-peruser').value ? parseInt(document.getElementById('pe-peruser').value, 10) : null,
+    target_user_id: parseInt(document.getElementById('pe-target-user-id').value || '0', 10) || null,
     is_active: document.getElementById('pe-active').checked,
     expires_at: expRaw ? expRaw + 'T23:59:59' : null,
     applies_to_plan_ids: planIds.length ? planIds : null,
@@ -2307,6 +2317,39 @@ function pickUserForPopup(id, name){
   document.getElementById('up-pickedlbl').textContent = `Selected: ${name} (#${id})`;
   document.getElementById('up-uresults').style.display = 'none';
   document.getElementById('up-usearch').value = name;
+}
+
+let _peTuTimer = null;
+async function searchUsersForPromo(q){
+  clearTimeout(_peTuTimer);
+  const wrap = document.getElementById('pe-tu-results');
+  if (!q || !q.trim()){
+    // Clearing the field also clears the saved target — public code again.
+    document.getElementById('pe-target-user-id').value = '';
+    document.getElementById('pe-tu-pickedlbl').textContent = '';
+    wrap.style.display = 'none';
+    return;
+  }
+  if (q.trim().length < 2){ wrap.style.display = 'none'; return; }
+  _peTuTimer = setTimeout(async () => {
+    const r = await Auth.apiFetch('/admin/users/search?q=' + encodeURIComponent(q));
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.users.length){ wrap.style.display = 'none'; return; }
+    wrap.innerHTML = j.users.map(u => `
+      <div style="padding:7px 10px;cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background='transparent'" onclick="pickUserForPromo(${u.id},'${_esc(u.username).replace(/'/g, "\\'")}')">
+        <b>${_esc(u.username)}</b> <span style="color:var(--text3)">${_esc(u.email)}</span>
+      </div>
+    `).join('');
+    wrap.style.display = '';
+  }, 200);
+}
+
+function pickUserForPromo(id, name){
+  document.getElementById('pe-target-user-id').value = id;
+  document.getElementById('pe-tu-pickedlbl').textContent = `Restricted to: ${name} (#${id})`;
+  document.getElementById('pe-tu-results').style.display = 'none';
+  document.getElementById('pe-tu-search').value = name;
 }
 
 // ── Broadcast tab ─────────────────────────────────────────────────────────
