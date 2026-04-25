@@ -77,6 +77,10 @@
     return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
   }
 
+  function _isAuthed(){
+    try { return !!localStorage.getItem('wm_token'); } catch { return false; }
+  }
+
   let _shown = null;
   let _queue = [];
 
@@ -109,14 +113,14 @@
   }
 
   async function _dismiss(id){
-    if (!window.Auth || !Auth.isLoggedIn()) return;
+    if (!_isAuthed()) return;
     try {
       await Auth.apiFetch(`/popups/${id}/dismiss`, { method: 'POST' });
     } catch {}
   }
 
   async function load(){
-    if (!window.Auth || !Auth.isLoggedIn()) return;
+    if (!_isAuthed()) return;
     try {
       const r = await Auth.apiFetch('/popups/pending');
       if (!r.ok) return;

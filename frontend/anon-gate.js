@@ -31,8 +31,11 @@
   function _now(){ return Date.now(); }
 
   function _isAuthed(){
+    // Check localStorage directly — `Auth` is a top-level const in
+    // auth.js, NOT a window property, so `window.Auth` reads as
+    // undefined and the gate previously fired for logged-in users.
     try {
-      return !!(window.Auth && Auth.getToken && Auth.getToken());
+      return !!localStorage.getItem('wm_token');
     } catch { return false; }
   }
 
