@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 
 from backend.db.base import get_db  # re-export for API layer
@@ -58,7 +58,31 @@ def get_current_user(
     return user
 
 
-def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
+def get_admin_user(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Admin gate. A logged-in non-admin who hits this is treated as a
+    probe: their account is auto-blocked, audit-logged, and admins get a
+    TG ping. Anonymous callers fail at get_current_user before this and
+    are NOT auto-banned (browser address-bar typing / link-clicking
+    shouldn't trip the honeypot)."""
     if not current_user.is_admin:
+        try:
+            from backend.services import honeypot_service
+            ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() \
+                 or (request.client.host if request.client else None)
+            honeypot_service.trip(
+                db, current_user,
+                request_ip=ip,
+                request_path=request.url.path,
+                request_method=request.method,
+                reason="admin_endpoint_probe",
+            )
+        except Exception:
+            # Never let honeypot bookkeeping bypass the 403 — that's the
+            # actual security control.
+            pass
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user

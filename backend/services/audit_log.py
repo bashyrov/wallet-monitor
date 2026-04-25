@@ -68,6 +68,38 @@ def record(
             pass
 
 
+def record_low_level(
+    db: Session,
+    *,
+    actor_user_id: int | None,
+    actor_ip: str | None,
+    action: str,
+    target_type: str | None = None,
+    target_id: int | None = None,
+    delta: Any = None,
+) -> None:
+    """Sister to record() for callers that don't have a Request object handy
+    (background services, middleware, etc.). Same fail-soft semantics."""
+    try:
+        entry = AuditLogEntry(
+            actor_user_id=actor_user_id,
+            actor_ip=actor_ip,
+            actor_user_agent=None,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            delta=delta,
+        )
+        db.add(entry)
+        db.commit()
+    except Exception as exc:
+        logger.warning("audit_log low-level write failed (action=%s): %s", action, exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 # Convenience: serialize for /api/admin/audit-log responses
 def serialize(e: AuditLogEntry) -> dict[str, Any]:
     return {

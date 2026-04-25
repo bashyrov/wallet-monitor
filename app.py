@@ -539,6 +539,23 @@ async def serve_page(page: str, request: Request, db: Session = Depends(get_db))
         if base in _ADMIN_PAGES:
             user = get_user_by_id(db, user_id)
             if not user or not user.is_admin:
+                # Same honeypot trap as /api/admin/*: a logged-in non-admin
+                # who hits /admin or /admin-user gets blocked. Cookie path
+                # only triggers on full-page navigation, so this is a
+                # deliberate probe (or someone lost their admin role since
+                # last session — they get unblocked manually if so).
+                try:
+                    if user is not None and not user.is_admin:
+                        from backend.services import honeypot_service
+                        ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() \
+                             or (request.client.host if request.client else None)
+                        honeypot_service.trip(
+                            db, user, request_ip=ip,
+                            request_path=request.url.path, request_method=request.method,
+                            reason="admin_page_probe",
+                        )
+                except Exception:
+                    pass
                 return RedirectResponse("/app", status_code=302)
 
     if os.path.exists(filepath):
