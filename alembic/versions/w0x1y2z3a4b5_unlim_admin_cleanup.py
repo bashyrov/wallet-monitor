@@ -87,9 +87,78 @@ def upgrade():
                NOW(), NOW())
         """), {"f": _json.dumps(_UNLIM_FEATURES)})
 
-    # 3. Delete every non-admin user. Use ON DELETE CASCADE on FK rows
-    #    where defined (wallets, balance_snapshots, etc); the rest get
-    #    cleaned up automatically.
+    # 3. Delete every non-admin user. The wallets FK does NOT have ON
+    #    DELETE CASCADE on prod (legacy table) so we have to clean up
+    #    every dependent row manually before the DELETE on users. Order
+    #    matters — children first.
+    bind.execute(sa.text("""
+        DELETE FROM wallet_addresses
+         WHERE wallet_id IN (
+            SELECT id FROM wallets WHERE user_id IN (
+                SELECT id FROM users WHERE is_admin = FALSE
+            )
+         )
+    """))
+    bind.execute(sa.text("""
+        DELETE FROM wallet_tags
+         WHERE wallet_id IN (
+            SELECT id FROM wallets WHERE user_id IN (
+                SELECT id FROM users WHERE is_admin = FALSE
+            )
+         )
+    """))
+    bind.execute(sa.text("""
+        DELETE FROM balance_snapshots
+         WHERE user_id IN (SELECT id FROM users WHERE is_admin = FALSE)
+    """))
+    bind.execute(sa.text("""
+        DELETE FROM provider_error_logs
+         WHERE wallet_type IS NOT NULL
+    """))  # legacy table; drop the noise but no FK
+    bind.execute(sa.text("""
+        DELETE FROM balance_history
+         WHERE user_id IN (SELECT id FROM users WHERE is_admin = FALSE)
+    """))
+    # Drop dependents that may or may not be present in the schema
+    # depending on which migrations have run — wrap in try-blocks via
+    # a sub-transaction so a missing table doesn't abort the upgrade.
+    for table in (
+        "arb_alerts",
+        "tags",
+        "watchlists",
+        "password_reset_tokens",
+        "email_verify_tokens",
+        "popup_dismissals",
+        "promo_code_usages",
+        "payments",
+        "wallets",
+        "audit_log",
+    ):
+        try:
+            # Each statement runs in its own savepoint so a missing
+            # column / table doesn't poison the outer transaction.
+            sp = bind.begin_nested()
+            if table == "audit_log":
+                bind.execute(sa.text(
+                    f"DELETE FROM {table} WHERE actor_user_id IN (SELECT id FROM users WHERE is_admin = FALSE)"
+                ))
+            elif table in ("tags",):
+                bind.execute(sa.text(
+                    f"DELETE FROM {table} WHERE user_id IS NOT NULL "
+                    f"AND user_id IN (SELECT id FROM users WHERE is_admin = FALSE)"
+                ))
+            else:
+                bind.execute(sa.text(
+                    f"DELETE FROM {table} WHERE user_id IN "
+                    f"(SELECT id FROM users WHERE is_admin = FALSE)"
+                ))
+            sp.commit()
+        except Exception:
+            try:
+                sp.rollback()
+            except Exception:
+                pass
+
     bind.execute(sa.text("DELETE FROM users WHERE is_admin = FALSE"))
 
     # 4. Re-map remaining users by their legacy plan string.
