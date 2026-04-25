@@ -474,6 +474,34 @@ _CSP = "; ".join([
 ])
 
 
+# Per-extension cache windows. HTML stays no-cache so ops can hot-fix copy
+# without telling users to refresh. Everything else (JS / CSS / fonts /
+# icons) gets a 5-minute browser cache + 1-hour CDN/proxy cache, so a
+# returning user pulls a single round of HTML and reuses every static
+# asset across reloads. Tighten further once we ship hash-named bundles.
+_STATIC_CACHE_BY_SUFFIX = {
+    ".js":   "public, max-age=300, s-maxage=3600",
+    ".css":  "public, max-age=300, s-maxage=3600",
+    ".svg":  "public, max-age=86400, s-maxage=86400, immutable",
+    ".png":  "public, max-age=86400, s-maxage=86400",
+    ".jpg":  "public, max-age=86400, s-maxage=86400",
+    ".jpeg": "public, max-age=86400, s-maxage=86400",
+    ".webp": "public, max-age=86400, s-maxage=86400",
+    ".ico":  "public, max-age=604800, s-maxage=604800, immutable",
+    ".woff": "public, max-age=2592000, immutable",
+    ".woff2":"public, max-age=2592000, immutable",
+    ".ttf":  "public, max-age=2592000, immutable",
+}
+
+
+def _static_cache_for(path: str) -> str | None:
+    p = path.lower()
+    for suf, cc in _STATIC_CACHE_BY_SUFFIX.items():
+        if p.endswith(suf):
+            return cc
+    return None
+
+
 # ── Security headers ──────────────────────────────────────────────────────────
 @app.middleware("http")
 async def security_headers(request: Request, call_next) -> Response:
@@ -485,8 +513,17 @@ async def security_headers(request: Request, call_next) -> Response:
     response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
     # Skip CSP on /api/* — only HTML pages need it, API responses are JSON
     # and a stray header here can break clients that parse it strictly.
-    if not request.url.path.startswith("/api"):
+    path = request.url.path
+    if not path.startswith("/api"):
         response.headers["Content-Security-Policy"] = _CSP
+    # Static-asset cache. Only set when serve_page hasn't already pinned
+    # the response to no-cache (HTML pages keep no-cache, JS/CSS/SVG get
+    # browser+CDN caching). Skip API responses entirely — they get
+    # endpoint-specific cache policy.
+    if not path.startswith("/api") and request.method == "GET":
+        cc = _static_cache_for(path)
+        if cc and "cache-control" not in {k.lower() for k in response.headers.keys()}:
+            response.headers["Cache-Control"] = cc
     # Remove server fingerprint
     if "server" in response.headers:
         del response.headers["server"]
