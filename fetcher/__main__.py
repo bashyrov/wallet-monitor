@@ -150,6 +150,13 @@ async def _run() -> None:
     start_tg_bot()
     logger.info("fetcher: TG bot started")
 
+    # ── Subscription expiry reminder daemon ──────────────────────────
+    from backend.services.expiry_notifier_service import (
+        start_expiry_notifier, stop_expiry_notifier,
+    )
+    start_expiry_notifier()
+    logger.info("fetcher: expiry-notifier started")
+
     # ── Alpha loops (health / snapshot / anomaly) ────────────────────
     from backend.services.health_service import health_loop
     from backend.services.replay_service import snapshot_loop
@@ -181,6 +188,7 @@ async def _run() -> None:
         for name, fn in (
             ("alert_service", stop_alert_service),
             ("tg_bot", stop_tg_bot),
+            ("expiry_notifier", stop_expiry_notifier),
             ("dex_refresh_loop", stop_dex_refresh_loop),
             ("spot_refresh_loop", stop_spot_refresh_loop),
             ("refresh_loop", stop_refresh_loop),
