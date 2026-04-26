@@ -477,21 +477,27 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
                     from backend.services.orderbook_cache import top_levels
                     spot_lv = top_levels(f"{spot_ex}_spot", sym)
                     perp_lv = top_levels(perp_ex, sym)
-                    if spot_lv and perp_lv:
+                    # Promote ticker prices to bid==ask synthetic levels
+                    # whenever the live book isn't there. We end up with
+                    # values for every row that has BOTH ticker prices —
+                    # i.e. every row in the feed. book_ok=true only when
+                    # both sides streamed real WS books.
+                    if spot_lv:
                         bid_sp, ask_sp = spot_lv
+                    elif spot_price and spot_price > 0:
+                        bid_sp = ask_sp = float(spot_price)
+                    else:
+                        bid_sp = ask_sp = 0.0
+                    if perp_lv:
                         bid_pr, ask_pr = perp_lv
-                        if ask_sp > 0 and ask_pr > 0 and bid_sp > 0 and bid_pr > 0:
-                            in_pct  = (bid_pr - ask_sp) / ask_sp * 100
-                            out_pct = (bid_sp - ask_pr) / ask_pr * 100
-                            book_ok = True
-                    elif perp_lv and spot_price > 0:
-                        # Synthetic spot top-of-book from ticker last price.
-                        bid_pr, ask_pr = perp_lv
-                        if ask_pr > 0 and bid_pr > 0:
-                            in_pct  = (bid_pr - spot_price) / spot_price * 100
-                            out_pct = (spot_price - ask_pr) / ask_pr * 100
-                            # book_ok stays False — the row still shows the
-                            # ticker-based fallback marker.
+                    elif perp_price and perp_price > 0:
+                        bid_pr = ask_pr = float(perp_price)
+                    else:
+                        bid_pr = ask_pr = 0.0
+                    if ask_sp > 0 and ask_pr > 0 and bid_sp > 0 and bid_pr > 0:
+                        in_pct  = (bid_pr - ask_sp) / ask_sp * 100
+                        out_pct = (bid_sp - ask_pr) / ask_pr * 100
+                        book_ok = bool(spot_lv and perp_lv)
                 except Exception:
                     pass
 
