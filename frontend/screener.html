@@ -2527,6 +2527,9 @@ function tickCountdowns() {
 
 // ── avatar ────────────────────────────────────────────────────────────────────
 (async () => {
+  // Anonymous viewers don't have a /auth/me to fetch — skip the call so
+  // the (now non-redirecting) 401 doesn't hit the network at all.
+  if (!Auth.isLoggedIn()) return;
   try {
     const me = await Auth.apiFetch('/auth/me').then(r => r.json());
     const el = document.getElementById('nav-avatar');
@@ -2600,6 +2603,8 @@ function _wlKey(sym, l, s) { return `${sym}|${l}>${s}`; }
 function _isWatched(sym, l, s) { return !!_watchlist[_wlKey(sym, l, s)]; }
 
 async function loadWatchlist() {
+  // Watchlist is a per-user feature — anonymous visitors skip the call.
+  if (!IS_AUTHED) return;
   try {
     const r = await Auth.apiFetch('/screener/watchlist');
     if (!r.ok) return;

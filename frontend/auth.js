@@ -77,9 +77,12 @@ const Auth = (() => {
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
     if (token) headers['Authorization'] = 'Bearer ' + token;
     const resp = await fetch('/api' + path, { ...opts, headers });
-    if (resp.status === 401) {
+    // 401 redirect logic — only matters for authenticated sessions whose
+    // token died mid-flight. Anonymous visitors expect 401s on user-only
+    // endpoints (watchlist, /auth/me, alerts, etc.) and should NOT get
+    // bounced off a public page like /screener.
+    if (resp.status === 401 && token) {
       clearSession();
-      // Don't redirect if already on login/register — prevents reload loop
       const p = window.location.pathname;
       if (p !== '/login' && p !== '/register') {
         window.location.replace('/login');

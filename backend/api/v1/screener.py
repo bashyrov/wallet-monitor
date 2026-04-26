@@ -1217,20 +1217,30 @@ def stop_screener_broadcaster() -> None:
     _refresh_task = None
 
 
-async def _ws_authenticate(websocket: WebSocket, label: str) -> int | None:
+async def _ws_authenticate(websocket: WebSocket, label: str, *, required: bool = False) -> int | None:
     """Auth via first-frame {"auth": "<JWT>"} after accept().
 
     The JWT used to be passed as ?token= in the URL — that put it into nginx
     access logs (token leak). First-frame auth keeps the token in the WS
-    payload only. 5 s wait window; on timeout / bad payload the socket is
-    closed with code 4401 and we never reach the streaming loop.
+    payload only. 5 s wait window.
+
+    Modes:
+      · required=False (default for the public screener feeds): an empty /
+        missing / invalid token is treated as anonymous (returns 0). The
+        feed is identical for every connection — no per-user filtering —
+        so anon clients on /screener get the same live data, with a
+        2-minute soft gate on the page itself via /anon-gate.js.
+      · required=True (for endpoints that DO need a user, e.g. /ws/book):
+        any auth failure closes the socket with 4401.
     """
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
     except (asyncio.TimeoutError, WebSocketDisconnect):
-        try: await websocket.close(code=4401, reason="auth timeout")
-        except Exception: pass
-        return None
+        if required:
+            try: await websocket.close(code=4401, reason="auth timeout")
+            except Exception: pass
+            return None
+        return 0
     token = ""
     try:
         msg = json.loads(raw)
@@ -1239,16 +1249,20 @@ async def _ws_authenticate(websocket: WebSocket, label: str) -> int | None:
     except (ValueError, TypeError):
         pass
     if not token:
-        try: await websocket.close(code=4401, reason="auth required")
-        except Exception: pass
-        logger.debug("%s WS rejected — no auth frame", label)
-        return None
+        if required:
+            try: await websocket.close(code=4401, reason="auth required")
+            except Exception: pass
+            logger.debug("%s WS rejected — no auth frame", label)
+            return None
+        return 0
     user_id = decode_token(token)
     if not user_id:
-        try: await websocket.close(code=4401, reason="invalid token")
-        except Exception: pass
-        logger.debug("%s WS rejected — invalid token", label)
-        return None
+        if required:
+            try: await websocket.close(code=4401, reason="invalid token")
+            except Exception: pass
+            logger.debug("%s WS rejected — invalid token", label)
+            return None
+        return 0
     return user_id
 
 
@@ -1256,9 +1270,12 @@ async def _ws_handler(websocket: WebSocket, clients: set[WebSocket],
                       fetch_fn, label: str,
                       snapshot_builder=None) -> None:
     await websocket.accept()
-    user_id = await _ws_authenticate(websocket, label)
+    # Public live feeds — anon clients get the same data. Auth is read but
+    # non-fatal; a returning user with a token shows up in logs by uid, an
+    # anonymous viewer logs as uid=0.
+    user_id = await _ws_authenticate(websocket, label, required=False)
     if user_id is None:
-        return
+        return  # only happens if `required` becomes True someday
     clients.add(websocket)
     logger.debug("Screener %s WS connect uid=%s (total=%d)", label, user_id, len(clients))
 
