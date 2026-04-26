@@ -26,6 +26,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import threading
 import time
 import uuid
 
@@ -309,16 +310,19 @@ def _release_lock(redis_client, key: str) -> None:
         pass
 
 
-async def _renew_loop(bot_label: str, redis_client, lock_key: str, lost: asyncio.Event) -> None:
-    """Independent renewer — runs side-by-side with the poll loop on a fixed
-    cadence so a slow getUpdates / DB call can never delay the renew.
-    Sets `lost` when the lease can't be extended; the poll loop checks the
-    event and steps down."""
-    while not lost.is_set():
-        try:
-            await asyncio.sleep(_LOCK_RENEW_S)
-        except asyncio.CancelledError:
-            return
+def _renew_thread(bot_label: str, redis_client, lock_key: str, lost: threading.Event) -> None:
+    """Renewer running on its own OS thread. The fetcher's asyncio loop is
+    shared by 11+ WS adapters, screener compute, prewarm, alpha jobs etc. —
+    any one of those occasionally blocks the loop for 30–60 s with a sync
+    call. An asyncio-based renewer would silently miss its tick during
+    those windows and the lock TTL would lapse. A real thread runs
+    independently of the loop and is immune to that class of stall.
+
+    Communication back to the asyncio poll loop uses threading.Event,
+    which the poll loop polls non-blockingly (asyncio.Event isn't
+    thread-safe without call_soon_threadsafe and that's needless ceremony
+    for a one-shot signal)."""
+    while not lost.wait(timeout=_LOCK_RENEW_S):
         if not _renew_lock(redis_client, lock_key):
             logger.warning("TG bot %s renewer: lost leader lock", bot_label)
             lost.set()
@@ -326,35 +330,36 @@ async def _renew_loop(bot_label: str, redis_client, lock_key: str, lost: asyncio
 
 
 async def _lead_and_poll(bot_token: str, bot_label: str, redis_client, lock_key: str) -> None:
-    """Long-poll loop. Renewal runs in a sibling task (`_renew_loop`) so a
-    slow getUpdates can't expire the lease. Exits when renewal fails or
-    asyncio cancels us."""
+    """Long-poll loop. Renewal runs in a SIBLING THREAD (not asyncio task)
+    so a stalled event loop can't make us miss the renew tick. Exits when
+    renewal fails or asyncio cancels us."""
     await _drain_offset(bot_token)
-    lost = asyncio.Event()
-    renewer: asyncio.Task | None = None
+    lost = threading.Event()
+    renewer: threading.Thread | None = None
     if redis_client is not None:
-        renewer = asyncio.create_task(_renew_loop(bot_label, redis_client, lock_key, lost))
+        renewer = threading.Thread(
+            target=_renew_thread,
+            args=(bot_label, redis_client, lock_key, lost),
+            name=f"tg-renew-{bot_label}",
+            daemon=True,
+        )
+        renewer.start()
 
     try:
         while not lost.is_set():
             try:
-                # Race the long-poll against the lost-lease signal so we
-                # don't keep handling updates after another replica took
-                # over.
-                gu_task = asyncio.create_task(_tg_post(bot_token, "getUpdates", {
+                # threading.Event isn't awaitable, so we can't asyncio.wait on it.
+                # The compromise: cap getUpdates timeout to _GETUPDATES_TIMEOUT_S
+                # and check `lost` between polls. Worst-case lag from
+                # losing leadership to stepping down is one poll cycle
+                # (≤ _GETUPDATES_TIMEOUT_S), still tighter than the previous
+                # 25 s.
+                j = await _tg_post(bot_token, "getUpdates", {
                     "offset": _offsets.get(bot_token, 0),
                     "timeout": _GETUPDATES_TIMEOUT_S,
-                }))
-                lost_task = asyncio.create_task(lost.wait())
-                done, pending = await asyncio.wait(
-                    {gu_task, lost_task}, return_when=asyncio.FIRST_COMPLETED,
-                )
-                for p in pending:
-                    p.cancel()
+                })
                 if lost.is_set():
                     return
-                j = gu_task.result() if gu_task in done else None
-
                 if j:
                     for upd in j.get("result", []):
                         if lost.is_set():
@@ -372,12 +377,11 @@ async def _lead_and_poll(bot_token: str, bot_label: str, redis_client, lock_key:
                 logger.warning("TG poll loop error (%s): %s", bot_label, exc)
                 await asyncio.sleep(2)
     finally:
-        if renewer is not None and not renewer.done():
-            renewer.cancel()
-            try:
-                await renewer
-            except (asyncio.CancelledError, Exception):
-                pass
+        # Tell the renewer to exit; the daemon thread dies with the process
+        # if the join hangs.
+        lost.set()
+        if renewer is not None:
+            renewer.join(timeout=2.0)
 
 
 async def _poll_loop(bot_token: str, bot_label: str) -> None:
