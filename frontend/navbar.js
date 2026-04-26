@@ -79,37 +79,30 @@ function _rightHtml(page) {
     case 'profile':
     case 'checkout':
       return _avatarBtn();
-    // Screener service — consistent icon toolbar across screener / arb / watchlist
+    // Screener service — consistent icon toolbar across screener / arb / watchlist.
+    // Auth-only icons (watchlist, alerts, avatar) live inside #_nb-user;
+    // anonymous visitors see Sign In + Get Started in #_nb-guest. _applyAuth
+    // flips the display: between the two blocks based on Auth.isLoggedIn().
     case 'screener':
-      return `
-        <a href="/watchlist" class="nav-lnk nav-lnk-icon" title="Watchlist" aria-label="Watchlist">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z"/></svg>
-        </a>
-        <button class="nav-lnk nav-lnk-bell" onclick="openAlertsPopover(event)" title="Alerts" aria-label="Alerts">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
-          <span class="nav-dot" id="nb-alerts-dot" style="display:none"></span>
-        </button>
-        ${_avatarBtn()}`;
-    case 'watchlist':
-      return `
-        <a href="/watchlist" class="nav-lnk nav-lnk-icon active" title="Watchlist" aria-label="Watchlist">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z"/></svg>
-        </a>
-        <button class="nav-lnk nav-lnk-bell" onclick="openAlertsPopover(event)" title="Alerts" aria-label="Alerts">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
-          <span class="nav-dot" id="nb-alerts-dot" style="display:none"></span>
-        </button>
-        ${_avatarBtn()}`;
     case 'arb':
+    case 'watchlist': {
+      const wlActive = page === 'watchlist' ? ' active' : '';
       return `
-        <a href="/watchlist" class="nav-lnk nav-lnk-icon" title="Watchlist" aria-label="Watchlist">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z"/></svg>
-        </a>
-        <button class="nav-lnk nav-lnk-bell" onclick="openAlertsPopover(event)" title="All alerts" aria-label="Alerts">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
-          <span class="nav-dot" id="nb-alerts-dot" style="display:none"></span>
-        </button>
-        ${_avatarBtn()}`;
+        <div id="_nb-guest" style="display:flex;align-items:center;gap:8px">
+          <a href="/login" class="nav-lnk">${_ICONS.login}Sign In</a>
+          <a href="/register" class="btn btn-primary btn-sm">Get Started</a>
+        </div>
+        <div id="_nb-user" style="display:none;align-items:center;gap:8px">
+          <a href="/watchlist" class="nav-lnk nav-lnk-icon${wlActive}" title="Watchlist" aria-label="Watchlist">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z"/></svg>
+          </a>
+          <button class="nav-lnk nav-lnk-bell" onclick="openAlertsPopover(event)" title="Alerts" aria-label="Alerts">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+            <span class="nav-dot" id="nb-alerts-dot" style="display:none"></span>
+          </button>
+          ${_avatarBtn()}
+        </div>`;
+    }
     case 'index':
       return `
         <div id="_nb-guest" style="display:flex;align-items:center;gap:8px">
@@ -184,8 +177,9 @@ class AppNavbar extends HTMLElement {
       if (av) av.textContent = (user.username || user.email || 'U')[0].toUpperCase();
     }
 
-    // Guest/user toggle for index and pricing
-    if (page === 'index' || page === 'pricing') {
+    // Guest/user toggle: index, pricing, screener, arb, watchlist all
+    // ship both blocks now and pick the right one based on auth state.
+    if (['index', 'pricing', 'screener', 'arb', 'watchlist'].includes(page)) {
       const guestEl = this.querySelector('#_nb-guest');
       const userEl  = this.querySelector('#_nb-user');
       if (loggedIn) {
