@@ -47,6 +47,30 @@ async def positions(
     return await trade_service.list_user_positions(db, user.id, symbol.upper() if symbol else None)
 
 
+@router.get("/balances")
+async def balances(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """USDT balance per screener-attached exchange wallet — drives the
+    Balances tab on /arb. Portfolio-only wallets aren't included; this
+    is the per-key trading view, not a portfolio aggregate."""
+    return await trade_service.list_user_balances(db, user.id)
+
+
+@router.get("/orders")
+async def orders(
+    symbol: str | None = Query(None, pattern=r"^[A-Za-z0-9]{1,16}$"),
+    limit: int = Query(50, ge=1, le=500),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Recent trade fills across the user's screener wallets. Used by the
+    Order History tab on /arb. Filters to type=trade|fill — deposits
+    and withdrawals don't belong here."""
+    return await trade_service.list_user_orders(db, user.id, limit=limit, symbol=symbol)
+
+
 @router.get("/supported")
 def supported_exchanges():
     from backend.services.trade_adapters import TRADE_SUPPORTED

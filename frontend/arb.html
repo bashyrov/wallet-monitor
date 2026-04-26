@@ -1812,7 +1812,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       const r = await Auth.apiFetch('/wallets');
       if (!r.ok) return;
       const rows = await r.json();
-      const ex = rows.filter(w => w.wallet_type === 'exchange' && !w.is_archived);
+      // Trading view counts only the screener-purpose keys, not the
+      // portfolio-only ones — those don't go through trade adapters.
+      const ex = rows.filter(w => w.wallet_type === 'exchange' && !w.is_archived
+                                   && (w.purpose === 'screener' || w.purpose === 'both'));
       const tr = ex.filter(w => w.can_trade).length;
       const ro = ex.length - tr;
       const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -1822,6 +1825,52 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       set('acc-tr-count-pnl', tr);
     } catch {}
   }
+  // Pair-detect: same greedy USD-notional match the futures view uses.
+  // Two positions on the same symbol on opposite sides whose notional
+  // (qty × mark) is within 10 % of each other count as a paired arb leg
+  // and render as a collapsible "⇆ PAIR" header — the spot/short flow
+  // produces those by design (buy spot + short perp), so showing them
+  // un-grouped misrepresents the trade.
+  const _ptPairOpen = new Set();
+  function _ptPairToggle(key) {
+    if (_ptPairOpen.has(key)) _ptPairOpen.delete(key);
+    else                      _ptPairOpen.add(key);
+    _ptLoadPositions();
+  }
+  window._ptPairToggle = _ptPairToggle;
+
+  function _ptPairPositions(rows) {
+    const tagged = rows.map((p, i) => ({
+      p,
+      key: p.position_id || `${p.exchange}:${p.symbol}:${i}`,
+      notional: Math.abs(Number(p.quantity || 0) * Number(p.mark_price || 0)),
+    }));
+    const bySym = {};
+    for (const t of tagged) (bySym[t.p.symbol] = bySym[t.p.symbol] || []).push(t);
+    const pairs = [];
+    const used = new Set();
+    for (const group of Object.values(bySym)) {
+      const longs  = group.filter(t => (t.p.side || '').toLowerCase() === 'buy');
+      const shorts = group.filter(t => (t.p.side || '').toLowerCase() === 'sell');
+      const cands = [];
+      for (const l of longs) for (const s of shorts) {
+        const maxN = Math.max(l.notional, s.notional);
+        if (maxN <= 0) continue;
+        const diffPct = Math.abs(l.notional - s.notional) / maxN;
+        if (diffPct > 0.10) continue;
+        cands.push({l, s, diffPct});
+      }
+      cands.sort((a, b) => a.diffPct - b.diffPct);
+      for (const c of cands) {
+        if (used.has(c.l.key) || used.has(c.s.key)) continue;
+        used.add(c.l.key); used.add(c.s.key);
+        pairs.push({symbol: c.l.p.symbol, long: c.l.p, short: c.s.p});
+      }
+    }
+    const singles = tagged.filter(t => !used.has(t.key)).map(t => t.p);
+    return {pairs, singles};
+  }
+
   async function _ptLoadPositions() {
     try {
       const r = await Auth.apiFetch('/trade/positions');
@@ -1842,14 +1891,14 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       if (em) em.style.display = 'none';
       const fmtPx = (p) => p == null ? '—' : (+p).toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
       const fmtPct = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${(+v).toFixed(2)}%`;
-      const fmtUsd = (v) => v == null ? '—' : `$${(+v).toFixed(2)}`;
+      const fmtUsd = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}$${Math.abs(+v).toFixed(2)}`;
       let totalUpnl = 0;
-      if (tb) tb.innerHTML = arr.map(p => {
+
+      const rowFor = (p) => {
         const side = (p.side || '').toLowerCase();
         const sideCls = side === 'buy' ? 'pos' : 'neg';
         const sideTxt = side === 'buy' ? 'LONG' : 'SHORT';
         const upnl = +(p.unrealized_pnl_usd || 0);
-        totalUpnl += upnl;
         const upnlPct = p.entry_price && p.quantity ? (upnl / (p.entry_price * p.quantity) * 100) : null;
         return `<tr>
           <td>${p.symbol}</td>
@@ -1863,39 +1912,129 @@ if (TYPE === 'spot' || TYPE === 'dex') {
           <td class="num ${upnl >= 0 ? 'pos' : 'neg'}">${fmtPct(upnlPct)}</td>
           <td></td>
         </tr>`;
+      };
+
+      const {pairs, singles} = _ptPairPositions(arr);
+
+      const pairHtml = pairs.map(pair => {
+        const lp = +(pair.long.unrealized_pnl_usd || 0);
+        const sp = +(pair.short.unrealized_pnl_usd || 0);
+        const tPnl = lp + sp;
+        const lf = +(pair.long.funding_pnl_usd || 0);
+        const sf = +(pair.short.funding_pnl_usd || 0);
+        const hasFunding = pair.long.funding_pnl_usd != null || pair.short.funding_pnl_usd != null;
+        const tFund = hasFunding ? lf + sf : null;
+        const lN = (+pair.long.quantity  || 0) * (+pair.long.mark_price  || 0);
+        const sN = (+pair.short.quantity || 0) * (+pair.short.mark_price || 0);
+        const legUsd = (lN + sN) / 2;
+        const pnlCls = tPnl >= 0 ? 'pos' : 'neg';
+        const fundCls = hasFunding && tFund >= 0 ? 'pos' : 'neg';
+        const combinedPct = legUsd > 0 ? (tPnl / legUsd * 100) : 0;
+        const lE = +pair.long.entry_price || 0;
+        const sE = +pair.short.entry_price || 0;
+        const entrySpread = (lE > 0 && sE > 0) ? ((sE - lE) / lE * 100) : null;
+        const entrySpreadTxt = entrySpread != null
+          ? `<span class="${entrySpread>=0?'pos':'neg'}">${entrySpread>=0?'+':''}${entrySpread.toFixed(4)}%</span>`
+          : '<span style="color:var(--text3)">—</span>';
+        const pairKey = `${pair.symbol}:${pair.long.exchange}:${pair.short.exchange}`;
+        const isOpen = _ptPairOpen.has(pairKey);
+        const caret = isOpen ? '▾' : '▸';
+        totalUpnl += tPnl;
+        const header = `
+          <tr style="background:rgba(26,255,171,0.04);border-top:1px solid rgba(26,255,171,0.18);cursor:pointer;user-select:none"
+              onclick="window._ptPairToggle('${pairKey}')">
+            <td colspan="2" style="padding:8px 10px">
+              <span style="color:var(--green);font-family:monospace;margin-right:6px">${caret}</span>
+              <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ PAIR</span>
+              <span style="margin-left:6px;font-weight:600">${pair.symbol}</span>
+              <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
+            </td>
+            <td colspan="2" class="num" style="color:var(--text2);font-size:11px">${legUsd.toFixed(2)} USDT / leg<br><span style="color:var(--text3);font-size:10px">entry spread ${entrySpreadTxt}</span></td>
+            <td colspan="2" class="num" style="color:var(--text3);font-size:11px">Δ pair</td>
+            <td class="num">${hasFunding ? `<span class="${fundCls}">${fmtUsd(tFund)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+            <td class="num ${pnlCls}" style="font-weight:700">${fmtUsd(tPnl)}</td>
+            <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
+            <td></td>
+          </tr>`;
+        const legs = isOpen ? (rowFor(pair.long) + rowFor(pair.short)) : '';
+        return header + legs;
       }).join('');
+
+      const singlesHtml = singles.map(p => {
+        const upnl = +(p.unrealized_pnl_usd || 0);
+        totalUpnl += upnl;
+        return rowFor(p);
+      }).join('');
+
+      if (tb) tb.innerHTML = pairHtml + singlesHtml;
       const upnlEl = document.getElementById('acc-upnl');
       if (upnlEl) upnlEl.textContent = fmtUsd(totalUpnl);
     } catch (e) { console.error('[pair-acc] positions:', e); }
   }
   async function _ptLoadBalances() {
     try {
-      const r = await Auth.apiFetch('/wallets');
+      // /trade/balances already filters to purpose in ('screener','both')
+      // server-side, so we don't have to second-guess what's a "trading
+      // key" here — every row is.
+      const r = await Auth.apiFetch('/trade/balances');
       if (!r.ok) return;
-      const wallets = (await r.json()).filter(w => w.wallet_type === 'exchange' && !w.is_archived);
+      const rows = await r.json();
       const tb = document.getElementById('acc-balances-body');
       const em = document.getElementById('acc-balances-empty');
       const cnt = document.getElementById('acc-cnt-balances');
-      if (cnt) cnt.textContent = wallets.length;
-      if (!wallets.length) {
+      if (cnt) cnt.textContent = rows.length;
+      if (!rows.length) {
         if (tb) tb.innerHTML = '';
         if (em) em.style.display = '';
         return;
       }
       if (em) em.style.display = 'none';
-      if (tb) tb.innerHTML = wallets.map(w => {
-        const keyType = w.can_trade ? '<span class="pill tr" style="font-size:10px"><span class="pill-dot"></span>Trade</span>' : '<span class="pill ro" style="font-size:10px"><span class="pill-dot"></span>Read-only</span>';
+      const fmt = (v) => v == null ? '<span style="color:var(--text3)">—</span>' : `$${Number(v).toFixed(2)}`;
+      if (tb) tb.innerHTML = rows.map(w => {
+        const keyType = w.can_trade
+          ? '<span class="pill tr" style="font-size:10px"><span class="pill-dot"></span>Trade</span>'
+          : '<span class="pill ro" style="font-size:10px"><span class="pill-dot"></span>Read-only</span>';
+        const bal = w.error
+          ? `<span style="color:var(--red);font-size:10.5px" title="${w.error}">err</span>`
+          : fmt(w.balance_usdt);
         return `<tr>
-          <td>${EX_LABEL[w.type_value]||w.type_value}</td>
+          <td>${EX_LABEL[w.exchange]||w.exchange}</td>
           <td>${w.name||''}</td>
           <td>${keyType}</td>
-          <td class="num">—</td>
+          <td class="num">${bal}</td>
         </tr>`;
       }).join('');
     } catch (e) { console.error('[pair-acc] balances:', e); }
   }
+  async function _ptLoadOrders() {
+    try {
+      const r = await Auth.apiFetch('/trade/orders?limit=50');
+      if (!r.ok) return;
+      const rows = await r.json();
+      const tb = document.getElementById('acc-orders-body');
+      const em = document.getElementById('acc-orders-empty');
+      const cnt = document.getElementById('acc-cnt-orders');
+      if (cnt) cnt.textContent = rows.length;
+      if (!rows.length) {
+        if (tb) tb.innerHTML = '';
+        if (em) em.style.display = '';
+        return;
+      }
+      if (em) em.style.display = 'none';
+      if (tb) tb.innerHTML = rows.map(o => `
+        <tr>
+          <td>${o.timestamp || '—'}</td>
+          <td>${EX_LABEL[o.exchange]||o.exchange}</td>
+          <td>${o.asset || ''}</td>
+          <td class="num">${o.amount || ''}</td>
+          <td>${o.status || ''}</td>
+          <td style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${(o.tx_id||'').slice(0,14)}</td>
+        </tr>`).join('');
+    } catch (e) { console.error('[pair-acc] orders:', e); }
+  }
+
   async function _ptLoadAcc() {
-    await Promise.all([_ptLoadKeyCounts(), _ptLoadPositions(), _ptLoadBalances()]);
+    await Promise.all([_ptLoadKeyCounts(), _ptLoadPositions(), _ptLoadBalances(), _ptLoadOrders()]);
   }
   _ptLoadAcc();
   setInterval(_ptLoadAcc, 10000);
@@ -3537,21 +3676,49 @@ function accSwitch(el){
 }
 
 async function initAccBlock(){
-  await Promise.all([accLoadKeyCounts(), accLoadPositions(), accLoadBalances()]);
-  // Keep positions + balances fresh
-  setInterval(() => { accLoadPositions(); accLoadBalances(); }, 10000);
+  await Promise.all([accLoadKeyCounts(), accLoadPositions(), accLoadBalances(), accLoadOrders()]);
+  // Keep positions + balances + orders fresh
+  setInterval(() => { accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 10000);
+}
+
+async function accLoadOrders(){
+  const tbody = document.getElementById('acc-orders-body');
+  const empty = document.getElementById('acc-orders-empty');
+  try {
+    const r = await Auth.apiFetch('/trade/orders?limit=50');
+    if (!r.ok) throw new Error();
+    const rows = await r.json();
+    document.getElementById('acc-cnt-orders').textContent = rows.length;
+    if (!rows.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    tbody.innerHTML = rows.map(o => `
+      <tr>
+        <td style="color:var(--text2);font-size:11px">${o.timestamp || '—'}</td>
+        <td><span class="ex-pill">${(EX_LABEL[o.exchange]||o.exchange)}</span></td>
+        <td><span class="sym">${o.asset || ''}</span></td>
+        <td class="num">${o.amount || ''}</td>
+        <td>${o.status || ''}</td>
+        <td style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${(o.tx_id||'').slice(0,14)}</td>
+      </tr>`).join('');
+  } catch {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    document.getElementById('acc-cnt-orders').textContent = '0';
+  }
 }
 
 async function accLoadKeyCounts(){
-  // Read-only + trading counts are not yet split in the DB; today every exchange wallet is read-only,
-  // and can_trade flag promotes it to trading. Show totals until we split per-purpose keys.
+  // Trading view counts only screener-purpose keys (purpose IN screener /
+  // both). Portfolio-only wallets aren't usable for trading and shouldn't
+  // pad the Read-only column.
   try {
     const r = await Auth.apiFetch('/wallets');
     if (!r.ok) return;
     const rows = await r.json();
-    const ex = rows.filter(w => w.wallet_type === 'exchange' && !w.is_archived);
+    const ex = rows.filter(w => w.wallet_type === 'exchange' && !w.is_archived
+                                  && (w.purpose === 'screener' || w.purpose === 'both'));
     const tr = ex.filter(w => w.can_trade).length;
-    const ro = ex.length; // every exchange key is usable read-only
+    const ro = Math.max(0, ex.length - tr);
     const roEl = document.getElementById('acc-ro-count'); if (roEl) roEl.textContent = ro;
     const trEl = document.getElementById('acc-tr-count'); if (trEl) trEl.textContent = tr;
   } catch {}
@@ -3754,27 +3921,33 @@ async function _tradeClosePair(longWid, shortWid, sym){
 async function accLoadBalances(){
   const tbody = document.getElementById('acc-balances-body');
   const empty = document.getElementById('acc-balances-empty');
-  // Balances across wallets: not yet batched by a single endpoint; pull per trade-enabled wallet via /trade/status
+  // /trade/balances filters to screener-purpose wallets server-side and
+  // returns USDT free balance per key (null when the read fails).
   try {
-    const r = await Auth.apiFetch('/wallets');
+    const r = await Auth.apiFetch('/trade/balances');
     if (!r.ok) throw new Error();
     const rows = await r.json();
-    const exs = rows.filter(w => w.wallet_type === 'exchange' && !w.is_archived);
-    if (!exs.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    if (!rows.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
     empty.style.display = 'none';
-    // Stub — real USDT balance requires a dedicated batch endpoint; show "—" for now for RO-only keys
-    tbody.innerHTML = exs.map(w => `
-      <tr>
-        <td><span class="ex-pill">${(EX_LABEL[w.type_value]||w.type_value)}</span></td>
+    const fmt = (v) => v == null
+      ? '<span style="color:var(--text3)">—</span>'
+      : `$${Number(v).toFixed(2)}`;
+    tbody.innerHTML = rows.map(w => {
+      const bal = w.error
+        ? `<span style="color:var(--red);font-size:10.5px" title="${w.error}">err</span>`
+        : fmt(w.balance_usdt);
+      return `<tr>
+        <td><span class="ex-pill">${(EX_LABEL[w.exchange]||w.exchange)}</span></td>
         <td><span class="sym" style="font-family:Inter,sans-serif;font-weight:600;font-size:11.5px;color:var(--text)">${w.name}</span></td>
         <td>${w.can_trade
             ? '<span style="color:var(--yellow);font-weight:600;font-size:10.5px">TRADE</span>'
             : '<span style="color:var(--teal);font-weight:600;font-size:10.5px">READ</span>'}</td>
+        <td class="num">${bal}</td>
         <td class="num" style="color:var(--text3)">—</td>
         <td class="num" style="color:var(--text3)">—</td>
-        <td class="num" style="color:var(--text3)">—</td>
-      </tr>`).join('');
-    document.getElementById('acc-cnt-balances').textContent = exs.length;
+      </tr>`;
+    }).join('');
+    document.getElementById('acc-cnt-balances').textContent = rows.length;
   } catch {
     tbody.innerHTML = '';
     empty.style.display = 'block';

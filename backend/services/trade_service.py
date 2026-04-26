@@ -307,3 +307,133 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
         if isinstance(r, list):
             flat.extend(r)
     return flat
+
+
+async def list_user_orders(db: Session, user_id: int, *, limit: int = 50,
+                           symbol: str | None = None) -> list[dict]:
+    """Recent trade fills across the user's screener-purpose wallets.
+
+    Reuses transaction_service.fetch_transactions (which already wires up
+    per-adapter endpoints for transactions/fills) and filters to the
+    `trade` / `fill` event types — deposits and withdrawals are out of
+    scope for an "order history" tab. Returns up to `limit` rows sorted
+    by timestamp desc, optionally filtered to a single symbol."""
+    from backend.services.transaction_service import fetch_transactions
+    wallets = (
+        db.query(Wallet)
+        .filter(
+            Wallet.user_id == user_id,
+            Wallet.wallet_type == "exchange",
+            Wallet.purpose.in_(("screener", "both")),
+            Wallet.is_archived == False,  # noqa: E712
+            Wallet.type_value.in_(list(SUPPORTED_EXCHANGES)),
+        )
+        .all()
+    )
+
+    sym_norm = (symbol or "").upper().strip() or None
+
+    async def _one(w: Wallet) -> list[dict]:
+        try:
+            resp = await fetch_transactions(w)
+        except Exception as exc:
+            logger.info("list_orders failed wallet=%s ex=%s: %s", w.id, w.type_value, exc)
+            return []
+        out: list[dict] = []
+        for t in (getattr(resp, "transactions", None) or []):
+            t_type = (getattr(t, "type", "") or "").lower()
+            if t_type not in ("trade", "fill"):
+                continue
+            asset = (getattr(t, "asset", "") or "").upper()
+            if sym_norm and sym_norm not in asset:
+                continue
+            out.append({
+                "wallet_id":  w.id,
+                "exchange":   w.type_value,
+                "wallet_name": w.name,
+                "tx_id":      getattr(t, "tx_id", None),
+                "type":       t_type,
+                "asset":      asset,
+                "amount":     getattr(t, "amount", None),
+                "timestamp":  getattr(t, "timestamp", None),
+                "status":     getattr(t, "status", None),
+                "address":    getattr(t, "address", None),
+            })
+        return out
+
+    results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)
+    flat: list[dict] = []
+    for r in results:
+        if isinstance(r, list):
+            flat.extend(r)
+    # Sort desc by timestamp string — ISO-ish so lexical sort works for
+    # the "YYYY-MM-DD HH:MM" format used in transaction_service.
+    flat.sort(key=lambda x: (x.get("timestamp") or ""), reverse=True)
+    return flat[: max(1, min(int(limit), 500))]
+
+
+async def list_user_balances(db: Session, user_id: int) -> list[dict]:
+    """USDT balance across every screener-purpose exchange wallet the user
+    has connected. Returns one row per wallet so the /arb Balances tab can
+    render them grouped by exchange. Portfolio-only wallets are explicitly
+    excluded — the trading panel cares about KEYS that can place orders or
+    are at least screener-attached, not read-only portfolio addresses."""
+    wallets = (
+        db.query(Wallet)
+        .filter(
+            Wallet.user_id == user_id,
+            Wallet.wallet_type == "exchange",
+            Wallet.purpose.in_(("screener", "both")),
+            Wallet.is_archived == False,  # noqa: E712
+            Wallet.type_value.in_(list(SUPPORTED_EXCHANGES)),
+        )
+        .all()
+    )
+
+    async def _one(w: Wallet) -> dict:
+        ex = (w.type_value or "").lower()
+        out = {
+            "wallet_id":       w.id,
+            "exchange":        ex,
+            "name":            w.name or ex,
+            "purpose":         w.purpose,
+            "can_trade":       bool(getattr(w, "can_trade", False)) or w.purpose in ("screener", "both"),
+            "is_main":         bool(getattr(w, "is_main", False)),
+            "balance_usdt":    None,
+            "error":           None,
+        }
+        if ex not in ADAPTERS:
+            out["error"] = "unsupported"
+            return out
+        try:
+            creds = decrypt_credentials(w.credentials or {})
+            bal = await ADAPTERS[ex].fetch_balance(creds)
+        except Exception as exc:
+            out["error"] = str(exc)[:80]
+            logger.info("list_balances failed wallet=%s ex=%s: %s", w.id, ex, exc)
+            return out
+        # fetch_balance returns the canonical {asset: {free, total, ...}} shape
+        # via _build_result; pull USDT out of "free" with fallback to "total".
+        # Different adapters surface USDT as either a dict or a flat number,
+        # so accept both. Trade adapters often only return a free/available
+        # number — keep it permissive.
+        usdt = None
+        if isinstance(bal, dict):
+            entry = bal.get("USDT") or bal.get("usdt") or bal.get("usdt_balance")
+            if isinstance(entry, dict):
+                usdt = entry.get("free") if entry.get("free") is not None else entry.get("total")
+            elif isinstance(entry, (int, float, str)):
+                try: usdt = float(entry)
+                except (TypeError, ValueError): usdt = None
+            elif "free" in bal or "available" in bal:
+                v = bal.get("free", bal.get("available"))
+                try: usdt = float(v)
+                except (TypeError, ValueError): usdt = None
+        try:
+            out["balance_usdt"] = round(float(usdt), 2) if usdt is not None else None
+        except (TypeError, ValueError):
+            out["balance_usdt"] = None
+        return out
+
+    results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)
+    return [r for r in results if isinstance(r, dict)]
