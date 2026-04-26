@@ -86,18 +86,50 @@ def _lock_key(bot_token: str) -> str:
     return "tg_bot_lock:" + hashlib.sha256(bot_token.encode()).hexdigest()[:16]
 
 
+# Persistent httpx client per (timeout, label). Reusing the connection
+# pool saves the ~200 ms TLS handshake on every call AND keeps a healthy
+# HTTP/2 connection alive — which is what Telegram's edge prefers under
+# their RPS limits. Two clients: one with a long read timeout for
+# getUpdates (TG holds it ≤25 s by design) and one short for everything
+# else (sends, callbacks, etc.).
+_tg_client_long: httpx.AsyncClient | None = None
+_tg_client_short: httpx.AsyncClient | None = None
+
+
+def _tg_client(method: str) -> httpx.AsyncClient:
+    global _tg_client_long, _tg_client_short
+    is_long = method.startswith("getUpdates")
+    if is_long:
+        if _tg_client_long is None or _tg_client_long.is_closed:
+            _tg_client_long = httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=5.0, read=35.0, write=5.0, pool=5.0),
+                http2=True,
+                limits=httpx.Limits(max_connections=4, max_keepalive_connections=4, keepalive_expiry=120),
+            )
+        return _tg_client_long
+    if _tg_client_short is None or _tg_client_short.is_closed:
+        _tg_client_short = httpx.AsyncClient(
+            # sendMessage normally returns in <500 ms. Tight timeouts:
+            # if Contabo's path to api.telegram.org degrades we fail fast
+            # and don't block the poll loop for 35 s.
+            timeout=httpx.Timeout(connect=3.0, read=8.0, write=3.0, pool=3.0),
+            http2=True,
+            limits=httpx.Limits(max_connections=8, max_keepalive_connections=8, keepalive_expiry=120),
+        )
+    return _tg_client_short
+
+
 async def _tg_post(token: str, method: str, payload: dict) -> dict | None:
     if not token:
         return None
     url = f"https://api.telegram.org/bot{token}/{method}"
     try:
-        async with httpx.AsyncClient(timeout=35) as c:
-            r = await c.post(url, json=payload)
-            j = r.json()
-            if not j.get("ok"):
-                logger.debug("TG %s not ok: %s", method, j)
-                return None
-            return j
+        r = await _tg_client(method).post(url, json=payload)
+        j = r.json()
+        if not j.get("ok"):
+            logger.debug("TG %s not ok: %s", method, j)
+            return None
+        return j
     except Exception as exc:
         logger.debug("TG %s error: %s", method, exc)
         return None
@@ -246,17 +278,28 @@ async def _handle_update(bot_token: str, bot_label: str, upd: dict) -> None:
     }
     if reply_markup:
         msg_payload["reply_markup"] = reply_markup
+
+    # Fire-and-forget the reply send. Critical: when Contabo's network path
+    # to api.telegram.org degrades, sendMessage can take 35 s. Awaiting it
+    # blocks the poll loop — the next /start from anyone (or the next
+    # leader-renew check on this bot) would have to wait. By detaching the
+    # send into its own task we keep getUpdates flowing immediately. The
+    # JWT for the login flow is ALREADY persisted (consume_login_token wrote
+    # the file before this point), so the user's webview poll on /tg-done
+    # picks it up regardless of how slow the bot's button reply lands.
     _t_send = time.time()
-    await _tg_post(bot_token, "sendMessage", msg_payload)
-    # Total: handle_update entry → reply sent. Wire-lag is the gap between
-    # the user's physical /start tap and our handler running, which catches
-    # bot-leader flaps + TG long-poll quirks.
-    logger.info(
-        "TG /start handled (%s): handler=%.2fs send=%.2fs wire_lag=%s payload=%r",
-        bot_label, _t_send - _t0, time.time() - _t_send,
-        f"{_wire_lag:.2f}s" if _wire_lag is not None else "?",
-        payload[:30] if payload else "<no-payload>",
-    )
+    async def _send_and_log():
+        try:
+            await _tg_post(bot_token, "sendMessage", msg_payload)
+            logger.info(
+                "TG /start handled (%s): handler=%.2fs send=%.2fs wire_lag=%s payload=%r",
+                bot_label, _t_send - _t0, time.time() - _t_send,
+                f"{_wire_lag:.2f}s" if _wire_lag is not None else "?",
+                payload[:30] if payload else "<no-payload>",
+            )
+        except Exception as exc:
+            logger.warning("TG sendMessage failed (%s): %s", bot_label, exc)
+    asyncio.create_task(_send_and_log())
 
 
 async def _drain_offset(bot_token: str) -> None:
