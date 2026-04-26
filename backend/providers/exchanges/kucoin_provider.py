@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 
 from backend.providers.http import RetryClient
@@ -10,6 +11,8 @@ from backend.providers.base_wallet_provider import BaseWalletProvider
 from settings import settings
 
 from ._signing import b64_hmac_sha256
+
+logger = logging.getLogger("avalant.providers.kucoin")
 
 
 class KucoinProvider(BaseWalletProvider):
@@ -82,24 +85,55 @@ class KucoinProvider(BaseWalletProvider):
         return dict(out)
 
     async def _get_futures(self, wallet: ExchangeWallet) -> tuple[dict[str, Decimal], str | None]:
-        """KuCoin Futures account (separate domain)"""
-        path = "/api/v1/account-overview"
-        try:
-            r = await self._http.get(
-                f"{self.futures_base_url}{path}",
-                headers=await self._headers(wallet, "GET", path),
-            )
-            r.raise_for_status()
+        """KuCoin Futures account (separate domain).
+
+        KuCoin maintains a SEPARATE account-overview balance per margin
+        currency — USDT-margined, USDC-margined, XBT-margined are each their
+        own pot. The API's GET /api/v1/account-overview requires a
+        `?currency=` query, and without it the response defaults to USDT
+        only — which is why USDC / BTC futures balances were silently
+        missing from the portfolio fetch.
+
+        Fetch all three margins in parallel, merge equity per currency,
+        sum unrealizedPnl across them. Skip empty pots so we don't pad
+        the wallet view with zero-equity rows."""
+        currencies = ("USDT", "USDC", "XBT")
+
+        async def _one(cur: str) -> tuple[str, Decimal, Decimal | None]:
+            path = f"/api/v1/account-overview?currency={cur}"
+            try:
+                r = await self._http.get(
+                    f"{self.futures_base_url}{path}",
+                    headers=await self._headers(wallet, "GET", path),
+                )
+                r.raise_for_status()
+            except Exception as exc:
+                logger.info("kucoin futures fetch %s failed: %s", cur, exc)
+                return cur, Decimal("0"), None
             data = r.json().get("data") or {}
-            currency = (data.get("currency") or "XBT").upper()
-            if currency == "XBT":
-                currency = "BTC"
             equity = Decimal(str(data.get("accountEquity") or "0"))
             upnl = data.get("unrealisedPnl")
-            upnl_str = str(upnl) if upnl is not None else None
-            return ({currency: equity} if equity > 0 else {}), upnl_str
-        except Exception:
-            return {}, None
+            upnl_d: Decimal | None
+            try:
+                upnl_d = Decimal(str(upnl)) if upnl is not None else None
+            except Exception:
+                upnl_d = None
+            return cur, equity, upnl_d
+
+        results = await asyncio.gather(*(_one(c) for c in currencies), return_exceptions=True)
+        out: dict[str, Decimal] = {}
+        upnl_total: Decimal | None = None
+        for r in results:
+            if isinstance(r, Exception):
+                continue
+            cur, equity, upnl_d = r
+            asset = "BTC" if cur == "XBT" else cur
+            if equity > 0:
+                out[asset] = out.get(asset, Decimal("0")) + equity
+            if upnl_d is not None:
+                upnl_total = (upnl_total or Decimal("0")) + upnl_d
+        upnl_str = str(upnl_total) if upnl_total is not None else None
+        return out, upnl_str
 
     async def fetch_balance(self, wallet: ExchangeWallet):
         spot, futures = await asyncio.gather(

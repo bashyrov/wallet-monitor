@@ -412,22 +412,32 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
             out["error"] = str(exc)[:80]
             logger.info("list_balances failed wallet=%s ex=%s: %s", w.id, ex, exc)
             return out
-        # fetch_balance returns the canonical {asset: {free, total, ...}} shape
-        # via _build_result; pull USDT out of "free" with fallback to "total".
-        # Different adapters surface USDT as either a dict or a flat number,
-        # so accept both. Trade adapters often only return a free/available
-        # number — keep it permissive.
+        # Trade adapters return {"usdt": <float>, ...} (flat). Wallet
+        # providers return {"USDT": {"free": ..., "total": ...}, ...} via
+        # _build_result. Accept both. The `or`-chain trick is unsafe here
+        # — a literal 0.0 is falsy and would skip a real-but-zero balance —
+        # so we test each key with explicit `is not None`.
         usdt = None
         if isinstance(bal, dict):
-            entry = bal.get("USDT") or bal.get("usdt") or bal.get("usdt_balance")
-            if isinstance(entry, dict):
-                usdt = entry.get("free") if entry.get("free") is not None else entry.get("total")
-            elif isinstance(entry, (int, float, str)):
-                try: usdt = float(entry)
-                except (TypeError, ValueError): usdt = None
-            elif "free" in bal or "available" in bal:
-                v = bal.get("free", bal.get("available"))
-                try: usdt = float(v)
+            for key in ("USDT", "usdt", "usdt_balance"):
+                if key in bal and bal[key] is not None:
+                    entry = bal[key]
+                    if isinstance(entry, dict):
+                        usdt = entry.get("free")
+                        if usdt is None:
+                            usdt = entry.get("total")
+                    else:
+                        try: usdt = float(entry)
+                        except (TypeError, ValueError): usdt = None
+                    if usdt is not None:
+                        break
+            # Adapter that returns flat {"available": .., "equity": ..} (no
+            # USDT key) — accept too. Used by some early adapter shapes.
+            if usdt is None:
+                v = bal.get("available")
+                if v is None: v = bal.get("free")
+                if v is None: v = bal.get("equity")
+                try: usdt = float(v) if v is not None else None
                 except (TypeError, ValueError): usdt = None
         try:
             out["balance_usdt"] = round(float(usdt), 2) if usdt is not None else None

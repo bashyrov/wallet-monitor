@@ -142,19 +142,46 @@ class KuCoinAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        """KuCoin Futures: availableBalance is the free portion. If user has
-        open positions, fall back to accountEquity (total) so the UI reflects
-        actual funds on the account, not just free margin."""
-        data = await cls._signed(creds, "GET", "/api/v1/account-overview", {"currency": "USDT"})
-        d = data or {}
-        avail = float(d.get("availableBalance") or 0)
-        if avail > 0:
-            return {"usdt": avail}
-        # Fall back to accountEquity (= marginBalance = wallet balance + uPnL).
-        # Not perfect for "what can I open now" but prevents the UI showing
-        # $0 when user has funds tied up in an open position.
-        equity = float(d.get("accountEquity") or d.get("marginBalance") or 0)
-        return {"usdt": max(avail, equity), "available": avail, "equity": equity}
+        """KuCoin Futures: account-overview is per-margin-currency. KuCoin
+        keeps USDT-, USDC-, and XBT-margined pots independent — without an
+        explicit `currency` query the API returns USDT only, which silently
+        hides USDC / BTC balances. Fetch all three in parallel.
+
+        Returns the canonical `{usdt: float, ...}` shape the rest of the
+        codebase expects: `usdt` is the USDT-margin pot's available balance
+        (with equity fallback when funds are tied up in a position), and
+        `available_total` / `equity_total` aggregate across all three
+        currencies (USDT + USDC + XBT) for views that want "everything I
+        can see on this account"."""
+        import asyncio as _asyncio
+
+        async def _one(cur: str) -> dict:
+            try:
+                data = await cls._signed(
+                    creds, "GET", "/api/v1/account-overview", {"currency": cur},
+                )
+            except Exception:
+                return {"currency": cur, "available": 0.0, "equity": 0.0, "ok": False}
+            d = data or {}
+            return {
+                "currency": cur,
+                "available": float(d.get("availableBalance") or 0),
+                "equity":    float(d.get("accountEquity") or d.get("marginBalance") or 0),
+                "ok":        True,
+            }
+
+        results = await _asyncio.gather(*(_one(c) for c in ("USDT", "USDC", "XBT")))
+        by_cur = {r["currency"]: r for r in results}
+        usdt_pot = by_cur.get("USDT", {"available": 0.0, "equity": 0.0})
+        usdt = usdt_pot["available"] if usdt_pot["available"] > 0 else usdt_pot["equity"]
+        return {
+            "usdt":            usdt,
+            "available":       usdt_pot["available"],
+            "equity":          usdt_pot["equity"],
+            "available_total": sum(r["available"] for r in results),
+            "equity_total":    sum(r["equity"]    for r in results),
+            "by_currency":     by_cur,
+        }
 
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
