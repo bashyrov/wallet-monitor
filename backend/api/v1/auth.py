@@ -317,12 +317,18 @@ class _TgWidgetAuth(_BM):
 
 @router.get("/tg-bot-username")
 def tg_bot_username():
-    """Public — returns the auth bot's username so the Telegram Login Widget
-    can be wired up on /login without hardcoding it in HTML. Falls back to
-    the alerts bot in single-bot deployments."""
+    """Public — returns the auth bot's username + numeric bot_id. The
+    numeric id is the portion of the bot token before the colon and is
+    needed by the OAuth redirect flow (oauth.telegram.org/auth?bot_id=…)."""
     from settings import settings as _settings
     name = (_settings.TG_AUTH_BOT_USERNAME or _settings.TG_BOT_USERNAME or "").lstrip("@")
-    return {"username": name}
+    token = _settings.TG_AUTH_BOT_TOKEN or _settings.TG_BOT_TOKEN or ""
+    bot_id = None
+    if ":" in token:
+        head = token.split(":", 1)[0]
+        if head.isdigit():
+            bot_id = int(head)
+    return {"username": name, "bot_id": bot_id}
 
 
 @router.post("/tg-login", response_model=Token)

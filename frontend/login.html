@@ -400,18 +400,13 @@
 <script>
 Auth.redirectIfAuthed('/app');
 
-// ── Telegram Login Widget ─────────────────────────────────────────────
-// telegram.org/js/telegram-widget.js relies on document.currentScript
-// to find itself in the DOM, which is null for dynamically-appended
-// scripts in modern browsers — that's why the previous IIFE-injected
-// version rendered nothing. Embed the OAuth widget iframe directly
-// instead. Same params the script would have generated; the bot ID is
-// resolved by oauth.telegram.org from the username path segment.
-//
-// On user confirm in TG, the iframe postMessages back with the auth
-// payload (id, first_name, username, photo_url, auth_date, hash). We
-// listen on `message` and forward to our /auth/tg-login handler, which
-// HMAC-verifies the payload server-side.
+// ── Telegram Login (OAuth redirect flow) ─────────────────────────────
+// We render a plain button instead of the official iframe widget. The
+// iframe widget relies on cross-origin postMessage between the embed
+// iframe and the parent page, which keeps tripping silently in this
+// setup. The redirect flow needs nothing but a click — the user goes
+// to oauth.telegram.org/auth, authorises, and Telegram redirects back
+// to /login#tgAuthResult=<base64-json> which we then verify.
 async function _doTelegramAuth(user) {
   const errEl = document.getElementById('tg-login-err');
   errEl.style.display = 'none';
@@ -437,32 +432,43 @@ async function _doTelegramAuth(user) {
   }
 }
 
-// Listen for the postMessage that the embed iframe sends after the user
-// confirms in their Telegram app. Origin check: only oauth.telegram.org.
-window.addEventListener('message', (ev) => {
-  if (ev.origin !== 'https://oauth.telegram.org') return;
-  let data = ev.data;
-  if (typeof data === 'string') {
-    try { data = JSON.parse(data); } catch (_) { return; }
+// Process the tgAuthResult hash that Telegram appends on redirect-back.
+function _consumeTgAuthHash() {
+  const m = location.hash.match(/[#&?]tgAuthResult=([A-Za-z0-9\-_=]+)/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  try {
+    let data = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = data.length % 4;
+    if (pad > 1) data += '='.repeat(4 - pad);
+    const user = JSON.parse(atob(data));
+    _doTelegramAuth(user);
+  } catch (e) {
+    const errEl = document.getElementById('tg-login-err');
+    errEl.textContent = 'Could not parse Telegram response.';
+    errEl.style.display = 'block';
   }
-  if (!data || data.event !== 'auth_user' || !data.auth_data) return;
-  _doTelegramAuth(data.auth_data);
-});
+}
+_consumeTgAuthHash();
 
 (async () => {
   try {
     const r = await fetch('/api/auth/tg-bot-username');
     const j = await r.json();
-    if (!j.username) return;  // no auth bot configured → widget skipped
-    // origin must exactly match what's whitelisted in BotFather /setdomain.
-    const origin = encodeURIComponent(window.location.origin);
-    const iframe = document.createElement('iframe');
-    iframe.id = 'tg-login-iframe';
-    iframe.src = `https://oauth.telegram.org/embed/${j.username}?origin=${origin}&size=large&request_access=write`;
-    iframe.style.cssText = 'border:0;width:238px;height:46px;color-scheme:auto';
-    iframe.setAttribute('scrolling', 'no');
-    iframe.setAttribute('allowtransparency', 'true');
-    document.getElementById('tg-widget-mount').appendChild(iframe);
+    if (!j.username || !j.bot_id) return;  // no auth bot configured
+    const mount = document.getElementById('tg-widget-mount');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'tg-oauth-btn';
+    btn.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 22px;border-radius:9px;background:linear-gradient(135deg,#229ED9,#1A8BC3);border:none;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;letter-spacing:-0.01em;font-family:inherit;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 6px 16px -8px rgba(34,158,217,.55)';
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg>Log in with Telegram';
+    btn.onclick = () => {
+      const origin = window.location.origin;
+      const ret = window.location.origin + '/login';
+      const url = `https://oauth.telegram.org/auth?bot_id=${j.bot_id}&origin=${encodeURIComponent(origin)}&request_access=write&return_to=${encodeURIComponent(ret)}`;
+      window.location.href = url;
+    };
+    mount.appendChild(btn);
   } catch (_) {}
 })();
 
