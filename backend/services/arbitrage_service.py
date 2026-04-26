@@ -1634,6 +1634,26 @@ def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None =
                     p_l = (bid_l + ask_l) * 0.5
                     p_s = (bid_s + ask_s) * 0.5
                     book_ok = True
+                elif book_l or book_s:
+                    # Half-streamed: one venue has WS book, the other only
+                    # has a mark price. Use real bid/ask on the streamed
+                    # side, treat the other's mark as bid==ask. Still beats
+                    # the all-mark fallback because at least the entry leg
+                    # has a real top-of-book to settle the spread against.
+                    if mark_l <= 0 or mark_s <= 0:
+                        continue
+                    if book_l:
+                        bid_l, ask_l = book_l
+                        bid_s = ask_s = mark_s
+                    else:
+                        bid_s, ask_s = book_s
+                        bid_l = ask_l = mark_l
+                    in_pct = (bid_s - ask_l) / ask_l
+                    out_pct = (bid_l - ask_s) / ask_s
+                    price_spread = in_pct
+                    p_l = (bid_l + ask_l) * 0.5
+                    p_s = (bid_s + ask_s) * 0.5
+                    book_ok = False
                 else:
                     if mark_l <= 0 or mark_s <= 0:
                         continue
