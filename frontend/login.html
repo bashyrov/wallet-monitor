@@ -401,12 +401,18 @@
 Auth.redirectIfAuthed('/app');
 
 // ── Telegram Login Widget ─────────────────────────────────────────────
-// Loads telegram.org/js/telegram-widget.js dynamically and wires
-// data-onauth → onTelegramAuth(user). The widget script needs the bot
-// username, so we fetch it once at page load. If the bot doesn't have
-// /setdomain configured in BotFather, the widget will just refuse to
-// render — the bot deep-link fallback under <details> still works.
-window.onTelegramAuth = async function(user) {
+// telegram.org/js/telegram-widget.js relies on document.currentScript
+// to find itself in the DOM, which is null for dynamically-appended
+// scripts in modern browsers — that's why the previous IIFE-injected
+// version rendered nothing. Embed the OAuth widget iframe directly
+// instead. Same params the script would have generated; the bot ID is
+// resolved by oauth.telegram.org from the username path segment.
+//
+// On user confirm in TG, the iframe postMessages back with the auth
+// payload (id, first_name, username, photo_url, auth_date, hash). We
+// listen on `message` and forward to our /auth/tg-login handler, which
+// HMAC-verifies the payload server-side.
+async function _doTelegramAuth(user) {
   const errEl = document.getElementById('tg-login-err');
   errEl.style.display = 'none';
   try {
@@ -429,22 +435,34 @@ window.onTelegramAuth = async function(user) {
     errEl.textContent = 'Telegram sign-in failed: ' + (e.message || 'unknown');
     errEl.style.display = 'block';
   }
-};
+}
+
+// Listen for the postMessage that the embed iframe sends after the user
+// confirms in their Telegram app. Origin check: only oauth.telegram.org.
+window.addEventListener('message', (ev) => {
+  if (ev.origin !== 'https://oauth.telegram.org') return;
+  let data = ev.data;
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch (_) { return; }
+  }
+  if (!data || data.event !== 'auth_user' || !data.auth_data) return;
+  _doTelegramAuth(data.auth_data);
+});
 
 (async () => {
   try {
     const r = await fetch('/api/auth/tg-bot-username');
     const j = await r.json();
     if (!j.username) return;  // no auth bot configured → widget skipped
-    const s = document.createElement('script');
-    s.async = true;
-    s.src = 'https://telegram.org/js/telegram-widget.js?22';
-    s.setAttribute('data-telegram-login', j.username);
-    s.setAttribute('data-size', 'large');
-    s.setAttribute('data-radius', '8');
-    s.setAttribute('data-onauth', 'onTelegramAuth(user)');
-    s.setAttribute('data-request-access', 'write');
-    document.getElementById('tg-widget-mount').appendChild(s);
+    // origin must exactly match what's whitelisted in BotFather /setdomain.
+    const origin = encodeURIComponent(window.location.origin);
+    const iframe = document.createElement('iframe');
+    iframe.id = 'tg-login-iframe';
+    iframe.src = `https://oauth.telegram.org/embed/${j.username}?origin=${origin}&size=large&request_access=write`;
+    iframe.style.cssText = 'border:0;width:238px;height:46px;color-scheme:auto';
+    iframe.setAttribute('scrolling', 'no');
+    iframe.setAttribute('allowtransparency', 'true');
+    document.getElementById('tg-widget-mount').appendChild(iframe);
   } catch (_) {}
 })();
 
