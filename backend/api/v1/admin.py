@@ -407,6 +407,34 @@ def maintenance_kick(
     return screener_config_get(user)
 
 
+# ═══ Site-wide announcement banner ════════════════════════════════════════════
+
+class _BannerBody(BaseModel):
+    enabled: bool | None = None
+    text: str | None = None
+    marquee: bool | None = None
+
+
+@router.get("/banner")
+def admin_banner_get(_: User = Depends(get_admin_user)):
+    return admin_settings.get_banner()
+
+
+@router.patch("/banner")
+def admin_banner_patch(body: _BannerBody, user: User = Depends(get_admin_user)):
+    """Admin: toggle the site-wide banner, set its text, switch between static
+    and marquee. Cap the text at 500 chars so a fat-finger paste can't
+    blow up every page."""
+    if body.text is not None:
+        text = (body.text or "").strip()[:500]
+        admin_settings.set_value(admin_settings.KEY_BANNER_TEXT, text, user_id=user.id)
+    if body.enabled is not None:
+        admin_settings.set_value(admin_settings.KEY_BANNER_ENABLED, bool(body.enabled), user_id=user.id)
+    if body.marquee is not None:
+        admin_settings.set_value(admin_settings.KEY_BANNER_MARQUEE, bool(body.marquee), user_id=user.id)
+    return admin_settings.get_banner()
+
+
 # ═══ Portfolio runtime controls ═══════════════════════════════════════════════
 
 class PortfolioConfigIn(BaseModel):

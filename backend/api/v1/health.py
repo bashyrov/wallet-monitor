@@ -11,6 +11,15 @@ def health():
     return {"status": "ok"}
 
 
+@router.get("/banner")
+def banner_status():
+    """Public — site-wide announcement banner. Polled by /banner.js on
+    every page so admin toggles propagate within ~60 s without a page
+    refresh. Always returns 200 so the loader can run a small cache."""
+    from backend.services import admin_settings as _s
+    return _s.get_banner()
+
+
 @router.get("/maintenance/status")
 def maintenance_status():
     """Public — single source of truth the maintenance/section-blocked HTML

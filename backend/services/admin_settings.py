@@ -38,6 +38,11 @@ KEY_SCREENER_DISABLED_ENDS_AT = "screener_disabled_ends_at"
 KEY_PORTFOLIO_DISABLED_ENDS_AT = "portfolio_disabled_ends_at"
 # Display TZ for maintenance pages. IANA name, e.g. Europe/Warsaw.
 KEY_MAINTENANCE_TZ = "maintenance_tz"
+# Site-wide announcement banner (top of every page, above the navbar).
+# Three fields: enabled toggle, plain-text message, marquee on/off.
+KEY_BANNER_ENABLED = "banner_enabled"
+KEY_BANNER_TEXT = "banner_text"
+KEY_BANNER_MARQUEE = "banner_marquee"
 
 _DEFAULTS: dict[str, Any] = {
     KEY_HIDDEN_SYMBOLS: [],
@@ -71,6 +76,9 @@ _DEFAULTS: dict[str, Any] = {
     # Default to Poland (Warsaw). Owner is in PL/UA timezones; users see this
     # as "Tech work ends at 13:00 (Europe/Warsaw)".
     KEY_MAINTENANCE_TZ: "Europe/Warsaw",
+    KEY_BANNER_ENABLED: False,
+    KEY_BANNER_TEXT: "",
+    KEY_BANNER_MARQUEE: False,
 }
 
 
@@ -224,3 +232,14 @@ def get_screener_disabled_ends_at() -> str | None:
 
 def get_portfolio_disabled_ends_at() -> str | None:
     return _ends_at(KEY_PORTFOLIO_DISABLED_ENDS_AT)
+
+
+def get_banner() -> dict:
+    """Site-wide announcement banner — public via /api/banner. Empty/disabled
+    state returns enabled=False so the JS loader removes the banner element
+    without flicker."""
+    return {
+        "enabled": bool(get(KEY_BANNER_ENABLED)),
+        "text": str(get(KEY_BANNER_TEXT) or "").strip(),
+        "marquee": bool(get(KEY_BANNER_MARQUEE)),
+    }

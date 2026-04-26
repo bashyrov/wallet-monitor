@@ -1114,6 +1114,28 @@
       <div class="page-sub">Push a message via the auth bot to every linked user, or to one specific user. HTML formatting supported (<code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;a href&gt;</code>, <code>&lt;code&gt;</code>).</div>
 
       <div class="mn-row" style="margin-top:14px">
+        <h3 style="margin:0 0 6px;font-size:15px">Site banner</h3>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:14px">
+          A green strip above the navbar on every page. Live for everyone — auth and anon. Switch on Marquee for endless scroll, off for static centered text. Cap 500 chars.
+        </div>
+        <label style="display:block;font-size:12px;color:var(--text3);margin-bottom:4px">Banner text</label>
+        <textarea id="bn-text" class="inp" rows="2" placeholder="e.g. Maintenance window tomorrow 02:00–02:30 UTC"></textarea>
+        <div style="display:flex;gap:18px;align-items:center;margin-top:12px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input id="bn-enabled" type="checkbox"> Enabled
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input id="bn-marquee" type="checkbox"> Marquee (scrolling)
+          </label>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-primary" onclick="saveBanner()">Save banner</button>
+          <button class="btn-secondary" onclick="loadBannerConfig()">Reset</button>
+        </div>
+        <div id="bn-feedback" style="margin-top:8px;font-size:12px;min-height:14px;color:var(--text3)"></div>
+      </div>
+
+      <div class="mn-row" style="margin-top:14px">
         <h3 style="margin:0 0 14px;font-size:15px">Expiry-reminder schedule</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:520px">
           <div>
@@ -1260,6 +1282,7 @@ input[type="checkbox"] { accent-color: var(--green); width: 14px; height: 14px; 
 }
 </style>
 
+<script src="/banner.js" defer></script>
 <script src="/auth.js"></script>
 <script src="/toast.js"></script>
 <script src="/confirm.js"></script>
@@ -2365,6 +2388,52 @@ async function loadBroadcastTab(){
       document.getElementById('bc-interval').value = j.expiry_notice_interval_hours ?? 24;
     }
   } catch(_) {}
+  loadBannerConfig();
+}
+
+async function loadBannerConfig(){
+  try {
+    const r = await Auth.apiFetch('/admin/banner');
+    if (!r.ok) return;
+    const b = await r.json();
+    document.getElementById('bn-text').value      = b.text || '';
+    document.getElementById('bn-enabled').checked = !!b.enabled;
+    document.getElementById('bn-marquee').checked = !!b.marquee;
+    const fb = document.getElementById('bn-feedback');
+    fb.textContent = b.enabled ? 'Currently visible to every visitor.' : 'Currently hidden.';
+    fb.style.color = b.enabled ? 'var(--green)' : 'var(--text3)';
+  } catch(_) {}
+}
+
+async function saveBanner(){
+  const text     = (document.getElementById('bn-text').value || '').trim();
+  const enabled  = document.getElementById('bn-enabled').checked;
+  const marquee  = document.getElementById('bn-marquee').checked;
+  const fb       = document.getElementById('bn-feedback');
+  if (enabled && !text){
+    fb.style.color = 'var(--red)';
+    fb.textContent = 'Cannot enable an empty banner — write some text first.';
+    return;
+  }
+  try {
+    const r = await Auth.apiFetch('/admin/banner', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, enabled, marquee }),
+    });
+    if (!r.ok){
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.detail || ('http ' + r.status));
+    }
+    toast('Banner saved', 'success', enabled ? 'Now visible to all visitors' : 'Banner hidden');
+    loadBannerConfig();
+    // Refresh THIS admin's banner immediately so the admin sees the result
+    // without waiting for the 60 s poll cycle.
+    if (window.AvalantBanner && window.AvalantBanner.reload) window.AvalantBanner.reload();
+  } catch (e){
+    fb.style.color = 'var(--red)';
+    fb.textContent = 'Failed: ' + e.message;
+  }
 }
 
 async function saveExpirySchedule(){
