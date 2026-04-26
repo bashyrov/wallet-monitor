@@ -458,7 +458,8 @@ async def maintenance_gate(request: Request, call_next) -> Response:
 # unpkg (Lightweight Charts CDN) can serve resources to a logged-in user.
 _CSP = "; ".join([
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://unpkg.com",
+    # telegram.org hosts the official Login Widget script (telegram-widget.js).
+    "script-src 'self' 'unsafe-inline' https://unpkg.com https://telegram.org",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     # img-src must allow exchange logos/avatars + base64 inline + telegram CDN.
@@ -466,6 +467,8 @@ _CSP = "; ".join([
     # WS connections + same-origin XHR; tighten to wss://avalant.xyz once we
     # confirm no other endpoints are dialled.
     "connect-src 'self' https: wss:",
+    # The Login Widget renders an iframe pointing at oauth.telegram.org.
+    "frame-src 'self' https://oauth.telegram.org https://telegram.org",
     "frame-ancestors 'none'",
     "form-action 'self'",
     "base-uri 'self'",
