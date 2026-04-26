@@ -51,6 +51,11 @@ class User(Base):
     # Throttle key for the expiry notifier so a daemon-restart can't fire
     # a duplicate "expires in 2 days" message minutes after the previous one.
     expiry_notice_last_sent_at = Column(DateTime, nullable=True)
+    # Per-account failed-password counter. Bumps on every wrong-password
+    # login attempt against this user (regardless of source IP), resets to
+    # 0 on a successful login. Hits the threshold → is_blocked=True and
+    # the user has to contact support to unlock.
+    failed_login_attempts = Column(Integer, nullable=False, default=0)
 
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")

@@ -180,6 +180,11 @@ def toggle_block(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_blocked = not getattr(user, 'is_blocked', False)
+    # Unblock also clears the failed-login counter — otherwise a user
+    # who was auto-locked at 5 failures would re-lock on their first
+    # mistype after the admin's unblock.
+    if not user.is_blocked:
+        user.failed_login_attempts = 0
     db.commit()
     from backend.services.auth_cache import invalidate_user
     invalidate_user(user.id)
@@ -848,18 +853,30 @@ def admin_delete_popup(
 
 @router.get("/users/search")
 def admin_users_search(
-    q: str = "",
+    q: str = Query("", max_length=64),
     db: Session = Depends(get_db),
     _: User = Depends(get_admin_user),
 ):
-    """Lightweight typeahead for the popup target picker."""
+    """Lightweight typeahead for the popup target picker.
+
+    Length cap on `q` (64 chars) prevents pathologically long ILIKE
+    patterns from exhausting DB time. The actual SQL is parameter-bound
+    via SQLAlchemy's expression API — no string interpolation reaches
+    the wire — so user-supplied `%` / `_` / quotes are interpreted as
+    LIKE wildcards / literals, never as SQL syntax."""
     qs = (q or "").strip().lower()
     if not qs:
         return {"users": []}
+    # Escape LIKE wildcards so a user typing "%" doesn't match every
+    # username — keeps the typeahead semantically sane and prevents
+    # accidental "match-everything" queries.
+    safe = qs.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{safe}%"
     rows = (
         db.query(User)
         .filter(
-            (User.username.ilike(f"%{qs}%")) | (User.email.ilike(f"%{qs}%"))
+            User.username.ilike(pattern, escape="\\")
+            | User.email.ilike(pattern, escape="\\")
         )
         .order_by(User.username.asc())
         .limit(20)

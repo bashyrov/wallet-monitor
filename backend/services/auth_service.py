@@ -129,9 +129,61 @@ def register_user(db: Session, username: str, email: str, password: str) -> User
     return user
 
 
+LOGIN_LOCK_THRESHOLD = 5
+
+
 def authenticate_user(db: Session, login: str, password: str) -> User | None:
-    """Authenticate by email or username."""
+    """Authenticate by email or username.
+
+    Side effects on the User row:
+      · wrong password → increment failed_login_attempts; at threshold,
+        flip is_blocked=True so subsequent logins (and the existing
+        get_current_user gate) reject this account until an admin
+        unblocks it.
+      · correct password → reset failed_login_attempts to 0.
+
+    Returns the User on success, None on any failure path. The caller
+    distinguishes between "no such user", "wrong password", and "now
+    locked" via the user.is_blocked / failed_login_attempts state if it
+    needs a tailored response."""
     user = get_user_by_email(db, login) or get_user_by_username(db, login)
-    if not user or not verify_password(password, user.hashed_password):
+    if user is None:
         return None
+    if not verify_password(password, user.hashed_password):
+        try:
+            user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+            if user.failed_login_attempts >= LOGIN_LOCK_THRESHOLD and not user.is_blocked:
+                user.is_blocked = True
+                logger.warning(
+                    "Auto-lockout: user_id=%s username=%s after %d failed attempts",
+                    user.id, user.username, user.failed_login_attempts,
+                )
+                # Best-effort audit + auth-cache invalidation so the next
+                # request from a stale token also gets bounced.
+                try:
+                    from backend.services import audit_log
+                    audit_log.record_low_level(
+                        db, actor_user_id=user.id, actor_ip=None,
+                        action="security.login_lockout",
+                        target_type="user", target_id=user.id,
+                        delta={"attempts": user.failed_login_attempts},
+                    )
+                except Exception:
+                    pass
+                try:
+                    from backend.services.auth_cache import invalidate_user
+                    invalidate_user(user.id)
+                except Exception:
+                    pass
+            db.commit()
+        except Exception:
+            db.rollback()
+        return None
+    # Correct password — clear the counter if it had drifted up.
+    if user.failed_login_attempts:
+        try:
+            user.failed_login_attempts = 0
+            db.commit()
+        except Exception:
+            db.rollback()
     return user

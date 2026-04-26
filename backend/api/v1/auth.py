@@ -114,6 +114,22 @@ def login(body: UserLogin, request: Request, response: Response, db: Session = D
     user = svc.authenticate_user(db, body.login, body.password)
     if not user:
         _record_attempt(ip)
+        # If the wrong password JUST tripped the per-account lockout,
+        # surface the lockout message rather than the generic 401 — the
+        # user shouldn't keep guessing into a wall.
+        from backend.services.auth_service import LOGIN_LOCK_THRESHOLD
+        fallback = (
+            svc.get_user_by_email(db, body.login) or svc.get_user_by_username(db, body.login)
+        )
+        if fallback and getattr(fallback, "is_blocked", False):
+            logger.warning(
+                "Login attempt against locked account: %s from IP %s (failed_attempts=%s)",
+                fallback.username, ip, getattr(fallback, "failed_login_attempts", 0),
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Account locked after {LOGIN_LOCK_THRESHOLD} failed attempts. Please contact support to restore access.",
+            )
         logger.warning("Failed login attempt for %r from IP %s", body.login, ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if getattr(user, 'is_blocked', False):
