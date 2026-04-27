@@ -187,6 +187,14 @@ async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
             d = (r.json() or {}).get("data", {}) or {}
             return {"bids": [[float(x["price"]), float(x["qty"])] for x in d.get("bid", [])],
                     "asks": [[float(x["price"]), float(x["qty"])] for x in d.get("ask", [])]}
+        if exchange == "htx":
+            # HTX (Huobi) USDT-margined linear-swap orderbook. step0 = full
+            # depth (raw), no aggregation. Response shape:
+            #   { status, tick: { bids: [[px, sz], …], asks: […] } }
+            r = await c.get(f"https://api.hbdm.com/linear-swap-ex/market/depth?contract_code={symbol}-USDT&type=step0")
+            d = (r.json() or {}).get("tick", {}) or {}
+            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
     except Exception as exc:
         logger.debug("orderbook fetch %s/%s failed: %s", exchange, symbol, exc)
     return None
