@@ -900,7 +900,6 @@ async def _refresh_loop() -> None:
                     _, cached_ts = _cache.get(ex, ([], 0.0))
                     if cached_ts:
                         ts_by_ex[ex] = now_t - (now_m - cached_ts)
-                logger.info("HB-WRITE rows=%d ts_by_ex=%d", len(rows), len(ts_by_ex))
                 await _write_file_cache_async("funding.json", {
                     "ts": int(now_t),
                     "exchanges": sorted(ex_set),
