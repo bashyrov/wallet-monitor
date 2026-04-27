@@ -179,6 +179,14 @@ async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
             d = r.json() or {}
             return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
                     "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+        if exchange == "extended":
+            # Extended (StarkNet perpdex) — no WS adapter yet, so this REST
+            # path is the only orderbook source. Response shape:
+            #   { status, data: { market, bid: [{qty, price}], ask: [...] } }
+            r = await c.get(f"https://api.starknet.extended.exchange/api/v1/info/markets/{symbol}-USD/orderbook")
+            d = (r.json() or {}).get("data", {}) or {}
+            return {"bids": [[float(x["price"]), float(x["qty"])] for x in d.get("bid", [])],
+                    "asks": [[float(x["price"]), float(x["qty"])] for x in d.get("ask", [])]}
     except Exception as exc:
         logger.debug("orderbook fetch %s/%s failed: %s", exchange, symbol, exc)
     return None

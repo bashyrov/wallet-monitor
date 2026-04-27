@@ -423,8 +423,14 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
                 interval_h = pdata.get("interval_h") or 8.0
                 # Normalize to 8h window
                 rate_8h = rate_f * (8.0 / interval_h) * 100  # percent
-                # Short perp → we pay if funding>0, receive if funding<0
-                short_funding = -rate_8h
+                # Standard exchange convention (Binance / Bybit / OKX docs):
+                #   funding rate POSITIVE → longs pay shorts → short PnL = +rate
+                #   funding rate NEGATIVE → shorts pay longs → short PnL = +rate
+                # i.e. for a short position the funding-leg PnL just IS the
+                # signed rate. Earlier code had `short_funding = -rate_8h`,
+                # which flipped the sign and made negative-rate shorts look
+                # profitable when in reality we'd be paying funding.
+                short_funding = rate_8h
                 basis_pct = (perp_price - spot_price) / spot_price * 100
                 # Collision guard: 100% catches only the most extreme cases
                 # (genuinely-different tokens with 2×+ price gaps). Everything

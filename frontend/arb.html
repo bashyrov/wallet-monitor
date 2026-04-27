@@ -1481,7 +1481,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     const perpPx = +perp.price;
     const rate = +perp.rate;
     const ivl = +perp.interval_h || 8;
-    const short_funding_8h = -rate * (8 / ivl) * 100;
+    // Short PnL from funding = signed rate (positive rate = longs pay shorts,
+    // we receive; negative rate = shorts pay longs, we pay). See same fix in
+    // backend/services/spot_arbitrage_service.py.
+    const short_funding_8h = rate * (8 / ivl) * 100;
     const basis_pct = (perpPx - dexPx) / dexPx * 100;
     const gross = short_funding_8h + basis_pct;
     const PERP_FEE = { binance:.04, bybit:.055, okx:.05, gate:.05, kucoin:.06, mexc:.02, bitget:.06, hyperliquid:.035, aster:.05, bingx:.05, whitebit:.06 };
