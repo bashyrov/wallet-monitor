@@ -755,6 +755,15 @@ async def _refresh_loop() -> None:
     _LAST_HEARTBEAT_WRITE = 0.0
     _HEARTBEAT_INTERVAL = 1.0  # write rate ceiling — file lives on tmpfs, cheap
 
+    # Pull live WS rows directly so _cache.ts tracks the WS push, not just
+    # the last successful REST gather. Without this the heartbeat below
+    # writes ts_by_ex from REST timestamps only, which can be 10-30s old
+    # on Contabo's degraded path even though WS is delivering sub-second.
+    try:
+        from backend.services.funding_ws import get_ws_rows as _get_ws_rows
+    except Exception:
+        _get_ws_rows = None
+
     while True:
         started = asyncio.get_event_loop().time()
         # Kick background funding refresh — never await. Lock ensures only one
@@ -768,7 +777,33 @@ async def _refresh_loop() -> None:
             shared_rows_by_ex: dict[str, list] = {}
             for r in shared.get("rows", []) or []:
                 shared_rows_by_ex.setdefault(r.get("exchange",""), []).append(r)
+
+            # Pre-pull WS rows for every venue so _cache stays current with
+            # the live push. Cheap — get_ws_rows is just an in-memory dict
+            # lookup; no network traffic. Stamps each venue's _cache entry
+            # with `now` so the heartbeat below sees fresh per-venue ts.
             now_m = _mono()
+            if _get_ws_rows is not None:
+                from backend.services.arbitrage_service import _cache as _c
+                for ex in FETCHERS:
+                    try:
+                        ws_rows = _get_ws_rows(ex) or []
+                    except Exception:
+                        ws_rows = []
+                    if not ws_rows:
+                        continue
+                    normalised = []
+                    for r in ws_rows:
+                        if r.get("interval_h") is None:
+                            continue
+                        rr = dict(r)
+                        rr["exchange"] = ex
+                        rr.setdefault("volume_usd", 0)
+                        rr.setdefault("next_ts", 0)
+                        normalised.append(rr)
+                    if normalised:
+                        _c[ex] = (normalised, now_m)
+
             rows = []
             for ex in FETCHERS:
                 if ex in disabled_ex:
