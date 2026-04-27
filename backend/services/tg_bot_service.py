@@ -106,16 +106,20 @@ def _tg_client(method: str) -> httpx.AsyncClient:
     if is_long:
         if _tg_client_long is None or _tg_client_long.is_closed:
             _tg_client_long = httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=5.0, read=35.0, write=5.0, pool=5.0),
+                # connect=20s: Contabo's path to api.telegram.org degrades
+                # often (TLS handshake + IPv6 fallback can take >10s under
+                # mild latency). Earlier 5s ceiling caused ConnectTimeout
+                # bursts that blocked polling. read=35s covers the 25s
+                # long-poll window TG holds.
+                timeout=httpx.Timeout(connect=20.0, read=35.0, write=10.0, pool=10.0),
                 limits=httpx.Limits(max_connections=4, max_keepalive_connections=4, keepalive_expiry=120),
             )
         return _tg_client_long
     if _tg_client_short is None or _tg_client_short.is_closed:
         _tg_client_short = httpx.AsyncClient(
-            # sendMessage normally returns in <500 ms. Tight timeouts:
-            # if Contabo's path to api.telegram.org degrades we fail fast
-            # and don't block the poll loop for 35 s.
-            timeout=httpx.Timeout(connect=3.0, read=8.0, write=3.0, pool=3.0),
+            # sendMessage normally returns in <500 ms but the TLS handshake
+            # itself can stall on a degraded path; bump connect to 15s.
+            timeout=httpx.Timeout(connect=15.0, read=10.0, write=5.0, pool=5.0),
             limits=httpx.Limits(max_connections=8, max_keepalive_connections=8, keepalive_expiry=120),
         )
     return _tg_client_short
