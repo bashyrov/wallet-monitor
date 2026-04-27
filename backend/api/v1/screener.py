@@ -803,6 +803,32 @@ async def _refresh_loop() -> None:
             rows = [r for r in rows if _keep(r)]
             rows = _drop_price_outliers(rows)
 
+            # Heartbeat write to funding.json — kept BEFORE the subprocess-mode
+            # short-circuit below so freshness stays close to real-time even
+            # when arb compute is delegated. Web-role replicas read this file's
+            # `ts` (and `ts_by_ex`) for the Exchange-status strip.
+            now_t = time.time()
+            if rows and now_t - _LAST_HEARTBEAT_WRITE >= _HEARTBEAT_INTERVAL:
+                _LAST_HEARTBEAT_WRITE = now_t
+                ex_set = set()
+                for r in rows:
+                    if r.get("exchange"):
+                        ex_set.add(r["exchange"])
+                ts_by_ex = {}
+                for ex in FETCHERS:
+                    if ex in disabled_ex:
+                        continue
+                    _, cached_ts = _cache.get(ex, ([], 0.0))
+                    if cached_ts:
+                        # cached_ts is monotonic; convert back to wall-clock.
+                        ts_by_ex[ex] = now_t - (now_m - cached_ts)
+                await _write_file_cache_async("funding.json", {
+                    "ts": int(now_t),
+                    "exchanges": sorted(ex_set),
+                    "rows": rows,
+                    "ts_by_ex": ts_by_ex,
+                })
+
             # Out-of-process compute: if AVALANT_ARB_COMPUTE_MODE=subprocess
             # AND the worker is alive, skip the in-master compute path
             # entirely — the subprocess owns arbitrage.json writes. Pick up
@@ -854,31 +880,6 @@ async def _refresh_loop() -> None:
                     _arb_result_cache["ts"] = time.time()
                     await _write_file_cache_async("arbitrage.json", _slim_arb_for_file(result))
                     score_opportunities(result.get("opportunities", []))
-            # Heartbeat write to funding.json so the web role's freshness
-            # signal stays current even when no REST gather has completed
-            # for a while (paradex/htx/extended often connect-timeout from
-            # Contabo). The actual rows come from whatever's in _cache —
-            # WS pushes keep them updated independently of the gather.
-            now_t = time.time()
-            if rows and now_t - _LAST_HEARTBEAT_WRITE >= _HEARTBEAT_INTERVAL:
-                _LAST_HEARTBEAT_WRITE = now_t
-                ex_set = set()
-                for r in rows:
-                    if r.get("exchange"):
-                        ex_set.add(r["exchange"])
-                ts_by_ex = {}
-                for ex in FETCHERS:
-                    if ex in disabled_ex:
-                        continue
-                    _, cached_ts = _cache.get(ex, ([], 0.0))
-                    if cached_ts:
-                        ts_by_ex[ex] = time.time() - (now_m - cached_ts)
-                await _write_file_cache_async("funding.json", {
-                    "ts": int(now_t),
-                    "exchanges": sorted(ex_set),
-                    "rows": rows,
-                    "ts_by_ex": ts_by_ex,
-                })
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)
         elapsed = asyncio.get_event_loop().time() - started
