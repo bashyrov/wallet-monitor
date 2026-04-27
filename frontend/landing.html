@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avalant — funding arbitrage, built for serious traders</title>
 
-<meta name="description" content="Cross-exchange funding-rate screener and arbitrage workbench. 13 venues, sub-second live data, one-click trade from a single interface.">
+<meta name="description" content="Cross-exchange funding-rate screener and arbitrage workbench. 15 venues, sub-second live data, one-click trade from a single interface.">
 <meta property="og:title" content="Avalant — funding arbitrage for serious traders">
-<meta property="og:description" content="Funding screener, spread alerts, pair detection, one-click arb. 13 exchanges under one keyboard.">
+<meta property="og:description" content="Funding screener, spread alerts, pair detection, one-click arb. 15 exchanges under one keyboard.">
 <meta property="og:image" content="/og-image.jpg">
 <meta name="twitter:card" content="summary_large_image">
 
@@ -772,6 +772,7 @@ img, svg { display: block; max-width: 100%; }
   .reveal, .reveal-stagger > * { opacity: 1; transform: none; }
 }
 </style>
+<script src="/exchanges.js"></script>
 <script src="/banner.js" defer></script>
 </head>
 <body>
@@ -779,7 +780,7 @@ img, svg { display: block; max-width: 100%; }
 <!-- ─── ANNOUNCEMENT ─── -->
 <div class="announce">
   <span class="dot"></span>
-  <span>Avalant is live across 13 exchanges — sub-second funding-rate data.</span>
+  <span>Avalant is live across <span data-meta-sum="screener_cex+screener_perp_dex">15</span> exchanges — sub-second funding-rate data.</span>
   <a href="/screener">See live screener →</a>
 </div>
 
@@ -1361,7 +1362,7 @@ img, svg { display: block; max-width: 100%; }
       <div class="showcase-body">
         <div class="sec-kicker">05 · Portfolio</div>
         <h3>Every wallet you own, <span class="it">one equity curve</span>.</h3>
-        <p>Connect 8 CEX accounts, 13 EVM chains, 5 perp DEXes and watch a single total. Balance history is saved per snapshot — hover the chart and see what you held on any day.</p>
+        <p>Connect <span data-meta="portfolio_cex">13</span> CEX accounts, <span data-meta="portfolio_chains">14</span> chains, <span data-meta="portfolio_perp_dex">5</span> perp DEXes and watch a single total. Balance history is saved per snapshot — hover the chart and see what you held on any day.</p>
         <div class="showcase-feats">
           <div class="f">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg></div>
@@ -1440,7 +1441,7 @@ img, svg { display: block; max-width: 100%; }
             <td><span class="n">No</span></td>
           </tr>
           <tr>
-            <td class="feat-name">Unified portfolio <span class="feat-sub">CEX + 13 EVM chains + 5 perp DEXes</span></td>
+            <td class="feat-name">Unified portfolio <span class="feat-sub">CEX + <span data-meta="portfolio_chains">14</span> chains + <span data-meta="portfolio_perp_dex">5</span> perp DEXes</span></td>
             <td class="us"><span class="y">Yes</span></td>
             <td><span class="n">No</span></td>
             <td><span class="p">Single-venue</span></td>
@@ -1490,7 +1491,7 @@ img, svg { display: block; max-width: 100%; }
       <div class="step">
         <div class="step-num">02</div>
         <h4>Connect your venues</h4>
-        <p>Paste API keys for any of the 8 CEX exchanges or on-chain addresses for 13 EVM networks and 5 perp DEXes. Keys are Fernet-encrypted on write.</p>
+        <p>Paste API keys for any of the <span data-meta="portfolio_cex">13</span> CEX exchanges or on-chain addresses for <span data-meta="portfolio_chains">14</span> networks and <span data-meta="portfolio_perp_dex">5</span> perp DEXes. Keys are Fernet-encrypted on write.</p>
         <div class="step-hint">Read-only mode is fine — trade is opt-in</div>
       </div>
       <div class="step">

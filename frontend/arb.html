@@ -3048,7 +3048,18 @@ document.addEventListener('fullscreenchange',()=>{
 });
 
 // ── Navigate modal ────────────────────────────────────────────────────────────
-const _EXCHANGES=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx'];
+// Sourced from /api/meta/venues via exchanges.js — fallback to the static
+// list while the meta fetch is in flight (fresh-load race).
+const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter'];
+function _exchangesList(){
+  const lst = (window.EX && window.EX.lists && window.EX.lists.screener_all) || [];
+  return lst.length ? lst : _EXCHANGES_FALLBACK;
+}
+// Legacy name kept for places that read it eagerly during page bootstrap.
+let _EXCHANGES = _exchangesList();
+if (window.EX && window.EX.ready) {
+  window.EX.ready.then(() => { _EXCHANGES = _exchangesList(); });
+}
 // ── Symbol / exchange popovers ────────────────────────────────────────────────
 let _allSymbols=[];
 let _popState={items:[],hi:0,type:null,side:null,onPick:null};

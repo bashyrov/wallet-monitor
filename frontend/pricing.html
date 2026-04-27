@@ -465,7 +465,7 @@
         </div>
         <div class="col-list">
           <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <div><b>11 exchanges</b>, 4&nbsp;000+ contracts via live WebSocket</div></div>
+            <div><b><span data-meta-sum="screener_cex+screener_perp_dex">15</span> exchanges</b>, 4&nbsp;000+ contracts via live WebSocket</div></div>
           <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <div>Cross-exchange <b>arbitrage scanner</b> with net /8h, fees, spread</div></div>
           <div class="col-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -596,6 +596,7 @@
   </a>
 </nav>
 
+<script src="/exchanges.js"></script>
 <script src="/navbar.js"></script>
 <script src="/banner.js" defer></script>
 <script src="/auth.js"></script>
@@ -725,7 +726,7 @@ function render() {
       mode === 'full'
         ? '<b>Screener + Portfolio</b> (up to 30 wallets)'
         : '<b>Screener only</b> — no Portfolio',
-      '11 exchanges · live WebSocket feed',
+      `${(window.EX&&window.EX.counts&&(window.EX.counts.screener_cex+window.EX.counts.screener_perp_dex))||15} exchanges · live WebSocket feed`,
       'Unlimited Telegram spread alerts',
       'Entry/Exit chart · live orderbooks',
       mode === 'full' ? 'Fernet-encrypted credentials · read-only API' : 'Encrypted settings vault',

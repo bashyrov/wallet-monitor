@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Avalant — Screener &amp; Portfolio for serious crypto traders</title>
-  <meta name="description" content="Two products, one platform. A realtime funding-rate & arbitrage Screener plus a multi-source Portfolio dashboard — both talking to the same 11 exchanges and 13 chains.">
+  <meta name="description" content="Two products, one platform. A realtime funding-rate & arbitrage Screener plus a multi-source Portfolio dashboard — covering 13 CEX, 5 perp DEX and 14 chains.">
   <meta name="keywords" content="crypto arbitrage, funding rate screener, cross-exchange arb, crypto portfolio tracker, wallet aggregator, binance screener, hyperliquid tracker">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://avalant.xyz/">
@@ -1086,7 +1086,7 @@
 
   <p class="hero-sub">
     The trading edge and the treasury view, connected to the same data.
-    Realtime funding-rate arbitrage across 11 exchanges — plus a multi-source
+    Realtime funding-rate arbitrage across <span data-meta-sum="screener_cex+screener_perp_dex">15</span> exchanges — plus a multi-source
     portfolio dashboard that reads all your wallets in parallel.
   </p>
 
@@ -1128,7 +1128,7 @@
         <div class="product-num">01</div>
       </div>
       <h3 class="product-title">Find the next <span class="product-headline">10% spread</span> before it cools off.</h3>
-      <p class="product-sub">Live funding rates and cross-exchange arbitrage across 11 CEX and perp DEXes. 4&nbsp;000+ contracts, updated via WebSocket every few seconds.</p>
+      <p class="product-sub">Live funding rates and cross-exchange arbitrage across <span data-meta="screener_cex">10</span> CEX and <span data-meta="screener_perp_dex">5</span> perp DEXes. 4&nbsp;000+ contracts, updated via WebSocket every few seconds.</p>
 
       <div class="product-mockup">
         <div class="pm-bar">
@@ -1291,7 +1291,7 @@
       <div class="product-bullets">
         <div class="bullet">
           <svg class="ico" viewBox="0 0 16 16" fill="none"><circle cx="5.5" cy="5.5" r="2.5" stroke="currentColor" stroke-width="1.4"/><circle cx="10.5" cy="10.5" r="2.5" stroke="currentColor" stroke-width="1.4"/><path d="M7 7l2 2" stroke="currentColor" stroke-width="1.4"/></svg>
-          <div><b>All your sources.</b> 8 CEX + 5 perp DEX + 13 chains — one request, parallel fetch.</div>
+          <div><b>All your sources.</b> <span data-meta="portfolio_cex">13</span> CEX + <span data-meta="portfolio_perp_dex">5</span> perp DEX + <span data-meta="portfolio_chains">14</span> chains — one request, parallel fetch.</div>
         </div>
         <div class="bullet">
           <svg class="ico" viewBox="0 0 16 16" fill="none"><path d="M2 12l3-3 3 2 2-3 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1407,7 +1407,7 @@
         </div>
         <div>
           <div class="persona-name">Arb Trader</div>
-          <h3 class="persona-h">Hunts <em>funding spreads</em> across 11 exchanges.</h3>
+          <h3 class="persona-h">Hunts <em>funding spreads</em> across <span data-meta-sum="screener_cex+screener_perp_dex">15</span> exchanges.</h3>
         </div>
         <p class="persona-p">Lives on the Screener. Watches 4&nbsp;000+ contracts, compares short-side vs long-side funding, and opens pairs only when the net /8h clears fees plus price spread.</p>
         <div class="persona-stat-row">
@@ -1678,10 +1678,10 @@
           <span class="faq-plus">+</span>
         </summary>
         <div class="faq-body">
-          <strong>11 CEX:</strong> Binance, OKX, Bybit, Gate.io, KuCoin, MEXC, Bitget, BingX, WhiteBIT, Kraken, Backpack.
-          <strong>4 perp DEX:</strong> Hyperliquid, Aster, Lighter, Ethereal (Paradex read-only).
-          <strong>13 chains:</strong> Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, Tron, Solana, zkSync, Linea, Scroll, Mantle, Blast.
-          Screener adds a live WebSocket orderbook stream for all 11 CEX + Hyperliquid + Aster.
+          <strong><span data-meta="portfolio_cex">13</span> CEX:</strong> <span data-venues="portfolio_cex">Binance, OKX, Bybit, Gate.io, KuCoin, MEXC, Bitget, BingX, WhiteBIT, Kraken, Backpack, HTX, Ourbit</span>.
+          <strong><span data-meta="portfolio_perp_dex">5</span> perp DEX:</strong> <span data-venues="portfolio_perp_dex">Hyperliquid, Aster, Lighter, Ethereal, Paradex</span>.
+          <strong><span data-meta="portfolio_chains">14</span> chains:</strong> <span data-venues="portfolio_chains">Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, Tron, Solana, zkSync, Linea, Scroll, Mantle, Blast</span>.
+          Screener adds a live WebSocket orderbook stream across <span data-meta="screener_cex">10</span> CEX + <span data-meta="screener_perp_dex">5</span> perp DEX.
         </div>
       </details>
 
@@ -1813,6 +1813,7 @@
   </a>
 </nav>
 
+<script src="/exchanges.js"></script>
 <script src="/navbar.js"></script>
 <script src="/banner.js" defer></script>
 <script src="/auth.js"></script>
