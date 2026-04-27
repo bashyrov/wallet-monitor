@@ -127,11 +127,11 @@ async def _tg_post(token: str, method: str, payload: dict) -> dict | None:
         r = await _tg_client(method).post(url, json=payload)
         j = r.json()
         if not j.get("ok"):
-            logger.debug("TG %s not ok: %s", method, j)
+            logger.warning("TG %s not ok: %s", method, j)
             return None
         return j
     except Exception as exc:
-        logger.debug("TG %s error: %s", method, exc)
+        logger.warning("TG %s error: %s", method, exc)
         return None
 
 
