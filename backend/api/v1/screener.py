@@ -21,6 +21,25 @@ import httpx
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
 
+def _read_ws_dump_for(exchange: str, cache_dir: str = "/tmp/avalant_cache") -> tuple[list, float]:
+    """Read the per-exchange WS subprocess dump. Returns (rows, wall-clock ts).
+    On any read/parse error returns ([], 0.0); the caller treats 0.0 as 'unknown'.
+    Module-level so refresh_loop closures don't shadow `json` import."""
+    try:
+        with open(f"{cache_dir}/funding_ws.{exchange}.json", "rb") as f:
+            d = json.loads(f.read())
+    except FileNotFoundError:
+        return ([], 0.0)
+    except Exception as exc:
+        logging.getLogger("avalant.screener").debug("ws dump read %s: %s", exchange, exc)
+        return ([], 0.0)
+    tbe = d.get("ts_by_ex") or {}
+    wall_ts = tbe.get(exchange) or d.get("ts") or 0.0
+    rows_map = d.get("rows") or {}
+    ex_rows = rows_map.get(exchange) if isinstance(rows_map, dict) else []
+    return (ex_rows or [], float(wall_ts))
+
+
 def _env_float(name: str, default: float) -> float:
     """Read a float env var with a fallback. Used for tunable cadence knobs
     (refresh / broadcast intervals) so prod can tweak without rebuild."""
@@ -767,22 +786,7 @@ async def _refresh_loop() -> None:
     # subprocess and dumps to /tmp/avalant_cache/funding_ws.{ex}.json
     # — main-process get_ws_rows() returns 0 for those venues. Read the
     # per-exchange dump as a second source of truth.
-    import os as _os
     _CACHE_DIR = _os.environ.get("AVALANT_CACHE_DIR", "/tmp/avalant_cache")
-    def _read_ws_dump(ex: str) -> tuple[list, float]:
-        """Returns (rows, monotonic-equivalent ts) — falls back to wall-clock
-        when the file's ts_by_ex is missing."""
-        try:
-            with open(f"{_CACHE_DIR}/funding_ws.{ex}.json", "rb") as f:
-                d = _json.loads(f.read())
-            wall_ts = ((d.get("ts_by_ex") or {}).get(ex)
-                       or d.get("ts") or 0.0)
-            rows_map = d.get("rows") or {}
-            ex_rows = rows_map.get(ex) if isinstance(rows_map, dict) else []
-            return (ex_rows or [], float(wall_ts))
-        except Exception:
-            return ([], 0.0)
-    import json as _json
 
     while True:
         started = asyncio.get_event_loop().time()
@@ -820,7 +824,7 @@ async def _refresh_loop() -> None:
                         ws_rows = []
                 # Source 2: per-exchange dump from subprocess WS worker
                 if not ws_rows:
-                    dump_rows, dump_ts = _read_ws_dump(ex)
+                    dump_rows, dump_ts = _read_ws_dump_for(ex, _CACHE_DIR)
                     if dump_rows and (now_t - dump_ts) < 30.0:
                         ws_rows = dump_rows
                 if not ws_rows:
@@ -889,7 +893,7 @@ async def _refresh_loop() -> None:
                 for ex in FETCHERS:
                     if ex in disabled_ex:
                         continue
-                    _rows, _ws_ts = _read_ws_dump(ex)
+                    _rows, _ws_ts = _read_ws_dump_for(ex, _CACHE_DIR)
                     if _ws_ts and (now_t - _ws_ts) < 30.0:
                         ts_by_ex[ex] = _ws_ts
                         continue
