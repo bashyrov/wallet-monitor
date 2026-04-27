@@ -388,6 +388,7 @@ async def _fetch_price_history(exchange: str, symbol: str, limit: int = 100) -> 
 _ORDERBOOK_EX = {
     "binance","bybit","okx","gate","kucoin","mexc","bitget",
     "aster","hyperliquid","bingx","whitebit",
+    "paradex","extended","htx",
 }
 
 _SPOT_OB_EX = {"binance","bybit","okx","gate","kucoin","mexc","bitget","bingx"}
