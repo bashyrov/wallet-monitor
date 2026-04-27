@@ -97,13 +97,16 @@ _tg_client_short: httpx.AsyncClient | None = None
 
 
 def _tg_client(method: str) -> httpx.AsyncClient:
+    # HTTP/1.1 with keepalive — the h2 package isn't in requirements and
+    # http2=True silently fails every request with "h2 package not installed".
+    # Persistent connection pool already saves the TLS handshake; HTTP/2's
+    # multiplexing isn't worth a separate dependency here.
     global _tg_client_long, _tg_client_short
     is_long = method.startswith("getUpdates")
     if is_long:
         if _tg_client_long is None or _tg_client_long.is_closed:
             _tg_client_long = httpx.AsyncClient(
                 timeout=httpx.Timeout(connect=5.0, read=35.0, write=5.0, pool=5.0),
-                http2=True,
                 limits=httpx.Limits(max_connections=4, max_keepalive_connections=4, keepalive_expiry=120),
             )
         return _tg_client_long
@@ -113,7 +116,6 @@ def _tg_client(method: str) -> httpx.AsyncClient:
             # if Contabo's path to api.telegram.org degrades we fail fast
             # and don't block the poll loop for 35 s.
             timeout=httpx.Timeout(connect=3.0, read=8.0, write=3.0, pool=3.0),
-            http2=True,
             limits=httpx.Limits(max_connections=8, max_keepalive_connections=8, keepalive_expiry=120),
         )
     return _tg_client_short
