@@ -33,12 +33,22 @@ def get_venues_meta() -> dict:
         return getattr(provider_cls, "label", None) or provider_cls.__name__
 
     portfolio_cex = [
-        {"id": k, "label": _label(v), "enabled": getattr(v, "enabled", True)}
+        {
+            "id": k,
+            "label": _label(v),
+            "enabled": getattr(v, "enabled", True),
+            "soon": getattr(v, "soon", False),
+        }
         for k, v in EXCHANGE_PROVIDERS.items()
         if getattr(v, "enabled", True)
     ]
     portfolio_perp_dex = [
-        {"id": k, "label": _label(v), "enabled": getattr(v, "enabled", True)}
+        {
+            "id": k,
+            "label": _label(v),
+            "enabled": getattr(v, "enabled", True),
+            "soon": getattr(v, "soon", False),
+        }
         for k, v in PERPDEX_PROVIDERS.items()
         if getattr(v, "enabled", True)
     ]

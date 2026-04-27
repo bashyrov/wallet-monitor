@@ -1324,22 +1324,28 @@
       <div class="sources-kicker">One platform, every source</div>
       <div class="sources-h">Works with everything you already use</div>
     </div>
-    <div class="sources-grid reveal">
+    <!-- Source chips are rendered by exchanges.js from /api/meta/venues
+         (CEX + perp DEX + chains). Static fallback below renders the
+         current venue list so the page is meaningful before JS runs. -->
+    <div class="sources-grid reveal" data-venues-grid="portfolio_cex+portfolio_perp_dex+portfolio_chains">
       <div class="source-chip"><span class="source-chip-dot" style="background:#F0B90B"></span>Binance</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#0ECB81"></span>OKX</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#F7931A"></span>Bybit</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#2354E6"></span>Gate.io</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#1DA2B4"></span>KuCoin</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#00B897"></span>MEXC</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#00F0FF"></span>Bitget</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#8B5CF6"></span>Backpack</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#1DB8F2"></span>BingX</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#C8C8C8"></span>OKX</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#F0842D"></span>Bybit</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#17C684"></span>Gate</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#09BA86"></span>KuCoin</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#17D854"></span>MEXC</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#00D2C8"></span>Bitget</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#4ADE80"></span>Backpack</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#7C5CFF"></span>Kraken</div>
       <div class="source-chip"><span class="source-chip-dot" style="background:#2DCCCD"></span>WhiteBIT</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#5741D9"></span>Kraken</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#1AFFAB"></span>Hyperliquid</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#06B6D4"></span>Lighter</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#925BD6"></span>Ethereal</div>
-      <div class="source-chip"><span class="source-chip-dot" style="background:#FF6B35"></span>Aster</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#1DB8F2"></span>BingX</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#2E7DF6"></span>HTX</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#FFB84D"></span>Ourbit</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#64B4FF"></span>Hyperliquid</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#8A63D2"></span>Aster</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#A78BFA"></span>Lighter</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#C864C8"></span>Ethereal</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#FF6A6A"></span>Paradex</div>
       <div class="source-chip"><span class="source-chip-dot" style="background:#627EEA"></span>Ethereum</div>
       <div class="source-chip"><span class="source-chip-dot" style="background:#F3BA2F"></span>BSC</div>
       <div class="source-chip"><span class="source-chip-dot" style="background:#8247E5"></span>Polygon</div>
@@ -1350,6 +1356,10 @@
       <div class="source-chip"><span class="source-chip-dot" style="background:#C2A633"></span>Tron</div>
       <div class="source-chip"><span class="source-chip-dot" style="background:#9945FF"></span>Solana</div>
       <div class="source-chip"><span class="source-chip-dot" style="background:#1C9BEF"></span>zkSync</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#7B61FF"></span>Linea</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#FFEEDA"></span>Scroll</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#27E5C7"></span>Mantle</div>
+      <div class="source-chip"><span class="source-chip-dot" style="background:#FCFC03"></span>Blast</div>
     </div>
   </div>
 </section>
