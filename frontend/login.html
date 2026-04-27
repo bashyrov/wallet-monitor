@@ -412,6 +412,7 @@ async function handleLogin(e) {
   errEl.style.display = 'none';
   btn.disabled = true;
   btn.textContent = 'Signing in…';
+  let cooldownActive = false;
 
   const login = document.getElementById('f-login').value.trim();
   const password = document.getElementById('f-password').value;
@@ -424,6 +425,30 @@ async function handleLogin(e) {
     });
     const data = await resp.json();
     if (!resp.ok) {
+      // 429 with Retry-After → cooldown active; lock the button for the
+      // duration and show a live countdown so the user knows what to wait for.
+      if (resp.status === 429) {
+        const ra = parseInt(resp.headers.get('Retry-After') || '0', 10);
+        if (ra > 0) {
+          errEl.textContent = data.detail || 'Too many attempts.';
+          errEl.style.display = 'block';
+          cooldownActive = true;
+          let left = ra;
+          btn.disabled = true;
+          btn.textContent = `Retry in ${left}s`;
+          const tick = setInterval(() => {
+            left -= 1;
+            if (left <= 0) {
+              clearInterval(tick);
+              btn.disabled = false;
+              btn.textContent = 'Sign in';
+              return;
+            }
+            btn.textContent = `Retry in ${left}s`;
+          }, 1000);
+          return;
+        }
+      }
       errEl.textContent = data.detail || 'Login failed';
       errEl.style.display = 'block';
       return;
@@ -445,8 +470,10 @@ async function handleLogin(e) {
     errEl.textContent = err.message || 'Network error';
     errEl.style.display = 'block';
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Sign in';
+    if (!cooldownActive) {
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+    }
   }
 }
 

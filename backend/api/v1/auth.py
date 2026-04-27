@@ -108,27 +108,42 @@ def register(body: UserRegister, request: Request, response: Response, db: Sessi
 
 
 @router.post("/login", response_model=Token)
-def login(body: UserLogin, request: Request, response: Response, db: Session = Depends(get_db)):
+async def login(body: UserLogin, request: Request, response: Response, db: Session = Depends(get_db)):
+    from backend.services import login_throttle
     ip = _get_ip(request)
     _check_rate_limit(ip)
+
+    # Cooldown check before we even look at the password — keeps us from
+    # leaking timing info about whether the account exists during the
+    # progressive-backoff window.
+    retry_after = login_throttle.check(body.login)
+    if retry_after:
+        await login_throttle.response_delay()
+        logger.warning("Login throttled for %r from IP %s (retry_after=%ds)", body.login, ip, retry_after)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = svc.authenticate_user(db, body.login, body.password)
     if not user:
         _record_attempt(ip)
-        # If the wrong password JUST tripped the per-account lockout,
-        # surface the lockout message rather than the generic 401 — the
-        # user shouldn't keep guessing into a wall.
-        from backend.services.auth_service import LOGIN_LOCK_THRESHOLD
-        fallback = (
-            svc.get_user_by_email(db, body.login) or svc.get_user_by_username(db, body.login)
-        )
+        cooldown = login_throttle.register_failure(body.login)
+        await login_throttle.response_delay()
+        # An admin block flipped manually (or by the honeypot) still
+        # short-circuits with the dedicated 403 — separate from the
+        # progressive-backoff cooldown.
+        fallback = svc.get_user_by_email(db, body.login) or svc.get_user_by_username(db, body.login)
         if fallback and getattr(fallback, "is_blocked", False):
-            logger.warning(
-                "Login attempt against locked account: %s from IP %s (failed_attempts=%s)",
-                fallback.username, ip, getattr(fallback, "failed_login_attempts", 0),
-            )
+            logger.warning("Blocked-account login attempt: %s from IP %s", fallback.username, ip)
+            raise HTTPException(status_code=403, detail="Your account has been blocked. Please contact support.")
+        if cooldown:
+            logger.warning("Failed login (now cooled %ds) for %r from IP %s", cooldown, body.login, ip)
             raise HTTPException(
-                status_code=403,
-                detail=f"Account locked after {LOGIN_LOCK_THRESHOLD} failed attempts. Please contact support to restore access.",
+                status_code=429,
+                detail=f"Too many failed attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                headers={"Retry-After": str(cooldown)},
             )
         logger.warning("Failed login attempt for %r from IP %s", body.login, ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -143,6 +158,7 @@ def login(body: UserLogin, request: Request, response: Response, db: Session = D
         _record_attempt(ip)  # gentle anti-bruteforce on the password leg
         challenge = svc.create_token(user.id, ttl_minutes=5, scope="totp_challenge")
         return Token(access_token=challenge, token_type="totp_challenge")
+    login_throttle.clear(body.login)
     _clear_attempts(ip)
     logger.info("User logged in: %s (id=%d) from IP %s", user.username, user.id, ip)
     token = svc.create_token(user.id)
