@@ -1859,6 +1859,7 @@ def get_exchange_health() -> dict[str, dict]:
     ws_dump: dict | None = None
     rest_counts: dict[str, int] = {}
     rest_age_s: float | None = None
+    merged_ts_by_ex: dict[str, float] = {}
     if is_web:
         ws_dump = _read_file_cache("funding_ws.json", max_age=_ARB_CACHE_TTL * 10) or {}
         merged = _read_file_cache("funding.json", max_age=120.0) or {}
@@ -1867,6 +1868,11 @@ def get_exchange_health() -> dict[str, dict]:
             rest_counts = Counter(r["exchange"] for r in merged["rows"])
         if merged.get("ts"):
             rest_age_s = max(0.0, time.time() - merged["ts"])
+        # Per-exchange wall-clock timestamps stamped by the refresh-loop
+        # heartbeat — these track WS push delivery, not the (much rarer)
+        # successful REST gather. Web role has no in-memory _cache so this
+        # is the only per-venue freshness signal it can see.
+        merged_ts_by_ex = merged.get("ts_by_ex") or {}
 
     now_m = _mono()
     now_t = time.time()
@@ -1900,10 +1906,16 @@ def get_exchange_health() -> dict[str, dict]:
 
         # ── REST/merged side ──
         # On fetcher/monolith, _cache is the merged source of truth for
-        # the screener endpoints — use it.
+        # the screener endpoints — use it. On web, prefer the per-exchange
+        # ts stamped by the refresh-loop heartbeat (tracks WS push), and
+        # only fall back to the merged-file ts if it's missing.
         if is_web:
             rest_row_count = rest_counts.get(ex, 0)
-            rest_age = rest_age_s
+            per_ex_t = merged_ts_by_ex.get(ex)
+            if per_ex_t:
+                rest_age = max(0.0, time.time() - per_ex_t)
+            else:
+                rest_age = rest_age_s
         else:
             cached_rows, cached_at = _cache.get(ex, ([], 0.0))
             rest_row_count = len(cached_rows)

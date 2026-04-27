@@ -763,6 +763,26 @@ async def _refresh_loop() -> None:
         from backend.services.funding_ws import get_ws_rows as _get_ws_rows
     except Exception:
         _get_ws_rows = None
+    # In multiprocess fetcher mode each WS adapter runs in its own
+    # subprocess and dumps to /tmp/avalant_cache/funding_ws.{ex}.json
+    # — main-process get_ws_rows() returns 0 for those venues. Read the
+    # per-exchange dump as a second source of truth.
+    import os as _os
+    _CACHE_DIR = _os.environ.get("AVALANT_CACHE_DIR", "/tmp/avalant_cache")
+    def _read_ws_dump(ex: str) -> tuple[list, float]:
+        """Returns (rows, monotonic-equivalent ts) — falls back to wall-clock
+        when the file's ts_by_ex is missing."""
+        try:
+            with open(f"{_CACHE_DIR}/funding_ws.{ex}.json", "rb") as f:
+                d = _json.loads(f.read())
+            wall_ts = ((d.get("ts_by_ex") or {}).get(ex)
+                       or d.get("ts") or 0.0)
+            rows_map = d.get("rows") or {}
+            ex_rows = rows_map.get(ex) if isinstance(rows_map, dict) else []
+            return (ex_rows or [], float(wall_ts))
+        except Exception:
+            return ([], 0.0)
+    import json as _json
 
     while True:
         started = asyncio.get_event_loop().time()
@@ -779,30 +799,43 @@ async def _refresh_loop() -> None:
                 shared_rows_by_ex.setdefault(r.get("exchange",""), []).append(r)
 
             # Pre-pull WS rows for every venue so _cache stays current with
-            # the live push. Cheap — get_ws_rows is just an in-memory dict
-            # lookup; no network traffic. Stamps each venue's _cache entry
-            # with `now` so the heartbeat below sees fresh per-venue ts.
+            # the live push. Two sources, in priority order:
+            #   1. funding_ws/manager.get_ws_rows() — works for adapters
+            #      running in the main process (paradex).
+            #   2. /tmp/avalant_cache/funding_ws.{ex}.json — written by
+            #      multiprocess WS workers (binance/bybit/mexc/etc.).
+            # If either returns rows, stamp _cache[ex] with `now_m` so the
+            # heartbeat below records a per-venue ts that tracks the WS
+            # push, not the (possibly minutes-old) REST gather.
             now_m = _mono()
-            if _get_ws_rows is not None:
-                from backend.services.arbitrage_service import _cache as _c
-                for ex in FETCHERS:
+            now_t = time.time()
+            from backend.services.arbitrage_service import _cache as _c
+            for ex in FETCHERS:
+                ws_rows = []
+                # Source 1: in-process manager
+                if _get_ws_rows is not None:
                     try:
                         ws_rows = _get_ws_rows(ex) or []
                     except Exception:
                         ws_rows = []
-                    if not ws_rows:
+                # Source 2: per-exchange dump from subprocess WS worker
+                if not ws_rows:
+                    dump_rows, dump_ts = _read_ws_dump(ex)
+                    if dump_rows and (now_t - dump_ts) < 30.0:
+                        ws_rows = dump_rows
+                if not ws_rows:
+                    continue
+                normalised = []
+                for r in ws_rows:
+                    if r.get("interval_h") is None:
                         continue
-                    normalised = []
-                    for r in ws_rows:
-                        if r.get("interval_h") is None:
-                            continue
-                        rr = dict(r)
-                        rr["exchange"] = ex
-                        rr.setdefault("volume_usd", 0)
-                        rr.setdefault("next_ts", 0)
-                        normalised.append(rr)
-                    if normalised:
-                        _c[ex] = (normalised, now_m)
+                    rr = dict(r)
+                    rr["exchange"] = ex
+                    rr.setdefault("volume_usd", 0)
+                    rr.setdefault("next_ts", 0)
+                    normalised.append(rr)
+                if normalised:
+                    _c[ex] = (normalised, now_m)
 
             rows = []
             for ex in FETCHERS:
