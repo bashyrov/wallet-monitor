@@ -133,7 +133,7 @@ async def _tg_post(token: str, method: str, payload: dict) -> dict | None:
             return None
         return j
     except Exception as exc:
-        logger.warning("TG %s error: %s", method, exc)
+        logger.warning("TG %s error: %r", method, exc)
         return None
 
 
