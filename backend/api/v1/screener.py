@@ -882,13 +882,19 @@ async def _refresh_loop() -> None:
                 for r in rows:
                     if r.get("exchange"):
                         ex_set.add(r["exchange"])
+                # Per-venue freshness: prefer the WS subprocess's own ts dump
+                # (wall-clock, no monotonic→wall conversion needed). Fall back
+                # to the in-memory _cache stamp the pre-pull above sets.
                 ts_by_ex = {}
                 for ex in FETCHERS:
                     if ex in disabled_ex:
                         continue
+                    _rows, _ws_ts = _read_ws_dump(ex)
+                    if _ws_ts and (now_t - _ws_ts) < 30.0:
+                        ts_by_ex[ex] = _ws_ts
+                        continue
                     _, cached_ts = _cache.get(ex, ([], 0.0))
                     if cached_ts:
-                        # cached_ts is monotonic; convert back to wall-clock.
                         ts_by_ex[ex] = now_t - (now_m - cached_ts)
                 await _write_file_cache_async("funding.json", {
                     "ts": int(now_t),
