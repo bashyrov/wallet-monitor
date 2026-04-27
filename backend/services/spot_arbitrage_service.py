@@ -552,74 +552,74 @@ _spot_stop = None          # threading.Event — created lazily
 _spot_refresh_lock_fd = None
 
 
-def _run_spot_cycle_sync() -> dict:
-    """Run a single spot refresh cycle in a fresh event loop WITH a fresh
-    httpx.AsyncClient. Can't reuse the module-level _http because it's bound
-    to whatever loop instantiated it first (RuntimeError across loops)."""
+def _spot_worker_loop() -> None:
+    """Persistent event-loop worker.
+
+    Earlier version recreated the asyncio loop AND a fresh httpx.AsyncClient
+    every tick. That made every venue's REST call go through a cold TLS
+    handshake (Contabo path adds 8-12s on average per crypto-exchange
+    edge), so a single cycle ballooned to 100-150 s. We now own one loop +
+    one client for the lifetime of the thread; warm keepalive connections
+    are reused tick-to-tick and the cycle drops to ~1-2 s on a healthy
+    network and ~5-15 s when one venue lags.
+    """
     import asyncio as _asyncio
     global _http
-    loop = _asyncio.new_event_loop()
-    try:
-        _asyncio.set_event_loop(loop)
-        # Bind a brand-new client to this loop
-        _http = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=5.0, read=12.0, write=5.0, pool=5.0),
-            headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
-            follow_redirects=True,
-            limits=httpx.Limits(max_connections=64, max_keepalive_connections=16, keepalive_expiry=30),
-            http2=False,
-        )
-        try:
-            return loop.run_until_complete(get_spot_arbitrage_opportunities())
-        finally:
-            try:
-                loop.run_until_complete(_http.aclose())
-            except Exception:
-                pass
-    finally:
-        loop.close()
-
-
-def _spot_worker_loop() -> None:
     logger.info("Spot worker thread running (interval=%.1fs)", SPOT_REFRESH_INTERVAL)
-    # Same flicker guard as the DEX worker: keep the last valid snapshot
-    # when a cycle degrades ≥80% vs the last good one. Spot's cycle is 2s
-    # so blips are rare, but exchange rate-limits on a bad minute (e.g.
-    # KuCoin 429s) can collapse the set. Window shorter than DEX since
-    # we expect fresher data overall.
     last_good_count: int = 0
     last_write_ts: float = 0.0
     _FLICKER_WINDOW_S = 30.0
     _MIN_RETAIN_RATIO = 0.20
-    while not _spot_stop.is_set():
-        t0 = time.time()
+
+    loop = _asyncio.new_event_loop()
+    _asyncio.set_event_loop(loop)
+    _http = httpx.AsyncClient(
+        # connect=15s: Contabo→exchange TLS handshake regularly hits 8-12s
+        # under typical conditions; the previous 5s ceiling guaranteed
+        # ConnectTimeout bursts that pushed cycle time into the minutes.
+        timeout=httpx.Timeout(connect=15.0, read=12.0, write=5.0, pool=5.0),
+        headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
+        follow_redirects=True,
+        limits=httpx.Limits(max_connections=64, max_keepalive_connections=16, keepalive_expiry=30),
+        http2=False,
+    )
+
+    try:
+        while not _spot_stop.is_set():
+            t0 = time.time()
+            try:
+                result = loop.run_until_complete(get_spot_arbitrage_opportunities())
+                current = len(result.get("opportunities") or [])
+                now = time.time()
+                too_thin = (
+                    last_good_count > 10
+                    and (now - last_write_ts) < _FLICKER_WINDOW_S
+                    and (current == 0 or current < last_good_count * _MIN_RETAIN_RATIO)
+                )
+                if too_thin:
+                    logger.info(
+                        "spot refresh skipped (flicker guard): %d vs last_good=%d (%.1fs)",
+                        current, last_good_count, time.time() - t0,
+                    )
+                else:
+                    _arb._write_file_cache("spot_arbitrage.json", result)
+                    if current > 0:
+                        last_good_count = current
+                        last_write_ts = now
+                    logger.info(
+                        "spot refresh: %d opps, %.1fs",
+                        current, time.time() - t0,
+                    )
+            except Exception as exc:
+                logger.warning("spot refresh failed: %s", exc)
+            remaining = max(0.2, SPOT_REFRESH_INTERVAL - (time.time() - t0))
+            _spot_stop.wait(remaining)
+    finally:
         try:
-            result = _run_spot_cycle_sync()
-            current = len(result.get("opportunities") or [])
-            now = time.time()
-            too_thin = (
-                last_good_count > 10
-                and (now - last_write_ts) < _FLICKER_WINDOW_S
-                and (current == 0 or current < last_good_count * _MIN_RETAIN_RATIO)
-            )
-            if too_thin:
-                logger.info(
-                    "spot refresh skipped (flicker guard): %d vs last_good=%d (%.1fs)",
-                    current, last_good_count, time.time() - t0,
-                )
-            else:
-                _arb._write_file_cache("spot_arbitrage.json", result)
-                if current > 0:
-                    last_good_count = current
-                    last_write_ts = now
-                logger.info(
-                    "spot refresh: %d opps, %.1fs",
-                    current, time.time() - t0,
-                )
-        except Exception as exc:
-            logger.warning("spot refresh failed: %s", exc)
-        remaining = max(0.2, SPOT_REFRESH_INTERVAL - (time.time() - t0))
-        _spot_stop.wait(remaining)
+            loop.run_until_complete(_http.aclose())
+        except Exception:
+            pass
+        loop.close()
 
 
 def start_spot_refresh_loop() -> None:
