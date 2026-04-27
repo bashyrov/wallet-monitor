@@ -698,6 +698,11 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4l5 4 5-4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><rect x="2" y="3" width="10" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>
       Broadcast
     </a>
+    <div class="sidebar-section" style="margin-top:14px">Operations</div>
+    <a class="sidebar-item" href="#" onclick="showTab('freshness',this);loadFreshnessTab();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3l2 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Exchange freshness
+    </a>
   </aside>
 
   <!-- ── MAIN ── -->
@@ -1177,6 +1182,44 @@
           <button class="btn-primary" onclick="sendBroadcast()">Send</button>
         </div>
         <div id="bc-feedback" style="margin-top:10px;font-size:12.5px"></div>
+      </div>
+    </div>
+
+    <!-- ══ EXCHANGE FRESHNESS TAB ══ -->
+    <div id="tab-freshness" style="display:none">
+      <div class="page-title">Exchange freshness</div>
+      <div class="page-sub">Rolling 5-minute averages from the same per-venue ages the UI exposes in the Exchange-status strip. Refreshes every 10s. Numbers are seconds since the freshest source updated.</div>
+
+      <div class="kpi-grid" style="margin-bottom:18px">
+        <div class="kpi green">
+          <div class="kpi-num" id="fr-overall-avg" style="color:var(--green)">—</div>
+          <div class="kpi-label">Overall avg age (s)</div>
+        </div>
+        <div class="kpi yellow">
+          <div class="kpi-num" id="fr-overall-max" style="color:var(--yellow)">—</div>
+          <div class="kpi-label">Overall max age (s)</div>
+        </div>
+        <div class="kpi teal">
+          <div class="kpi-num" id="fr-samples" style="color:var(--teal)">—</div>
+          <div class="kpi-label">Samples in window</div>
+        </div>
+      </div>
+
+      <div class="mn-row">
+        <table class="table" style="min-width:520px">
+          <thead>
+            <tr>
+              <th style="text-align:left">Exchange</th>
+              <th>Avg age (s)</th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Samples</th>
+            </tr>
+          </thead>
+          <tbody id="fr-tbody">
+            <tr><td colspan="5" style="color:var(--text3)">Loading…</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -2373,6 +2416,46 @@ function pickUserForPromo(id, name){
   document.getElementById('pe-tu-pickedlbl').textContent = `Restricted to: ${name} (#${id})`;
   document.getElementById('pe-tu-results').style.display = 'none';
   document.getElementById('pe-tu-search').value = name;
+}
+
+// ── Exchange freshness tab ────────────────────────────────────────────────
+let _frTimer = null;
+async function loadFreshnessTab(){
+  await refreshFreshness();
+  if (_frTimer) clearInterval(_frTimer);
+  _frTimer = setInterval(refreshFreshness, 10000);
+}
+async function refreshFreshness(){
+  try {
+    const r = await Auth.apiFetch('/admin/freshness-stats');
+    if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json();
+    const overallAvg = j.overall_avg_age_s, overallMax = j.overall_max_age_s;
+    document.getElementById('fr-overall-avg').textContent = overallAvg == null ? '—' : overallAvg.toFixed(2);
+    document.getElementById('fr-overall-max').textContent = overallMax == null ? '—' : overallMax.toFixed(2);
+    document.getElementById('fr-samples').textContent     = j.total_samples ?? 0;
+    const labels = (window.EX && window.EX.labels) || {};
+    const rows = Object.entries(j.exchanges || {}).sort((a,b) => b[1].avg_age_s - a[1].avg_age_s);
+    const tb = document.getElementById('fr-tbody');
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="5" style="color:var(--text3)">No samples yet — open /screener in another tab to generate them.</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(([ex, s]) => {
+      const cls = s.avg_age_s <= 5 ? 'pos' : s.avg_age_s <= 15 ? 'warn' : 'neg';
+      const colour = cls === 'pos' ? 'var(--green)' : cls === 'warn' ? 'var(--yellow)' : 'var(--red)';
+      return `<tr>
+        <td style="text-align:left">${labels[ex]||ex}</td>
+        <td style="color:${colour};font-family:var(--mono)">${s.avg_age_s.toFixed(2)}</td>
+        <td style="font-family:var(--mono);color:var(--text3)">${s.min_age_s.toFixed(2)}</td>
+        <td style="font-family:var(--mono);color:var(--text3)">${s.max_age_s.toFixed(2)}</td>
+        <td style="font-family:var(--mono);color:var(--text3)">${s.samples}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('fr-tbody').innerHTML =
+      `<tr><td colspan="5" style="color:var(--red)">${(e && e.message) || 'failed to load'}</td></tr>`;
+  }
 }
 
 // ── Broadcast tab ─────────────────────────────────────────────────────────

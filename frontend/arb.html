@@ -4521,21 +4521,59 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeKeysP
 body.light .ex-status-strip{background:rgba(255,255,255,.96);}
 body{padding-bottom:44px;}
 @media (max-width:768px){body{padding-bottom:140px;} .ex-status-strip{bottom:88px;}}
+.ex-status-strip .as-toggle{margin-left:auto;background:transparent;border:0;color:var(--text3);cursor:pointer;padding:2px 6px;font-size:13px;line-height:1;border-radius:4px;}
+.ex-status-strip .as-toggle:hover{color:var(--text);background:var(--surface3);}
+.ex-status-strip.is-hidden{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;border-top:0;padding:0;}
+.ex-status-strip.is-hidden > :not(.as-show){display:none !important;}
+.ex-status-strip.is-hidden .as-show{display:inline-flex !important;}
+.ex-status-strip .as-show{display:none;position:fixed;right:12px;bottom:12px;z-index:41;background:var(--surface2);border:1px solid var(--border);color:var(--text2);border-radius:999px;padding:6px 12px;gap:6px;font-size:11px;cursor:pointer;align-items:center;}
+.ex-status-strip .as-show:hover{color:var(--text);}
 </style>
 
-<!-- Exchange status strip — sticky bottom -->
+<!-- Exchange status strip — sticky bottom (hide-state in localStorage) -->
 <div class="ex-status-strip" id="ex-status-strip">
   <span class="lbl">Exchange status</span>
   <div id="ex-status-items" style="display:contents"></div>
+  <button class="as-toggle" type="button" onclick="toggleExStatusBar()" title="Hide status strip" aria-label="Hide status strip">×</button>
+  <button class="as-show" type="button" onclick="toggleExStatusBar()" title="Show exchange status">
+    <span class="d live" style="display:inline-block;width:6px;height:6px;border-radius:50%"></span>
+    Status
+  </button>
 </div>
+<script>
+  function toggleExStatusBar(){
+    const el = document.getElementById('ex-status-strip');
+    const hidden = el.classList.toggle('is-hidden');
+    try { localStorage.setItem('ex-status-hidden', hidden ? '1' : '0'); } catch(_){}
+  }
+  (function(){
+    try {
+      if (localStorage.getItem('ex-status-hidden') === '1') {
+        document.getElementById('ex-status-strip').classList.add('is-hidden');
+      }
+    } catch(_){}
+  })();
+</script>
 
 <script>
 (function(){
-  const EXES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit'];
-  const LABELS = (window.EX && window.EX.labels) || {binance:'Binance',bybit:'Bybit',okx:'OKX',gate:'Gate',kucoin:'KuCoin',mexc:'MEXC',bitget:'Bitget',hyperliquid:'Hyperliquid',aster:'Aster',ethereal:'Ethereal',whitebit:'WhiteBIT'};
+  const _FALLBACK = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx','whitebit','hyperliquid','aster','ethereal','paradex','extended','lighter'];
+  let EXES = (window.EX && window.EX.lists && window.EX.lists.screener_all && window.EX.lists.screener_all.length) ? window.EX.lists.screener_all : _FALLBACK;
+  const LABELS = (window.EX && window.EX.labels) || {};
   const FRESH_S = 8, STALE_S = 30;
   const wrap = document.getElementById('ex-status-items');
-  wrap.innerHTML = EXES.map(e => `<span class="as-ex" id="exs-${e}"><span class="d"></span><span class="nm">${LABELS[e]||e}</span><span class="age" style="font-family:var(--mono);color:var(--text3)">—</span></span>`).join('');
+  function rebuild(){
+    wrap.innerHTML = EXES.map(e => `<span class="as-ex" id="exs-${e}"><span class="d"></span><span class="nm">${LABELS[e]||e}</span><span class="age" style="font-family:var(--mono);color:var(--text3)">—</span></span>`).join('');
+  }
+  rebuild();
+  if (window.EX && window.EX.ready) {
+    window.EX.ready.then(() => {
+      if (window.EX.lists.screener_all.length) {
+        EXES = window.EX.lists.screener_all;
+        rebuild();
+      }
+    });
+  }
 
   async function tick(){
     try {

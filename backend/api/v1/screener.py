@@ -747,6 +747,14 @@ async def _refresh_loop() -> None:
     # reach over to another worker's snapshot.
     _LOCAL_STALE_MAX = 15.0
 
+    # Throttle for the freshness-keeping snapshot we write to funding.json
+    # below. Web role reads `ts` off this file for the Exchange-status
+    # strip; if we only wrote inside `get_funding_data`, the file would
+    # only be touched when a REST gather completed (10-30 s). Keeping a
+    # 2 s heartbeat there means the freshness number stays close to live.
+    _LAST_HEARTBEAT_WRITE = 0.0
+    _HEARTBEAT_INTERVAL = 2.0
+
     while True:
         started = asyncio.get_event_loop().time()
         # Kick background funding refresh — never await. Lock ensures only one
@@ -846,6 +854,31 @@ async def _refresh_loop() -> None:
                     _arb_result_cache["ts"] = time.time()
                     await _write_file_cache_async("arbitrage.json", _slim_arb_for_file(result))
                     score_opportunities(result.get("opportunities", []))
+            # Heartbeat write to funding.json so the web role's freshness
+            # signal stays current even when no REST gather has completed
+            # for a while (paradex/htx/extended often connect-timeout from
+            # Contabo). The actual rows come from whatever's in _cache —
+            # WS pushes keep them updated independently of the gather.
+            now_t = time.time()
+            if rows and now_t - _LAST_HEARTBEAT_WRITE >= _HEARTBEAT_INTERVAL:
+                _LAST_HEARTBEAT_WRITE = now_t
+                ex_set = set()
+                for r in rows:
+                    if r.get("exchange"):
+                        ex_set.add(r["exchange"])
+                ts_by_ex = {}
+                for ex in FETCHERS:
+                    if ex in disabled_ex:
+                        continue
+                    _, cached_ts = _cache.get(ex, ([], 0.0))
+                    if cached_ts:
+                        ts_by_ex[ex] = time.time() - (now_m - cached_ts)
+                await _write_file_cache_async("funding.json", {
+                    "ts": int(now_t),
+                    "exchanges": sorted(ex_set),
+                    "rows": rows,
+                    "ts_by_ex": ts_by_ex,
+                })
         except Exception as exc:
             logger.warning("Refresh arb error: %s", exc)
         elapsed = asyncio.get_event_loop().time() - started

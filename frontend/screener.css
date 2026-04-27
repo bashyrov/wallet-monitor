@@ -179,6 +179,27 @@ body { padding-bottom: 44px; }
 .alpha-status-strip .as-ex .d.live { background: var(--green); box-shadow: 0 0 6px rgba(26,255,171,.55); }
 .alpha-status-strip .as-ex .d.slow { background: var(--yellow); }
 .alpha-status-strip .as-ex .d.stale { background: var(--red); }
+.alpha-status-strip .as-toggle {
+  margin-left: auto;
+  background: transparent; border: 0; color: var(--text3);
+  cursor: pointer; padding: 2px 6px; font-size: 13px; line-height: 1;
+  border-radius: 4px;
+}
+.alpha-status-strip .as-toggle:hover { color: var(--text); background: var(--surface3); }
+/* Hidden state: only the show-button remains, fixed bottom-right */
+.alpha-status-strip.is-hidden { background: transparent; backdrop-filter: none;
+  -webkit-backdrop-filter: none; border-top: 0; padding: 0; }
+.alpha-status-strip.is-hidden > :not(.as-show) { display: none !important; }
+.alpha-status-strip.is-hidden .as-show { display: inline-flex !important; }
+.alpha-status-strip .as-show {
+  display: none;
+  position: fixed; right: 12px; bottom: 12px; z-index: 41;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text2); border-radius: 999px;
+  padding: 6px 12px; gap: 6px; font-size: 11px; cursor: pointer;
+  align-items: center;
+}
+.alpha-status-strip .as-show:hover { color: var(--text); }
 
 .left-panel {
   width: 260px;

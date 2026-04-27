@@ -1064,3 +1064,15 @@ async def admin_broadcast(
                "preview": body.text[:120]},
     )
     return {"sent": sent, "failed": failed, "recipients": len(rows)}
+
+@router.get("/freshness-stats")
+def freshness_statistics(_: User = Depends(get_admin_user)):
+    """Rolling 5-minute average freshness per exchange + overall.
+
+    Sourced from backend.services.freshness_stats, which records every
+    sample produced by `/api/screener/exchange-health` (called from the
+    UI Exchange-status strip every 3 s). Means the dashboard reflects
+    what real users are actually seeing without the admin endpoint
+    needing its own poll loop."""
+    from backend.services.freshness_stats import stats as _stats
+    return _stats()

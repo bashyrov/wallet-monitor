@@ -21,7 +21,13 @@ import httpx
 logger = logging.getLogger("avalant.screener")
 
 _http = httpx.AsyncClient(
-    timeout=httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=2.0),
+    # connect=15s: Contabo's outbound path to crypto-exchange edges
+    # frequently runs above 5s during TLS+IPv6 fallback. The previous
+    # 5s ceiling caused continual ConnectTimeout bursts that left the
+    # screener feed 20-30s stale even though every venue's data plane
+    # was actually reachable. read=8s is enough — the actual response
+    # is sub-second once the handshake lands.
+    timeout=httpx.Timeout(connect=15.0, read=8.0, write=5.0, pool=2.0),
     headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
     follow_redirects=True,
     limits=httpx.Limits(max_connections=200, max_keepalive_connections=60, keepalive_expiry=30),
@@ -1947,6 +1953,13 @@ def get_exchange_health() -> dict[str, dict]:
         entry["orderbook_total"] = ob.get("total") or 0
         entry["orderbook_healthy"] = bool(ob.get("healthy"))
         result[ex] = entry
+        # Feed the rolling-window stats so /api/admin/freshness-stats
+        # can show averages without doing its own polling.
+        try:
+            from backend.services import freshness_stats as _fs
+            _fs.record(ex, age_s)
+        except Exception:
+            pass
     return result
 
 

@@ -409,11 +409,31 @@
       <div class="pager" id="pager-alpha"></div>
     </div>
 
-    <!-- Exchange status strip — sticky bottom, visible across all modes -->
+    <!-- Exchange status strip — sticky bottom, visible across all modes.
+         Hide-state persisted in localStorage("ex-status-hidden"). -->
     <div class="alpha-status-strip" id="alpha-status-strip">
       <span class="lbl">Exchange status</span>
       <div id="alpha-status-items" style="display:contents"></div>
+      <button class="as-toggle" type="button" onclick="toggleExStatus()" title="Hide status strip" aria-label="Hide status strip">×</button>
+      <button class="as-show" type="button" onclick="toggleExStatus()" title="Show exchange status">
+        <span class="d live" style="display:inline-block;width:6px;height:6px;border-radius:50%"></span>
+        Status
+      </button>
     </div>
+    <script>
+      function toggleExStatus(){
+        const el = document.getElementById('alpha-status-strip');
+        const hidden = el.classList.toggle('is-hidden');
+        try { localStorage.setItem('ex-status-hidden', hidden ? '1' : '0'); } catch(_){}
+      }
+      (function(){
+        try {
+          if (localStorage.getItem('ex-status-hidden') === '1') {
+            document.getElementById('alpha-status-strip').classList.add('is-hidden');
+          }
+        } catch(_){}
+      })();
+    </script>
 
   </div><!-- /main-content -->
 </div><!-- /screener-layout -->
