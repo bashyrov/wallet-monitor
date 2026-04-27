@@ -753,7 +753,7 @@ async def _refresh_loop() -> None:
     # only be touched when a REST gather completed (10-30 s). Keeping a
     # 2 s heartbeat there means the freshness number stays close to live.
     _LAST_HEARTBEAT_WRITE = 0.0
-    _HEARTBEAT_INTERVAL = 2.0
+    _HEARTBEAT_INTERVAL = 1.0  # write rate ceiling — file lives on tmpfs, cheap
 
     while True:
         started = asyncio.get_event_loop().time()
