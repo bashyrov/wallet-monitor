@@ -347,6 +347,21 @@
     </div>
   </form>
 
+  <!-- 2FA challenge form — shown only when /auth/login returns
+       token_type="totp_challenge". Hidden by default. -->
+  <form id="totp-form" onsubmit="handleTotp(event)" style="display:none">
+    <div style="font-size:13px;color:var(--text);margin-bottom:6px;font-weight:600">Two-factor code</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">Enter the 6-digit code from your authenticator app to finish signing in.</div>
+    <div class="form-group">
+      <input id="f-totp" class="form-input mono" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123 456" autocomplete="one-time-code" required style="letter-spacing:0.18em;text-align:center;font-size:16px">
+    </div>
+    <div id="totp-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--red-dim);border-radius:7px;"></div>
+    <button type="submit" class="btn-submit" id="btn-totp">Verify code</button>
+    <div style="text-align:center;margin-top:10px;font-size:12px;">
+      <a href="#" onclick="cancelTotp(event)" style="color:var(--text2);text-decoration:none">← Use a different account</a>
+    </div>
+  </form>
+
   <div class="tg-divider"><span>or</span></div>
 
   <div class="tg-login-wrap">
@@ -405,6 +420,80 @@ function togglePw(id, btn) {
     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 }
 
+let _totpChallenge = null;
+
+function cancelTotp(e) {
+  if (e) e.preventDefault();
+  _totpChallenge = null;
+  document.getElementById('totp-form').style.display = 'none';
+  document.getElementById('login-form').style.display = '';
+  document.querySelector('.tg-divider').style.display = '';
+  document.querySelector('.tg-login-wrap').style.display = '';
+  document.getElementById('totp-error').style.display = 'none';
+  document.getElementById('f-totp').value = '';
+}
+
+async function handleTotp(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btn-totp');
+  const errEl = document.getElementById('totp-error');
+  const code = (document.getElementById('f-totp').value || '').trim();
+  errEl.style.display = 'none';
+  if (!_totpChallenge) {
+    errEl.textContent = 'Sign in expired. Refresh and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  let cooldown = false;
+  try {
+    const r = await fetch('/api/auth/login/totp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge: _totpChallenge, code }),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      if (r.status === 429) {
+        const ra = parseInt(r.headers.get('Retry-After') || '0', 10);
+        if (ra > 0) {
+          cooldown = true;
+          errEl.textContent = j.detail || 'Too many attempts.';
+          errEl.style.display = 'block';
+          let left = ra;
+          btn.disabled = true; btn.textContent = `Retry in ${left}s`;
+          const tick = setInterval(() => {
+            left -= 1;
+            if (left <= 0) {
+              clearInterval(tick);
+              btn.disabled = false; btn.textContent = 'Verify code';
+              return;
+            }
+            btn.textContent = `Retry in ${left}s`;
+          }, 1000);
+          return;
+        }
+      }
+      errEl.textContent = j.detail || 'Invalid code';
+      errEl.style.display = 'block';
+      return;
+    }
+    const meR = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + j.access_token } });
+    const me = meR.ok ? await meR.json() : { username: 'user' };
+    Auth.setSession(j.access_token, me);
+    const params = new URLSearchParams(window.location.search);
+    window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
+  } catch (err) {
+    errEl.textContent = err.message || 'Network error';
+    errEl.style.display = 'block';
+  } finally {
+    if (!cooldown) {
+      btn.disabled = false;
+      btn.textContent = 'Verify code';
+    }
+  }
+}
+
 async function handleLogin(e) {
   e.preventDefault();
   const btn = document.getElementById('btn-submit');
@@ -424,6 +513,17 @@ async function handleLogin(e) {
       body: JSON.stringify({ login, password }),
     });
     const data = await resp.json();
+    if (resp.ok && data.token_type === 'totp_challenge') {
+      // Stash the short-lived challenge token, hide login form, show TOTP form.
+      _totpChallenge = data.access_token;
+      document.getElementById('login-form').style.display = 'none';
+      document.querySelector('.tg-divider').style.display = 'none';
+      document.querySelector('.tg-login-wrap').style.display = 'none';
+      const totpForm = document.getElementById('totp-form');
+      totpForm.style.display = '';
+      document.getElementById('f-totp').focus();
+      return;
+    }
     if (!resp.ok) {
       // 429 with Retry-After → cooldown active; lock the button for the
       // duration and show a live countdown so the user knows what to wait for.

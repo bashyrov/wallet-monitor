@@ -150,11 +150,11 @@ async def login(body: UserLogin, request: Request, response: Response, db: Sessi
     if getattr(user, 'is_blocked', False):
         logger.warning("Blocked user login attempt: %s from IP %s", user.username, ip)
         raise HTTPException(status_code=403, detail="Your account has been blocked. Please contact support.")
-    # Admin TOTP gate. If the admin has armed 2FA, the password+username
+    # TOTP gate. If the user has armed 2FA, the password+username
     # exchange does NOT yield a session token directly; instead we issue
     # a short-lived "challenge" token + ask for the OTP via
     # POST /auth/login/totp.
-    if user.is_admin and user.totp_verified_at is not None and user.totp_secret_enc:
+    if user.totp_verified_at is not None and user.totp_secret_enc:
         _record_attempt(ip)  # gentle anti-bruteforce on the password leg
         challenge = svc.create_token(user.id, ttl_minutes=5, scope="totp_challenge")
         return Token(access_token=challenge, token_type="totp_challenge")
@@ -167,10 +167,13 @@ async def login(body: UserLogin, request: Request, response: Response, db: Sessi
 
 
 @router.post("/login/totp", response_model=Token)
-def login_totp(body: dict, request: Request, response: Response, db: Session = Depends(get_db)):
-    """Second-factor leg of the admin login flow. Body = {challenge, code}.
-    Returns a regular session token on success, 401 on bad code."""
+async def login_totp(body: dict, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Second-factor leg of the login flow (any user with 2FA armed).
+    Body = {challenge, code}. Returns a session token on success, 401 on
+    bad code. Per-user progressive cooldown identical to /login keeps
+    automated 6-digit-code brute-force expensive."""
     from backend.services import totp as _totp
+    from backend.services import login_throttle
     ip = _get_ip(request)
     _check_rate_limit(ip)
     challenge = (body.get("challenge") or "").strip()
@@ -184,34 +187,53 @@ def login_totp(body: dict, request: Request, response: Response, db: Session = D
     if payload.get("scope") != "totp_challenge":
         raise HTTPException(status_code=401, detail="Bad challenge scope")
     user = db.query(User).filter(User.id == int(payload.get("sub", 0) or 0)).first()
-    if not user or not user.is_admin or not user.totp_secret_enc:
+    if not user or not user.totp_secret_enc:
         raise HTTPException(status_code=401, detail="No 2FA configured")
+
+    throttle_key = f"totp:{user.id}"
+    retry_after = login_throttle.check(throttle_key)
+    if retry_after:
+        await login_throttle.response_delay()
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed codes. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     try:
         secret = _totp.decrypt_secret(user.totp_secret_enc)
     except Exception:
         raise HTTPException(status_code=500, detail="2FA secret unreadable; contact ops")
     if not _totp.verify_code(secret, code):
         _record_attempt(ip)
-        try:
-            from backend.services.admin_alert_service import alert_admin_security
-            alert_admin_security(user, "Failed 2FA code on login", ip)
-        except Exception:
-            pass
+        cooldown = login_throttle.register_failure(throttle_key)
+        await login_throttle.response_delay()
+        if user.is_admin:
+            try:
+                from backend.services.admin_alert_service import alert_admin_security
+                alert_admin_security(user, "Failed 2FA code on login", ip)
+            except Exception:
+                pass
+        if cooldown:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many failed codes. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                headers={"Retry-After": str(cooldown)},
+            )
         raise HTTPException(status_code=401, detail="Invalid code")
+    login_throttle.clear(throttle_key)
     _clear_attempts(ip)
     token = svc.create_token(user.id)
     _set_session_cookie(response, token)
-    logger.info("Admin 2FA login OK: %s (id=%d)", user.username, user.id)
+    logger.info("2FA login OK: %s (id=%d, admin=%s)", user.username, user.id, user.is_admin)
     return Token(access_token=token)
 
 
 @router.post("/me/2fa/setup")
 def me_2fa_setup(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Admin-only — generate (but DO NOT arm) a fresh TOTP secret. The
-    admin enters the QR code in their authenticator and then calls
-    /me/2fa/verify with a generated code to arm the secret."""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin only")
+    """Generate (but DO NOT arm) a fresh TOTP secret. User scans the
+    otpauth URI as a QR code in their authenticator app and confirms
+    via /me/2fa/verify with a generated code."""
     from backend.services import totp as _totp
     secret = _totp.generate_secret()
     current_user.totp_secret_enc = _totp.encrypt_secret(secret)
@@ -223,10 +245,8 @@ def me_2fa_setup(current_user: User = Depends(get_current_user), db: Session = D
 
 @router.post("/me/2fa/verify")
 def me_2fa_verify(body: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Admin enters the first valid code from their authenticator —
+    """User enters the first valid code from their authenticator —
     flips totp_verified_at so future logins start requiring it."""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin only")
     if not current_user.totp_secret_enc:
         raise HTTPException(status_code=400, detail="Run /me/2fa/setup first")
     from backend.services import totp as _totp
@@ -236,23 +256,45 @@ def me_2fa_verify(body: dict, current_user: User = Depends(get_current_user), db
         raise HTTPException(status_code=400, detail="Invalid code")
     current_user.totp_verified_at = _dt.utcnow()
     db.commit()
-    logger.info("Admin 2FA armed: uid=%d", current_user.id)
+    logger.info("2FA armed: uid=%d (admin=%s)", current_user.id, current_user.is_admin)
     return {"ok": True}
 
 
 @router.post("/me/2fa/disable")
-def me_2fa_disable(body: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def me_2fa_disable(body: dict, request: Request,
+                          current_user: User = Depends(get_current_user),
+                          db: Session = Depends(get_db)):
     """Disarm 2FA. Requires the current password to prevent a stolen
-    session from undoing protection silently."""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin only")
+    session from undoing protection silently. Throttled per-user so an
+    attacker on a hijacked session can't brute-force the password."""
+    from backend.services import login_throttle
+    ip = _get_ip(request)
+    throttle_key = f"pwd:{current_user.id}"
+    retry_after = login_throttle.check(throttle_key)
+    if retry_after:
+        await login_throttle.response_delay()
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
+            headers={"Retry-After": str(retry_after)},
+        )
     pwd = body.get("password") or ""
     if not svc.verify_password(pwd, current_user.hashed_password):
+        cooldown = login_throttle.register_failure(throttle_key)
+        await login_throttle.response_delay()
+        logger.warning("2FA disable: bad password uid=%s ip=%s", current_user.id, ip)
+        if cooldown:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                headers={"Retry-After": str(cooldown)},
+            )
         raise HTTPException(status_code=401, detail="Password mismatch")
+    login_throttle.clear(throttle_key)
     current_user.totp_secret_enc = None
     current_user.totp_verified_at = None
     db.commit()
-    logger.info("Admin 2FA disabled: uid=%d", current_user.id)
+    logger.info("2FA disabled: uid=%d", current_user.id)
     return {"ok": True}
 
 
@@ -367,8 +409,13 @@ def tg_login(body: _TgWidgetAuth, request: Request, response: Response, db: Sess
 # ── One-time link token for profile ──────────────────────────────────────────
 # ── Login-by-Bot (no auth required) ──────────────────────────────────────────
 @router.post("/tg-bot-login")
-def tg_bot_login_start(db: Session = Depends(get_db)):
-    """Generate a one-time token for login via bot. Returns deep_link to open."""
+def tg_bot_login_start(request: Request, db: Session = Depends(get_db)):
+    """Generate a one-time token for login via bot. Returns deep_link to open.
+    Rate-limited per-IP — this endpoint writes to DB and to Redis, so an
+    open token-mint pipe would let anyone flood storage."""
+    ip = _get_ip(request)
+    _check_rate_limit(ip)
+    _record_attempt(ip)
     from backend.services.tg_auth_service import issue_login_token
     return issue_login_token(db)
 
@@ -583,8 +630,12 @@ def email_verify_confirm(body: _EmailVerifyConfirm, request: Request, db: Sessio
 
 
 @router.get("/tg-bot-login")
-def tg_bot_login_check(token: str = Query(...), response: Response = None):
-    """Poll: has the user pressed Start in the bot yet?"""
+def tg_bot_login_check(token: str = Query(..., max_length=128), response: Response = None):
+    """Poll: has the user pressed Start in the bot yet? The frontend polls
+    this every ~2 s during the bot-login flow, so we don't tie it to the
+    per-IP failed-login bucket — token shape is bounded by max_length and
+    the actual cost is one cache-file stat. Mint-side (POST) rate limit
+    is what stops storage flooding."""
     from backend.services.tg_auth_service import check_login_token
     result = check_login_token(token)
     if result.get("status") == "ok" and result.get("access_token"):
@@ -640,9 +691,9 @@ class _DeleteMeBody(_BM):
 
 
 @router.delete("/me")
-def delete_me(body: _DeleteMeBody, response: Response,
-              current_user: User = Depends(get_current_user),
-              db: Session = Depends(get_db)):
+async def delete_me(body: _DeleteMeBody, request: Request, response: Response,
+                    current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
     """Self-service account deletion. Requires current password as a
     second factor so a stolen session token alone can't nuke the
     account. Admins cannot delete themselves via this endpoint — they
@@ -650,8 +701,27 @@ def delete_me(body: _DeleteMeBody, response: Response,
     arb alerts via the FKs defined in models.py."""
     if current_user.is_admin:
         raise HTTPException(status_code=400, detail="Admins cannot self-delete; demote first")
+    from backend.services import login_throttle
+    throttle_key = f"pwd:{current_user.id}"
+    retry_after = login_throttle.check(throttle_key)
+    if retry_after:
+        await login_throttle.response_delay()
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
+            headers={"Retry-After": str(retry_after)},
+        )
     if not svc.verify_password(body.password, current_user.hashed_password):
+        cooldown = login_throttle.register_failure(throttle_key)
+        await login_throttle.response_delay()
+        if cooldown:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                headers={"Retry-After": str(cooldown)},
+            )
         raise HTTPException(status_code=401, detail="Password incorrect")
+    login_throttle.clear(throttle_key)
 
     uid = current_user.id
     username = current_user.username

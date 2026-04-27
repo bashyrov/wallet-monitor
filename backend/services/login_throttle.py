@@ -59,16 +59,16 @@ def _redis():
         return None
 
 
-def _norm(login: str) -> str:
-    return (login or "").strip().lower()
+def _norm(subject: str) -> str:
+    return (subject or "").strip().lower()
 
 
-def _fail_key(login: str) -> str:
-    return f"login_fail:{_norm(login)}"
+def _fail_key(subject: str, scope: str = "login") -> str:
+    return f"{scope}_fail:{_norm(subject)}"
 
 
-def _block_key(login: str) -> str:
-    return f"login_block:{_norm(login)}"
+def _block_key(subject: str, scope: str = "login") -> str:
+    return f"{scope}_block:{_norm(subject)}"
 
 
 def _cooldown_for(failures: int) -> int:
