@@ -66,9 +66,15 @@ def _sampler_loop() -> None:
     from backend.services.arbitrage_service import get_exchange_health
     logger.info("freshness sampler thread started (interval=3s)")
     last_write = 0.0
+    tick = 0
     while not _sampler_stop.is_set():
+        tick += 1
         try:
             health = get_exchange_health() or {}
+            valid_ages = sum(1 for v in health.values() if v.get("age_s") is not None)
+            if tick % 10 == 1:
+                logger.info("freshness sampler tick=%d venues_with_age=%d/%d",
+                            tick, valid_ages, len(health))
             # `record` is already called inside get_exchange_health, so we
             # just need to flush stats() to disk once per cycle.
             now = time.time()
