@@ -6,17 +6,26 @@ admin page can show "average freshness" — the metric users actually
 care about (a venue can spike to 30s once and recover; an average tells
 us whether it's chronically slow).
 
-State is in-memory per-process. Each replica samples independently;
-the admin endpoint aggregates them via the file-cache shim used by
-arbitrage_service for cross-process state.
+A background sampler thread on the fetcher polls get_exchange_health
+every 3s and writes stats() to /tmp/avalant_cache/freshness_stats.json.
+The admin endpoint on web replicas reads the file (cross-process), so
+the dashboard reflects what the sampler thread has recorded regardless
+of which web replica handles the GET.
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 import threading
 import time
 from collections import deque
 from typing import Iterable
+
+logger = logging.getLogger("avalant.freshness_stats")
+_CACHE_DIR = os.environ.get("AVALANT_CACHE_DIR", "/tmp/avalant_cache")
+_STATS_FILE = f"{_CACHE_DIR}/freshness_stats.json"
 
 # Window length — ages older than this are dropped from the rolling
 # computation. 5 minutes balances "responsive enough to spot a stuck
@@ -45,6 +54,65 @@ def record(exchange: str, age_s: float | None) -> None:
         cutoff = now - _WINDOW_S
         while dq and dq[0][0] < cutoff:
             dq.popleft()
+
+
+_sampler_thread: threading.Thread | None = None
+_sampler_stop = threading.Event()
+
+
+def _sampler_loop() -> None:
+    """Sample get_exchange_health() every 3s, persist via file cache so the
+    admin endpoint (potentially on a different replica) can read it."""
+    from backend.services.arbitrage_service import get_exchange_health
+    logger.info("freshness sampler thread started (interval=3s)")
+    last_write = 0.0
+    while not _sampler_stop.is_set():
+        try:
+            health = get_exchange_health() or {}
+            # `record` is already called inside get_exchange_health, so we
+            # just need to flush stats() to disk once per cycle.
+            now = time.time()
+            if now - last_write >= 2.0:
+                last_write = now
+                snapshot = stats()
+                snapshot["written_at"] = now
+                try:
+                    os.makedirs(_CACHE_DIR, exist_ok=True)
+                    tmp = _STATS_FILE + ".tmp"
+                    with open(tmp, "w") as f:
+                        json.dump(snapshot, f)
+                    os.replace(tmp, _STATS_FILE)
+                except Exception as exc:
+                    logger.warning("freshness stats write failed: %s", exc)
+        except Exception as exc:
+            logger.warning("freshness sampler tick failed: %s", exc)
+        _sampler_stop.wait(3.0)
+
+
+def start_sampler() -> None:
+    """Idempotent — starts the background sampler if not already running.
+    Called once from the fetcher entrypoint."""
+    global _sampler_thread
+    if _sampler_thread is not None and _sampler_thread.is_alive():
+        return
+    _sampler_thread = threading.Thread(target=_sampler_loop, name="freshness-sampler", daemon=True)
+    _sampler_thread.start()
+
+
+def read_persisted_stats() -> dict:
+    """Read the snapshot the fetcher's sampler thread last wrote. Used by
+    the admin endpoint on web replicas (which have their own empty
+    in-memory _samples dict)."""
+    try:
+        with open(_STATS_FILE, "rb") as f:
+            return json.loads(f.read())
+    except FileNotFoundError:
+        return {"window_s": _WINDOW_S, "exchanges": {}, "overall_avg_age_s": None,
+                "overall_max_age_s": None, "total_samples": 0, "written_at": None}
+    except Exception as exc:
+        logger.warning("freshness stats read failed: %s", exc)
+        return {"window_s": _WINDOW_S, "exchanges": {}, "overall_avg_age_s": None,
+                "overall_max_age_s": None, "total_samples": 0, "written_at": None}
 
 
 def stats(exchanges: Iterable[str] | None = None) -> dict:

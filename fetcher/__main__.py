@@ -157,6 +157,11 @@ async def _run() -> None:
     start_expiry_notifier()
     logger.info("fetcher: expiry-notifier started")
 
+    # ── Freshness sampler — feeds /admin → Exchange-freshness ──────
+    from backend.services.freshness_stats import start_sampler as start_freshness_sampler
+    start_freshness_sampler()
+    logger.info("fetcher: freshness sampler started")
+
     # ── Alpha loops (health / snapshot / anomaly) ────────────────────
     from backend.services.health_service import health_loop
     from backend.services.replay_service import snapshot_loop

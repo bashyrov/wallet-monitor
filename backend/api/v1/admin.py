@@ -1069,10 +1069,9 @@ async def admin_broadcast(
 def freshness_statistics(_: User = Depends(get_admin_user)):
     """Rolling 5-minute average freshness per exchange + overall.
 
-    Sourced from backend.services.freshness_stats, which records every
-    sample produced by `/api/screener/exchange-health` (called from the
-    UI Exchange-status strip every 3 s). Means the dashboard reflects
-    what real users are actually seeing without the admin endpoint
-    needing its own poll loop."""
-    from backend.services.freshness_stats import stats as _stats
-    return _stats()
+    The fetcher's sampler thread polls get_exchange_health() every 3s
+    and persists stats() to /tmp/avalant_cache/freshness_stats.json.
+    Web replicas read that snapshot here — their own _samples dict is
+    empty (sampler runs in fetcher only)."""
+    from backend.services.freshness_stats import read_persisted_stats
+    return read_persisted_stats()
