@@ -35,7 +35,9 @@ class WSManager:
 
     def _update_cb(self, exchange: str, symbol: str, bids: list, asks: list) -> None:
         """Called by each adapter on every incoming book update."""
-        from backend.services.orderbook_cache import _book_cache
+        from backend.services.orderbook_cache import (
+            _book_cache, _first_req_at, _first_data_logged,
+        )
         key = f"{exchange}:{symbol}"
         entry = _book_cache.setdefault(key, {})
         now = time.time()
@@ -44,6 +46,14 @@ class WSManager:
         # keep last_request fresh so file-dumper includes it
         if "last_request" not in entry or now - entry.get("last_request", 0) > 5:
             entry["last_request"] = now
+        if key not in _first_data_logged:
+            t0 = _first_req_at.get(key)
+            if t0 is not None:
+                logger.info(
+                    "orderbook first-data %s via WS in %.2fs",
+                    key, now - t0,
+                )
+                _first_data_logged.add(key)
         # Publish to Redis at WS cadence — HTTP /orderbook no longer waits
         # for the 100-230 ms merger tick to propagate. Throttled per symbol
         # so bybit's 20 ms snapshot stream doesn't pound Redis at 12 K/s.

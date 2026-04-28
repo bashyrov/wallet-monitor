@@ -74,6 +74,13 @@ _book_cache: dict[str, dict] = {}        # key → {"data": dict, "ts": float, "
 _pollers: dict[str, asyncio.Task] = {}
 _lock = asyncio.Lock()
 
+# Instrumentation: track time from "key first requested" to "first non-empty
+# data in cache" — this is the user-visible latency for In/Out to populate
+# when a token enters the hot-list. Logged once per (key, generation) so we
+# don't spam on every tick.
+_first_req_at: dict[str, float] = {}     # set when prewarm/poller first picks up the key
+_first_data_logged: set[str] = set()
+
 # Reader-side snapshot of shared file (refreshed on demand, throttled)
 _file_memo: dict[str, dict] = {}
 _file_memo_mtime: float = 0.0
@@ -225,6 +232,14 @@ async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
                 entry["data"] = data
                 entry["ts"] = time.time()
                 consecutive_fails = 0
+                if key not in _first_data_logged:
+                    t0 = _first_req_at.get(key)
+                    if t0 is not None:
+                        logger.info(
+                            "orderbook first-data %s via REST in %.2fs",
+                            key, time.time() - t0,
+                        )
+                        _first_data_logged.add(key)
             else:
                 consecutive_fails += 1
                 if consecutive_fails == 1 or consecutive_fails % 20 == 0:
@@ -896,6 +911,12 @@ async def _prewarm_hotlist_loop() -> None:
                     e = _book_cache.setdefault(key, {})
                     age = _now - (e.get("ts", 0) or 0)
                     e["last_request"] = _now
+                    # Mark when the key first entered prewarm — used to log
+                    # the eventual subscribe→first-data latency (REST or WS,
+                    # whichever wins). Only set once per cold-start to keep
+                    # the metric meaningful.
+                    if key not in _first_req_at and key not in _first_data_logged:
+                        _first_req_at[key] = _now
                     if age > 10.0:
                         async with _lock:
                             task = _pollers.get(key)
