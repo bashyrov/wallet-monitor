@@ -4771,7 +4771,7 @@ body{padding-bottom:44px;}
       </div>
     </div>
     <div class="sc-preview-wrap">
-      <canvas id="sc-canvas" width="1080" height="680"></canvas>
+      <canvas id="sc-canvas" width="1080" height="1080"></canvas>
     </div>
     <div class="sc-actions">
       <button class="sc-btn sc-btn-primary" onclick="downloadShareCard()">
@@ -4803,8 +4803,8 @@ body{padding-bottom:44px;}
 .sc-toggle{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px;}
 .sc-tog-btn{background:none;border:none;color:var(--text3);font-family:inherit;font-size:13px;font-weight:600;padding:7px 22px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s;}
 .sc-tog-btn.is-active{background:var(--surface3);color:var(--text);}
-.sc-preview-wrap{padding:14px 18px;display:flex;justify-content:center;flex:1;min-height:0;overflow:auto;background:radial-gradient(ellipse at center,rgba(26,255,171,0.04),transparent 60%);}
-#sc-canvas{display:block;width:100%;max-width:540px;height:auto;border-radius:14px;background:#000;box-shadow:0 12px 40px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.04);}
+.sc-preview-wrap{padding:14px 18px;display:flex;justify-content:center;flex:1;min-height:0;overflow:auto;background:radial-gradient(ellipse at center,rgba(26,255,171,0.05),transparent 60%);}
+#sc-canvas{display:block;width:100%;max-width:480px;height:auto;border-radius:18px;background:#0A0A0E;box-shadow:0 16px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.03);}
 .sc-actions{display:flex;gap:8px;padding:12px 18px 18px;border-top:1px solid var(--border);background:var(--surface2);}
 .sc-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--surface3);border:1px solid var(--border);color:var(--text2);padding:10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;transition:background .12s,color .12s,border-color .12s;}
 .sc-btn:hover{background:var(--surface);color:var(--text);}
@@ -4865,16 +4865,34 @@ function _fmtPx(p){
   return (+p).toPrecision(4);
 }
 
+// Wait for fonts before rendering — otherwise canvas falls back to a
+// generic system font and the card looks generic.
+let _scFontsReady = false;
+async function _scEnsureFonts(){
+  if (_scFontsReady) return;
+  try {
+    if (document.fonts && document.fonts.load){
+      await Promise.all([
+        document.fonts.load('800 56px "Inter"'),
+        document.fonts.load('900 200px "Inter"'),
+        document.fonts.load('900 200px "JetBrains Mono"'),
+        document.fonts.load('700 32px "Inter"'),
+      ]);
+    }
+  } catch(_) {}
+  _scFontsReady = true;
+}
+
 function _renderShareCard(){
+  if (!_sharePos) return;
+  // Render after fonts load. If fonts already cached this is sync-fast.
+  _scEnsureFonts().then(() => _renderShareCardNow());
+}
+
+function _renderShareCardNow(){
   if (!_sharePos) return;
   const c = document.getElementById('sc-canvas');
   const ctx = c.getContext('2d');
-  const W = c.width, H = c.height;
-  const p = _sharePos;
-  const isLong = p.side === 'buy';
-  const profit = (p.unrealized_pnl_usd || 0) >= 0;
-  const accent = profit ? '#1AFFAB' : '#F87171';
-  const accentRGB = profit ? '26,255,171' : '248,113,113';
 
   // Polyfill roundRect for older browsers
   if (typeof ctx.roundRect !== 'function'){
@@ -4891,139 +4909,114 @@ function _renderShareCard(){
     };
   }
 
-  // ── 1. Outer canvas background — pure black so the rounded card "floats"
-  ctx.fillStyle = '#000000';
+  const W = 1080, H = 1080;
+  c.width = W; c.height = H;
+
+  const p = _sharePos;
+  const isLong = p.side === 'buy';
+  const profit = (p.unrealized_pnl_usd || 0) >= 0;
+  const accent = profit ? '#1AFFAB' : '#F87171';
+  const accentRGB = profit ? '26,255,171' : '248,113,113';
+
+  ctx.textBaseline = 'alphabetic';
+
+  // ─────────── 1. BACKGROUND
+  // Solid near-black base
+  ctx.fillStyle = '#0A0A0E';
   ctx.fillRect(0, 0, W, H);
 
-  // ── 2. Card body — rounded rectangle with multi-stop diagonal gradient
-  const PAD = 28;
-  const cardX = PAD, cardY = PAD, cardW = W - PAD*2, cardH = H - PAD*2;
-  const cardR = 32;
+  // Single broad accent radial in upper-right (off-center, refined)
+  const g1 = ctx.createRadialGradient(W*0.78, H*0.12, 0, W*0.78, H*0.12, W*0.85);
+  g1.addColorStop(0, `rgba(${accentRGB},0.18)`);
+  g1.addColorStop(0.5, `rgba(${accentRGB},0.04)`);
+  g1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g1;
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.roundRect(cardX, cardY, cardW, cardH, cardR);
-  ctx.clip();
+  // Soft bottom dim
+  const g2 = ctx.createLinearGradient(0, H*0.55, 0, H);
+  g2.addColorStop(0, 'rgba(0,0,0,0)');
+  g2.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = g2;
+  ctx.fillRect(0, 0, W, H);
 
-  // Base diagonal gradient
-  const bg = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY + cardH);
-  bg.addColorStop(0, '#181820');
-  bg.addColorStop(0.55, '#101015');
-  bg.addColorStop(1, '#08080B');
-  ctx.fillStyle = bg;
-  ctx.fillRect(cardX, cardY, cardW, cardH);
+  // Very thin top border accent strip
+  ctx.fillStyle = `rgba(${accentRGB},0.55)`;
+  ctx.fillRect(0, 0, W, 4);
 
-  // Big diffuse accent glow upper-left
-  const glow = ctx.createRadialGradient(
-    cardX + cardW*0.15, cardY + cardH*0.18, 30,
-    cardX + cardW*0.15, cardY + cardH*0.18, cardW*0.7
-  );
-  glow.addColorStop(0, `rgba(${accentRGB},0.28)`);
-  glow.addColorStop(0.4, `rgba(${accentRGB},0.10)`);
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(cardX, cardY, cardW, cardH);
+  const PAD = 80;
 
-  // Secondary glow lower-right (subtle warmth)
-  const glow2 = ctx.createRadialGradient(
-    cardX + cardW*0.85, cardY + cardH*0.85, 30,
-    cardX + cardW*0.85, cardY + cardH*0.85, cardW*0.6
-  );
-  glow2.addColorStop(0, `rgba(${accentRGB},0.10)`);
-  glow2.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow2;
-  ctx.fillRect(cardX, cardY, cardW, cardH);
-
-  // Decorative dot mesh upper-right
-  ctx.fillStyle = `rgba(${accentRGB},0.14)`;
-  for (let i = 0; i < 8; i++){
-    for (let j = 0; j < 5; j++){
-      const x = cardX + cardW - 240 + i*26, y = cardY + 60 + j*26;
-      const r = 1.5 + Math.random()*0.6;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
-    }
-  }
-
-  // Sparse sparkles across the card
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  for (let i = 0; i < 60; i++){
-    const x = cardX + Math.random()*cardW;
-    const y = cardY + Math.random()*cardH;
-    const r = Math.random()*1.8 + 0.4;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
-  }
-
-  // Vertical accent rail on the very left edge of the card
-  const railGrad = ctx.createLinearGradient(0, cardY, 0, cardY+cardH);
-  railGrad.addColorStop(0, `rgba(${accentRGB},0)`);
-  railGrad.addColorStop(0.5, `rgba(${accentRGB},0.9)`);
-  railGrad.addColorStop(1, `rgba(${accentRGB},0)`);
-  ctx.fillStyle = railGrad;
-  ctx.fillRect(cardX, cardY + cardH*0.18, 4, cardH*0.64);
-
-  ctx.restore();  // end clip
-
-  // Card border (subtle)
-  ctx.beginPath();
-  ctx.roundRect(cardX + 0.5, cardY + 0.5, cardW - 1, cardH - 1, cardR);
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Inner content origin
-  const cx = cardX + 50, cy = cardY + 50;
-
-  // ── 3. Brand wordmark + subtitle
-  ctx.textBaseline = 'alphabetic';
-  ctx.font = '800 42px Inter, system-ui, sans-serif';
-  ctx.fillStyle = '#1AFFAB';
-  ctx.fillText('avalant', cx, cy + 36);
+  // ─────────── 2. BRAND BLOCK
+  // "avalant_" wordmark
+  ctx.font = '800 64px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = accent;
+  ctx.fillText('avalant', PAD, PAD + 64);
+  const wmW = ctx.measureText('avalant').width;
   // green underscore cursor
-  const underscoreX = cx + ctx.measureText('avalant').width + 6;
-  ctx.fillRect(underscoreX, cy + 26, 14, 5);
-  // subtitle
-  ctx.font = '700 11px Inter, system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(155,159,171,0.85)';
-  ctx.fillText('FUTURES  ·  LONG/SHORT', cx, cy + 64);
-
-  // ── 4. Side pill + leverage + symbol (header line)
-  const sideText = isLong ? 'LONG' : 'SHORT';
-  const sideColor = isLong ? '#1AFFAB' : '#F87171';
-  const sideRGB = isLong ? '26,255,171' : '248,113,113';
-  const headY = cy + 130;
-
-  ctx.font = '800 18px Inter, system-ui, sans-serif';
-  const sidePillW = ctx.measureText(sideText).width + 32;
-  // Pill with gradient fill + glow border
-  const pillGrad = ctx.createLinearGradient(cx, headY-22, cx, headY+12);
-  pillGrad.addColorStop(0, `rgba(${sideRGB},0.28)`);
-  pillGrad.addColorStop(1, `rgba(${sideRGB},0.12)`);
-  ctx.fillStyle = pillGrad;
-  ctx.beginPath(); ctx.roundRect(cx, headY-26, sidePillW, 38, 19); ctx.fill();
-  ctx.strokeStyle = `rgba(${sideRGB},0.45)`;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.fillStyle = sideColor;
-  ctx.fillText(sideText, cx + 16, headY);
-
-  // Leverage chip
-  const levText = `${p.leverage}×`;
-  const levX = cx + sidePillW + 12;
-  const levW = ctx.measureText(levText).width + 22;
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.beginPath(); ctx.roundRect(levX, headY-26, levW, 38, 19); ctx.fill();
-  ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(levText, levX + 11, headY);
-
-  // Symbol (just text, larger)
-  ctx.font = '700 22px Inter, system-ui, sans-serif';
-  ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(`${p.symbol}USDT`, levX + levW + 16, headY);
-  ctx.font = '500 14px Inter, system-ui, sans-serif';
+  ctx.fillStyle = accent;
+  ctx.fillRect(PAD + wmW + 10, PAD + 38, 22, 7);
+  // brand subtitle
+  ctx.font = '700 14px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  ctx.fillText('Perpetual', levX + levW + 16 + ctx.measureText(`${p.symbol}USDT`).width + 10, headY);
+  _drawTracked(ctx, 'FUTURES   ·   LONG/SHORT', PAD, PAD + 100, 1.5);
 
-  // ── 5. BIG P&L block with halo
+  // Date stamp top-right
+  const ds = new Date();
+  const datestr = `${ds.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}`.toUpperCase();
+  ctx.font = '700 13px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#50545E';
+  ctx.textAlign = 'right';
+  _drawTracked(ctx, datestr, W - PAD, PAD + 64, 1.2, 'right');
+  ctx.textAlign = 'left';
+
+  // Thin divider under brand
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(PAD, PAD + 145, W - PAD*2, 1);
+
+  // ─────────── 3. POSITION HEADER (side pill + lev + symbol)
+  const headY = PAD + 240;
+
+  // Side pill — large, prominent
+  const sideText = isLong ? 'LONG' : 'SHORT';
+  ctx.font = '800 28px "Inter", system-ui, sans-serif';
+  const pillW = ctx.measureText(sideText).width + 56;
+  const pillH = 56;
+  // Filled pill
+  ctx.fillStyle = `rgba(${accentRGB},0.16)`;
+  ctx.beginPath(); ctx.roundRect(PAD, headY - pillH/2 - 8, pillW, pillH, pillH/2); ctx.fill();
+  // Glow border
+  ctx.strokeStyle = `rgba(${accentRGB},0.55)`;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+  ctx.fillStyle = accent;
+  ctx.fillText(sideText, PAD + 28, headY + 12);
+
+  // Leverage — clean text, no chip
+  let cursorX = PAD + pillW + 24;
+  ctx.font = '900 36px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#E6E8E3';
+  const levText = `${p.leverage}×`;
+  ctx.fillText(levText, cursorX, headY + 12);
+  cursorX += ctx.measureText(levText).width + 28;
+
+  // Dot separator
+  ctx.fillStyle = '#3A3D47';
+  ctx.beginPath(); ctx.arc(cursorX - 8, headY - 4, 4, 0, Math.PI*2); ctx.fill();
+  cursorX += 16;
+
+  // Symbol
+  ctx.font = '800 36px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(`${p.symbol}USDT`, cursorX, headY + 12);
+
+  // PERPETUAL caption underneath
+  ctx.font = '700 12px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#50545E';
+  _drawTracked(ctx, 'PERPETUAL', cursorX, headY + 38, 2);
+
+  // ─────────── 4. HERO P&L (the centerpiece)
+  const heroCY = H * 0.51;
+
   const pnlPct = +p.pnl_pct || 0;
   const pnlUsd = +p.unrealized_pnl_usd || 0;
   let primary, secondary;
@@ -5034,92 +5027,108 @@ function _renderShareCard(){
     primary = `${pnlUsd >= 0 ? '+$' : '−$'}${Math.abs(pnlUsd).toFixed(2)}`;
     secondary = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
   }
-  const arrow = profit ? '▲' : '▼';
 
-  // Halo behind the number
-  const pnlY = cy + 240;
+  // Halo behind hero number
   ctx.save();
-  const halo = ctx.createRadialGradient(cx + 200, pnlY - 30, 20, cx + 200, pnlY - 30, 320);
-  halo.addColorStop(0, `rgba(${accentRGB},0.22)`);
+  const halo = ctx.createRadialGradient(W/2, heroCY - 20, 60, W/2, heroCY - 20, 600);
+  halo.addColorStop(0, `rgba(${accentRGB},0.20)`);
+  halo.addColorStop(0.4, `rgba(${accentRGB},0.05)`);
   halo.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = halo;
-  ctx.fillRect(cx - 40, pnlY - 130, 700, 260);
+  ctx.fillRect(0, heroCY - 320, W, 540);
   ctx.restore();
 
-  // Big number
-  ctx.font = '900 108px "JetBrains Mono", Menlo, monospace';
-  ctx.fillStyle = accent;
+  // Hero number — fits within the card width
+  const sizes = [180, 168, 156, 144, 132, 120];
+  let chosenSize = 156;
+  for (const s of sizes){
+    ctx.font = `900 ${s}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
+    if (ctx.measureText(primary).width <= W - PAD*2 - 40){ chosenSize = s; break; }
+  }
+  ctx.font = `900 ${chosenSize}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
+  ctx.textAlign = 'center';
+  // Drop subtle outer glow
   ctx.shadowColor = accent;
-  ctx.shadowBlur = 36;
-  ctx.fillText(primary, cx, pnlY);
+  ctx.shadowBlur = 60;
+  ctx.fillStyle = accent;
+  ctx.fillText(primary, W/2, heroCY);
   ctx.shadowBlur = 0;
 
-  // Arrow + secondary
-  ctx.font = '700 22px Inter, system-ui, sans-serif';
-  ctx.fillStyle = accent;
-  ctx.fillText(arrow, cx, pnlY + 38);
-  ctx.font = '600 22px "JetBrains Mono", Menlo, monospace';
-  ctx.fillStyle = 'rgba(230,232,227,0.65)';
-  ctx.fillText(secondary, cx + 28, pnlY + 38);
+  // Secondary line (smaller, with arrow)
+  const arrow = profit ? '▲' : '▼';
+  ctx.font = '700 28px "JetBrains Mono", "SF Mono", Menlo, monospace';
+  ctx.fillStyle = `rgba(${accentRGB},0.85)`;
+  ctx.fillText(`${arrow}  ${secondary}`, W/2, heroCY + 70);
 
-  // ── 6. Entry / Last as mini glass cards
-  const miniW = 240, miniH = 88, miniGap = 16;
-  const miniY = cy + 320;
-  function drawMini(label, value, x){
-    ctx.save();
-    ctx.fillStyle = 'rgba(255,255,255,0.04)';
-    ctx.beginPath(); ctx.roundRect(x, miniY, miniW, miniH, 14); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    // Inner glow line on top
-    const lgrd = ctx.createLinearGradient(x, miniY, x+miniW, miniY);
-    lgrd.addColorStop(0, 'rgba(255,255,255,0)');
-    lgrd.addColorStop(0.5, 'rgba(255,255,255,0.10)');
-    lgrd.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = lgrd;
-    ctx.fillRect(x+1, miniY+1, miniW-2, 1);
-    ctx.restore();
+  ctx.textAlign = 'left';
 
-    ctx.font = '600 11px Inter, system-ui, sans-serif';
-    ctx.fillStyle = '#9B9FAB';
-    ctx.fillText(label.toUpperCase(), x + 18, miniY + 28);
+  // ─────────── 5. ENTRY / LAST (clean two-column block)
+  const tabY = H * 0.78;
+  const colW = (W - PAD*2) / 2;
 
-    ctx.font = '800 28px "JetBrains Mono", Menlo, monospace';
-    ctx.fillStyle = '#E6E8E3';
-    ctx.fillText(value, x + 18, miniY + 64);
-  }
-  drawMini('Entry Price', _fmtPx(p.entry_price), cx);
-  drawMini('Last Price',  _fmtPx(p.mark_price),  cx + miniW + miniGap);
+  // Vertical separator between columns
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(PAD + colW - 1, tabY - 12, 1, 86);
 
-  // ── 7. Footer: exchange + URL
-  const footY = cardY + cardH - 50;
+  // Column 1: Entry
+  ctx.font = '700 13px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  _drawTracked(ctx, 'ENTRY PRICE', PAD, tabY, 1.4);
+  ctx.font = '800 44px "JetBrains Mono", "SF Mono", Menlo, monospace';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(_fmtPx(p.entry_price), PAD, tabY + 56);
 
-  // Exchange chip
+  // Column 2: Last
+  const c2x = PAD + colW + 28;
+  ctx.font = '700 13px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  _drawTracked(ctx, 'LAST PRICE', c2x, tabY, 1.4);
+  ctx.font = '800 44px "JetBrains Mono", "SF Mono", Menlo, monospace';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(_fmtPx(p.mark_price), c2x, tabY + 56);
+
+  // ─────────── 6. FOOTER
+  const footY = H - PAD;
+
+  // Thin top divider
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(PAD, footY - 60, W - PAD*2, 1);
+
+  // Exchange (left): brand dot + name
   const exLabel = _shareEx(p.exchange);
   const exColor = _shareExColor(p.exchange);
-  ctx.font = '700 14px Inter, system-ui, sans-serif';
-  const exTextW = ctx.measureText(exLabel).width;
-  const exChipW = exTextW + 38;
-  ctx.fillStyle = 'rgba(255,255,255,0.05)';
-  ctx.beginPath(); ctx.roundRect(cx, footY-22, exChipW, 32, 16); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx + 16, footY-6, 5, 0, Math.PI*2);
+  ctx.beginPath(); ctx.arc(PAD + 8, footY - 18, 7, 0, Math.PI*2);
   ctx.fillStyle = exColor; ctx.fill();
+  ctx.font = '700 22px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(exLabel, cx + 28, footY);
+  ctx.fillText(exLabel, PAD + 28, footY - 12);
 
-  // URL right-aligned
-  ctx.font = '800 18px Inter, system-ui, sans-serif';
-  const url = 'avalant.xyz';
-  const urlW = ctx.measureText(url).width;
-  const urlX = cardX + cardW - 50 - urlW;
-  ctx.fillStyle = '#1AFFAB';
-  ctx.fillText(url, urlX, footY - 4);
-  ctx.font = '500 11px Inter, system-ui, sans-serif';
-  ctx.fillStyle = '#676B7E';
-  const tagline = 'Cross-exchange arb terminal';
-  const tlW = ctx.measureText(tagline).width;
-  ctx.fillText(tagline, cardX + cardW - 50 - tlW, footY + 14);
+  // URL (right): big green wordmark + tagline
+  ctx.textAlign = 'right';
+  ctx.font = '800 26px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = accent;
+  ctx.fillText('avalant.xyz', W - PAD, footY - 12);
+  ctx.font = '600 12px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#50545E';
+  ctx.fillText('Cross-exchange arbitrage terminal', W - PAD, footY + 12);
+  ctx.textAlign = 'left';
+}
+
+// Helper: draw text with letter-spacing tracking. Canvas has no native
+// letter-spacing API, so we draw character-by-character with fixed offsets.
+// Cheap; called only on label/caption strings.
+function _drawTracked(ctx, text, x, y, tracking, align){
+  // Pre-measure for right alignment
+  let totalW = 0;
+  for (const ch of text){ totalW += ctx.measureText(ch).width + tracking; }
+  totalW -= tracking;
+  let startX = x;
+  if (align === 'right') startX = x - totalW;
+  let cur = startX;
+  for (const ch of text){
+    ctx.fillText(ch, cur, y);
+    cur += ctx.measureText(ch).width + tracking;
+  }
 }
 
 function downloadShareCard(){
