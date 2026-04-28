@@ -368,11 +368,17 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
                 return cached
         return {"opportunities": [], "generated_at": int(time.time()), "spot_exchanges": SPOT_EXCHANGES, "cold": True}
 
-    # Fetch spot tickers for every supported spot venue in parallel
-    spot_results = await asyncio.gather(
-        *[get_spot_rows(ex) for ex in SPOT_EXCHANGES],
-        return_exceptions=True,
-    )
+    # Fetch spot tickers AND perp rows concurrently. Earlier code ran them
+    # in two sequential gathers — wall-clock cost was the slowest spot
+    # venue + the slowest perp venue. Combined gather lets a slow perp
+    # rest gather overlap with a slow spot rest gather, halving cycle
+    # time when one of the two has timing-out venues.
+    perp_exs = [ex for ex in _arb.FETCHERS.keys() if ex != "lighter"]
+    spot_tasks = [get_spot_rows(ex) for ex in SPOT_EXCHANGES]
+    perp_tasks = [_arb._get_rows(ex) for ex in perp_exs]
+    all_results = await asyncio.gather(*spot_tasks, *perp_tasks, return_exceptions=True)
+    spot_results = all_results[:len(SPOT_EXCHANGES)]
+    perp_results = all_results[len(SPOT_EXCHANGES):]
     spot_map: dict[str, dict[str, dict]] = {}
     for ex, rows in zip(SPOT_EXCHANGES, spot_results):
         if not isinstance(rows, list):
@@ -380,14 +386,6 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
         for r in rows:
             sym = r["symbol"]
             spot_map.setdefault(sym, {})[ex] = r
-
-    # Pull perp rows from the same source the futures arbitrage uses so we stay
-    # in lock-step on freshness.
-    perp_exs = [ex for ex in _arb.FETCHERS.keys() if ex != "lighter"]
-    perp_results = await asyncio.gather(
-        *[_arb._get_rows(ex) for ex in perp_exs],
-        return_exceptions=True,
-    )
     perp_map: dict[str, dict[str, dict]] = {}
     for ex, rows in zip(perp_exs, perp_results):
         if not isinstance(rows, list):
