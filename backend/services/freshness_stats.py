@@ -28,10 +28,10 @@ _CACHE_DIR = os.environ.get("AVALANT_CACHE_DIR", "/tmp/avalant_cache")
 _STATS_FILE = f"{_CACHE_DIR}/freshness_stats.json"
 
 # Window length — ages older than this are dropped from the rolling
-# computation. 5 minutes balances "responsive enough to spot a stuck
-# venue" against "smooth enough that a single 30 s blip doesn't dominate".
-_WINDOW_S = 300.0
-_MAX_SAMPLES_PER_EX = 600  # cap memory: 1 sample/s × 5 min × 2 safety margin
+# computation. 60 s is responsive: a 30s spike still drags the avg up
+# noticeably but doesn't swamp the dashboard for the next 5 min.
+_WINDOW_S = 60.0
+_MAX_SAMPLES_PER_EX = 120  # cap memory: 1 sample/s × 60 s × 2 safety margin
 
 # {exchange: deque[(monotonic_ts, age_s)]}
 _samples: dict[str, "deque[tuple[float, float]]"] = {}
