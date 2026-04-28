@@ -114,8 +114,6 @@ def _sampler_loop() -> None:
                 ages = [a for a in (ws_age, merged_age) if a is not None]
                 if ages:
                     record(ex, min(ages))
-            if tick % 30 == 1:
-                logger.info("freshness sampler tick=%d", tick)
             # Persist stats every 2s
             if now - last_write >= 2.0:
                 last_write = now
