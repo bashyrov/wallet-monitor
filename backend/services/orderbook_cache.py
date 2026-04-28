@@ -710,12 +710,10 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 # How often we re-pick the hot-list from current arb opportunities. Lowered
-# 4s → 2s → 1s — at 1s the worst-case detect-to-subscribe window is 1s,
-# so a pair entering top → first REST snapshot in ~1.1-2s typical (was 2.5-4s).
-# Cost: 2× more get_arbitrage_opportunities() reads per second; both are
-# in-memory dict reads, negligible CPU. Reconnect cadence is preserved by
-# bumping _PRUNE_EVERY to 60 (was 30 at 2s tick → still ~60s between prunes).
-PREWARM_HOTLIST_S    = _env_float("AVALANT_PREWARM_HOTLIST_S", 1.0)
+# from 4s so a pair that just entered the top-N starts receiving WS frames
+# in ≤2s instead of ≤4s, keeping the In/Out column's `book_ok` flag aligned
+# with the actual row visibility.
+PREWARM_HOTLIST_S    = _env_float("AVALANT_PREWARM_HOTLIST_S", 2.0)
 # How often we atomically-dump the merged `books.json` for web readers.
 # Live-mode: 100 ms. Each worker writes ~300 KB/dump × 11 workers = ~33 MB/s
 # to tmpfs — fine on NVMe. Combined with 100 ms master merge + 100 ms WS
@@ -723,10 +721,8 @@ PREWARM_HOTLIST_S    = _env_float("AVALANT_PREWARM_HOTLIST_S", 1.0)
 PREWARM_DUMP_S       = _env_float("AVALANT_PREWARM_DUMP_S", 0.1)
 # snapshot to file
 # Prune WS subscriptions down to the current hot-list every N ticks.
-# At PREWARM_HOTLIST_S=1s, _PRUNE_EVERY=60 → prune roughly every minute.
-# Keep the same wall-clock cadence regardless of tick rate so we don't
-# burn reconnects faster.
-_PRUNE_EVERY         = 60
+# At PREWARM_HOTLIST_S=4s, _PRUNE_EVERY=30 → prune roughly every 2 minutes.
+_PRUNE_EVERY         = 30
 _prewarm_tick_counter = [0]
 
 _prewarm_hotlist_task: asyncio.Task | None = None
