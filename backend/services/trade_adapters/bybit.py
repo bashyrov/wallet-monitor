@@ -173,12 +173,26 @@ class BybitAdapter:
                     "sellLeverage": str(int(leverage)),
                 })
             except RuntimeError as e:
-                # 110026 already set, 110043 not modified, 110027 not allowed,
-                # 100028 UTA forbidden — UTA accounts can't switch isolated/cross
-                # at the symbol level. Fall through silently; the leverage call
-                # below will set per-symbol leverage which UTA does support.
-                if not any(code in str(e) for code in ("110026", "110043", "110027", "100028")):
-                    raise
+                msg = str(e)
+                # 110026 already set, 110043 not modified, 110027 not allowed.
+                if any(code in msg for code in ("110026", "110043", "110027")):
+                    return
+                # 100028 UTA forbidden — UTA = Unified Trading Account.
+                # Bybit enforces a single cross-margin pool across spot+perp+
+                # options at the account level. We can't switch a UTA symbol
+                # to isolated. Log a clear warning so server logs show the
+                # downgrade; the order proceeds in CROSS regardless of what
+                # the user picked. Users wanting isolated must use a Bybit
+                # Classic account.
+                if "100028" in msg:
+                    if margin_mode == "isolated":
+                        import logging as _l
+                        _l.getLogger("avalant.trade").warning(
+                            "Bybit %s: UTA account forces cross margin — "
+                            "isolated request silently downgraded", sym,
+                        )
+                    return
+                raise
 
         async def _lev():
             try:
