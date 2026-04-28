@@ -731,10 +731,13 @@ def freshness_by_exchange() -> dict[str, dict]:
 
 
 # ── Prewarm owner loops (single worker) ──────────────────────────────────────
-# Top-N opps by net_profit that get orderbook subscriptions. Reduced 200→100
-# per user request — concentrates WS bandwidth on the highest-net rows so
-# their fresh count climbs and tighter the spread the data backs.
-PREWARM_TOP_N        = 100
+# Top-N opps that get orderbook subscriptions. Drastically reduced from 100
+# to 30 — In/Out columns dropped from screener (basis-only display), so the
+# orderbook is now only needed for /arb detail page on-demand. Keeping a
+# small hot-list around means clicking a top-30 opp opens the detail page
+# with the book already warm. Pairs outside top-30 fetch on /arb open
+# (1-2s warmup is acceptable for a deliberate click-through).
+PREWARM_TOP_N        = 30
 def _env_float(name: str, default: float) -> float:
     try:
         v = os.environ.get(name)
@@ -742,10 +745,9 @@ def _env_float(name: str, default: float) -> float:
     except (TypeError, ValueError):
         return default
 
-# How often we re-pick the hot-list from current arb opportunities. Lowered
-# from 4s so a pair that just entered the top-N starts receiving WS frames
-# in ≤2s instead of ≤4s, keeping the In/Out column's `book_ok` flag aligned
-# with the actual row visibility.
+# How often we re-pick the hot-list from current arb opportunities. With
+# the smaller top-30 hot-list and basis-only display, the prewarm has much
+# less work — but still 2s tick to keep things lively when the top rotates.
 PREWARM_HOTLIST_S    = _env_float("AVALANT_PREWARM_HOTLIST_S", 2.0)
 # How often we atomically-dump the merged `books.json` for web readers.
 # Live-mode: 100 ms. Each worker writes ~300 KB/dump × 11 workers = ~33 MB/s

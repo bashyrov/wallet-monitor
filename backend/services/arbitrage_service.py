@@ -1541,19 +1541,15 @@ def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None =
     hot path is mostly dict reads and arithmetic. For ~4500 rows / ~3000 pairs
     this drops compute from ~1-2s to ~200-400ms.
     """
-    from backend.services.orderbook_cache import top_levels, _load_books_snapshot
-
     if exclude is None:
         from backend.services import admin_settings
         exclude = admin_settings.get_arb_exclude_exchanges()
 
-    # Snapshot books.json ONCE at the start of the cycle. `top_levels` was
-    # re-parsing the 4.5 MB file up to ~15 times per cycle because the merger
-    # rewrites it every 200 ms → `_refresh_file_memo` kept picking up mtime
-    # changes mid-loop. cProfile showed 81 % of cycle time burnt in
-    # `json.loads`. Feeding a frozen snapshot to top_levels cuts cycle time
-    # from ~11 s → ~300 ms.
-    _book_snap = _load_books_snapshot()
+    # Orderbook lookup REMOVED from screener compute path — In/Out columns
+    # were dropped per user policy (basis-only display). The expensive
+    # _load_books_snapshot() + top_levels() calls were the ~80 % cost of
+    # this function; with them gone the cycle is mostly arithmetic over
+    # already-cached funding rows.
     by_symbol: dict[str, list[dict]] = {}
     for r in rows:
         if r["exchange"] in exclude:
@@ -1569,46 +1565,20 @@ def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None =
         if n_entries < 2:
             continue
 
-        # Precompute per-entry derived values. Each entry's normalised rate,
-        # fee, and top-of-book is used up to 2*(N-1) times in the inner loop;
-        # computing once here is the single biggest optimisation.
+        # Precompute per-entry derived values (no orderbook lookup — In/Out
+        # is no longer displayed). Each entry's normalised rate / fee / mark
+        # is used up to 2*(N-1) times in the inner loop, so caching helps.
         per_entry = []
         for e in entries:
             ex = e["exchange"]
             ivl = e["interval_h"]
             rate_norm = e["rate"] * (8.0 / ivl)
             fee = _fee(ex)
-            # Use the frozen books snapshot (loaded once at start of cycle)
-            # instead of calling top_levels() — that would re-parse books.json
-            # dozens of times per cycle under the merger's 200 ms mtime churn.
-            lv = None
-            if _book_snap is not None:
-                entry = _book_snap.get(f"{ex}:{symbol}")
-                if entry:
-                    data = entry.get("data") or entry
-                    bids = data.get("bids") or []
-                    asks = data.get("asks") or []
-                    if bids and asks:
-                        try:
-                            lv = (float(bids[0][0]), float(asks[0][0]))
-                        except (TypeError, ValueError, IndexError):
-                            lv = None
-            if lv is None:
-                # Fallback path if snapshot was missing (fetcher cold-start).
-                lv = top_levels(ex, symbol)
-            if lv:
-                bid, ask = lv
-                if ask > 0 and bid > 0:
-                    book = (bid, ask)
-                else:
-                    book = None
-            else:
-                book = None
             mark_price = float(e.get("price") or 0)
             per_entry.append({
                 "e": e, "ex": ex, "ivl": ivl,
                 "rate_norm": rate_norm, "fee": fee,
-                "book": book, "mark": mark_price,
+                "mark": mark_price,
             })
 
         for i in range(n_entries):
@@ -1625,50 +1595,19 @@ def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None =
                 short_e = short_pe["e"]
                 rate_s = short_pe["rate_norm"]
                 fee_s = short_pe["fee"]
-                book_s = short_pe["book"]
                 mark_s = short_pe["mark"]
 
                 gross = rate_s - rate_l
                 total_fees = 2.0 * (fee_l + fee_s)
 
-                if book_l and book_s:
-                    bid_l, ask_l = book_l
-                    bid_s, ask_s = book_s
-                    in_pct = (bid_s - ask_l) / ask_l
-                    out_pct = (bid_l - ask_s) / ask_s
-                    price_spread = in_pct
-                    p_l = (bid_l + ask_l) * 0.5
-                    p_s = (bid_s + ask_s) * 0.5
-                    book_ok = True
-                elif book_l or book_s:
-                    # Half-streamed: one venue has WS book, the other only
-                    # has a mark price. Use real bid/ask on the streamed
-                    # side, treat the other's mark as bid==ask. Still beats
-                    # the all-mark fallback because at least the entry leg
-                    # has a real top-of-book to settle the spread against.
-                    if mark_l <= 0 or mark_s <= 0:
-                        continue
-                    if book_l:
-                        bid_l, ask_l = book_l
-                        bid_s = ask_s = mark_s
-                    else:
-                        bid_s, ask_s = book_s
-                        bid_l = ask_l = mark_l
-                    in_pct = (bid_s - ask_l) / ask_l
-                    out_pct = (bid_l - ask_s) / ask_s
-                    price_spread = in_pct
-                    p_l = (bid_l + ask_l) * 0.5
-                    p_s = (bid_s + ask_s) * 0.5
-                    book_ok = False
-                else:
-                    if mark_l <= 0 or mark_s <= 0:
-                        continue
-                    p_l = mark_l
-                    p_s = mark_s
-                    price_spread = (p_s - p_l) / p_l
-                    in_pct = price_spread
-                    out_pct = -price_spread
-                    book_ok = False
+                # Mark-based basis only — no orderbook reads. In/Out display
+                # was dropped from the screener, basis is now the single
+                # spread metric (matches the live spread on /arb detail).
+                if mark_l <= 0 or mark_s <= 0:
+                    continue
+                p_l = mark_l
+                p_s = mark_s
+                price_spread = (p_s - p_l) / p_l
 
                 net = gross + price_spread - total_fees
                 # No net>0 filter — user wants to see every spread, even the
@@ -1738,9 +1677,6 @@ def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None =
                     "next_ts_short":  short_e.get("next_ts", 0),
                     "long_interval_h":  long_e.get("interval_h"),
                     "short_interval_h": short_e.get("interval_h"),
-                    "in_pct":  round(in_pct * 100, 4),
-                    "out_pct": round(out_pct * 100, 4),
-                    "book_ok": book_ok,
                 })
 
     opportunities.sort(key=lambda x: x["net_profit"], reverse=True)
