@@ -61,60 +61,44 @@ _sampler_stop = threading.Event()
 
 
 def _sampler_loop() -> None:
-    """Sample per-venue freshness from the canonical sources every 1s.
+    """Sample per-venue freshness from file mtimes — fastest possible
+    path. Each tick:
+      · stat funding_ws.{ex}.json (cheapest — no JSON parse)
+      · stat funding.json once for venues without per-ex file
+    record() the resulting age into the rolling deque, persist every 2s.
 
-    Two inputs, MIN of which goes into the rolling window:
-      · funding.json/ts_by_ex — wall-clock ts the refresh-loop heartbeat
-        writes for each venue (tracks the WS subprocess push)
-      · /tmp/avalant_cache/funding_ws.{ex}.json — the per-venue WS
-        subprocess dump, even fresher than the merged file
-    Reading these directly means we report what the user *actually*
-    sees on the Exchange-status strip (which reads funding.json), not
-    a separate path that could drift."""
-    logger.info("freshness sampler thread started (interval=1s)")
+    Earlier version JSON-parsed every dump file each tick (~16 parses).
+    Under heavy main-loop CPU contention (orderbook merge, refresh-loop
+    pre-pull) the sampler thread starved on the GIL and ticked once
+    every 5-15 s instead of once every 1s. mtime is a single os.stat
+    syscall and never holds the GIL for long."""
+    logger.info("freshness sampler thread started (interval=1s, mtime-based)")
     last_write = 0.0
-    tick = 0
     fetchers_cache = None
     while not _sampler_stop.is_set():
-        tick += 1
         try:
             if fetchers_cache is None:
                 from backend.services.arbitrage_service import FETCHERS as _F
                 fetchers_cache = list(_F.keys())
             now = time.time()
-            # 1. Per-venue WS dump
+            merged_path = f"{_CACHE_DIR}/funding.json"
+            try:
+                merged_mtime = os.path.getmtime(merged_path)
+            except OSError:
+                merged_mtime = 0.0
             for ex in fetchers_cache:
-                ws_age = None
-                # Per-exchange WS subprocess dump
+                # Prefer per-exchange WS subprocess dump (most accurate
+                # — its mtime tracks the WS push directly).
                 try:
-                    with open(f"{_CACHE_DIR}/funding_ws.{ex}.json", "rb") as f:
-                        d = json.loads(f.read())
-                    tbe = d.get("ts_by_ex") or {}
-                    ts = tbe.get(ex) or d.get("ts")
-                    if ts:
-                        ws_age = max(0.0, now - float(ts))
-                except FileNotFoundError:
-                    pass
-                except Exception:
-                    pass
-                # Heartbeat-merged ts (refresh_loop writes both REST + WS)
-                merged_age = None
-                try:
-                    with open(f"{_CACHE_DIR}/funding.json", "rb") as f:
-                        d = json.loads(f.read())
-                    tbe = d.get("ts_by_ex") or {}
-                    ts = tbe.get(ex)
-                    if ts:
-                        merged_age = max(0.0, now - float(ts))
-                    elif d.get("ts"):
-                        merged_age = max(0.0, now - float(d["ts"]))
-                except Exception:
-                    pass
-                # Best (lowest) of the two
-                ages = [a for a in (ws_age, merged_age) if a is not None]
-                if ages:
-                    record(ex, min(ages))
-            # Persist stats every 2s
+                    mt = os.path.getmtime(f"{_CACHE_DIR}/funding_ws.{ex}.json")
+                except OSError:
+                    mt = 0.0
+                # Fall back to the merged-file mtime when no per-ex dump
+                # exists (paradex / htx / extended / ethereal).
+                if not mt:
+                    mt = merged_mtime
+                if mt:
+                    record(ex, max(0.0, now - mt))
             if now - last_write >= 2.0:
                 last_write = now
                 snapshot = stats()
