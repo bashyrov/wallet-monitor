@@ -61,11 +61,14 @@ class BybitWS(WSAdapter):
     name = "bybit"
     url = "wss://stream.bybit.com/v5/public/linear"
     subscribe_delay = 0.1  # Bybit accepts up to 10 topics/frame but pauses help on resubscribe bursts
-    # Bybit V5 closes the connection if no app-level ping is received within
-    # ~20s. WS-frame pings (handled by the websockets lib) are NOT enough —
-    # we must send `{"op":"ping"}` JSON. 18s leaves headroom under the 20s
-    # server timeout. Was hitting "1011 keepalive ping timeout" without this.
-    ping_interval = 18.0
+    # Bybit V5 closes the WS with 1011 if the WS-frame ping the websockets
+    # library sends gets no reply (Bybit ignores those). They use an
+    # app-level ping/pong: client sends {"op":"ping"} every <20s, server
+    # replies with {"op":"pong"}. Disable the lib-level pings entirely
+    # (ping_interval=None) so the websockets keepalive timer never fires;
+    # heartbeat_frame() drives our own.
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
 
     def heartbeat_frame(self):
         return '{"op":"ping"}'
@@ -189,10 +192,12 @@ class BitgetWS(WSAdapter):
 
     name = "bitget"
     url = "wss://ws.bitget.com/v2/ws/public"
-    # Bitget closes the WS with 1011 after ~30s without an app-level "ping"
-    # string. WS-frame pings from the websockets lib don't satisfy it —
-    # docs require a literal text frame "ping". 25s gives 5s headroom.
-    ping_interval = 25.0
+    # Bitget V2 closes the WS with 1011 after ~30s without an app-level
+    # "ping" string. The websockets-lib WS-frame ping is ignored (Bitget
+    # disconnects). Disable lib pings + send our own app-level "ping"
+    # every ~25s via the heartbeat hook.
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
 
     def heartbeat_frame(self):
         return "ping"
