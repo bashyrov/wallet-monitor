@@ -4056,10 +4056,38 @@ async function accLoadPositions(){
           <td class="num">${hasFunding ? `<span class="${fundCls}">${sumUsd(totalFunding)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
           <td class="num ${pnlCls}" style="font-weight:700">${sumUsd(totalPnl)}</td>
           <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
-          <td>
+          <td style="white-space:nowrap">
             <button class="pos-close"
                     onclick="event.stopPropagation();_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')"
                     style="background:var(--green);border:none;color:#0a0a0f;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-weight:700;font-family:inherit">Close Both</button>
+            <button title="Share pair P&amp;L card"
+                    data-share-pair='${_htmlEsc(JSON.stringify({
+                      symbol: pair.symbol,
+                      long: {
+                        exchange: pair.long.exchange,
+                        side: pair.long.side,
+                        quantity: Number(pair.long.quantity || 0),
+                        entry_price: Number(pair.long.entry_price || 0),
+                        mark_price: Number(pair.long.mark_price || 0),
+                        leverage: Number(pair.long.leverage || 1),
+                        unrealized_pnl_usd: Number(pair.long.unrealized_pnl_usd || 0),
+                      },
+                      short: {
+                        exchange: pair.short.exchange,
+                        side: pair.short.side,
+                        quantity: Number(pair.short.quantity || 0),
+                        entry_price: Number(pair.short.entry_price || 0),
+                        mark_price: Number(pair.short.mark_price || 0),
+                        leverage: Number(pair.short.leverage || 1),
+                        unrealized_pnl_usd: Number(pair.short.unrealized_pnl_usd || 0),
+                      },
+                      total_pnl_usd: totalPnl,
+                      pair_size_usd: pairUsd,
+                      combined_pct: combinedPct,
+                      entry_spread_pct: entrySpread,
+                    }))}'
+                    onclick='event.stopPropagation();_openSharePairFromBtn(this)'
+                    style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:4px">↗</button>
           </td>
         </tr>`;
       const legs = isOpen ? (rowFor(pair.long) + rowFor(pair.short)) : '';
@@ -4834,6 +4862,11 @@ body{padding-bottom:44px;}
         <button class="sc-tog-btn" data-mode="usd" onclick="setShareMode('usd')">PNL</button>
         <button class="sc-tog-btn is-active" data-mode="both" onclick="setShareMode('both')">ROI&nbsp;·&nbsp;PNL</button>
       </div>
+      <div class="sc-toggle" id="sc-pair-view" style="display:none;margin-left:8px">
+        <button class="sc-pair-view-btn is-active" data-view="combined" onclick="setSharePairView('combined')">Pair</button>
+        <button class="sc-pair-view-btn" data-view="long" onclick="setSharePairView('long')">Long leg</button>
+        <button class="sc-pair-view-btn" data-view="short" onclick="setSharePairView('short')">Short leg</button>
+      </div>
     </div>
     <div class="sc-preview-wrap">
       <canvas id="sc-canvas" width="1080" height="1080"></canvas>
@@ -4868,6 +4901,8 @@ body{padding-bottom:44px;}
 .sc-toggle{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px;}
 .sc-tog-btn{background:none;border:none;color:var(--text3);font-family:inherit;font-size:13px;font-weight:600;padding:7px 22px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s;}
 .sc-tog-btn.is-active{background:var(--surface3);color:var(--text);}
+.sc-pair-view-btn{background:none;border:none;color:var(--text3);font-family:inherit;font-size:12px;font-weight:600;padding:6px 14px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s;}
+.sc-pair-view-btn.is-active{background:var(--surface3);color:var(--text);}
 .sc-preview-wrap{padding:14px 18px;display:flex;justify-content:center;flex:1;min-height:0;overflow:auto;background:radial-gradient(ellipse at center,rgba(26,255,171,0.05),transparent 60%);}
 /* Canvas itself is transparent outside the rounded shape (alpha channel).
    No CSS background — the canvas paints its own card. Drop-shadow filter
@@ -4886,6 +4921,8 @@ body{padding-bottom:44px;}
 <script>
 // ═══ Share P&L card ═══════════════════════════════════════════════════════
 let _sharePos = null;
+let _sharePair = null;            // populated when sharing a paired position
+let _sharePairView = 'combined';  // 'combined' | 'long' | 'short'
 let _shareMode = 'both'; // 'pct' (ROI %), 'usd' (PNL $), or 'both' (% big + $ small)
 
 // Reads the position from the button's data-share attribute. Browsers
@@ -4903,10 +4940,45 @@ function _openShareFromBtn(btn){
 
 function openShareCard(pos){
   _sharePos = pos;
+  _sharePair = null;
   const bd = document.getElementById('sc-backdrop');
   if (!bd) { console.error('sc-backdrop missing'); return; }
   bd.classList.add('open');
+  // Hide pair-only view chooser
+  const pv = document.getElementById('sc-pair-view'); if (pv) pv.style.display = 'none';
   document.querySelectorAll('.sc-tog-btn').forEach(b => b.classList.toggle('is-active', b.dataset.mode === _shareMode));
+  _renderShareCard();
+}
+
+function _openSharePairFromBtn(btn){
+  try {
+    const raw = btn.getAttribute('data-share-pair');
+    const pair = JSON.parse(raw);
+    openSharePairCard(pair);
+  } catch(e){
+    console.error('share-pair parse failed', e);
+    if (typeof toast === 'function') toast('Could not open share card', 'error');
+  }
+}
+
+function openSharePairCard(pair){
+  _sharePair = pair;
+  _sharePos = null;
+  _sharePairView = 'combined';
+  const bd = document.getElementById('sc-backdrop');
+  if (!bd) return;
+  bd.classList.add('open');
+  // Show pair-view chooser
+  const pv = document.getElementById('sc-pair-view'); if (pv) pv.style.display = 'inline-flex';
+  document.querySelectorAll('.sc-pair-view-btn').forEach(b => b.classList.toggle('is-active', b.dataset.view === _sharePairView));
+  document.querySelectorAll('.sc-tog-btn').forEach(b => b.classList.toggle('is-active', b.dataset.mode === _shareMode));
+  _renderShareCard();
+}
+
+function setSharePairView(v){
+  if (v === _sharePairView) return;
+  _sharePairView = v;
+  document.querySelectorAll('.sc-pair-view-btn').forEach(b => b.classList.toggle('is-active', b.dataset.view === v));
   _renderShareCard();
 }
 function closeShareCard(){
@@ -4958,7 +5030,45 @@ function _renderShareCard(){
 }
 
 function _renderShareCardNow(){
+  // Pair-mode renders one of three views by mapping the chosen pair-view
+  // back to the single-position renderer. "Combined" synthesises a virtual
+  // position from both legs.
+  if (_sharePair){
+    const pp = _sharePair;
+    let virt;
+    if (_sharePairView === 'long'){
+      virt = {
+        symbol: pp.symbol, exchange: pp.long.exchange, side: pp.long.side,
+        quantity: pp.long.quantity, entry_price: pp.long.entry_price,
+        mark_price: pp.long.mark_price, leverage: pp.long.leverage,
+        unrealized_pnl_usd: pp.long.unrealized_pnl_usd,
+        pnl_pct: (pp.long.entry_price > 0 && pp.long.quantity > 0)
+          ? (pp.long.unrealized_pnl_usd / (pp.long.entry_price * pp.long.quantity)) * 100 : 0,
+      };
+    } else if (_sharePairView === 'short'){
+      virt = {
+        symbol: pp.symbol, exchange: pp.short.exchange, side: pp.short.side,
+        quantity: pp.short.quantity, entry_price: pp.short.entry_price,
+        mark_price: pp.short.mark_price, leverage: pp.short.leverage,
+        unrealized_pnl_usd: pp.short.unrealized_pnl_usd,
+        pnl_pct: (pp.short.entry_price > 0 && pp.short.quantity > 0)
+          ? (pp.short.unrealized_pnl_usd / (pp.short.entry_price * pp.short.quantity)) * 100 : 0,
+      };
+    } else {
+      // Combined: render via the dedicated pair-combined renderer.
+      _renderPairCombined();
+      return;
+    }
+    _sharePos = virt;
+    _renderSinglePositionCard();
+    _sharePos = null;
+    return;
+  }
   if (!_sharePos) return;
+  _renderSinglePositionCard();
+}
+
+function _renderSinglePositionCard(){
   const c = document.getElementById('sc-canvas');
   const ctx = c.getContext('2d');
 
@@ -5315,6 +5425,258 @@ function _renderShareCardNow(){
   ctx.stroke();
 }
 
+// ─── Combined pair card (long+short on different venues) ────────────────
+function _renderPairCombined(){
+  const pp = _sharePair;
+  if (!pp) return;
+  const c = document.getElementById('sc-canvas');
+  const ctx = c.getContext('2d');
+  if (typeof ctx.roundRect !== 'function'){
+    ctx.roundRect = function(x,y,w,h,r){const rad=Math.min(r,w/2,h/2);this.beginPath();this.moveTo(x+rad,y);this.arcTo(x+w,y,x+w,y+h,rad);this.arcTo(x+w,y+h,x,y+h,rad);this.arcTo(x,y+h,x,y,rad);this.arcTo(x,y,x+w,y,rad);this.closePath();return this;};
+  }
+
+  const W = 1080, H = 1080;
+  c.width = W; c.height = H;
+
+  const totalPnl = +pp.total_pnl_usd || 0;
+  const profit = totalPnl >= 0;
+  // Combined ROI = totalPnl / pair_size (single-leg notional, that's the
+  // capital actually deployed).
+  const combinedPct = +pp.combined_pct || 0;
+  const accent    = profit ? '#1AFFAB' : '#F87171';
+  const accentRGB = profit ? '26,255,171' : '248,113,113';
+  const accentTip = profit ? '#9DFFD9' : '#FFB6B6';
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.clearRect(0,0,W,H);
+  const CARD_INSET = 0, CARD_R = 56;
+  const cardX = 0, cardY = 0, cardW = W, cardH = H;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, cardH, CARD_R);
+  ctx.clip();
+
+  // Background (same layered pattern as single card)
+  ctx.fillStyle = '#08080C';
+  ctx.fillRect(0,0,W,H);
+  const base = ctx.createLinearGradient(0,0,W,H);
+  base.addColorStop(0,'#12121A'); base.addColorStop(0.5,'#0A0A0E'); base.addColorStop(1,'#050507');
+  ctx.fillStyle = base; ctx.fillRect(0,0,W,H);
+  const wash1 = ctx.createRadialGradient(W*0.92,-100,0,W*0.92,-100,W*0.95);
+  wash1.addColorStop(0,`rgba(${accentRGB},0.22)`);
+  wash1.addColorStop(0.45,`rgba(${accentRGB},0.06)`);
+  wash1.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle = wash1; ctx.fillRect(0,0,W,H);
+  const wash2 = ctx.createRadialGradient(W*0.05,H*1.05,0,W*0.05,H*1.05,W*0.7);
+  wash2.addColorStop(0,`rgba(${accentRGB},0.10)`); wash2.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle = wash2; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = 'rgba(255,255,255,0.012)';
+  for (let i=0;i<280;i++){ ctx.fillRect(Math.random()*W, Math.random()*H, 1, 1); }
+  // Top accent strip
+  const stripGrad = ctx.createLinearGradient(0,0,W,0);
+  stripGrad.addColorStop(0,`rgba(${accentRGB},0)`);
+  stripGrad.addColorStop(0.5,`rgba(${accentRGB},0.85)`);
+  stripGrad.addColorStop(1,`rgba(${accentRGB},0)`);
+  ctx.fillStyle = stripGrad; ctx.fillRect(0,0,W,3);
+
+  // Watermark — symbol HUGE
+  ctx.save();
+  ctx.font = '900 380px "Inter", system-ui, sans-serif';
+  const wmW = ctx.measureText(pp.symbol).width;
+  ctx.fillStyle = `rgba(${accentRGB},0.045)`;
+  ctx.fillText(pp.symbol, W - wmW - 40, H*0.42);
+  ctx.strokeStyle = `rgba(${accentRGB},0.06)`; ctx.lineWidth = 1.5;
+  ctx.strokeText(pp.symbol, W - wmW - 40, H*0.42);
+  ctx.restore();
+
+  const PAD = 80;
+  const GRID_X = PAD, GRID_R = W - PAD, COL_W = GRID_R - GRID_X;
+
+  // BRAND
+  let y = PAD + 20;
+  ctx.font = '800 60px "Inter", system-ui, sans-serif';
+  ctx.strokeStyle = accent; ctx.lineWidth = 2.6; ctx.lineJoin = 'round';
+  ctx.strokeText('avalant', GRID_X, y + 60);
+  const brandW = ctx.measureText('avalant').width;
+  ctx.fillStyle = accent; ctx.fillRect(GRID_X + brandW + 10, y + 36, 22, 7);
+
+  const ds = new Date();
+  const dateStr = ds.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}).toUpperCase();
+  ctx.font = '700 13px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#50545E';
+  _drawTracked(ctx, dateStr, GRID_R, y + 38, 1.6, 'right');
+
+  y += 96;
+  ctx.font = '700 12px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  _drawTracked(ctx, 'PAIR ARB  ·  CROSS-EXCHANGE  ·  LONG / SHORT', GRID_X, y, 1.8);
+
+  y += 30;
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(GRID_X, y, COL_W, 1);
+
+  // PAIR HEADER: long.exchange ⇄ short.exchange + symbol
+  y += 80;
+  // Long pill (green)
+  ctx.font = '800 22px "Inter", system-ui, sans-serif';
+  const longLabel = (window.EX && window.EX.labels && window.EX.labels[pp.long.exchange]) || pp.long.exchange.toUpperCase();
+  const shortLabel = (window.EX && window.EX.labels && window.EX.labels[pp.short.exchange]) || pp.short.exchange.toUpperCase();
+  // Long chip
+  const longTextW = ctx.measureText(longLabel).width;
+  const longChipW = longTextW + 56;
+  const chipH = 50;
+  ctx.fillStyle = 'rgba(26,255,171,0.18)';
+  ctx.beginPath(); ctx.roundRect(GRID_X, y - chipH/2, longChipW, chipH, chipH/2); ctx.fill();
+  ctx.strokeStyle = 'rgba(26,255,171,0.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+  // green dot
+  ctx.fillStyle = '#1AFFAB';
+  ctx.beginPath(); ctx.arc(GRID_X + 22, y, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#1AFFAB';
+  ctx.fillText(longLabel, GRID_X + 38, y + 8);
+  // arrow ⇄
+  let ax = GRID_X + longChipW + 18;
+  ctx.font = '700 30px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  ctx.fillText('⇄', ax, y + 10);
+  ax += ctx.measureText('⇄').width + 18;
+  // Short chip
+  ctx.font = '800 22px "Inter", system-ui, sans-serif';
+  const shortTextW = ctx.measureText(shortLabel).width;
+  const shortChipW = shortTextW + 56;
+  ctx.fillStyle = 'rgba(248,113,113,0.18)';
+  ctx.beginPath(); ctx.roundRect(ax, y - chipH/2, shortChipW, chipH, chipH/2); ctx.fill();
+  ctx.strokeStyle = 'rgba(248,113,113,0.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#F87171';
+  ctx.beginPath(); ctx.arc(ax + 22, y, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#F87171';
+  ctx.fillText(shortLabel, ax + 38, y + 8);
+
+  // Symbol below
+  y += 50;
+  ctx.font = '900 38px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(`${pp.symbol}USDT`, GRID_X, y);
+  ctx.font = '700 11px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#3A3D47';
+  _drawTracked(ctx, 'PERPETUAL  ·  PAIR POSITION', GRID_X, y + 22, 1.8);
+
+  // UPNL label + HERO
+  y += 70;
+  ctx.font = '700 13px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  _drawTracked(ctx, 'COMBINED P&L', GRID_X, y, 1.8);
+
+  const pctStr = `${combinedPct >= 0 ? '+' : ''}${combinedPct.toFixed(2)}%`;
+  const usdStr = `${totalPnl >= 0 ? '+$' : '−$'}${Math.abs(totalPnl).toFixed(2)}`;
+  const showPrimary = _shareMode === 'usd' ? usdStr : pctStr;
+  const showSecondary = _shareMode === 'both' ? usdStr : null;
+
+  y += 40;
+  // Halo
+  ctx.save();
+  const haloOuter = ctx.createRadialGradient(GRID_X + 200, y + 80, 30, GRID_X + 200, y + 80, 760);
+  haloOuter.addColorStop(0, `rgba(${accentRGB},0.22)`);
+  haloOuter.addColorStop(0.35, `rgba(${accentRGB},0.10)`);
+  haloOuter.addColorStop(0.7, `rgba(${accentRGB},0.02)`);
+  haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haloOuter; ctx.fillRect(0, y - 80, W, 380);
+  const haloInner = ctx.createRadialGradient(GRID_X + 220, y + 100, 10, GRID_X + 220, y + 100, 320);
+  haloInner.addColorStop(0, `rgba(${accentRGB},0.30)`);
+  haloInner.addColorStop(0.5, `rgba(${accentRGB},0.07)`);
+  haloInner.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haloInner; ctx.fillRect(0, y - 80, W, 380);
+  ctx.restore();
+
+  const heroSizes = (_shareMode === 'both') ? [200, 184, 168, 152, 136, 120] : [220, 200, 184, 168, 152];
+  let chosen = heroSizes[1];
+  for (const s of heroSizes){
+    ctx.font = `900 ${s}px "JetBrains Mono", Menlo, monospace`;
+    if (ctx.measureText(showPrimary).width <= COL_W - 20){ chosen = s; break; }
+  }
+  ctx.font = `900 ${chosen}px "JetBrains Mono", Menlo, monospace`;
+  const heroBaselineY = y + 130;
+  const numGrad = ctx.createLinearGradient(0, heroBaselineY - chosen, 0, heroBaselineY + 6);
+  numGrad.addColorStop(0, accentTip);
+  numGrad.addColorStop(0.55, accent);
+  numGrad.addColorStop(1, profit ? '#10C987' : '#D14545');
+  ctx.shadowColor = accent; ctx.shadowBlur = 60;
+  ctx.fillStyle = numGrad;
+  ctx.fillText(showPrimary, GRID_X, heroBaselineY);
+  ctx.shadowBlur = 0;
+
+  if (showSecondary){
+    ctx.font = '700 32px "JetBrains Mono", Menlo, monospace';
+    ctx.fillStyle = `rgba(${accentRGB},0.80)`;
+    ctx.fillText(`▲  ${showSecondary}`, GRID_X, heroBaselineY + 56);
+  } else {
+    const lbl = _shareMode === 'pct' ? 'COMBINED ROI' : 'COMBINED PROFIT & LOSS';
+    ctx.font = '700 12px "Inter", system-ui, sans-serif';
+    ctx.fillStyle = `rgba(${accentRGB},0.55)`;
+    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 44, 1.6);
+  }
+
+  // ENTRY SPREAD + PAIR SIZE — two columns
+  y = H * 0.78;
+  const colWidth = COL_W / 2;
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillRect(GRID_X + colWidth, y - 18, 1, 92);
+
+  // Col 1: Entry spread
+  ctx.font = '700 12px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  _drawTracked(ctx, 'ENTRY SPREAD', GRID_X, y, 1.6);
+  const sp = +pp.entry_spread_pct || 0;
+  const spStr = sp != null ? `${sp >= 0 ? '+' : ''}${sp.toFixed(4)}%` : '—';
+  ctx.font = '800 42px "JetBrains Mono", Menlo, monospace';
+  ctx.fillStyle = sp >= 0 ? '#1AFFAB' : '#F87171';
+  ctx.fillText(spStr, GRID_X, y + 60);
+
+  // Col 2: Pair size
+  const c2x = GRID_X + colWidth + 32;
+  ctx.font = '700 12px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  _drawTracked(ctx, 'PAIR SIZE / LEG', c2x, y, 1.6);
+  ctx.font = '800 42px "JetBrains Mono", Menlo, monospace';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(`$${(+pp.pair_size_usd || 0).toFixed(0)}`, c2x, y + 60);
+
+  // FOOTER (re-uses single-card layout)
+  const footY = H - PAD;
+  const captionY = footY - 50;
+  const valueY = footY - 16;
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillRect(GRID_X, footY - 80, COL_W, 1);
+  // Left: PAIR caption + dual exchange dots
+  ctx.font = '700 10px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#3A3D47';
+  _drawTracked(ctx, 'EXCHANGES', GRID_X, captionY, 1.6);
+  // long dot + short dot
+  ctx.fillStyle = '#1AFFAB';
+  ctx.beginPath(); ctx.arc(GRID_X + 7, valueY - 8, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#F87171';
+  ctx.beginPath(); ctx.arc(GRID_X + 24, valueY - 8, 6, 0, Math.PI*2); ctx.fill();
+  ctx.font = '700 20px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(`${longLabel} · ${shortLabel}`, GRID_X + 40, valueY);
+
+  ctx.font = '700 10px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#3A3D47';
+  _drawTracked(ctx, 'CROSS-EXCHANGE ARBITRAGE', GRID_R, captionY, 1.6, 'right');
+  ctx.font = '800 28px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = accent;
+  const urlText = 'avalant.xyz';
+  const urlW = ctx.measureText(urlText).width;
+  ctx.fillText(urlText, GRID_R - urlW, valueY);
+
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.roundRect(cardX + 0.5, cardY + 0.5, cardW - 1, cardH - 1, CARD_R);
+  ctx.strokeStyle = `rgba(${accentRGB},0.18)`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
 // Helper: draw text with letter-spacing tracking. Canvas has no native
 // letter-spacing API, so we draw character-by-character with fixed offsets.
 // Cheap; called only on label/caption strings.
@@ -5335,8 +5697,9 @@ function _drawTracked(ctx, text, x, y, tracking, align){
 function downloadShareCard(){
   const c = document.getElementById('sc-canvas');
   const a = document.createElement('a');
-  const sym = (_sharePos && _sharePos.symbol) || 'pnl';
-  a.download = `avalant-${sym.toLowerCase()}-${Date.now()}.png`;
+  const sym = (_sharePair && _sharePair.symbol) || (_sharePos && _sharePos.symbol) || 'pnl';
+  const tag = _sharePair ? 'pair' : 'pnl';
+  a.download = `avalant-${sym.toLowerCase()}-${tag}-${Date.now()}.png`;
   a.href = c.toDataURL('image/png');
   a.click();
 }
@@ -5358,13 +5721,24 @@ async function copyShareCard(){
 }
 
 async function copyShareText(){
-  if (!_sharePos) return;
-  const p = _sharePos;
-  const isLong = p.side === 'buy';
-  const profit = (p.unrealized_pnl_usd || 0) >= 0;
-  const pctTxt = `${profit ? '+' : ''}${(+p.pnl_pct).toFixed(2)}%`;
-  const usdTxt = `${profit ? '+$' : '−$'}${Math.abs(+p.unrealized_pnl_usd).toFixed(2)}`;
-  const text = `${isLong ? 'LONG' : 'SHORT'} ${p.symbol} ${p.leverage}× on ${_shareEx(p.exchange)} — ${pctTxt} (${usdTxt}) · avalant.xyz`;
+  let text;
+  if (_sharePair){
+    const pp = _sharePair;
+    const tot = +pp.total_pnl_usd || 0;
+    const pct = +pp.combined_pct || 0;
+    const pctTxt = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+    const usdTxt = `${tot >= 0 ? '+$' : '−$'}${Math.abs(tot).toFixed(2)}`;
+    text = `PAIR ${pp.symbol} ${_shareEx(pp.long.exchange)}⇄${_shareEx(pp.short.exchange)} — ${pctTxt} (${usdTxt}) · avalant.xyz`;
+  } else if (_sharePos){
+    const p = _sharePos;
+    const isLong = p.side === 'buy';
+    const profit = (p.unrealized_pnl_usd || 0) >= 0;
+    const pctTxt = `${profit ? '+' : ''}${(+p.pnl_pct).toFixed(2)}%`;
+    const usdTxt = `${profit ? '+$' : '−$'}${Math.abs(+p.unrealized_pnl_usd).toFixed(2)}`;
+    text = `${isLong ? 'LONG' : 'SHORT'} ${p.symbol} ${p.leverage}× on ${_shareEx(p.exchange)} — ${pctTxt} (${usdTxt}) · avalant.xyz`;
+  } else {
+    return;
+  }
   try {
     await navigator.clipboard.writeText(text);
     if (typeof toast === 'function') toast('Copied to clipboard', 'success');
