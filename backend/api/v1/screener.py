@@ -880,7 +880,12 @@ async def _refresh_loop() -> None:
             # when arb compute is delegated. Web-role replicas read this file's
             # `ts` (and `ts_by_ex`) for the Exchange-status strip.
             now_t = time.time()
-            if rows and now_t - _LAST_HEARTBEAT_WRITE >= _HEARTBEAT_INTERVAL:
+            # Write the heartbeat even when `rows` is briefly empty so the
+            # file's mtime tracks "refresh-loop is alive" — venues without
+            # per-exchange WS dumps (htx/extended/ethereal/paradex) read
+            # their freshness off this file, and a 10s gap shows up as a
+            # stale row on the dashboard.
+            if now_t - _LAST_HEARTBEAT_WRITE >= _HEARTBEAT_INTERVAL:
                 _LAST_HEARTBEAT_WRITE = now_t
                 ex_set = set()
                 for r in rows:
