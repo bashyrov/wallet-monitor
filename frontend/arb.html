@@ -3870,17 +3870,44 @@ function _acc_pair_positions(rows){
   return {pairs, singles};
 }
 
+// Sticky positions cache — keeps the last successful payload so brief
+// network blips, 5xx hiccups, or transient empty responses don't blank
+// the table while a position is actually open. Only clear after N
+// consecutive empty responses (genuine "all closed" state).
+let _accLastPositions = null;
+let _accEmptyStreak = 0;
+const _EMPTY_STREAK_LIMIT = 3;
+
 async function accLoadPositions(){
   const tbody = document.getElementById('acc-positions-body');
   const empty = document.getElementById('acc-positions-empty');
+  let rows;
   try {
     const r = await Auth.apiFetch('/trade/positions');
     if (!r.ok) throw new Error();
-    const rows = await r.json();
-    document.getElementById('acc-cnt-positions').textContent = rows.length;
-    document.getElementById('acc-pos-count').textContent = rows.length;
-    if (!rows.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
-    empty.style.display = 'none';
+    rows = await r.json();
+  } catch {
+    // Network/server hiccup — keep showing the last state, do not blank.
+    return;
+  }
+  if (!rows.length){
+    _accEmptyStreak++;
+    if (_accLastPositions && _accEmptyStreak < _EMPTY_STREAK_LIMIT){
+      // Probably a transient blip — keep showing the last good payload.
+      return;
+    }
+    document.getElementById('acc-cnt-positions').textContent = '0';
+    document.getElementById('acc-pos-count').textContent = '0';
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    _accLastPositions = [];
+    return;
+  }
+  _accEmptyStreak = 0;
+  _accLastPositions = rows;
+  document.getElementById('acc-cnt-positions').textContent = rows.length;
+  document.getElementById('acc-pos-count').textContent = rows.length;
+  empty.style.display = 'none';
 
     const {pairs, singles} = _acc_pair_positions(rows);
     const sumUsd = (v) => (v>=0?'+':'') + '$' + Math.abs(v).toFixed(2);
@@ -3987,11 +4014,6 @@ async function accLoadPositions(){
       fEl.textContent = (fundingSum>=0?'+':'') + '$' + Math.abs(fundingSum).toFixed(2);
       fEl.className = 'acc-sum-val ' + (fundingSum>=0?'pos':'neg');
     }
-  } catch {
-    tbody.innerHTML = '';
-    empty.style.display = 'block';
-    document.getElementById('acc-cnt-positions').textContent = '0';
-  }
 }
 
 async function _tradeClosePair(longWid, shortWid, sym){
@@ -4446,15 +4468,34 @@ async function tradeClose(wid, posId){
   } catch (e) { _toast('Close failed: ' + (e.message || 'unknown'), 'error'); }
 }
 
+// Sticky for the trade-panel position list — same idea as accLoadPositions.
+let _tpLastPositions = null;
+let _tpEmptyStreak = 0;
+
 async function refreshTradePositions(){
+  let rows;
   try {
     const r = await Auth.apiFetch('/trade/positions?symbol=' + SYM);
     if (!r.ok) return;
-    const rows = await r.json();
-    const wrap = document.getElementById('trade-positions');
-    const list = document.getElementById('trade-positions-list');
-    if (!rows.length) { wrap.style.display = 'none'; return; }
-    wrap.style.display = 'block';
+    rows = await r.json();
+  } catch {
+    return;
+  }
+  const wrap = document.getElementById('trade-positions');
+  const list = document.getElementById('trade-positions-list');
+  if (!rows.length){
+    _tpEmptyStreak++;
+    if (_tpLastPositions && _tpEmptyStreak < _EMPTY_STREAK_LIMIT){
+      // Likely a transient blip — keep the row visible.
+      return;
+    }
+    _tpLastPositions = [];
+    wrap.style.display = 'none';
+    return;
+  }
+  _tpEmptyStreak = 0;
+  _tpLastPositions = rows;
+  wrap.style.display = 'block';
     list.innerHTML = rows.map(p => {
       const pnlCls = p.unrealized_pnl_usd >= 0 ? 'pos' : 'neg';
       const sideCls = p.side === 'buy' ? 'side-long' : 'side-short';
@@ -4480,8 +4521,7 @@ async function refreshTradePositions(){
                   onclick='_openShareFromBtn(this)'
                   style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:4px">↗</button>
         </div>`;
-    }).join('');
-  } catch {}
+  }).join('');
 }
 
 // ═══════════════════════════════════════════════════════════════════════
