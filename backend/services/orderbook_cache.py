@@ -25,15 +25,47 @@ import time
 
 import httpx
 
-# Dedicated httpx pool for orderbook polling so it doesn't compete with funding
-# fetchers for connection slots. connect=10s — Contabo→exchange edge regularly
-# spends 5-8s on TLS handshake, the previous 3s ceiling caused empty/fail polls
-# on healthy venues (HTX SIREN/POWER/ORCA etc.).
+# Per-exchange dedicated httpx pool. Previously a single shared pool meant
+# slow venues (KuCoin/HTX/Aster from Contabo) could occupy connection slots
+# and starve fast venues (Binance/Bybit) waiting in pool queue. With dedicated
+# pools, each venue's TCP connections live in their own pool — a stuck
+# KuCoin doesn't slow down a Binance fetch.
+#
+# Limits per pool: 30 connections / 15 keepalive — ample for top-100 hot-list
+# polling at 0.5s cadence, well under any venue's per-IP connection cap.
+# connect=10s for slow venues' TLS handshakes (Contabo edge spends 5-8s on
+# KuCoin/HTX). read=4s is enough for orderbook responses.
+_HTTP_POOLS: dict[str, httpx.AsyncClient] = {}
+
+def _get_http_for(exchange: str) -> httpx.AsyncClient:
+    """Lazy-create a dedicated httpx pool for `exchange`. Threadsafe at import
+    time only; subsequent calls just look up the dict."""
+    ex = exchange.lower()
+    pool = _HTTP_POOLS.get(ex)
+    if pool is None:
+        pool = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=4.0, write=3.0, pool=1.0),
+            headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
+            follow_redirects=True,
+            limits=httpx.Limits(
+                max_connections=30,
+                max_keepalive_connections=15,
+                keepalive_expiry=30,
+            ),
+            http2=False,
+        )
+        _HTTP_POOLS[ex] = pool
+    return pool
+
+
+# Backwards-compat alias used by code paths that aren't venue-aware (e.g.
+# the master merger). Keep one large shared pool just for those — no risk
+# of competing with the per-venue pools because they go to different hosts.
 _arb_http = httpx.AsyncClient(
     timeout=httpx.Timeout(connect=10.0, read=4.0, write=3.0, pool=1.0),
     headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
     follow_redirects=True,
-    limits=httpx.Limits(max_connections=300, max_keepalive_connections=80, keepalive_expiry=30),
+    limits=httpx.Limits(max_connections=100, max_keepalive_connections=40, keepalive_expiry=30),
     http2=False,
 )
 
@@ -116,7 +148,8 @@ def _canonical_limit(exchange: str, limit: int) -> int:
 
 # ── Direct per-exchange fetch ────────────────────────────────────────────────
 async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
-    c = _arb_http
+    # Per-exchange dedicated pool — slow venues no longer block fast ones.
+    c = _get_http_for(exchange)
     limit = _canonical_limit(exchange, limit)
     try:
         if exchange == "binance":
