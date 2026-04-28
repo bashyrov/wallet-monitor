@@ -61,23 +61,62 @@ _sampler_stop = threading.Event()
 
 
 def _sampler_loop() -> None:
-    """Sample get_exchange_health() every 3s, persist via file cache so the
-    admin endpoint (potentially on a different replica) can read it."""
-    from backend.services.arbitrage_service import get_exchange_health
-    logger.info("freshness sampler thread started (interval=3s)")
+    """Sample per-venue freshness from the canonical sources every 1s.
+
+    Two inputs, MIN of which goes into the rolling window:
+      · funding.json/ts_by_ex — wall-clock ts the refresh-loop heartbeat
+        writes for each venue (tracks the WS subprocess push)
+      · /tmp/avalant_cache/funding_ws.{ex}.json — the per-venue WS
+        subprocess dump, even fresher than the merged file
+    Reading these directly means we report what the user *actually*
+    sees on the Exchange-status strip (which reads funding.json), not
+    a separate path that could drift."""
+    logger.info("freshness sampler thread started (interval=1s)")
     last_write = 0.0
     tick = 0
+    fetchers_cache = None
     while not _sampler_stop.is_set():
         tick += 1
         try:
-            health = get_exchange_health() or {}
-            valid_ages = sum(1 for v in health.values() if v.get("age_s") is not None)
-            if tick % 10 == 1:
-                logger.info("freshness sampler tick=%d venues_with_age=%d/%d",
-                            tick, valid_ages, len(health))
-            # `record` is already called inside get_exchange_health, so we
-            # just need to flush stats() to disk once per cycle.
+            if fetchers_cache is None:
+                from backend.services.arbitrage_service import FETCHERS as _F
+                fetchers_cache = list(_F.keys())
             now = time.time()
+            # 1. Per-venue WS dump
+            for ex in fetchers_cache:
+                ws_age = None
+                # Per-exchange WS subprocess dump
+                try:
+                    with open(f"{_CACHE_DIR}/funding_ws.{ex}.json", "rb") as f:
+                        d = json.loads(f.read())
+                    tbe = d.get("ts_by_ex") or {}
+                    ts = tbe.get(ex) or d.get("ts")
+                    if ts:
+                        ws_age = max(0.0, now - float(ts))
+                except FileNotFoundError:
+                    pass
+                except Exception:
+                    pass
+                # Heartbeat-merged ts (refresh_loop writes both REST + WS)
+                merged_age = None
+                try:
+                    with open(f"{_CACHE_DIR}/funding.json", "rb") as f:
+                        d = json.loads(f.read())
+                    tbe = d.get("ts_by_ex") or {}
+                    ts = tbe.get(ex)
+                    if ts:
+                        merged_age = max(0.0, now - float(ts))
+                    elif d.get("ts"):
+                        merged_age = max(0.0, now - float(d["ts"]))
+                except Exception:
+                    pass
+                # Best (lowest) of the two
+                ages = [a for a in (ws_age, merged_age) if a is not None]
+                if ages:
+                    record(ex, min(ages))
+            if tick % 30 == 1:
+                logger.info("freshness sampler tick=%d", tick)
+            # Persist stats every 2s
             if now - last_write >= 2.0:
                 last_write = now
                 snapshot = stats()
@@ -92,7 +131,7 @@ def _sampler_loop() -> None:
                     logger.warning("freshness stats write failed: %s", exc)
         except Exception as exc:
             logger.warning("freshness sampler tick failed: %s", exc)
-        _sampler_stop.wait(3.0)
+        _sampler_stop.wait(1.0)
 
 
 def start_sampler() -> None:
