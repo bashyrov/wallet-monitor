@@ -1586,7 +1586,6 @@ def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None =
             long_e = long_pe["e"]
             rate_l = long_pe["rate_norm"]
             fee_l = long_pe["fee"]
-            book_l = long_pe["book"]
             mark_l = long_pe["mark"]
             for j in range(n_entries):
                 if i == j:
