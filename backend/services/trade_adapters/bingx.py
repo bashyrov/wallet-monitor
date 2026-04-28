@@ -142,13 +142,33 @@ class BingxAdapter:
             except RuntimeError:
                 pass  # already set
 
+        async def _lev_side(s: str):
+            try:
+                await cls._req(creds, "POST", "/openApi/swap/v2/trade/leverage", {
+                    "symbol": sym, "side": s, "leverage": int(leverage),
+                })
+            except RuntimeError as e:
+                # 80012 / 109400 "leverage not modified" — fine
+                if not any(c in str(e) for c in ("80012", "109400", "100413")):
+                    raise
+
         async def _lev():
+            # Try BOTH first (one-way mode); on hedge-mode rejection, set
+            # both LONG and SHORT separately. BingX errors with code 100400
+            # "side error" if BOTH is sent in hedge mode.
             try:
                 await cls._req(creds, "POST", "/openApi/swap/v2/trade/leverage", {
                     "symbol": sym, "side": "BOTH", "leverage": int(leverage),
                 })
             except RuntimeError as e:
-                raise RuntimeError(_friendly_error(*_split_code(e)))
+                s = str(e)
+                if any(t in s for t in ("hedge", "Hedge", "side", "100400", "LONG", "SHORT")):
+                    # Hedge mode — set both legs
+                    await asyncio.gather(_lev_side("LONG"), _lev_side("SHORT"),
+                                          return_exceptions=True)
+                else:
+                    if not any(c in s for c in ("80012", "109400")):
+                        raise RuntimeError(_friendly_error(*_split_code(e)))
 
         await asyncio.gather(_mode(), _lev())
 
@@ -232,15 +252,23 @@ class BingxAdapter:
         info = (await _exchange_info()).get(sym) or {}
         prec = info.get("quantityPrecision", 2)
         qty_s = _qty_str(abs(amt), prec)
+        # Hedge mode (positionSide=LONG/SHORT): BingX rejects reduceOnly.
+        #   "In the Hedge mode, the 'ReduceOnly' field can not be filled."
+        # The positionSide already disambiguates which leg to flatten, so
+        # reduceOnly is redundant. One-way mode (positionSide=BOTH) accepts
+        # reduceOnly. Detect mode and adjust.
+        is_hedge = position_side in ("LONG", "SHORT")
+        body = {
+            "symbol": sym,
+            "type": "MARKET",
+            "side": reduce_side,
+            "positionSide": position_side,
+            "quantity": qty_s,
+        }
+        if not is_hedge:
+            body["reduceOnly"] = "true"
         try:
-            r = await cls._req(creds, "POST", "/openApi/swap/v2/trade/order", {
-                "symbol": sym,
-                "type": "MARKET",
-                "side": reduce_side,
-                "positionSide": position_side,
-                "quantity": qty_s,
-                "reduceOnly": "true",
-            })
+            r = await cls._req(creds, "POST", "/openApi/swap/v2/trade/order", body)
         except RuntimeError as e:
             raise RuntimeError(_friendly_error(*_split_code(e)))
         return {"order_id": str((r or {}).get("orderId", "")), "closed_qty": abs(amt), "realized_pnl_usd": 0.0}
