@@ -5132,12 +5132,14 @@ function _renderShareCardNow(){
 
   // Build a vertical gradient for the BIG number — lighter tip → mid → deeper.
   // Visually nicer than flat fill, gives the number "shine".
+  // All three stops MUST belong to the same colour family (profit-based)
+  // so a SHORT-in-profit card doesn't get a red bottom under a green top.
   const heroH = chosen;
   const heroBaselineY = y + 130;
   const numGrad = ctx.createLinearGradient(0, heroBaselineY - heroH, 0, heroBaselineY + 6);
   numGrad.addColorStop(0, accentTip);
   numGrad.addColorStop(0.55, accent);
-  numGrad.addColorStop(1, isLong ? '#10C987' : '#D14545');
+  numGrad.addColorStop(1, profit ? '#10C987' : '#D14545');
   ctx.shadowColor = accent;
   ctx.shadowBlur = 60;
   ctx.fillStyle = numGrad;
