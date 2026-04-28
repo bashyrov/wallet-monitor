@@ -1270,7 +1270,7 @@ function renderSpot() {
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
       <td class="td-spread td-in"><span class="${(typeof r.in_pct === 'number' && r.in_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(typeof r.in_pct === 'number') ? (r.in_pct >= 0 ? '+' : '') + r.in_pct.toFixed(4) + '%' : '—'}</span>${r.book_ok === false ? '<span class="book-stale" title="Fallback to ticker-based basis — live orderbook not subscribed yet for this pair (subscribe takes ~5–20s on first request).">·</span>' : ''}</td>
       <td class="td-spread td-out"><span class="${(typeof r.out_pct === 'number' && r.out_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(typeof r.out_pct === 'number') ? (r.out_pct >= 0 ? '+' : '') + r.out_pct.toFixed(4) + '%' : '—'}</span></td>
-      <td class="td-spread"><span class="${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span></td>
+      <td class="td-spread">${r.book_ok ? '<span style="color:var(--text3)">—</span>' : `<span class="${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>`}</td>
       <td class="td-fees">
         <span title="spot rt: ${r.fee_spot.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
@@ -1347,10 +1347,10 @@ function renderSpotCards() {
           <span class="card-lbl">Funding / 8h</span>
           <span class="card-val ${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span>
         </div>
-        <div class="card-row">
+        ${r.book_ok ? '' : `<div class="card-row">
           <span class="card-lbl">Basis</span>
           <span class="card-val ${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>
-        </div>
+        </div>`}
         <div class="card-row">
           <span class="card-lbl">In</span>
           <span class="card-val ${inCls}">${inPct != null ? inSign+inPct.toFixed(4)+'%' : '—'}</span>
