@@ -4918,13 +4918,18 @@ function _renderShareCardNow(){
   const p = _sharePos;
   const isLong = p.side === 'buy';
   const profit = (p.unrealized_pnl_usd || 0) >= 0;
-  // Theme accent comes from the SIDE: LONG → green, SHORT → red.
-  // The position's profit/loss does NOT change the card colour — the
-  // sign on the P&L number tells that story.
-  const accent = isLong ? '#1AFFAB' : '#F87171';
-  const accentRGB = isLong ? '26,255,171' : '248,113,113';
-  // Lighter shade used for top of the hero gradient (more luminous tip).
-  const accentTip = isLong ? '#9DFFD9' : '#FFB6B6';
+
+  // Two color families:
+  //   sideColor — only for the LONG/SHORT pill (long=green, short=red).
+  //               Communicates the trade direction visually.
+  //   accent    — for the THEME: hero number, halo, top strip, URL.
+  //               Driven by profit/loss so the card reads as profitable
+  //               (green) or in drawdown (red) at a glance.
+  const sideColor = isLong ? '#1AFFAB' : '#F87171';
+  const sideRGB   = isLong ? '26,255,171' : '248,113,113';
+  const accent    = profit ? '#1AFFAB' : '#F87171';
+  const accentRGB = profit ? '26,255,171' : '248,113,113';
+  const accentTip = profit ? '#9DFFD9' : '#FFB6B6';
 
   ctx.textBaseline = 'alphabetic';
 
@@ -5037,24 +5042,22 @@ function _renderShareCardNow(){
   // ──────────── 2. POSITION HEADER  — clean single line, all left-aligned
   y += 80;
 
-  // Side pill at the very left
+  // Side pill at the very left — coloured by direction (long=green, short=red)
   const sideText = isLong ? 'LONG' : 'SHORT';
   ctx.font = '800 28px "Inter", system-ui, sans-serif';
   const pillTextW = ctx.measureText(sideText).width;
   const pillW = pillTextW + 56;
   const pillH = 54;
   const pillTop = y - pillH/2;
-  // gradient pill bg
   const pillGrad = ctx.createLinearGradient(GRID_X, pillTop, GRID_X, pillTop + pillH);
-  pillGrad.addColorStop(0, `rgba(${accentRGB},0.22)`);
-  pillGrad.addColorStop(1, `rgba(${accentRGB},0.08)`);
+  pillGrad.addColorStop(0, `rgba(${sideRGB},0.22)`);
+  pillGrad.addColorStop(1, `rgba(${sideRGB},0.08)`);
   ctx.fillStyle = pillGrad;
   ctx.beginPath(); ctx.roundRect(GRID_X, pillTop, pillW, pillH, pillH/2); ctx.fill();
-  ctx.strokeStyle = `rgba(${accentRGB},0.55)`;
+  ctx.strokeStyle = `rgba(${sideRGB},0.55)`;
   ctx.lineWidth = 1.6;
   ctx.stroke();
-  // pill text
-  ctx.fillStyle = accent;
+  ctx.fillStyle = sideColor;
   ctx.fillText(sideText, GRID_X + 28, y + 10);
 
   // Leverage and symbol — single typography style, no chips, just clean text
