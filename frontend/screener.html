@@ -71,9 +71,9 @@
         <span class="fb-label">Net</span>
         <input class="fb-input" id="f-min-net" type="number" step="0.001" placeholder="0%">
         <span class="fb-label">Gross</span>
-        <input class="fb-input" id="f-min-gross" type="number" step="0.001" placeholder="any" oninput="applyArb()">
+        <input class="fb-input" id="f-min-gross" type="number" step="0.001" placeholder="any" oninput="_reapplyCurrentMode()">
         <span class="fb-label" title="Gross funding + price spread — positive = tailwind from either side">G+S</span>
-        <input class="fb-input" id="f-min-gs" type="number" step="0.001" placeholder="0" oninput="applyArb()">
+        <input class="fb-input" id="f-min-gs" type="number" step="0.001" placeholder="0" oninput="_reapplyCurrentMode()">
         <span class="fb-label">Vol</span>
         <div class="vol-quick">
           <button class="vol-chip" data-v="0" onclick="setMinVol(0, this)">Any</button>
@@ -82,7 +82,7 @@
           <button class="vol-chip" data-v="10000000" onclick="setMinVol(10000000, this)">10M</button>
           <button class="vol-chip" data-v="100000000" onclick="setMinVol(100000000, this)">100M</button>
         </div>
-        <input class="fb-input" id="f-min-vol" type="number" min="0" step="10000" placeholder="500000" oninput="applyArb()" style="width:110px;">
+        <input class="fb-input" id="f-min-vol" type="number" min="0" step="10000" placeholder="500000" oninput="_reapplyCurrentMode()" style="width:110px;">
         <div class="fb-ex-chip" id="f-valid-toggle" onclick="toggleValidOnly()">
           <span class="dot" id="f-valid-dot" style="opacity:.4;background:currentColor"></span>Valid only
         </div>
@@ -142,7 +142,7 @@
     <div class="toolbar">
       <div class="search-wrap" style="flex:1">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.8"/><path d="M15 15l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <input class="mob-search-input" id="search-mobile" type="text" placeholder="Search token…" autocomplete="off" oninput="document.getElementById('search').value=this.value;applyFilter(true);applyArb(true)">
+        <input class="mob-search-input" id="search-mobile" type="text" placeholder="Search token…" autocomplete="off" oninput="document.getElementById('search').value=this.value;applyFilter(true);_reapplyCurrentMode()">
       </div>
       <button class="mob-filter-btn" id="mob-filter-btn" onclick="toggleMobFilters()">
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M3 7h8M5 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -191,15 +191,15 @@
           <div class="lp-title" style="margin-bottom:8px">Long/Short filters</div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min net profit %</div>
-            <input class="lp-filter-input" id="f-min-net-mob" type="number" step="0.001" placeholder="0%" oninput="document.getElementById('f-min-net').value=this.value;applyArb()">
+            <input class="lp-filter-input" id="f-min-net-mob" type="number" step="0.001" placeholder="0%" oninput="document.getElementById('f-min-net').value=this.value;_reapplyCurrentMode()">
           </div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min gross funding %</div>
-            <input class="lp-filter-input" id="f-min-gross-mob" type="number" step="0.001" placeholder="any" oninput="document.getElementById('f-min-gross').value=this.value;applyArb()">
+            <input class="lp-filter-input" id="f-min-gross-mob" type="number" step="0.001" placeholder="any" oninput="document.getElementById('f-min-gross').value=this.value;_reapplyCurrentMode()">
           </div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min (Gross + Spread) %</div>
-            <input class="lp-filter-input" id="f-min-gs-mob" type="number" step="0.001" placeholder="e.g. 0" oninput="document.getElementById('f-min-gs').value=this.value;applyArb()">
+            <input class="lp-filter-input" id="f-min-gs-mob" type="number" step="0.001" placeholder="e.g. 0" oninput="document.getElementById('f-min-gs').value=this.value;_reapplyCurrentMode()">
           </div>
           <div class="lp-filter-group">
             <div class="lp-filter-label">Min 24h volume (USDT)</div>
@@ -210,7 +210,7 @@
               <button class="vol-chip" data-v="10000000"  onclick="setMinVol(10000000, this)">10M</button>
               <button class="vol-chip" data-v="100000000" onclick="setMinVol(100000000, this)">100M</button>
             </div>
-            <input class="lp-filter-input" id="f-min-vol-mob" type="number" min="0" step="10000" placeholder="e.g. 500000" oninput="document.getElementById('f-min-vol').value=this.value;applyArb()">
+            <input class="lp-filter-input" id="f-min-vol-mob" type="number" min="0" step="10000" placeholder="e.g. 500000" oninput="document.getElementById('f-min-vol').value=this.value;_reapplyCurrentMode()">
           </div>
           <div class="lp-toggle" id="f-valid-toggle-mob" onclick="toggleValidOnly()">
             <div class="lp-toggle-dot" id="f-valid-dot-mob" style="opacity:.4"></div>
@@ -684,14 +684,14 @@ function addHiddenToken(fromMob = false) {
   const other = document.getElementById(fromMob ? 'hidden-token-input' : 'hidden-token-input-mob');
   if (other) other.value = '';
   renderHiddenChips();
-  _mode === 'funding' ? applyFilter() : applyArb();
+  _reapplyCurrentMode();
 }
 
 function removeHiddenToken(token) {
   _hiddenTokens.delete(token);
   _saveHiddenTokens();
   renderHiddenChips();
-  _mode === 'funding' ? applyFilter() : applyArb();
+  _reapplyCurrentMode();
 }
 
 // ── left panel exchange list ───────────────────────────────────────────────────
@@ -810,12 +810,20 @@ function renderAlphaStatus(){
   }).join('');
 }
 
+function _reapplyCurrentMode() {
+  if (_mode === 'funding') applyFilter();
+  else if (_mode === 'spot') applySpot();
+  else if (_mode === 'dex')  applyDex();
+  else if (_mode === 'all')  renderAll();
+  else applyArb();
+}
+
 function toggleEx(ex) {
   const item = document.getElementById(`ex-item-${ex}`);
   if (_exDisabled.has(ex)) { _exDisabled.delete(ex); item.classList.add('checked'); }
   else { _exDisabled.add(ex); item.classList.remove('checked'); }
   _updateExCount();
-  _mode === 'funding' ? applyFilter() : applyArb();
+  _reapplyCurrentMode();
 }
 
 function exSelectAll() {
@@ -825,7 +833,7 @@ function exSelectAll() {
     const b = document.getElementById(`mob-ex-${ex}`);  if (b) b.classList.add('checked');
   });
   _updateExCount();
-  _mode === 'funding' ? applyFilter() : applyArb();
+  _reapplyCurrentMode();
 }
 
 function exSelectNone() {
@@ -835,7 +843,7 @@ function exSelectNone() {
     const b = document.getElementById(`mob-ex-${ex}`);  if (b) b.classList.remove('checked');
   });
   _updateExCount();
-  _mode === 'funding' ? applyFilter() : applyArb();
+  _reapplyCurrentMode();
 }
 
 function exSelectInvert() {
@@ -846,7 +854,7 @@ function exSelectInvert() {
     const b = document.getElementById(`mob-ex-${ex}`);  if (b) b.classList.toggle('checked', was);
   });
   _updateExCount();
-  _mode === 'funding' ? applyFilter() : applyArb();
+  _reapplyCurrentMode();
 }
 
 // ── mobile filters toggle ─────────────────────────────────────────────────────
@@ -880,7 +888,7 @@ function toggleExMob(ex) {
     if (item) item.classList.remove('checked');
     if (mobItem) mobItem.classList.remove('checked');
   }
-  _mode === 'funding' ? applyFilter() : applyArb();
+  _reapplyCurrentMode();
 }
 
 // ── left panel toggle ──────────────────────────────────────────────────────────
@@ -914,7 +922,7 @@ function switchMode(mode) {
   document.getElementById('lp-filters-funding').style.display   = mode === 'funding' ? '' : 'none';
   document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex') ? '' : 'none';
   const mf = document.getElementById('mob-filters-funding'); if (mf) mf.style.display = mode === 'funding' ? '' : 'none';
-  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all') ? '' : 'none';
+  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex') ? '' : 'none';
   const mobSortF = document.getElementById('mobile-sort-funding'); if (mobSortF) mobSortF.style.display = mode === 'funding' ? '' : 'none';
   const mobSortA = document.getElementById('mobile-sort-arb');     if (mobSortA) mobSortA.style.display = mode === 'arb'     ? '' : 'none';
   renderAlphaStatus();
@@ -1023,8 +1031,9 @@ function renderDex() {
     const dexLabel = (r.dex_name || 'dex').toUpperCase();
     const chain = (r.dex_chain || '').toUpperCase();
     const dexLink = r.dex_pair_url ? `<a href="${r.dex_pair_url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--purple);text-decoration:none;font-weight:600">${dexLabel}</a>` : `<span style="color:var(--purple);font-weight:600">${dexLabel}</span>`;
-    return `<tr data-short-ex="${r.short_exchange}">
-      <td class="td-symbol">${esc(r.symbol)}</td>
+    const dexDetailUrl = `/arb?type=dex-short&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
+    return `<tr data-short-ex="${r.short_exchange}" style="cursor:pointer" onclick="window.open('${dexDetailUrl}','_blank')">
+      <td class="td-symbol"><a href="${dexDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
@@ -1237,8 +1246,9 @@ function renderSpot() {
     const shealth = _exHealth[r.short_exchange] || {};
     const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.spot_exchange}"></span>`;
     const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange}"></span>`;
-    return `<tr data-long-ex="${r.spot_exchange}_spot" data-short-ex="${r.short_exchange}" data-symbol="${r.symbol}" data-kind="spot">
-      <td class="td-symbol">${esc(r.symbol)}</td>
+    const spotDetailUrl = `/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(r.short_exchange)}`;
+    return `<tr data-long-ex="${r.spot_exchange}_spot" data-short-ex="${r.short_exchange}" data-symbol="${r.symbol}" data-kind="spot" style="cursor:pointer" onclick="window.open('${spotDetailUrl}','_blank')">
+      <td class="td-symbol"><a href="${spotDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
@@ -1468,9 +1478,9 @@ function renderAll() {
       ? `/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(shortEx)}`
       : `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(shortEx)}`;
 
-    return `<tr>
+    return `<tr style="cursor:pointer" onclick="window.open('${detailUrl}','_blank')">
       <td>${typeChip}</td>
-      <td class="td-symbol">${esc(r.symbol)}</td>
+      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
       <td>${longCell}</td>
       <td>${window.EX.chip(shortEx)}</td>
       <td class="td-gross">${grossSign}${gross.toFixed(4)}%</td>
@@ -2248,8 +2258,9 @@ function renderArb() {
     const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.long_exchange} · ${lhealth.age_s != null ? lhealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
     const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange} · ${shealth.age_s != null ? shealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
 
-    return `<tr data-long-ex="${r.long_exchange}" data-short-ex="${r.short_exchange}" data-symbol="${r.symbol}">
-      <td class="td-symbol">${symbolLink(r.symbol, r.long_exchange)}</td>
+    const lsDetailUrl = `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}`;
+    return `<tr data-long-ex="${r.long_exchange}" data-short-ex="${r.short_exchange}" data-symbol="${r.symbol}" style="cursor:pointer" onclick="window.open('${lsDetailUrl}','_blank')">
+      <td class="td-symbol"><a href="${lsDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
@@ -2581,11 +2592,11 @@ buildMobExChips();
 buildSortChips();
 renderHiddenChips();
 startExchangeHealthPoll();
-document.getElementById('search').addEventListener('input', () => { _mode === 'funding' ? applyFilter() : applyArb(); });
+document.getElementById('search').addEventListener('input', () => { _reapplyCurrentMode(); });
 document.getElementById('f-min-apr').addEventListener('input', () => applyFilter());
-document.getElementById('f-min-net').addEventListener('input', () => applyArb());
-document.getElementById('f-min-gross').addEventListener('input', () => applyArb());
-document.getElementById('f-min-vol')?.addEventListener('input', () => applyArb());
+document.getElementById('f-min-net').addEventListener('input', () => _reapplyCurrentMode());
+document.getElementById('f-min-gross').addEventListener('input', () => _reapplyCurrentMode());
+document.getElementById('f-min-vol')?.addEventListener('input', () => _reapplyCurrentMode());
 // Mark "Any" chip active on load
 document.querySelectorAll('.vol-chip[data-v="0"]').forEach(el => el.classList.add('is-active'));
 
