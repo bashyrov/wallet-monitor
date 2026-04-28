@@ -247,8 +247,17 @@ class BingxAdapter:
         if not target:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         amt = float(target.get("positionAmt") or target.get("availableAmt") or 0)
-        reduce_side = "SELL" if amt > 0 else "BUY"
-        position_side = (target.get("positionSide") or ("LONG" if amt > 0 else "SHORT")).upper()
+        position_side = (target.get("positionSide") or "BOTH").upper()
+        # In HEDGE mode positionAmt is always positive (magnitude held);
+        # direction is encoded in positionSide. To close LONG you SELL,
+        # to close SHORT you BUY. In ONE-WAY (positionSide=BOTH) the sign
+        # of positionAmt encodes direction.
+        if position_side == "LONG":
+            reduce_side = "SELL"
+        elif position_side == "SHORT":
+            reduce_side = "BUY"
+        else:
+            reduce_side = "SELL" if amt > 0 else "BUY"
         info = (await _exchange_info()).get(sym) or {}
         prec = info.get("quantityPrecision", 2)
         qty_s = _qty_str(abs(amt), prec)
