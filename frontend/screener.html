@@ -291,14 +291,13 @@
               <th onclick="sortSpot('short_funding_8h')" data-scol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('in_pct')"          data-scol="in_pct"          data-tip="Entry divergence = (bidPerp − askSpot)/askSpot. Computed from live orderbooks on the 3 covered spot venues (Binance/Bybit/OKX); rows from other venues fall back to basis math.">In <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('out_pct')"         data-scol="out_pct"         data-tip="Exit divergence = (bidSpot − askPerp)/askPerp. Closer to 0 = cheap exit.">Out <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       data-tip="Ticker-based basis = (perp − spot) / spot. Positive = perp trades above spot.">Basis <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('total_fees')"      data-scol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
               <th onclick="sortSpot('net_apr')"         data-scol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-spot"><tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+          <tbody id="tbody-spot"><tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
@@ -322,7 +321,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-dex"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
+          <tbody id="tbody-dex"><tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-dex"></div>
@@ -945,7 +944,7 @@ let _dexSort = { col: 'net_profit', dir: 'desc' };
 async function loadDex() {
   if (!_dexRows.length) {
     document.getElementById('tbody-dex').innerHTML =
-      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
+      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/dex-short');
@@ -965,7 +964,7 @@ async function loadDex() {
     // Network / 5xx — leave the previous table intact, don't stomp on
     // user's view. Only show "Failed" if we have nothing at all.
     if (!_dexRows.length) {
-      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="10" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_dexTimer);
@@ -1014,7 +1013,7 @@ function renderDex() {
   const page = _dexFiltered.slice(start, start + PAGE_SIZE);
   if (!_dexFiltered.length) {
     const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
     renderDexCards();
     return;
@@ -1160,7 +1159,7 @@ let _spotSort = { col: 'net_profit', dir: 'desc' };
 async function loadSpot() {
   if (!_spotRows.length) {
     document.getElementById('tbody-spot').innerHTML =
-      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
+      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/spot-short');
@@ -1177,7 +1176,7 @@ async function loadSpot() {
     applySpot();
   } catch (e) {
     if (!_spotRows.length) {
-      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="10" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_spotTimer);
@@ -1229,7 +1228,7 @@ function renderSpot() {
   const page = _spotFiltered.slice(start, start + PAGE_SIZE);
   if (!_spotFiltered.length) {
     const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="11" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
     renderSpotCards();
     return;
@@ -1268,9 +1267,8 @@ function renderSpot() {
         </div>
       </td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
-      <td class="td-spread td-in"><span class="${(typeof r.in_pct === 'number' && r.in_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(typeof r.in_pct === 'number') ? (r.in_pct >= 0 ? '+' : '') + r.in_pct.toFixed(4) + '%' : '—'}</span>${r.book_ok ? '' : ` <span class="ob-stale-mark" title="Live orderbook unavailable for ${esc(r.spot_exchange)} — In/Out computed from ticker price (still live, less precise)">⚠</span>`}</td>
-      <td class="td-spread td-out"><span class="${(typeof r.out_pct === 'number' && r.out_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(typeof r.out_pct === 'number') ? (r.out_pct >= 0 ? '+' : '') + r.out_pct.toFixed(4) + '%' : '—'}</span>${r.book_ok ? '' : ` <span class="ob-stale-mark" title="Live orderbook unavailable for ${esc(r.short_exchange)} — In/Out computed from ticker price (still live, less precise)">⚠</span>`}</td>
-      <td class="td-spread">${r.book_ok ? '<span style="color:var(--text3)">—</span>' : `<span class="${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>`}</td>
+      <td class="td-spread td-in"><span class="${(typeof r.in_pct === 'number' && r.in_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(typeof r.in_pct === 'number') ? (r.in_pct >= 0 ? '+' : '') + r.in_pct.toFixed(4) + '%' : '—'}</span></td>
+      <td class="td-spread td-out"><span class="${(typeof r.out_pct === 'number' && r.out_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(typeof r.out_pct === 'number') ? (r.out_pct >= 0 ? '+' : '') + r.out_pct.toFixed(4) + '%' : '—'}</span></td>
       <td class="td-fees">
         <span title="spot rt: ${r.fee_spot.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
@@ -1347,10 +1345,6 @@ function renderSpotCards() {
           <span class="card-lbl">Funding / 8h</span>
           <span class="card-val ${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span>
         </div>
-        ${r.book_ok ? '' : `<div class="card-row">
-          <span class="card-lbl">Basis</span>
-          <span class="card-val ${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>
-        </div>`}
         <div class="card-row">
           <span class="card-lbl">In</span>
           <span class="card-val ${inCls}">${inPct != null ? inSign+inPct.toFixed(4)+'%' : '—'}</span>
@@ -1975,7 +1969,7 @@ async function loadArb() {
     applyArb();
   } else {
     document.getElementById('tbody-arb').innerHTML =
-      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
+      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
     document.getElementById('cards-arb').innerHTML =
       '<div class="empty-msg"><span class="spinner"></span>Computing…</div>';
   }
@@ -2248,8 +2242,8 @@ function renderArb() {
     // in this codebase's funding-coloured convention: positive funding = red).
     const inCls   = (inPct  != null && inPct  > 0) ? 'rate-neg' : 'rate-pos';
     const outCls  = (outPct != null && outPct > 0) ? 'rate-neg' : 'rate-pos';
-    const longStale = bookOk ? '' : ` <span class="ob-stale-mark" title="Live orderbook unavailable for ${esc(r.long_exchange)} — In/Out computed from mark price (still live, less precise)">⚠</span>`;
-    const shortStale = bookOk ? '' : ` <span class="ob-stale-mark" title="Live orderbook unavailable for ${esc(r.short_exchange)} — In/Out computed from mark price (still live, less precise)">⚠</span>`;
+    const longStale = '';
+    const shortStale = '';
     const bookMark = ''; // legacy var kept for any callers below
     const validBadge = r.valid_price
       ? '<span class="badge-valid">✓ valid</span>'

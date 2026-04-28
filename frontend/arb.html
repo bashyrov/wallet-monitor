@@ -977,7 +977,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         </div>
       </div>
 
-      <div class="metric-block">
+      <div class="metric-block" id="pt-basis-block" style="display:none">
         <span class="ib-label">Basis</span>
         <span class="metric-val" id="pt-basis">—</span>
       </div>
@@ -1284,6 +1284,11 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
     setT('pt-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`);
     $('pt-basis').style.color = basis >= 0 ? 'var(--green)' : 'var(--red)';
+    // Basis is only meaningful as a separate metric for DEX/Short — for
+    // long/short and spot/short the user-facing "Live Spread" already
+    // captures the entry divergence.
+    const _basisBlock = document.getElementById('pt-basis-block');
+    if (_basisBlock) _basisBlock.style.display = IS_DEX ? '' : 'none';
     setT('pt-net',  `${net >= 0 ? '+' : ''}${net.toFixed(4)}%`);
     $('pt-net').style.color = net >= 0 ? 'var(--green)' : 'var(--red)';
     setT('pt-apr',  apr > 0 ? apr.toFixed(0) + '%' : '—');
@@ -1552,6 +1557,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // ── Order-book polling (futures-style .book-row rendering) ────────────────
   let _obTicks = { long: 0, short: 0 };
   let _lastMidLong = 0, _lastMidShort = 0;
+  let _lastAskLong = 0, _lastBidShort = 0;
 
   const _fmtP = (p) => {
     const n = +p;
@@ -1597,22 +1603,27 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       setT('pt-mid-' + side, _fmtP(mid));
       const a = $('pt-mid-arrow-' + side);
       if (a) { a.textContent = arrow; a.style.color = col; }
-      if (side === 'long') _lastMidLong = mid;
-      else _lastMidShort = mid;
+      if (side === 'long') {
+        _lastMidLong = mid;
+        _lastAskLong = bestAsk;
+      } else {
+        _lastMidShort = mid;
+        _lastBidShort = bestBid;
+      }
 
-      // Live spread in infobar — always computed from short mid vs long mid (if spot)
-      // or vs DEX price (if dex)
+      // Live spread = entry-divergence (in_pct): bidShort − askLong over
+      // askLong (for DEX/spot use dex_price as the long ask). Mirrors the
+      // In column on the screener so the two pages don't drift.
       if (side === 'short') {
-        const longPx = IS_DEX
+        const askLong = IS_DEX
           ? (_row && _row.dex_price)
-          : (_lastMidLong || (_row && _row.spot_price));
-        if (longPx && longPx > 0) {
-          const live = (mid - longPx) / longPx * 100;
+          : (_lastAskLong || (_row && _row.spot_price));
+        if (askLong && askLong > 0 && bestBid > 0) {
+          const live = (bestBid - askLong) / askLong * 100;
           setT('pt-live-spread', `${live >= 0 ? '+' : ''}${live.toFixed(4)}%`);
           const el = $('pt-live-spread');
           if (el) el.style.color = live >= 0 ? 'var(--green)' : 'var(--red)';
-          // Push to live Entry/Exit chart (spot only — we have both mids)
-          if (!IS_DEX && _lastMidLong) _eePush(live);
+          if (!IS_DEX && _lastAskLong) _eePush(live);
         }
       }
     }
@@ -2575,8 +2586,8 @@ function renderBook(d,side){
   const rawBestBid=rawBids[0]?.[0]||0;
   const rawBestAsk=rawAsks[0]?.[0]||0;
   const rawMid=(rawBestBid&&rawBestAsk)?(rawBestBid+rawBestAsk)/2:(rawBestBid||rawBestAsk||0);
-  if(side==='long') _liveMidLong=rawMid;
-  if(side==='short') _liveMidShort=rawMid;
+  if(side==='long') { _liveMidLong=rawMid; _liveAskLong=rawBestAsk; }
+  if(side==='short') { _liveMidShort=rawMid; _liveBidShort=rawBestBid; }
   updateLiveSpread();
   sampleEntryExit();
 }
@@ -2948,19 +2959,27 @@ function connectWs(){
 }
 
 // ── Live spread from order books ──────────────────────────────────────────────
+// Live spread = entry-divergence (in_pct): bidShort − askLong over askLong.
+// Positive = free money on entry (we sell short at higher bid than we buy long
+// at ask). Mirrors the In column on the screener so the two pages don't drift.
 let _liveMidLong=0, _liveMidShort=0;
+let _liveAskLong=0, _liveBidShort=0;
+function _liveInPct(){
+  if(!_liveAskLong||!_liveBidShort) return null;
+  return (_liveBidShort-_liveAskLong)/_liveAskLong*100;
+}
 function updateLiveSpread(){
-  if(!_liveMidLong||!_liveMidShort) return;
-  const sp=(_liveMidShort-_liveMidLong)/_liveMidLong*100;
+  const sp=_liveInPct();
+  if(sp===null) return;
   const cls=sp>=0?'pos':'neg';
   setH('tb-live-spread',`<span class="${cls}">${sign(sp)}${sp.toFixed(4)}%</span>`);
 }
 
-// Price spread in P&L refreshes every 3s from live orderbook mids (fresh ≤500ms),
+// Price spread in P&L refreshes every 3s from live orderbook (fresh ≤500ms),
 // not every 10s from WS broadcast. Keeps number responsive without visual churn.
 setInterval(()=>{
-  if(!_liveMidLong||!_liveMidShort) return;
-  const sp=(_liveMidShort-_liveMidLong)/_liveMidLong*100;
+  const sp=_liveInPct();
+  if(sp===null) return;
   const cls=sp<=0?'pos':'neg';
   setH('b-spread',`<span class="${cls}">${sign(sp)}${sp.toFixed(4)}%</span>`);
   if(_opp) _opp.price_spread=sp;
