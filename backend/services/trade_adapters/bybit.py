@@ -381,13 +381,21 @@ class BybitAdapter:
             if qty == 0:
                 continue
             side = "buy" if p.get("side") == "Buy" else "sell"
-            # tradeMode: 0=cross, 1=isolated. UTA accounts force cross at the
-            # account level; the field still reflects what's effective.
+            # Bybit margin-mode determination:
+            #   Classic: position.tradeMode (0=cross, 1=isolated) is reliable
+            #   UTA-Linear: tradeMode is always 0 regardless of actual mode;
+            #     truth is at account level (account.marginMode).
+            # If tradeMode is 1 we know it's isolated. If 0 we need to
+            # fall back to account info for UTA users.
             tm = p.get("tradeMode")
-            if tm is None:
-                margin_mode = None
+            if tm == 1:
+                margin_mode = "isolated"
+            elif tm == 0:
+                # Defer to account-level mode (one extra REST call, cached
+                # below for the rest of this list_positions invocation).
+                margin_mode = "_uta_lookup"
             else:
-                margin_mode = "isolated" if int(tm) == 1 else "cross"
+                margin_mode = None
             positions.append({
                 "exchange": "bybit",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
@@ -403,6 +411,24 @@ class BybitAdapter:
             })
         if not positions:
             return []
+        # UTA users: fetch account.marginMode once and patch any position
+        # that we couldn't resolve from tradeMode alone.
+        needs_uta = any(p.get("margin_mode") == "_uta_lookup" for p in positions)
+        if needs_uta:
+            try:
+                info = await cls._signed(creds, "GET", "/v5/account/info", {})
+                acct_mode = (info.get("marginMode") or "").upper()
+                if acct_mode.startswith("ISOLATED"):
+                    uta_mode = "isolated"
+                elif acct_mode.startswith("REGULAR") or acct_mode.startswith("PORTFOLIO"):
+                    uta_mode = "cross"
+                else:
+                    uta_mode = None
+            except Exception:
+                uta_mode = None
+            for p in positions:
+                if p.get("margin_mode") == "_uta_lookup":
+                    p["margin_mode"] = uta_mode
         since_ms = int((time.time() - 7 * 86400) * 1000)
         fundings = await asyncio.gather(*[
             cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
