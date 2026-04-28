@@ -368,17 +368,16 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
                 return cached
         return {"opportunities": [], "generated_at": int(time.time()), "spot_exchanges": SPOT_EXCHANGES, "cold": True}
 
-    # Fetch spot tickers AND perp rows concurrently. Earlier code ran them
-    # in two sequential gathers — wall-clock cost was the slowest spot
-    # venue + the slowest perp venue. Combined gather lets a slow perp
-    # rest gather overlap with a slow spot rest gather, halving cycle
-    # time when one of the two has timing-out venues.
-    perp_exs = [ex for ex in _arb.FETCHERS.keys() if ex != "lighter"]
-    spot_tasks = [get_spot_rows(ex) for ex in SPOT_EXCHANGES]
-    perp_tasks = [_arb._get_rows(ex) for ex in perp_exs]
-    all_results = await asyncio.gather(*spot_tasks, *perp_tasks, return_exceptions=True)
-    spot_results = all_results[:len(SPOT_EXCHANGES)]
-    perp_results = all_results[len(SPOT_EXCHANGES):]
+    # Fetch only spot tickers in this loop — perp rows come from the
+    # screener's _cache (kept warm by the refresh-loop in the main
+    # fetcher loop). Calling _arb._get_rows here used to RuntimeError
+    # ("attached to different loop") because _arb._http is bound to
+    # the main loop and we run in a worker thread's loop. Reading
+    # _cache directly is loop-agnostic and ~100× faster.
+    spot_results = await asyncio.gather(
+        *[get_spot_rows(ex) for ex in SPOT_EXCHANGES],
+        return_exceptions=True,
+    )
     spot_map: dict[str, dict[str, dict]] = {}
     for ex, rows in zip(SPOT_EXCHANGES, spot_results):
         if not isinstance(rows, list):
@@ -386,6 +385,24 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
         for r in rows:
             sym = r["symbol"]
             spot_map.setdefault(sym, {})[ex] = r
+
+    # Read perp rows from the screener cache (in-memory) and the
+    # heartbeat file (cross-process, written by the refresh-loop).
+    perp_exs = [ex for ex in _arb.FETCHERS.keys() if ex != "lighter"]
+    perp_results: list = []
+    for ex in perp_exs:
+        cached_rows, _ts = _arb._cache.get(ex, ([], 0.0))
+        perp_results.append(cached_rows if cached_rows else [])
+    if not any(perp_results):
+        # Cold-start fallback — read funding.json once.
+        try:
+            shared = _arb._read_file_cache("funding.json", max_age=120.0) or {}
+            by_ex: dict[str, list] = {}
+            for r in shared.get("rows", []) or []:
+                by_ex.setdefault(r.get("exchange", ""), []).append(r)
+            perp_results = [by_ex.get(ex, []) for ex in perp_exs]
+        except Exception:
+            pass
     perp_map: dict[str, dict[str, dict]] = {}
     for ex, rows in zip(perp_exs, perp_results):
         if not isinstance(rows, list):
