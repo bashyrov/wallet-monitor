@@ -724,7 +724,13 @@ async def _prewarm_hotlist_loop() -> None:
     while True:
         try:
             data = await get_arbitrage_opportunities()
-            opps = data.get("opportunities", [])[:PREWARM_TOP_N]
+            # User-set policy: prewarm follows top-N by ABSOLUTE basis (price
+            # spread). The bigger the divergence, the more interesting the
+            # pair — orderbook subscription kicks in immediately so In/Out
+            # show up the moment the row enters the hotlist.
+            _all_opps = list(data.get("opportunities", []) or [])
+            _all_opps.sort(key=lambda o: abs(float(o.get("price_spread") or o.get("basis_pct") or 0)), reverse=True)
+            opps = _all_opps[:PREWARM_TOP_N]
             ws_subs: dict[str, set[str]] = {}
             rest_pairs: set[tuple[str, str]] = set()
             for o in opps:
@@ -786,7 +792,9 @@ async def _prewarm_hotlist_loop() -> None:
                     get_spot_arbitrage_opportunities as _sp_get,
                 )
                 sp_data = await _sp_get()
-                for o in (sp_data.get("opportunities") or [])[:PREWARM_TOP_N]:
+                _sp_all = list(sp_data.get("opportunities") or [])
+                _sp_all.sort(key=lambda o: abs(float(o.get("basis_pct") or 0)), reverse=True)
+                for o in _sp_all[:PREWARM_TOP_N]:
                     sym_s = o.get("symbol")
                     spot_ex = (o.get("spot_exchange") or "").lower()
                     short_ex = (o.get("short_exchange") or "").lower()
