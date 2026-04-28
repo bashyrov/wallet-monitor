@@ -4804,7 +4804,10 @@ body{padding-bottom:44px;}
 .sc-tog-btn{background:none;border:none;color:var(--text3);font-family:inherit;font-size:13px;font-weight:600;padding:7px 22px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s;}
 .sc-tog-btn.is-active{background:var(--surface3);color:var(--text);}
 .sc-preview-wrap{padding:14px 18px;display:flex;justify-content:center;flex:1;min-height:0;overflow:auto;background:radial-gradient(ellipse at center,rgba(26,255,171,0.05),transparent 60%);}
-#sc-canvas{display:block;width:100%;max-width:480px;height:auto;border-radius:18px;background:#0A0A0E;box-shadow:0 16px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.03);}
+/* Canvas itself is transparent outside the rounded shape (alpha channel).
+   No CSS background — the canvas paints its own card. Drop-shadow filter
+   follows the actual rounded edges instead of a square box-shadow. */
+#sc-canvas{display:block;width:100%;max-width:480px;height:auto;background:transparent;filter:drop-shadow(0 16px 50px rgba(0,0,0,0.55)) drop-shadow(0 0 0 rgba(0,0,0,0.04));}
 .sc-actions{display:flex;gap:8px;padding:12px 18px 18px;border-top:1px solid var(--border);background:var(--surface2);}
 .sc-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--surface3);border:1px solid var(--border);color:var(--text2);padding:10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;transition:background .12s,color .12s,border-color .12s;}
 .sc-btn:hover{background:var(--surface);color:var(--text);}
@@ -4919,8 +4922,23 @@ function _renderShareCardNow(){
 
   ctx.textBaseline = 'alphabetic';
 
-  // ──────────── BACKGROUND
-  // Layered: deep base → diagonal gradient → 2 radial accent washes → noise
+  // ──────────── ROUNDED-CORNER CLIP
+  // The card itself is the rounded rectangle: transparent outside, opaque
+  // inside. Downloaded PNG keeps the alpha channel so the corners stay
+  // rounded when shared/embedded anywhere.
+  ctx.clearRect(0, 0, W, H);
+  const CARD_INSET = 0;            // edge-to-edge for max card area
+  const CARD_R = 56;               // generous radius — premium feel
+  const cardX = CARD_INSET, cardY = CARD_INSET;
+  const cardW = W - CARD_INSET*2, cardH = H - CARD_INSET*2;
+
+  // Clip every subsequent draw to the rounded shape.
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, cardH, CARD_R);
+  ctx.clip();
+
+  // ──────────── BACKGROUND (inside the rounded card)
   ctx.fillStyle = '#08080C';
   ctx.fillRect(0, 0, W, H);
 
@@ -5169,6 +5187,16 @@ function _renderShareCardNow(){
   ctx.font = '700 11px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#3A3D47';
   _drawTracked(ctx, 'CROSS-EXCHANGE ARBITRAGE', GRID_R, footY - 36, 1.6, 'right');
+
+  ctx.restore();  // end rounded-card clip
+
+  // ──────────── ROUNDED BORDER (drawn AFTER restore so it renders on the
+  // outer edge crisply, not clipped to itself)
+  ctx.beginPath();
+  ctx.roundRect(cardX + 0.5, cardY + 0.5, cardW - 1, cardH - 1, CARD_R);
+  ctx.strokeStyle = `rgba(${accentRGB},0.18)`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 }
 
 // Helper: draw text with letter-spacing tracking. Canvas has no native
