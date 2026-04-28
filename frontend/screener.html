@@ -263,9 +263,7 @@
               <th onclick="sortArb('long_exchange')"  data-acol="long_exchange"  data-tip="Exchange to go long (pay negative funding) + 24h volume. Rate normalised to per-8h for comparison">Long / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('short_exchange')" data-acol="short_exchange" data-tip="Exchange to go short (receive positive funding) + 24h volume. Rate normalised to per-8h for comparison">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('gross_funding')"  data-acol="gross_funding"  data-tip="short_rate − long_rate normalised to per-8h. Regardless of each exchange's actual interval">Gross /8h <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('in_pct')"         data-acol="in_pct"         class="sorted" data-tip="Entry divergence = (bidShort − askLong) / askLong. Positive = free money on entry. Computed from live orderbooks.">In <span class="sort-arrow">↓</span></th>
-              <th onclick="sortArb('out_pct')"        data-acol="out_pct"        data-tip="Exit divergence = (bidLong − askShort) / askShort. Closer to 0 = cheap exit. Computed from live orderbooks.">Out <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('price_spread')"   data-acol="price_spread"   data-tip="Mark-price spread between the two venues = (shortPx − longPx) / longPx. Drives the prewarm hot-list — top-N by |basis| get live orderbook subscriptions.">Basis <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('price_spread')"   data-acol="price_spread"   class="sorted" data-tip="Mark-price spread between the two venues = (shortPx − longPx) / longPx">Basis <span class="sort-arrow">↓</span></th>
               <th onclick="sortArb('total_fees')"     data-acol="total_fees"     data-tip="Estimated taker fees for opening both legs (0.06% per side)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_profit')"     data-acol="net_profit"     data-tip="Net profit per 8h = gross funding − fees − price spread cost">Net profit <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_apr')"        data-acol="net_apr"        data-tip="Annualised net profit (net × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
@@ -290,16 +288,14 @@
               <th onclick="sortSpot('spot_exchange')"   data-scol="spot_exchange"   data-tip="Spot venue to buy — price + 24h volume">Spot / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('short_exchange')"  data-scol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('short_funding_8h')" data-scol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('in_pct')"          data-scol="in_pct"          class="sorted" data-tip="Entry divergence = (bidPerp − askSpot)/askSpot. Computed from live orderbooks on the 3 covered spot venues (Binance/Bybit/OKX); rows from other venues fall back to basis math.">In <span class="sort-arrow">↓</span></th>
-              <th onclick="sortSpot('out_pct')"         data-scol="out_pct"         data-tip="Exit divergence = (bidSpot − askPerp)/askPerp. Closer to 0 = cheap exit.">Out <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       data-tip="Mark-price basis = (perpPx − spotPx) / spotPx. Drives prewarm hot-list — top-N by |basis| get live orderbook subscriptions.">Basis <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       class="sorted" data-tip="Mark-price basis = (perpPx − spotPx) / spotPx">Basis <span class="sort-arrow">↓</span></th>
               <th onclick="sortSpot('total_fees')"      data-scol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
               <th onclick="sortSpot('net_apr')"         data-scol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-spot"><tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+          <tbody id="tbody-spot"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
@@ -637,7 +633,7 @@ let _sortF = { col: 'apr', asc: false };
 // Default sort = In (entry-divergence). Rows without a live orderbook
 // have null in_pct and sink to the bottom — so the top of the table is
 // always the most-actionable rows with real bid/ask quotes.
-let _sortA = { col: 'in_pct', asc: false };
+let _sortA = { col: 'price_spread', asc: false };
 let _validOnly = false;
 let _crossOnly = true;   // show only tokens on 2+ exchanges by default
 
@@ -1159,12 +1155,12 @@ let _spotRows = [];
 let _spotFiltered = [];
 let _spotTimer = null;
 let _pageSP = 0;
-let _spotSort = { col: 'in_pct', dir: 'desc' };
+let _spotSort = { col: 'basis_pct', dir: 'desc' };
 
 async function loadSpot() {
   if (!_spotRows.length) {
     document.getElementById('tbody-spot').innerHTML =
-      '<tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
+      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/spot-short');
@@ -1181,7 +1177,7 @@ async function loadSpot() {
     applySpot();
   } catch (e) {
     if (!_spotRows.length) {
-      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="11" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_spotTimer);
@@ -1239,7 +1235,7 @@ function renderSpot() {
   const page = _spotFiltered.slice(start, start + PAGE_SIZE);
   if (!_spotFiltered.length) {
     const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="11" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
     renderSpotCards();
     return;
@@ -1278,8 +1274,6 @@ function renderSpot() {
         </div>
       </td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
-      <td class="td-spread td-in"><span class="${(typeof r.in_pct === 'number' && r.in_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(r.book_ok && typeof r.in_pct === 'number') ? (r.in_pct >= 0 ? '+' : '') + r.in_pct.toFixed(4) + '%' : '—'}</span></td>
-      <td class="td-spread td-out"><span class="${(typeof r.out_pct === 'number' && r.out_pct > 0) ? 'rate-neg' : 'rate-pos'}">${(r.book_ok && typeof r.out_pct === 'number') ? (r.out_pct >= 0 ? '+' : '') + r.out_pct.toFixed(4) + '%' : '—'}</span></td>
       <td class="td-spread"><span class="${r.basis_pct >= 0 ? 'rate-pos' : 'rate-neg'}">${(r.basis_pct >= 0 ? '+' : '') + r.basis_pct.toFixed(4)}%</span></td>
       <td class="td-fees">
         <span title="spot rt: ${r.fee_spot.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
@@ -1314,12 +1308,6 @@ function renderSpotCards() {
     const fundSign = r.short_funding_8h >= 0 ? '+' : '';
     const aprCls   = r.net_apr > 0 ? 'rate-pos' : r.net_apr < 0 ? 'rate-neg' : 'rate-zero';
     const aprSign  = r.net_apr >= 0 ? '+' : '';
-    const inPct  = (typeof r.in_pct  === 'number') ? r.in_pct  : null;
-    const outPct = (typeof r.out_pct === 'number') ? r.out_pct : null;
-    const inSign  = (inPct  != null && inPct  >= 0) ? '+' : '';
-    const outSign = (outPct != null && outPct >= 0) ? '+' : '';
-    const inCls  = (inPct  != null && inPct  > 0) ? 'rate-neg' : 'rate-pos';
-    const outCls = (outPct != null && outPct > 0) ? 'rate-neg' : 'rate-pos';
     const key = `spot|${r.symbol}|${r.spot_exchange}|${r.short_exchange}`;
     const isOpen = _openArbKey === key;
     return `
@@ -1358,12 +1346,8 @@ function renderSpotCards() {
           <span class="card-val ${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span>
         </div>
         <div class="card-row">
-          <span class="card-lbl">In</span>
-          <span class="card-val ${inCls}">${inPct != null ? inSign+inPct.toFixed(4)+'%' : '—'}</span>
-        </div>
-        <div class="card-row">
-          <span class="card-lbl">Out</span>
-          <span class="card-val ${outCls}">${outPct != null ? outSign+outPct.toFixed(4)+'%' : '—'}</span>
+          <span class="card-lbl">Basis</span>
+          <span class="card-val ${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>
         </div>
         <div class="card-row">
           <span class="card-lbl">Fees</span>
@@ -1958,9 +1942,8 @@ function _recomputeLiveInOut(changedKeys) {
   }
 }
 
-// Refresh the subscription set whenever arb/spot data changes or user pages.
-// Hooked into the existing render paths below.
-setInterval(_syncBookWsSubs, 2000);
+// _syncBookWsSubs disabled — In/Out columns dropped, no live updates needed.
+// setInterval(_syncBookWsSubs, 2000);
 
 // ── Arbitrage WebSocket ────────────────────────────────────────────────────────
 const _retryA      = { val: 0 };
@@ -1981,7 +1964,7 @@ async function loadArb() {
     applyArb();
   } else {
     document.getElementById('tbody-arb').innerHTML =
-      '<tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
+      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
     document.getElementById('cards-arb').innerHTML =
       '<div class="empty-msg"><span class="spinner"></span>Computing…</div>';
   }
@@ -2239,7 +2222,7 @@ function renderArb() {
   const page  = _filteredArb.slice(start, start + PAGE_SIZE);
   if (!_filteredArb.length) {
     const msg = _arbRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="11" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');
     renderArbCards();
     return;
@@ -2248,21 +2231,6 @@ function renderArb() {
     const netCls = r.net_profit > 0 ? 'net-pos' : 'net-neg';
     const netSign = r.net_profit >= 0 ? '+' : '';
     const grossSign = r.gross_funding >= 0 ? '+' : '';
-    // In = entry divergence (bidShort − askLong)/askLong  → positive = free money on entry
-    // Out = exit divergence  (bidLong − askShort)/askShort → closer to 0 = cheap exit
-    // book_ok=false means backend fell back to mark prices — flag visually.
-    const inPct  = (typeof r.in_pct  === 'number') ? r.in_pct  : null;
-    const outPct = (typeof r.out_pct === 'number') ? r.out_pct : null;
-    const bookOk = r.book_ok !== false;
-    const inSign  = (inPct  != null && inPct  >= 0) ? '+' : '';
-    const outSign = (outPct != null && outPct >= 0) ? '+' : '';
-    // Positive In/Out = free money / bonus on entry-or-exit → green (rate-neg
-    // in this codebase's funding-coloured convention: positive funding = red).
-    const inCls   = (inPct  != null && inPct  > 0) ? 'rate-neg' : 'rate-pos';
-    const outCls  = (outPct != null && outPct > 0) ? 'rate-neg' : 'rate-pos';
-    const longStale = bookOk ? '' : ` <span class="ob-stale-mark" title="Live orderbook unavailable for ${esc(r.long_exchange)} — In/Out computed from mark price (still live, less precise)">⚠</span>`;
-    const shortStale = bookOk ? '' : ` <span class="ob-stale-mark" title="Live orderbook unavailable for ${esc(r.short_exchange)} — In/Out computed from mark price (still live, less precise)">⚠</span>`;
-    const bookMark = ''; // legacy var kept for any callers below
     const validBadge = r.valid_price
       ? '<span class="badge-valid">✓ valid</span>'
       : '<span class="badge-invalid">⚠ spread</span>';
@@ -2294,8 +2262,6 @@ function renderArb() {
         </div>
       </td>
       <td class="td-gross">${grossSign}${r.gross_funding.toFixed(4)}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
-      <td class="td-spread td-in"><span class="${inCls}">${(bookOk && inPct != null) ? inSign +inPct .toFixed(4)+'%' : '—'}</span>${longStale}</td>
-      <td class="td-spread td-out"><span class="${outCls}">${(bookOk && outPct != null) ? outSign+outPct.toFixed(4)+'%' : '—'}</span>${shortStale}</td>
       <td class="td-spread"><span class="${(r.price_spread || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.price_spread || 0) >= 0 ? '+' : '')}${(r.price_spread || 0).toFixed(4)}%</span></td>
       <td class="td-fees">
         <span title="long: ${r.fee_long}% + short: ${r.fee_short}%">−${r.total_fees.toFixed(4)}%</span>
@@ -2327,8 +2293,7 @@ const SORT_CHIPS_A = [
   { col: 'net_profit',    label: 'Net profit' },
   { col: 'net_apr',       label: 'Net APR' },
   { col: 'gross_funding', label: 'Gross' },
-  { col: 'in_pct',        label: 'In' },
-  { col: 'out_pct',       label: 'Out' },
+  { col: 'price_spread',  label: 'Basis' },
   { col: 'symbol',        label: 'Token' },
   { col: 'total_fees',    label: 'Fees' },
 ];
@@ -2480,13 +2445,6 @@ function renderArbCards() {
     const netCls   = r.net_profit > 0 ? 'net-pos' : 'net-neg';
     const netSign  = r.net_profit >= 0 ? '+' : '';
     const grossSign = r.gross_funding >= 0 ? '+' : '';
-    const inPct  = (typeof r.in_pct  === 'number') ? r.in_pct  : null;
-    const outPct = (typeof r.out_pct === 'number') ? r.out_pct : null;
-    const inSign   = (inPct  != null && inPct  >= 0) ? '+' : '';
-    const outSign  = (outPct != null && outPct >= 0) ? '+' : '';
-    // Positive In/Out = good → green (rate-neg in this codebase).
-    const inCls    = (inPct  != null && inPct  > 0) ? 'rate-neg' : 'rate-pos';
-    const outCls   = (outPct != null && outPct > 0) ? 'rate-neg' : 'rate-pos';
     const longRateCls  = r.long_rate  > 0 ? 'rate-pos' : r.long_rate  < 0 ? 'rate-neg' : 'rate-zero';
     const shortRateCls = r.short_rate > 0 ? 'rate-pos' : r.short_rate < 0 ? 'rate-neg' : 'rate-zero';
     const validBadge = r.valid_price
@@ -2537,12 +2495,8 @@ function renderArbCards() {
           <span class="card-val td-gross">${grossSign}${r.gross_funding.toFixed(4)}%</span>
         </div>
         <div class="card-row">
-          <span class="card-lbl">In</span>
-          <span class="card-val ${inCls}">${inPct != null ? inSign+inPct.toFixed(4)+'%' : '—'}</span>
-        </div>
-        <div class="card-row">
-          <span class="card-lbl">Out</span>
-          <span class="card-val ${outCls}">${outPct != null ? outSign+outPct.toFixed(4)+'%' : '—'}</span>
+          <span class="card-lbl">Basis</span>
+          <span class="card-val ${(r.price_spread || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.price_spread || 0) >= 0 ? '+' : '')}${(r.price_spread || 0).toFixed(4)}%</span>
         </div>
         <div class="card-row">
           <span class="card-lbl">Fees</span>
@@ -2647,7 +2601,8 @@ setInterval(tickCountdowns, 1000);
     }
   } catch (_) {}
   connectWs();
-  _openBookWs();
+  // _openBookWs() disabled — In/Out columns dropped from screener (basis-only
+  // policy). Detail page maintains its own /ws/book subscription.
   loadWatchlist();
   startLiveOpsPollers();
 })();
