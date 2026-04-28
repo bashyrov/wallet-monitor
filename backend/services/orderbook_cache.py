@@ -614,7 +614,11 @@ def freshness_by_exchange() -> dict[str, dict]:
             return
         ex = key.split(":", 1)[0]
         age = max(0.0, now - ts)
-        b = per_ex.setdefault(ex, {"fresh": 0, "degraded": 0, "stale": 0, "min_age_s": float("inf")})
+        b = per_ex.setdefault(
+            ex,
+            {"fresh": 0, "degraded": 0, "stale": 0, "min_age_s": float("inf"),
+             "_ages": []},
+        )
         if age <= FILE_FRESH_MAX:
             b["fresh"] += 1
         elif age <= FILE_DEGRADED_MAX:
@@ -623,6 +627,7 @@ def freshness_by_exchange() -> dict[str, dict]:
             b["stale"] += 1
         if age < b["min_age_s"]:
             b["min_age_s"] = age
+        b["_ages"].append(age)
 
     seen: set[str] = set()
     for key, entry in _book_cache.items():
@@ -641,6 +646,16 @@ def freshness_by_exchange() -> dict[str, dict]:
         b["total"] = b["fresh"] + b["degraded"] + b["stale"]
         b["healthy"] = b["fresh"] > 0
         b["min_age_s"] = None if b["min_age_s"] == float("inf") else round(b["min_age_s"], 2)
+        ages = b.pop("_ages", [])
+        if ages:
+            ages.sort()
+            n = len(ages)
+            b["avg_age_s"] = round(sum(ages) / n, 2)
+            b["median_age_s"] = round(ages[n // 2], 2)
+            b["max_age_s"] = round(ages[-1], 2)
+            b["p90_age_s"] = round(ages[min(n - 1, int(n * 0.9))], 2)
+        else:
+            b["avg_age_s"] = b["median_age_s"] = b["max_age_s"] = b["p90_age_s"] = None
     return per_ex
 
 
