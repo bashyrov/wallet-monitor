@@ -1657,12 +1657,60 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // within the 0.5 s freshness budget the screener is promising now.
   // _bookInflight gate in fetchBook() ensures a slow response doesn't
   // queue requests. User-throttle gate applied via _arbThrottleShouldFire().
+  // Initial REST fetch for fast first paint, then WS for live updates.
+  // The 300/400ms polling kept as a fallback when WS is silent — `_lastWsAt`
+  // gates the REST fetch so we only poll when the stream's actually dead.
   _refreshBook('short');
-  setInterval(() => { if (_arbThrottleShouldFire('pt-short')) _refreshBook('short'); }, 300);
-  if (!IS_DEX) {
-    _refreshBook('long');
-    setInterval(() => { if (_arbThrottleShouldFire('pt-long')) _refreshBook('long'); }, 400);
+  if (!IS_DEX) _refreshBook('long');
+
+  // /ws/book streams the same books.json that the screener WS broadcaster
+  // serves — bid/ask deltas pushed at 100-200ms cadence. Replaces the old
+  // 300ms REST polling with a live feed, dropping the orderbook latency
+  // from ~300ms (poll interval + RTT) to ~100ms (WS push).
+  let _ptBookWs = null, _ptLastWsAt = 0, _ptWsBackoff = 1000;
+  const _ptBookPair = (side) => (side === 'long' ? LONG : SHORT).toLowerCase() + ':' + SYM.toUpperCase();
+  function _openPtBookWs() {
+    if (_ptBookWs && (_ptBookWs.readyState === 0 || _ptBookWs.readyState === 1)) return;
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${proto}://${location.host}/api/screener/ws/book?token=${Auth.getToken()}`;
+    let ws;
+    try { ws = new WebSocket(url); } catch (_) { return; }
+    _ptBookWs = ws;
+    ws.onopen = () => {
+      _ptWsBackoff = 1000;
+      try {
+        const pairs = IS_DEX ? [_ptBookPair('short')] : [_ptBookPair('long'), _ptBookPair('short')];
+        ws.send(JSON.stringify({ action: 'subscribe', pairs }));
+      } catch (_) {}
+    };
+    ws.onmessage = (e) => {
+      _ptLastWsAt = Date.now();
+      let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
+      const books = msg && msg.books;
+      if (!books) return;
+      const longPair = _ptBookPair('long'), shortPair = _ptBookPair('short');
+      if (!IS_DEX && books[longPair]) {
+        if (_arbThrottleShouldFire('pt-long')) _renderBook('long', books[longPair].asks || [], books[longPair].bids || []);
+      }
+      if (books[shortPair]) {
+        if (_arbThrottleShouldFire('pt-short')) _renderBook('short', books[shortPair].asks || [], books[shortPair].bids || []);
+      }
+    };
+    ws.onclose = () => {
+      _ptBookWs = null;
+      setTimeout(_openPtBookWs, Math.min(_ptWsBackoff, 10000));
+      _ptWsBackoff = Math.min(_ptWsBackoff * 2, 10000);
+    };
+    ws.onerror = () => { try { ws.close(); } catch (_) {} };
   }
+  _openPtBookWs();
+  // REST fallback — fires only when WS has been silent >3s. Live stream
+  // overrides at 100-200ms cadence; this kicks in only on disconnect.
+  setInterval(() => {
+    const silent = Date.now() - _ptLastWsAt > 3000;
+    if (silent && _arbThrottleShouldFire('pt-short')) _refreshBook('short');
+    if (silent && !IS_DEX && _arbThrottleShouldFire('pt-long')) _refreshBook('long');
+  }, 1000);
 
   // ── Trade panel (short leg on CEX perp) ───────────────────────────────────
   const _pt = {
