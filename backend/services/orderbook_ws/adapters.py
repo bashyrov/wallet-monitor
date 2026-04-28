@@ -1233,13 +1233,12 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "bingx_spot":   BingXSpotWS,
     "kucoin_spot":  KuCoinSpotWS,
     "htx_spot":     HtxSpotWS,
-    "ourbit_spot":  OurbitSpotWS,
-    # NOTE on `mexc_spot`: the v3 spot WS replies with
-    # `Reason： Blocked!` to subscribe frames coming from the Contabo /
-    # AWS EU IP range (probed live and confirmed, same on wbs.mexc.com
-    # and wbs-api.mexc.com). The MexcSpotWS class works fine when the
-    # IP is allowed — Ourbit (a MEXC fork on a different host) inherits
-    # it and runs without issue. Until we route through a residential
-    # proxy or AWS-AP region, MEXC spot In/Out columns fall back to the
-    # ticker-based basis instead of streaming books.
+    # NOTE on `mexc_spot` and `ourbit_spot`: both used to work when our
+    # outbound IP was on an Asia-friendly range. They now fail to even
+    # complete the WS handshake from Contabo (wbs.mexc.com replies
+    # `Reason: Blocked!`, wbs.ourbit.com just times out the handshake).
+    # The adapter classes are kept around in case a residential proxy or
+    # AWS-AP routing is added later, but they're NOT registered here so
+    # the manager doesn't burn restarts on them. In/Out for those venues
+    # falls back to the ticker-based basis.
 }

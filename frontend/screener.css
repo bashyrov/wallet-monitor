@@ -851,6 +851,14 @@ a.ex-badge:hover { color: var(--green); }
 .net-pos { color: var(--green); }
 .net-neg { color: var(--red); }
 .td-status { font-size: 11px; }
+.ob-stale-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--yellow);
+  margin-left: 3px;
+  cursor: help;
+  opacity: .7;
+}
+.ob-stale-mark:hover { opacity: 1; }
 .badge-valid { background: rgba(26,255,171,.1); color: var(--green); padding: 2px 7px; border-radius: 99px; font-weight: 600; font-size: 10px; }
 .arb-detail-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; color: var(--text3); font-size: 14px; text-decoration: none; transition: background .15s, color .15s; }
 .arb-detail-btn:hover { background: var(--surface3); color: var(--green); }
