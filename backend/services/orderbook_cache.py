@@ -702,6 +702,13 @@ def freshness_by_exchange() -> dict[str, dict]:
 # per user request — concentrates WS bandwidth on the highest-net rows so
 # their fresh count climbs and tighter the spread the data backs.
 PREWARM_TOP_N        = 100
+# WS-only buffer below the active top-N. Symbols in this band stay subscribed
+# to the orderbook stream so when they move up into the active top, no fresh
+# WS subscribe is needed — In/Out fills instantly from already-running WS.
+# REST pollers are NOT spawned for the buffer (saves REST load). Cheap on
+# the WS side because subscribes are amortised over a persistent connection.
+PREWARM_BUFFER_EXTRA = 50
+PREWARM_TOTAL_WS     = PREWARM_TOP_N + PREWARM_BUFFER_EXTRA  # 150 by default
 def _env_float(name: str, default: float) -> float:
     try:
         v = os.environ.get(name)
@@ -768,10 +775,15 @@ async def _prewarm_hotlist_loop() -> None:
             # show up the moment the row enters the hotlist.
             _all_opps = list(data.get("opportunities", []) or [])
             _all_opps.sort(key=lambda o: abs(float(o.get("price_spread") or o.get("basis_pct") or 0)), reverse=True)
-            opps = _all_opps[:PREWARM_TOP_N]
-            ws_subs: dict[str, set[str]] = {}
+            # Two bands:
+            #   active (top-N): WS subscribe + REST poller (instant fill on cold start)
+            #   buffer (next M): WS subscribe only (already-streaming on promotion)
+            active_opps = _all_opps[:PREWARM_TOP_N]
+            buffer_opps = _all_opps[PREWARM_TOP_N:PREWARM_TOTAL_WS]
+            ws_subs: dict[str, set[str]] = {}        # union: active + buffer
+            ws_active: dict[str, set[str]] = {}      # active band only — gets REST poller
             rest_pairs: set[tuple[str, str]] = set()
-            for o in opps:
+            for o in active_opps:
                 sym = o["symbol"]
                 for ex in (o.get("long_exchange"), o.get("short_exchange")):
                     if not ex:
@@ -785,8 +797,21 @@ async def _prewarm_hotlist_loop() -> None:
                         continue
                     if is_ws_supported(ex):
                         ws_subs.setdefault(ex, set()).add(sym)
+                        ws_active.setdefault(ex, set()).add(sym)
                     else:
                         rest_pairs.add((ex, sym))
+            for o in buffer_opps:
+                sym = o["symbol"]
+                for ex in (o.get("long_exchange"), o.get("short_exchange")):
+                    if not ex:
+                        continue
+                    ex_lc = ex.lower()
+                    if only_exchange and ex_lc != only_exchange:
+                        continue
+                    if ex_lc in worker_owned_exchanges:
+                        continue
+                    if is_ws_supported(ex):
+                        ws_subs.setdefault(ex, set()).add(sym)
 
             # Arb now REQUIRES orderbook on both sides, so a cold start would
             # leave us with zero opps and never warm anything. Seed the hot
@@ -905,18 +930,21 @@ async def _prewarm_hotlist_loop() -> None:
             # freshness — when WS pushes a fresh book, the poller skips
             # its fetch on the next tick.
             _now = time.time()
+            # Buffer (top-N+1 .. top-N+M) gets WS-only — keep last_request
+            # warm so the dump path includes them, but no REST poller spawn.
             for ex, syms in ws_subs.items():
                 for sym in syms:
                     key = f"{ex}:{sym}"
                     e = _book_cache.setdefault(key, {})
-                    age = _now - (e.get("ts", 0) or 0)
                     e["last_request"] = _now
-                    # Mark when the key first entered prewarm — used to log
-                    # the eventual subscribe→first-data latency (REST or WS,
-                    # whichever wins). Only set once per cold-start to keep
-                    # the metric meaningful.
                     if key not in _first_req_at and key not in _first_data_logged:
                         _first_req_at[key] = _now
+            # Active (top-N) ALSO gets a REST poller as a WS-dropout backstop.
+            for ex, syms in ws_active.items():
+                for sym in syms:
+                    key = f"{ex}:{sym}"
+                    e = _book_cache.get(key, {})
+                    age = _now - (e.get("ts", 0) or 0)
                     if age > 10.0:
                         async with _lock:
                             task = _pollers.get(key)
