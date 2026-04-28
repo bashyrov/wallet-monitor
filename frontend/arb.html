@@ -1634,8 +1634,8 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     const isSpotSide = (side === 'long' && !IS_DEX);
     const ex = side === 'long' ? LONG : SHORT;
     const path = isSpotSide
-      ? `/screener/orderbook-spot?exchange=${ex}&symbol=${SYM}&limit=40`
-      : `/screener/orderbook?exchange=${ex}&symbol=${SYM}&limit=40`;
+      ? `/screener/orderbook-spot?exchange=${ex}&symbol=${SYM}&limit=200`
+      : `/screener/orderbook?exchange=${ex}&symbol=${SYM}&limit=200`;
     try {
       const r = await Auth.apiFetch(path);
       if (!r.ok) {
@@ -2511,7 +2511,10 @@ async function fetchBook(exchange,side){
   if(_bookInflight[side]) return;  // skip if previous request still pending
   _bookInflight[side]=true;
   try{
-    const res=await Auth.apiFetch(`/screener/orderbook?symbol=${SYM}&exchange=${exchange}&limit=50`);
+    // Detail page wants the deepest book the venue offers — 200 levels.
+    // limit > 30 forces a fresh REST snapshot in get_cached_orderbook
+    // (WS prewarm caches only top-of-book for the screener list).
+    const res=await Auth.apiFetch(`/screener/orderbook?symbol=${SYM}&exchange=${exchange}&limit=200`);
     if(!res.ok) return;
     const d=await res.json();
     _lastBookData[side]=d;

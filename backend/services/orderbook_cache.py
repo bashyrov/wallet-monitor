@@ -473,6 +473,21 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     key = f"{exchange}:{symbol}"
     now = time.time()
 
+    # Detail page asks for deep books (limit > 30). Prewarm WS subscribes to
+    # shallow depth (5-20 levels) for tight In/Out cadence on the screener
+    # list, so the WS cache *can't* satisfy a 100/200-level request — go
+    # straight to REST for those, which returns full-depth snapshots.
+    DEEP_LIMIT_THRESHOLD = 30
+    if limit > DEEP_LIMIT_THRESHOLD:
+        rest_data = await _rest_fallback(exchange, symbol, limit)
+        if rest_data and (rest_data.get("bids") or rest_data.get("asks")):
+            # Trip last_request so the WS poller (if any) keeps the cache
+            # warm in case a follow-up shallow request comes in.
+            entry = _book_cache.setdefault(key, {})
+            entry["last_request"] = now
+            return rest_data
+        # If REST failed, fall through to the cache/file/WS fallbacks below.
+
     # 1. Local memory — fastest (WS pushes land here directly).
     # Treat an empty book (no bids AND no asks) as a cache miss — some WS
     # streams briefly deliver an empty snapshot before the first real tick,
