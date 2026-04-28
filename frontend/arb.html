@@ -1196,6 +1196,12 @@ if (TYPE === 'spot' || TYPE === 'dex') {
                   </div>
                   <button class="trade-submit trade-short-btn" id="pt-submit" onclick="_pt_submit()" disabled>Open Short · —</button>
                   <div class="trade-err" id="pt-err" style="display:none;padding:6px 10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:5px;color:var(--red);font-size:10.5px;margin-top:2px"></div>
+
+                  <!-- Open positions for this symbol — Close + Share buttons -->
+                  <div id="pt-positions-wrap" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+                    <div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;padding:0 2px">Open positions</div>
+                    <div id="pt-positions-list" style="display:flex;flex-direction:column;gap:6px"></div>
+                  </div>
                 </div>
               </div>
 
@@ -1868,6 +1874,64 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
   _ptFetchStatus();
   setInterval(_ptFetchStatus, 15000);
+
+  // ── Open positions list for spot/dex mode (Close + Share buttons) ──
+  // Pull positions for the SHORT-leg exchange (perp). The long leg is
+  // either a spot purchase (no API position concept) or a DEX hold,
+  // neither queryable from /trade/positions, so we only surface the
+  // perp leg here.
+  let _ptPosLast = null, _ptPosEmpty = 0;
+  async function _ptLoadPositions(){
+    let rows;
+    try {
+      const r = await Auth.apiFetch('/trade/positions?symbol=' + SYM);
+      if (!r.ok) return;
+      rows = await r.json();
+    } catch { return; }
+    rows = (rows || []).filter(r => (r.exchange || '').toLowerCase() === SHORT.toLowerCase()
+                                   && (r.symbol || '').toUpperCase() === SYM.toUpperCase());
+    const wrap = $('pt-positions-wrap');
+    const list = $('pt-positions-list');
+    if (!wrap || !list) return;
+    if (!rows.length){
+      _ptPosEmpty++;
+      if (_ptPosLast && _ptPosEmpty < 3) return;  // sticky during reconnect
+      _ptPosLast = [];
+      wrap.style.display = 'none';
+      return;
+    }
+    _ptPosEmpty = 0;
+    _ptPosLast = rows;
+    wrap.style.display = 'block';
+    list.innerHTML = rows.map(p => {
+      const qty = Number(p.quantity || 0);
+      const entry = Number(p.entry_price || 0);
+      const mark = Number(p.mark_price || 0);
+      const pnl = Number(p.unrealized_pnl_usd || 0);
+      const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
+      const pnlCls = pnl >= 0 ? 'rate-pos' : 'rate-neg';
+      const sideTxt = p.side === 'buy' ? 'LONG' : 'SHORT';
+      const sideCol = p.side === 'buy' ? 'var(--green)' : 'var(--red)';
+      const shareData = JSON.stringify({
+        symbol: p.symbol, exchange: p.exchange, side: p.side,
+        quantity: qty, entry_price: entry, mark_price: mark,
+        leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
+        unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
+      }).replace(/'/g, '&#39;');
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:11px">
+          <span style="color:${sideCol};font-weight:700;font-size:10px">${sideTxt}</span>
+          <span class="mono" style="color:var(--text2)">${qty.toFixed(4)} ${SYM}</span>
+          <span class="mono ${pnlCls}" style="margin-left:auto">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span>
+          <button title="Share" data-share='${shareData}' onclick='_openShareFromBtn(this)'
+                  style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px">↗</button>
+          <button onclick="tradeClose(${p.wallet_id}, '${p.position_id || p.symbol}')"
+                  style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button>
+        </div>`;
+    }).join('');
+  }
+  _ptLoadPositions();
+  setInterval(_ptLoadPositions, 8000);
 
   // ── Account block (Positions / Orders / P&L / Balances) ──────────────────
   window._ptAccSwitch = function (el) {
@@ -5014,11 +5078,16 @@ function _renderShareCardNow(){
   // ──────────── 1. BRAND BAR
   let y = PAD + 20;
 
-  // "avalant_" — accent-coloured wordmark
+  // "avalant_" — outlined (hollow) wordmark for that engraved-on-glass feel.
+  // Stroke-only text via strokeText; the letterforms are transparent inside.
   ctx.font = '800 60px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = accent;
-  ctx.fillText('avalant', GRID_X, y + 60);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2.6;
+  ctx.lineJoin = 'round';
+  ctx.strokeText('avalant', GRID_X, y + 60);
   const brandW = ctx.measureText('avalant').width;
+  // Solid green underscore — visual anchor next to the outlined letters
+  ctx.fillStyle = accent;
   ctx.fillRect(GRID_X + brandW + 10, y + 36, 22, 7);
 
   // Date right-aligned, top-aligned with brand
