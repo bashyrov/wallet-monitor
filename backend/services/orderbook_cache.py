@@ -212,6 +212,14 @@ async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
                 logger.info("orderbook poller idle, stopping: %s", key)
                 return
 
+            # Skip the REST fetch if WS has already pushed a fresh book.
+            # Lets us run the poller as a "WS dropout" backstop without
+            # generating REST traffic when WS is healthy.
+            ts = entry.get("ts", 0)
+            if ts and time.time() - ts < FILE_FRESH_MAX:
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
+
             data = await _fetch_direct(exchange, symbol, limit)
             if data and (data.get("bids") or data.get("asks")):
                 entry["data"] = data
@@ -869,6 +877,32 @@ async def _prewarm_hotlist_loop() -> None:
             # REST: spawn pollers for exchanges without WS support (perp DEX + slow CEX)
             for ex, sym in rest_pairs:
                 await _prewarm_start_poller(ex, sym)
+
+            # REST backstop for WS-supported venues whose stream is stale.
+            # KuCoin/HTX/Aster handshakes intermittently fail from Contabo;
+            # without this, hot-list pairs on those venues sit at book_ok=
+            # False until the WS finally comes back. Kicking _poll_loop
+            # gives them a 1s REST tick so the In/Out cells fill in even
+            # when WS is dead. Once WS recovers, _book_cache.ts overrides.
+            #
+            # Bump last_request directly here so the poll loop doesn't
+            # idle-exit after 30s. The loop self-throttles via _book_cache
+            # freshness — when WS pushes a fresh book, the poller skips
+            # its fetch on the next tick.
+            _now = time.time()
+            for ex, syms in ws_subs.items():
+                for sym in syms:
+                    key = f"{ex}:{sym}"
+                    e = _book_cache.setdefault(key, {})
+                    age = _now - (e.get("ts", 0) or 0)
+                    e["last_request"] = _now
+                    if age > 10.0:
+                        async with _lock:
+                            task = _pollers.get(key)
+                            if not task or task.done():
+                                _pollers[key] = asyncio.create_task(
+                                    _poll_loop(key, ex, sym, 50)
+                                )
 
             # REST backstop symbol-push DISABLED — see start_prewarm() comment.
             logger.info(
