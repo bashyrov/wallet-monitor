@@ -357,6 +357,13 @@ class BybitAdapter:
             if qty == 0:
                 continue
             side = "buy" if p.get("side") == "Buy" else "sell"
+            # tradeMode: 0=cross, 1=isolated. UTA accounts force cross at the
+            # account level; the field still reflects what's effective.
+            tm = p.get("tradeMode")
+            if tm is None:
+                margin_mode = None
+            else:
+                margin_mode = "isolated" if int(tm) == 1 else "cross"
             positions.append({
                 "exchange": "bybit",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
@@ -367,6 +374,7 @@ class BybitAdapter:
                 "mark_price":  float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealisedPnl") or 0),
                 "leverage": int(float(p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("symbol", "")),
             })
         if not positions:

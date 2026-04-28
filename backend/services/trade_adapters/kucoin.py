@@ -367,6 +367,15 @@ class KuCoinAdapter:
             if base_sym == "XBT":
                 base_sym = "BTC"
             multiplier = float((info or {}).get("multiplier") or 1) if not isinstance(info, Exception) else 1.0
+            # KuCoin: crossMode flag (true=cross, false=isolated). Some
+            # responses use marginMode string instead.
+            mm_raw = (p.get("marginMode") or "")
+            if mm_raw:
+                margin_mode = "isolated" if str(mm_raw).lower().startswith("iso") else "cross"
+            elif "crossMode" in p:
+                margin_mode = "cross" if bool(p.get("crossMode")) else "isolated"
+            else:
+                margin_mode = None
             out.append({
                 "exchange": "kucoin",
                 "symbol": base_sym,
@@ -377,6 +386,7 @@ class KuCoinAdapter:
                 "unrealized_pnl_usd": float(p.get("unrealisedPnl") or 0),
                 "funding_pnl_usd": funding if isinstance(funding, (int, float)) else None,
                 "leverage": int(float(p.get("realLeverage") or p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("id", "")),
             })
         return out

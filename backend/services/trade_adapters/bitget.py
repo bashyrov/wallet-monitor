@@ -319,6 +319,8 @@ class BitgetAdapter:
             if qty == 0:
                 continue
             hold_side = str(p.get("holdSide") or "").lower()
+            mm = (p.get("marginMode") or "").lower()
+            margin_mode = "isolated" if mm.startswith("iso") else ("cross" if mm else None)
             positions.append({
                 "exchange": "bitget",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
@@ -329,6 +331,7 @@ class BitgetAdapter:
                 "mark_price": float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealizedPL") or 0),
                 "leverage": int(float(p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("positionId", "")),
             })
         if not positions:

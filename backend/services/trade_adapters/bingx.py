@@ -310,16 +310,31 @@ class BingxAdapter:
             if amt == 0:
                 continue
             sym_raw = str(p.get("symbol", ""))
+            # In hedge mode positionAmt is always positive, direction comes
+            # from positionSide. Reflect that in side parsing.
+            ps = (p.get("positionSide") or "").upper()
+            if ps == "LONG":
+                side_parsed = "buy"
+            elif ps == "SHORT":
+                side_parsed = "sell"
+            else:
+                side_parsed = "buy" if amt > 0 else "sell"
+            iso_flag = p.get("isolated")
+            if iso_flag is None:
+                margin_mode = None
+            else:
+                margin_mode = "isolated" if bool(iso_flag) else "cross"
             positions.append({
                 "exchange": "bingx",
                 "symbol": sym_raw.replace("-USDT", ""),
                 "_api_symbol": sym_raw,
-                "side": "buy" if amt > 0 else "sell",
+                "side": side_parsed,
                 "quantity": abs(amt),
                 "entry_price": float(p.get("avgPrice") or 0),
                 "mark_price": float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealizedProfit") or 0),
                 "leverage": int(float(p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": sym_raw,
             })
         if not positions:

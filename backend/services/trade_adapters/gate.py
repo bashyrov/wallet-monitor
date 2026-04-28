@@ -341,6 +341,10 @@ class GateAdapter:
             quanto = all_contracts.get(cname, {}).get("quanto_multiplier", 1)
             qty_coins = abs(size) * quanto
             sym = cname.replace("_USDT", "")
+            # Gate: leverage=0 means cross margin; >0 means isolated with
+            # that leverage. There's no separate marginMode field.
+            lev_val = float(p.get("leverage") or 0)
+            margin_mode = "isolated" if lev_val > 0 else "cross"
             positions.append({
                 "exchange": "gate",
                 "symbol": sym,
@@ -350,7 +354,8 @@ class GateAdapter:
                 "entry_price": float(p.get("entry_price") or 0),
                 "mark_price": float(p.get("mark_price") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealised_pnl") or 0),
-                "leverage": int(float(p.get("leverage") or 1)),
+                "leverage": int(lev_val) if lev_val > 0 else int(float(p.get("cross_leverage_limit") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": cname,
             })
         if not positions:

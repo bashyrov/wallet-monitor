@@ -1759,6 +1759,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     $('pt-mm-iso').style.color       = v === 'isolated' ? 'var(--text)'     : 'var(--text3)';
     $('pt-mm-cross').style.background= v === 'cross'    ? 'var(--surface3)' : 'var(--surface2)';
     $('pt-mm-cross').style.color     = v === 'cross'    ? 'var(--text)'     : 'var(--text3)';
+    _ptRecalc();
   };
   window._pt_lev = function (d) {
     _pt.leverage = Math.max(1, Math.min(100, _pt.leverage + d));
@@ -1766,13 +1767,23 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     _ptRecalc();
   };
   window._pt_setUnit = function (u) {
+    if (u === _pt.unit) return;
+    // Convert the value already in the size input so the user doesn't have
+    // to retype after switching token↔USDT.
+    const inp = $('pt-size');
+    const cur = parseFloat((inp && inp.value) || '0') || 0;
+    const px = _row ? (+_row.perp_price || 0) : 0;
+    if (cur > 0 && px > 0 && inp) {
+      if (_pt.unit === 'token' && u === 'usdt') inp.value = (cur * px).toFixed(2);
+      else if (_pt.unit === 'usdt' && u === 'token') inp.value = (cur / px).toFixed(6);
+      _pt.size = parseFloat(inp.value) || 0;
+    }
     _pt.unit = u;
     $('pt-unit-tok').style.background = u === 'token' ? 'var(--surface3)' : 'transparent';
     $('pt-unit-tok').style.color      = u === 'token' ? 'var(--text)'     : 'var(--text3)';
     $('pt-unit-usd').style.background = u === 'usdt'  ? 'var(--surface3)' : 'transparent';
     $('pt-unit-usd').style.color      = u === 'usdt'  ? 'var(--text)'     : 'var(--text3)';
-    const ph = $('pt-size');
-    if (ph) ph.placeholder = u === 'token' ? `Size · ${SYM}` : 'Size · USDT';
+    if (inp) inp.placeholder = u === 'token' ? `Size · ${SYM}` : 'Size · USDT';
     _ptRecalc();
   };
   window._pt_updateCalc = function () {
@@ -4145,15 +4156,32 @@ function tradeSetMargin(el){
   const leg = el.parentElement.dataset.leg;
   _trade[leg].margin = el.dataset.v;
   el.parentElement.querySelectorAll('.trade-dd-chip').forEach(c => c.classList.toggle('is-active', c === el));
+  // Margin mode doesn't change the calculated numbers, but rerender so the
+  // submit button reflects the active mode immediately.
+  tradeRecalc(leg);
 }
 
 function tradeSetUnit(el){
   const leg = el.dataset.leg;
-  _trade[leg].unit = el.dataset.v;
-  document.querySelectorAll(`.trade-unit[data-leg="${leg}"]`).forEach(b => b.classList.toggle('is-active', b === el));
-  // refresh input placeholder
+  const newUnit = el.dataset.v;
+  const t = _trade[leg];
+  if (newUnit === t.unit) return;
+  // Convert the value in the input box to the new unit so the user doesn't
+  // have to retype. Token↔USDT conversion uses the leg's last price.
   const inp = document.getElementById('trade-size-' + leg);
-  inp.placeholder = _trade[leg].unit === 'token' ? `Size in ${SYM}` : 'Size in USDT';
+  const cur = parseFloat(inp.value) || 0;
+  if (cur > 0 && t.last > 0) {
+    if (t.unit === 'token' && newUnit === 'usdt') {
+      inp.value = (cur * t.last).toFixed(2);
+    } else if (t.unit === 'usdt' && newUnit === 'token') {
+      inp.value = (cur / t.last).toFixed(4);
+    }
+  }
+  t.unit = newUnit;
+  document.querySelectorAll(`.trade-unit[data-leg="${leg}"]`).forEach(b => b.classList.toggle('is-active', b === el));
+  inp.placeholder = newUnit === 'token' ? `Size in ${SYM}` : 'Size in USDT';
+  // Recompute t.qty from the (possibly converted) input and re-render.
+  tradeSizeInput(leg);
 }
 
 function tradeLevStep(ev, leg, dir){

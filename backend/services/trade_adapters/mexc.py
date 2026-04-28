@@ -280,6 +280,9 @@ class MexcAdapter:
             if vol == 0:
                 continue
             pos_type = int(p.get("positionType", 0))  # 1=long, 2=short
+            # MEXC openType: 1=isolated, 2=cross
+            ot = p.get("openType")
+            margin_mode = "isolated" if ot == 1 else ("cross" if ot == 2 else None)
             positions.append({
                 "exchange": "mexc",
                 "symbol": str(p.get("symbol", "")).replace("_USDT", ""),
@@ -290,6 +293,7 @@ class MexcAdapter:
                 "mark_price": float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealisedPnl") or 0),
                 "leverage": int(float(p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("positionId", "")),
             })
         if not positions:

@@ -335,6 +335,8 @@ class BinanceAdapter:
             amt = float(p.get("positionAmt", 0) or 0)
             if amt == 0:
                 continue
+            mt = (p.get("marginType") or "").lower()
+            margin_mode = "isolated" if mt.startswith("iso") else ("cross" if mt else None)
             positions.append({
                 "exchange": "binance",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
@@ -345,6 +347,7 @@ class BinanceAdapter:
                 "mark_price":  float(p.get("markPrice",  0) or 0),
                 "unrealized_pnl_usd": float(p.get("unRealizedProfit", 0) or 0),
                 "leverage": int(float(p.get("leverage", 1) or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("symbol", "")),
             })
         if not positions:
