@@ -3907,7 +3907,12 @@ async function accLoadPositions(){
           <td class="num">${funding}</td>
           <td class="num ${pnlCls}">${sumUsd(pnl)}</td>
           <td class="num ${pnlCls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
-          <td><button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button></td>
+          <td>
+            <button class="pos-share" title="Share P&L card"
+                    onclick='openShareCard(${JSON.stringify({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct})}})'
+                    style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-right:4px">↗</button>
+            <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button>
+          </td>
         </tr>`;
     };
 
@@ -4452,12 +4457,25 @@ async function refreshTradePositions(){
     list.innerHTML = rows.map(p => {
       const pnlCls = p.unrealized_pnl_usd >= 0 ? 'pos' : 'neg';
       const sideCls = p.side === 'buy' ? 'side-long' : 'side-short';
+      const qty = Number(p.quantity || 0);
+      const entry = Number(p.entry_price || 0);
+      const mark = Number(p.mark_price || 0);
+      const pnl = Number(p.unrealized_pnl_usd || 0);
+      const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
+      const shareData = JSON.stringify({
+        symbol: p.symbol, exchange: p.exchange, side: p.side,
+        quantity: qty, entry_price: entry, mark_price: mark,
+        leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
+        unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
+      });
       return `
         <div class="trade-position-row">
           <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
           <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
-          <span class="pos-qty">${Number(p.quantity).toFixed(4)} ${SYM}</span>
-          <span class="pos-pnl ${pnlCls}">${p.unrealized_pnl_usd >= 0 ? '+' : ''}${Number(p.unrealized_pnl_usd).toFixed(2)}</span>
+          <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
+          <span class="pos-pnl ${pnlCls}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</span>
+          <button class="pos-share" title="Share" onclick='openShareCard(${shareData})'
+                  style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px">↗</button>
           <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id}')">Close</button>
         </div>`;
     }).join('');
@@ -4695,6 +4713,285 @@ body{padding-bottom:44px;}
   tick();
   setInterval(tick, 3000);
 })();
+</script>
+
+<!-- ═══ Share P&L card modal ═══════════════════════════════════════════════ -->
+<div class="sc-backdrop" id="sc-backdrop" onclick="if(event.target===this)closeShareCard()">
+  <div class="sc-modal" role="dialog" aria-label="Share P&L">
+    <div class="sc-head">
+      <span class="sc-title">Share P&amp;L</span>
+      <button class="sc-x" onclick="closeShareCard()" aria-label="Close">&times;</button>
+    </div>
+    <div class="sc-controls">
+      <div class="sc-toggle" id="sc-toggle">
+        <button class="sc-tog-btn is-active" data-mode="pct" onclick="setShareMode('pct')">%</button>
+        <button class="sc-tog-btn" data-mode="usd" onclick="setShareMode('usd')">$</button>
+      </div>
+    </div>
+    <div class="sc-preview-wrap">
+      <canvas id="sc-canvas" width="1080" height="680"></canvas>
+    </div>
+    <div class="sc-actions">
+      <button class="sc-btn sc-btn-primary" onclick="downloadShareCard()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v9M4 7l4 4 4-4M2 13h12"/></svg>
+        Download PNG
+      </button>
+      <button class="sc-btn" onclick="copyShareCard()" id="sc-copy-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M11 4V2.5A1.5 1.5 0 0 0 9.5 1h-6A1.5 1.5 0 0 0 2 2.5v6A1.5 1.5 0 0 0 3.5 10H5"/></svg>
+        Copy image
+      </button>
+      <button class="sc-btn" onclick="copyShareText()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        Copy text
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+.sc-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:700;opacity:0;pointer-events:none;transition:opacity .15s;}
+.sc-backdrop.open{opacity:1;pointer-events:auto;}
+.sc-modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:min(640px, 92vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;transform:translateY(8px) scale(.98);transition:transform .15s ease;box-shadow:0 24px 80px rgba(0,0,0,0.5);}
+.sc-backdrop.open .sc-modal{transform:translateY(0) scale(1);}
+.sc-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);}
+.sc-title{font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text2);}
+.sc-x{background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;line-height:1;padding:0 4px;font-family:inherit;transition:color .12s;}
+.sc-x:hover{color:var(--text);}
+.sc-controls{display:flex;align-items:center;justify-content:center;padding:12px 18px 4px;}
+.sc-toggle{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px;}
+.sc-tog-btn{background:none;border:none;color:var(--text3);font-family:inherit;font-size:13px;font-weight:600;padding:7px 22px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s;}
+.sc-tog-btn.is-active{background:var(--surface3);color:var(--text);}
+.sc-preview-wrap{padding:12px 18px;display:flex;justify-content:center;flex:1;min-height:0;overflow:auto;}
+#sc-canvas{display:block;width:100%;max-width:540px;height:auto;border-radius:10px;background:#0E0E11;box-shadow:0 8px 24px rgba(0,0,0,0.4);}
+.sc-actions{display:flex;gap:8px;padding:12px 18px 18px;border-top:1px solid var(--border);background:var(--surface2);}
+.sc-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--surface3);border:1px solid var(--border);color:var(--text2);padding:10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;transition:background .12s,color .12s,border-color .12s;}
+.sc-btn:hover{background:var(--surface);color:var(--text);}
+.sc-btn-primary{background:var(--green);color:#0a0a0f;border-color:transparent;}
+.sc-btn-primary:hover{background:#0fffa3;color:#0a0a0f;filter:brightness(1.05);}
+@media (max-width: 560px){
+  .sc-actions{flex-direction:column;}
+}
+</style>
+
+<script>
+// ═══ Share P&L card ═══════════════════════════════════════════════════════
+let _sharePos = null;
+let _shareMode = 'pct'; // 'pct' or 'usd'
+
+function openShareCard(pos){
+  _sharePos = pos;
+  document.getElementById('sc-backdrop').classList.add('open');
+  // Reset mode toggle UI
+  document.querySelectorAll('.sc-tog-btn').forEach(b => b.classList.toggle('is-active', b.dataset.mode === _shareMode));
+  _renderShareCard();
+}
+function closeShareCard(){
+  document.getElementById('sc-backdrop').classList.remove('open');
+}
+function setShareMode(m){
+  if (m === _shareMode) return;
+  _shareMode = m;
+  document.querySelectorAll('.sc-tog-btn').forEach(b => b.classList.toggle('is-active', b.dataset.mode === m));
+  _renderShareCard();
+}
+
+function _shareEx(ex){
+  return (window.EX && window.EX.labels && window.EX.labels[ex]) || (ex || '').toUpperCase();
+}
+function _shareExColor(ex){
+  return (window.EX && window.EX.colors && window.EX.colors[ex]) || '#1AFFAB';
+}
+function _fmtPx(p){
+  if (p == null || !isFinite(p)) return '—';
+  if (p >= 1000) return p.toLocaleString('en-US', {maximumFractionDigits:2});
+  if (p >= 1) return (+p).toFixed(4);
+  if (p >= 0.01) return (+p).toFixed(5);
+  return (+p).toPrecision(4);
+}
+
+function _renderShareCard(){
+  if (!_sharePos) return;
+  const c = document.getElementById('sc-canvas');
+  const ctx = c.getContext('2d');
+  const W = c.width, H = c.height;
+  const p = _sharePos;
+  const isLong = p.side === 'buy';
+  const profit = (p.unrealized_pnl_usd || 0) >= 0;
+  const accent = profit ? '#1AFFAB' : '#F87171';
+  const accentSoft = profit ? 'rgba(26,255,171,0.18)' : 'rgba(248,113,113,0.18)';
+
+  // ── Background: dark with subtle radial accent glow
+  ctx.fillStyle = '#0E0E11';
+  ctx.fillRect(0, 0, W, H);
+  // Accent glow upper-left
+  let grad = ctx.createRadialGradient(W*0.15, H*0.15, 50, W*0.15, H*0.15, 600);
+  grad.addColorStop(0, accentSoft);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  // Bottom dim
+  let g2 = ctx.createLinearGradient(0, H*0.6, 0, H);
+  g2.addColorStop(0, 'rgba(0,0,0,0)');
+  g2.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = g2;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle dotted sparkles
+  ctx.fillStyle = 'rgba(255,255,255,0.04)';
+  for (let i = 0; i < 80; i++){
+    const x = Math.random()*W, y = Math.random()*H, r = Math.random()*2 + 0.5;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  }
+
+  // ── Brand wordmark (top-left)
+  ctx.font = '800 44px Inter, system-ui, sans-serif';
+  ctx.fillStyle = '#1AFFAB';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('avalant', 60, 100);
+  // blinking _ cursor (static here)
+  ctx.fillStyle = '#1AFFAB';
+  ctx.fillRect(255, 78, 16, 4);
+  // Brand subtitle
+  ctx.font = '600 14px Inter, system-ui, sans-serif';
+  ctx.fillStyle = '#9B9FAB';
+  ctx.letterSpacing = '0.18em';
+  ctx.fillText('FUTURES · LONG/SHORT', 60, 130);
+
+  // ── Pair line: side · leverage · symbol
+  const sideText = isLong ? 'LONG' : 'SHORT';
+  const sideColor = isLong ? '#1AFFAB' : '#F87171';
+  ctx.font = '700 22px Inter, system-ui, sans-serif';
+  // SIDE pill
+  const pillX = 60, pillY = 200;
+  ctx.fillStyle = isLong ? 'rgba(26,255,171,0.16)' : 'rgba(248,113,113,0.16)';
+  const pillW = ctx.measureText(sideText).width + 28;
+  ctx.beginPath(); ctx.roundRect(pillX, pillY-26, pillW, 36, 6); ctx.fill();
+  ctx.fillStyle = sideColor;
+  ctx.fillText(sideText, pillX + 14, pillY);
+  // separators + leverage + symbol
+  let cursorX = pillX + pillW + 18;
+  ctx.fillStyle = '#676B7E';
+  ctx.fillText('·', cursorX, pillY); cursorX += 18;
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(`${p.leverage}×`, cursorX, pillY); cursorX += ctx.measureText(`${p.leverage}×`).width + 18;
+  ctx.fillStyle = '#676B7E';
+  ctx.fillText('·', cursorX, pillY); cursorX += 18;
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(`${p.symbol}USDT Perpetual`, cursorX, pillY);
+
+  // ── Big PnL display (centered)
+  const pnlPct = +p.pnl_pct || 0;
+  const pnlUsd = +p.unrealized_pnl_usd || 0;
+  let primary, secondary;
+  if (_shareMode === 'pct'){
+    primary = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
+    secondary = `${pnlUsd >= 0 ? '+$' : '−$'}${Math.abs(pnlUsd).toFixed(2)}`;
+  } else {
+    primary = `${pnlUsd >= 0 ? '+$' : '−$'}${Math.abs(pnlUsd).toFixed(2)}`;
+    secondary = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
+  }
+  ctx.font = '800 110px "JetBrains Mono", Menlo, monospace';
+  ctx.fillStyle = accent;
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 24;
+  ctx.fillText(primary, 60, 360);
+  ctx.shadowBlur = 0;
+  ctx.font = '600 22px "JetBrains Mono", Menlo, monospace';
+  ctx.fillStyle = '#9B9FAB';
+  ctx.fillText(secondary, 60, 395);
+
+  // ── Entry / Last prices (two columns)
+  const labelStyle = '500 14px Inter, system-ui, sans-serif';
+  const valStyle = '700 26px "JetBrains Mono", Menlo, monospace';
+  ctx.fillStyle = '#9B9FAB'; ctx.font = labelStyle;
+  ctx.fillText('Entry Price', 60, 470);
+  ctx.fillText('Last Price', 360, 470);
+  ctx.fillStyle = '#E6E8E3'; ctx.font = valStyle;
+  ctx.fillText(_fmtPx(p.entry_price), 60, 510);
+  ctx.fillText(_fmtPx(p.mark_price), 360, 510);
+
+  // ── Exchange (bottom-left, with brand dot)
+  const exLabel = _shareEx(p.exchange);
+  const exColor = _shareExColor(p.exchange);
+  ctx.beginPath(); ctx.arc(72, 590, 7, 0, Math.PI*2);
+  ctx.fillStyle = exColor; ctx.fill();
+  ctx.fillStyle = '#9B9FAB'; ctx.font = '500 14px Inter, system-ui, sans-serif';
+  ctx.fillText('Exchange', 90, 580);
+  ctx.fillStyle = '#E6E8E3'; ctx.font = '700 18px Inter, system-ui, sans-serif';
+  ctx.fillText(exLabel, 90, 605);
+
+  // ── URL bottom-right
+  ctx.fillStyle = '#9B9FAB';
+  ctx.font = '600 16px Inter, system-ui, sans-serif';
+  const url = 'avalant.xyz';
+  const urlW = ctx.measureText(url).width;
+  ctx.fillText(url, W - 60 - urlW, 605);
+  ctx.fillStyle = '#676B7E';
+  ctx.font = '500 11px Inter, system-ui, sans-serif';
+  const tagline = 'Cross-exchange arb terminal';
+  const tlW = ctx.measureText(tagline).width;
+  ctx.fillText(tagline, W - 60 - tlW, 624);
+
+  // ── Decorative corner flourish (top-right green dot grid)
+  ctx.fillStyle = 'rgba(26,255,171,0.10)';
+  for (let i = 0; i < 6; i++){
+    for (let j = 0; j < 6; j++){
+      const x = W - 200 + i*22, y = 60 + j*22;
+      ctx.beginPath(); ctx.arc(x, y, 1.5, 0, Math.PI*2); ctx.fill();
+    }
+  }
+}
+
+function downloadShareCard(){
+  const c = document.getElementById('sc-canvas');
+  const a = document.createElement('a');
+  const sym = (_sharePos && _sharePos.symbol) || 'pnl';
+  a.download = `avalant-${sym.toLowerCase()}-${Date.now()}.png`;
+  a.href = c.toDataURL('image/png');
+  a.click();
+}
+
+async function copyShareCard(){
+  const c = document.getElementById('sc-canvas');
+  try {
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    if (!blob) throw new Error('blob fail');
+    if (navigator.clipboard && window.ClipboardItem){
+      await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+      _scFlash('sc-copy-btn', 'Copied!');
+    } else {
+      throw new Error('Clipboard API unavailable');
+    }
+  } catch (e) {
+    _scFlash('sc-copy-btn', 'Use Download');
+  }
+}
+
+async function copyShareText(){
+  if (!_sharePos) return;
+  const p = _sharePos;
+  const isLong = p.side === 'buy';
+  const profit = (p.unrealized_pnl_usd || 0) >= 0;
+  const pctTxt = `${profit ? '+' : ''}${(+p.pnl_pct).toFixed(2)}%`;
+  const usdTxt = `${profit ? '+$' : '−$'}${Math.abs(+p.unrealized_pnl_usd).toFixed(2)}`;
+  const text = `${isLong ? 'LONG' : 'SHORT'} ${p.symbol} ${p.leverage}× on ${_shareEx(p.exchange)} — ${pctTxt} (${usdTxt}) · avalant.xyz`;
+  try {
+    await navigator.clipboard.writeText(text);
+    if (typeof toast === 'function') toast('Copied to clipboard', 'success');
+  } catch {
+    if (typeof toast === 'function') toast('Copy failed', 'error');
+  }
+}
+
+function _scFlash(id, msg){
+  const b = document.getElementById(id);
+  if (!b) return;
+  const orig = b.innerHTML;
+  b.innerHTML = msg;
+  setTimeout(() => { b.innerHTML = orig; }, 1500);
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeShareCard(); });
 </script>
 
 </body>
