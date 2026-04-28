@@ -264,19 +264,53 @@ class GateAdapter:
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
 
-        p = positions[0]
+        # Find the position matching the side we want to close. In dual-mode
+        # there can be both long+short on the same contract — pick the right one.
+        target = None
+        for p in positions:
+            if (p.get("side") or "").lower() == side.lower():
+                target = p
+                break
+        if target is None:
+            target = positions[0]
+
+        # Gate has two close paths:
+        #   single-mode (default): `close: true, size: 0` auto-flattens whichever
+        #     direction holds an open position. Fails with POSITION_DUAL_MODE
+        #     if the account has dual-mode enabled.
+        #   dual-mode: must use `auto_size: "close_long"` or `"close_short"`
+        #     (size still 0). Identifies which leg to flatten explicitly.
+        # Try the single-mode path first; on dual-mode error, retry with auto_size.
+        body_single = {
+            "contract": contract,
+            "size": 0,
+            "price": "0",
+            "tif": "ioc",
+            "close": True,
+        }
         try:
-            r = await cls._req(creds, "POST", "/api/v4/futures/usdt/orders", body={
-                "contract": contract,
-                "size": 0,
-                "price": "0",
-                "tif": "ioc",
-                "close": True,
-            })
+            r = await cls._req(creds, "POST", "/api/v4/futures/usdt/orders", body=body_single)
         except RuntimeError as e:
-            raise RuntimeError(_friendly_gate(*_split_label(e)))
+            label, msg = _split_label(e)
+            if label == "POSITION_DUAL_MODE":
+                # Dual-mode: explicitly specify which leg to close.
+                auto_size = "close_long" if (target.get("side") or "").lower() == "buy" else "close_short"
+                body_dual = {
+                    "contract": contract,
+                    "size": 0,
+                    "price": "0",
+                    "tif": "ioc",
+                    "auto_size": auto_size,
+                    "reduce_only": True,
+                }
+                try:
+                    r = await cls._req(creds, "POST", "/api/v4/futures/usdt/orders", body=body_dual)
+                except RuntimeError as e2:
+                    raise RuntimeError(_friendly_gate(*_split_label(e2)))
+            else:
+                raise RuntimeError(_friendly_gate(label, msg))
         order_id = str(r.get("id", ""))
-        return {"order_id": order_id, "closed_qty": p["quantity"], "realized_pnl_usd": p.get("unrealized_pnl_usd", 0)}
+        return {"order_id": order_id, "closed_qty": target["quantity"], "realized_pnl_usd": target.get("unrealized_pnl_usd", 0)}
 
     # ── Positions ──
     @classmethod

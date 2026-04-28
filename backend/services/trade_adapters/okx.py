@@ -175,17 +175,31 @@ class OKXAdapter:
             await cls._req(creds, "POST", "/api/v5/account/set-position-mode", {"posMode": "long_short_mode"})
         except RuntimeError:
             pass
-        # Set margin mode via set-leverage (OKX sets margin mode per instrument with leverage call)
+        # In `long_short_mode` + `isolated`, OKX requires `posSide` on the
+        # set-leverage call (51000 "Parameter posSide error" otherwise).
+        # We have to set leverage for BOTH long and short legs since either
+        # could be opened next. In `cross`, posSide is forbidden.
+        async def _try(extra: dict) -> None:
+            try:
+                await cls._req(creds, "POST", "/api/v5/account/set-leverage", {
+                    "instId": inst_id,
+                    "lever": str(int(leverage)),
+                    "mgnMode": mgn,
+                    **extra,
+                })
+            except RuntimeError as e:
+                s = str(e)
+                # 59001 "Account level too low" / 59000 "Position exists" — non-fatal
+                if "59001" in s or "59000" in s:
+                    return
+                raise
         try:
-            await cls._req(creds, "POST", "/api/v5/account/set-leverage", {
-                "instId": inst_id,
-                "lever": str(int(leverage)),
-                "mgnMode": mgn,
-            })
+            if mgn == "isolated":
+                await asyncio.gather(_try({"posSide": "long"}), _try({"posSide": "short"}))
+            else:
+                await _try({})
         except RuntimeError as e:
-            s = str(e)
-            if "59001" not in s and "59000" not in s:
-                raise RuntimeError(_friendly_okx(*_split_code(e)))
+            raise RuntimeError(_friendly_okx(*_split_code(e)))
 
     # ── Preflight ──
     @classmethod
@@ -332,12 +346,21 @@ class OKXAdapter:
         if symbol:
             path += f"&instId={_okx_symbol(symbol)}"
         data = await cls._req(creds, "GET", path)
+        # Pull instruments cache once — OKX position responses sometimes omit
+        # ctVal (and we'd silently default to 1, multiplying quantity by 1
+        # instead of e.g. 1000 for DOGE-USDT-SWAP). Quote: BUG: previously
+        # qty came back as 0.15 instead of 150 → close-by-coins computed
+        # contracts=0.15/1000=0.00015 and rejected as "qty too small".
+        instruments = await _instruments()
         positions = []
         for p in data:
             pos = float(p.get("pos") or 0)
             if pos == 0:
                 continue
-            ct_val = float(p.get("ctVal") or 1)
+            inst_id = p.get("instId", "")
+            # Prefer the position's own ctVal; fall back to instruments cache
+            # which is the source of truth from /public/instruments.
+            ct_val = float(p.get("ctVal") or 0) or instruments.get(inst_id, {}).get("ctVal", 1)
             qty_coins = abs(pos) * ct_val
             ps = p.get("posSide", "")
             if ps == "long":
@@ -346,8 +369,9 @@ class OKXAdapter:
                 side = "sell"
             else:
                 side = "buy" if pos > 0 else "sell"
-            inst_id = p.get("instId", "")
             sym = inst_id.replace("-USDT-SWAP", "")
+            mgn = (p.get("mgnMode") or "").lower()
+            margin_mode = "isolated" if mgn.startswith("iso") else ("cross" if mgn else None)
             positions.append({
                 "exchange": "okx",
                 "symbol": sym,
@@ -358,6 +382,7 @@ class OKXAdapter:
                 "mark_price": float(p.get("markPx") or 0),
                 "unrealized_pnl_usd": float(p.get("upl") or 0),
                 "leverage": int(float(p.get("lever") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": inst_id,
             })
         if not positions:

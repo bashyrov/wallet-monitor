@@ -114,7 +114,23 @@ class MexcAdapter:
                 import json as jsonlib
                 r = await c.post(url, content=jsonlib.dumps(body or {}, separators=(",", ":")), headers=headers)
 
-        j = r.json()
+        # MEXC's edge (Akamai) returns 403 + HTML "Access Denied" for blocked
+        # IPs — without this guard we'd fall through to r.json() and surface
+        # an unhelpful JSONDecodeError. Detect non-JSON content and raise a
+        # clean message so the user understands their orders never reached
+        # MEXC's servers.
+        ct = (r.headers.get("content-type") or "").lower()
+        if "application/json" not in ct:
+            if r.status_code == 403 or "Access Denied" in r.text:
+                raise RuntimeError(
+                    "MEXC blocked at edge — REST trading is not available from this IP. "
+                    "Use a region MEXC accepts (Asia AWS) or trade via the web UI."
+                )
+            raise RuntimeError(f"MEXC HTTP {r.status_code}: non-JSON response (likely edge-blocked)")
+        try:
+            j = r.json()
+        except Exception:
+            raise RuntimeError(f"MEXC HTTP {r.status_code}: invalid JSON: {r.text[:200]}")
         code = j.get("code")
         if code is not None and int(code) != 0:
             raise RuntimeError(f"MEXC {code}: {j.get('msg', r.text)}")

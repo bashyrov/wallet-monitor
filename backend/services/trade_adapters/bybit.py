@@ -173,7 +173,11 @@ class BybitAdapter:
                     "sellLeverage": str(int(leverage)),
                 })
             except RuntimeError as e:
-                if not any(code in str(e) for code in ("110026", "110043", "110027")):
+                # 110026 already set, 110043 not modified, 110027 not allowed,
+                # 100028 UTA forbidden — UTA accounts can't switch isolated/cross
+                # at the symbol level. Fall through silently; the leverage call
+                # below will set per-symbol leverage which UTA does support.
+                if not any(code in str(e) for code in ("110026", "110043", "110027", "100028")):
                     raise
 
         async def _lev():
@@ -185,6 +189,7 @@ class BybitAdapter:
                     "sellLeverage": str(int(leverage)),
                 })
             except RuntimeError as e:
+                # 110043 leverage not modified (already set) — non-fatal
                 if "110043" not in str(e):
                     raise
 

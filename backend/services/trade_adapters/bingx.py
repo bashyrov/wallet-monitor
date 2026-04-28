@@ -96,14 +96,20 @@ class BingxAdapter:
         params = dict(params or {})
         params["timestamp"] = int(time.time() * 1000)
         sig = cls._sign(params, creds["api_secret"])
-        params["signature"] = sig
+        # Build the query string EXACTLY the same way we signed it — passing
+        # params= to httpx may URL-encode differently (e.g. + vs %2B,
+        # comma vs %2C) which corrupts the signature. Append the query
+        # string to the URL ourselves so the bytes on the wire match what
+        # we hashed.
+        sorted_qs = urllib.parse.urlencode(sorted(params.items()), doseq=True)
+        sorted_qs += f"&signature={sig}"
         headers = {"X-BX-APIKEY": creds["api_key"]}
-        url = BASE + path
+        url = f"{BASE}{path}?{sorted_qs}"
         async with httpx.AsyncClient(timeout=10) as c:
             if method == "GET":
-                r = await c.get(url, params=params, headers=headers)
+                r = await c.get(url, headers=headers)
             else:
-                r = await c.post(url, params=params, headers=headers)
+                r = await c.post(url, headers=headers)
             body = r.json()
             code = str(body.get("code", 0))
             if code != "0" and r.status_code >= 400 or code not in ("0", "200"):

@@ -259,13 +259,17 @@ class KuCoinAdapter:
             raise RuntimeError(f"Quantity below minimum for {sym}")
         # Clamp to the per-symbol max. Set a safe default if caller passed 0/neg.
         lev = max(1, min(int(leverage or 1), max_lev))
+        # KuCoin requires a unique clientOid per order — without it some
+        # accounts return "200002 Parameter error" (vague). Generate a UUID.
+        import uuid as _uuid
         body = {
+            "clientOid": str(_uuid.uuid4()),
             "symbol": sym,
             "side": "buy" if side == "buy" else "sell",
             "type": "market",
             "size": qty_lots,
             "leverage": lev,
-            # KuCoin Futures: tdMode "ISOLATED" | "CROSS" — without this the
+            # KuCoin Futures: marginMode "ISOLATED" | "CROSS" — without this the
             # server may default to whatever the account has cached.
             "marginMode": "ISOLATED" if margin_mode == "isolated" else "CROSS",
         }
@@ -284,8 +288,10 @@ class KuCoinAdapter:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         p = positions[0]
         reduce_side = "sell" if p["side"] == "buy" else "buy"
+        import uuid as _uuid
         try:
             data = await cls._signed(creds, "POST", "/api/v1/orders", body={
+                "clientOid": str(_uuid.uuid4()),
                 "symbol": sym,
                 "side": reduce_side,
                 "type": "market",

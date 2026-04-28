@@ -265,7 +265,11 @@ class BitgetAdapter:
         positions = await cls.list_positions(creds, symbol)
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
-        p = positions[0]
+        # In hedge mode the same symbol can have BOTH long and short — match
+        # the requested side, fall back to first position only when there's no
+        # match (one-way mode usually).
+        target = next((q for q in positions if (q.get("side") or "").lower() == side.lower()), positions[0])
+        p = target
         info = await _instrument_info(sym) or {}
         vol_prec = info.get("volumePlace", 4)
         reduce_side = "sell" if p["side"] == "buy" else "buy"
@@ -273,6 +277,10 @@ class BitgetAdapter:
         # different one would be rejected by Bitget.
         pos_mm = (p.get("margin_mode") or "isolated").lower()
         mm_api = "isolated" if pos_mm.startswith("iso") else "crossed"
+        # holdSide is required in hedge (two_way) mode and ignored in one_way.
+        # Sending it in both modes is safe and avoids a 22002 "no position to
+        # close" when Bitget can't infer which leg to flatten.
+        hold_side = "long" if (p.get("side") or "").lower() == "buy" else "short"
         try:
             data = await cls._signed(creds, "POST", "/api/v2/mix/order/place-order", body={
                 "symbol": sym,
@@ -281,6 +289,7 @@ class BitgetAdapter:
                 "marginCoin": "USDT",
                 "side": reduce_side,
                 "tradeSide": "close",
+                "holdSide": hold_side,
                 "orderType": "market",
                 "size": _qty_str(p["quantity"], vol_prec),
             })
