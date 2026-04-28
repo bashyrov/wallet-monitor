@@ -1959,6 +1959,10 @@ def get_exchange_health() -> dict[str, dict]:
             )
         ob = ob_freshness.get(ex) or {}
         entry["orderbook_min_age_s"] = ob.get("min_age_s")
+        entry["orderbook_avg_age_s"] = ob.get("avg_age_s")
+        entry["orderbook_median_age_s"] = ob.get("median_age_s")
+        entry["orderbook_p90_age_s"] = ob.get("p90_age_s")
+        entry["orderbook_max_age_s"] = ob.get("max_age_s")
         entry["orderbook_fresh"] = ob.get("fresh") or 0
         entry["orderbook_degraded"] = ob.get("degraded") or 0
         entry["orderbook_stale"] = ob.get("stale") or 0
