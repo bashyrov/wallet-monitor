@@ -147,23 +147,24 @@ class GateAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         contract = _gate_symbol(symbol)
-        # Gate sets leverage per position; 0 = cross, >0 = isolated with that leverage
+        # Gate's leverage endpoint takes `leverage` as a QUERY parameter, not
+        # a JSON body — sending it in the body produces "Missing required
+        # parameter: leverage" even though the spec is unambiguous.
+        # 0 = cross, >0 = isolated with that leverage.
         lev_val = int(leverage) if margin_mode == "isolated" else 0
         try:
             await cls._req(creds, "POST",
                            f"/api/v4/futures/usdt/positions/{contract}/leverage",
-                           body={"leverage": lev_val})
+                           query={"leverage": lev_val})
         except RuntimeError as e:
             s = str(e)
-            # "leverage not changed" is fine
             if "not changed" not in s.lower() and "same" not in s.lower():
                 raise RuntimeError(_friendly_gate(*_split_label(e)))
-        # If isolated, also set the cross_leverage_limit (some Gate accounts need this)
         if margin_mode == "isolated":
             try:
                 await cls._req(creds, "POST",
                                f"/api/v4/futures/usdt/positions/{contract}/leverage",
-                               body={"leverage": int(leverage)})
+                               query={"leverage": int(leverage), "cross_leverage_limit": "0"})
             except RuntimeError:
                 pass
 

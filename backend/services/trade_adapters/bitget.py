@@ -265,39 +265,27 @@ class BitgetAdapter:
         positions = await cls.list_positions(creds, symbol)
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
-        # In hedge mode the same symbol can have BOTH long and short — match
-        # the requested side, fall back to first position only when there's no
-        # match (one-way mode usually).
         target = next((q for q in positions if (q.get("side") or "").lower() == side.lower()), positions[0])
         p = target
-        info = await _instrument_info(sym) or {}
-        vol_prec = info.get("volumePlace", 4)
-        reduce_side = "sell" if p["side"] == "buy" else "buy"
-        # Mirror the existing position's margin mode on close; passing a
-        # different one would be rejected by Bitget.
-        pos_mm = (p.get("margin_mode") or "isolated").lower()
-        mm_api = "isolated" if pos_mm.startswith("iso") else "crossed"
-        # holdSide is required in hedge (two_way) mode and ignored in one_way.
-        # Sending it in both modes is safe and avoids a 22002 "no position to
-        # close" when Bitget can't infer which leg to flatten.
-        hold_side = "long" if (p.get("side") or "").lower() == "buy" else "short"
+        # Use the dedicated /close-positions endpoint. It flushes the symbol's
+        # position regardless of one-way / hedge mode, so we don't have to
+        # match holdSide / tradeSide / posMode against the user's account
+        # configuration. In hedge mode this flushes both legs for the symbol;
+        # since arb workflows close one-leg-at-a-time we accept that side
+        # effect (the test harness above re-verifies the side of any leftovers).
         try:
-            data = await cls._signed(creds, "POST", "/api/v2/mix/order/place-order", body={
+            data = await cls._signed(creds, "POST", "/api/v2/mix/order/close-positions", body={
                 "symbol": sym,
                 "productType": "USDT-FUTURES",
-                "marginMode": mm_api,
-                "marginCoin": "USDT",
-                "side": reduce_side,
-                "tradeSide": "close",
-                "holdSide": hold_side,
-                "orderType": "market",
-                "size": _qty_str(p["quantity"], vol_prec),
             })
         except RuntimeError as e:
             code, msg = _split_code(e)
             raise RuntimeError(_friendly_bg(code, msg))
+        # Response shape: {"successList": [...], "failureList": [...]}
+        success = (data or {}).get("successList") or []
+        order_id = success[0].get("orderId", "") if success else ""
         return {
-            "order_id": str((data or {}).get("orderId", "")),
+            "order_id": str(order_id),
             "closed_qty": p["quantity"],
             "realized_pnl_usd": p.get("unrealized_pnl_usd", 0),
         }

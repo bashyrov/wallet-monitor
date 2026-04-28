@@ -186,18 +186,29 @@ class KuCoinAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         sym = cls._symbol(symbol)
-        # KuCoin: margin mode is set per-position via the order's leverage param
-        # Change leverage via risk limit endpoint
+        # KuCoin enforces per-symbol margin mode independently of the order's
+        # marginMode field — if they don't match, place_order fails with
+        # "The order's margin mode does not match the selected one." Switch
+        # the symbol-level mode explicitly via the v2 endpoint before placing.
+        target_mode = "ISOLATED" if margin_mode == "isolated" else "CROSS"
+        try:
+            await cls._signed(creds, "POST", "/api/v2/position/changeMarginMode", body={
+                "symbol": sym,
+                "marginMode": target_mode,
+            })
+        except RuntimeError:
+            # Already in target mode → KuCoin returns an error code we don't
+            # care about (300013 / similar). Non-fatal.
+            pass
+
         try:
             await cls._signed(creds, "POST", "/api/v1/position/risk-limit-level/change", body={
                 "symbol": sym,
-                "level": 1,  # default risk level
+                "level": 1,
             })
         except RuntimeError:
-            pass  # risk limit may already be at level 1
+            pass
 
-        # Leverage is set on each order via the leverage parameter — no separate endpoint needed
-        # But we can validate the symbol exists
         info = await _instrument_info(sym)
         if not info:
             raise RuntimeError(f"{sym} is not listed on KuCoin Futures.")

@@ -182,11 +182,15 @@ class BingxAdapter:
         step = info.get("stepSize") or 0
         qty_r = _round_qty(quantity, step, prec)
         qty_s = _qty_str(qty_r, prec)
+        # Hedge-mode accounts require positionSide=LONG/SHORT; one-way
+        # accounts ignore it. Sending it in both modes is safe.
+        position_side = "LONG" if side == "buy" else "SHORT"
         try:
             r = await cls._req(creds, "POST", "/openApi/swap/v2/trade/order", {
                 "symbol": sym,
                 "type": "MARKET",
                 "side": "BUY" if side == "buy" else "SELL",
+                "positionSide": position_side,
                 "quantity": qty_s,
             })
         except RuntimeError as e:
@@ -200,16 +204,31 @@ class BingxAdapter:
         sym = cls._symbol(symbol)
         positions = await cls._req(creds, "GET", "/openApi/swap/v2/user/positions", {"symbol": sym})
         pos_list = positions if isinstance(positions, list) else []
+        # In hedge mode `positionSide` is "LONG"/"SHORT". Match the requested
+        # side rather than picking the first non-zero leg, otherwise we'd
+        # close the wrong direction in a paired arb position.
         target = None
+        want_pside = "LONG" if side.lower() == "buy" else "SHORT"
         for p in pos_list:
             amt = float(p.get("positionAmt") or p.get("availableAmt") or 0)
-            if amt != 0:
+            if amt == 0:
+                continue
+            ps = (p.get("positionSide") or "").upper()
+            if ps == want_pside:
                 target = p
                 break
+        # Fallback: any non-zero leg (one-way mode where positionSide="BOTH")
+        if target is None:
+            for p in pos_list:
+                amt = float(p.get("positionAmt") or p.get("availableAmt") or 0)
+                if amt != 0:
+                    target = p
+                    break
         if not target:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         amt = float(target.get("positionAmt") or target.get("availableAmt") or 0)
         reduce_side = "SELL" if amt > 0 else "BUY"
+        position_side = (target.get("positionSide") or ("LONG" if amt > 0 else "SHORT")).upper()
         info = (await _exchange_info()).get(sym) or {}
         prec = info.get("quantityPrecision", 2)
         qty_s = _qty_str(abs(amt), prec)
@@ -218,6 +237,7 @@ class BingxAdapter:
                 "symbol": sym,
                 "type": "MARKET",
                 "side": reduce_side,
+                "positionSide": position_side,
                 "quantity": qty_s,
                 "reduceOnly": "true",
             })

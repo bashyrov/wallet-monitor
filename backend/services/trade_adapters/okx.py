@@ -299,32 +299,34 @@ class OKXAdapter:
         positions = await cls.list_positions(creds, symbol)
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
-        p = positions[0]
-        close_side = "sell" if p["side"] == "buy" else "buy"
-        pos_side = "long" if p["side"] == "buy" else "short"
-        # Match the position's own margin mode — closing in a different mode
-        # would be rejected by OKX ("52000: Position & order tdMode mismatch").
+        # Match by side — in hedge mode the same instId can have both long
+        # and short positions; closing the wrong leg is silently no-op.
+        target = next((q for q in positions if (q.get("side") or "").lower() == side.lower()), positions[0])
+        p = target
+        pos_side = "long" if (p.get("side") or "").lower() == "buy" else "short"
         td_mode = p.get("margin_mode") or "isolated"
         td_mode = "isolated" if td_mode.lower().startswith("iso") else "cross"
 
-        instruments = await _instruments()
-        info = instruments.get(inst_id) or {}
-        ct_val = info.get("ctVal", 1)
-        contracts = p["quantity"] / ct_val if ct_val > 0 else p["quantity"]
-
+        # Use the dedicated close-position endpoint instead of placing an
+        # opposing reduce-only market order. The native flatten:
+        #   - succeeds in both one-way and hedge mode
+        #   - doesn't require us to compute the contract size correctly
+        #   - returns cleanly even when the position was just closed by
+        #     someone else (idempotent)
+        # Contrast: a reduce-only POST /trade/order with sz=contracts would
+        # error 51121 "all operations failed" if the cached qty is stale,
+        # which happens whenever the user just trimmed the position.
         try:
-            r = await cls._req(creds, "POST", "/api/v5/trade/order", {
+            r = await cls._req(creds, "POST", "/api/v5/trade/close-position", {
                 "instId": inst_id,
-                "tdMode": td_mode,
-                "side": close_side,
+                "mgnMode": td_mode,
                 "posSide": pos_side,
-                "ordType": "market",
-                "sz": _qty_to_str(contracts),
-                "reduceOnly": True,
             })
         except RuntimeError as e:
             raise RuntimeError(_friendly_okx(*_split_code(e)))
-        order_id = r[0].get("ordId", "") if r else ""
+        order_id = ""
+        if r and isinstance(r, list) and r[0].get("clOrdId"):
+            order_id = r[0].get("clOrdId", "")
         return {"order_id": str(order_id), "closed_qty": p["quantity"], "realized_pnl_usd": p.get("unrealized_pnl_usd", 0)}
 
     # ── Positions ──
