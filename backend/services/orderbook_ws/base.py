@@ -41,6 +41,12 @@ class WSAdapter:
         self._task: asyncio.Task | None = None
         self._ws = None
         self._stop = False
+        # Track the time we sent a subscribe frame for each symbol so we can
+        # measure subscribe→first-frame latency. Popped on first delivered
+        # update; logged at INFO so prod can grep "ws first-frame" to see
+        # how long fresh hot-list entries take to start streaming.
+        self._sub_sent_at: dict[str, float] = {}
+        self._first_seen: set[str] = set()
 
     # ── to override ──────────────────────────────────────────────────────────
     @abstractmethod
@@ -163,6 +169,10 @@ class WSAdapter:
                     return  # socket died — let _run reconnect handle it
                 if self.subscribe_delay > 0 and i < len(frames) - 1:
                     await asyncio.sleep(self.subscribe_delay)
+            now = time.time()
+            for s in syms:
+                self._sub_sent_at.setdefault(s, now)
+                self._first_seen.discard(s)
             self._subscribed.update(syms)
 
     async def _heartbeat_loop(self, ws, interval: float | None = None) -> None:
@@ -209,6 +219,8 @@ class WSAdapter:
                     self._last_msg_at = time.time()
                     # Fresh connection — re-subscribe to everything we want
                     self._subscribed.clear()
+                    self._sub_sent_at.clear()
+                    self._first_seen.clear()
                     self.on_reconnect()
                     if self._symbols:
                         await self._send_subscribe()
@@ -273,6 +285,14 @@ class WSAdapter:
                             continue
                         sym, bids, asks = parsed
                         if bids or asks:
+                            if sym not in self._first_seen:
+                                self._first_seen.add(sym)
+                                t0 = self._sub_sent_at.pop(sym, None)
+                                if t0 is not None:
+                                    logger.info(
+                                        "ws first-frame %s %s in %.2fs",
+                                        self.name, sym, time.time() - t0,
+                                    )
                             self._update_cb(self.name, sym, bids, asks)
             except asyncio.CancelledError:
                 raise
