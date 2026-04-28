@@ -708,13 +708,6 @@ PREWARM_DUMP_S       = _env_float("AVALANT_PREWARM_DUMP_S", 0.1)
 # Prune WS subscriptions down to the current hot-list every N ticks.
 # At PREWARM_HOTLIST_S=4s, _PRUNE_EVERY=30 → prune roughly every 2 minutes.
 _PRUNE_EVERY         = 30
-
-# Snapshot of last tick's hot-list — used to detect NEW (ex, sym) pairs so
-# we can fire an immediate REST snapshot in parallel with the WS subscribe.
-# The WS first-frame on a thin-volume symbol can be 30+ seconds; the REST
-# snapshot fills _book_cache within 200-500 ms so In/Out shows live data
-# the moment a token enters the top.
-_prev_ws_subs: dict[str, set[str]] = {}
 _prewarm_tick_counter = [0]
 
 _prewarm_hotlist_task: asyncio.Task | None = None
@@ -874,24 +867,6 @@ async def _prewarm_hotlist_loop() -> None:
                     mgr.set_symbols(ex, list(syms))
                 else:
                     mgr.subscribe(ex, list(syms))
-
-            # Instant REST snapshot for symbols that JUST entered the top.
-            # WS subscribe→first-frame can take 5-200s on illiquid pairs
-            # (waiting for first orderbook activity), so In/Out shows ⚠
-            # until then. Firing _rest_fallback in parallel fills the cache
-            # within ~200-500ms — user sees live spread the moment the token
-            # hits the top, and WS overrides naturally when its first frame
-            # arrives (REST writes source='rest', WS overwrites with newer ts).
-            #
-            # Dedup is built into _rest_fallback (per-key inflight task), so
-            # multiple ticks asking for the same symbol won't pile up.
-            global _prev_ws_subs
-            for ex, syms in ws_subs.items():
-                prev = _prev_ws_subs.get(ex, set())
-                new_syms = syms - prev
-                for sym in new_syms:
-                    asyncio.create_task(_rest_fallback(ex, sym, 20))
-            _prev_ws_subs = {ex: set(syms) for ex, syms in ws_subs.items()}
 
             # Ad-hoc subscribes from non-owner workers are ADDITIVE — user
             # just opened /arb for a non-prewarmed symbol.
