@@ -31,6 +31,12 @@ class BinanceWS(WSAdapter):
     url = "wss://fstream.binance.com/ws"
     _rest_depth_url = "https://fapi.binance.com/fapi/v1/depth"
     _snap_limit = 1000
+    # Binance fstream sends a ping every ~3 min and the websockets lib
+    # auto-replies pong. Our own ping_interval=20s flood was triggering
+    # 1011 closes after a few minutes (binance edge dropped us as noisy).
+    # Let the venue drive keepalive via its own pings.
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -352,6 +358,9 @@ class GateWS(WSAdapter):
 class MEXCWS(WSAdapter):
     name = "mexc"
     url = "wss://contract.mexc.com/edge"
+    # MEXC futures wants {"method":"ping"} every 15s, ignores WS-frame pings.
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
 
     def build_subscribe(self, symbols):
         # MEXC futures `sub.depth.full` caps the `limit` param at 20 — even
