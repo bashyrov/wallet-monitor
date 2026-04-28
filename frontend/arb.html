@@ -1881,7 +1881,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // neither queryable from /trade/positions, so we only surface the
   // perp leg here.
   let _ptPosLast = null, _ptPosEmpty = 0;
-  async function _ptLoadPositions(){
+  async function _ptLoadOpenPositions(){
     let rows;
     try {
       const r = await Auth.apiFetch('/trade/positions?symbol=' + SYM);
@@ -1930,8 +1930,8 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         </div>`;
     }).join('');
   }
-  _ptLoadPositions();
-  setInterval(_ptLoadPositions, 8000);
+  _ptLoadOpenPositions();
+  setInterval(_ptLoadOpenPositions, 8000);
 
   // ── Account block (Positions / Orders / P&L / Balances) ──────────────────
   window._ptAccSwitch = function (el) {
@@ -1967,7 +1967,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   function _ptPairToggle(key) {
     if (_ptPairOpen.has(key)) _ptPairOpen.delete(key);
     else                      _ptPairOpen.add(key);
-    _ptLoadPositions();
+    _ptLoadOpenPositions();
   }
   window._ptPairToggle = _ptPairToggle;
 
@@ -2003,7 +2003,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     return {pairs, singles};
   }
 
-  async function _ptLoadPositions() {
+  async function _ptLoadAccPositions() {
     try {
       const r = await Auth.apiFetch('/trade/positions');
       if (!r.ok) return;
@@ -2166,7 +2166,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   }
 
   async function _ptLoadAcc() {
-    await Promise.all([_ptLoadKeyCounts(), _ptLoadPositions(), _ptLoadBalances(), _ptLoadOrders()]);
+    await Promise.all([_ptLoadKeyCounts(), _ptLoadAccPositions(), _ptLoadBalances(), _ptLoadOrders()]);
   }
   _ptLoadAcc();
   setInterval(_ptLoadAcc, 10000);
