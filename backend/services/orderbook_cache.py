@@ -660,11 +660,10 @@ def freshness_by_exchange() -> dict[str, dict]:
 
 
 # ── Prewarm owner loops (single worker) ──────────────────────────────────────
-# Top-N opps by net_profit that get orderbook subscriptions. Bumped from 80
-# so the screener's new In/Out columns have live quotes on more rows —
-# 200 × both sides = ~40 subs per exchange on a 10-venue mix, well within
-# Binance/Bybit per-connection limits (~200 each).
-PREWARM_TOP_N        = 200
+# Top-N opps by net_profit that get orderbook subscriptions. Reduced 200→100
+# per user request — concentrates WS bandwidth on the highest-net rows so
+# their fresh count climbs and tighter the spread the data backs.
+PREWARM_TOP_N        = 100
 def _env_float(name: str, default: float) -> float:
     try:
         v = os.environ.get(name)
