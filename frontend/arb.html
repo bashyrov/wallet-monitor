@@ -4766,8 +4766,9 @@ body{padding-bottom:44px;}
     </div>
     <div class="sc-controls">
       <div class="sc-toggle" id="sc-toggle">
-        <button class="sc-tog-btn is-active" data-mode="pct" onclick="setShareMode('pct')">%</button>
-        <button class="sc-tog-btn" data-mode="usd" onclick="setShareMode('usd')">$</button>
+        <button class="sc-tog-btn" data-mode="pct" onclick="setShareMode('pct')">ROI</button>
+        <button class="sc-tog-btn" data-mode="usd" onclick="setShareMode('usd')">PNL</button>
+        <button class="sc-tog-btn is-active" data-mode="both" onclick="setShareMode('both')">ROI&nbsp;·&nbsp;PNL</button>
       </div>
     </div>
     <div class="sc-preview-wrap">
@@ -4821,7 +4822,7 @@ body{padding-bottom:44px;}
 <script>
 // ═══ Share P&L card ═══════════════════════════════════════════════════════
 let _sharePos = null;
-let _shareMode = 'pct'; // 'pct' or 'usd'
+let _shareMode = 'both'; // 'pct' (ROI %), 'usd' (PNL $), or 'both' (% big + $ small)
 
 // Reads the position from the button's data-share attribute. Browsers
 // auto-decode HTML entities when reading data-* via JS, so we get clean JSON.
@@ -4917,8 +4918,13 @@ function _renderShareCardNow(){
   const p = _sharePos;
   const isLong = p.side === 'buy';
   const profit = (p.unrealized_pnl_usd || 0) >= 0;
-  const accent = profit ? '#1AFFAB' : '#F87171';
-  const accentRGB = profit ? '26,255,171' : '248,113,113';
+  // Theme accent comes from the SIDE: LONG → green, SHORT → red.
+  // The position's profit/loss does NOT change the card colour — the
+  // sign on the P&L number tells that story.
+  const accent = isLong ? '#1AFFAB' : '#F87171';
+  const accentRGB = isLong ? '26,255,171' : '248,113,113';
+  // Lighter shade used for top of the hero gradient (more luminous tip).
+  const accentTip = isLong ? '#9DFFD9' : '#FFB6B6';
 
   ctx.textBaseline = 'alphabetic';
 
@@ -5081,45 +5087,73 @@ function _renderShareCardNow(){
   // ──────────── 4. HERO P&L (left-aligned to grid, oversized)
   const pnlPct = +p.pnl_pct || 0;
   const pnlUsd = +p.unrealized_pnl_usd || 0;
-  let primary, secondary;
-  if (_shareMode === 'pct'){
-    primary = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
-    secondary = `${pnlUsd >= 0 ? '+$' : '−$'}${Math.abs(pnlUsd).toFixed(2)}`;
-  } else {
-    primary = `${pnlUsd >= 0 ? '+$' : '−$'}${Math.abs(pnlUsd).toFixed(2)}`;
-    secondary = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
-  }
+  const pctStr = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
+  const usdStr = `${pnlUsd >= 0 ? '+$' : '−$'}${Math.abs(pnlUsd).toFixed(2)}`;
+
+  // Mode determines what we show:
+  //   pct  (ROI)        → only %, no secondary
+  //   usd  (PNL)        → only $, no secondary
+  //   both (ROI · PNL)  → % big on top, $ smaller below
+  const showPrimary = _shareMode === 'usd' ? usdStr : pctStr;
+  const showSecondary = _shareMode === 'both' ? usdStr : null;
 
   y += 40;
-  // Halo behind the number — anchored to the LEFT edge so visual weight aligns
+  // Halo behind the number — refined gradient, anchored to LEFT edge
   ctx.save();
-  const halo = ctx.createRadialGradient(GRID_X + 200, y + 80, 30, GRID_X + 200, y + 80, 700);
-  halo.addColorStop(0, `rgba(${accentRGB},0.24)`);
-  halo.addColorStop(0.4, `rgba(${accentRGB},0.06)`);
-  halo.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = halo;
-  ctx.fillRect(0, y - 80, W, 360);
+  // Outer wide halo
+  const haloOuter = ctx.createRadialGradient(GRID_X + 200, y + 80, 30, GRID_X + 200, y + 80, 760);
+  haloOuter.addColorStop(0, `rgba(${accentRGB},0.22)`);
+  haloOuter.addColorStop(0.35, `rgba(${accentRGB},0.10)`);
+  haloOuter.addColorStop(0.7, `rgba(${accentRGB},0.02)`);
+  haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haloOuter;
+  ctx.fillRect(0, y - 80, W, 380);
+
+  // Inner concentrated halo for extra depth right behind the number
+  const haloInner = ctx.createRadialGradient(GRID_X + 220, y + 100, 10, GRID_X + 220, y + 100, 320);
+  haloInner.addColorStop(0, `rgba(${accentRGB},0.30)`);
+  haloInner.addColorStop(0.5, `rgba(${accentRGB},0.07)`);
+  haloInner.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haloInner;
+  ctx.fillRect(0, y - 80, W, 380);
   ctx.restore();
 
-  // Auto-fit hero size to column width
-  const sizes = [200, 184, 168, 152, 136, 120];
-  let chosen = 184;
-  for (const s of sizes){
+  // Auto-fit hero size — bigger ceiling when there's only one number
+  const heroSizes = (_shareMode === 'both') ? [200, 184, 168, 152, 136, 120] : [220, 200, 184, 168, 152];
+  let chosen = heroSizes[1];
+  for (const s of heroSizes){
     ctx.font = `900 ${s}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
-    if (ctx.measureText(primary).width <= COL_W - 20){ chosen = s; break; }
+    if (ctx.measureText(showPrimary).width <= COL_W - 20){ chosen = s; break; }
   }
   ctx.font = `900 ${chosen}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
+
+  // Build a vertical gradient for the BIG number — lighter tip → mid → deeper.
+  // Visually nicer than flat fill, gives the number "shine".
+  const heroH = chosen;
+  const heroBaselineY = y + 130;
+  const numGrad = ctx.createLinearGradient(0, heroBaselineY - heroH, 0, heroBaselineY + 6);
+  numGrad.addColorStop(0, accentTip);
+  numGrad.addColorStop(0.55, accent);
+  numGrad.addColorStop(1, isLong ? '#10C987' : '#D14545');
   ctx.shadowColor = accent;
-  ctx.shadowBlur = 70;
-  ctx.fillStyle = accent;
-  ctx.fillText(primary, GRID_X, y + 130);
+  ctx.shadowBlur = 60;
+  ctx.fillStyle = numGrad;
+  ctx.fillText(showPrimary, GRID_X, heroBaselineY);
   ctx.shadowBlur = 0;
 
-  // Secondary line — smaller, slightly muted, with arrow
-  const arrow = profit ? '▲' : '▼';
-  ctx.font = '700 30px "JetBrains Mono", "SF Mono", Menlo, monospace';
-  ctx.fillStyle = `rgba(${accentRGB},0.85)`;
-  ctx.fillText(`${arrow}  ${secondary}`, GRID_X, y + 180);
+  // Secondary line — only in "both" mode
+  if (showSecondary){
+    const arrow = profit ? '▲' : '▼';
+    ctx.font = '700 32px "JetBrains Mono", "SF Mono", Menlo, monospace';
+    ctx.fillStyle = `rgba(${accentRGB},0.80)`;
+    ctx.fillText(`${arrow}  ${showSecondary}`, GRID_X, heroBaselineY + 56);
+  } else {
+    // For single-mode, show a small label clarifying what the big number is.
+    const lbl = _shareMode === 'pct' ? 'RETURN ON INVESTMENT' : 'UNREALIZED PROFIT & LOSS';
+    ctx.font = '700 12px "Inter", system-ui, sans-serif';
+    ctx.fillStyle = `rgba(${accentRGB},0.55)`;
+    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 44, 1.6);
+  }
 
   // ──────────── 5. ENTRY / LAST
   y = H * 0.79;
@@ -5158,35 +5192,43 @@ function _renderShareCardNow(){
   ctx.fillText(dirUp ? '▲' : '▼', c2x + realLastW + 14, y + 56);
 
   // ──────────── 6. FOOTER
+  // Two-row layout per side, with clear vertical spacing so caption
+  // and value don't crash into each other:
+  //   captionY  ← small tracked caption (10-11px)
+  //   valueY    ← main text (22-28px)
+  // Gap between baselines ≈ 30px which clears descenders/ascenders.
   const footY = H - PAD;
+  const captionY = footY - 50;   // small caption baseline
+  const valueY   = footY - 16;   // main value baseline (≈ 34px gap)
 
-  // Top divider
+  // Top divider above the entire footer
   ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  ctx.fillRect(GRID_X, footY - 64, COL_W, 1);
+  ctx.fillRect(GRID_X, footY - 80, COL_W, 1);
 
-  // Exchange — clean inline (dot + name)
+  // ── Left: exchange
+  ctx.font = '700 10px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#3A3D47';
+  _drawTracked(ctx, 'EXCHANGE', GRID_X, captionY, 1.6);
+
+  // brand dot + exchange name on the value row
   const exLabel = _shareEx(p.exchange);
   const exColor = _shareExColor(p.exchange);
-  ctx.beginPath(); ctx.arc(GRID_X + 7, footY - 22, 7, 0, Math.PI*2);
+  ctx.beginPath(); ctx.arc(GRID_X + 7, valueY - 8, 7, 0, Math.PI*2);
   ctx.fillStyle = exColor; ctx.fill();
   ctx.font = '700 22px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(exLabel, GRID_X + 26, footY - 16);
-  // EXCHANGE caption tiny
+  ctx.fillText(exLabel, GRID_X + 26, valueY);
+
+  // ── Right: URL + tagline
   ctx.font = '700 10px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#3A3D47';
-  _drawTracked(ctx, 'EXCHANGE', GRID_X + 26, footY - 36, 1.6);
+  _drawTracked(ctx, 'CROSS-EXCHANGE ARBITRAGE', GRID_R, captionY, 1.6, 'right');
 
-  // URL right side — green emphasis + tagline
   ctx.font = '800 28px "Inter", system-ui, sans-serif';
   ctx.fillStyle = accent;
   const urlText = 'avalant.xyz';
   const urlW = ctx.measureText(urlText).width;
-  ctx.fillText(urlText, GRID_R - urlW, footY - 16);
-  // tagline
-  ctx.font = '700 11px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#3A3D47';
-  _drawTracked(ctx, 'CROSS-EXCHANGE ARBITRAGE', GRID_R, footY - 36, 1.6, 'right');
+  ctx.fillText(urlText, GRID_R - urlW, valueY);
 
   ctx.restore();  // end rounded-card clip
 
