@@ -36,7 +36,6 @@ class Settings(BaseSettings):
     KRAKEN_BASE_URL: str = "https://api.kraken.com"
     WHITEBIT_BASE_URL: str = "https://whitebit.com"
     BINGX_BASE_URL: str = "https://open-api.bingx.com"
-    OURBIT_BASE_URL: str = "https://api.ourbit.com"
     HTX_SPOT_BASE_URL: str = "https://api.huobi.pro"
     HTX_FUTURES_BASE_URL: str = "https://api.hbdm.com"
 

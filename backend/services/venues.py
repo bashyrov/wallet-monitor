@@ -96,7 +96,7 @@ _FALLBACK_LABELS = {
     "binance": "Binance", "bybit": "Bybit", "okx": "OKX", "gate": "Gate",
     "kucoin": "KuCoin", "mexc": "MEXC", "bitget": "Bitget", "bingx": "BingX",
     "whitebit": "WhiteBIT", "htx": "HTX", "kraken": "Kraken",
-    "backpack": "Backpack", "ourbit": "Ourbit",
+    "backpack": "Backpack",
     "hyperliquid": "Hyperliquid", "aster": "Aster", "ethereal": "Ethereal",
     "paradex": "Paradex", "lighter": "Lighter", "extended": "Extended",
 }

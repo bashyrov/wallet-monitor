@@ -25,7 +25,7 @@
     hyperliquid: 'Hyperliquid', aster: 'Aster', ethereal: 'Ethereal',
     whitebit: 'WhiteBIT', bingx: 'BingX', backpack: 'Backpack',
     lighter: 'Lighter', paradex: 'Paradex',
-    htx: 'HTX', extended: 'Extended', ourbit: 'Ourbit',
+    htx: 'HTX', extended: 'Extended',
     kraken: 'Kraken',
   };
   const colors = {
@@ -34,7 +34,7 @@
     hyperliquid: '#64B4FF', aster: '#8A63D2', ethereal: '#C864C8',
     whitebit: '#2DCCCD', bingx: '#1DB8F2', backpack: '#4ADE80',
     lighter: '#A78BFA', paradex: '#FF6A6A',
-    htx: '#2E7DF6', extended: '#E879F9', ourbit: '#FFB84D',
+    htx: '#2E7DF6', extended: '#E879F9',
     kraken: '#7C5CFF',
     // Chain palette — used by source-chip grids on /landing and /
     ethereum: '#627EEA', bsc: '#F3BA2F', polygon: '#8247E5',

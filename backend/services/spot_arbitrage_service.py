@@ -255,26 +255,6 @@ async def _fetch_bingx_spot() -> list[dict]:
     return out
 
 
-async def _fetch_ourbit_spot() -> list[dict]:
-    """Ourbit spot tickers — Binance-compatible API surface."""
-    r = await _http.get("https://api.ourbit.com/api/v3/ticker/24hr")
-    if r.status_code != 200:
-        return []
-    out: list[dict] = []
-    for x in r.json():
-        s = x.get("symbol", "")
-        if not s.endswith("USDT"):
-            continue
-        try:
-            price = float(x.get("lastPrice") or 0)
-            vol = float(x.get("quoteVolume") or 0)
-        except (TypeError, ValueError):
-            continue
-        if price > 0 and vol > 0:
-            out.append({"symbol": s[:-4], "price": price, "volume_usd": vol})
-    return out
-
-
 async def _fetch_htx_spot() -> list[dict]:
     r = await _http.get("https://api.huobi.pro/market/tickers")
     if r.status_code != 200:
@@ -305,7 +285,6 @@ SPOT_FETCHERS = {
     "bitget":  _fetch_bitget_spot,
     "bingx":   _fetch_bingx_spot,
     "htx":     _fetch_htx_spot,
-    "ourbit":  _fetch_ourbit_spot,
 }
 
 SPOT_EXCHANGES = list(SPOT_FETCHERS.keys())

@@ -1200,15 +1200,6 @@ class MexcSpotWS(WSAdapter):
         return token, bids, asks
 
 
-# ── Ourbit Spot — MEXC fork on wbs.ourbit.com ───────────────────────────────
-class OurbitSpotWS(MexcSpotWS):
-    """Ourbit's spot WS turned out to be a clone of MEXC's wbs-api protocol
-    (probed live: SUBSCRIPTION method + spot@public.limit.depth.v3.api@SYM@N
-    works verbatim). Just swap the host."""
-    name = "ourbit_spot"
-    url = "wss://wbs.ourbit.com/ws"
-
-
 ADAPTERS: dict[str, type[WSAdapter]] = {
     "binance":      BinanceWS,
     "bybit":        BybitWS,
@@ -1233,12 +1224,9 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "bingx_spot":   BingXSpotWS,
     "kucoin_spot":  KuCoinSpotWS,
     "htx_spot":     HtxSpotWS,
-    # NOTE on `mexc_spot` and `ourbit_spot`: both used to work when our
-    # outbound IP was on an Asia-friendly range. They now fail to even
-    # complete the WS handshake from Contabo (wbs.mexc.com replies
-    # `Reason: Blocked!`, wbs.ourbit.com just times out the handshake).
-    # The adapter classes are kept around in case a residential proxy or
-    # AWS-AP routing is added later, but they're NOT registered here so
-    # the manager doesn't burn restarts on them. In/Out for those venues
-    # falls back to the ticker-based basis.
+    # NOTE on `mexc_spot`: WS handshake fails from Contabo's IP range
+    # (wbs.mexc.com replies "Reason: Blocked!"). MexcSpotWS class stays
+    # in the file for re-enablement when a residential proxy is wired —
+    # not registered here so the manager doesn't burn reconnect cycles
+    # on it. In/Out for MEXC spot falls back to the ticker-based basis.
 }
