@@ -282,10 +282,11 @@ class BingXWS(WSAdapter):
         return None
 
     def build_subscribe(self, symbols):
-        # Each subscribe creates one subscription; BingX supports bulk via multiple frames.
-        # @depth100 is the deepest snapshot-based option they expose publicly.
+        # @depth5 ships at the highest cadence — 100ms updates vs ~5-10s
+        # for depth100. We only need top-of-book for In/Out, so 5 levels
+        # is plenty.
         return [
-            {"id": str(i), "reqType": "sub", "dataType": f"{s}-USDT@depth100"}
+            {"id": str(i), "reqType": "sub", "dataType": f"{s}-USDT@depth5"}
             for i, s in enumerate(symbols)
         ]
 
@@ -326,32 +327,65 @@ class GateWS(WSAdapter):
     name = "gate"
     url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
 
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
     def build_subscribe(self, symbols):
+        # `futures.order_book_update` ships a full snapshot on subscribe
+        # (event=all) followed by deltas (event=update) every 100ms — way
+        # tighter than `futures.order_book` which only re-snapshots on
+        # change at unspecified cadence (was 8-12s in practice).
         import time as _t
         frames = []
         for s in symbols:
             frames.append({
                 "time": int(_t.time()),
-                "channel": "futures.order_book",
+                "channel": "futures.order_book_update",
                 "event": "subscribe",
-                "payload": [f"{s}_USDT", "20", "0"],
+                "payload": [f"{s}_USDT", "100ms", "20"],
             })
         return frames
 
     def parse_message(self, msg):
-        if msg.get("channel") != "futures.order_book":
+        if msg.get("channel") != "futures.order_book_update":
             return None
-        if msg.get("event") != "all":
+        ev = msg.get("event")
+        if ev not in ("all", "update"):
             return None
         result = msg.get("result") or {}
-        contract = result.get("contract") or result.get("s") or ""
+        contract = result.get("s") or result.get("contract") or ""
         if not contract.endswith("_USDT"):
             return None
         token = contract[:-5]
-        raw_bids = [[x["p"], x["s"]] for x in result.get("bids", [])]
-        raw_asks = [[x["p"], x["s"]] for x in result.get("asks", [])]
-        bids, asks = _to_book(raw_bids, raw_asks)
-        return token, bids, asks
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}})
+        if ev == "all":
+            book["bids"].clear()
+            book["asks"].clear()
+        for side_key, raw in (("bids", result.get("b") or result.get("bids") or []),
+                              ("asks", result.get("a") or result.get("asks") or [])):
+            store = book[side_key]
+            for lvl in raw:
+                if isinstance(lvl, dict):
+                    p_v = lvl.get("p"); q_v = lvl.get("s")
+                else:
+                    p_v, q_v = (lvl[0], lvl[1]) if isinstance(lvl, (list, tuple)) and len(lvl) >= 2 else (None, None)
+                if p_v is None or q_v is None:
+                    continue
+                try:
+                    p = float(p_v); q = float(q_v)
+                except (TypeError, ValueError):
+                    continue
+                if q <= 0:
+                    store.pop(p, None)
+                else:
+                    store[p] = q
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
+        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
 # ── MEXC Futures ──────────────────────────────────────────────────────────────
@@ -362,35 +396,56 @@ class MEXCWS(WSAdapter):
     ping_interval = None  # type: ignore[assignment]
     ping_timeout = None   # type: ignore[assignment]
 
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
     def build_subscribe(self, symbols):
-        # MEXC futures `sub.depth.full` caps the `limit` param at 20 — even
-        # asking for 100 returns 20. Full book is only available via the
-        # delta channel (`sub.depth`), which needs snapshot+diff merging
-        # similar to Binance. Left at 20 until we wire that up.
+        # `sub.depth` is the live delta channel — ticks every ~100ms vs the
+        # ~5s cadence of `sub.depth.full`. Snapshot arrives first, then
+        # deltas; size=0 removes a level. limit=20 keeps payload small.
         return [
-            {"method": "sub.depth.full", "param": {"symbol": f"{s}_USDT", "limit": 20}}
+            {"method": "sub.depth", "param": {"symbol": f"{s}_USDT", "limit": 20}}
             for s in symbols
         ]
 
     def heartbeat_frame(self):
-        # MEXC needs an app-level ping every 15s
         return '{"method":"ping"}'
 
     def parse_message(self, msg):
-        if msg.get("channel") in ("pong", "rs.sub.depth.full"):
+        ch = msg.get("channel")
+        if ch in ("pong", "rs.sub.depth", "rs.sub.depth.full"):
             return None
-        if msg.get("channel") != "push.depth.full":
+        if ch not in ("push.depth", "push.depth.full"):
             return None
         data = msg.get("data") or {}
         sym = msg.get("symbol") or ""
         if not sym.endswith("_USDT"):
             return None
         token = sym[:-5]
-        # MEXC uses [price, quantity, contract_count]
-        raw_bids = [[x[0], x[1]] for x in data.get("bids", [])]
-        raw_asks = [[x[0], x[1]] for x in data.get("asks", [])]
-        bids, asks = _to_book(raw_bids, raw_asks)
-        return token, bids, asks
+        book = self._books.setdefault(token, {"bids": {}, "asks": {}})
+        # `push.depth.full` is a fresh snapshot (clear local first).
+        if ch == "push.depth.full":
+            book["bids"].clear()
+            book["asks"].clear()
+        # Apply (delta) entries: [price, qty, contract_count] — qty=0 removes.
+        for side_key, raw in (("bids", data.get("bids") or []), ("asks", data.get("asks") or [])):
+            store = book[side_key]
+            for lvl in raw:
+                try:
+                    p = float(lvl[0]); q = float(lvl[1])
+                except (TypeError, ValueError, IndexError):
+                    continue
+                if q <= 0:
+                    store.pop(p, None)
+                else:
+                    store[p] = q
+        bids = sorted(book["bids"].items(), key=lambda x: -x[0])[:200]
+        asks = sorted(book["asks"].items(), key=lambda x: x[0])[:200]
+        return token, [[p, s] for p, s in bids], [[p, s] for p, s in asks]
 
 
 # ── Whitebit Perp ─────────────────────────────────────────────────────────────
@@ -418,16 +473,12 @@ class WhitebitWS(WSAdapter):
 
     def build_subscribe(self, symbols):
         # 4th param = multiple_updates: first frame clears the server-side
-        # subscription set, subsequent frames append. Always send a full
-        # re-subscribe on connect; delta adds are handled by the base class
-        # which only sends a new frame for the new symbol — that frame will
-        # also set multi=False (i=0) in isolation. That's fine for append
-        # semantics because we already have an open subscription for the
-        # existing ones on the server; if not, the fresh snapshot arrives
-        # and merge kicks in.
+        # subscription set, subsequent frames append. Depth=20 is enough
+        # for top-of-book In/Out and ships at higher cadence than depth=100
+        # (whitebit batches deeper books less frequently).
         return [
             {"id": i + 1, "method": "depth_subscribe",
-             "params": [f"{s}_PERP", 100, "0", i > 0]}
+             "params": [f"{s}_PERP", 20, "0", i > 0]}
             for i, s in enumerate(symbols)
         ]
 
