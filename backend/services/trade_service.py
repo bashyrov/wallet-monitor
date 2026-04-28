@@ -290,7 +290,22 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
         .all()
     )
 
+    # Skip exchanges that don't list this symbol — querying anyway just
+    # generates "Instrument ID … doesn't exist" noise (OKX 51001 / Binance
+    # -1121 / etc.) on every poll.
+    symbol_supported: dict[str, bool] = {}
+    if symbol:
+        try:
+            from backend.services.arbitrage_service import _cache as _arb_cache
+            for ex_name, (rows, _ts) in _arb_cache.items():
+                if any(r.get("symbol") == symbol for r in rows):
+                    symbol_supported[ex_name] = True
+        except Exception:
+            pass
+
     async def _one(w: Wallet) -> list[dict]:
+        if symbol and symbol_supported and not symbol_supported.get(w.type_value):
+            return []
         try:
             creds = decrypt_credentials(w.credentials or {})
             rows = await ADAPTERS[w.type_value].list_positions(creds, symbol)
@@ -298,7 +313,13 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
                 r["wallet_id"] = w.id
             return rows
         except Exception as exc:
-            logger.info("list_positions failed wallet=%s ex=%s: %s", w.id, w.type_value, exc)
+            msg = str(exc)
+            # Quiet a few known "symbol doesn't exist on this venue" errors —
+            # they're expected when polling a pair across all user wallets.
+            if any(s in msg for s in ("51001", "-1121", "Instrument ID", "Invalid symbol")):
+                logger.debug("list_positions skipped wallet=%s ex=%s: %s", w.id, w.type_value, msg)
+            else:
+                logger.info("list_positions failed wallet=%s ex=%s: %s", w.id, w.type_value, exc)
             return []
 
     results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)

@@ -26,9 +26,11 @@ import time
 import httpx
 
 # Dedicated httpx pool for orderbook polling so it doesn't compete with funding
-# fetchers for connection slots.
+# fetchers for connection slots. connect=10s — Contabo→exchange edge regularly
+# spends 5-8s on TLS handshake, the previous 3s ceiling caused empty/fail polls
+# on healthy venues (HTX SIREN/POWER/ORCA etc.).
 _arb_http = httpx.AsyncClient(
-    timeout=httpx.Timeout(connect=3.0, read=4.0, write=3.0, pool=1.0),
+    timeout=httpx.Timeout(connect=10.0, read=4.0, write=3.0, pool=1.0),
     headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate"},
     follow_redirects=True,
     limits=httpx.Limits(max_connections=300, max_keepalive_connections=80, keepalive_expiry=30),

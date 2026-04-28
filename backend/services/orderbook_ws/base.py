@@ -164,10 +164,17 @@ class WSAdapter:
                     await asyncio.sleep(self.subscribe_delay)
             self._subscribed.update(syms)
 
-    async def _heartbeat_loop(self, ws, interval: float = 15.0) -> None:
+    async def _heartbeat_loop(self, ws, interval: float | None = None) -> None:
         frame = self.heartbeat_frame()
         if frame is None:
             return
+        # Default to ping_interval (per-adapter override) so the cadence
+        # actually matches the venue's server-side timeout. 15s was a
+        # one-size-fits-all that tripped Bitget's 30s window when the
+        # network added latency.
+        if interval is None:
+            interval = float(self.ping_interval) - 2.0 if self.ping_interval else 15.0
+            interval = max(5.0, interval)
         try:
             while True:
                 await asyncio.sleep(interval)
