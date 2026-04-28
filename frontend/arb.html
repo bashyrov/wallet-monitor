@@ -3907,11 +3907,12 @@ async function accLoadPositions(){
           <td class="num">${funding}</td>
           <td class="num ${pnlCls}">${sumUsd(pnl)}</td>
           <td class="num ${pnlCls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
-          <td>
-            <button class="pos-share" title="Share P&L card"
-                    onclick='openShareCard(${JSON.stringify({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct})}})'
-                    style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-right:4px">↗</button>
+          <td style="white-space:nowrap">
             <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button>
+            <button class="pos-share" title="Share P&amp;L card"
+                    data-share='${_htmlEsc(JSON.stringify({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct}))}'
+                    onclick='_openShareFromBtn(this)'
+                    style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:4px">↗</button>
           </td>
         </tr>`;
     };
@@ -4462,21 +4463,22 @@ async function refreshTradePositions(){
       const mark = Number(p.mark_price || 0);
       const pnl = Number(p.unrealized_pnl_usd || 0);
       const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
-      const shareData = JSON.stringify({
+      const shareData = _htmlEsc(JSON.stringify({
         symbol: p.symbol, exchange: p.exchange, side: p.side,
         quantity: qty, entry_price: entry, mark_price: mark,
         leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
         unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
-      });
+      }));
       return `
         <div class="trade-position-row">
           <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
           <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
           <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
           <span class="pos-pnl ${pnlCls}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</span>
-          <button class="pos-share" title="Share" onclick='openShareCard(${shareData})'
-                  style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px">↗</button>
           <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id}')">Close</button>
+          <button class="pos-share" title="Share P&amp;L card" data-share='${shareData}'
+                  onclick='_openShareFromBtn(this)'
+                  style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:4px">↗</button>
         </div>`;
     }).join('');
   } catch {}
@@ -4778,10 +4780,24 @@ body{padding-bottom:44px;}
 let _sharePos = null;
 let _shareMode = 'pct'; // 'pct' or 'usd'
 
+// Reads the position from the button's data-share attribute. Browsers
+// auto-decode HTML entities when reading data-* via JS, so we get clean JSON.
+function _openShareFromBtn(btn){
+  try {
+    const raw = btn.getAttribute('data-share');
+    const pos = JSON.parse(raw);
+    openShareCard(pos);
+  } catch (e) {
+    console.error('share-card data parse failed', e, btn.getAttribute('data-share'));
+    if (typeof toast === 'function') toast('Could not open share card', 'error');
+  }
+}
+
 function openShareCard(pos){
   _sharePos = pos;
-  document.getElementById('sc-backdrop').classList.add('open');
-  // Reset mode toggle UI
+  const bd = document.getElementById('sc-backdrop');
+  if (!bd) { console.error('sc-backdrop missing'); return; }
+  bd.classList.add('open');
   document.querySelectorAll('.sc-tog-btn').forEach(b => b.classList.toggle('is-active', b.dataset.mode === _shareMode));
   _renderShareCard();
 }
