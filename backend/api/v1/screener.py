@@ -890,13 +890,29 @@ async def _refresh_loop() -> None:
                 # (wall-clock, no monotonic→wall conversion needed). Fall back
                 # to the in-memory _cache stamp the pre-pull above sets.
                 ts_by_ex = {}
+                # Also pull paradex from the shared funding_ws.json (it's the
+                # one venue that runs in the main process WS manager rather
+                # than a subprocess, so it writes there, not to per-ex file).
+                try:
+                    with open(f"{_CACHE_DIR}/funding_ws.json", "rb") as _ff:
+                        _shared_ws = json.loads(_ff.read())
+                    _shared_tbe = _shared_ws.get("ts_by_ex") or {}
+                except Exception:
+                    _shared_tbe = {}
                 for ex in FETCHERS:
                     if ex in disabled_ex:
                         continue
-                    _rows, _ws_ts = _read_ws_dump_for(ex, _CACHE_DIR)
+                    # Source 1: per-exchange WS subprocess dump
+                    _rows_ws, _ws_ts = _read_ws_dump_for(ex, _CACHE_DIR)
                     if _ws_ts and (now_t - _ws_ts) < 30.0:
                         ts_by_ex[ex] = _ws_ts
                         continue
+                    # Source 2: shared WS file (paradex)
+                    _shared_ts = _shared_tbe.get(ex)
+                    if _shared_ts and (now_t - float(_shared_ts)) < 30.0:
+                        ts_by_ex[ex] = float(_shared_ts)
+                        continue
+                    # Source 3: in-memory _cache stamped by REST gather
                     _, cached_ts = _cache.get(ex, ([], 0.0))
                     if cached_ts:
                         ts_by_ex[ex] = now_t - (now_m - cached_ts)
