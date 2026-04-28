@@ -1260,6 +1260,51 @@ class MexcSpotWS(WSAdapter):
         return token, bids, asks
 
 
+class HtxWS(WSAdapter):
+    """HTX (Huobi) USDT-margined linear-swap orderbook WS.
+
+    Endpoint `wss://api.hbdm.com/linear-swap-ws` — gzipped JSON, app-level
+    ping/pong (same protocol as HTX spot). step0 = full raw depth, no
+    aggregation. Topic format: ``market.<SYM>-USDT.depth.step0``.
+    """
+    name = "htx"
+    _hosts = (
+        "wss://api.hbdm.com/linear-swap-ws",
+    )
+    url = _hosts[0]
+    decompress_gzip = True
+    subscribe_delay = 0.04
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
+
+    def build_subscribe(self, symbols):
+        return [
+            {"sub": f"market.{s.upper()}-USDT.depth.step0", "id": f"avalant_{i}"}
+            for i, s in enumerate(symbols)
+        ]
+
+    def pong_for(self, msg):
+        ping_ts = msg.get("ping") if isinstance(msg, dict) else None
+        if ping_ts is not None:
+            return json.dumps({"pong": ping_ts})
+        return None
+
+    def parse_message(self, msg):
+        ch = msg.get("ch", "")
+        if not ch.startswith("market.") or not ch.endswith(".depth.step0"):
+            return None
+        # ch = "market.BTC-USDT.depth.step0" → BTC
+        sym_part = ch.split(".")[1]
+        if not sym_part.endswith("-USDT"):
+            return None
+        token = sym_part[:-5].upper()
+        tick = msg.get("tick", {}) or {}
+        bids, asks = _to_book(tick.get("bids"), tick.get("asks"))
+        if not bids and not asks:
+            return None
+        return token, bids, asks
+
+
 ADAPTERS: dict[str, type[WSAdapter]] = {
     "binance":      BinanceWS,
     "bybit":        BybitWS,
@@ -1273,6 +1318,19 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "hyperliquid":  HyperliquidWS,
     "kucoin":       KuCoinWS,
     "paradex":      ParadexWS,
+    "htx":          HtxWS,
+    # extended/lighter/ethereal still REST-only:
+    #   • extended uses per-market WS URLs — incompatible with the single-
+    #     connection-per-exchange model in WSManager. Needs a per-symbol
+    #     adapter spawn path before we can wire it in.
+    #   • lighter publishes integer market IDs that change on listings; need
+    #     a cold-start REST fetch of /api/v1/orderBooks to map id↔symbol
+    #     before subscribe. Doable, but requires extending the adapter base
+    #     to allow async pre-subscribe work.
+    #   • ethereal — public WS endpoint + subscribe format unverified against
+    #     their docs. Risk of silent reconnect-loop in prod, deferring.
+    # All three keep working through the existing REST poller in
+    # orderbook_cache._fetch_direct.
     # Spot — only on the big-3 venues for now (covers ~70-80% of spot-short
     # opp volume). Extending to the rest needs per-venue WS work (kucoin has
     # an odd token-auth flow, gate uses different sub format, etc.).
