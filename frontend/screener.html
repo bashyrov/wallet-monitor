@@ -1814,136 +1814,9 @@ function reconnectWs() {
   connectWs();
 }
 
-// ── Live orderbook WS — powers per-row live In/Out updates ──────────────────
-// Subscribes to /ws/book for the top-visible arb rows' (long, short) pairs
-// and re-computes In/Out from live bid/ask on each book tick. That pushes
-// per-row update cadence from the 300-500 ms compute cycle down to ~100 ms
-// (books.json refresh + WS push), matching the orderbook freshness target.
-const _liveBooks = new Map();  // "ex:SYM" → { bid, ask, ts }
-let _bookWs = null;
-let _bookWsSubs = new Set();   // normalised pair strings currently subscribed
-let _bookWsRetry = 0;
-let _bookWsRetryTimer = null;
-const _BOOK_WS_MAX_SUBS = 40;  // cap per client — backend also gates at 16 by default
+// /ws/book live In/Out updates removed — basis-only screener policy.
+// Detail page (/arb) maintains its own /ws/book subscription independently.
 
-function _liveBookKey(ex, sym) { return `${(ex||'').toLowerCase()}:${(sym||'').toUpperCase()}`; }
-
-function _openBookWs() {
-  if (_bookWs && _bookWs.readyState === WebSocket.OPEN) return;
-  const token = Auth.getToken();
-  if (!token) return;
-  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${scheme}://${location.host}/api/screener/ws/book`;
-  _bookWs = new WebSocket(url);
-  _bookWs.onopen = () => {
-    _bookWsRetry = 0;
-    // First-frame auth (replaces the old ?token= query — kept the JWT
-    // out of nginx access logs).
-    try { _bookWs.send(JSON.stringify({ auth: token })); } catch {}
-    if (_bookWsSubs.size > 0) {
-      _bookWs.send(JSON.stringify({ action: 'subscribe', pairs: [..._bookWsSubs] }));
-    }
-  };
-  _bookWs.onmessage = (ev) => {
-    try {
-      const msg = JSON.parse(ev.data);
-      const books = msg.books || {};
-      for (const k in books) {
-        const b = books[k];
-        const bid = (b.bids && b.bids[0]) ? +b.bids[0][0] : null;
-        const ask = (b.asks && b.asks[0]) ? +b.asks[0][0] : null;
-        if (bid && ask) {
-          _liveBooks.set(k, { bid, ask, ts: b.ts || Date.now() / 1000 });
-        }
-      }
-      _recomputeLiveInOut(Object.keys(books));
-    } catch (_) {}
-  };
-  _bookWs.onclose = () => {
-    _bookWs = null;
-    const delay = Math.min(30000, 1000 * 2 ** _bookWsRetry++);
-    clearTimeout(_bookWsRetryTimer);
-    _bookWsRetryTimer = setTimeout(_openBookWs, delay);
-  };
-  _bookWs.onerror = () => { try { _bookWs.close(); } catch (_) {} };
-}
-
-function _bookWsPairsForVisibleRows() {
-  // Collect up to _BOOK_WS_MAX_SUBS (long_ex:sym, short_ex:sym) pairs from
-  // the currently-visible arb + spot tabs. Only these get a WS subscription;
-  // off-screen rows render with the server-computed in/out from arb.json.
-  const pairs = new Set();
-  const arbRows = document.querySelectorAll(
-    '#tbody-arb tr[data-long-ex], #tbody-spot tr[data-long-ex]'
-  );
-  for (const tr of arbRows) {
-    if (pairs.size >= _BOOK_WS_MAX_SUBS * 2) break;
-    const lex = tr.dataset.longEx;
-    const sex = tr.dataset.shortEx;
-    const sym = tr.dataset.symbol;
-    if (lex && sym) pairs.add(_liveBookKey(lex, sym));
-    if (sex && sym) pairs.add(_liveBookKey(sex, sym));
-  }
-  return pairs;
-}
-
-function _syncBookWsSubs() {
-  if (!_bookWs || _bookWs.readyState !== WebSocket.OPEN) return;
-  const wanted = _bookWsPairsForVisibleRows();
-  const toAdd = [...wanted].filter(p => !_bookWsSubs.has(p));
-  const toRemove = [..._bookWsSubs].filter(p => !wanted.has(p));
-  if (toAdd.length) {
-    _bookWs.send(JSON.stringify({ action: 'subscribe', pairs: toAdd.slice(0, _BOOK_WS_MAX_SUBS) }));
-    toAdd.slice(0, _BOOK_WS_MAX_SUBS).forEach(p => _bookWsSubs.add(p));
-  }
-  if (toRemove.length) {
-    _bookWs.send(JSON.stringify({ action: 'unsubscribe', pairs: toRemove }));
-    toRemove.forEach(p => _bookWsSubs.delete(p));
-  }
-}
-
-function _recomputeLiveInOut(changedKeys) {
-  // For each row whose long or short pair appears in changedKeys, recompute
-  // in/out from the cached bid/ask and rewrite the In/Out cells in place.
-  if (!changedKeys || !changedKeys.length) return;
-  const changed = new Set(changedKeys);
-  const rows = document.querySelectorAll(
-    '#tbody-arb tr[data-long-ex], #tbody-spot tr[data-long-ex]'
-  );
-  for (const tr of rows) {
-    const lex = tr.dataset.longEx;
-    const sex = tr.dataset.shortEx;
-    const sym = tr.dataset.symbol;
-    if (!lex || !sex || !sym) continue;
-    const kL = _liveBookKey(lex, sym);
-    const kS = _liveBookKey(sex, sym);
-    if (!changed.has(kL) && !changed.has(kS)) continue;
-    const bookL = _liveBooks.get(kL);
-    const bookS = _liveBooks.get(kS);
-    if (!bookL || !bookS) continue;
-    // In  = (bid_short − ask_long) / ask_long × 100
-    // Out = (bid_long − ask_short) / ask_short × 100
-    const inPct  = (bookS.bid - bookL.ask) / bookL.ask * 100;
-    const outPct = (bookL.bid - bookS.ask) / bookS.ask * 100;
-    const inCell  = tr.querySelector('.td-in span');
-    const outCell = tr.querySelector('.td-out span');
-    if (inCell) {
-      const cls = inPct > 0 ? 'rate-neg' : 'rate-pos';
-      inCell.className = cls + ' live-tick';
-      inCell.textContent = (inPct >= 0 ? '+' : '') + inPct.toFixed(4) + '%';
-      setTimeout(() => inCell.classList.remove('live-tick'), 200);
-    }
-    if (outCell) {
-      const cls = outPct > 0 ? 'rate-neg' : 'rate-pos';
-      outCell.className = cls + ' live-tick';
-      outCell.textContent = (outPct >= 0 ? '+' : '') + outPct.toFixed(4) + '%';
-      setTimeout(() => outCell.classList.remove('live-tick'), 200);
-    }
-  }
-}
-
-// _syncBookWsSubs disabled — In/Out columns dropped, no live updates needed.
-// setInterval(_syncBookWsSubs, 2000);
 
 // ── Arbitrage WebSocket ────────────────────────────────────────────────────────
 const _retryA      = { val: 0 };
@@ -2601,8 +2474,6 @@ setInterval(tickCountdowns, 1000);
     }
   } catch (_) {}
   connectWs();
-  // _openBookWs() disabled — In/Out columns dropped from screener (basis-only
-  // policy). Detail page maintains its own /ws/book subscription.
   loadWatchlist();
   startLiveOpsPollers();
 })();
