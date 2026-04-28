@@ -162,7 +162,14 @@ class BybitAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         sym = cls._symbol(symbol)
-        # Parallel: independent endpoints; saves ~100-200ms on first order.
+        # Bybit V5 has TWO margin-mode endpoints:
+        #   /v5/position/switch-isolated  — per-symbol, works on Classic
+        #     and UTA-Inverse. UTA-Linear returns 100028 ("unified account
+        #     is forbidden").
+        #   /v5/account/set-margin-mode   — account-wide, used by UTA.
+        #     Values: REGULAR_MARGIN (cross) | ISOLATED_MARGIN | PORTFOLIO_MARGIN.
+        # We try the per-symbol path first (cheaper, doesn't affect other
+        # symbols), then fall back to the account-wide one for UTA users.
         async def _mode():
             try:
                 await cls._signed(creds, "POST", "/v5/position/switch-isolated", {
@@ -174,23 +181,26 @@ class BybitAdapter:
                 })
             except RuntimeError as e:
                 msg = str(e)
-                # 110026 already set, 110043 not modified, 110027 not allowed.
                 if any(code in msg for code in ("110026", "110043", "110027")):
-                    return
-                # 100028 UTA forbidden — UTA = Unified Trading Account.
-                # Bybit enforces a single cross-margin pool across spot+perp+
-                # options at the account level. We can't switch a UTA symbol
-                # to isolated. Log a clear warning so server logs show the
-                # downgrade; the order proceeds in CROSS regardless of what
-                # the user picked. Users wanting isolated must use a Bybit
-                # Classic account.
+                    return  # already set / not modified / not allowed-but-OK
                 if "100028" in msg:
-                    if margin_mode == "isolated":
+                    # UTA-Linear: switch via account-level set-margin-mode.
+                    setting = "ISOLATED_MARGIN" if margin_mode == "isolated" else "REGULAR_MARGIN"
+                    try:
+                        await cls._signed(creds, "POST", "/v5/account/set-margin-mode", {
+                            "setMarginMode": setting,
+                        })
+                    except RuntimeError as e2:
+                        msg2 = str(e2)
+                        # ret_code 30086 = "already in this margin mode" — non-fatal
+                        if "30086" in msg2 or "already" in msg2.lower():
+                            return
                         import logging as _l
                         _l.getLogger("avalant.trade").warning(
-                            "Bybit %s: UTA account forces cross margin — "
-                            "isolated request silently downgraded", sym,
+                            "Bybit set-margin-mode failed for %s (%s): %s",
+                            sym, setting, msg2,
                         )
+                        return
                     return
                 raise
 
