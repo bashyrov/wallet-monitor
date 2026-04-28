@@ -134,6 +134,14 @@ class OKXWS(WSAdapter):
 
     name = "okx"
     url = "wss://ws.okx.com:8443/ws/v5/public"
+    # OKX V5 closes WS with 1011 after 30s of no traffic. Lib-level WS-frame
+    # pings get ignored — they want a literal "ping" text frame, server
+    # responds "pong". Disable lib pings + drive our own at ~25s.
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
+
+    def heartbeat_frame(self):
+        return "ping"
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
@@ -253,6 +261,19 @@ class BingXWS(WSAdapter):
     name = "bingx"
     url = "wss://open-api-swap.bingx.com/swap-market"
     decompress_gzip = True
+    # BingX server sends a "Ping" text frame every 5s. Client MUST respond
+    # with literal "Pong". Lib-level WS-frame pings get ignored → 1011
+    # within seconds. Disable lib pings, respond via pong_for.
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
+
+    def pong_for(self, msg):
+        # BingX server sends gzipped "Ping" — after decompress it's a string.
+        # parse_message receives JSON dicts; pong_for receives the parsed
+        # frame BEFORE parse_message. We need the raw frame check.
+        if msg == "Ping" or (isinstance(msg, dict) and msg.get("ping")):
+            return "Pong"
+        return None
 
     def build_subscribe(self, symbols):
         # Each subscribe creates one subscription; BingX supports bulk via multiple frames.
@@ -442,6 +463,15 @@ class WhitebitWS(WSAdapter):
 class HyperliquidWS(WSAdapter):
     name = "hyperliquid"
     url = "wss://api.hyperliquid.xyz/ws"
+    # Hyperliquid closes WS with 1011 after 60s without traffic. Their docs
+    # spec'd app-level {"method":"ping"} → server sends {"channel":"pong"}.
+    # WS-frame pings from the lib are ignored — disable them and use the
+    # heartbeat hook instead. ~30s cadence.
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
+
+    def heartbeat_frame(self):
+        return '{"method":"ping"}'
 
     def build_subscribe(self, symbols):
         return [
