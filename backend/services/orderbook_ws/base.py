@@ -5,6 +5,7 @@ import asyncio
 import gzip
 import json
 import logging
+import time
 from abc import abstractmethod
 
 import websockets
@@ -184,9 +185,12 @@ class WSAdapter:
 
     async def _run(self) -> None:
         import random
-        backoff = 1.0
+        # Faster initial reconnect — most failures recover within 1-2s, no
+        # reason to wait a whole second on the very first retry.
+        backoff = 0.3
         while not self._stop:
             hb_task: asyncio.Task | None = None
+            wd_task: asyncio.Task | None = None
             try:
                 connect_url = await self.get_url()
                 async with websockets.connect(
@@ -201,7 +205,8 @@ class WSAdapter:
                     max_size=4 * 1024 * 1024,
                 ) as ws:
                     self._ws = ws
-                    backoff = 1.0
+                    backoff = 0.3
+                    self._last_msg_at = time.time()
                     # Fresh connection — re-subscribe to everything we want
                     self._subscribed.clear()
                     self.on_reconnect()
@@ -209,10 +214,18 @@ class WSAdapter:
                         await self._send_subscribe()
                     if self.heartbeat_frame() is not None:
                         hb_task = asyncio.create_task(self._heartbeat_loop(ws))
+                    # Stale-data watchdog: many WS edges (especially under
+                    # NAT/Cloudflare) keep the TCP connection up but stop
+                    # delivering frames. Lib pings can't catch this — server
+                    # answers pings without sending data. We track the time
+                    # of the last *real* message; if no frames for 30s, we
+                    # force-close and let the outer loop reconnect.
+                    wd_task = asyncio.create_task(self._stale_watchdog(ws))
                     logger.info("%s WS connected (%d symbols)", self.name, len(self._symbols))
                     async for raw in ws:
                         if self._stop:
                             break
+                        self._last_msg_at = time.time()
                         if self.decompress_gzip and isinstance(raw, bytes):
                             try:
                                 raw = gzip.decompress(raw).decode("utf-8")
@@ -264,14 +277,51 @@ class WSAdapter:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                jitter = random.uniform(0, 1.0)
+                jitter = random.uniform(0, 0.5)
                 wait = backoff + jitter
                 logger.warning("%s WS error: %s (retry in %.1fs)", self.name, exc, wait)
                 self._ws = None
                 await asyncio.sleep(wait)
-                backoff = min(backoff * 1.8, 30.0)
+                # Cap aggressive — most failures (handshake timeouts,
+                # transient drops) recover within 5s. Long backoffs leave
+                # entire venues blank. 8s ceiling gives breathing room
+                # without losing minutes of stream.
+                backoff = min(backoff * 1.5, 8.0)
             finally:
                 if hb_task and not hb_task.done():
                     hb_task.cancel()
+                if wd_task and not wd_task.done():
+                    wd_task.cancel()
         self._ws = None
         logger.info("%s WS stopped", self.name)
+
+    async def _stale_watchdog(self, ws, threshold: float = 30.0,
+                                interval: float = 5.0) -> None:
+        """Force-close the connection if no frame arrived in `threshold` s.
+
+        Many exchange WS edges keep the TCP socket up but quietly stop
+        delivering frames (CDN warmstart, NAT idle, peer hung up). The
+        websockets-library ping/pong won't catch this — server still
+        answers pings while never sending real data. We watch
+        `self._last_msg_at` and trigger a clean reconnect when the data
+        stream goes silent."""
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                if self._stop:
+                    return
+                age = time.time() - getattr(self, "_last_msg_at", time.time())
+                if age > threshold:
+                    logger.warning(
+                        "%s WS stale (no frames for %.0fs) — forcing reconnect",
+                        self.name, age,
+                    )
+                    try:
+                        await ws.close(code=1000, reason="stale-data-watchdog")
+                    except Exception:
+                        pass
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
