@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from collections import defaultdict
 from decimal import Decimal
@@ -10,6 +11,8 @@ from backend.providers.http import RetryClient
 
 from backend.domain import ExchangeWallet
 from backend.providers.base_wallet_provider import BaseWalletProvider
+
+logger = logging.getLogger("avalant.providers.okx")
 from settings import settings
 
 from backend.providers.exchanges._signing import b64_hmac_sha256
@@ -122,18 +125,80 @@ class OKXProvider(BaseWalletProvider):
                 out[ccy] += amt
         return dict(out)
 
+    async def _get_funding_balance(self, creds: dict[str, str]) -> dict[str, Decimal]:
+        """Funding (asset) account — separate from the unified trading
+        account. Deposits land here first, fiat conversions sit here, etc.
+        Endpoint: /api/v5/asset/balances. Without this, users who keep
+        funds outside the trading account see zero on the portfolio."""
+        try:
+            data = await self._signed_get(creds, "/api/v5/asset/balances")
+        except Exception as exc:
+            logger.warning("OKX funding balance fetch failed: %s", exc)
+            return {}
+        out = defaultdict(Decimal)
+        for it in (data.get("data") or []):
+            ccy = (it.get("ccy") or "").strip()
+            # Funding response uses `bal` (balance) — sometimes also `availBal`.
+            amt = self._D(it.get("bal") or it.get("availBal"))
+            if ccy and amt != 0:
+                out[ccy] += amt
+        return dict(out)
+
+    async def _get_staking_defi_balance(self, creds: dict[str, str]) -> dict[str, Decimal]:
+        """Active DeFi/Earn staking orders. Endpoint:
+        /api/v5/finance/staking-defi/orders-active. Captures the
+        "накопление" (savings/staking) side that's separate from
+        Simple Earn savings."""
+        try:
+            data = await self._signed_get(creds, "/api/v5/finance/staking-defi/orders-active")
+        except Exception as exc:
+            logger.warning("OKX staking-defi fetch failed: %s", exc)
+            return {}
+        out = defaultdict(Decimal)
+        for it in (data.get("data") or []):
+            ccy = (it.get("ccy") or "").strip()
+            amt = self._D(it.get("investAmt") or it.get("amt"))
+            if ccy and amt != 0:
+                out[ccy] += amt
+        return dict(out)
+
     async def fetch_balance(self, wallet: ExchangeWallet):
         creds = self.creds_execution(wallet)
 
-        trading, earn = await asyncio.gather(
+        # Pull every wallet bucket OKX exposes so the portfolio shows the
+        # full picture (trading + funding + savings + staking).
+        trading, savings, funding, staking = await asyncio.gather(
             self._get_trading_balance(creds),
             self._get_savings_balance(creds),
+            self._get_funding_balance(creds),
+            self._get_staking_defi_balance(creds),
             return_exceptions=True,
         )
 
         if isinstance(trading, Exception): raise trading
-        if isinstance(earn, Exception): earn = {}
+        if isinstance(savings, Exception):
+            logger.warning("OKX savings fetch failed: %s", savings)
+            savings = {}
+        if isinstance(funding, Exception):
+            logger.warning("OKX funding fetch failed: %s", funding)
+            funding = {}
+        if isinstance(staking, Exception):
+            logger.warning("OKX staking fetch failed: %s", staking)
+            staking = {}
 
         trading_dict, upnl = trading
+
+        # Merge funding into the spot bucket (it's spendable balance, not
+        # earn). Merge savings + staking into the earn bucket.
+        merged_spot = defaultdict(Decimal, trading_dict)
+        for ccy, amt in funding.items():
+            merged_spot[ccy] += amt
+
+        merged_earn = defaultdict(Decimal)
+        for ccy, amt in savings.items():
+            merged_earn[ccy] += amt
+        for ccy, amt in staking.items():
+            merged_earn[ccy] += amt
+
         upnl_str = str(upnl) if upnl != 0 else None
-        return self._build_result(wallet, self.name, trading_dict, {}, earn, upnl_usd=upnl_str)
+        return self._build_result(wallet, self.name, dict(merged_spot), {}, dict(merged_earn), upnl_usd=upnl_str)
