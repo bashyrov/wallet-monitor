@@ -48,6 +48,17 @@ class OKXUserStream(BaseUserStream):
         passphrase = (creds.get("api_passphrase") or "").strip()
         if not api_key or not api_secret or not passphrase:
             raise RuntimeError("okx user-stream: missing api_key/secret/passphrase")
+
+        # Pre-warm the instrument cache BEFORE we subscribe — otherwise
+        # the first position frames arrive with ctVal still 1.0 and we
+        # write wrong quantities to the snapshot. Position frames stop
+        # coming once positions are stable, so the first ones matter.
+        try:
+            from backend.services.trade_adapters.okx import _instruments
+            await _instruments()
+        except Exception as exc:
+            logger.warning("okx user-stream: prewarm instruments failed: %s", exc)
+
         ts = str(int(time.time()))
         prehash = f"{ts}{LOGIN_PREHASH_SUFFIX}"
         sig = base64.b64encode(
@@ -89,16 +100,6 @@ class OKXUserStream(BaseUserStream):
                 {"channel": "account"},
             ],
         }))
-
-        # Pre-warm the instrument cache so parse_event doesn't have to
-        # hit REST for ctVal on every position event. We don't need to
-        # await — the cache is shared module-level state and the import
-        # is lazy so this is best-effort.
-        try:
-            from backend.services.trade_adapters.okx import _instruments
-            await _instruments()
-        except Exception as exc:
-            logger.warning("okx user-stream: prewarm instruments failed: %s", exc)
 
     @classmethod
     def parse_event(cls, raw: Any) -> UserStreamEvent | None:
