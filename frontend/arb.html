@@ -4273,6 +4273,15 @@ function _renderIfChanged(elId, html){
   window._lastRenderedHTML.set(elId, html);
 }
 
+// Null-safe textContent setter — some pages render only a subset of
+// the summary cards (futures pair page replaced the legacy uPnL/realized
+// /fees grid with a closed-P&L grid for Stage 2c, which means the old
+// `acc-pos-count` etc. only exist on the spot/dex pages now).
+function _setText(elId, value) {
+  const el = document.getElementById(elId);
+  if (el) el.textContent = value;
+}
+
 async function accLoadPositions(){
   const tbody = document.getElementById('acc-positions-body');
   const empty = document.getElementById('acc-positions-empty');
@@ -4291,8 +4300,8 @@ async function accLoadPositions(){
       // Probably a transient blip — keep showing the last good payload.
       return;
     }
-    document.getElementById('acc-cnt-positions').textContent = '0';
-    document.getElementById('acc-pos-count').textContent = '0';
+    _setText('acc-cnt-positions', '0');
+    _setText('acc-pos-count', '0');
     tbody.innerHTML = '';
     empty.style.display = 'block';
     _accLastPositions = [];
@@ -4300,8 +4309,8 @@ async function accLoadPositions(){
   }
   _accEmptyStreak = 0;
   _accLastPositions = rows;
-  document.getElementById('acc-cnt-positions').textContent = rows.length;
-  document.getElementById('acc-pos-count').textContent = rows.length;
+  _setText('acc-cnt-positions', rows.length);
+  _setText('acc-pos-count', rows.length);
   empty.style.display = 'none';
 
     const {pairs, singles} = _acc_pair_positions(rows);
