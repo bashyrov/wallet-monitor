@@ -476,6 +476,118 @@ class AuditLogEntry(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
+class TradeOrder(Base):
+    """Append-only log of every order our service sent to a venue.
+
+    Captures both successes and failures with the raw exchange response so
+    the Order History tab can show the user exactly what happened (and why
+    it failed, if it did). Errors are bucketed via `error_kind` so the UI
+    can sanitize internal errors into "unexpected error" while showing the
+    venue's actual message for exchange-side errors.
+    """
+    __tablename__ = "trade_orders"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True, index=True)
+    position_id = Column(Integer, ForeignKey("trade_positions.id", ondelete="SET NULL"), nullable=True, index=True)
+    exchange = Column(String, nullable=False, index=True)
+    symbol = Column(String, nullable=False, index=True)
+    side = Column(String, nullable=False)              # buy | sell
+    intent = Column(String, nullable=False, index=True)  # open | close
+    order_type = Column(String, nullable=False, default="market")
+    requested_qty = Column(Float, nullable=False)
+    requested_price = Column(Float, nullable=True)
+    leverage = Column(Integer, nullable=True)
+    margin_mode = Column(String, nullable=True)
+    status = Column(String, nullable=False, index=True)  # pending | filled | partial | failed | canceled
+    exchange_order_id = Column(String, nullable=True, index=True)
+    filled_qty = Column(Float, nullable=True)
+    avg_fill_price = Column(Float, nullable=True)
+    fee_usd = Column(Float, nullable=True)
+    error_code = Column(String, nullable=True)
+    error_message = Column(String, nullable=True)
+    error_kind = Column(String, nullable=True)         # exchange | internal | user
+    raw_response = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    finalized_at = Column(DateTime, nullable=True)
+
+
+class TradePosition(Base):
+    """Lifecycle of an open or closed trading position.
+
+    Single-leg or pair (long/short or spot/short). Pairs are stitched
+    together either by the auto-detector (same symbol, opposite sides,
+    notional within spread%±5%, opened within 5 min) or by the user's
+    Sync ⇆ button. P&L tab reads `kind=pair, status=closed` rows;
+    `single` rows are shown as one-sided P&L.
+    """
+    __tablename__ = "trade_positions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String, nullable=False)              # single | pair
+    pair_kind = Column(String, nullable=True)          # long_short | spot_short | null
+    status = Column(String, nullable=False, index=True)
+    symbol = Column(String, nullable=False, index=True)
+
+    leg_a_wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
+    leg_a_exchange = Column(String, nullable=False)
+    leg_a_side = Column(String, nullable=False)
+    leg_a_qty = Column(Float, nullable=False)
+    leg_a_entry_price = Column(Float, nullable=True)
+    leg_a_exit_price = Column(Float, nullable=True)
+    leg_a_realized_pnl_usd = Column(Float, nullable=True)
+    leg_a_funding_pnl_usd = Column(Float, nullable=True)
+    leg_a_fees_usd = Column(Float, nullable=True)
+    leg_a_open_order_id = Column(Integer, ForeignKey("trade_orders.id", ondelete="SET NULL"), nullable=True)
+    leg_a_close_order_id = Column(Integer, ForeignKey("trade_orders.id", ondelete="SET NULL"), nullable=True)
+
+    leg_b_wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
+    leg_b_exchange = Column(String, nullable=True)
+    leg_b_side = Column(String, nullable=True)
+    leg_b_qty = Column(Float, nullable=True)
+    leg_b_entry_price = Column(Float, nullable=True)
+    leg_b_exit_price = Column(Float, nullable=True)
+    leg_b_realized_pnl_usd = Column(Float, nullable=True)
+    leg_b_funding_pnl_usd = Column(Float, nullable=True)
+    leg_b_fees_usd = Column(Float, nullable=True)
+    leg_b_open_order_id = Column(Integer, ForeignKey("trade_orders.id", ondelete="SET NULL"), nullable=True)
+    leg_b_close_order_id = Column(Integer, ForeignKey("trade_orders.id", ondelete="SET NULL"), nullable=True)
+
+    realized_pnl_usd = Column(Float, nullable=True)
+    entry_spread_pct = Column(Float, nullable=True)
+    exit_spread_pct = Column(Float, nullable=True)
+    opened_externally = Column(Boolean, nullable=False, default=False)
+    closed_externally = Column(Boolean, nullable=False, default=False)
+    opened_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    closed_at = Column(DateTime, nullable=True, index=True)
+
+
+class TradePairDecision(Base):
+    """User's persisted choice about whether two single positions should be
+    paired or not. Survives page refresh so we don't undo the user's manual
+    Sync ⇆ / Unpair on every reload.
+
+    `leg_*_key` is a stable fingerprint per-leg (wallet+symbol+side+rounded
+    entry price) — we don't rely on the venue's position id since some of
+    them recycle.
+    """
+    __tablename__ = "trade_pair_decisions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    leg_a_key = Column(String, nullable=False)
+    leg_b_key = Column(String, nullable=False)
+    decision = Column(String, nullable=False)  # paired | unpaired
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "leg_a_key", "leg_b_key", name="uq_pair_decisions_user_legs"),
+    )
+
+
 class PopupDismissal(Base):
     """Per-user dismissal log. `dismissed_at` lets the popup_service decide
     whether `every_n_min` cadence has elapsed since the last close. Unique

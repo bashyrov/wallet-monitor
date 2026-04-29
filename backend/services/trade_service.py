@@ -7,13 +7,108 @@ import asyncio
 import logging
 from typing import Any
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from backend.crypto import decrypt_credentials
-from backend.db.models import Wallet
+from backend.db.models import Wallet, TradeOrder
 from backend.services.trade_adapters import ADAPTERS, SUPPORTED_EXCHANGES
 
 logger = logging.getLogger("avalant.trade")
+
+
+class TradeError(ValueError):
+    """Trade-service error with structured metadata.
+
+    `kind`:
+      - "user"     : caller's input was rejected by our own validation
+                     (bad symbol, leverage too high, etc). Surface verbatim.
+      - "exchange" : venue rejected the request. Surface verbatim — the
+                     user wants the venue's actual code/message.
+      - "internal" : something on our side broke. UI shows a generic
+                     "unexpected error — see Order History"; the truth
+                     stays in the trade_orders row.
+    """
+
+    def __init__(self, message: str, *, kind: str = "exchange",
+                 code: str | None = None, raw: dict | None = None) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.code = code
+        self.raw = raw
+
+
+def _log_order(
+    db: Session, *,
+    user_id: int, wallet_id: int | None,
+    exchange: str, symbol: str, side: str, intent: str,
+    requested_qty: float, leverage: int | None = None,
+    margin_mode: str | None = None,
+    status: str = "pending",
+    exchange_order_id: str | None = None,
+    filled_qty: float | None = None,
+    avg_fill_price: float | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    error_kind: str | None = None,
+    raw_response: dict | None = None,
+) -> TradeOrder:
+    """Insert a trade_orders row and commit. Used for both pending entries
+    (right before the upstream call) and finalised entries (when we have a
+    one-shot success/failure outcome)."""
+    row = TradeOrder(
+        user_id=user_id,
+        wallet_id=wallet_id,
+        exchange=exchange,
+        symbol=symbol,
+        side=side,
+        intent=intent,
+        order_type="market",
+        requested_qty=float(requested_qty),
+        leverage=int(leverage) if leverage is not None else None,
+        margin_mode=margin_mode,
+        status=status,
+        exchange_order_id=exchange_order_id,
+        filled_qty=float(filled_qty) if filled_qty is not None else None,
+        avg_fill_price=float(avg_fill_price) if avg_fill_price is not None else None,
+        error_code=error_code,
+        error_message=error_message,
+        error_kind=error_kind,
+        raw_response=raw_response,
+        finalized_at=datetime.utcnow() if status != "pending" else None,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _finalize_order(db: Session, order: TradeOrder, *, status: str,
+                    exchange_order_id: str | None = None,
+                    filled_qty: float | None = None,
+                    avg_fill_price: float | None = None,
+                    error_code: str | None = None,
+                    error_message: str | None = None,
+                    error_kind: str | None = None,
+                    raw_response: dict | None = None) -> None:
+    order.status = status
+    if exchange_order_id is not None:
+        order.exchange_order_id = exchange_order_id
+    if filled_qty is not None:
+        order.filled_qty = float(filled_qty)
+    if avg_fill_price is not None:
+        order.avg_fill_price = float(avg_fill_price)
+    if error_code is not None:
+        order.error_code = error_code
+    if error_message is not None:
+        order.error_message = error_message
+    if error_kind is not None:
+        order.error_kind = error_kind
+    if raw_response is not None:
+        order.raw_response = raw_response
+    order.finalized_at = datetime.utcnow()
+    db.commit()
 
 
 def _find_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
@@ -136,22 +231,22 @@ async def place_open_order(
     # Normalise inputs
     symbol = (symbol or "").strip().upper()
     if not symbol or not symbol.isalnum() or len(symbol) > 16:
-        raise ValueError(f"Invalid symbol: {symbol!r}")
+        raise TradeError(f"Invalid symbol: {symbol!r}", kind="user")
     if side not in ("buy", "sell"):
-        raise ValueError(f"Invalid side: {side!r}")
+        raise TradeError(f"Invalid side: {side!r}", kind="user")
     if margin_mode not in ("isolated", "cross"):
-        raise ValueError(f"Invalid margin_mode: {margin_mode!r}")
+        raise TradeError(f"Invalid margin_mode: {margin_mode!r}", kind="user")
     if quantity <= 0:
-        raise ValueError("quantity must be > 0")
+        raise TradeError("quantity must be > 0", kind="user")
 
     w = db.query(Wallet).filter(Wallet.id == wallet_id, Wallet.user_id == user_id).first()
     if not w:
-        raise ValueError("Wallet not found")
+        raise TradeError("Wallet not found", kind="user")
     if w.purpose not in ("screener", "both"):
-        raise ValueError("This wallet is configured for Portfolio (read-only). Enable Screener on it or create a trading key.")
+        raise TradeError("This wallet is configured for Portfolio (read-only). Enable Screener on it or create a trading key.", kind="user")
     ex = (w.type_value or "").lower()
     if ex not in SUPPORTED_EXCHANGES:
-        raise ValueError(f"{ex} not supported yet")
+        raise TradeError(f"{ex} not supported yet", kind="user")
 
     # Plan-based trade delay: free tier orders sleep `trade_delay_ms` before
     # signing. Configurable per plan in DB (free=500ms, paid=0ms).
@@ -168,7 +263,7 @@ async def place_open_order(
     # side (e.g. during a maintenance window or an integration audit).
     from backend.services import admin_settings
     if ex in admin_settings.get_trade_disabled_exchanges():
-        raise ValueError(f"Trading on {ex} is temporarily disabled by admin")
+        raise TradeError(f"Trading on {ex} is temporarily disabled by admin", kind="user")
 
     adapter = ADAPTERS[ex]
 
@@ -178,8 +273,8 @@ async def place_open_order(
         if hasattr(adapter, "get_public_max_leverage"):
             max_lev = await adapter.get_public_max_leverage(symbol)
             if max_lev and leverage > max_lev:
-                raise ValueError(f"Leverage {leverage}× exceeds {ex} max {max_lev}× for {symbol}")
-    except ValueError:
+                raise TradeError(f"Leverage {leverage}× exceeds {ex} max {max_lev}× for {symbol}", kind="user")
+    except TradeError:
         raise
     except Exception as exc:
         logger.info("max-leverage probe failed %s/%s: %s", ex, symbol, exc)
@@ -224,30 +319,57 @@ async def place_open_order(
                 # Cancel the leverage task so we don't leave it pending if we
                 # bail early on a bad preflight.
                 leverage_task.cancel()
-                raise ValueError(pre.get("reason") or "Pre-flight check failed")
+                raise TradeError(pre.get("reason") or "Pre-flight check failed", kind="user")
             if pre.get("qty_rounded"):
                 quantity = float(pre["qty_rounded"])
-        except ValueError:
+        except TradeError:
             raise
         except Exception as exc:
             logger.info("preflight unexpected error %s/%s: %s", ex, symbol, exc)
 
     await leverage_task
 
+    # Log the pending row before signing — gives us a permanent record even
+    # if our process crashes mid-flight.
+    order_row = _log_order(
+        db, user_id=user_id, wallet_id=wallet_id, exchange=ex, symbol=symbol,
+        side=side, intent="open", requested_qty=quantity, leverage=leverage,
+        margin_mode=margin_mode, status="pending",
+    )
+
     try:
         result = await adapter.place_order(creds, symbol, side, quantity,
                                            leverage=leverage, margin_mode=margin_mode)
     except RuntimeError as exc:
-        # On a failed order, invalidate the state cache — the exchange may
-        # have returned a leverage/margin-mode mismatch, and we want the
-        # next attempt to re-sync.
+        # Exchange rejected the order. Surface its message verbatim — that's
+        # what the user wants to see — but also persist it.
         _state_cache.invalidate(ex, creds, symbol)
-        # Adapters surface friendly messages in RuntimeError
-        raise ValueError(str(exc))
+        msg = str(exc)
+        _finalize_order(db, order_row, status="failed", error_kind="exchange",
+                        error_message=msg)
+        raise TradeError(msg, kind="exchange")
+    except Exception as exc:
+        # Anything else is on us.
+        _state_cache.invalidate(ex, creds, symbol)
+        logger.exception("place_order internal error %s/%s: %s", ex, symbol, exc)
+        _finalize_order(db, order_row, status="failed", error_kind="internal",
+                        error_message=f"{type(exc).__name__}: {exc}")
+        raise TradeError("unexpected error — see Order History", kind="internal")
+
+    fill_price = result.get("avg_price") or result.get("fill_price") or result.get("price")
+    fill_qty = result.get("filled_qty") or result.get("qty") or quantity
+    _finalize_order(
+        db, order_row, status="filled",
+        exchange_order_id=str(result.get("order_id") or "") or None,
+        filled_qty=fill_qty,
+        avg_fill_price=float(fill_price) if fill_price else None,
+        raw_response=result if isinstance(result, dict) else None,
+    )
     logger.info("Order placed: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s lev=%sx mode=%s",
                 user_id, wallet_id, ex, symbol, side, quantity, leverage, margin_mode)
     invalidate_positions_cache(user_id)
-    return {**result, "exchange": ex, "symbol": symbol, "side": side, "quantity": quantity}
+    return {**result, "exchange": ex, "symbol": symbol, "side": side, "quantity": quantity,
+            "order_db_id": order_row.id}
 
 
 async def close_position(
@@ -255,12 +377,12 @@ async def close_position(
 ) -> dict:
     w = db.query(Wallet).filter(Wallet.id == wallet_id, Wallet.user_id == user_id).first()
     if not w:
-        raise ValueError("Wallet not found")
+        raise TradeError("Wallet not found", kind="user")
     if w.purpose not in ("screener", "both"):
-        raise ValueError("This wallet is configured for Portfolio (read-only). Enable Screener on it or create a trading key.")
+        raise TradeError("This wallet is configured for Portfolio (read-only). Enable Screener on it or create a trading key.", kind="user")
     ex = w.type_value
     if ex not in SUPPORTED_EXCHANGES:
-        raise ValueError(f"{ex} not supported yet")
+        raise TradeError(f"{ex} not supported yet", kind="user")
 
     # Apply the same plan-based trade_delay_ms as place_open_order — without
     # this a Free user could close instantly even though their open path is
@@ -274,7 +396,36 @@ async def close_position(
             await asyncio.sleep(_limits.trade_delay_ms / 1000.0)
 
     creds = decrypt_credentials(w.credentials or {})
-    result = await ADAPTERS[ex].close_position(creds, symbol, side or "")
+
+    norm_symbol = (symbol or "").strip().upper()
+    close_side = (side or "").strip().lower() or "sell"
+    order_row = _log_order(
+        db, user_id=user_id, wallet_id=wallet_id, exchange=ex, symbol=norm_symbol,
+        side=close_side, intent="close", requested_qty=0.0, status="pending",
+    )
+
+    try:
+        result = await ADAPTERS[ex].close_position(creds, symbol, side or "")
+    except RuntimeError as exc:
+        msg = str(exc)
+        _finalize_order(db, order_row, status="failed", error_kind="exchange",
+                        error_message=msg)
+        raise TradeError(msg, kind="exchange")
+    except Exception as exc:
+        logger.exception("close_position internal error %s/%s: %s", ex, symbol, exc)
+        _finalize_order(db, order_row, status="failed", error_kind="internal",
+                        error_message=f"{type(exc).__name__}: {exc}")
+        raise TradeError("unexpected error — see Order History", kind="internal")
+
+    fill_price = (result or {}).get("avg_price") or (result or {}).get("price")
+    fill_qty = (result or {}).get("filled_qty") or (result or {}).get("qty")
+    _finalize_order(
+        db, order_row, status="filled",
+        exchange_order_id=str((result or {}).get("order_id") or "") or None,
+        filled_qty=fill_qty,
+        avg_fill_price=float(fill_price) if fill_price else None,
+        raw_response=result if isinstance(result, dict) else None,
+    )
     invalidate_positions_cache(user_id)
     return result
 
@@ -375,67 +526,54 @@ def invalidate_positions_cache(user_id: int) -> None:
         _POSITIONS_LASTGOOD.pop(k, None)
 
 
+def _serialize_order(o: TradeOrder) -> dict:
+    """Shape a TradeOrder row for the Order History UI. Internal errors are
+    sanitized to a generic message — the user shouldn't see our stack
+    traces, even though the row in the DB still has the truth for support."""
+    sanitized_msg = o.error_message
+    if o.error_kind == "internal" and sanitized_msg:
+        sanitized_msg = "Unexpected error — please contact support if this persists"
+    return {
+        "id":               o.id,
+        "wallet_id":        o.wallet_id,
+        "position_id":      o.position_id,
+        "exchange":         o.exchange,
+        "symbol":           o.symbol,
+        "side":             o.side,
+        "intent":           o.intent,
+        "order_type":       o.order_type,
+        "requested_qty":    o.requested_qty,
+        "leverage":         o.leverage,
+        "margin_mode":      o.margin_mode,
+        "status":           o.status,
+        "exchange_order_id": o.exchange_order_id,
+        "filled_qty":       o.filled_qty,
+        "avg_fill_price":   o.avg_fill_price,
+        "fee_usd":          o.fee_usd,
+        "error_kind":       o.error_kind,
+        "error_message":    sanitized_msg,
+        "raw_response":     o.raw_response if o.error_kind != "internal" else None,
+        "created_at":       o.created_at.isoformat() if o.created_at else None,
+        "finalized_at":     o.finalized_at.isoformat() if o.finalized_at else None,
+    }
+
+
 async def list_user_orders(db: Session, user_id: int, *, limit: int = 50,
                            symbol: str | None = None) -> list[dict]:
-    """Recent trade fills across the user's screener-purpose wallets.
+    """Order History: every order our service sent to a venue for this user.
 
-    Reuses transaction_service.fetch_transactions (which already wires up
-    per-adapter endpoints for transactions/fills) and filters to the
-    `trade` / `fill` event types — deposits and withdrawals are out of
-    scope for an "order history" tab. Returns up to `limit` rows sorted
-    by timestamp desc, optionally filtered to a single symbol."""
-    from backend.services.transaction_service import fetch_transactions
-    wallets = (
-        db.query(Wallet)
-        .filter(
-            Wallet.user_id == user_id,
-            Wallet.wallet_type == "exchange",
-            Wallet.purpose.in_(("screener", "both")),
-            Wallet.is_archived == False,  # noqa: E712
-            Wallet.type_value.in_(list(SUPPORTED_EXCHANGES)),
-        )
-        .all()
-    )
+    Reads `trade_orders` directly — does NOT include fills the user did on
+    the exchange UI itself, by design. Order History is "what we did";
+    P&L tab will be the place that aggregates everything.
 
-    sym_norm = (symbol or "").upper().strip() or None
-
-    async def _one(w: Wallet) -> list[dict]:
-        try:
-            resp = await fetch_transactions(w)
-        except Exception as exc:
-            logger.info("list_orders failed wallet=%s ex=%s: %s", w.id, w.type_value, exc)
-            return []
-        out: list[dict] = []
-        for t in (getattr(resp, "transactions", None) or []):
-            t_type = (getattr(t, "type", "") or "").lower()
-            if t_type not in ("trade", "fill"):
-                continue
-            asset = (getattr(t, "asset", "") or "").upper()
-            if sym_norm and sym_norm not in asset:
-                continue
-            out.append({
-                "wallet_id":  w.id,
-                "exchange":   w.type_value,
-                "wallet_name": w.name,
-                "tx_id":      getattr(t, "tx_id", None),
-                "type":       t_type,
-                "asset":      asset,
-                "amount":     getattr(t, "amount", None),
-                "timestamp":  getattr(t, "timestamp", None),
-                "status":     getattr(t, "status", None),
-                "address":    getattr(t, "address", None),
-            })
-        return out
-
-    results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)
-    flat: list[dict] = []
-    for r in results:
-        if isinstance(r, list):
-            flat.extend(r)
-    # Sort desc by timestamp string — ISO-ish so lexical sort works for
-    # the "YYYY-MM-DD HH:MM" format used in transaction_service.
-    flat.sort(key=lambda x: (x.get("timestamp") or ""), reverse=True)
-    return flat[: max(1, min(int(limit), 500))]
+    Sorted desc by created_at, capped at `limit`.
+    """
+    sym = (symbol or "").upper().strip() or None
+    q = db.query(TradeOrder).filter(TradeOrder.user_id == user_id)
+    if sym:
+        q = q.filter(TradeOrder.symbol == sym)
+    rows = q.order_by(TradeOrder.created_at.desc()).limit(max(1, min(int(limit), 500))).all()
+    return [_serialize_order(r) for r in rows]
 
 
 async def list_user_balances(db: Session, user_id: int) -> list[dict]:

@@ -483,13 +483,13 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
       </div>
       <div class="acc-pane" id="acc-pane-orders">
         <table class="acc-table">
-          <thead><tr><th>Time</th><th>Symbol</th><th>Exchange</th><th>Side</th><th>Type</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Fee</th><th>Status</th></tr></thead>
+          <thead><tr><th style="width:24px"></th><th>Time</th><th>Action</th><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th>Status</th></tr></thead>
           <tbody id="acc-orders-body"></tbody>
         </table>
         <div class="acc-empty" id="acc-orders-empty">
           <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v10H3z"/><path d="M3 6h10M3 9h10M3 12h6"/></svg></div>
-          <h4>No orders</h4>
-          <p>Order history across your exchange keys will appear here.</p>
+          <h4>No orders yet</h4>
+          <p>Orders you place through Avalant — and any errors — will appear here.</p>
         </div>
       </div>
       <div class="acc-pane" id="acc-pane-pnl">
@@ -1085,10 +1085,14 @@ if (TYPE === 'spot' || TYPE === 'dex') {
               </div>
             </div>
             <div class="acc-pane" id="acc-pane-orders">
-              <div class="acc-empty">
+              <table class="acc-table">
+                <thead><tr><th style="width:24px"></th><th>Time</th><th>Action</th><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th>Status</th></tr></thead>
+                <tbody id="acc-orders-body"></tbody>
+              </table>
+              <div class="acc-empty" id="acc-orders-empty">
                 <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v10H3z"/><path d="M3 6h10M3 9h10M3 12h6"/></svg></div>
-                <h4>No orders</h4>
-                <p>Order history across your exchange keys will appear here.</p>
+                <h4>No orders yet</h4>
+                <p>Orders you place through Avalant — and any errors — will appear here.</p>
               </div>
             </div>
             <div class="acc-pane" id="acc-pane-pnl">
@@ -2146,25 +2150,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       const r = await Auth.apiFetch('/trade/orders?limit=50');
       if (!r.ok) return;
       const rows = await r.json();
-      const tb = document.getElementById('acc-orders-body');
-      const em = document.getElementById('acc-orders-empty');
-      const cnt = document.getElementById('acc-cnt-orders');
-      if (cnt) cnt.textContent = rows.length;
-      if (!rows.length) {
-        if (tb) tb.innerHTML = '';
-        if (em) em.style.display = '';
-        return;
-      }
-      if (em) em.style.display = 'none';
-      if (tb) tb.innerHTML = rows.map(o => `
-        <tr>
-          <td>${o.timestamp || '—'}</td>
-          <td>${EX_LABEL[o.exchange]||o.exchange}</td>
-          <td>${o.asset || ''}</td>
-          <td class="num">${o.amount || ''}</td>
-          <td>${o.status || ''}</td>
-          <td style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${(o.tx_id||'').slice(0,14)}</td>
-        </tr>`).join('');
+      _renderOrderHistory(rows);
     } catch (e) { console.error('[pair-acc] orders:', e); }
   }
 
@@ -3842,29 +3828,94 @@ async function initAccBlock(){
 }
 
 async function accLoadOrders(){
-  const tbody = document.getElementById('acc-orders-body');
-  const empty = document.getElementById('acc-orders-empty');
   try {
     const r = await Auth.apiFetch('/trade/orders?limit=50');
     if (!r.ok) throw new Error();
     const rows = await r.json();
-    document.getElementById('acc-cnt-orders').textContent = rows.length;
-    if (!rows.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
-    empty.style.display = 'none';
-    tbody.innerHTML = rows.map(o => `
-      <tr>
-        <td style="color:var(--text2);font-size:11px">${o.timestamp || '—'}</td>
-        <td><span class="ex-pill">${(EX_LABEL[o.exchange]||o.exchange)}</span></td>
-        <td><span class="sym">${o.asset || ''}</span></td>
-        <td class="num">${o.amount || ''}</td>
-        <td>${o.status || ''}</td>
-        <td style="color:var(--text3);font-family:var(--mono);font-size:10.5px">${(o.tx_id||'').slice(0,14)}</td>
-      </tr>`).join('');
+    _renderOrderHistory(rows);
   } catch {
-    tbody.innerHTML = '';
-    empty.style.display = 'block';
-    document.getElementById('acc-cnt-orders').textContent = '0';
+    _renderOrderHistory([]);
   }
+}
+
+// Shared Order History renderer — used from both the futures pair page
+// (acc-pane-orders) and the spot/dex page. Reads from /trade/orders which
+// is sourced from our trade_orders table — only orders our service placed,
+// not arbitrary fills the user did directly on the exchange.
+const _ohExpanded = new Set();
+function _ohToggle(id){
+  if (_ohExpanded.has(id)) _ohExpanded.delete(id);
+  else _ohExpanded.add(id);
+  const r = window._ohLastRows || [];
+  _renderOrderHistory(r);
+}
+function _esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function _ohFmtTime(iso){
+  if (!iso) return '—';
+  try { const d = new Date(iso); return d.toLocaleString('en-US',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
+  catch { return iso; }
+}
+function _renderOrderHistory(rows){
+  window._ohLastRows = rows || [];
+  const tbody = document.getElementById('acc-orders-body');
+  const empty = document.getElementById('acc-orders-empty');
+  const cnt = document.getElementById('acc-cnt-orders');
+  if (cnt) cnt.textContent = rows.length;
+  if (!rows.length){
+    if (tbody) tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (!tbody) return;
+  tbody.innerHTML = rows.map(o => {
+    const isOpen = _ohExpanded.has(o.id);
+    const exLabel = (window.EX_LABEL && EX_LABEL[o.exchange]) || (o.exchange||'').toUpperCase();
+    const sideCls = (o.side === 'buy') ? 'oh-side-buy' : 'oh-side-sell';
+    const sideTxt = (o.side === 'buy') ? 'BUY' : 'SELL';
+    const intent = (o.intent || '').toUpperCase();
+    const status = (o.status || 'pending').toLowerCase();
+    const qty = (o.filled_qty != null ? o.filled_qty : o.requested_qty);
+    const price = o.avg_fill_price;
+    const chev = `<svg class="oh-chev ${isOpen?'open':''}" viewBox="0 0 16 16" onclick="event.stopPropagation();_ohToggle(${o.id})"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const main = `
+      <tr onclick="_ohToggle(${o.id})" style="cursor:pointer">
+        <td>${chev}</td>
+        <td style="color:var(--text2);font-size:11px">${_ohFmtTime(o.created_at)}</td>
+        <td><span class="oh-intent">${_esc(intent)}</span></td>
+        <td><span class="sym">${_esc(o.symbol||'')}</span></td>
+        <td><span class="ex-pill">${_esc(exLabel)}</span></td>
+        <td><span class="${sideCls}">${sideTxt}</span></td>
+        <td class="num">${qty != null ? Number(qty).toLocaleString(undefined,{maximumFractionDigits:6}) : '—'}</td>
+        <td class="num">${price != null ? Number(price).toLocaleString(undefined,{maximumFractionDigits:8}) : '—'}</td>
+        <td><span class="oh-status ${status}">${status}</span></td>
+      </tr>`;
+    if (!isOpen) return main;
+    const errBlock = (o.error_message)
+      ? `<div class="oh-detail-err"><div class="lbl">${o.error_kind === 'exchange' ? 'Exchange error' : 'Error'}${o.error_code ? ' · ' + _esc(o.error_code) : ''}</div>${_esc(o.error_message)}</div>`
+      : '';
+    const rawBlock = (o.raw_response)
+      ? `<div class="oh-detail-raw">${_esc(JSON.stringify(o.raw_response, null, 2))}</div>`
+      : '';
+    const detail = `
+      <tr class="oh-detail-row">
+        <td colspan="9">
+          <div class="oh-detail-grid">
+            <div><div class="k">Order ID</div><div class="v">${_esc(o.exchange_order_id || '—')}</div></div>
+            <div><div class="k">Order type</div><div class="v">${_esc((o.order_type||'market').toUpperCase())}</div></div>
+            <div><div class="k">Leverage</div><div class="v">${o.leverage != null ? o.leverage + '×' : '—'}</div></div>
+            <div><div class="k">Margin mode</div><div class="v">${_esc(o.margin_mode || '—')}</div></div>
+            <div><div class="k">Requested qty</div><div class="v">${o.requested_qty != null ? Number(o.requested_qty).toLocaleString(undefined,{maximumFractionDigits:6}) : '—'}</div></div>
+            <div><div class="k">Filled qty</div><div class="v">${o.filled_qty != null ? Number(o.filled_qty).toLocaleString(undefined,{maximumFractionDigits:6}) : '—'}</div></div>
+            <div><div class="k">Fee (USD)</div><div class="v">${o.fee_usd != null ? '$'+Number(o.fee_usd).toFixed(4) : '—'}</div></div>
+            <div><div class="k">Finalized</div><div class="v">${_esc(_ohFmtTime(o.finalized_at))}</div></div>
+          </div>
+          ${errBlock}
+          ${rawBlock}
+        </td>
+      </tr>`;
+    return main + detail;
+  }).join('');
 }
 
 async function accLoadKeyCounts(){
@@ -4191,12 +4242,16 @@ async function _tradeClosePair(longWid, shortWid, sym){
     ]);
     const okCount = [lr, sr].filter(r => r.status === 'fulfilled' && r.value.ok).length;
     if (okCount === 2)      _toast('Pair closed', 'success');
-    else if (okCount === 1) _toast('One leg closed — the other failed; check Positions', 'warn');
-    else                    _toast('Close pair failed — check Positions', 'error');
+    else if (okCount === 1) _toast('One leg closed — the other failed; see Order History', 'warn');
+    else                    _toast('Close pair failed — see Order History for details', 'error');
     refreshTradePositions();
     _reloadTradeStatus();
     if (typeof accLoadPositions === 'function') accLoadPositions();
-  } catch (e) { _toast('Close pair failed: ' + (e.message||'unknown'), 'error'); }
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  } catch (e) {
+    _toast('Close pair failed — see Order History for details', 'error');
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  }
 }
 
 async function accLoadBalances(){
@@ -4538,9 +4593,11 @@ async function tradeOpenArb(){
     refreshTradePositions();
     _reloadTradeStatus();
     if (typeof accLoadPositions === 'function') accLoadPositions();
+    if (typeof accLoadOrders === 'function') accLoadOrders();
   } catch (e) {
     _showLegErr('long', e.message || 'Order failed');
     _showLegErr('short', e.message || 'Order failed');
+    if (typeof accLoadOrders === 'function') accLoadOrders();
   } finally {
     _tradeInflight.arb = false;
     txt.textContent = prev; _renderArbBtn();
@@ -4588,11 +4645,13 @@ async function tradeOpen(leg){
     refreshTradePositions();
     _reloadTradeStatus();
     if (typeof accLoadPositions === 'function') accLoadPositions();
+    if (typeof accLoadOrders === 'function') accLoadOrders();
     // Reset size
     document.getElementById('trade-size-' + leg).value = '';
     _trade[leg].qty = 0; tradeRecalc(leg);
   } catch (e) {
     _showLegErr(leg, e.message || 'Order failed');
+    if (typeof accLoadOrders === 'function') accLoadOrders();
   } finally {
     _tradeInflight[leg] = false;
     btn.textContent = prev; _renderSubmit(leg);
@@ -4625,7 +4684,11 @@ async function tradeClose(wid, posId){
     refreshTradePositions();
     _reloadTradeStatus();
     if (typeof accLoadPositions === 'function') accLoadPositions();
-  } catch (e) { _toast('Close failed: ' + (e.message || 'unknown'), 'error'); }
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  } catch (e) {
+    _toast('Close failed — see Order History for details', 'error');
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  }
 }
 
 // Sticky for the trade-panel position list — same idea as accLoadPositions.

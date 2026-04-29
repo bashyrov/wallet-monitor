@@ -149,9 +149,12 @@ async def open_arb(
                 db, user.id, wid, body.symbol, side, qty, lev, mode,
             )
             return {"leg": leg, "ok": True, **r}
+        except trade_service.TradeError as e:
+            msg = "Unexpected error — see Order History" if e.kind == "internal" else str(e)
+            return {"leg": leg, "ok": False, "error": msg}
         except Exception as e:
-            logger.warning("open-arb %s failed: %s", leg, e)
-            return {"leg": leg, "ok": False, "error": str(e)}
+            logger.exception("open-arb %s unexpected: %s", leg, e)
+            return {"leg": leg, "ok": False, "error": "Unexpected error — see Order History"}
 
     long_res, short_res = await asyncio.gather(
         _one("long",  body.long_wallet_id,  body.long_quantity,
@@ -188,11 +191,14 @@ async def open_order(
             db, user.id, body.wallet_id, body.symbol, body.side, body.quantity,
             body.leverage, body.margin_mode,
         )
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    except trade_service.TradeError as e:
+        # Internal errors are sanitized so we don't leak internals to the
+        # client. The truth is in trade_orders for support to see.
+        msg = "Unexpected error — see Order History" if e.kind == "internal" else str(e)
+        raise HTTPException(400, msg)
     except Exception as e:
-        logger.warning("open order failed uid=%s wid=%s: %s", user.id, body.wallet_id, e)
-        raise HTTPException(502, f"Exchange rejected order: {e}")
+        logger.exception("open order unexpected uid=%s wid=%s: %s", user.id, body.wallet_id, e)
+        raise HTTPException(500, "Unexpected error — see Order History")
 
 
 class CloseIn(BaseModel):
@@ -213,11 +219,12 @@ async def close_order(
 ):
     try:
         return await trade_service.close_position(db, user.id, body.wallet_id, body.symbol, body.side)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    except trade_service.TradeError as e:
+        msg = "Unexpected error — see Order History" if e.kind == "internal" else str(e)
+        raise HTTPException(400, msg)
     except Exception as e:
-        logger.warning("close failed uid=%s wid=%s: %s", user.id, body.wallet_id, e)
-        raise HTTPException(502, f"Exchange rejected close: {e}")
+        logger.exception("close unexpected uid=%s wid=%s: %s", user.id, body.wallet_id, e)
+        raise HTTPException(500, "Unexpected error — see Order History")
 
 
 # ── Enable/disable trading on a wallet (switch purpose) ──────────────────────
