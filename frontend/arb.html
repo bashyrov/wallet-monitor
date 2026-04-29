@@ -5445,35 +5445,42 @@ function _renderSinglePositionCard(){
   const showSecondary = _shareMode === 'both' ? usdStr : null;
 
   y += 16;
-  // Tightened halo for the landscape layout (was 380px tall, now 240px)
-  ctx.save();
-  const haloOuter = ctx.createRadialGradient(GRID_X + 200, y + 60, 30, GRID_X + 200, y + 60, 660);
-  haloOuter.addColorStop(0, `rgba(${accentRGB},0.22)`);
-  haloOuter.addColorStop(0.35, `rgba(${accentRGB},0.10)`);
-  haloOuter.addColorStop(0.7, `rgba(${accentRGB},0.02)`);
-  haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloOuter;
-  ctx.fillRect(0, y - 30, W, 240);
 
-  const haloInner = ctx.createRadialGradient(GRID_X + 220, y + 80, 10, GRID_X + 220, y + 80, 280);
-  haloInner.addColorStop(0, `rgba(${accentRGB},0.30)`);
-  haloInner.addColorStop(0.5, `rgba(${accentRGB},0.07)`);
-  haloInner.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloInner;
-  ctx.fillRect(0, y - 30, W, 240);
-  ctx.restore();
-
-  // Auto-fit hero size — wider canvas allows bigger numbers
+  // Pick hero size FIRST so we can place the baseline relative to digit
+  // height (canvas text grows UPWARD from baseline — without this, digits
+  // for 200px font would start ~90px ABOVE the label).
   const heroSizes = (_shareMode === 'both') ? [180, 168, 152, 136, 120] : [200, 184, 168, 152, 136];
   let chosen = heroSizes[1];
   for (const s of heroSizes){
     ctx.font = `900 ${s}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
     if (ctx.measureText(showPrimary).width <= COL_W - 20){ chosen = s; break; }
   }
-  ctx.font = `900 ${chosen}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
-
   const heroH = chosen;
-  const heroBaselineY = y + 110;
+  // Top of digits sits 14px below the UPNL label baseline.
+  const heroBaselineY = y + 14 + chosen;
+
+  // Halo bounded around the digits, can't smear surrounding rows.
+  ctx.save();
+  const haloTop = heroBaselineY - chosen - 16;
+  const haloH = chosen + 60;
+  const haloCenterY = heroBaselineY - chosen/2;
+  const haloOuter = ctx.createRadialGradient(GRID_X + 200, haloCenterY, 30, GRID_X + 200, haloCenterY, 660);
+  haloOuter.addColorStop(0, `rgba(${accentRGB},0.22)`);
+  haloOuter.addColorStop(0.35, `rgba(${accentRGB},0.10)`);
+  haloOuter.addColorStop(0.7, `rgba(${accentRGB},0.02)`);
+  haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haloOuter;
+  ctx.fillRect(0, haloTop, W, haloH);
+
+  const haloInner = ctx.createRadialGradient(GRID_X + 220, haloCenterY, 10, GRID_X + 220, haloCenterY, 280);
+  haloInner.addColorStop(0, `rgba(${accentRGB},0.30)`);
+  haloInner.addColorStop(0.5, `rgba(${accentRGB},0.07)`);
+  haloInner.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haloInner;
+  ctx.fillRect(0, haloTop, W, haloH);
+  ctx.restore();
+
+  ctx.font = `900 ${chosen}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
   const numGrad = ctx.createLinearGradient(0, heroBaselineY - heroH, 0, heroBaselineY + 6);
   numGrad.addColorStop(0, accentTip);
   numGrad.addColorStop(0.55, accent);
@@ -5726,31 +5733,37 @@ function _renderPairCombined(){
   const showPrimary = _shareMode === 'usd' ? usdStr : pctStr;
   const showSecondary = _shareMode === 'both' ? usdStr : null;
 
-  // Halo (BOUNDED so it can't bleed into footer or 3-col row)
-  ctx.save();
-  const haloTop = y + 4;
-  const haloH = 170;
-  const haloOuter = ctx.createRadialGradient(GRID_X + 200, haloTop + 80, 30, GRID_X + 200, haloTop + 80, 540);
-  haloOuter.addColorStop(0, `rgba(${accentRGB},0.20)`);
-  haloOuter.addColorStop(0.4, `rgba(${accentRGB},0.06)`);
-  haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloOuter; ctx.fillRect(0, haloTop, W, haloH);
-  const haloInner = ctx.createRadialGradient(GRID_X + 220, haloTop + 90, 10, GRID_X + 220, haloTop + 90, 240);
-  haloInner.addColorStop(0, `rgba(${accentRGB},0.26)`);
-  haloInner.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloInner; ctx.fillRect(0, haloTop, W, haloH);
-  ctx.restore();
-
   // Pair card has more rows below than the single card → smaller hero
-  // ceiling so the digits don't bleed into the 3-column row.
-  const heroSizes = (_shareMode === 'both') ? [124, 112, 100, 88] : [144, 128, 112, 100];
+  // ceiling so the digits don't bleed into the 3-column row. Pick size
+  // FIRST so we can position halo + baseline relative to digit height.
+  const heroSizes = (_shareMode === 'both') ? [110, 100, 90, 80] : [124, 112, 100, 90];
   let chosen = heroSizes[1];
   for (const s of heroSizes){
     ctx.font = `900 ${s}px "JetBrains Mono", Menlo, monospace`;
     if (ctx.measureText(showPrimary).width <= COL_W - 20){ chosen = s; break; }
   }
+  // Canvas text grows UPWARD from baseline. Place baseline so the top of
+  // the digits sits 14px below the COMBINED P&L label — was previously
+  // computed as `y + 110` which left the digit top ABOVE the label for
+  // any font ≥ 124px (the original bug user reported).
+  const heroBaselineY = y + 14 + chosen;
   ctx.font = `900 ${chosen}px "JetBrains Mono", Menlo, monospace`;
-  const heroBaselineY = y + 110;
+
+  // Halo BOUNDED to ~just-around-the-digits so it can't smear neighbours.
+  ctx.save();
+  const haloTop = heroBaselineY - chosen - 16;
+  const haloH = chosen + 60;
+  const haloCenterY = heroBaselineY - chosen/2;
+  const haloOuter = ctx.createRadialGradient(GRID_X + 220, haloCenterY, 30, GRID_X + 220, haloCenterY, 520);
+  haloOuter.addColorStop(0, `rgba(${accentRGB},0.20)`);
+  haloOuter.addColorStop(0.4, `rgba(${accentRGB},0.06)`);
+  haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haloOuter; ctx.fillRect(0, haloTop, W, haloH);
+  const haloInner = ctx.createRadialGradient(GRID_X + 240, haloCenterY, 10, GRID_X + 240, haloCenterY, 220);
+  haloInner.addColorStop(0, `rgba(${accentRGB},0.26)`);
+  haloInner.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haloInner; ctx.fillRect(0, haloTop, W, haloH);
+  ctx.restore();
   const numGrad = ctx.createLinearGradient(0, heroBaselineY - chosen, 0, heroBaselineY + 6);
   numGrad.addColorStop(0, accentTip);
   numGrad.addColorStop(0.55, accent);
