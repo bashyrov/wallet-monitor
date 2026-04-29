@@ -25,6 +25,9 @@ from backend.services.user_streams.aster import AsterUserStream
 from backend.services.user_streams.bybit import BybitUserStream
 from backend.services.user_streams.okx import OKXUserStream
 from backend.services.user_streams.bitget import BitgetUserStream
+from backend.services.user_streams.gate import GateUserStream
+from backend.services.user_streams.bingx import BingXUserStream
+from backend.services.user_streams.hyperliquid import HyperliquidUserStream
 
 ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "binance": BinanceUserStream,
@@ -32,6 +35,9 @@ ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "bybit": BybitUserStream,
     "okx": OKXUserStream,
     "bitget": BitgetUserStream,
+    "gate": GateUserStream,
+    "bingx": BingXUserStream,
+    "hyperliquid": HyperliquidUserStream,
 }
 
 
