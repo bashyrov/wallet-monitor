@@ -5228,8 +5228,10 @@ async function _scEnsureFonts(){
 }
 
 function _renderShareCard(){
-  if (!_sharePos) return;
-  // Render after fonts load. If fonts already cached this is sync-fast.
+  // Bail only when neither single-position nor pair data is set —
+  // checking `!_sharePos` alone silently dropped pair-card renders since
+  // openSharePairCard sets `_sharePair` and clears `_sharePos`.
+  if (!_sharePos && !_sharePair) return;
   _scEnsureFonts().then(() => _renderShareCardNow());
 }
 
