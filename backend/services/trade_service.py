@@ -287,6 +287,14 @@ async def close_position(
 _POSITIONS_CACHE: dict[tuple[int, str], tuple[float, list[dict]]] = {}
 _POSITIONS_CACHE_TTL_S = 4.0  # short — we still want fresh values
 
+# Per-wallet last-good snapshot. When an upstream call transiently fails
+# (rate limit, timeout, etc.) we serve the last successful rows instead of
+# dropping to [], otherwise positions blink out of the UI for a few seconds
+# until the next poll succeeds. Successful empty results overwrite this so
+# legitimately-closed positions do disappear.
+_POSITIONS_LASTGOOD: dict[tuple[int, int, str], tuple[float, list[dict]]] = {}
+_POSITIONS_LASTGOOD_TTL_S = 30.0
+
 
 async def list_user_positions(db: Session, user_id: int, symbol: str | None = None) -> list[dict]:
     """Aggregate open positions across all the user's trade-enabled wallets."""
@@ -321,6 +329,7 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
             pass
 
     async def _one(w: Wallet) -> list[dict]:
+        lg_key = (user_id, w.id, (symbol or "").upper())
         if symbol and symbol_supported and not symbol_supported.get(w.type_value):
             return []
         try:
@@ -328,15 +337,20 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
             rows = await ADAPTERS[w.type_value].list_positions(creds, symbol)
             for r in rows:
                 r["wallet_id"] = w.id
+            _POSITIONS_LASTGOOD[lg_key] = (_time.time(), rows)
             return rows
         except Exception as exc:
             msg = str(exc)
-            # Quiet a few known "symbol doesn't exist on this venue" errors —
-            # they're expected when polling a pair across all user wallets.
-            if any(s in msg for s in ("51001", "-1121", "Instrument ID", "Invalid symbol")):
+            # "Symbol not on this venue" errors are real empties, not blips —
+            # don't fall back to last-good for them.
+            symbol_not_on_venue = any(s in msg for s in ("51001", "-1121", "Instrument ID", "Invalid symbol"))
+            if symbol_not_on_venue:
                 logger.debug("list_positions skipped wallet=%s ex=%s: %s", w.id, w.type_value, msg)
-            else:
-                logger.info("list_positions failed wallet=%s ex=%s: %s", w.id, w.type_value, exc)
+                return []
+            logger.info("list_positions failed wallet=%s ex=%s: %s", w.id, w.type_value, exc)
+            lg = _POSITIONS_LASTGOOD.get(lg_key)
+            if lg and (_time.time() - lg[0]) < _POSITIONS_LASTGOOD_TTL_S:
+                return lg[1]
             return []
 
     results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)
@@ -351,10 +365,14 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
 def invalidate_positions_cache(user_id: int) -> None:
     """Drop cached positions for a user — called after place_order / close
     so the next poll sees the new state immediately rather than waiting
-    out the TTL."""
+    out the TTL. Also clears last-good per-wallet rows so a freshly-closed
+    position can't be revived by a subsequent fetch failure."""
     keys = [k for k in _POSITIONS_CACHE if k[0] == user_id]
     for k in keys:
         _POSITIONS_CACHE.pop(k, None)
+    lg_keys = [k for k in _POSITIONS_LASTGOOD if k[0] == user_id]
+    for k in lg_keys:
+        _POSITIONS_LASTGOOD.pop(k, None)
 
 
 async def list_user_orders(db: Session, user_id: int, *, limit: int = 50,
