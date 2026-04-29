@@ -1,0 +1,12 @@
+{
+  "name": "avalant-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend bundling pipeline. Outputs minified bundles to dist/ for arb.html / screener.html / etc. to load instead of N separate <script> tags.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

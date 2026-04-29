@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Long/Short · avalant_</title>
 <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+<!-- core.js bundles auth+toast+confirm+theme+exchanges+formatters into one
+     minified file. ~20 KB vs ~32 KB across 6 separate fetches. Preloaded
+     so it's ready by the time inline <script> blocks below need
+     Auth.apiFetch / EX / toast. -->
+<link rel="preload" as="script" href="/dist/core.js">
+<link rel="preload" as="style" href="/arb.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Pre-establish TCP+TLS to exchange API origins so the first orderbook /
@@ -23,17 +29,9 @@
 <link rel="dns-prefetch" href="//whitebit.com">
 <link rel="dns-prefetch" href="//api.prod.paradex.trade">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="/banner.js" defer></script>
-<script src="/auth.js"></script>
-<script src="/toast.js"></script>
-<script src="/popup.js" defer></script>
-<script src="/expiry-banner.js" defer></script>
-<script src="/confirm.js"></script>
-<script src="/theme.js"></script>
-<script src="/exchanges.js"></script>
-<script src="/formatters.js"></script>
+<script src="/dist/core.js"></script>
+<script src="/dist/aux.js" defer></script>
 <link rel="stylesheet" href="/navbar.css">
-<script src="/navbar.js" defer></script>
 <link rel="preconnect" href="https://unpkg.com" crossorigin>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" defer></script>
 <link rel="stylesheet" href="/arb.css">

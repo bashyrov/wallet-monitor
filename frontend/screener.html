@@ -11,6 +11,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Screener · Avalant</title>
   <link rel="stylesheet" href="/navbar.css">
+  <link rel="preload" as="script" href="/dist/core.js">
+  <link rel="preload" as="style" href="/screener.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -490,17 +492,12 @@
   </a>
 </nav>
 
-<script src="/navbar.js"></script>
-<script src="/banner.js" defer></script>
-<script src="/auth.js"></script>
-<script src="/exchanges.js"></script>
-<script src="/formatters.js"></script>
-<script src="/toast.js"></script>
-<script src="/popup.js" defer></script>
-<script src="/expiry-banner.js" defer></script>
+<!-- Bundled core (auth + toast + confirm + theme + exchanges + formatters) +
+     deferred aux (banner + popup + expiry-banner + navbar). 9 separate
+     <script> requests collapsed into 2 minified bundles. -->
+<script src="/dist/core.js"></script>
+<script src="/dist/aux.js" defer></script>
 <script src="/anon-gate.js" defer></script>
-<script src="/confirm.js"></script>
-<script src="/theme.js"></script>
 <script>
 // Screener is public; user-specific features (watchlist, alerts) auto-disable
 // when Auth.isLoggedIn() is false.
