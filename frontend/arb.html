@@ -5259,7 +5259,10 @@ function _renderSinglePositionCard(){
     };
   }
 
-  const W = 1080, H = 1080;
+  // Landscape 3:2 — works for Twitter/Telegram/Discord previews and looks
+  // less square-default. The internal layout was tuned for 1080×1080 so
+  // we tighten vertical spacings rather than re-architect.
+  const W = 1200, H = 800;
   c.width = W; c.height = H;
 
   const p = _sharePos;
@@ -5358,41 +5361,35 @@ function _renderSinglePositionCard(){
   const GRID_R = W - PAD;        // single right edge
   const COL_W = GRID_R - GRID_X;
 
-  // ──────────── 1. BRAND BAR
+  // ──────────── 1. BRAND BAR (compressed for landscape layout)
   let y = PAD + 20;
 
-  // "avalant_" — outlined (hollow) wordmark for that engraved-on-glass feel.
-  // Stroke-only text via strokeText; the letterforms are transparent inside.
-  ctx.font = '800 60px "Inter", system-ui, sans-serif';
+  ctx.font = '800 56px "Inter", system-ui, sans-serif';
   ctx.strokeStyle = accent;
-  ctx.lineWidth = 2.6;
+  ctx.lineWidth = 2.4;
   ctx.lineJoin = 'round';
-  ctx.strokeText('avalant', GRID_X, y + 60);
+  ctx.strokeText('avalant', GRID_X, y + 56);
   const brandW = ctx.measureText('avalant').width;
-  // Solid green underscore — visual anchor next to the outlined letters
   ctx.fillStyle = accent;
-  ctx.fillRect(GRID_X + brandW + 10, y + 36, 22, 7);
+  ctx.fillRect(GRID_X + brandW + 10, y + 34, 20, 6);
 
-  // Date right-aligned, top-aligned with brand
   const ds = new Date();
   const dateStr = ds.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }).toUpperCase();
   ctx.font = '700 13px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#50545E';
-  _drawTracked(ctx, dateStr, GRID_R, y + 38, 1.6, 'right');
+  _drawTracked(ctx, dateStr, GRID_R, y + 36, 1.6, 'right');
 
-  // tag below brand
-  y += 96;
+  y += 80;
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
   _drawTracked(ctx, 'FUTURES  ·  LONG/SHORT  ·  CROSS-EXCHANGE ARB', GRID_X, y, 1.8);
 
-  // Divider after brand
-  y += 30;
+  y += 24;
   ctx.fillStyle = 'rgba(255,255,255,0.06)';
   ctx.fillRect(GRID_X, y, COL_W, 1);
 
-  // ──────────── 2. POSITION HEADER  — clean single line, all left-aligned
-  y += 80;
+  // ──────────── 2. POSITION HEADER
+  y += 60;
 
   // Side pill at the very left — coloured by direction (long=green, short=red)
   const sideText = isLong ? 'LONG' : 'SHORT';
@@ -5434,47 +5431,40 @@ function _renderSinglePositionCard(){
   _drawTracked(ctx, 'PERPETUAL FUTURES', cx, y + 38, 1.8);
 
   // ──────────── 3. UPNL LABEL — sets up the hero
-  y += 100;
+  y += 60;
   ctx.font = '700 13px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
   _drawTracked(ctx, 'UNREALIZED P&L', GRID_X, y, 1.8);
 
-  // ──────────── 4. HERO P&L (left-aligned to grid, oversized)
+  // ──────────── 4. HERO P&L
   const pnlPct = +p.pnl_pct || 0;
   const pnlUsd = +p.unrealized_pnl_usd || 0;
   const pctStr = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
   const usdStr = `${pnlUsd >= 0 ? '+$' : '−$'}${Math.abs(pnlUsd).toFixed(2)}`;
-
-  // Mode determines what we show:
-  //   pct  (ROI)        → only %, no secondary
-  //   usd  (PNL)        → only $, no secondary
-  //   both (ROI · PNL)  → % big on top, $ smaller below
   const showPrimary = _shareMode === 'usd' ? usdStr : pctStr;
   const showSecondary = _shareMode === 'both' ? usdStr : null;
 
-  y += 40;
-  // Halo behind the number — refined gradient, anchored to LEFT edge
+  y += 16;
+  // Tightened halo for the landscape layout (was 380px tall, now 240px)
   ctx.save();
-  // Outer wide halo
-  const haloOuter = ctx.createRadialGradient(GRID_X + 200, y + 80, 30, GRID_X + 200, y + 80, 760);
+  const haloOuter = ctx.createRadialGradient(GRID_X + 200, y + 60, 30, GRID_X + 200, y + 60, 660);
   haloOuter.addColorStop(0, `rgba(${accentRGB},0.22)`);
   haloOuter.addColorStop(0.35, `rgba(${accentRGB},0.10)`);
   haloOuter.addColorStop(0.7, `rgba(${accentRGB},0.02)`);
   haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = haloOuter;
-  ctx.fillRect(0, y - 80, W, 380);
+  ctx.fillRect(0, y - 30, W, 240);
 
-  // Inner concentrated halo for extra depth right behind the number
-  const haloInner = ctx.createRadialGradient(GRID_X + 220, y + 100, 10, GRID_X + 220, y + 100, 320);
+  const haloInner = ctx.createRadialGradient(GRID_X + 220, y + 80, 10, GRID_X + 220, y + 80, 280);
   haloInner.addColorStop(0, `rgba(${accentRGB},0.30)`);
   haloInner.addColorStop(0.5, `rgba(${accentRGB},0.07)`);
   haloInner.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = haloInner;
-  ctx.fillRect(0, y - 80, W, 380);
+  ctx.fillRect(0, y - 30, W, 240);
   ctx.restore();
 
-  // Auto-fit hero size — bigger ceiling when there's only one number
-  const heroSizes = (_shareMode === 'both') ? [200, 184, 168, 152, 136, 120] : [220, 200, 184, 168, 152];
+  // Auto-fit hero size — wider canvas allows bigger numbers
+  const heroSizes = (_shareMode === 'both') ? [180, 168, 152, 136, 120] : [200, 184, 168, 152, 136];
   let chosen = heroSizes[1];
   for (const s of heroSizes){
     ctx.font = `900 ${s}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
@@ -5482,71 +5472,61 @@ function _renderSinglePositionCard(){
   }
   ctx.font = `900 ${chosen}px "JetBrains Mono", "SF Mono", Menlo, monospace`;
 
-  // Build a vertical gradient for the BIG number — lighter tip → mid → deeper.
-  // Visually nicer than flat fill, gives the number "shine".
-  // All three stops MUST belong to the same colour family (profit-based)
-  // so a SHORT-in-profit card doesn't get a red bottom under a green top.
   const heroH = chosen;
-  const heroBaselineY = y + 130;
+  const heroBaselineY = y + 110;
   const numGrad = ctx.createLinearGradient(0, heroBaselineY - heroH, 0, heroBaselineY + 6);
   numGrad.addColorStop(0, accentTip);
   numGrad.addColorStop(0.55, accent);
   numGrad.addColorStop(1, profit ? '#10C987' : '#D14545');
   ctx.shadowColor = accent;
-  ctx.shadowBlur = 60;
+  ctx.shadowBlur = 50;
   ctx.fillStyle = numGrad;
   ctx.fillText(showPrimary, GRID_X, heroBaselineY);
   ctx.shadowBlur = 0;
 
-  // Secondary line — only in "both" mode
   if (showSecondary){
     const arrow = profit ? '▲' : '▼';
-    ctx.font = '700 32px "JetBrains Mono", "SF Mono", Menlo, monospace';
+    ctx.font = '700 28px "JetBrains Mono", "SF Mono", Menlo, monospace';
     ctx.fillStyle = `rgba(${accentRGB},0.80)`;
-    ctx.fillText(`${arrow}  ${showSecondary}`, GRID_X, heroBaselineY + 56);
+    ctx.fillText(`${arrow}  ${showSecondary}`, GRID_X, heroBaselineY + 44);
   } else {
-    // For single-mode, show a small label clarifying what the big number is.
     const lbl = _shareMode === 'pct' ? 'RETURN ON INVESTMENT' : 'UNREALIZED PROFIT & LOSS';
     ctx.font = '700 12px "Inter", system-ui, sans-serif';
     ctx.fillStyle = `rgba(${accentRGB},0.55)`;
-    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 44, 1.6);
+    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 36, 1.6);
   }
 
-  // ──────────── 5. ENTRY / LAST
-  y = H * 0.79;
+  // ──────────── 5. ENTRY / LAST (compressed for landscape)
+  y = H * 0.74;
   const colWidth = COL_W / 2;
 
   // Vertical separator between columns
   ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  ctx.fillRect(GRID_X + colWidth, y - 18, 1, 92);
+  ctx.fillRect(GRID_X + colWidth, y - 16, 1, 76);
 
   // Column 1
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
   _drawTracked(ctx, 'ENTRY PRICE', GRID_X, y, 1.6);
-  ctx.font = '800 46px "JetBrains Mono", "SF Mono", Menlo, monospace';
+  ctx.font = '800 38px "JetBrains Mono", "SF Mono", Menlo, monospace';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(_fmtPx(p.entry_price), GRID_X, y + 60);
+  ctx.fillText(_fmtPx(p.entry_price), GRID_X, y + 50);
 
   // Column 2
   const c2x = GRID_X + colWidth + 32;
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
   _drawTracked(ctx, 'LAST PRICE', c2x, y, 1.6);
-  ctx.font = '800 46px "JetBrains Mono", "SF Mono", Menlo, monospace';
+  ctx.font = '800 38px "JetBrains Mono", "SF Mono", Menlo, monospace';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(_fmtPx(p.mark_price), c2x, y + 60);
+  ctx.fillText(_fmtPx(p.mark_price), c2x, y + 50);
 
-  // Mark direction arrow next to last price (subtle hint of direction)
   const dirUp = (p.mark_price || 0) >= (p.entry_price || 0);
-  ctx.font = '800 22px Inter, system-ui, sans-serif';
-  ctx.fillStyle = dirUp ? 'rgba(26,255,171,0.7)' : 'rgba(248,113,113,0.7)';
-  const lastW = ctx.measureText(_fmtPx(p.mark_price)).width;
-  // measure with the bigger font we just used
-  ctx.font = '800 46px "JetBrains Mono", "SF Mono", Menlo, monospace';
+  ctx.font = '800 38px "JetBrains Mono", "SF Mono", Menlo, monospace';
   const realLastW = ctx.measureText(_fmtPx(p.mark_price)).width;
-  ctx.font = '800 22px Inter, system-ui, sans-serif';
-  ctx.fillText(dirUp ? '▲' : '▼', c2x + realLastW + 14, y + 56);
+  ctx.font = '800 18px Inter, system-ui, sans-serif';
+  ctx.fillStyle = dirUp ? 'rgba(26,255,171,0.7)' : 'rgba(248,113,113,0.7)';
+  ctx.fillText(dirUp ? '▲' : '▼', c2x + realLastW + 12, y + 46);
 
   // ──────────── 6. FOOTER
   // Two-row layout per side, with clear vertical spacing so caption
@@ -5608,7 +5588,9 @@ function _renderPairCombined(){
     ctx.roundRect = function(x,y,w,h,r){const rad=Math.min(r,w/2,h/2);this.beginPath();this.moveTo(x+rad,y);this.arcTo(x+w,y,x+w,y+h,rad);this.arcTo(x+w,y+h,x,y+h,rad);this.arcTo(x,y+h,x,y,rad);this.arcTo(x,y,x+w,y,rad);this.closePath();return this;};
   }
 
-  const W = 1080, H = 1080;
+  // Landscape 3:2 — same canvas dims as the single-position card so
+  // shares look consistent regardless of which card was generated.
+  const W = 1200, H = 800;
   c.width = W; c.height = H;
 
   const totalPnl = +pp.total_pnl_usd || 0;
@@ -5725,16 +5707,16 @@ function _renderPairCombined(){
   ctx.fillText(shortLabel, ax + 38, y + 8);
 
   // Symbol below
-  y += 50;
-  ctx.font = '900 38px "Inter", system-ui, sans-serif';
+  y += 44;
+  ctx.font = '900 36px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#E6E8E3';
   ctx.fillText(`${pp.symbol}USDT`, GRID_X, y);
   ctx.font = '700 11px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#3A3D47';
-  _drawTracked(ctx, 'PERPETUAL  ·  PAIR POSITION', GRID_X, y + 22, 1.8);
+  _drawTracked(ctx, 'PERPETUAL  ·  PAIR POSITION', GRID_X, y + 20, 1.8);
 
   // UPNL label + HERO
-  y += 70;
+  y += 50;
   ctx.font = '700 13px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
   _drawTracked(ctx, 'COMBINED P&L', GRID_X, y, 1.8);
@@ -5744,87 +5726,92 @@ function _renderPairCombined(){
   const showPrimary = _shareMode === 'usd' ? usdStr : pctStr;
   const showSecondary = _shareMode === 'both' ? usdStr : null;
 
-  y += 40;
-  // Halo
+  y += 12;
+  // Halo (compressed for landscape)
   ctx.save();
-  const haloOuter = ctx.createRadialGradient(GRID_X + 200, y + 80, 30, GRID_X + 200, y + 80, 760);
+  const haloOuter = ctx.createRadialGradient(GRID_X + 200, y + 60, 30, GRID_X + 200, y + 60, 660);
   haloOuter.addColorStop(0, `rgba(${accentRGB},0.22)`);
   haloOuter.addColorStop(0.35, `rgba(${accentRGB},0.10)`);
   haloOuter.addColorStop(0.7, `rgba(${accentRGB},0.02)`);
   haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloOuter; ctx.fillRect(0, y - 80, W, 380);
-  const haloInner = ctx.createRadialGradient(GRID_X + 220, y + 100, 10, GRID_X + 220, y + 100, 320);
+  ctx.fillStyle = haloOuter; ctx.fillRect(0, y - 30, W, 220);
+  const haloInner = ctx.createRadialGradient(GRID_X + 220, y + 80, 10, GRID_X + 220, y + 80, 280);
   haloInner.addColorStop(0, `rgba(${accentRGB},0.30)`);
   haloInner.addColorStop(0.5, `rgba(${accentRGB},0.07)`);
   haloInner.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloInner; ctx.fillRect(0, y - 80, W, 380);
+  ctx.fillStyle = haloInner; ctx.fillRect(0, y - 30, W, 220);
   ctx.restore();
 
-  const heroSizes = (_shareMode === 'both') ? [200, 184, 168, 152, 136, 120] : [220, 200, 184, 168, 152];
+  const heroSizes = (_shareMode === 'both') ? [180, 168, 152, 136, 120] : [200, 184, 168, 152, 136];
   let chosen = heroSizes[1];
   for (const s of heroSizes){
     ctx.font = `900 ${s}px "JetBrains Mono", Menlo, monospace`;
     if (ctx.measureText(showPrimary).width <= COL_W - 20){ chosen = s; break; }
   }
   ctx.font = `900 ${chosen}px "JetBrains Mono", Menlo, monospace`;
-  const heroBaselineY = y + 130;
+  const heroBaselineY = y + 100;
   const numGrad = ctx.createLinearGradient(0, heroBaselineY - chosen, 0, heroBaselineY + 6);
   numGrad.addColorStop(0, accentTip);
   numGrad.addColorStop(0.55, accent);
   numGrad.addColorStop(1, profit ? '#10C987' : '#D14545');
-  ctx.shadowColor = accent; ctx.shadowBlur = 60;
+  ctx.shadowColor = accent; ctx.shadowBlur = 50;
   ctx.fillStyle = numGrad;
   ctx.fillText(showPrimary, GRID_X, heroBaselineY);
   ctx.shadowBlur = 0;
 
   if (showSecondary){
-    ctx.font = '700 32px "JetBrains Mono", Menlo, monospace';
+    ctx.font = '700 28px "JetBrains Mono", Menlo, monospace';
     ctx.fillStyle = `rgba(${accentRGB},0.80)`;
-    ctx.fillText(`▲  ${showSecondary}`, GRID_X, heroBaselineY + 56);
+    ctx.fillText(`▲  ${showSecondary}`, GRID_X, heroBaselineY + 44);
   } else {
     const lbl = _shareMode === 'pct' ? 'COMBINED ROI' : 'COMBINED PROFIT & LOSS';
     ctx.font = '700 12px "Inter", system-ui, sans-serif';
     ctx.fillStyle = `rgba(${accentRGB},0.55)`;
-    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 44, 1.6);
+    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 36, 1.6);
   }
 
-  // ENTRY SPREAD — single full-width row
-  y = H * 0.66;
+  // ENTRY SPREAD + LONG/SHORT entries — three columns in one row to fit
+  // landscape height. Spread on the left (full label, signed colour),
+  // long entry middle (green dot), short entry right (red dot).
+  y = H * 0.78;
+  const col3 = COL_W / 3;
+
+  // Vertical separators between the 3 columns
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillRect(GRID_X + col3, y - 16, 1, 78);
+  ctx.fillRect(GRID_X + col3*2, y - 16, 1, 78);
+
+  // Col 1: Entry spread
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
   _drawTracked(ctx, 'ENTRY SPREAD', GRID_X, y, 1.6);
   const sp = +pp.entry_spread_pct || 0;
   const spStr = `${sp >= 0 ? '+' : ''}${sp.toFixed(4)}%`;
-  ctx.font = '800 44px "JetBrains Mono", Menlo, monospace';
+  ctx.font = '800 32px "JetBrains Mono", Menlo, monospace';
   ctx.fillStyle = sp >= 0 ? '#1AFFAB' : '#F87171';
-  ctx.fillText(spStr, GRID_X, y + 50);
+  ctx.fillText(spStr, GRID_X, y + 46);
 
-  // ENTRY PRICES — long & short side-by-side, mirrors single-card layout
-  y = H * 0.79;
-  const colWidth2 = COL_W / 2;
-  ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  ctx.fillRect(GRID_X + colWidth2, y - 18, 1, 80);
-
-  // Col 1: Long entry (green dot label)
+  // Col 2: Long entry
+  const c2x = GRID_X + col3 + 24;
   ctx.fillStyle = '#1AFFAB';
-  ctx.beginPath(); ctx.arc(GRID_X + 4, y - 4, 4, 0, Math.PI*2); ctx.fill();
-  ctx.font = '700 12px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#676B7E';
-  _drawTracked(ctx, `LONG · ${longLabel.toUpperCase()}`, GRID_X + 16, y, 1.6);
-  ctx.font = '800 38px "JetBrains Mono", Menlo, monospace';
-  ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(_fmtPx(pp.long.entry_price), GRID_X, y + 52);
-
-  // Col 2: Short entry (red dot label)
-  const c2x = GRID_X + colWidth2 + 32;
-  ctx.fillStyle = '#F87171';
   ctx.beginPath(); ctx.arc(c2x + 4, y - 4, 4, 0, Math.PI*2); ctx.fill();
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  _drawTracked(ctx, `SHORT · ${shortLabel.toUpperCase()}`, c2x + 16, y, 1.6);
-  ctx.font = '800 38px "JetBrains Mono", Menlo, monospace';
+  _drawTracked(ctx, `LONG · ${longLabel.toUpperCase()}`, c2x + 16, y, 1.6);
+  ctx.font = '800 32px "JetBrains Mono", Menlo, monospace';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(_fmtPx(pp.short.entry_price), c2x, y + 52);
+  ctx.fillText(_fmtPx(pp.long.entry_price), c2x, y + 46);
+
+  // Col 3: Short entry
+  const c3x = GRID_X + col3*2 + 24;
+  ctx.fillStyle = '#F87171';
+  ctx.beginPath(); ctx.arc(c3x + 4, y - 4, 4, 0, Math.PI*2); ctx.fill();
+  ctx.font = '700 12px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  _drawTracked(ctx, `SHORT · ${shortLabel.toUpperCase()}`, c3x + 16, y, 1.6);
+  ctx.font = '800 32px "JetBrains Mono", Menlo, monospace';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(_fmtPx(pp.short.entry_price), c3x, y + 46);
 
   // FOOTER (re-uses single-card layout)
   const footY = H - PAD;
