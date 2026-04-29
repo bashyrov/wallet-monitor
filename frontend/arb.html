@@ -5706,18 +5706,18 @@ function _renderPairCombined(){
   ctx.fillStyle = '#F87171';
   ctx.fillText(shortLabel, ax + 38, y + 8);
 
-  // Symbol below
-  y += 44;
-  ctx.font = '900 36px "Inter", system-ui, sans-serif';
+  // Symbol below pair-chip row
+  y += 50;
+  ctx.font = '900 34px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#E6E8E3';
   ctx.fillText(`${pp.symbol}USDT`, GRID_X, y);
   ctx.font = '700 11px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#3A3D47';
-  _drawTracked(ctx, 'PERPETUAL  ·  PAIR POSITION', GRID_X, y + 20, 1.8);
+  _drawTracked(ctx, 'PERPETUAL  ·  PAIR POSITION', GRID_X, y + 18, 1.8);
 
-  // UPNL label + HERO
-  y += 50;
-  ctx.font = '700 13px "Inter", system-ui, sans-serif';
+  // COMBINED P&L label + HERO
+  y += 38;
+  ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
   _drawTracked(ctx, 'COMBINED P&L', GRID_X, y, 1.8);
 
@@ -5726,54 +5726,55 @@ function _renderPairCombined(){
   const showPrimary = _shareMode === 'usd' ? usdStr : pctStr;
   const showSecondary = _shareMode === 'both' ? usdStr : null;
 
-  y += 12;
-  // Halo (compressed for landscape)
+  // Halo (BOUNDED so it can't bleed into footer or 3-col row)
   ctx.save();
-  const haloOuter = ctx.createRadialGradient(GRID_X + 200, y + 60, 30, GRID_X + 200, y + 60, 660);
-  haloOuter.addColorStop(0, `rgba(${accentRGB},0.22)`);
-  haloOuter.addColorStop(0.35, `rgba(${accentRGB},0.10)`);
-  haloOuter.addColorStop(0.7, `rgba(${accentRGB},0.02)`);
+  const haloTop = y + 4;
+  const haloH = 170;
+  const haloOuter = ctx.createRadialGradient(GRID_X + 200, haloTop + 80, 30, GRID_X + 200, haloTop + 80, 540);
+  haloOuter.addColorStop(0, `rgba(${accentRGB},0.20)`);
+  haloOuter.addColorStop(0.4, `rgba(${accentRGB},0.06)`);
   haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloOuter; ctx.fillRect(0, y - 30, W, 220);
-  const haloInner = ctx.createRadialGradient(GRID_X + 220, y + 80, 10, GRID_X + 220, y + 80, 280);
-  haloInner.addColorStop(0, `rgba(${accentRGB},0.30)`);
-  haloInner.addColorStop(0.5, `rgba(${accentRGB},0.07)`);
+  ctx.fillStyle = haloOuter; ctx.fillRect(0, haloTop, W, haloH);
+  const haloInner = ctx.createRadialGradient(GRID_X + 220, haloTop + 90, 10, GRID_X + 220, haloTop + 90, 240);
+  haloInner.addColorStop(0, `rgba(${accentRGB},0.26)`);
   haloInner.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloInner; ctx.fillRect(0, y - 30, W, 220);
+  ctx.fillStyle = haloInner; ctx.fillRect(0, haloTop, W, haloH);
   ctx.restore();
 
-  const heroSizes = (_shareMode === 'both') ? [180, 168, 152, 136, 120] : [200, 184, 168, 152, 136];
+  // Pair card has more rows below than the single card → smaller hero
+  // ceiling so the digits don't bleed into the 3-column row.
+  const heroSizes = (_shareMode === 'both') ? [124, 112, 100, 88] : [144, 128, 112, 100];
   let chosen = heroSizes[1];
   for (const s of heroSizes){
     ctx.font = `900 ${s}px "JetBrains Mono", Menlo, monospace`;
     if (ctx.measureText(showPrimary).width <= COL_W - 20){ chosen = s; break; }
   }
   ctx.font = `900 ${chosen}px "JetBrains Mono", Menlo, monospace`;
-  const heroBaselineY = y + 100;
+  const heroBaselineY = y + 110;
   const numGrad = ctx.createLinearGradient(0, heroBaselineY - chosen, 0, heroBaselineY + 6);
   numGrad.addColorStop(0, accentTip);
   numGrad.addColorStop(0.55, accent);
   numGrad.addColorStop(1, profit ? '#10C987' : '#D14545');
-  ctx.shadowColor = accent; ctx.shadowBlur = 50;
+  ctx.shadowColor = accent; ctx.shadowBlur = 40;
   ctx.fillStyle = numGrad;
   ctx.fillText(showPrimary, GRID_X, heroBaselineY);
   ctx.shadowBlur = 0;
 
   if (showSecondary){
-    ctx.font = '700 28px "JetBrains Mono", Menlo, monospace';
+    ctx.font = '700 24px "JetBrains Mono", Menlo, monospace';
     ctx.fillStyle = `rgba(${accentRGB},0.80)`;
-    ctx.fillText(`▲  ${showSecondary}`, GRID_X, heroBaselineY + 44);
+    ctx.fillText(`${profit ? '▲' : '▼'}  ${showSecondary}`, GRID_X, heroBaselineY + 36);
   } else {
     const lbl = _shareMode === 'pct' ? 'COMBINED ROI' : 'COMBINED PROFIT & LOSS';
     ctx.font = '700 12px "Inter", system-ui, sans-serif';
     ctx.fillStyle = `rgba(${accentRGB},0.55)`;
-    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 36, 1.6);
+    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 32, 1.6);
   }
 
-  // ENTRY SPREAD + LONG/SHORT entries — three columns in one row to fit
-  // landscape height. Spread on the left (full label, signed colour),
-  // long entry middle (green dot), short entry right (red dot).
-  y = H * 0.78;
+  // 3-col bottom row: ENTRY SPREAD · LONG entry · SHORT entry
+  // Anchored to absolute Y so it never collides with the hero above
+  // or the footer below.
+  y = H - 220;  // 800 - 220 = 580 → label baseline; value at +44 = 624
   const col3 = COL_W / 3;
 
   // Vertical separators between the 3 columns
