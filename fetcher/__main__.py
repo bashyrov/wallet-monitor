@@ -157,6 +157,13 @@ async def _run() -> None:
     start_expiry_notifier()
     logger.info("fetcher: expiry-notifier started")
 
+    # ── Trade-position reconciliation worker ─────────────────────────
+    from backend.services.reconcile_service import (
+        start_reconcile_service, stop_reconcile_service,
+    )
+    start_reconcile_service()
+    logger.info("fetcher: reconcile worker started")
+
     # ── Freshness sampler — feeds /admin → Exchange-freshness ──────
     from backend.services.freshness_stats import start_sampler as start_freshness_sampler
     start_freshness_sampler()
@@ -194,6 +201,7 @@ async def _run() -> None:
             ("alert_service", stop_alert_service),
             ("tg_bot", stop_tg_bot),
             ("expiry_notifier", stop_expiry_notifier),
+            ("reconcile", stop_reconcile_service),
             ("dex_refresh_loop", stop_dex_refresh_loop),
             ("spot_refresh_loop", stop_spot_refresh_loop),
             ("refresh_loop", stop_refresh_loop),

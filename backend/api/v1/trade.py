@@ -65,10 +65,63 @@ async def orders(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Recent trade fills across the user's screener wallets. Used by the
-    Order History tab on /arb. Filters to type=trade|fill — deposits
-    and withdrawals don't belong here."""
+    """Order History — every order our service sent to a venue for this
+    user. Used by the Order History tab on /arb. Internal errors are
+    sanitized; exchange errors are surfaced verbatim."""
     return await trade_service.list_user_orders(db, user.id, limit=limit, symbol=symbol)
+
+
+# ── Pair decisions ──────────────────────────────────────────────────────────
+class PairIn(BaseModel):
+    symbol: str
+    long_exchange: str = Field(..., min_length=2, max_length=24)
+    short_exchange: str = Field(..., min_length=2, max_length=24)
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _v(cls, v): return _vsym(v)
+
+
+@router.get("/pair/decisions")
+def pair_decisions(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Active 'paired' decisions for the user — drives the manual-pair list
+    in the Sync ⇆ modal, replacing the legacy localStorage cache."""
+    return trade_service.list_pair_decisions(db, user.id)
+
+
+@router.post("/pair/sync")
+def pair_sync(
+    body: PairIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        trade_service.set_pair_decision(
+            db, user.id, body.symbol, body.long_exchange, body.short_exchange,
+            decision="paired",
+        )
+    except trade_service.TradeError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@router.post("/pair/unsync")
+def pair_unsync(
+    body: PairIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        trade_service.set_pair_decision(
+            db, user.id, body.symbol, body.long_exchange, body.short_exchange,
+            decision="unpaired",
+        )
+    except trade_service.TradeError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
 
 
 @router.get("/supported")

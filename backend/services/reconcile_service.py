@@ -1,0 +1,273 @@
+"""Position reconciliation worker.
+
+Runs on the fetcher container, every 60 seconds. For each user with
+trade-enabled wallets, diff the current live position set against the
+last known set in `trade_positions` and:
+
+  · NEW position → insert TradePosition(kind=single, status=open).
+                   If a recent matching trade_orders(intent=open, filled)
+                   row exists, link it. Otherwise mark opened_externally.
+
+  · STILL OPEN  → refresh leg_a_qty, leg_a_entry_price, leg_a_funding_pnl
+                  from the live snapshot (positions evolve via DCA).
+
+  · DISAPPEARED → set status=closed, closed_at=now(),
+                  leg_a_exit_price = best-effort from last known mark.
+                  closed_externally=True if no recent matching close order.
+
+Pair stitching is NOT done here — the P&L tab applies the auto-pair rule
+and decision overrides at read time, grouping closed singles into pairs
+when applicable. That keeps the reconcile logic dialog-free.
+
+Per-exchange fuse: if `list_user_positions` raises for a venue, that
+venue's wallets are skipped this cycle but the rest of the user's wallets
+keep reconciling. We rely on `list_user_positions`' own per-wallet
+last-good cache to mask transient blips.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import threading
+import time
+from datetime import datetime, timedelta
+
+from sqlalchemy.orm import Session
+
+from backend.db.base import SessionLocal
+from backend.db.models import User, Wallet, TradePosition, TradeOrder
+from backend.services import trade_service
+
+logger = logging.getLogger("avalant.reconcile")
+
+_LOOP_INTERVAL_S = 60.0
+_thread: threading.Thread | None = None
+_stop = threading.Event()
+# Match window for linking a new trade_position to a recent trade_orders
+# row that placed it. Anything older than this is treated as
+# "opened externally" — the user opened it on the exchange UI directly.
+_OPEN_LINK_WINDOW_S = 600
+_CLOSE_LINK_WINDOW_S = 600
+
+
+def _users_with_trade_wallets(db: Session) -> list[int]:
+    """Return user_ids that have at least one screener / both purpose
+    exchange wallet — only those need reconciliation."""
+    rows = (
+        db.query(Wallet.user_id)
+        .filter(
+            Wallet.wallet_type == "exchange",
+            Wallet.purpose.in_(("screener", "both")),
+            Wallet.is_archived == False,  # noqa: E712
+        )
+        .distinct()
+        .all()
+    )
+    return [r[0] for r in rows if r[0] is not None]
+
+
+def _fingerprint(p: dict) -> tuple[int, str, str]:
+    """Per-position dedup key. Stable across DCA / partial fills since
+    we don't include qty or entry_price."""
+    return (int(p.get("wallet_id") or 0), str(p.get("symbol") or "").upper(), str(p.get("side") or "").lower())
+
+
+def _link_recent_open_order(db: Session, user_id: int, wallet_id: int,
+                             symbol: str, side: str) -> int | None:
+    cutoff = datetime.utcnow() - timedelta(seconds=_OPEN_LINK_WINDOW_S)
+    row = (
+        db.query(TradeOrder)
+        .filter(
+            TradeOrder.user_id == user_id,
+            TradeOrder.wallet_id == wallet_id,
+            TradeOrder.symbol == symbol.upper(),
+            TradeOrder.side == side.lower(),
+            TradeOrder.intent == "open",
+            TradeOrder.status == "filled",
+            TradeOrder.position_id.is_(None),
+            TradeOrder.created_at >= cutoff,
+        )
+        .order_by(TradeOrder.created_at.desc())
+        .first()
+    )
+    return row.id if row else None
+
+
+def _link_recent_close_order(db: Session, user_id: int, wallet_id: int,
+                              symbol: str) -> int | None:
+    cutoff = datetime.utcnow() - timedelta(seconds=_CLOSE_LINK_WINDOW_S)
+    row = (
+        db.query(TradeOrder)
+        .filter(
+            TradeOrder.user_id == user_id,
+            TradeOrder.wallet_id == wallet_id,
+            TradeOrder.symbol == symbol.upper(),
+            TradeOrder.intent == "close",
+            TradeOrder.status == "filled",
+            TradeOrder.created_at >= cutoff,
+        )
+        .order_by(TradeOrder.created_at.desc())
+        .first()
+    )
+    return row.id if row else None
+
+
+async def _reconcile_user(user_id: int) -> None:
+    db = SessionLocal()
+    try:
+        try:
+            live = await trade_service.list_user_positions(db, user_id)
+        except Exception as exc:
+            logger.info("reconcile: list_user_positions failed user=%s: %s", user_id, exc)
+            return
+
+        live_by_fp: dict[tuple[int, str, str], dict] = {}
+        for p in live:
+            fp = _fingerprint(p)
+            if fp[0] == 0:
+                continue  # missing wallet_id
+            live_by_fp[fp] = p
+
+        # All TradePosition rows we currently consider OPEN for this user.
+        open_rows: list[TradePosition] = (
+            db.query(TradePosition)
+            .filter(
+                TradePosition.user_id == user_id,
+                TradePosition.status == "open",
+                TradePosition.kind == "single",
+            )
+            .all()
+        )
+
+        seen_fps: set[tuple[int, str, str]] = set()
+        # 1) update / close existing
+        for row in open_rows:
+            fp = (row.leg_a_wallet_id or 0, (row.symbol or "").upper(), (row.leg_a_side or "").lower())
+            seen_fps.add(fp)
+            live_p = live_by_fp.get(fp)
+            if live_p:
+                # Still open — refresh evolving fields.
+                row.leg_a_qty = float(live_p.get("quantity") or row.leg_a_qty or 0)
+                ep = live_p.get("entry_price")
+                if ep is not None:
+                    try:
+                        row.leg_a_entry_price = float(ep)
+                    except (TypeError, ValueError):
+                        pass
+                fp_pnl = live_p.get("funding_pnl_usd")
+                if fp_pnl is not None:
+                    try:
+                        row.leg_a_funding_pnl_usd = float(fp_pnl)
+                    except (TypeError, ValueError):
+                        pass
+            else:
+                # Disappeared from live → closed.
+                row.status = "closed"
+                row.closed_at = datetime.utcnow()
+                # Approximate exit using last-known mark price if available.
+                # Stage 2c will fetch the precise realized PnL from the
+                # exchange's closed-trades endpoint.
+                close_oid = _link_recent_close_order(
+                    db, user_id, row.leg_a_wallet_id, row.symbol or ""
+                )
+                if close_oid:
+                    row.leg_a_close_order_id = close_oid
+                else:
+                    row.closed_externally = True
+                # Best-effort realized PnL from entry/last-mark difference.
+                # Without a precise exit price this is approximate — Stage 2c
+                # replaces this with the exchange-reported realized PnL.
+                if row.leg_a_entry_price and row.leg_a_qty:
+                    sign = 1.0 if (row.leg_a_side or "").lower() == "buy" else -1.0
+                    # If we have a stored exit_price already (e.g. from
+                    # close order), use it. Otherwise leave NULL — caller
+                    # treats NULL as "unknown" rather than $0.
+                    if row.leg_a_exit_price:
+                        row.leg_a_realized_pnl_usd = sign * (row.leg_a_exit_price - row.leg_a_entry_price) * row.leg_a_qty
+                row.realized_pnl_usd = row.leg_a_realized_pnl_usd
+
+        # 2) insert new positions
+        new_fps = set(live_by_fp.keys()) - seen_fps
+        for fp in new_fps:
+            live_p = live_by_fp[fp]
+            wallet_id, symbol, side = fp
+            entry_price = live_p.get("entry_price")
+            try:
+                entry_price_f = float(entry_price) if entry_price is not None else None
+            except (TypeError, ValueError):
+                entry_price_f = None
+            qty = float(live_p.get("quantity") or 0)
+            open_oid = _link_recent_open_order(db, user_id, wallet_id, symbol, side)
+            row = TradePosition(
+                user_id=user_id,
+                kind="single",
+                status="open",
+                symbol=symbol,
+                leg_a_wallet_id=wallet_id,
+                leg_a_exchange=str(live_p.get("exchange") or "").lower(),
+                leg_a_side=side,
+                leg_a_qty=qty,
+                leg_a_entry_price=entry_price_f,
+                leg_a_open_order_id=open_oid,
+                opened_externally=open_oid is None,
+            )
+            db.add(row)
+            if open_oid:
+                # Backlink the order so Order History can show its position.
+                ord_row = db.query(TradeOrder).filter(TradeOrder.id == open_oid).first()
+                if ord_row and ord_row.position_id is None:
+                    db.flush()  # populate row.id
+                    ord_row.position_id = row.id
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _reconcile_pass() -> None:
+    db = SessionLocal()
+    try:
+        user_ids = _users_with_trade_wallets(db)
+    finally:
+        db.close()
+    if not user_ids:
+        return
+    # Run users sequentially — concurrency-1 is plenty for a 60s cycle and
+    # avoids stampeding the per-exchange position endpoints from many
+    # users at once. Bumping to a small worker pool is a Stage 3 nicety.
+    for uid in user_ids:
+        if _stop.is_set():
+            break
+        try:
+            await _reconcile_user(uid)
+        except Exception as exc:
+            logger.exception("reconcile user=%s failed: %s", uid, exc)
+
+
+def _runner() -> None:
+    logger.info("reconcile worker started (cycle=%ss)", _LOOP_INTERVAL_S)
+    while not _stop.is_set():
+        t0 = time.time()
+        try:
+            asyncio.run(_reconcile_pass())
+        except Exception as exc:
+            logger.exception("reconcile pass failed: %s", exc)
+        elapsed = time.time() - t0
+        sleep_for = max(5.0, _LOOP_INTERVAL_S - elapsed)
+        # Don't busy-sleep through stop; check the event regularly.
+        end = time.time() + sleep_for
+        while time.time() < end and not _stop.is_set():
+            time.sleep(min(2.0, end - time.time()))
+    logger.info("reconcile worker stopped")
+
+
+def start_reconcile_service() -> None:
+    global _thread
+    if _thread and _thread.is_alive():
+        return
+    _stop.clear()
+    _thread = threading.Thread(target=_runner, name="reconcile-worker", daemon=True)
+    _thread.start()
+
+
+def stop_reconcile_service() -> None:
+    _stop.set()

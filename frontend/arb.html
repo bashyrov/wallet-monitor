@@ -2155,8 +2155,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   }
 
   async function _ptLoadAcc() {
-    await Promise.all([_ptLoadKeyCounts(), _ptLoadAccPositions(), _ptLoadBalances(), _ptLoadOrders()]);
+    await Promise.all([_ptLoadKeyCounts(), _ptLoadAccPositions(), _ptLoadBalances(), _ptLoadOrders(), _refreshPairDecisions()]);
   }
+  // One-time migration of legacy localStorage Sync entries on first load.
+  if (typeof _migrateLegacyManualPairs === 'function') _migrateLegacyManualPairs();
   _ptLoadAcc();
   setInterval(_ptLoadAcc, 10000);
 
@@ -3822,9 +3824,14 @@ function accSwitch(el){
 }
 
 async function initAccBlock(){
+  // One-time migration of legacy localStorage Sync entries → backend.
+  // Idempotent on the server side (UNIQUE on user_id+leg_a_key+leg_b_key).
+  await _migrateLegacyManualPairs();
+  await _refreshPairDecisions();
   await Promise.all([accLoadKeyCounts(), accLoadPositions(), accLoadBalances(), accLoadOrders()]);
-  // Keep positions + balances + orders fresh
-  setInterval(() => { accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 10000);
+  // Keep positions + balances + orders fresh; refresh pair decisions too
+  // so a Sync from another tab/device propagates within ~10s.
+  setInterval(() => { _refreshPairDecisions(); accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 10000);
 }
 
 async function accLoadOrders(){
@@ -3952,31 +3959,70 @@ function _accPairToggle(key) {
 // match is unreliable. 10% tolerance handles slight price differences
 // between the legs at snapshot time. Matched pair renders as a single
 // "⇆ PAIR" block with summed metrics.
-// Manual pairings — persisted in localStorage so they survive reloads.
+// Manual pairings — DB-backed via /api/trade/pair/* so they survive page
+// refresh AND device switch. Cached in window._pairDecisions; refreshed on
+// every accLoadPositions tick. Legacy localStorage entries get migrated
+// to the API on first load.
+//
 // Schema: [{symbol, long_exchange, short_exchange}]. The user marks pairs
-// via the "Sync ⇆" button when auto-detect can't (size mismatch, no clean
-// 1:1 mapping, etc.).
+// via the "Sync ⇆" button when auto-detect can't (size mismatch, etc.).
 const _MANUAL_PAIRS_KEY = 'avalant_manual_pairs_v1';
+window._pairDecisions = window._pairDecisions || [];
+
+async function _refreshPairDecisions(){
+  try {
+    const r = await Auth.apiFetch('/trade/pair/decisions');
+    if (!r.ok) return;
+    window._pairDecisions = await r.json() || [];
+  } catch {}
+}
+
 function _loadManualPairs(){
-  try { return JSON.parse(localStorage.getItem(_MANUAL_PAIRS_KEY) || '[]') || []; }
-  catch { return []; }
+  // Fast synchronous getter for renderers — relies on the cache being
+  // refreshed by accLoadPositions. First call returns [] until the first
+  // refresh completes.
+  return window._pairDecisions || [];
 }
-function _saveManualPairs(arr){
-  try { localStorage.setItem(_MANUAL_PAIRS_KEY, JSON.stringify(arr || [])); }
-  catch {}
+
+async function _addManualPair(sym, longEx, shortEx){
+  try {
+    const r = await Auth.apiFetch('/trade/pair/sync', {
+      method: 'POST',
+      body: JSON.stringify({ symbol: sym, long_exchange: longEx, short_exchange: shortEx }),
+    });
+    if (!r.ok) return;
+    await _refreshPairDecisions();
+  } catch {}
 }
-function _addManualPair(sym, longEx, shortEx){
-  const arr = _loadManualPairs();
-  const dup = arr.some(p => p.symbol === sym && p.long_exchange === longEx && p.short_exchange === shortEx);
-  if (dup) return;
-  arr.push({ symbol: sym, long_exchange: longEx, short_exchange: shortEx });
-  _saveManualPairs(arr);
+
+async function _removeManualPair(sym, longEx, shortEx){
+  try {
+    const r = await Auth.apiFetch('/trade/pair/unsync', {
+      method: 'POST',
+      body: JSON.stringify({ symbol: sym, long_exchange: longEx, short_exchange: shortEx }),
+    });
+    if (!r.ok) return;
+    await _refreshPairDecisions();
+  } catch {}
 }
-function _removeManualPair(sym, longEx, shortEx){
-  const arr = _loadManualPairs().filter(p =>
-    !(p.symbol === sym && p.long_exchange === longEx && p.short_exchange === shortEx)
-  );
-  _saveManualPairs(arr);
+
+// One-shot migration of any legacy localStorage entries → backend, then
+// clear the local cache so we don't keep re-uploading on every load.
+async function _migrateLegacyManualPairs(){
+  let legacy = [];
+  try { legacy = JSON.parse(localStorage.getItem(_MANUAL_PAIRS_KEY) || '[]') || []; }
+  catch { legacy = []; }
+  if (!Array.isArray(legacy) || !legacy.length) return;
+  for (const p of legacy){
+    if (!p || !p.symbol || !p.long_exchange || !p.short_exchange) continue;
+    try {
+      await Auth.apiFetch('/trade/pair/sync', {
+        method: 'POST',
+        body: JSON.stringify({ symbol: p.symbol, long_exchange: p.long_exchange, short_exchange: p.short_exchange }),
+      });
+    } catch {}
+  }
+  try { localStorage.removeItem(_MANUAL_PAIRS_KEY); } catch {}
 }
 
 function _acc_pair_positions(rows){
@@ -4003,9 +4049,13 @@ function _acc_pair_positions(rows){
     pairs.push({symbol: mp.symbol, long: l.p, short: s.p, _manual: true});
   }
 
-  // 2. AUTO-DETECT for the rest. Threshold relaxed to 25% to catch real-
-  //    world cases like 440-vs-482 qty (~12% diff) which were rejected by
-  //    the previous 10% cutoff.
+  // 2. AUTO-DETECT for the rest. Rule: notional diff% must be within
+  //    spread_pct ± 5%, where spread_pct is the price spread between
+  //    the two legs at their entry prices. So a 20% spread arb whose
+  //    sizes naturally differ by 20% (e.g. 1000 USDT long, 1200 USDT
+  //    short) gets paired; a 0% spread accepts only tight (≤5%) size
+  //    mismatch. This matches the user's mental model — they entered
+  //    the spread, the size diff IS the spread.
   for (const [sym, group] of Object.entries(bySym)) {
     const longs  = group.filter(t => t.p.side === 'buy'  && !used.has(t.key));
     const shorts = group.filter(t => t.p.side === 'sell' && !used.has(t.key));
@@ -4013,11 +4063,20 @@ function _acc_pair_positions(rows){
     for (const l of longs) for (const s of shorts) {
       const maxN = Math.max(l.notional, s.notional);
       if (maxN <= 0) continue;
-      const diffPct = Math.abs(l.notional - s.notional) / maxN;
-      if (diffPct > 0.25) continue;
-      candidates.push({l, s, diffPct});
+      const lEntry = Number(l.p.entry_price || 0);
+      const sEntry = Number(s.p.entry_price || 0);
+      // Spread between the legs' entry prices, in %.
+      const spreadPct = (lEntry > 0 && sEntry > 0)
+        ? Math.abs((sEntry - lEntry) / lEntry) * 100
+        : 0;
+      const diffPct = (Math.abs(l.notional - s.notional) / maxN) * 100;
+      // Match if the size difference is within ±5% of the spread.
+      const tolerance = 5;
+      if (Math.abs(diffPct - spreadPct) > tolerance) continue;
+      candidates.push({l, s, diffPct, spreadPct});
     }
-    candidates.sort((a, b) => a.diffPct - b.diffPct);
+    // Best candidate first = smallest deviation from the expected spread.
+    candidates.sort((a, b) => Math.abs(a.diffPct - a.spreadPct) - Math.abs(b.diffPct - b.spreadPct));
     for (const c of candidates) {
       if (used.has(c.l.key) || used.has(c.s.key)) continue;
       used.add(c.l.key); used.add(c.s.key);
@@ -5090,7 +5149,7 @@ function _syncToggle(k){
   _renderSyncList();
 }
 
-function confirmSyncPair(){
+async function confirmSyncPair(){
   const sels = [..._syncSelected].map(k => {
     const [sym, ex, side] = k.split('|');
     return { sym, ex, side };
@@ -5099,18 +5158,18 @@ function confirmSyncPair(){
   const longSel = sels.find(s => s.side === 'buy');
   const shortSel = sels.find(s => s.side === 'sell');
   if (!longSel || !shortSel || longSel.sym !== shortSel.sym) return;
-  _addManualPair(longSel.sym, longSel.ex, shortSel.ex);
+  await _addManualPair(longSel.sym, longSel.ex, shortSel.ex);
   _syncSelected.clear();
   if (typeof toast === 'function') toast(`Paired ${longSel.sym} ${longSel.ex.toUpperCase()} ⇄ ${shortSel.ex.toUpperCase()}`, 'success');
   if (typeof accLoadPositions === 'function') accLoadPositions();
   _renderSyncList();
 }
 
-function _syncUnpair(idx){
+async function _syncUnpair(idx){
   const arr = _loadManualPairs();
   const p = arr[idx];
   if (!p) return;
-  _removeManualPair(p.symbol, p.long_exchange, p.short_exchange);
+  await _removeManualPair(p.symbol, p.long_exchange, p.short_exchange);
   if (typeof accLoadPositions === 'function') accLoadPositions();
   _renderSyncList();
 }

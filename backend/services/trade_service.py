@@ -526,6 +526,71 @@ def invalidate_positions_cache(user_id: int) -> None:
         _POSITIONS_LASTGOOD.pop(k, None)
 
 
+# ── Pair decisions ─────────────────────────────────────────────────────────
+# The user's manual Sync ⇆ / Unpair choices are persisted server-side so
+# they survive page refresh (previously these lived in localStorage). Each
+# decision links two leg-fingerprints. Today the fingerprint is symbol +
+# exchange + side; we'll extend with wallet_id once users routinely run
+# multiple wallets per venue.
+
+def _pair_legs_for(symbol: str, long_ex: str, short_ex: str) -> tuple[str, str]:
+    sym = (symbol or "").upper().strip()
+    long_ex = (long_ex or "").lower().strip()
+    short_ex = (short_ex or "").lower().strip()
+    return f"{sym}|{long_ex}|buy", f"{sym}|{short_ex}|sell"
+
+
+def set_pair_decision(db: Session, user_id: int, symbol: str,
+                       long_exchange: str, short_exchange: str,
+                       decision: str) -> None:
+    if decision not in ("paired", "unpaired"):
+        raise TradeError("Invalid decision", kind="user")
+    from backend.db.models import TradePairDecision
+    leg_a, leg_b = _pair_legs_for(symbol, long_exchange, short_exchange)
+    row = (
+        db.query(TradePairDecision)
+        .filter(
+            TradePairDecision.user_id == user_id,
+            TradePairDecision.leg_a_key == leg_a,
+            TradePairDecision.leg_b_key == leg_b,
+        )
+        .first()
+    )
+    if row:
+        row.decision = decision
+        row.updated_at = datetime.utcnow()
+    else:
+        from backend.db.models import TradePairDecision as _TPD
+        db.add(_TPD(user_id=user_id, leg_a_key=leg_a, leg_b_key=leg_b, decision=decision))
+    db.commit()
+
+
+def list_pair_decisions(db: Session, user_id: int) -> list[dict]:
+    """Return active (decision != 'unpaired') pair decisions for the user.
+
+    The frontend uses this to pre-populate the manual-pair list, replacing
+    the legacy localStorage cache. Unpaired decisions stay in the DB so we
+    can avoid re-suggesting the same auto-pair the user has already
+    rejected, but we don't surface them to the UI."""
+    from backend.db.models import TradePairDecision
+    rows = (
+        db.query(TradePairDecision)
+        .filter(TradePairDecision.user_id == user_id,
+                TradePairDecision.decision == "paired")
+        .all()
+    )
+    out: list[dict] = []
+    for r in rows:
+        # leg_a_key = "SYM|long_ex|buy", leg_b_key = "SYM|short_ex|sell"
+        try:
+            sym, long_ex, _ = r.leg_a_key.split("|")
+            _, short_ex, _ = r.leg_b_key.split("|")
+            out.append({"symbol": sym, "long_exchange": long_ex, "short_exchange": short_ex})
+        except ValueError:
+            continue
+    return out
+
+
 def _serialize_order(o: TradeOrder) -> dict:
     """Shape a TradeOrder row for the Order History UI. Internal errors are
     sanitized to a generic message — the user shouldn't see our stack
