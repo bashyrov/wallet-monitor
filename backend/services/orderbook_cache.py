@@ -147,104 +147,152 @@ def _canonical_limit(exchange: str, limit: int) -> int:
 
 
 # ── Direct per-exchange fetch ────────────────────────────────────────────────
-async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
+async def _fetch_direct_raw(exchange: str, symbol: str, limit: int) -> dict | None:
+    """Inner fetch — returns the dict (possibly with empty bids/asks) or
+    raises on infrastructure errors. The empty/error distinction lets
+    callers throttle a delisted symbol differently from a rate-limited
+    request. Returns None if the exchange isn't recognised."""
     # Per-exchange dedicated pool — slow venues no longer block fast ones.
     c = _get_http_for(exchange)
     limit = _canonical_limit(exchange, limit)
+    if exchange == "binance":
+        r = await c.get(f"https://fapi.binance.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit}")
+        d = r.json()
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "bybit":
+        r = await c.get(f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={symbol}USDT&limit={limit}")
+        d = r.json().get("result", {})
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("b", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("a", [])]}
+    if exchange == "okx":
+        r = await c.get(f"https://www.okx.com/api/v5/market/books?instId={symbol}-USDT-SWAP&sz={limit}")
+        d = (r.json().get("data") or [{}])[0]
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "gate":
+        r = await c.get(f"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract={symbol}_USDT&limit={limit}")
+        d = r.json()
+        return {"bids": [[float(x["p"]), float(x["s"])] for x in d.get("bids", [])],
+                "asks": [[float(x["p"]), float(x["s"])] for x in d.get("asks", [])]}
+    if exchange == "kucoin":
+        sym = ("XBT" if symbol == "BTC" else symbol) + "USDTM"
+        depth = 100 if limit > 20 else 20
+        r = await c.get(f"https://api-futures.kucoin.com/api/v1/level2/depth{depth}?symbol={sym}")
+        d = r.json().get("data", {})
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "mexc":
+        r = await c.get(f"https://contract.mexc.com/api/v1/contract/depth/{symbol}_USDT?limit={limit}")
+        d = r.json().get("data", {})
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "bitget":
+        r = await c.get(f"https://api.bitget.com/api/v2/mix/market/merge-depth?symbol={symbol}USDT&productType=USDT-FUTURES&limit={limit}")
+        d = r.json().get("data", {})
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "aster":
+        limit_a = _canonical_limit("aster", limit)
+        r = await c.get(f"https://fapi.asterdex.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit_a}")
+        d = r.json()
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "hyperliquid":
+        r = await c.post("https://api.hyperliquid.xyz/info",
+                         json={"type": "l2Book", "coin": symbol},
+                         headers={"Content-Type": "application/json"})
+        d = r.json().get("levels", [[], []])
+        return {"bids": [[float(x["px"]), float(x["sz"])] for x in d[0]],
+                "asks": [[float(x["px"]), float(x["sz"])] for x in d[1]]}
+    if exchange == "bingx":
+        r = await c.get(f"https://open-api.bingx.com/openApi/swap/v2/quote/depth?symbol={symbol}-USDT&limit={limit}")
+        d = r.json().get("data", {})
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "whitebit":
+        r = await c.get(f"https://whitebit.com/api/v4/public/orderbook/{symbol}_PERP?limit={limit}&level=2")
+        d = r.json()
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "paradex":
+        # Paradex returns "asks" / "bids" sorted best-first with string
+        # price+size tuples. `depth` caps each side; pass at least 20 so
+        # we have enough levels for consensus-style checks elsewhere.
+        lim = max(20, min(50, int(limit)))
+        r = await c.get(f"https://api.prod.paradex.trade/v1/orderbook/{symbol}-USD-PERP?depth={lim}")
+        d = r.json() or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "extended":
+        # Extended (StarkNet perpdex) — no WS adapter yet, so this REST
+        # path is the only orderbook source. Response shape:
+        #   { status, data: { market, bid: [{qty, price}], ask: [...] } }
+        r = await c.get(f"https://api.starknet.extended.exchange/api/v1/info/markets/{symbol}-USD/orderbook")
+        d = (r.json() or {}).get("data", {}) or {}
+        return {"bids": [[float(x["price"]), float(x["qty"])] for x in d.get("bid", [])],
+                "asks": [[float(x["price"]), float(x["qty"])] for x in d.get("ask", [])]}
+    if exchange == "htx":
+        # HTX (Huobi) USDT-margined linear-swap orderbook. step0 = full
+        # depth (raw), no aggregation. Response shape:
+        #   { status, tick: { bids: [[px, sz], …], asks: […] } }
+        r = await c.get(f"https://api.hbdm.com/linear-swap-ex/market/depth?contract_code={symbol}-USDT&type=step0")
+        d = (r.json() or {}).get("tick", {}) or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    return None
+
+
+# Outcome of a single REST poll. "ok" + non-empty book = healthy.
+# "empty" = the venue answered cleanly but has no levels for this symbol
+# (delisted, halted, ultra-thin) — back off, but not because the venue
+# is unreachable. "error" = network / rate-limit / parse — different
+# remediation (retry sooner, open circuit, etc).
+class FetchOutcome:
+    OK = "ok"
+    EMPTY = "empty"
+    ERROR = "error"
+
+
+async def _fetch_direct_with_status(exchange: str, symbol: str, limit: int) -> tuple[str, dict | None, str | None]:
+    """Returns (outcome, data, error). Outcome is one of FetchOutcome.*."""
     try:
-        if exchange == "binance":
-            r = await c.get(f"https://fapi.binance.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit}")
-            d = r.json()
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "bybit":
-            r = await c.get(f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={symbol}USDT&limit={limit}")
-            d = r.json().get("result", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("b", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("a", [])]}
-        if exchange == "okx":
-            r = await c.get(f"https://www.okx.com/api/v5/market/books?instId={symbol}-USDT-SWAP&sz={limit}")
-            d = (r.json().get("data") or [{}])[0]
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "gate":
-            r = await c.get(f"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract={symbol}_USDT&limit={limit}")
-            d = r.json()
-            return {"bids": [[float(x["p"]), float(x["s"])] for x in d.get("bids", [])],
-                    "asks": [[float(x["p"]), float(x["s"])] for x in d.get("asks", [])]}
-        if exchange == "kucoin":
-            sym = ("XBT" if symbol == "BTC" else symbol) + "USDTM"
-            depth = 100 if limit > 20 else 20
-            r = await c.get(f"https://api-futures.kucoin.com/api/v1/level2/depth{depth}?symbol={sym}")
-            d = r.json().get("data", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "mexc":
-            r = await c.get(f"https://contract.mexc.com/api/v1/contract/depth/{symbol}_USDT?limit={limit}")
-            d = r.json().get("data", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "bitget":
-            r = await c.get(f"https://api.bitget.com/api/v2/mix/market/merge-depth?symbol={symbol}USDT&productType=USDT-FUTURES&limit={limit}")
-            d = r.json().get("data", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "aster":
-            limit_a = _canonical_limit("aster", limit)
-            r = await c.get(f"https://fapi.asterdex.com/fapi/v1/depth?symbol={symbol}USDT&limit={limit_a}")
-            d = r.json()
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "hyperliquid":
-            r = await c.post("https://api.hyperliquid.xyz/info",
-                             json={"type": "l2Book", "coin": symbol},
-                             headers={"Content-Type": "application/json"})
-            d = r.json().get("levels", [[], []])
-            return {"bids": [[float(x["px"]), float(x["sz"])] for x in d[0]],
-                    "asks": [[float(x["px"]), float(x["sz"])] for x in d[1]]}
-        if exchange == "bingx":
-            r = await c.get(f"https://open-api.bingx.com/openApi/swap/v2/quote/depth?symbol={symbol}-USDT&limit={limit}")
-            d = r.json().get("data", {})
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "whitebit":
-            r = await c.get(f"https://whitebit.com/api/v4/public/orderbook/{symbol}_PERP?limit={limit}&level=2")
-            d = r.json()
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "paradex":
-            # Paradex returns "asks" / "bids" sorted best-first with string
-            # price+size tuples. `depth` caps each side; pass at least 20 so
-            # we have enough levels for consensus-style checks elsewhere.
-            lim = max(20, min(50, int(limit)))
-            r = await c.get(f"https://api.prod.paradex.trade/v1/orderbook/{symbol}-USD-PERP?depth={lim}")
-            d = r.json() or {}
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
-        if exchange == "extended":
-            # Extended (StarkNet perpdex) — no WS adapter yet, so this REST
-            # path is the only orderbook source. Response shape:
-            #   { status, data: { market, bid: [{qty, price}], ask: [...] } }
-            r = await c.get(f"https://api.starknet.extended.exchange/api/v1/info/markets/{symbol}-USD/orderbook")
-            d = (r.json() or {}).get("data", {}) or {}
-            return {"bids": [[float(x["price"]), float(x["qty"])] for x in d.get("bid", [])],
-                    "asks": [[float(x["price"]), float(x["qty"])] for x in d.get("ask", [])]}
-        if exchange == "htx":
-            # HTX (Huobi) USDT-margined linear-swap orderbook. step0 = full
-            # depth (raw), no aggregation. Response shape:
-            #   { status, tick: { bids: [[px, sz], …], asks: […] } }
-            r = await c.get(f"https://api.hbdm.com/linear-swap-ex/market/depth?contract_code={symbol}-USDT&type=step0")
-            d = (r.json() or {}).get("tick", {}) or {}
-            return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
-                    "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+        data = await _fetch_direct_raw(exchange, symbol, limit)
     except Exception as exc:
         logger.debug("orderbook fetch %s/%s failed: %s", exchange, symbol, exc)
+        return FetchOutcome.ERROR, None, f"{type(exc).__name__}: {exc}"
+    if data is None:
+        # Unrecognised exchange — treat as a config error, not transient.
+        return FetchOutcome.ERROR, None, f"unsupported exchange: {exchange}"
+    if not data.get("bids") and not data.get("asks"):
+        return FetchOutcome.EMPTY, data, None
+    return FetchOutcome.OK, data, None
+
+
+async def _fetch_direct(exchange: str, symbol: str, limit: int) -> dict | None:
+    """Backwards-compatible wrapper used by REST fallback paths that only
+    care about the data, treating empty and error as the same shape."""
+    outcome, data, _err = await _fetch_direct_with_status(exchange, symbol, limit)
+    if outcome == FetchOutcome.OK:
+        return data
     return None
 
 
 # ── Poller task ──────────────────────────────────────────────────────────────
+# Consecutive-failure thresholds and back-off windows. Empty books (delisted /
+# halted / ultra-thin) get a much longer back-off than errors (network /
+# rate-limit) — empty pairs aren't going to recover in the next 3 seconds, so
+# keep hammering is pure waste of REST budget. Errors usually clear within
+# seconds (rate-limit windows expire, connections recover) so we throttle
+# more gently.
+_EMPTY_BACKOFF_SHORT_S = 30.0   # after 5 consecutive empties → poll once / 30s
+_EMPTY_BACKOFF_LONG_S = 300.0   # after 20 consecutive empties → poll once / 5m
+_ERROR_BACKOFF_S = 5.0          # after 5 consecutive errors  → 5s extra sleep
+
+
 async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
-    consecutive_fails = 0
+    consecutive_empty = 0
+    consecutive_error = 0
     try:
         while True:
             entry = _book_cache.get(key)
@@ -260,11 +308,12 @@ async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
                 await asyncio.sleep(POLL_INTERVAL)
                 continue
 
-            data = await _fetch_direct(exchange, symbol, limit)
-            if data and (data.get("bids") or data.get("asks")):
+            outcome, data, err = await _fetch_direct_with_status(exchange, symbol, limit)
+            if outcome == FetchOutcome.OK:
                 entry["data"] = data
                 entry["ts"] = time.time()
-                consecutive_fails = 0
+                consecutive_empty = 0
+                consecutive_error = 0
                 if key not in _first_data_logged:
                     t0 = _first_req_at.get(key)
                     if t0 is not None:
@@ -273,12 +322,27 @@ async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
                             key, time.time() - t0,
                         )
                         _first_data_logged.add(key)
-            else:
-                consecutive_fails += 1
-                if consecutive_fails == 1 or consecutive_fails % 20 == 0:
-                    logger.warning("orderbook poll empty/fail: %s (streak=%d)", key, consecutive_fails)
-                if consecutive_fails >= 20:
-                    await asyncio.sleep(3)
+            elif outcome == FetchOutcome.EMPTY:
+                consecutive_empty += 1
+                consecutive_error = 0
+                if consecutive_empty == 1 or consecutive_empty in (5, 20) or consecutive_empty % 100 == 0:
+                    logger.info("orderbook poll empty: %s (streak=%d) — venue returned no levels", key, consecutive_empty)
+                if consecutive_empty >= 20:
+                    await asyncio.sleep(_EMPTY_BACKOFF_LONG_S)
+                    continue
+                if consecutive_empty >= 5:
+                    await asyncio.sleep(_EMPTY_BACKOFF_SHORT_S)
+                    continue
+            else:  # FetchOutcome.ERROR
+                consecutive_error += 1
+                consecutive_empty = 0
+                if consecutive_error == 1 or consecutive_error % 10 == 0:
+                    logger.warning(
+                        "orderbook poll error: %s (streak=%d) — %s",
+                        key, consecutive_error, err or "?",
+                    )
+                if consecutive_error >= 5:
+                    await asyncio.sleep(_ERROR_BACKOFF_S)
                     continue
             await asyncio.sleep(POLL_INTERVAL)
     except asyncio.CancelledError:
