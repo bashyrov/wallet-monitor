@@ -24,12 +24,14 @@ from backend.services.user_streams.binance import BinanceUserStream
 from backend.services.user_streams.aster import AsterUserStream
 from backend.services.user_streams.bybit import BybitUserStream
 from backend.services.user_streams.okx import OKXUserStream
+from backend.services.user_streams.bitget import BitgetUserStream
 
 ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "binance": BinanceUserStream,
     "aster": AsterUserStream,
     "bybit": BybitUserStream,
     "okx": OKXUserStream,
+    "bitget": BitgetUserStream,
 }
 
 
