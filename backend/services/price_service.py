@@ -5,18 +5,100 @@ Flow:
   1. CoinMarketCap /v1/cryptocurrency/listings/latest → top-100 symbols
   2. Gate.io GET /api/v4/spot/tickers (public, no auth) → *_USDT prices
   3. Build in-memory dict {SYMBOL: usd_price}
+  4. Mirror to Redis so app + app2 + fetcher share one snapshot rather
+     than each making its own CMC call. Read-through on every get_price()
+     so a fresh app process picks up the existing cache without waiting
+     for its own first refresh cycle.
 
 Stablecoins always equal 1.0.
 Falls back to CMC price data if Gate doesn't have the pair.
 """
 import asyncio
+import json
 import logging
+import os
+import time as _time
 from decimal import Decimal
 
 import httpx
 from backend.providers.http import RetryClient
 
 logger = logging.getLogger("avalant.prices")
+
+# Redis-backed shared snapshot. Key holds full {sym: price} map; we read
+# it whenever the local _prices dict is empty (cold start) so a freshly-
+# booted app process doesn't have to wait its own 30-min refresh cycle.
+_REDIS_KEY = "avalant:prices:snapshot:v1"
+_REDIS_TOP100_KEY = "avalant:prices:top100:v1"
+_REDIS_TTL_S = 3600  # 1h — refresh cycle is 30min so this is double-buffer
+_redis_client = None
+_redis_last_failure_ts: float = 0.0
+_REDIS_BACKOFF_S = 10.0
+
+
+def _redis():
+    global _redis_client, _redis_last_failure_ts
+    url = os.environ.get("REDIS_URL") or ""
+    if not url:
+        return None
+    if _redis_client is not None:
+        return _redis_client
+    if _time.time() - _redis_last_failure_ts < _REDIS_BACKOFF_S:
+        return None
+    try:
+        import redis
+        c = redis.from_url(url, decode_responses=True,
+                           socket_connect_timeout=1.0, socket_timeout=1.0)
+        c.ping()
+        _redis_client = c
+        return c
+    except Exception as exc:
+        _redis_last_failure_ts = _time.time()
+        logger.debug("prices redis connect failed: %s", exc)
+        return None
+
+
+def _publish_to_redis(prices: dict[str, float], top100: list[str]) -> None:
+    c = _redis()
+    if not c:
+        return
+    try:
+        c.setex(_REDIS_KEY, _REDIS_TTL_S, json.dumps(prices))
+        c.setex(_REDIS_TOP100_KEY, _REDIS_TTL_S, json.dumps(top100))
+    except Exception as exc:
+        logger.debug("prices redis publish failed: %s", exc)
+
+
+def _try_load_from_redis() -> bool:
+    """Pull the shared snapshot if local cache is empty. Returns True if
+    we hydrated from Redis."""
+    if _prices:
+        return False
+    c = _redis()
+    if not c:
+        return False
+    try:
+        raw = c.get(_REDIS_KEY)
+        raw_top = c.get(_REDIS_TOP100_KEY)
+        if not raw:
+            return False
+        loaded = json.loads(raw)
+        if not isinstance(loaded, dict):
+            return False
+        _prices.update({str(k).upper(): float(v) for k, v in loaded.items()
+                        if isinstance(v, (int, float))})
+        if raw_top:
+            try:
+                top = json.loads(raw_top)
+                if isinstance(top, list):
+                    _top100.update(str(s).upper() for s in top)
+            except Exception:
+                pass
+        logger.info("prices: hydrated from Redis (%d entries)", len(_prices))
+        return True
+    except Exception as exc:
+        logger.debug("prices redis hydrate failed: %s", exc)
+        return False
 
 STABLE_PRICE = 1.0
 STABLES = {
@@ -50,7 +132,10 @@ def get_price(symbol: str) -> float | None:
     s = symbol.upper().replace(".E", "").replace("-PERP", "").replace("_PERP", "")
     if s in STABLES:
         return STABLE_PRICE
-    # Try wrapped map first
+    # Cold-start hydrate from Redis on the very first call — saves the
+    # ~5s of waiting for the local refresh loop on a fresh app boot.
+    if not _prices:
+        _try_load_from_redis()
     underlying = WRAPPED_MAP.get(s)
     if underlying:
         return _prices.get(underlying)
@@ -165,6 +250,8 @@ async def refresh_prices() -> None:
         _prices.clear()
         _prices.update(new_prices)
         logger.info("Price cache updated: %d entries", len(_prices))
+        # Mirror to Redis so other processes share the snapshot.
+        _publish_to_redis(new_prices, sorted(_top100))
 
 
 async def _price_loop() -> None:

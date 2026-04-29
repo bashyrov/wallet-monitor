@@ -6,6 +6,22 @@
 <title>Long/Short · avalant_</title>
 <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Pre-establish TCP+TLS to exchange API origins so the first orderbook /
+     position fetch doesn't pay handshake cost. Cheap (browser opens
+     idle conns) and on /arb we hit nearly all of these within 2s. -->
+<link rel="dns-prefetch" href="//fapi.binance.com">
+<link rel="dns-prefetch" href="//api.bybit.com">
+<link rel="dns-prefetch" href="//www.okx.com">
+<link rel="dns-prefetch" href="//api.gateio.ws">
+<link rel="dns-prefetch" href="//api-futures.kucoin.com">
+<link rel="dns-prefetch" href="//contract.mexc.com">
+<link rel="dns-prefetch" href="//api.bitget.com">
+<link rel="dns-prefetch" href="//fapi.asterdex.com">
+<link rel="dns-prefetch" href="//api.hyperliquid.xyz">
+<link rel="dns-prefetch" href="//open-api.bingx.com">
+<link rel="dns-prefetch" href="//whitebit.com">
+<link rel="dns-prefetch" href="//api.prod.paradex.trade">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="/banner.js" defer></script>
 <script src="/auth.js"></script>

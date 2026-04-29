@@ -457,7 +457,12 @@ async def close_position(
 # the cache makes the periodic 8-10s polls effectively free for the second+
 # request that comes within TTL_S.
 _POSITIONS_CACHE: dict[tuple[int, str], tuple[float, list[dict]]] = {}
-_POSITIONS_CACHE_TTL_S = 4.0  # short — we still want fresh values
+# 15s TTL aligns with the 10s browser-poll cadence — every other poll hits
+# cache, halving upstream calls. Order/close events explicitly invalidate
+# (invalidate_positions_cache), so freshness for the user's own actions
+# stays sub-second. Mark price for unrealized-PnL still updates from the
+# funding WS feed so the on-screen number isn't stale.
+_POSITIONS_CACHE_TTL_S = 15.0
 
 # Per-wallet last-good snapshot. When an upstream call transiently fails
 # (rate limit, timeout, etc.) we serve the last successful rows instead of
