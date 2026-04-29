@@ -1,0 +1,349 @@
+"""Supervisor for per-(user, wallet) WS user-streams.
+
+Runs in the fetcher process. Owns one asyncio.Task per stream. State
+machine per stream:
+
+  INIT      → opening connection
+  LIVE      → WS connected, events flowing. Snapshot.set_status('LIVE')
+  DEGRADED  → WS just dropped. Reconnecting, attempts 1..MAX_RECONNECT.
+              Snapshot.set_status('DEGRADED'). Readers fall back to REST.
+  DEAD      → reconnect exhausted. Snapshot.set_status('DEAD'). REST
+              is sole source until the supervisor next ensures_running.
+
+Reconnect strategy: exponential backoff with jitter, max 5 attempts:
+  attempt 1 → wait 2 ± 0.5s
+  attempt 2 → wait 4 ± 1s
+  attempt 3 → wait 8 ± 2s
+  attempt 4 → wait 16 ± 4s
+  attempt 5 → wait 32 ± 8s
+  total spread for 5 attempts is ~1 minute, mostly wait. After failing
+  five we go DEAD and the next ensures_running tick (every 60s) will
+  retry.
+
+Reads in trade_service:
+  if snapshot.get_status() == 'LIVE':
+      return snapshot.get_positions(...)
+  else:
+      # REST as before
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import random
+import time
+from typing import Any
+
+import websockets
+
+from backend.services.user_streams import get_adapter
+from backend.services.user_streams import _snapshot
+from backend.services.user_streams._base import (
+    EVT_BALANCE_UPDATE, EVT_POSITION_UPDATE, UserStreamEvent,
+)
+
+logger = logging.getLogger("avalant.userstream")
+
+
+_RECONNECT_BACKOFF_S = [2.0, 4.0, 8.0, 16.0, 32.0]
+_RECONNECT_JITTER = 0.25  # ±25%
+_HEARTBEAT_INTERVAL_S = 30.0
+_WS_RECV_TIMEOUT_S = 60.0  # if no message in 60s, treat as dead
+
+
+class StreamTask:
+    """One supervised stream."""
+
+    def __init__(self, user_id: int, wallet_id: int, exchange: str, creds: dict):
+        self.user_id = user_id
+        self.wallet_id = wallet_id
+        self.exchange = exchange
+        self.creds = creds
+        self.task: asyncio.Task | None = None
+        self.stop_event = asyncio.Event()
+        self.state: str = "INIT"
+
+    def __repr__(self) -> str:
+        return f"<Stream user={self.user_id} wallet={self.wallet_id} ex={self.exchange} state={self.state}>"
+
+    async def run(self) -> None:
+        """Top-level lifecycle. Loop reconnects up to MAX_RECONNECT."""
+        adapter = get_adapter(self.exchange)
+        if adapter is None:
+            logger.warning("userstream: no adapter for %s — skipping stream", self.exchange)
+            self._set_state("DEAD")
+            return
+
+        try:
+            while not self.stop_event.is_set():
+                # Try to (re)connect
+                connected = await self._run_one_session(adapter)
+                if not connected:
+                    # _run_one_session always returns after WS closes.
+                    # Decide whether to retry.
+                    if self._exhausted_reconnects():
+                        logger.warning(
+                            "userstream %s: reconnect exhausted, going DEAD (user=%s wallet=%s)",
+                            self.exchange, self.user_id, self.wallet_id,
+                        )
+                        self._set_state("DEAD")
+                        return
+                    await self._reconnect_sleep()
+                # If we successfully reconnected, _run_one_session will block
+                # in recv loop again — when it returns, this while loop runs
+                # the next attempt with fresh backoff state.
+        except asyncio.CancelledError:
+            logger.info("userstream %s: cancelled (user=%s wallet=%s)",
+                        self.exchange, self.user_id, self.wallet_id)
+            raise
+        except Exception as exc:
+            logger.exception("userstream %s: fatal error (user=%s wallet=%s): %s",
+                             self.exchange, self.user_id, self.wallet_id, exc)
+            self._set_state("DEAD")
+
+    async def _run_one_session(self, adapter) -> bool:
+        """One WS connection lifecycle. Returns True if we ever reached
+        LIVE state. After WS closes, returns control so the outer loop
+        can decide reconnect vs give-up."""
+        try:
+            ws_url, ws_headers = await adapter.get_ws_url(self.creds)
+        except Exception as exc:
+            logger.warning(
+                "userstream %s: get_ws_url failed (user=%s): %s",
+                self.exchange, self.user_id, exc,
+            )
+            self._set_state("DEGRADED")
+            self._reconnect_attempt += 1
+            return False
+
+        logger.info(
+            "userstream %s: connecting (user=%s wallet=%s)",
+            self.exchange, self.user_id, self.wallet_id,
+        )
+        try:
+            async with websockets.connect(
+                ws_url,
+                additional_headers=list(ws_headers.items()) if ws_headers else None,
+                ping_interval=20,
+                ping_timeout=60,
+                max_size=2**20,
+            ) as ws:
+                # Login / subscribe frames if needed
+                try:
+                    await adapter.subscribe(ws, self.creds)
+                except Exception as exc:
+                    logger.warning("userstream %s: subscribe failed: %s", self.exchange, exc)
+                    self._set_state("DEGRADED")
+                    return False
+
+                # Reset reconnect attempt counter — we're LIVE
+                self._reconnect_attempt = 0
+                self._set_state("LIVE")
+                logger.info(
+                    "userstream %s: LIVE (user=%s wallet=%s)",
+                    self.exchange, self.user_id, self.wallet_id,
+                )
+
+                # Spawn keep-alive (e.g. listenKey PUT every 30 min)
+                ka_task = asyncio.create_task(adapter.keep_alive_loop(self.creds, self.stop_event))
+                hb_task = asyncio.create_task(self._heartbeat_loop())
+
+                try:
+                    while not self.stop_event.is_set():
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(), timeout=_WS_RECV_TIMEOUT_S)
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                "userstream %s: 60s without message, treating as dead (user=%s)",
+                                self.exchange, self.user_id,
+                            )
+                            break
+                        try:
+                            data = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+                        except Exception:
+                            continue
+                        try:
+                            evt = adapter.parse_event(data)
+                        except Exception as exc:
+                            logger.debug("userstream %s: parse error: %s (raw=%.200s)",
+                                         self.exchange, exc, str(data))
+                            continue
+                        if evt is not None:
+                            self._dispatch_event(evt)
+                finally:
+                    ka_task.cancel()
+                    hb_task.cancel()
+                    for t in (ka_task, hb_task):
+                        try:
+                            await t
+                        except (asyncio.CancelledError, Exception):
+                            pass
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "userstream %s: WS error (user=%s wallet=%s): %s",
+                self.exchange, self.user_id, self.wallet_id, exc,
+            )
+            self._set_state("DEGRADED")
+            self._reconnect_attempt += 1
+            return False
+
+        # Clean disconnect
+        self._set_state("DEGRADED")
+        self._reconnect_attempt += 1
+        return True
+
+    async def _heartbeat_loop(self) -> None:
+        """Periodically refresh the LIVE status TTL so readers know
+        we're still alive."""
+        while not self.stop_event.is_set():
+            if self.state == "LIVE":
+                _snapshot.set_status(self.user_id, self.wallet_id, "LIVE")
+            await asyncio.sleep(_HEARTBEAT_INTERVAL_S)
+
+    def _dispatch_event(self, evt: UserStreamEvent) -> None:
+        if evt.kind == EVT_POSITION_UPDATE:
+            payload = {
+                "exchange": self.exchange,
+                "symbol": evt.symbol,
+                "side": evt.side or "",
+                "quantity": evt.qty,
+                "entry_price": evt.entry_price,
+                "mark_price": evt.mark_price,
+                "unrealized_pnl_usd": evt.unrealized_pnl_usd,
+                "leverage": evt.leverage,
+                "margin_mode": evt.margin_mode,
+                "position_id": evt.symbol,
+                "_source": "ws",
+                "_ts": time.time(),
+            }
+            _snapshot.update_position(
+                self.user_id, self.wallet_id, self.exchange,
+                evt.symbol or "", payload,
+            )
+        elif evt.kind == EVT_BALANCE_UPDATE:
+            _snapshot.update_balance(self.user_id, self.wallet_id, evt.balance_usdt)
+
+    _reconnect_attempt: int = 0
+
+    def _exhausted_reconnects(self) -> bool:
+        return self._reconnect_attempt >= len(_RECONNECT_BACKOFF_S)
+
+    async def _reconnect_sleep(self) -> None:
+        idx = max(0, min(self._reconnect_attempt - 1, len(_RECONNECT_BACKOFF_S) - 1))
+        base = _RECONNECT_BACKOFF_S[idx]
+        jitter = base * _RECONNECT_JITTER
+        wait = base + random.uniform(-jitter, jitter)
+        logger.info(
+            "userstream %s: reconnect attempt %d in %.1fs (user=%s wallet=%s)",
+            self.exchange, self._reconnect_attempt, wait,
+            self.user_id, self.wallet_id,
+        )
+        try:
+            await asyncio.wait_for(self.stop_event.wait(), timeout=wait)
+        except asyncio.TimeoutError:
+            pass
+
+    def _set_state(self, state: str) -> None:
+        prev, self.state = self.state, state
+        if prev != state:
+            _snapshot.set_status(self.user_id, self.wallet_id, state)
+            logger.info(
+                "userstream %s: %s → %s (user=%s wallet=%s)",
+                self.exchange, prev, state, self.user_id, self.wallet_id,
+            )
+
+
+# ── Supervisor singleton ────────────────────────────────────────────────────
+_streams: dict[tuple[int, int], StreamTask] = {}
+_stop_supervisor = asyncio.Event() if False else None  # set in start()
+
+
+async def _ensure_stream(user_id: int, wallet_id: int, exchange: str, creds: dict) -> None:
+    key = (user_id, wallet_id)
+    existing = _streams.get(key)
+    if existing and existing.task and not existing.task.done():
+        return  # already running
+    task_obj = StreamTask(user_id, wallet_id, exchange, creds)
+    task_obj.task = asyncio.create_task(task_obj.run())
+    _streams[key] = task_obj
+
+
+async def _stop_stream(user_id: int, wallet_id: int) -> None:
+    key = (user_id, wallet_id)
+    s = _streams.pop(key, None)
+    if not s:
+        return
+    s.stop_event.set()
+    if s.task:
+        try:
+            await asyncio.wait_for(s.task, timeout=3)
+        except asyncio.TimeoutError:
+            s.task.cancel()
+        except Exception:
+            pass
+    _snapshot.clear_wallet(user_id, wallet_id)
+
+
+async def _scan_and_sync() -> None:
+    """Walk the DB once a minute, ensure a stream is running for every
+    trade-enabled wallet whose adapter we support. Stops streams for
+    wallets that disappeared (archived / purpose changed)."""
+    from backend.db.base import SessionLocal
+    from backend.db.models import Wallet
+    from backend.crypto import decrypt_credentials
+
+    db = SessionLocal()
+    try:
+        wallets = (
+            db.query(Wallet)
+            .filter(
+                Wallet.wallet_type == "exchange",
+                Wallet.purpose.in_(("screener", "both")),
+                Wallet.is_archived == False,  # noqa: E712
+            )
+            .all()
+        )
+    finally:
+        db.close()
+
+    desired: set[tuple[int, int]] = set()
+    for w in wallets:
+        ex = (w.type_value or "").lower()
+        if get_adapter(ex) is None:
+            continue
+        desired.add((w.user_id, w.id))
+        try:
+            creds = decrypt_credentials(w.credentials or {})
+        except Exception as exc:
+            logger.warning("userstream: decrypt creds failed wallet=%s: %s", w.id, exc)
+            continue
+        await _ensure_stream(w.user_id, w.id, ex, creds)
+
+    # Reap anything not in `desired`
+    for key in list(_streams.keys()):
+        if key not in desired:
+            await _stop_stream(*key)
+
+
+async def _run_supervisor_loop() -> None:
+    logger.info("userstream supervisor started")
+    while True:
+        try:
+            await _scan_and_sync()
+        except Exception as exc:
+            logger.exception("userstream supervisor scan failed: %s", exc)
+        await asyncio.sleep(60.0)
+
+
+def start_user_stream_supervisor() -> None:
+    """Hook called from fetcher startup."""
+    asyncio.create_task(_run_supervisor_loop())
+
+
+async def stop_user_stream_supervisor() -> None:
+    keys = list(_streams.keys())
+    for k in keys:
+        await _stop_stream(*k)

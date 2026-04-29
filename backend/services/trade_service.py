@@ -509,6 +509,26 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
         lg_key = (user_id, w.id, (symbol or "").upper())
         if symbol and symbol_supported and not symbol_supported.get(w.type_value):
             return []
+
+        # WS user-stream short-circuit: if a live stream exists for this
+        # wallet, return its in-memory snapshot instead of hitting the
+        # exchange REST API. Status TTL is 60s on Redis — stale = stream
+        # broken/down → fall through to REST.
+        try:
+            from backend.services.user_streams import _snapshot as _us_snapshot
+            if _us_snapshot.get_status(user_id, w.id) == "LIVE":
+                rows = _us_snapshot.get_positions(user_id, w.id) or []
+                if symbol:
+                    sym_norm = symbol.upper().strip()
+                    rows = [r for r in rows if (r.get("symbol") or "").upper() == sym_norm]
+                for r in rows:
+                    r["wallet_id"] = w.id
+                _POSITIONS_LASTGOOD[lg_key] = (_time.time(), rows)
+                return rows
+        except Exception as exc:
+            # Snapshot read should never throw — log and continue to REST.
+            logger.debug("userstream snapshot read failed: %s", exc)
+
         try:
             creds = decrypt_credentials(w.credentials or {})
             rows = await ADAPTERS[w.type_value].list_positions(creds, symbol)

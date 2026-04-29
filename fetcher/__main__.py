@@ -164,6 +164,17 @@ async def _run() -> None:
     start_reconcile_service()
     logger.info("fetcher: reconcile worker started")
 
+    # ── WS user-stream supervisor ─────────────────────────────────────
+    # Owns one WebSocket per (user, trade-wallet) for venues that have
+    # an adapter in backend/services/user_streams. Pushes live positions
+    # / balance updates into the snapshot store; trade_service reads
+    # from there instead of REST when the stream is LIVE.
+    from backend.services.user_streams._supervisor import (
+        start_user_stream_supervisor, stop_user_stream_supervisor,
+    )
+    start_user_stream_supervisor()
+    logger.info("fetcher: user-stream supervisor started")
+
     # ── Freshness sampler — feeds /admin → Exchange-freshness ──────
     from backend.services.freshness_stats import start_sampler as start_freshness_sampler
     start_freshness_sampler()
@@ -202,6 +213,7 @@ async def _run() -> None:
             ("tg_bot", stop_tg_bot),
             ("expiry_notifier", stop_expiry_notifier),
             ("reconcile", stop_reconcile_service),
+            ("user_stream_supervisor", stop_user_stream_supervisor),
             ("dex_refresh_loop", stop_dex_refresh_loop),
             ("spot_refresh_loop", stop_spot_refresh_loop),
             ("refresh_loop", stop_refresh_loop),
