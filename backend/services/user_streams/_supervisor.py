@@ -371,13 +371,19 @@ async def _scan_and_sync() -> None:
 
 
 async def _run_supervisor_loop() -> None:
-    logger.info("userstream supervisor started")
+    """Scan loop. 5s cadence so a freshly-logged-in user sees their
+    streams come up within seconds rather than waiting a minute. Cost
+    is trivial — one Redis SCAN + one Postgres query per cycle, both
+    sub-millisecond at our scale. The 60s heartbeat-TTL on online
+    presence dwarfs this; bursty logins don't trigger thrash because
+    `_ensure_stream` is idempotent (no-op if already running)."""
+    logger.info("userstream supervisor started (scan interval=5s)")
     while True:
         try:
             await _scan_and_sync()
         except Exception as exc:
             logger.exception("userstream supervisor scan failed: %s", exc)
-        await asyncio.sleep(60.0)
+        await asyncio.sleep(5.0)
 
 
 def start_user_stream_supervisor() -> None:
