@@ -464,6 +464,7 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
       <div class="acc-keyinfo" id="acc-keyinfo">
         <span class="pill ro" title="Read-only keys control Balances / Positions / Orders visibility"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
         <span class="pill tr" title="Trading keys place real orders"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
+        <button type="button" class="pill" style="background:none;cursor:pointer;font-family:inherit" title="Manually pair positions into arbitrage spreads" onclick="openSyncPairs()">Sync ⇆</button>
         <button type="button" class="pill" style="text-decoration:none;color:var(--text2);background:none;cursor:pointer;font-family:inherit" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
       </div>
     </div>
@@ -3900,8 +3901,34 @@ function _accPairToggle(key) {
 // match is unreliable. 10% tolerance handles slight price differences
 // between the legs at snapshot time. Matched pair renders as a single
 // "⇆ PAIR" block with summed metrics.
+// Manual pairings — persisted in localStorage so they survive reloads.
+// Schema: [{symbol, long_exchange, short_exchange}]. The user marks pairs
+// via the "Sync ⇆" button when auto-detect can't (size mismatch, no clean
+// 1:1 mapping, etc.).
+const _MANUAL_PAIRS_KEY = 'avalant_manual_pairs_v1';
+function _loadManualPairs(){
+  try { return JSON.parse(localStorage.getItem(_MANUAL_PAIRS_KEY) || '[]') || []; }
+  catch { return []; }
+}
+function _saveManualPairs(arr){
+  try { localStorage.setItem(_MANUAL_PAIRS_KEY, JSON.stringify(arr || [])); }
+  catch {}
+}
+function _addManualPair(sym, longEx, shortEx){
+  const arr = _loadManualPairs();
+  const dup = arr.some(p => p.symbol === sym && p.long_exchange === longEx && p.short_exchange === shortEx);
+  if (dup) return;
+  arr.push({ symbol: sym, long_exchange: longEx, short_exchange: shortEx });
+  _saveManualPairs(arr);
+}
+function _removeManualPair(sym, longEx, shortEx){
+  const arr = _loadManualPairs().filter(p =>
+    !(p.symbol === sym && p.long_exchange === longEx && p.short_exchange === shortEx)
+  );
+  _saveManualPairs(arr);
+}
+
 function _acc_pair_positions(rows){
-  // Tag rows with stable IDs + computed USD notional.
   const tagged = rows.map((p, i) => ({
     p,
     key: p.position_id || `${p.exchange}:${p.symbol}:${i}`,
@@ -3911,18 +3938,32 @@ function _acc_pair_positions(rows){
   for (const t of tagged) (bySym[t.p.symbol] = bySym[t.p.symbol] || []).push(t);
   const pairs = [];
   const used = new Set();
+
+  // 1. MANUAL pairs first — user explicitly marked these as arb pairs.
+  //    Match by symbol + exchanges + sides. Bypasses any size threshold.
+  const manual = _loadManualPairs();
+  for (const mp of manual) {
+    const group = bySym[mp.symbol];
+    if (!group) continue;
+    const l = group.find(t => t.p.exchange === mp.long_exchange  && t.p.side === 'buy'  && !used.has(t.key));
+    const s = group.find(t => t.p.exchange === mp.short_exchange && t.p.side === 'sell' && !used.has(t.key));
+    if (!l || !s) continue;
+    used.add(l.key); used.add(s.key);
+    pairs.push({symbol: mp.symbol, long: l.p, short: s.p, _manual: true});
+  }
+
+  // 2. AUTO-DETECT for the rest. Threshold relaxed to 25% to catch real-
+  //    world cases like 440-vs-482 qty (~12% diff) which were rejected by
+  //    the previous 10% cutoff.
   for (const [sym, group] of Object.entries(bySym)) {
-    const longs  = group.filter(t => t.p.side === 'buy');
-    const shorts = group.filter(t => t.p.side === 'sell');
-    // Greedy USD-notional match: for each long, find the short with the
-    // closest notional within 10%. Prevents mis-pairing when a user has
-    // e.g. two longs + one short on the same symbol.
+    const longs  = group.filter(t => t.p.side === 'buy'  && !used.has(t.key));
+    const shorts = group.filter(t => t.p.side === 'sell' && !used.has(t.key));
     const candidates = [];
     for (const l of longs) for (const s of shorts) {
       const maxN = Math.max(l.notional, s.notional);
       if (maxN <= 0) continue;
       const diffPct = Math.abs(l.notional - s.notional) / maxN;
-      if (diffPct > 0.10) continue;
+      if (diffPct > 0.25) continue;
       candidates.push({l, s, diffPct});
     }
     candidates.sort((a, b) => a.diffPct - b.diffPct);
@@ -4040,9 +4081,14 @@ async function accLoadPositions(){
       const lq = Number(pair.long.quantity || 0) * Number(pair.long.mark_price || 0);
       const sq = Number(pair.short.quantity || 0) * Number(pair.short.mark_price || 0);
       const pairUsd = (lq + sq) / 2;
-      const pnlCls = totalPnl >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
+      // Net P&L = price uPnL + accumulated funding (paid/received).
+      // For arb pairs the funding is the actual carry — including it in the
+      // headline number gives the trader the real take-home, not just the
+      // mark-to-market on prices.
+      const netPnl = totalPnl + (hasFunding ? totalFunding : 0);
+      const pnlCls = netPnl >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
       const fundCls = hasFunding && totalFunding >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
-      const combinedPct = pairUsd > 0 ? (totalPnl / pairUsd * 100) : 0;
+      const combinedPct = pairUsd > 0 ? (netPnl / pairUsd * 100) : 0;
       // Entry spread: divergence between the two legs' entry prices, measured
       // relative to the long leg. Positive = short entered higher than long
       // (favourable for a long-short arb). This is the "spread I entered at".
@@ -4071,7 +4117,10 @@ async function accLoadPositions(){
           </td>
           <td colspan="2" class="num" style="color:var(--text3);font-size:11px">Δ pair</td>
           <td class="num">${hasFunding ? `<span class="${fundCls}">${sumUsd(totalFunding)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
-          <td class="num ${pnlCls}" style="font-weight:700">${sumUsd(totalPnl)}</td>
+          <td class="num ${pnlCls}" style="font-weight:700"
+              title="${hasFunding ? `Price uPnL ${sumUsd(totalPnl)} + Funding ${sumUsd(totalFunding)} = Net ${sumUsd(netPnl)}` : `Price uPnL ${sumUsd(totalPnl)}`}">
+            ${sumUsd(netPnl)}
+          </td>
           <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
           <td style="white-space:nowrap">
             <button class="pos-close"
@@ -4098,7 +4147,9 @@ async function accLoadPositions(){
                         leverage: Number(pair.short.leverage || 1),
                         unrealized_pnl_usd: Number(pair.short.unrealized_pnl_usd || 0),
                       },
-                      total_pnl_usd: totalPnl,
+                      total_pnl_usd: netPnl,            // includes funding
+                      total_price_pnl_usd: totalPnl,    // price-only uPnL
+                      total_funding_usd: hasFunding ? totalFunding : null,
                       pair_size_usd: pairUsd,
                       combined_pct: combinedPct,
                       entry_spread_pct: entrySpread,
@@ -4865,6 +4916,143 @@ body{padding-bottom:44px;}
   tick();
   setInterval(tick, 3000);
 })();
+</script>
+
+<!-- ═══ Manual pair-sync modal ════════════════════════════════════════════ -->
+<div class="sc-backdrop" id="sync-backdrop" onclick="if(event.target===this)closeSyncPairs()">
+  <div class="sc-modal" role="dialog" aria-label="Sync pairs" style="max-width:560px">
+    <div class="sc-head">
+      <span class="sc-title">Sync arbitrage pairs</span>
+      <button class="sc-x" onclick="closeSyncPairs()" aria-label="Close">&times;</button>
+    </div>
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);line-height:1.5">
+      Pick a <span style="color:var(--green);font-weight:700">LONG</span> + <span style="color:var(--red);font-weight:700">SHORT</span> position to mark them as a pair. Pairs persist on this device and show up grouped in the Positions table with combined P&amp;L.
+    </div>
+    <div id="sync-list" style="padding:10px 14px;max-height:50vh;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div class="sc-actions">
+      <button class="sc-btn sc-btn-primary" id="sync-pair-btn" onclick="confirmSyncPair()" disabled>
+        Pair selected
+      </button>
+      <button class="sc-btn" onclick="closeSyncPairs()">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _syncRows = [], _syncSelected = new Set();
+
+async function openSyncPairs(){
+  const bd = document.getElementById('sync-backdrop');
+  if (!bd) return;
+  bd.classList.add('open');
+  _syncSelected.clear();
+  // Load current positions
+  document.getElementById('sync-list').innerHTML = '<div style="padding:20px;color:var(--text3);font-size:12px;text-align:center">Loading positions…</div>';
+  try {
+    const r = await Auth.apiFetch('/trade/positions');
+    if (!r.ok) throw new Error();
+    _syncRows = await r.json();
+  } catch {
+    document.getElementById('sync-list').innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px;text-align:center">Failed to load positions.</div>';
+    return;
+  }
+  _renderSyncList();
+}
+function closeSyncPairs(){
+  document.getElementById('sync-backdrop')?.classList.remove('open');
+}
+
+function _renderSyncList(){
+  const wrap = document.getElementById('sync-list');
+  if (!wrap) return;
+  const manual = _loadManualPairs();
+  const exLbl = (e) => (window.EX && window.EX.labels && window.EX.labels[e]) || (e || '').toUpperCase();
+
+  // Section 1: existing manual pairs (with "Unpair" button)
+  const pairedHTML = manual.length ? `
+    <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:4px 0">Active pairs (${manual.length})</div>
+    ${manual.map((p, i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface2);border:1px solid var(--green);border-radius:6px;font-size:12px">
+        <span style="color:var(--text)">${p.symbol}</span>
+        <span style="color:var(--text3);font-size:10px">${exLbl(p.long_exchange)} <span style="color:var(--green)">⇄</span> ${exLbl(p.short_exchange)}</span>
+        <button onclick='_syncUnpair(${i})' style="margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:5px;cursor:pointer;font-size:10.5px">Unpair</button>
+      </div>
+    `).join('')}
+    <div style="height:6px"></div>
+  ` : '';
+
+  // Section 2: pickable single positions
+  const isInManualPair = (p) => manual.some(m => m.symbol === p.symbol &&
+    ((m.long_exchange === p.exchange && p.side === 'buy') ||
+     (m.short_exchange === p.exchange && p.side === 'sell')));
+  const pickable = _syncRows.filter(p => !isInManualPair(p) && Math.abs(Number(p.quantity || 0)) > 0);
+  const rowsHTML = pickable.length ? pickable.map(p => {
+    const k = `${p.symbol}|${p.exchange}|${p.side}`;
+    const isSel = _syncSelected.has(k);
+    const sideTxt = p.side === 'buy' ? 'LONG' : 'SHORT';
+    const sideCol = p.side === 'buy' ? 'var(--green)' : 'var(--red)';
+    const qty = Number(p.quantity || 0).toFixed(4);
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:${isSel?'rgba(26,255,171,0.10)':'var(--surface2)'};border:1px solid ${isSel?'var(--green)':'var(--border)'};border-radius:6px;cursor:pointer;font-size:12px;transition:background .12s,border-color .12s" onclick="_syncToggle('${k}')">
+        <input type="checkbox" ${isSel?'checked':''} style="cursor:pointer" onclick="event.stopPropagation();_syncToggle('${k}')">
+        <span style="color:${sideCol};font-weight:700;font-size:10px">${sideTxt}</span>
+        <span style="color:var(--text)">${p.symbol}</span>
+        <span style="color:var(--text3);font-size:10px">${exLbl(p.exchange)}</span>
+        <span class="mono" style="color:var(--text3);margin-left:auto;font-size:10.5px">${qty}</span>
+      </div>`;
+  }).join('') : '<div style="padding:14px;color:var(--text3);font-size:12px;text-align:center">No unpaired positions.</div>';
+
+  wrap.innerHTML = pairedHTML + rowsHTML;
+
+  // Enable button only when 2 selected (one long + one short, different exchanges)
+  const sels = [..._syncSelected].map(k => {
+    const [sym, ex, side] = k.split('|');
+    return { sym, ex, side };
+  });
+  const valid = sels.length === 2 && sels[0].sym === sels[1].sym &&
+                sels[0].side !== sels[1].side && sels[0].ex !== sels[1].ex;
+  document.getElementById('sync-pair-btn').disabled = !valid;
+}
+
+function _syncToggle(k){
+  if (_syncSelected.has(k)) _syncSelected.delete(k);
+  else {
+    if (_syncSelected.size >= 2){
+      // Replace oldest
+      const first = _syncSelected.values().next().value;
+      _syncSelected.delete(first);
+    }
+    _syncSelected.add(k);
+  }
+  _renderSyncList();
+}
+
+function confirmSyncPair(){
+  const sels = [..._syncSelected].map(k => {
+    const [sym, ex, side] = k.split('|');
+    return { sym, ex, side };
+  });
+  if (sels.length !== 2) return;
+  const longSel = sels.find(s => s.side === 'buy');
+  const shortSel = sels.find(s => s.side === 'sell');
+  if (!longSel || !shortSel || longSel.sym !== shortSel.sym) return;
+  _addManualPair(longSel.sym, longSel.ex, shortSel.ex);
+  _syncSelected.clear();
+  if (typeof toast === 'function') toast(`Paired ${longSel.sym} ${longSel.ex.toUpperCase()} ⇄ ${shortSel.ex.toUpperCase()}`, 'success');
+  if (typeof accLoadPositions === 'function') accLoadPositions();
+  _renderSyncList();
+}
+
+function _syncUnpair(idx){
+  const arr = _loadManualPairs();
+  const p = arr[idx];
+  if (!p) return;
+  _removeManualPair(p.symbol, p.long_exchange, p.short_exchange);
+  if (typeof accLoadPositions === 'function') accLoadPositions();
+  _renderSyncList();
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSyncPairs(); });
 </script>
 
 <!-- ═══ Share P&L card modal ═══════════════════════════════════════════════ -->

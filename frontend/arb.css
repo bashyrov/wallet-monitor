@@ -558,12 +558,17 @@ body.light .bnav-item.active{color:#000;}
   .main{flex-direction:column;overflow:visible;height:auto;min-height:0;flex:none;max-height:none;border-bottom:none;}
   .col-left,.col-books,.col-info{width:100%;min-width:0;border-right:none;border-left:none;border-bottom:none;}
   .col-left{max-height:none;}
-  /* Charts column: sized to its active tab, no forced 520px min that left
-     a big blank below short tabs like All Rates / Info. */
+  /* Charts column: sized to its active tab. Bumped chart heights so the
+     content is actually readable on phones — the previous 320/260 left
+     candle bodies as 1-2px slivers under labels and toolbars. */
   .tab-pane.active{min-height:auto;}
-  .spread-section{flex:0 0 auto;height:320px;}
-  .fund-section{flex:0 0 auto;height:260px;}
+  .spread-section{flex:0 0 auto;height:480px;}
+  .fund-section{flex:0 0 auto;height:380px;}
   .overview-scroll,.info-scroll,.all-ex-scroll{max-height:none;overflow-y:visible;}
+  /* For panes without an inner section (Overview / Info / All Rates),
+     give the pane itself a minimum so the table isn't crushed under
+     its header. */
+  #pane-overview.active, #pane-info.active, #pane-allrates.active{min-height:420px;}
   /* Chart tabs: never wrap to a second row — scroll horizontally so
      Entry/Exit / Price History / Funding / Overview / Info / All Rates
      stay on one line on 360px phones. */
