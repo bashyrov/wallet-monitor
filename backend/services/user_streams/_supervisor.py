@@ -161,6 +161,19 @@ class StreamTask:
                     self._set_state("DEGRADED")
                     return False
 
+                # Seed the snapshot from REST so a stable position visible
+                # before we connected stays visible after we go LIVE. Most
+                # venues only push diffs; without this seed, a stable pos
+                # would silently disappear from /trade/positions until the
+                # next change event.
+                try:
+                    await self._seed_from_rest()
+                except Exception as exc:
+                    logger.warning(
+                        "userstream %s: REST seed failed (positions stay until first WS event): %s",
+                        self.exchange, exc,
+                    )
+
                 # Reset reconnect attempt counter — we're LIVE
                 self._reconnect_attempt = 0
                 self._set_state("LIVE")
@@ -269,6 +282,46 @@ class StreamTask:
             await asyncio.wait_for(self.stop_event.wait(), timeout=wait)
         except asyncio.TimeoutError:
             pass
+
+    async def _seed_from_rest(self) -> None:
+        """Fetch current positions via the REST trade adapter and write
+        them into the snapshot. Runs once per (re)connect — bridges the
+        gap between "WS just connected" and "first push event arrives"
+        for venues that only push diffs (Binance, Bybit, OKX, Bitget all
+        do this for stable positions)."""
+        try:
+            from backend.services.trade_adapters import ADAPTERS as REST_ADAPTERS
+        except Exception:
+            return
+        adapter = REST_ADAPTERS.get(self.exchange)
+        if adapter is None or not hasattr(adapter, "list_positions"):
+            return
+        try:
+            rows = await adapter.list_positions(self.creds, None)
+        except Exception as exc:
+            # Don't fail the LIVE transition just because REST seed failed.
+            # A typical case: Binance listenKey worked but income endpoint
+            # is rate-limited. WS will still pick up changes from now on.
+            logger.warning(
+                "userstream %s: REST positions fetch failed: %s",
+                self.exchange, exc,
+            )
+            return
+        seeded = 0
+        for r in (rows or []):
+            sym = (r.get("symbol") or "").upper()
+            if not sym:
+                continue
+            payload = {**r, "_source": "ws", "_ts": time.time()}
+            _snapshot.update_position(
+                self.user_id, self.wallet_id, self.exchange, sym, payload,
+            )
+            seeded += 1
+        if seeded:
+            logger.info(
+                "userstream %s: REST-seeded %d position(s) (user=%s wallet=%s)",
+                self.exchange, seeded, self.user_id, self.wallet_id,
+            )
 
     def _set_state(self, state: str) -> None:
         prev, self.state = self.state, state
