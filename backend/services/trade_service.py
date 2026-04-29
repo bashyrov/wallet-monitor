@@ -469,8 +469,15 @@ _POSITIONS_CACHE_TTL_S = 15.0
 # dropping to [], otherwise positions blink out of the UI for a few seconds
 # until the next poll succeeds. Successful empty results overwrite this so
 # legitimately-closed positions do disappear.
+# Last-good cache TTL — covers Binance-style intermittent 418/ban windows
+# without showing arbitrarily-stale positions. 5 min is the sweet spot:
+# long enough that an annoying 1-2 min IP-ban doesn't blank out the trade
+# panel, short enough that a position the user actually closed disappears
+# within a normal patience window. Reconcile worker writes the close
+# event into trade_positions independently, so end-to-end closes are
+# still tracked when this cache happens to mask them visually.
 _POSITIONS_LASTGOOD: dict[tuple[int, int, str], tuple[float, list[dict]]] = {}
-_POSITIONS_LASTGOOD_TTL_S = 30.0
+_POSITIONS_LASTGOOD_TTL_S = 300.0
 
 
 async def list_user_positions(db: Session, user_id: int, symbol: str | None = None) -> list[dict]:
