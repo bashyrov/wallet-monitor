@@ -112,14 +112,19 @@ def _link_recent_close_order(db: Session, user_id: int, wallet_id: int,
     return row.id if row else None
 
 
-async def _reconcile_user(user_id: int) -> None:
+async def _reconcile_user(user_id: int) -> tuple[int, int, int]:
+    """Reconcile one user. Returns (opens_created, closes_marked, still_open)
+    so the worker can log a cycle summary."""
+    opens_created = 0
+    closes_marked = 0
+    still_open = 0
     db = SessionLocal()
     try:
         try:
             live = await trade_service.list_user_positions(db, user_id)
         except Exception as exc:
             logger.info("reconcile: list_user_positions failed user=%s: %s", user_id, exc)
-            return
+            return (0, 0, 0)
 
         live_by_fp: dict[tuple[int, str, str], dict] = {}
         for p in live:
@@ -146,6 +151,7 @@ async def _reconcile_user(user_id: int) -> None:
             seen_fps.add(fp)
             live_p = live_by_fp.get(fp)
             if live_p:
+                still_open += 1
                 # Still open — refresh evolving fields.
                 row.leg_a_qty = float(live_p.get("quantity") or row.leg_a_qty or 0)
                 ep = live_p.get("entry_price")
@@ -162,8 +168,14 @@ async def _reconcile_user(user_id: int) -> None:
                         pass
             else:
                 # Disappeared from live → closed.
+                closes_marked += 1
                 row.status = "closed"
                 row.closed_at = datetime.utcnow()
+                logger.info(
+                    "reconcile: position CLOSED user=%s ex=%s sym=%s side=%s qty=%s entry=%s",
+                    user_id, row.leg_a_exchange, row.symbol, row.leg_a_side,
+                    row.leg_a_qty, row.leg_a_entry_price,
+                )
                 # Approximate exit using last-known mark price if available.
                 # Stage 2c will fetch the precise realized PnL from the
                 # exchange's closed-trades endpoint.
@@ -212,13 +224,20 @@ async def _reconcile_user(user_id: int) -> None:
                 opened_externally=open_oid is None,
             )
             db.add(row)
+            opens_created += 1
             if open_oid:
                 # Backlink the order so Order History can show its position.
                 ord_row = db.query(TradeOrder).filter(TradeOrder.id == open_oid).first()
                 if ord_row and ord_row.position_id is None:
                     db.flush()  # populate row.id
                     ord_row.position_id = row.id
+            logger.info(
+                "reconcile: position OPENED user=%s ex=%s sym=%s side=%s qty=%s entry=%s source=%s",
+                user_id, row.leg_a_exchange, symbol, side, qty, entry_price_f,
+                "ours" if open_oid else "exchange",
+            )
         db.commit()
+        return (opens_created, closes_marked, still_open)
     finally:
         db.close()
 
@@ -234,13 +253,25 @@ async def _reconcile_pass() -> None:
     # Run users sequentially — concurrency-1 is plenty for a 60s cycle and
     # avoids stampeding the per-exchange position endpoints from many
     # users at once. Bumping to a small worker pool is a Stage 3 nicety.
+    total_opens = 0
+    total_closes = 0
+    total_open = 0
+    failed_users = 0
     for uid in user_ids:
         if _stop.is_set():
             break
         try:
-            await _reconcile_user(uid)
+            opens, closes, still_open = await _reconcile_user(uid)
+            total_opens += opens
+            total_closes += closes
+            total_open += still_open
         except Exception as exc:
+            failed_users += 1
             logger.exception("reconcile user=%s failed: %s", uid, exc)
+    logger.info(
+        "reconcile pass: users=%d still_open=%d new_opens=%d new_closes=%d failed_users=%d",
+        len(user_ids), total_open, total_opens, total_closes, failed_users,
+    )
 
 
 def _runner() -> None:

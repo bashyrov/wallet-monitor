@@ -347,11 +347,18 @@ async def place_open_order(
         msg = str(exc)
         _finalize_order(db, order_row, status="failed", error_kind="exchange",
                         error_message=msg)
+        logger.warning(
+            "Order REJECTED by exchange: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s order_db_id=%s err=%s",
+            user_id, wallet_id, ex, symbol, side, quantity, order_row.id, msg,
+        )
         raise TradeError(msg, kind="exchange")
     except Exception as exc:
         # Anything else is on us.
         _state_cache.invalidate(ex, creds, symbol)
-        logger.exception("place_order internal error %s/%s: %s", ex, symbol, exc)
+        logger.exception(
+            "Order FAILED (internal) user=%s wallet=%s ex=%s sym=%s side=%s qty=%s order_db_id=%s",
+            user_id, wallet_id, ex, symbol, side, quantity, order_row.id,
+        )
         _finalize_order(db, order_row, status="failed", error_kind="internal",
                         error_message=f"{type(exc).__name__}: {exc}")
         raise TradeError("unexpected error — see Order History", kind="internal")
@@ -365,8 +372,11 @@ async def place_open_order(
         avg_fill_price=float(fill_price) if fill_price else None,
         raw_response=result if isinstance(result, dict) else None,
     )
-    logger.info("Order placed: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s lev=%sx mode=%s",
-                user_id, wallet_id, ex, symbol, side, quantity, leverage, margin_mode)
+    logger.info(
+        "Order PLACED: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s lev=%sx mode=%s order_db_id=%s ex_order_id=%s",
+        user_id, wallet_id, ex, symbol, side, quantity, leverage, margin_mode,
+        order_row.id, result.get("order_id"),
+    )
     invalidate_positions_cache(user_id)
     return {**result, "exchange": ex, "symbol": symbol, "side": side, "quantity": quantity,
             "order_db_id": order_row.id}
@@ -410,9 +420,16 @@ async def close_position(
         msg = str(exc)
         _finalize_order(db, order_row, status="failed", error_kind="exchange",
                         error_message=msg)
+        logger.warning(
+            "Close REJECTED by exchange: user=%s wallet=%s ex=%s sym=%s order_db_id=%s err=%s",
+            user_id, wallet_id, ex, symbol, order_row.id, msg,
+        )
         raise TradeError(msg, kind="exchange")
     except Exception as exc:
-        logger.exception("close_position internal error %s/%s: %s", ex, symbol, exc)
+        logger.exception(
+            "Close FAILED (internal) user=%s wallet=%s ex=%s sym=%s order_db_id=%s",
+            user_id, wallet_id, ex, symbol, order_row.id,
+        )
         _finalize_order(db, order_row, status="failed", error_kind="internal",
                         error_message=f"{type(exc).__name__}: {exc}")
         raise TradeError("unexpected error — see Order History", kind="internal")
@@ -425,6 +442,10 @@ async def close_position(
         filled_qty=fill_qty,
         avg_fill_price=float(fill_price) if fill_price else None,
         raw_response=result if isinstance(result, dict) else None,
+    )
+    logger.info(
+        "Close PLACED: user=%s wallet=%s ex=%s sym=%s order_db_id=%s ex_order_id=%s",
+        user_id, wallet_id, ex, symbol, order_row.id, (result or {}).get("order_id"),
     )
     invalidate_positions_cache(user_id)
     return result
@@ -563,6 +584,10 @@ def set_pair_decision(db: Session, user_id: int, symbol: str,
         from backend.db.models import TradePairDecision as _TPD
         db.add(_TPD(user_id=user_id, leg_a_key=leg_a, leg_b_key=leg_b, decision=decision))
     db.commit()
+    logger.info(
+        "Pair decision: user=%s sym=%s long=%s short=%s decision=%s",
+        user_id, symbol, long_exchange, short_exchange, decision,
+    )
 
 
 def list_pair_decisions(db: Session, user_id: int) -> list[dict]:
