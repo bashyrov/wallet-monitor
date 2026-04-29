@@ -4314,7 +4314,7 @@ async function accLoadPositions(){
   empty.style.display = 'none';
 
     const {pairs, singles} = _acc_pair_positions(rows);
-    const sumUsd = (v) => (v>=0?'+':'') + '$' + Math.abs(v).toFixed(2);
+    const sumUsd = (v) => (v>=0?'+':'−') + '$' + Math.abs(v).toFixed(2);
     const rowFor = (p) => {
       const sideCls  = p.side === 'buy' ? 'acc-side-long' : 'acc-side-short';
       const sideText = p.side === 'buy' ? 'LONG' : 'SHORT';
