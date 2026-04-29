@@ -246,6 +246,7 @@ async def place_open_order(
         raise ValueError(str(exc))
     logger.info("Order placed: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s lev=%sx mode=%s",
                 user_id, wallet_id, ex, symbol, side, quantity, leverage, margin_mode)
+    invalidate_positions_cache(user_id)
     return {**result, "exchange": ex, "symbol": symbol, "side": side, "quantity": quantity}
 
 
@@ -273,11 +274,27 @@ async def close_position(
             await asyncio.sleep(_limits.trade_delay_ms / 1000.0)
 
     creds = decrypt_credentials(w.credentials or {})
-    return await ADAPTERS[ex].close_position(creds, symbol, side or "")
+    result = await ADAPTERS[ex].close_position(creds, symbol, side or "")
+    invalidate_positions_cache(user_id)
+    return result
+
+
+# In-memory cache for list_user_positions: collapses repeat hits within
+# the TTL window into a single set of upstream API calls. Eight wallets ×
+# ~500-2000ms per list_positions = noticeable first-load latency on /arb;
+# the cache makes the periodic 8-10s polls effectively free for the second+
+# request that comes within TTL_S.
+_POSITIONS_CACHE: dict[tuple[int, str], tuple[float, list[dict]]] = {}
+_POSITIONS_CACHE_TTL_S = 4.0  # short — we still want fresh values
 
 
 async def list_user_positions(db: Session, user_id: int, symbol: str | None = None) -> list[dict]:
     """Aggregate open positions across all the user's trade-enabled wallets."""
+    import time as _time
+    cache_key = (user_id, (symbol or "").upper())
+    cached = _POSITIONS_CACHE.get(cache_key)
+    if cached and (_time.time() - cached[0]) < _POSITIONS_CACHE_TTL_S:
+        return cached[1]
     wallets = (
         db.query(Wallet)
         .filter(
@@ -327,7 +344,17 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
     for r in results:
         if isinstance(r, list):
             flat.extend(r)
+    _POSITIONS_CACHE[cache_key] = (_time.time(), flat)
     return flat
+
+
+def invalidate_positions_cache(user_id: int) -> None:
+    """Drop cached positions for a user — called after place_order / close
+    so the next poll sees the new state immediately rather than waiting
+    out the TTL."""
+    keys = [k for k in _POSITIONS_CACHE if k[0] == user_id]
+    for k in keys:
+        _POSITIONS_CACHE.pop(k, None)
 
 
 async def list_user_orders(db: Session, user_id: int, *, limit: int = 50,
