@@ -1903,7 +1903,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     _ptPosEmpty = 0;
     _ptPosLast = rows;
     wrap.style.display = 'block';
-    list.innerHTML = rows.map(p => {
+    const html = rows.map(p => {
       const qty = Number(p.quantity || 0);
       const entry = Number(p.entry_price || 0);
       const mark = Number(p.mark_price || 0);
@@ -1929,6 +1929,8 @@ if (TYPE === 'spot' || TYPE === 'dex') {
                   style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button>
         </div>`;
     }).join('');
+    if (typeof _renderIfChanged === 'function') _renderIfChanged('pt-positions-list', html);
+    else list.innerHTML = html;
   }
   _ptLoadOpenPositions();
   setInterval(_ptLoadOpenPositions, 8000);
@@ -3942,6 +3944,21 @@ let _accLastPositions = null;
 let _accEmptyStreak = 0;
 const _EMPTY_STREAK_LIMIT = 3;
 
+// Diff-aware render: store the last-written HTML so we don't trash the DOM
+// (and trigger a visible flicker) when the data hasn't changed across the
+// 8-10s refresh tick. Backed by a key per target element.
+// Stored on window so the spot/dex code path (which throws past this line
+// for futures-mode setup) can still access it from earlier in the script.
+function _renderIfChanged(elId, html){
+  if (!window._lastRenderedHTML) window._lastRenderedHTML = new Map();
+  const prev = window._lastRenderedHTML.get(elId);
+  if (prev === html) return;
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = html;
+  window._lastRenderedHTML.set(elId, html);
+}
+
 async function accLoadPositions(){
   const tbody = document.getElementById('acc-positions-body');
   const empty = document.getElementById('acc-positions-empty');
@@ -4094,7 +4111,7 @@ async function accLoadPositions(){
       return header + legs;
     }).join('');
     const singlesHtml = singles.map(rowFor).join('');
-    tbody.innerHTML = pairHtml + singlesHtml;
+    _renderIfChanged('acc-positions-body', pairHtml + singlesHtml);
 
     // P&L pane: total uPnL + total funding across all positions.
     const upnlSum = rows.reduce((a, p) => a + (Number(p.unrealized_pnl_usd)||0), 0);
@@ -4588,32 +4605,33 @@ async function refreshTradePositions(){
   _tpEmptyStreak = 0;
   _tpLastPositions = rows;
   wrap.style.display = 'block';
-    list.innerHTML = rows.map(p => {
-      const pnlCls = p.unrealized_pnl_usd >= 0 ? 'pos' : 'neg';
-      const sideCls = p.side === 'buy' ? 'side-long' : 'side-short';
-      const qty = Number(p.quantity || 0);
-      const entry = Number(p.entry_price || 0);
-      const mark = Number(p.mark_price || 0);
-      const pnl = Number(p.unrealized_pnl_usd || 0);
-      const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
-      const shareData = _htmlEsc(JSON.stringify({
-        symbol: p.symbol, exchange: p.exchange, side: p.side,
-        quantity: qty, entry_price: entry, mark_price: mark,
-        leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
-        unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
-      }));
-      return `
-        <div class="trade-position-row">
-          <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
-          <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
-          <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
-          <span class="pos-pnl ${pnlCls}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</span>
-          <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id}')">Close</button>
-          <button class="pos-share" title="Share P&amp;L card" data-share='${shareData}'
-                  onclick='_openShareFromBtn(this)'
-                  style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:4px">↗</button>
-        </div>`;
+  const html = rows.map(p => {
+    const pnlCls = p.unrealized_pnl_usd >= 0 ? 'pos' : 'neg';
+    const sideCls = p.side === 'buy' ? 'side-long' : 'side-short';
+    const qty = Number(p.quantity || 0);
+    const entry = Number(p.entry_price || 0);
+    const mark = Number(p.mark_price || 0);
+    const pnl = Number(p.unrealized_pnl_usd || 0);
+    const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
+    const shareData = _htmlEsc(JSON.stringify({
+      symbol: p.symbol, exchange: p.exchange, side: p.side,
+      quantity: qty, entry_price: entry, mark_price: mark,
+      leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
+      unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
+    }));
+    return `
+      <div class="trade-position-row">
+        <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
+        <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
+        <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
+        <span class="pos-pnl ${pnlCls}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</span>
+        <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id}')">Close</button>
+        <button class="pos-share" title="Share P&amp;L card" data-share='${shareData}'
+                onclick='_openShareFromBtn(this)'
+                style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:4px">↗</button>
+      </div>`;
   }).join('');
+  _renderIfChanged('trade-positions-list', html);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -4862,11 +4880,9 @@ body{padding-bottom:44px;}
         <button class="sc-tog-btn" data-mode="usd" onclick="setShareMode('usd')">PNL</button>
         <button class="sc-tog-btn is-active" data-mode="both" onclick="setShareMode('both')">ROI&nbsp;·&nbsp;PNL</button>
       </div>
-      <div class="sc-toggle" id="sc-pair-view" style="display:none;margin-left:8px">
-        <button class="sc-pair-view-btn is-active" data-view="combined" onclick="setSharePairView('combined')">Pair</button>
-        <button class="sc-pair-view-btn" data-view="long" onclick="setSharePairView('long')">Long leg</button>
-        <button class="sc-pair-view-btn" data-view="short" onclick="setSharePairView('short')">Short leg</button>
-      </div>
+      <!-- Pair-view toggle removed — pair cards always render the combined
+           layout showing both legs' entries side-by-side. -->
+      <div class="sc-toggle" id="sc-pair-view" style="display:none"></div>
     </div>
     <div class="sc-preview-wrap">
       <canvas id="sc-canvas" width="1080" height="1080"></canvas>
@@ -5030,40 +5046,7 @@ function _renderShareCard(){
 }
 
 function _renderShareCardNow(){
-  // Pair-mode renders one of three views by mapping the chosen pair-view
-  // back to the single-position renderer. "Combined" synthesises a virtual
-  // position from both legs.
-  if (_sharePair){
-    const pp = _sharePair;
-    let virt;
-    if (_sharePairView === 'long'){
-      virt = {
-        symbol: pp.symbol, exchange: pp.long.exchange, side: pp.long.side,
-        quantity: pp.long.quantity, entry_price: pp.long.entry_price,
-        mark_price: pp.long.mark_price, leverage: pp.long.leverage,
-        unrealized_pnl_usd: pp.long.unrealized_pnl_usd,
-        pnl_pct: (pp.long.entry_price > 0 && pp.long.quantity > 0)
-          ? (pp.long.unrealized_pnl_usd / (pp.long.entry_price * pp.long.quantity)) * 100 : 0,
-      };
-    } else if (_sharePairView === 'short'){
-      virt = {
-        symbol: pp.symbol, exchange: pp.short.exchange, side: pp.short.side,
-        quantity: pp.short.quantity, entry_price: pp.short.entry_price,
-        mark_price: pp.short.mark_price, leverage: pp.short.leverage,
-        unrealized_pnl_usd: pp.short.unrealized_pnl_usd,
-        pnl_pct: (pp.short.entry_price > 0 && pp.short.quantity > 0)
-          ? (pp.short.unrealized_pnl_usd / (pp.short.entry_price * pp.short.quantity)) * 100 : 0,
-      };
-    } else {
-      // Combined: render via the dedicated pair-combined renderer.
-      _renderPairCombined();
-      return;
-    }
-    _sharePos = virt;
-    _renderSinglePositionCard();
-    _sharePos = null;
-    return;
-  }
+  if (_sharePair){ _renderPairCombined(); return; }
   if (!_sharePos) return;
   _renderSinglePositionCard();
 }
@@ -5615,30 +5598,43 @@ function _renderPairCombined(){
     _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 44, 1.6);
   }
 
-  // ENTRY SPREAD + PAIR SIZE — two columns
-  y = H * 0.78;
-  const colWidth = COL_W / 2;
-  ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  ctx.fillRect(GRID_X + colWidth, y - 18, 1, 92);
-
-  // Col 1: Entry spread
+  // ENTRY SPREAD — single full-width row
+  y = H * 0.66;
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
   _drawTracked(ctx, 'ENTRY SPREAD', GRID_X, y, 1.6);
   const sp = +pp.entry_spread_pct || 0;
-  const spStr = sp != null ? `${sp >= 0 ? '+' : ''}${sp.toFixed(4)}%` : '—';
-  ctx.font = '800 42px "JetBrains Mono", Menlo, monospace';
+  const spStr = `${sp >= 0 ? '+' : ''}${sp.toFixed(4)}%`;
+  ctx.font = '800 44px "JetBrains Mono", Menlo, monospace';
   ctx.fillStyle = sp >= 0 ? '#1AFFAB' : '#F87171';
-  ctx.fillText(spStr, GRID_X, y + 60);
+  ctx.fillText(spStr, GRID_X, y + 50);
 
-  // Col 2: Pair size
-  const c2x = GRID_X + colWidth + 32;
+  // ENTRY PRICES — long & short side-by-side, mirrors single-card layout
+  y = H * 0.79;
+  const colWidth2 = COL_W / 2;
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillRect(GRID_X + colWidth2, y - 18, 1, 80);
+
+  // Col 1: Long entry (green dot label)
+  ctx.fillStyle = '#1AFFAB';
+  ctx.beginPath(); ctx.arc(GRID_X + 4, y - 4, 4, 0, Math.PI*2); ctx.fill();
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  _drawTracked(ctx, 'PAIR SIZE / LEG', c2x, y, 1.6);
-  ctx.font = '800 42px "JetBrains Mono", Menlo, monospace';
+  _drawTracked(ctx, `LONG · ${longLabel.toUpperCase()}`, GRID_X + 16, y, 1.6);
+  ctx.font = '800 38px "JetBrains Mono", Menlo, monospace';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(`$${(+pp.pair_size_usd || 0).toFixed(0)}`, c2x, y + 60);
+  ctx.fillText(_fmtPx(pp.long.entry_price), GRID_X, y + 52);
+
+  // Col 2: Short entry (red dot label)
+  const c2x = GRID_X + colWidth2 + 32;
+  ctx.fillStyle = '#F87171';
+  ctx.beginPath(); ctx.arc(c2x + 4, y - 4, 4, 0, Math.PI*2); ctx.fill();
+  ctx.font = '700 12px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#676B7E';
+  _drawTracked(ctx, `SHORT · ${shortLabel.toUpperCase()}`, c2x + 16, y, 1.6);
+  ctx.font = '800 38px "JetBrains Mono", Menlo, monospace';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(_fmtPx(pp.short.entry_price), c2x, y + 52);
 
   // FOOTER (re-uses single-card layout)
   const footY = H - PAD;
