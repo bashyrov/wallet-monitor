@@ -43,6 +43,13 @@ def get_current_user(
         user = db.query(User).get(uid)
         if user is None:
             raise HTTPException(status_code=401, detail="User not found")
+        # Online presence — fetcher's user-stream supervisor reads this
+        # to decide whether to keep WS connections open for this user.
+        try:
+            from backend.services.online_presence import heartbeat as _online_hb
+            _online_hb(uid)
+        except Exception:
+            pass
         return user
 
     try:
@@ -55,6 +62,11 @@ def get_current_user(
     if getattr(user, 'is_blocked', False):
         raise HTTPException(status_code=403, detail="Account is blocked")
     cache_user(token, user.id, bool(user.is_blocked), bool(user.is_admin))
+    try:
+        from backend.services.online_presence import heartbeat as _online_hb
+        _online_hb(user.id)
+    except Exception:
+        pass
     return user
 
 

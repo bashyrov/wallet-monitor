@@ -63,6 +63,10 @@ class StreamTask:
         self.task: asyncio.Task | None = None
         self.stop_event = asyncio.Event()
         self.state: str = "INIT"
+        # Set if the venue refused our credentials. Permanent — supervisor
+        # won't restart this stream until the user updates their key
+        # (which produces a different wallet credentials blob).
+        self.auth_failed: bool = False
 
     def __repr__(self) -> str:
         return f"<Stream user={self.user_id} wallet={self.wallet_id} ex={self.exchange} state={self.state}>"
@@ -109,6 +113,21 @@ class StreamTask:
         try:
             ws_url, ws_headers = await adapter.get_ws_url(self.creds)
         except Exception as exc:
+            # Detect "key invalid" so we don't waste retries (and don't
+            # spam Binance's auth endpoint). Different venues use
+            # different status codes / messages, but they all surface as
+            # the auth-step failing.
+            msg = str(exc).lower()
+            if any(s in msg for s in ("401", "403", "invalid api", "api-key", "-2014", "-2015", "signature", "unauthorized")):
+                logger.warning(
+                    "userstream %s: AUTH FAILED for user=%s wallet=%s — "
+                    "marking DEAD until user updates their key",
+                    self.exchange, self.user_id, self.wallet_id,
+                )
+                self.auth_failed = True
+                self._reconnect_attempt = len(_RECONNECT_BACKOFF_S)  # exhaust
+                self._set_state("DEAD")
+                return False
             logger.warning(
                 "userstream %s: get_ws_url failed (user=%s): %s",
                 self.exchange, self.user_id, exc,
@@ -289,23 +308,35 @@ async def _stop_stream(user_id: int, wallet_id: int) -> None:
 
 async def _scan_and_sync() -> None:
     """Walk the DB once a minute, ensure a stream is running for every
-    trade-enabled wallet whose adapter we support. Stops streams for
-    wallets that disappeared (archived / purpose changed)."""
+    trade-enabled wallet that belongs to a CURRENTLY-ONLINE user and
+    whose adapter we support. Stops streams for users who went offline
+    (closed the tab / session expired) or whose wallets disappeared
+    (archived / purpose changed)."""
     from backend.db.base import SessionLocal
     from backend.db.models import Wallet
     from backend.crypto import decrypt_credentials
+    from backend.services.online_presence import online_user_ids
+
+    online = online_user_ids()  # None = Redis unavailable → fail-open
+    if online is not None and not online:
+        # No one online — reap all running streams.
+        for key in list(_streams.keys()):
+            await _stop_stream(*key)
+        return
 
     db = SessionLocal()
     try:
-        wallets = (
+        q = (
             db.query(Wallet)
             .filter(
                 Wallet.wallet_type == "exchange",
                 Wallet.purpose.in_(("screener", "both")),
                 Wallet.is_archived == False,  # noqa: E712
             )
-            .all()
         )
+        if online is not None:
+            q = q.filter(Wallet.user_id.in_(list(online)))
+        wallets = q.all()
     finally:
         db.close()
 
@@ -314,15 +345,26 @@ async def _scan_and_sync() -> None:
         ex = (w.type_value or "").lower()
         if get_adapter(ex) is None:
             continue
+        # Skip wallets we already gave up on (auth failed → DEAD). The
+        # supervisor doesn't auto-retry until the user re-enters creds
+        # (which causes a wallet update → new (user, wallet) key).
+        existing = _streams.get((w.user_id, w.id))
+        if existing and existing.state == "DEAD" and getattr(existing, "auth_failed", False):
+            desired.add((w.user_id, w.id))  # keep marked, but no spawn
+            continue
         desired.add((w.user_id, w.id))
         try:
             creds = decrypt_credentials(w.credentials or {})
         except Exception as exc:
             logger.warning("userstream: decrypt creds failed wallet=%s: %s", w.id, exc)
             continue
+        if not creds.get("api_key") or not creds.get("api_secret"):
+            # User has the wallet entry but not the actual API keys —
+            # nothing to subscribe with. Skip silently.
+            continue
         await _ensure_stream(w.user_id, w.id, ex, creds)
 
-    # Reap anything not in `desired`
+    # Reap anything not in `desired` (wallet removed OR user offline)
     for key in list(_streams.keys()):
         if key not in desired:
             await _stop_stream(*key)
