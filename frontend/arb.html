@@ -4343,6 +4343,17 @@ async function accLoadPositions(){
     // Header is a collapsible "summary" by default; click toggles the legs.
     // State persists in _accPairOpen so it survives re-renders from the
     // 10s refresh tick. Default collapsed.
+    // Defensive: if a row's shape is unexpected (e.g. WS snapshot fields
+    // missing), don't let one broken row blank out the whole table.
+    // Wrap rowFor to log + fall back to a minimal placeholder.
+    const safeRowFor = (p) => {
+      try { return rowFor(p); }
+      catch (e) {
+        console.error('[positions] rowFor failed:', e, 'row=', p);
+        return `<tr><td colspan="10" style="color:var(--red);font-size:11px">Row render error · check console</td></tr>`;
+      }
+    };
+
     const pairHtml = pairs.map((pair, pi) => {
       const lp = Number(pair.long.unrealized_pnl_usd || 0);
       const sp = Number(pair.short.unrealized_pnl_usd || 0);
@@ -4431,10 +4442,10 @@ async function accLoadPositions(){
                     style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:4px">↗</button>
           </td>
         </tr>`;
-      const legs = isOpen ? (rowFor(pair.long) + rowFor(pair.short)) : '';
+      const legs = isOpen ? (safeRowFor(pair.long) + safeRowFor(pair.short)) : '';
       return header + legs;
     }).join('');
-    const singlesHtml = singles.map(rowFor).join('');
+    const singlesHtml = singles.map(safeRowFor).join('');
     _renderIfChanged('acc-positions-body', pairHtml + singlesHtml);
 
     // P&L pane: total uPnL + total funding across all positions.
