@@ -623,6 +623,228 @@ def _serialize_order(o: TradeOrder) -> dict:
     }
 
 
+# ── P&L (closed positions) ───────────────────────────────────────────────
+def _pnl_pair_decisions(db: Session, user_id: int) -> tuple[set[tuple[str, str, str]], set[tuple[str, str, str]]]:
+    """Return (paired, unpaired) sets keyed by (symbol, long_ex, short_ex)."""
+    from backend.db.models import TradePairDecision
+    rows = db.query(TradePairDecision).filter(TradePairDecision.user_id == user_id).all()
+    paired: set[tuple[str, str, str]] = set()
+    unpaired: set[tuple[str, str, str]] = set()
+    for r in rows:
+        try:
+            sym, long_ex, _ = r.leg_a_key.split("|")
+            _, short_ex, _ = r.leg_b_key.split("|")
+        except ValueError:
+            continue
+        key = (sym.upper(), long_ex.lower(), short_ex.lower())
+        (paired if r.decision == "paired" else unpaired).add(key)
+    return paired, unpaired
+
+
+def _pnl_can_pair(long_pos, short_pos, paired: set, unpaired: set) -> bool:
+    """Apply user decisions then the spread%±5% rule."""
+    sym = (long_pos.symbol or "").upper()
+    long_ex = (long_pos.leg_a_exchange or "").lower()
+    short_ex = (short_pos.leg_a_exchange or "").lower()
+    key = (sym, long_ex, short_ex)
+    if key in unpaired:
+        return False
+    if key in paired:
+        return True
+    # Auto rule: notional diff% within spread%±5%, opened within 5 min.
+    le = float(long_pos.leg_a_entry_price or 0)
+    se = float(short_pos.leg_a_entry_price or 0)
+    if le <= 0 or se <= 0:
+        return False
+    long_n = float(long_pos.leg_a_qty or 0) * le
+    short_n = float(short_pos.leg_a_qty or 0) * se
+    max_n = max(long_n, short_n)
+    if max_n <= 0:
+        return False
+    spread_pct = abs((se - le) / le) * 100.0
+    diff_pct = abs(long_n - short_n) / max_n * 100.0
+    if abs(diff_pct - spread_pct) > 5.0:
+        return False
+    # 5-minute opening window
+    if long_pos.opened_at and short_pos.opened_at:
+        delta = abs((long_pos.opened_at - short_pos.opened_at).total_seconds())
+        if delta > 5 * 60:
+            return False
+    return True
+
+
+def list_user_pnl(db: Session, user_id: int, *, days: int = 30) -> list[dict]:
+    """P&L tab — closed positions over the last `days` days, grouped into
+    pairs where pair-decision OR auto-detect (spread%±5% / 5-min window)
+    applies. Partial-closed pairs (one leg closed, the other still open)
+    are filtered out — those still belong in the live Positions tab.
+    """
+    from backend.db.models import TradePosition
+    from datetime import timedelta as _td
+    cutoff = datetime.utcnow() - _td(days=int(days))
+    paired, unpaired = _pnl_pair_decisions(db, user_id)
+
+    closed = (
+        db.query(TradePosition)
+        .filter(
+            TradePosition.user_id == user_id,
+            TradePosition.kind == "single",
+            TradePosition.status == "closed",
+            TradePosition.closed_at >= cutoff,
+        )
+        .order_by(TradePosition.closed_at.desc())
+        .all()
+    )
+    open_rows = (
+        db.query(TradePosition)
+        .filter(
+            TradePosition.user_id == user_id,
+            TradePosition.kind == "single",
+            TradePosition.status == "open",
+        )
+        .all()
+    )
+
+    # Partition closed by symbol+side so we can find counterparts efficiently.
+    by_sym_side: dict[tuple[str, str], list] = {}
+    for r in closed:
+        key = ((r.symbol or "").upper(), (r.leg_a_side or "").lower())
+        by_sym_side.setdefault(key, []).append(r)
+
+    open_by_sym_side: dict[tuple[str, str], list] = {}
+    for r in open_rows:
+        key = ((r.symbol or "").upper(), (r.leg_a_side or "").lower())
+        open_by_sym_side.setdefault(key, []).append(r)
+
+    used_ids: set[int] = set()
+    out: list[dict] = []
+
+    # First pass: pair up closed singles into pair rows.
+    for r in closed:
+        if r.id in used_ids:
+            continue
+        sym = (r.symbol or "").upper()
+        side = (r.leg_a_side or "").lower()
+        opp_side = "sell" if side == "buy" else "buy"
+        candidates = [c for c in by_sym_side.get((sym, opp_side), []) if c.id not in used_ids]
+
+        long_pos, short_pos = (r, None) if side == "buy" else (None, r)
+        match = None
+        for c in candidates:
+            l, s = (r, c) if side == "buy" else (c, r)
+            if _pnl_can_pair(l, s, paired, unpaired):
+                match = c
+                long_pos, short_pos = l, s
+                break
+
+        # If we found a pair candidate but its counterpart in OPEN exists
+        # for the same symbol+opposite-side combo, this pair is partial —
+        # skip both for now.
+        if match:
+            partner_open = any(
+                op.leg_a_exchange == match.leg_a_exchange
+                for op in open_by_sym_side.get((sym, opp_side), [])
+            )
+            this_open = any(
+                op.leg_a_exchange == r.leg_a_exchange
+                for op in open_by_sym_side.get((sym, side), [])
+            )
+            if partner_open or this_open:
+                used_ids.add(r.id); used_ids.add(match.id)
+                continue
+            used_ids.add(r.id); used_ids.add(match.id)
+            out.append(_serialize_pnl_pair(long_pos, short_pos))
+            continue
+
+        # No pair candidate — could still be a partial pair if the
+        # opposite side is currently open with a matching pair-decision.
+        opp_opens = open_by_sym_side.get((sym, opp_side), [])
+        if opp_opens:
+            l_open, s_open = (r, opp_opens[0]) if side == "buy" else (opp_opens[0], r)
+            if _pnl_can_pair(l_open, s_open, paired, unpaired):
+                # Partial pair — counterpart still open. Skip from P&L.
+                used_ids.add(r.id)
+                continue
+
+        used_ids.add(r.id)
+        out.append(_serialize_pnl_single(r))
+
+    return out
+
+
+def _serialize_pnl_single(r) -> dict:
+    return {
+        "kind": "single",
+        "id": r.id,
+        "symbol": r.symbol,
+        "exchange": r.leg_a_exchange,
+        "side": r.leg_a_side,
+        "qty": r.leg_a_qty,
+        "entry_price": r.leg_a_entry_price,
+        "exit_price": r.leg_a_exit_price,
+        "realized_pnl_usd": r.leg_a_realized_pnl_usd,
+        "funding_pnl_usd": r.leg_a_funding_pnl_usd,
+        "fees_usd": r.leg_a_fees_usd,
+        "total_pnl_usd": (r.leg_a_realized_pnl_usd or 0)
+                         + (r.leg_a_funding_pnl_usd or 0)
+                         - (r.leg_a_fees_usd or 0),
+        "opened_at": r.opened_at.isoformat() if r.opened_at else None,
+        "closed_at": r.closed_at.isoformat() if r.closed_at else None,
+        "opened_externally": bool(r.opened_externally),
+        "closed_externally": bool(r.closed_externally),
+    }
+
+
+def _serialize_pnl_pair(long_pos, short_pos) -> dict:
+    le = float(long_pos.leg_a_entry_price or 0)
+    se = float(short_pos.leg_a_entry_price or 0)
+    long_realized = long_pos.leg_a_realized_pnl_usd or 0
+    short_realized = short_pos.leg_a_realized_pnl_usd or 0
+    long_funding = long_pos.leg_a_funding_pnl_usd or 0
+    short_funding = short_pos.leg_a_funding_pnl_usd or 0
+    long_fees = long_pos.leg_a_fees_usd or 0
+    short_fees = short_pos.leg_a_fees_usd or 0
+    total = long_realized + short_realized + long_funding + short_funding - long_fees - short_fees
+    spread_pct = abs((se - le) / le) * 100.0 if le > 0 else None
+    opened_at = max(filter(None, [long_pos.opened_at, short_pos.opened_at])) if (long_pos.opened_at or short_pos.opened_at) else None
+    closed_at = max(filter(None, [long_pos.closed_at, short_pos.closed_at])) if (long_pos.closed_at or short_pos.closed_at) else None
+    return {
+        "kind": "pair",
+        "pair_kind": "long_short",
+        "id": f"{long_pos.id}-{short_pos.id}",
+        "symbol": long_pos.symbol,
+        "long":  {
+            "exchange": long_pos.leg_a_exchange,
+            "qty": long_pos.leg_a_qty,
+            "entry_price": long_pos.leg_a_entry_price,
+            "exit_price": long_pos.leg_a_exit_price,
+            "realized_pnl_usd": long_realized,
+            "funding_pnl_usd": long_funding,
+            "fees_usd": long_fees,
+            "opened_externally": bool(long_pos.opened_externally),
+            "closed_externally": bool(long_pos.closed_externally),
+        },
+        "short": {
+            "exchange": short_pos.leg_a_exchange,
+            "qty": short_pos.leg_a_qty,
+            "entry_price": short_pos.leg_a_entry_price,
+            "exit_price": short_pos.leg_a_exit_price,
+            "realized_pnl_usd": short_realized,
+            "funding_pnl_usd": short_funding,
+            "fees_usd": short_fees,
+            "opened_externally": bool(short_pos.opened_externally),
+            "closed_externally": bool(short_pos.closed_externally),
+        },
+        "total_realized_pnl_usd": long_realized + short_realized,
+        "total_funding_pnl_usd": long_funding + short_funding,
+        "total_fees_usd": long_fees + short_fees,
+        "total_pnl_usd": total,
+        "entry_spread_pct": spread_pct,
+        "opened_at": opened_at.isoformat() if opened_at else None,
+        "closed_at": closed_at.isoformat() if closed_at else None,
+    }
+
+
 async def list_user_orders(db: Session, user_id: int, *, limit: int = 50,
                            symbol: str | None = None) -> list[dict]:
     """Order History: every order our service sent to a venue for this user.

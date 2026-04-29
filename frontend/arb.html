@@ -493,18 +493,20 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
         </div>
       </div>
       <div class="acc-pane" id="acc-pane-pnl">
-        <div class="acc-sum-grid">
-          <div class="acc-sum-card"><div class="acc-sum-lbl">Unrealized P&amp;L</div><div class="acc-sum-val" id="acc-upnl">$0.00</div></div>
-          <div class="acc-sum-card"><div class="acc-sum-lbl">Realized (24h)</div><div class="acc-sum-val" id="acc-realized-24h">$0.00</div></div>
-          <div class="acc-sum-card"><div class="acc-sum-lbl">Funding (24h)</div><div class="acc-sum-val" id="acc-funding-24h">$0.00</div></div>
-          <div class="acc-sum-card"><div class="acc-sum-lbl">Fees (24h)</div><div class="acc-sum-val neg" id="acc-fees-24h">$0.00</div></div>
-          <div class="acc-sum-card"><div class="acc-sum-lbl">Open positions</div><div class="acc-sum-val" id="acc-pos-count">0</div></div>
-          <div class="acc-sum-card"><div class="acc-sum-lbl">Net equity</div><div class="acc-sum-val" id="acc-net-equity">$0.00</div></div>
+        <div class="acc-sum-grid" style="padding-bottom:6px">
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Closed (30d)</div><div class="acc-sum-val" id="acc-pnl-total">$0.00</div></div>
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Trades</div><div class="acc-sum-val" id="acc-pnl-count">0</div></div>
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Win rate</div><div class="acc-sum-val" id="acc-pnl-winrate">—</div></div>
+          <div class="acc-sum-card"><div class="acc-sum-lbl">Funding (30d)</div><div class="acc-sum-val" id="acc-pnl-funding">$0.00</div></div>
         </div>
+        <table class="acc-table">
+          <thead><tr><th style="width:24px"></th><th>Closed</th><th>Type</th><th>Symbol</th><th>Venues</th><th class="num">Total P&amp;L</th><th class="num">ROI</th></tr></thead>
+          <tbody id="acc-pnl-body"></tbody>
+        </table>
         <div class="acc-empty" id="acc-pnl-empty">
           <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13L6 9l3 3 5-5"/><path d="M10 4h4v4"/></svg></div>
-          <h4>No P&amp;L data yet</h4>
-          <p>P&amp;L summary aggregates realized, funding, and unrealized across all your exchange keys for the selected window.</p>
+          <h4>No closed positions yet</h4>
+          <p>P&amp;L history populates as you close positions. Pairs are auto-detected by the spread%±5% rule, or you can pair manually with Sync ⇆.</p>
         </div>
       </div>
       <div class="acc-pane" id="acc-pane-balances">
@@ -2156,6 +2158,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
   async function _ptLoadAcc() {
     await Promise.all([_ptLoadKeyCounts(), _ptLoadAccPositions(), _ptLoadBalances(), _ptLoadOrders(), _refreshPairDecisions()]);
+    if (typeof accLoadPnl === 'function') accLoadPnl();
   }
   // One-time migration of legacy localStorage Sync entries on first load.
   if (typeof _migrateLegacyManualPairs === 'function') _migrateLegacyManualPairs();
@@ -3828,10 +3831,13 @@ async function initAccBlock(){
   // Idempotent on the server side (UNIQUE on user_id+leg_a_key+leg_b_key).
   await _migrateLegacyManualPairs();
   await _refreshPairDecisions();
-  await Promise.all([accLoadKeyCounts(), accLoadPositions(), accLoadBalances(), accLoadOrders()]);
+  await Promise.all([accLoadKeyCounts(), accLoadPositions(), accLoadBalances(), accLoadOrders(), accLoadPnl()]);
   // Keep positions + balances + orders fresh; refresh pair decisions too
-  // so a Sync from another tab/device propagates within ~10s.
+  // so a Sync from another tab/device propagates within ~10s. P&L
+  // refreshes on a slower 30s cadence — the reconcile worker only writes
+  // closures every 60s, so 10s polling here would just be noise.
   setInterval(() => { _refreshPairDecisions(); accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 10000);
+  setInterval(() => { accLoadPnl(); }, 30000);
 }
 
 async function accLoadOrders(){
@@ -3843,6 +3849,149 @@ async function accLoadOrders(){
   } catch {
     _renderOrderHistory([]);
   }
+}
+
+// ── P&L tab ───────────────────────────────────────────────────────────
+const _pnlExpanded = new Set();
+function _pnlToggle(id){
+  if (_pnlExpanded.has(id)) _pnlExpanded.delete(id);
+  else _pnlExpanded.add(id);
+  _renderPnl(window._pnlLastRows || []);
+}
+function _pnlFmtUsd(v){
+  if (v == null || Number.isNaN(Number(v))) return '—';
+  const n = Number(v);
+  return (n >= 0 ? '+$' : '−$') + Math.abs(n).toFixed(2);
+}
+function _pnlFmtRoi(total, notional){
+  if (!notional || Number.isNaN(Number(total))) return '—';
+  const pct = (Number(total) / Number(notional)) * 100;
+  return (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+}
+async function accLoadPnl(){
+  const tbody = document.getElementById('acc-pnl-body');
+  const empty = document.getElementById('acc-pnl-empty');
+  try {
+    const r = await Auth.apiFetch('/trade/pnl?days=30');
+    if (!r.ok) throw new Error();
+    const rows = await r.json();
+    _renderPnl(rows);
+  } catch {
+    _renderPnl([]);
+  }
+}
+function _renderPnl(rows){
+  window._pnlLastRows = rows || [];
+  const tbody = document.getElementById('acc-pnl-body');
+  const empty = document.getElementById('acc-pnl-empty');
+  if (!rows.length){
+    if (tbody) tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    document.getElementById('acc-pnl-total').textContent = '$0.00';
+    document.getElementById('acc-pnl-count').textContent = '0';
+    document.getElementById('acc-pnl-winrate').textContent = '—';
+    document.getElementById('acc-pnl-funding').textContent = '$0.00';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  // Summary cards
+  let totalPnl = 0, totalFunding = 0, wins = 0;
+  for (const r of rows){
+    totalPnl += Number(r.total_pnl_usd || 0);
+    totalFunding += Number(r.total_funding_pnl_usd != null ? r.total_funding_pnl_usd : (r.funding_pnl_usd || 0));
+    if (Number(r.total_pnl_usd || 0) > 0) wins++;
+  }
+  const totalEl = document.getElementById('acc-pnl-total');
+  totalEl.textContent = _pnlFmtUsd(totalPnl);
+  totalEl.className = 'acc-sum-val ' + (totalPnl >= 0 ? 'pos' : 'neg');
+  document.getElementById('acc-pnl-count').textContent = rows.length;
+  document.getElementById('acc-pnl-winrate').textContent = ((wins / rows.length) * 100).toFixed(0) + '%';
+  document.getElementById('acc-pnl-funding').textContent = _pnlFmtUsd(totalFunding);
+
+  if (!tbody) return;
+  const exLbl = (e) => (window.EX_LABEL && EX_LABEL[e]) || (e || '').toUpperCase();
+  tbody.innerHTML = rows.map(r => {
+    const isOpen = _pnlExpanded.has(r.id);
+    const total = Number(r.total_pnl_usd || 0);
+    const totalCls = total >= 0 ? 'pnl-pl-pos' : 'pnl-pl-neg';
+    const chev = `<svg class="oh-chev ${isOpen?'open':''}" viewBox="0 0 16 16" onclick="event.stopPropagation();_pnlToggle('${r.id}')"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    let venuesCell = '';
+    let typeCell = '';
+    let roiCell = '—';
+    let notional = 0;
+    if (r.kind === 'pair'){
+      typeCell = `<span class="pnl-type pair">PAIR</span>`;
+      venuesCell = `<span class="pnl-venue-row"><span class="ex-pill">${_esc(exLbl(r.long.exchange))}</span><span style="color:var(--green)">⇄</span><span class="ex-pill">${_esc(exLbl(r.short.exchange))}</span></span>`;
+      notional = (Number(r.long.qty || 0) * Number(r.long.entry_price || 0)) || 0;
+    } else {
+      typeCell = `<span class="pnl-type single">${(r.side || '').toUpperCase()}</span>`;
+      venuesCell = `<span class="pnl-venue-row"><span class="ex-pill">${_esc(exLbl(r.exchange))}</span></span>`;
+      notional = Number(r.qty || 0) * Number(r.entry_price || 0);
+    }
+    if (notional > 0) roiCell = _pnlFmtRoi(total, notional);
+    const main = `
+      <tr onclick="_pnlToggle('${r.id}')" style="cursor:pointer">
+        <td>${chev}</td>
+        <td style="color:var(--text2);font-size:11px">${_ohFmtTime(r.closed_at)}</td>
+        <td>${typeCell}</td>
+        <td><span class="sym">${_esc(r.symbol||'')}</span></td>
+        <td>${venuesCell}</td>
+        <td class="num"><span class="${totalCls}">${_pnlFmtUsd(total)}</span></td>
+        <td class="num"><span class="${totalCls}">${roiCell}</span></td>
+      </tr>`;
+    if (!isOpen) return main;
+
+    const detail = (r.kind === 'pair')
+      ? _renderPnlPairDetail(r)
+      : _renderPnlSingleDetail(r);
+    return main + `<tr class="pnl-detail-row"><td colspan="7">${detail}</td></tr>`;
+  }).join('');
+}
+function _renderPnlPairDetail(r){
+  const exLbl = (e) => (window.EX_LABEL && EX_LABEL[e]) || (e || '').toUpperCase();
+  const legCard = (label, leg, cls) => `
+    <div class="pnl-leg-card">
+      <span class="leg-label ${cls}">${label}</span>
+      <div><div class="k">Venue</div><div>${_esc(exLbl(leg.exchange))}</div></div>
+      <div><div class="k">Qty</div><div>${leg.qty != null ? Number(leg.qty).toLocaleString(undefined,{maximumFractionDigits:6}) : '—'}</div></div>
+      <div><div class="k">Entry</div><div>${leg.entry_price != null ? Number(leg.entry_price).toLocaleString(undefined,{maximumFractionDigits:8}) : '—'}</div></div>
+      <div><div class="k">Exit</div><div>${leg.exit_price != null ? Number(leg.exit_price).toLocaleString(undefined,{maximumFractionDigits:8}) : '—'}</div></div>
+      <div><div class="k">P&amp;L</div><div class="${(leg.realized_pnl_usd||0) >= 0 ? 'pnl-pl-pos':'pnl-pl-neg'}">${_pnlFmtUsd(leg.realized_pnl_usd)}</div></div>
+    </div>`;
+  return `
+    ${legCard('LONG', r.long, 'long')}
+    ${legCard('SHORT', r.short, 'short')}
+    <div class="pnl-summary">
+      <div><div class="lbl">Realized</div><div class="val ${(r.total_realized_pnl_usd||0)>=0?'pnl-pl-pos':'pnl-pl-neg'}">${_pnlFmtUsd(r.total_realized_pnl_usd)}</div></div>
+      <div><div class="lbl">Funding</div><div class="val">${_pnlFmtUsd(r.total_funding_pnl_usd)}</div></div>
+      <div><div class="lbl">Fees</div><div class="val pnl-pl-neg">${r.total_fees_usd != null ? '−$'+Number(r.total_fees_usd).toFixed(2) : '—'}</div></div>
+      <div><div class="lbl">Total</div><div class="val ${(r.total_pnl_usd||0)>=0?'pnl-pl-pos':'pnl-pl-neg'}">${_pnlFmtUsd(r.total_pnl_usd)}</div></div>
+      <div><div class="lbl">Entry spread</div><div class="val">${r.entry_spread_pct != null ? Number(r.entry_spread_pct).toFixed(2)+'%' : '—'}</div></div>
+      <div><div class="lbl">Opened</div><div class="val" style="font-size:11px">${_esc(_ohFmtTime(r.opened_at))}</div></div>
+    </div>`;
+}
+function _renderPnlSingleDetail(r){
+  const exLbl = (e) => (window.EX_LABEL && EX_LABEL[e]) || (e || '').toUpperCase();
+  const sideCls = r.side === 'buy' ? 'long' : 'short';
+  const sideTxt = r.side === 'buy' ? 'LONG' : 'SHORT';
+  return `
+    <div class="pnl-leg-card">
+      <span class="leg-label ${sideCls}">${sideTxt}</span>
+      <div><div class="k">Venue</div><div>${_esc(exLbl(r.exchange))}</div></div>
+      <div><div class="k">Qty</div><div>${r.qty != null ? Number(r.qty).toLocaleString(undefined,{maximumFractionDigits:6}) : '—'}</div></div>
+      <div><div class="k">Entry</div><div>${r.entry_price != null ? Number(r.entry_price).toLocaleString(undefined,{maximumFractionDigits:8}) : '—'}</div></div>
+      <div><div class="k">Exit</div><div>${r.exit_price != null ? Number(r.exit_price).toLocaleString(undefined,{maximumFractionDigits:8}) : '—'}</div></div>
+      <div><div class="k">P&amp;L</div><div class="${(r.realized_pnl_usd||0)>=0?'pnl-pl-pos':'pnl-pl-neg'}">${_pnlFmtUsd(r.realized_pnl_usd)}</div></div>
+    </div>
+    <div class="pnl-summary">
+      <div><div class="lbl">Realized</div><div class="val ${(r.realized_pnl_usd||0)>=0?'pnl-pl-pos':'pnl-pl-neg'}">${_pnlFmtUsd(r.realized_pnl_usd)}</div></div>
+      <div><div class="lbl">Funding</div><div class="val">${_pnlFmtUsd(r.funding_pnl_usd)}</div></div>
+      <div><div class="lbl">Fees</div><div class="val pnl-pl-neg">${r.fees_usd != null ? '−$'+Number(r.fees_usd).toFixed(2) : '—'}</div></div>
+      <div><div class="lbl">Total</div><div class="val ${(r.total_pnl_usd||0)>=0?'pnl-pl-pos':'pnl-pl-neg'}">${_pnlFmtUsd(r.total_pnl_usd)}</div></div>
+      <div><div class="lbl">Opened</div><div class="val" style="font-size:11px">${_esc(_ohFmtTime(r.opened_at))}</div></div>
+      ${r.opened_externally ? `<div><div class="lbl">Source</div><div class="val" style="font-size:11px;color:var(--text2)">Opened on exchange</div></div>` : ''}
+    </div>`;
 }
 
 // Shared Order History renderer — used from both the futures pair page

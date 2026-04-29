@@ -71,6 +71,19 @@ async def orders(
     return await trade_service.list_user_orders(db, user.id, limit=limit, symbol=symbol)
 
 
+@router.get("/pnl")
+def pnl(
+    days: int = Query(30, ge=1, le=365),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """P&L tab — closed positions over the last `days` days. Pair-eligible
+    closed singles are grouped via the user's pair decisions or the
+    spread%±5% / 5-min-window auto rule. Partial-closed pairs are filtered
+    out — those still belong on the live Positions tab."""
+    return trade_service.list_user_pnl(db, user.id, days=days)
+
+
 # ── Pair decisions ──────────────────────────────────────────────────────────
 class PairIn(BaseModel):
     symbol: str
