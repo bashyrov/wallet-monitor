@@ -5655,205 +5655,201 @@ function _renderPairCombined(){
   const PAD = 80;
   const GRID_X = PAD, GRID_R = W - PAD, COL_W = GRID_R - GRID_X;
 
-  // BRAND
-  let y = PAD + 20;
-  ctx.font = '800 60px "Inter", system-ui, sans-serif';
-  ctx.strokeStyle = accent; ctx.lineWidth = 2.6; ctx.lineJoin = 'round';
-  ctx.strokeText('avalant', GRID_X, y + 60);
+  // ── EXPLICIT FIXED Y POSITIONS for 1200×800 ─────────────────────────────
+  // Each row has a hand-tuned absolute Y. No accumulators. Each section's
+  // bottom is well clear of the next section's top — no overlap possible
+  // regardless of which fonts get measured.
+  const Y_BRAND      = 120;    // avalant text baseline (60px font)
+  const Y_TAG        = 156;    // PAIR ARB caption baseline (12px)
+  const Y_DIVIDER_1  = 178;    // thin divider line
+  const Y_CHIPS_MID  = 230;    // pair chips center (h=46, top=207 bot=253)
+  const Y_SYMBOL     = 296;    // symbol text baseline (30px)
+  const Y_PERPETUAL  = 316;    // PERPETUAL caption baseline (10px)
+  const Y_PNL_LABEL  = 358;    // COMBINED P&L label baseline (12px)
+  // Hero region: digits live between Y_PNL_LABEL+14 and Y_HERO_END.
+  // Secondary line (▼ $X) optional in "both" mode.
+  const Y_HERO_BASE  = (_shareMode === 'both') ? 470 : 490;
+  const Y_HERO_2ND   = 510;
+  const Y_3COL_DIV   = 560;    // divider above 3-col row
+  const Y_3COL_LABEL = 590;    // 3-col labels baseline (12px)
+  const Y_3COL_VALUE = 632;    // 3-col values baseline (28px)
+  const Y_FOOT_DIV   = 690;    // divider above footer
+  const Y_FOOT_LABEL = 720;    // EXCHANGES / CROSS-EXCH caption baseline (10px)
+  const Y_FOOT_VALUE = 752;    // exchange names / avalant.xyz baseline (20-26px)
+
+  // ── BRAND
+  ctx.font = '800 56px "Inter", system-ui, sans-serif';
+  ctx.strokeStyle = accent; ctx.lineWidth = 2.4; ctx.lineJoin = 'round';
+  ctx.strokeText('avalant', GRID_X, Y_BRAND);
   const brandW = ctx.measureText('avalant').width;
-  ctx.fillStyle = accent; ctx.fillRect(GRID_X + brandW + 10, y + 36, 22, 7);
+  ctx.fillStyle = accent; ctx.fillRect(GRID_X + brandW + 10, Y_BRAND - 22, 20, 6);
 
   const ds = new Date();
   const dateStr = ds.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}).toUpperCase();
   ctx.font = '700 13px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#50545E';
-  _drawTracked(ctx, dateStr, GRID_R, y + 38, 1.6, 'right');
+  _drawTracked(ctx, dateStr, GRID_R, Y_BRAND - 22, 1.6, 'right');
 
-  y += 96;
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  _drawTracked(ctx, 'PAIR ARB  ·  CROSS-EXCHANGE  ·  LONG / SHORT', GRID_X, y, 1.8);
+  _drawTracked(ctx, 'PAIR ARB  ·  CROSS-EXCHANGE  ·  LONG / SHORT', GRID_X, Y_TAG, 1.8);
 
-  y += 30;
-  ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(GRID_X, y, COL_W, 1);
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(GRID_X, Y_DIVIDER_1, COL_W, 1);
 
-  // PAIR HEADER: long.exchange ⇄ short.exchange + symbol
-  y += 80;
-  // Long pill (green)
-  ctx.font = '800 22px "Inter", system-ui, sans-serif';
+  // ── PAIR HEADER (chips at Y_CHIPS_MID)
   const longLabel = (window.EX && window.EX.labels && window.EX.labels[pp.long.exchange]) || pp.long.exchange.toUpperCase();
   const shortLabel = (window.EX && window.EX.labels && window.EX.labels[pp.short.exchange]) || pp.short.exchange.toUpperCase();
+  const chipH = 46;
+  ctx.font = '800 20px "Inter", system-ui, sans-serif';
   // Long chip
   const longTextW = ctx.measureText(longLabel).width;
-  const longChipW = longTextW + 56;
-  const chipH = 50;
+  const longChipW = longTextW + 52;
   ctx.fillStyle = 'rgba(26,255,171,0.18)';
-  ctx.beginPath(); ctx.roundRect(GRID_X, y - chipH/2, longChipW, chipH, chipH/2); ctx.fill();
-  ctx.strokeStyle = 'rgba(26,255,171,0.45)'; ctx.lineWidth = 1.5; ctx.stroke();
-  // green dot
+  ctx.beginPath(); ctx.roundRect(GRID_X, Y_CHIPS_MID - chipH/2, longChipW, chipH, chipH/2); ctx.fill();
+  ctx.strokeStyle = 'rgba(26,255,171,0.45)'; ctx.lineWidth = 1.4; ctx.stroke();
   ctx.fillStyle = '#1AFFAB';
-  ctx.beginPath(); ctx.arc(GRID_X + 22, y, 6, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#1AFFAB';
-  ctx.fillText(longLabel, GRID_X + 38, y + 8);
-  // arrow ⇄
-  let ax = GRID_X + longChipW + 18;
-  ctx.font = '700 30px "Inter", system-ui, sans-serif';
+  ctx.beginPath(); ctx.arc(GRID_X + 20, Y_CHIPS_MID, 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillText(longLabel, GRID_X + 34, Y_CHIPS_MID + 6);
+  // Arrow + short chip
+  let ax = GRID_X + longChipW + 16;
+  ctx.font = '700 26px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  ctx.fillText('⇄', ax, y + 10);
-  ax += ctx.measureText('⇄').width + 18;
-  // Short chip
-  ctx.font = '800 22px "Inter", system-ui, sans-serif';
+  ctx.fillText('⇄', ax, Y_CHIPS_MID + 8);
+  ax += ctx.measureText('⇄').width + 16;
+  ctx.font = '800 20px "Inter", system-ui, sans-serif';
   const shortTextW = ctx.measureText(shortLabel).width;
-  const shortChipW = shortTextW + 56;
+  const shortChipW = shortTextW + 52;
   ctx.fillStyle = 'rgba(248,113,113,0.18)';
-  ctx.beginPath(); ctx.roundRect(ax, y - chipH/2, shortChipW, chipH, chipH/2); ctx.fill();
-  ctx.strokeStyle = 'rgba(248,113,113,0.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(ax, Y_CHIPS_MID - chipH/2, shortChipW, chipH, chipH/2); ctx.fill();
+  ctx.strokeStyle = 'rgba(248,113,113,0.45)'; ctx.lineWidth = 1.4; ctx.stroke();
   ctx.fillStyle = '#F87171';
-  ctx.beginPath(); ctx.arc(ax + 22, y, 6, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#F87171';
-  ctx.fillText(shortLabel, ax + 38, y + 8);
+  ctx.beginPath(); ctx.arc(ax + 20, Y_CHIPS_MID, 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillText(shortLabel, ax + 34, Y_CHIPS_MID + 6);
 
-  // Symbol below pair-chip row
-  y += 50;
-  ctx.font = '900 34px "Inter", system-ui, sans-serif';
+  // ── SYMBOL + PERPETUAL caption
+  ctx.font = '900 30px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(`${pp.symbol}USDT`, GRID_X, y);
-  ctx.font = '700 11px "Inter", system-ui, sans-serif';
+  ctx.fillText(`${pp.symbol}USDT`, GRID_X, Y_SYMBOL);
+  ctx.font = '700 10px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#3A3D47';
-  _drawTracked(ctx, 'PERPETUAL  ·  PAIR POSITION', GRID_X, y + 18, 1.8);
+  _drawTracked(ctx, 'PERPETUAL  ·  PAIR POSITION', GRID_X, Y_PERPETUAL, 1.8);
 
-  // COMBINED P&L label + HERO
-  y += 38;
+  // ── COMBINED P&L LABEL
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  _drawTracked(ctx, 'COMBINED P&L', GRID_X, y, 1.8);
+  _drawTracked(ctx, 'COMBINED P&L', GRID_X, Y_PNL_LABEL, 1.8);
 
+  // ── HERO P&L
   const pctStr = `${combinedPct >= 0 ? '+' : ''}${combinedPct.toFixed(2)}%`;
   const usdStr = `${totalPnl >= 0 ? '+$' : '−$'}${Math.abs(totalPnl).toFixed(2)}`;
   const showPrimary = _shareMode === 'usd' ? usdStr : pctStr;
   const showSecondary = _shareMode === 'both' ? usdStr : null;
 
-  // Pair card has more rows below than the single card → smaller hero
-  // ceiling so the digits don't bleed into the 3-column row. Pick size
-  // FIRST so we can position halo + baseline relative to digit height.
-  const heroSizes = (_shareMode === 'both') ? [110, 100, 90, 80] : [124, 112, 100, 90];
+  // Hero MUST fit in (Y_PNL_LABEL+14) → Y_HERO_BASE region:
+  //   "both"  : 372 → 470 = 98px slot → max 92px font
+  //   single  : 372 → 490 = 118px slot → max 112px font
+  const HERO_MAX = (_shareMode === 'both') ? 92 : 112;
+  const heroSizes = [HERO_MAX, HERO_MAX-12, HERO_MAX-24, HERO_MAX-36];
   let chosen = heroSizes[1];
   for (const s of heroSizes){
     ctx.font = `900 ${s}px "JetBrains Mono", Menlo, monospace`;
     if (ctx.measureText(showPrimary).width <= COL_W - 20){ chosen = s; break; }
   }
-  // Canvas text grows UPWARD from baseline. Place baseline so the top of
-  // the digits sits 14px below the COMBINED P&L label — was previously
-  // computed as `y + 110` which left the digit top ABOVE the label for
-  // any font ≥ 124px (the original bug user reported).
-  const heroBaselineY = y + 14 + chosen;
   ctx.font = `900 ${chosen}px "JetBrains Mono", Menlo, monospace`;
 
-  // Halo BOUNDED to ~just-around-the-digits so it can't smear neighbours.
+  // Halo bounded to digit area only
   ctx.save();
-  const haloTop = heroBaselineY - chosen - 16;
-  const haloH = chosen + 60;
-  const haloCenterY = heroBaselineY - chosen/2;
+  const haloTop = Y_HERO_BASE - chosen - 8;
+  const haloH = chosen + 32;
+  const haloCenterY = Y_HERO_BASE - chosen/2;
   const haloOuter = ctx.createRadialGradient(GRID_X + 220, haloCenterY, 30, GRID_X + 220, haloCenterY, 520);
   haloOuter.addColorStop(0, `rgba(${accentRGB},0.20)`);
   haloOuter.addColorStop(0.4, `rgba(${accentRGB},0.06)`);
   haloOuter.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = haloOuter; ctx.fillRect(0, haloTop, W, haloH);
-  const haloInner = ctx.createRadialGradient(GRID_X + 240, haloCenterY, 10, GRID_X + 240, haloCenterY, 220);
-  haloInner.addColorStop(0, `rgba(${accentRGB},0.26)`);
-  haloInner.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = haloInner; ctx.fillRect(0, haloTop, W, haloH);
   ctx.restore();
-  const numGrad = ctx.createLinearGradient(0, heroBaselineY - chosen, 0, heroBaselineY + 6);
+
+  const numGrad = ctx.createLinearGradient(0, Y_HERO_BASE - chosen, 0, Y_HERO_BASE + 6);
   numGrad.addColorStop(0, accentTip);
   numGrad.addColorStop(0.55, accent);
   numGrad.addColorStop(1, profit ? '#10C987' : '#D14545');
-  ctx.shadowColor = accent; ctx.shadowBlur = 40;
+  ctx.shadowColor = accent; ctx.shadowBlur = 30;
   ctx.fillStyle = numGrad;
-  ctx.fillText(showPrimary, GRID_X, heroBaselineY);
+  ctx.fillText(showPrimary, GRID_X, Y_HERO_BASE);
   ctx.shadowBlur = 0;
 
   if (showSecondary){
-    ctx.font = '700 24px "JetBrains Mono", Menlo, monospace';
+    ctx.font = '700 22px "JetBrains Mono", Menlo, monospace';
     ctx.fillStyle = `rgba(${accentRGB},0.80)`;
-    ctx.fillText(`${profit ? '▲' : '▼'}  ${showSecondary}`, GRID_X, heroBaselineY + 36);
-  } else {
-    const lbl = _shareMode === 'pct' ? 'COMBINED ROI' : 'COMBINED PROFIT & LOSS';
-    ctx.font = '700 12px "Inter", system-ui, sans-serif';
-    ctx.fillStyle = `rgba(${accentRGB},0.55)`;
-    _drawTracked(ctx, lbl, GRID_X, heroBaselineY + 32, 1.6);
+    ctx.fillText(`${profit ? '▲' : '▼'}  ${showSecondary}`, GRID_X, Y_HERO_2ND);
   }
 
-  // 3-col bottom row: ENTRY SPREAD · LONG entry · SHORT entry
-  // Anchored to absolute Y so it never collides with the hero above
-  // or the footer below.
-  y = H - 220;  // 800 - 220 = 580 → label baseline; value at +44 = 624
-  const col3 = COL_W / 3;
-
-  // Vertical separators between the 3 columns
+  // ── DIVIDER + 3-COL ROW
   ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  ctx.fillRect(GRID_X + col3, y - 16, 1, 78);
-  ctx.fillRect(GRID_X + col3*2, y - 16, 1, 78);
+  ctx.fillRect(GRID_X, Y_3COL_DIV, COL_W, 1);
+
+  const col3 = COL_W / 3;
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillRect(GRID_X + col3, Y_3COL_LABEL - 16, 1, 64);
+  ctx.fillRect(GRID_X + col3*2, Y_3COL_LABEL - 16, 1, 64);
 
   // Col 1: Entry spread
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  _drawTracked(ctx, 'ENTRY SPREAD', GRID_X, y, 1.6);
+  _drawTracked(ctx, 'ENTRY SPREAD', GRID_X, Y_3COL_LABEL, 1.6);
   const sp = +pp.entry_spread_pct || 0;
   const spStr = `${sp >= 0 ? '+' : ''}${sp.toFixed(4)}%`;
-  ctx.font = '800 32px "JetBrains Mono", Menlo, monospace';
+  ctx.font = '800 28px "JetBrains Mono", Menlo, monospace';
   ctx.fillStyle = sp >= 0 ? '#1AFFAB' : '#F87171';
-  ctx.fillText(spStr, GRID_X, y + 46);
+  ctx.fillText(spStr, GRID_X, Y_3COL_VALUE);
 
   // Col 2: Long entry
   const c2x = GRID_X + col3 + 24;
   ctx.fillStyle = '#1AFFAB';
-  ctx.beginPath(); ctx.arc(c2x + 4, y - 4, 4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(c2x + 4, Y_3COL_LABEL - 4, 4, 0, Math.PI*2); ctx.fill();
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  _drawTracked(ctx, `LONG · ${longLabel.toUpperCase()}`, c2x + 16, y, 1.6);
-  ctx.font = '800 32px "JetBrains Mono", Menlo, monospace';
+  _drawTracked(ctx, `LONG · ${longLabel.toUpperCase()}`, c2x + 16, Y_3COL_LABEL, 1.6);
+  ctx.font = '800 28px "JetBrains Mono", Menlo, monospace';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(_fmtPx(pp.long.entry_price), c2x, y + 46);
+  ctx.fillText(_fmtPx(pp.long.entry_price), c2x, Y_3COL_VALUE);
 
   // Col 3: Short entry
   const c3x = GRID_X + col3*2 + 24;
   ctx.fillStyle = '#F87171';
-  ctx.beginPath(); ctx.arc(c3x + 4, y - 4, 4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(c3x + 4, Y_3COL_LABEL - 4, 4, 0, Math.PI*2); ctx.fill();
   ctx.font = '700 12px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#676B7E';
-  _drawTracked(ctx, `SHORT · ${shortLabel.toUpperCase()}`, c3x + 16, y, 1.6);
-  ctx.font = '800 32px "JetBrains Mono", Menlo, monospace';
+  _drawTracked(ctx, `SHORT · ${shortLabel.toUpperCase()}`, c3x + 16, Y_3COL_LABEL, 1.6);
+  ctx.font = '800 28px "JetBrains Mono", Menlo, monospace';
   ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(_fmtPx(pp.short.entry_price), c3x, y + 46);
+  ctx.fillText(_fmtPx(pp.short.entry_price), c3x, Y_3COL_VALUE);
 
-  // FOOTER (re-uses single-card layout)
-  const footY = H - PAD;
-  const captionY = footY - 50;
-  const valueY = footY - 16;
+  // ── FOOTER (divider + caption + value rows)
   ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  ctx.fillRect(GRID_X, footY - 80, COL_W, 1);
-  // Left: PAIR caption + dual exchange dots
-  ctx.font = '700 10px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#3A3D47';
-  _drawTracked(ctx, 'EXCHANGES', GRID_X, captionY, 1.6);
-  // long dot + short dot
-  ctx.fillStyle = '#1AFFAB';
-  ctx.beginPath(); ctx.arc(GRID_X + 7, valueY - 8, 6, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#F87171';
-  ctx.beginPath(); ctx.arc(GRID_X + 24, valueY - 8, 6, 0, Math.PI*2); ctx.fill();
-  ctx.font = '700 20px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#E6E8E3';
-  ctx.fillText(`${longLabel} · ${shortLabel}`, GRID_X + 40, valueY);
+  ctx.fillRect(GRID_X, Y_FOOT_DIV, COL_W, 1);
 
+  // Left footer
   ctx.font = '700 10px "Inter", system-ui, sans-serif';
   ctx.fillStyle = '#3A3D47';
-  _drawTracked(ctx, 'CROSS-EXCHANGE ARBITRAGE', GRID_R, captionY, 1.6, 'right');
-  ctx.font = '800 28px "Inter", system-ui, sans-serif';
+  _drawTracked(ctx, 'EXCHANGES', GRID_X, Y_FOOT_LABEL, 1.6);
+  ctx.fillStyle = '#1AFFAB';
+  ctx.beginPath(); ctx.arc(GRID_X + 7, Y_FOOT_VALUE - 8, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#F87171';
+  ctx.beginPath(); ctx.arc(GRID_X + 24, Y_FOOT_VALUE - 8, 6, 0, Math.PI*2); ctx.fill();
+  ctx.font = '700 18px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#E6E8E3';
+  ctx.fillText(`${longLabel} · ${shortLabel}`, GRID_X + 38, Y_FOOT_VALUE);
+
+  // Right footer
+  ctx.font = '700 10px "Inter", system-ui, sans-serif';
+  ctx.fillStyle = '#3A3D47';
+  _drawTracked(ctx, 'CROSS-EXCHANGE ARBITRAGE', GRID_R, Y_FOOT_LABEL, 1.6, 'right');
+  ctx.font = '800 24px "Inter", system-ui, sans-serif';
   ctx.fillStyle = accent;
   const urlText = 'avalant.xyz';
   const urlW = ctx.measureText(urlText).width;
-  ctx.fillText(urlText, GRID_R - urlW, valueY);
+  ctx.fillText(urlText, GRID_R - urlW, Y_FOOT_VALUE);
 
   ctx.restore();
 
