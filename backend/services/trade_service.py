@@ -535,16 +535,26 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
 
 
 def invalidate_positions_cache(user_id: int) -> None:
-    """Drop cached positions for a user — called after place_order / close
-    so the next poll sees the new state immediately rather than waiting
-    out the TTL. Also clears last-good per-wallet rows so a freshly-closed
-    position can't be revived by a subsequent fetch failure."""
+    """Drop cached positions / balances for a user — called after
+    place_order / close so the next poll sees the new state immediately
+    rather than waiting out the TTL. Also clears last-good per-wallet rows
+    so a freshly-closed position can't be revived by a subsequent fetch
+    failure."""
     keys = [k for k in _POSITIONS_CACHE if k[0] == user_id]
     for k in keys:
         _POSITIONS_CACHE.pop(k, None)
     lg_keys = [k for k in _POSITIONS_LASTGOOD if k[0] == user_id]
     for k in lg_keys:
         _POSITIONS_LASTGOOD.pop(k, None)
+    _BALANCES_CACHE.pop(user_id, None)
+
+
+# Balances cache — same shape as positions but keyed by user_id only
+# (no symbol filter on /trade/balances). 30s TTL because USDT balances
+# don't change often outside of order events, and we explicitly invalidate
+# on order placed / closed.
+_BALANCES_CACHE: dict[int, tuple[float, list[dict]]] = {}
+_BALANCES_CACHE_TTL_S = 30.0
 
 
 # ── Pair decisions ─────────────────────────────────────────────────────────
@@ -893,7 +903,17 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
     has connected. Returns one row per wallet so the /arb Balances tab can
     render them grouped by exchange. Portfolio-only wallets are explicitly
     excluded — the trading panel cares about KEYS that can place orders or
-    are at least screener-attached, not read-only portfolio addresses."""
+    are at least screener-attached, not read-only portfolio addresses.
+
+    30s in-process cache because the /arb Balances tab polls every 10s
+    and balances don't move outside of order events. We explicitly
+    invalidate the cache on order placed / closed via
+    invalidate_positions_cache, so user-visible freshness stays sub-second
+    after their own actions."""
+    import time as _time
+    cached = _BALANCES_CACHE.get(user_id)
+    if cached and (_time.time() - cached[0]) < _BALANCES_CACHE_TTL_S:
+        return cached[1]
     wallets = (
         db.query(Wallet)
         .filter(
@@ -962,4 +982,6 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
         return out
 
     results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)
-    return [r for r in results if isinstance(r, dict)]
+    out = [r for r in results if isinstance(r, dict)]
+    _BALANCES_CACHE[user_id] = (_time.time(), out)
+    return out

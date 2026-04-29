@@ -361,8 +361,12 @@ class GateAdapter:
         if not positions:
             return []
         since_s = int(time.time() - 7 * 86400)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_contract"], since_s) for p in positions
+            cached_funding(api_key, p["_contract"],
+                           lambda p=p: cls._funding_pnl(creds, p["_contract"], since_s))
+            for p in positions
         ], return_exceptions=True)
         for p, f in zip(positions, fundings):
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None

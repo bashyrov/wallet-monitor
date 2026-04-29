@@ -242,6 +242,9 @@ async def _reconcile_user(user_id: int) -> tuple[int, int, int]:
         db.close()
 
 
+_RECONCILE_CONCURRENCY = 4
+
+
 async def _reconcile_pass() -> None:
     db = SessionLocal()
     try:
@@ -250,27 +253,35 @@ async def _reconcile_pass() -> None:
         db.close()
     if not user_ids:
         return
-    # Run users sequentially — concurrency-1 is plenty for a 60s cycle and
-    # avoids stampeding the per-exchange position endpoints from many
-    # users at once. Bumping to a small worker pool is a Stage 3 nicety.
-    total_opens = 0
-    total_closes = 0
-    total_open = 0
-    failed_users = 0
-    for uid in user_ids:
+
+    # Bounded-concurrency reconcile. Each user holds onto its own SessionLocal
+    # for the duration of its reconcile_user() call, and concurrent users hit
+    # different exchange API keys so per-key rate limits don't compound. The
+    # ceiling (4) is a balance: high enough that 50-100 users finish well
+    # under the 60s budget, low enough that 8 different users * 8 exchanges
+    # per user doesn't pulse the network too hard.
+    sem = asyncio.Semaphore(_RECONCILE_CONCURRENCY)
+    counters = {"opens": 0, "closes": 0, "open": 0, "failed": 0}
+
+    async def _bounded(uid: int) -> None:
         if _stop.is_set():
-            break
-        try:
-            opens, closes, still_open = await _reconcile_user(uid)
-            total_opens += opens
-            total_closes += closes
-            total_open += still_open
-        except Exception as exc:
-            failed_users += 1
-            logger.exception("reconcile user=%s failed: %s", uid, exc)
+            return
+        async with sem:
+            try:
+                opens, closes, still_open = await _reconcile_user(uid)
+                counters["opens"] += opens
+                counters["closes"] += closes
+                counters["open"] += still_open
+            except Exception as exc:
+                counters["failed"] += 1
+                logger.exception("reconcile user=%s failed: %s", uid, exc)
+
+    await asyncio.gather(*(_bounded(uid) for uid in user_ids))
+
     logger.info(
-        "reconcile pass: users=%d still_open=%d new_opens=%d new_closes=%d failed_users=%d",
-        len(user_ids), total_open, total_opens, total_closes, failed_users,
+        "reconcile pass: users=%d still_open=%d new_opens=%d new_closes=%d failed_users=%d (concurrency=%d)",
+        len(user_ids), counters["open"], counters["opens"], counters["closes"],
+        counters["failed"], _RECONCILE_CONCURRENCY,
     )
 
 

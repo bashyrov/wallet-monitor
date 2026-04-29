@@ -430,8 +430,12 @@ class BybitAdapter:
                 if p.get("margin_mode") == "_uta_lookup":
                     p["margin_mode"] = uta_mode
         since_ms = int((time.time() - 7 * 86400) * 1000)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
+            cached_funding(api_key, p["_api_symbol"],
+                           lambda p=p: cls._funding_pnl(creds, p["_api_symbol"], since_ms))
+            for p in positions
         ], return_exceptions=True)
         for p, f in zip(positions, fundings):
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None

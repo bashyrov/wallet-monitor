@@ -354,11 +354,14 @@ class KuCoinAdapter:
             return []
         # 7-day window for accumulated funding. See binance adapter note.
         since_ms = int((_t.time() - 7 * 86400) * 1000)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         infos, fundings = await asyncio.gather(
             asyncio.gather(*[_instrument_info(p.get("symbol") or cls._symbol(str(p.get("symbol", "")).replace("USDTM", "")))
                              for p in pending], return_exceptions=True),
-            asyncio.gather(*[cls._funding_pnl(creds, p.get("symbol"), since_ms) for p in pending],
-                           return_exceptions=True),
+            asyncio.gather(*[cached_funding(api_key, p.get("symbol") or "",
+                                            lambda p=p: cls._funding_pnl(creds, p.get("symbol"), since_ms))
+                             for p in pending], return_exceptions=True),
         )
         out = []
         for p, info, funding in zip(pending, infos, fundings):

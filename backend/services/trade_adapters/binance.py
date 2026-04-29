@@ -310,26 +310,47 @@ class BinanceAdapter:
         return {"order_id": str(r.get("orderId")), "closed_qty": abs(amt), "realized_pnl_usd": 0.0}
 
     # ── Positions ──
+    # Per-user funding-PnL cache. Was: 1 call per position per list_positions
+    # = N×30 weight × 6 polls/min = an instant 418 ban on Binance for any
+    # user with >5 open positions. Now: 1 call per user per 30s, bucketed
+    # in-memory by symbol. Drops weight cost by ~1/(N*6) for active /arb
+    # users.
+    _FUNDING_CACHE: dict[str, tuple[float, dict[str, float]]] = {}
+    _FUNDING_CACHE_TTL_S = 30.0
+
     @classmethod
-    async def _funding_pnl(cls, creds: dict, symbol: str, since_ms: int) -> float | None:
-        """Sum of funding fees (income) since `since_ms`. Negative = paid out.
-        `/fapi/v1/income?incomeType=FUNDING_FEE&symbol=...&limit=1000` —
-        Binance returns funding events with `income` in USDT. Returns None if
-        the call fails so the UI falls back to an em-dash."""
+    async def _funding_pnl_bulk(cls, creds: dict, since_ms: int) -> dict[str, float]:
+        """Single bulk fetch: all FUNDING_FEE events for the account in
+        one /fapi/v1/income call (no symbol filter). Returns {symbol: usd}.
+        Cached 30s per api_key. Empty dict on failure (caller falls back
+        to None per-symbol)."""
+        api_key = (creds.get("api_key") or "").strip()
+        cached = cls._FUNDING_CACHE.get(api_key)
+        if cached and (time.time() - cached[0]) < cls._FUNDING_CACHE_TTL_S:
+            return cached[1]
         try:
             data = await cls._signed(creds, "GET", "/fapi/v1/income", {
-                "symbol": symbol, "incomeType": "FUNDING_FEE",
-                "startTime": since_ms, "limit": 1000,
+                "incomeType": "FUNDING_FEE",
+                "startTime": since_ms,
+                "limit": 1000,
             })
-            return sum(float(x.get("income") or 0) for x in (data or []))
-        except Exception:
-            return None
+        except Exception as exc:
+            logger.info("binance funding bulk fetch failed: %s", exc)
+            return {}
+        out: dict[str, float] = {}
+        for ev in (data or []):
+            sym = (ev.get("symbol") or "").upper()
+            try:
+                out[sym] = out.get(sym, 0.0) + float(ev.get("income") or 0)
+            except (TypeError, ValueError):
+                continue
+        cls._FUNDING_CACHE[api_key] = (time.time(), out)
+        return out
 
     @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         params = {"symbol": cls._symbol(symbol)} if symbol else None
         data = await cls._signed(creds, "GET", "/fapi/v2/positionRisk", params)
-        # Gather positions first, then fetch funding P&L per symbol in parallel.
         positions = []
         for p in data:
             amt = float(p.get("positionAmt", 0) or 0)
@@ -352,17 +373,15 @@ class BinanceAdapter:
             })
         if not positions:
             return []
-        # Funding P&L since position-open time is hard to obtain from the
-        # Binance position API (no openTime field). 7 days window is a
-        # reasonable default — most arb positions are closed within days.
-        # Users can always see precise accumulated funding on the exchange UI.
+        # Single bulk funding fetch. 7-day window covers most arb positions;
+        # users can see precise accumulated funding on the exchange UI for
+        # longer-held positions.
         since_ms = int((time.time() - 7 * 86400) * 1000)
-        fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
-        ], return_exceptions=True)
-        for p, f in zip(positions, fundings):
-            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
-            p.pop("_api_symbol", None)
+        funding_by_sym = await cls._funding_pnl_bulk(creds, since_ms)
+        for p in positions:
+            api_sym = p.pop("_api_symbol", "")
+            v = funding_by_sym.get((api_sym or "").upper())
+            p["funding_pnl_usd"] = v if v is not None else None
         return positions
 
     @classmethod
