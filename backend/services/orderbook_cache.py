@@ -309,6 +309,17 @@ async def _poll_loop(key: str, exchange: str, symbol: str, limit: int) -> None:
                 continue
 
             outcome, data, err = await _fetch_direct_with_status(exchange, symbol, limit)
+            # Permanent give-up on "unsupported exchange" — we have no REST
+            # handler, no amount of retrying will fix it. Logged once so
+            # the source of the bad subscription can be tracked, then the
+            # poller exits and stops generating noise.
+            if outcome == FetchOutcome.ERROR and err and err.startswith("unsupported exchange"):
+                logger.warning(
+                    "orderbook poller giving up: %s — %s (no REST handler; "
+                    "this poller should not have been started)",
+                    key, err,
+                )
+                return
             if outcome == FetchOutcome.OK:
                 entry["data"] = data
                 entry["ts"] = time.time()
