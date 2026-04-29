@@ -121,15 +121,29 @@ class OKXUserStream(BaseUserStream):
                     pos_contracts = float(pos_str)
                 except (TypeError, ValueError):
                     pos_contracts = 0.0
-                # Convert contracts → base asset via cached ctVal.
-                ct_val = 1.0
-                try:
-                    from backend.services.trade_adapters.okx import _INSTR_CACHE
-                    info = (_INSTR_CACHE.get("data") or {}).get(inst_id)
-                    if info:
-                        ct_val = float(info.get("ctVal") or 1.0)
-                except Exception:
-                    pass
+                # Convert contracts → base asset via ctVal. The position
+                # payload often carries ctVal directly; fall back to the
+                # cached instruments table when it doesn't (the existing
+                # REST adapter does the same — its docstring notes the
+                # bug it caused: e.g. DOGE qty came back as 0.15 instead
+                # of 150 because ctVal silently defaulted to 1).
+                ct_val = 0.0
+                ctv_raw = p.get("ctVal")
+                if ctv_raw:
+                    try:
+                        ct_val = float(ctv_raw)
+                    except (TypeError, ValueError):
+                        ct_val = 0.0
+                if not ct_val:
+                    try:
+                        from backend.services.trade_adapters.okx import _INSTR_CACHE
+                        info = (_INSTR_CACHE.get("data") or {}).get(inst_id)
+                        if info:
+                            ct_val = float(info.get("ctVal") or 1.0)
+                    except Exception:
+                        pass
+                if not ct_val:
+                    ct_val = 1.0
                 qty = abs(pos_contracts) * ct_val
                 # Strip "-USDT-SWAP" → "BTC"
                 base = inst_id[: -len("-USDT-SWAP")]
