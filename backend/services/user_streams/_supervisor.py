@@ -49,7 +49,12 @@ logger = logging.getLogger("avalant.userstream")
 _RECONNECT_BACKOFF_S = [2.0, 4.0, 8.0, 16.0, 32.0]
 _RECONNECT_JITTER = 0.25  # ±25%
 _HEARTBEAT_INTERVAL_S = 30.0
-_WS_RECV_TIMEOUT_S = 60.0  # if no message in 60s, treat as dead
+# We rely on websockets' ping_interval=20s + ping_timeout=60s to detect
+# dead connections (set on the connect() call). A separate "no message
+# in N seconds" timeout was a bug — Bybit/OKX/Binance don't push anything
+# when positions are stable, so a quiet stream is healthy. The library's
+# ping/pong is the real liveness signal.
+_WS_RECV_TIMEOUT_S = 600.0  # backstop only; library detects dead conn first
 
 
 class StreamTask:
