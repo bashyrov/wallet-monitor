@@ -240,7 +240,91 @@ async def _fetch_direct_raw(exchange: str, symbol: str, limit: int) -> dict | No
         d = (r.json() or {}).get("tick", {}) or {}
         return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
                 "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "lighter":
+        # Lighter zk-perp REST. Uses integer market_id, not symbol — we
+        # maintain a 1h-cached symbol→id map fetched from /api/v1/orderBooks.
+        # /orderBookOrders returns individual orders both sides; aggregate
+        # per-price into levels matching the (price, size) shape.
+        mid = await _lighter_market_id(symbol)
+        if mid is None:
+            return None
+        lim = max(1, min(250, int(limit) * 4))  # over-fetch since we aggregate
+        r = await c.get(
+            f"https://mainnet.zklighter.elliot.ai/api/v1/orderBookOrders?market_id={mid}&limit={lim}"
+        )
+        d = r.json() or {}
+        if d.get("code") != 200:
+            return {"bids": [], "asks": []}
+
+        def _aggregate(orders: list, reverse: bool) -> list:
+            buckets: dict[float, float] = {}
+            for o in orders:
+                try:
+                    px = float(o.get("price") or 0)
+                    sz = float(o.get("remaining_base_amount") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if px <= 0 or sz <= 0:
+                    continue
+                buckets[px] = buckets.get(px, 0.0) + sz
+            return sorted(buckets.items(), key=lambda kv: kv[0], reverse=reverse)
+
+        return {
+            "bids": [[p, s] for p, s in _aggregate(d.get("bids") or [], reverse=True)],
+            "asks": [[p, s] for p, s in _aggregate(d.get("asks") or [], reverse=False)],
+        }
+    if exchange == "ethereal":
+        # Ethereal SDK only exposes order books via Socket.IO L2Book stream;
+        # the REST API has no orderbook endpoint. Round-trip the SDK once
+        # per fetch — caller throttles per-pair already (POLL_INTERVAL=500ms),
+        # so opening / closing the WS this often is not viable. Return None
+        # so the caller falls back to the existing REST poller path's
+        # error handling. Live orderbook for Ethereal needs the dedicated
+        # SDK-runner adapter (see orderbook_ws/ethereal_sdk.py).
+        return None
     return None
+
+
+# ── Lighter symbol→market_id cache ───────────────────────────────────────────
+_lighter_id_cache: tuple[dict[str, int], float] = ({}, 0.0)
+_LIGHTER_ID_TTL = 3600.0  # 1 hour — markets only change on listings
+_lighter_id_lock = asyncio.Lock()
+
+
+async def _lighter_market_id(symbol: str) -> int | None:
+    """Resolve Lighter's integer market_id from a symbol like "BTC".
+
+    Lighter exposes /api/v1/orderBooks with {symbol, market_id, market_type,
+    status} per market; we cache the perp-only subset for 1h.
+    """
+    sym = (symbol or "").upper()
+    cache, ts = _lighter_id_cache
+    if cache and (time.monotonic() - ts) < _LIGHTER_ID_TTL:
+        return cache.get(sym)
+    async with _lighter_id_lock:
+        cache, ts = _lighter_id_cache
+        if cache and (time.monotonic() - ts) < _LIGHTER_ID_TTL:
+            return cache.get(sym)
+        try:
+            c = _get_http_for("lighter")
+            r = await c.get("https://mainnet.zklighter.elliot.ai/api/v1/orderBooks")
+            data = r.json() or {}
+            books = data.get("order_books") or []
+            new_map: dict[str, int] = {}
+            for b in books:
+                if (b.get("market_type") or "").lower() != "perp":
+                    continue
+                if (b.get("status") or "").lower() != "active":
+                    continue
+                s = (b.get("symbol") or "").upper()
+                mid = b.get("market_id")
+                if s and isinstance(mid, int):
+                    new_map[s] = mid
+            globals()["_lighter_id_cache"] = (new_map, time.monotonic())
+            return new_map.get(sym)
+        except Exception as exc:
+            logger.warning("lighter market_id refresh failed: %s", exc)
+            return cache.get(sym) if cache else None
 
 
 # Outcome of a single REST poll. "ok" + non-empty book = healthy.
