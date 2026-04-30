@@ -537,6 +537,12 @@ async def security_headers(request: Request, call_next) -> Response:
 from backend.api.v1.router import router as api_router  # noqa: E402
 app.include_router(api_router)
 
+# Refuse to boot if any /api/admin/* route is missing the
+# `Depends(get_admin_user)` guard — see backend/services/admin_guard_check.py
+# for the rationale (silent IDOR if forgotten on a new endpoint).
+from backend.services.admin_guard_check import assert_admin_routes_guarded  # noqa: E402
+assert_admin_routes_guarded(app)
+
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.exceptions import HTTPException
 from sqlalchemy.orm import Session
