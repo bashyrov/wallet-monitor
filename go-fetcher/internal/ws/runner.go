@@ -39,6 +39,18 @@ const staleThreshold = 30 * time.Second
 // Concurrency: SetSymbols() can be called from any goroutine; the runner
 // serialises through symMu. The recv loop reads symbols/conn under symMu
 // for the brief subscribe-window only, never on the hot path.
+//
+// IMPORTANT — gorilla/websocket requires "no more than one goroutine
+// calls write methods concurrently". We have THREE potential writers per
+// session:
+//
+//   1. main recv loop  — initial subscribe + ping replies
+//   2. heartbeat loop  — periodic app-level pings
+//   3. SetSymbols      — delta-subscribe on prewarm refresh
+//
+// All three go through writeMu. Without serialization Bybit/Hyperliquid
+// silently drop the connection on byte-interleaved frames; the symptom
+// is "WS connected" with zero data flow before reconnect.
 type Runner struct {
 	a        Adapter
 	onUpdate UpdateFunc
@@ -48,9 +60,18 @@ type Runner struct {
 	subscribed map[string]struct{} // already-sent for current connection
 	conn       *websocket.Conn
 
+	writeMu sync.Mutex // serialises all writes to .conn
 	bo      Backoff
 	lastMsg atomic[time.Time]
 	log     *zerolog.Logger
+}
+
+// safeSend is the ONLY sanctioned write path. Holds writeMu so the three
+// concurrent writers don't interleave bytes on the wire.
+func (r *Runner) safeSend(conn *websocket.Conn, payload []byte) error {
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+	return SendText(conn, payload)
 }
 
 func NewRunner(a Adapter, onUpdate UpdateFunc) *Runner {
@@ -235,7 +256,7 @@ func (r *Runner) session(ctx context.Context) error {
 					// adapter's PongFor decides reply (different venues
 					// want different cases — runner stays neutral).
 					if reply := r.a.PongFor(raw); reply != nil {
-						if err := SendText(conn, reply); err != nil {
+						if err := r.safeSend(conn, reply); err != nil {
 							return err
 						}
 					}
@@ -243,7 +264,7 @@ func (r *Runner) session(ctx context.Context) error {
 				}
 			}
 			if reply := r.a.PongFor(raw); reply != nil {
-				if err := SendText(conn, reply); err != nil {
+				if err := r.safeSend(conn, reply); err != nil {
 					return err
 				}
 				continue
@@ -287,7 +308,7 @@ func (r *Runner) subscribe(conn *websocket.Conn, syms []string) error {
 
 	delay := r.a.SubscribeDelay()
 	for i, f := range frames {
-		if err := SendText(conn, f); err != nil {
+		if err := r.safeSend(conn, f); err != nil {
 			return err
 		}
 		if delay > 0 && i < len(frames)-1 {
@@ -313,7 +334,7 @@ func (r *Runner) heartbeatLoop(ctx context.Context, conn *websocket.Conn, frame 
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := SendText(conn, frame); err != nil {
+			if err := r.safeSend(conn, frame); err != nil {
 				return
 			}
 		}

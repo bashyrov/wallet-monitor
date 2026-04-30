@@ -22,16 +22,27 @@ import (
 // in fast (rate, mark price), REST backstop fills in heavy fields
 // (volume, open interest) that WS pushes often omit.
 type Runner struct {
-	a        Adapter
-	store    *Store
-	syms     []string
-	symsMu   sync.RWMutex
-	log      *zerolog.Logger
+	a       Adapter
+	store   *Store
+	syms    []string
+	symsMu  sync.RWMutex
+	writeMu sync.Mutex // serialises all writes to the live conn
+	log     *zerolog.Logger
 }
 
 func NewRunner(a Adapter, store *Store) *Runner {
 	l := wmlog.L().With().Str("funding", a.Name()).Logger()
 	return &Runner{a: a, store: store, log: &l}
+}
+
+// safeSend — single sanctioned write path. Holds writeMu so the
+// recv-loop (subscribes, ping replies) and the heartbeat goroutine
+// don't byte-interleave on the same conn (gorilla/websocket contract:
+// only one concurrent writer).
+func (r *Runner) safeSend(conn *websocket.Conn, payload []byte) error {
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+	return ws.SendText(conn, payload)
 }
 
 // SetSymbols replaces the wanted set. Both WS and REST goroutines see the
@@ -138,7 +149,7 @@ func (r *Runner) wsSession(ctx context.Context) error {
 	syms := r.symbols()
 	if len(syms) > 0 {
 		for _, frame := range r.a.BuildSubscribe(syms) {
-			if err := ws.SendText(conn, frame); err != nil {
+			if err := r.safeSend(conn, frame); err != nil {
 				return err
 			}
 		}
@@ -164,7 +175,7 @@ func (r *Runner) wsSession(ctx context.Context) error {
 		}
 		if mt == websocket.TextMessage || mt == websocket.BinaryMessage {
 			if reply := r.a.PongFor(raw); reply != nil {
-				if err := ws.SendText(conn, reply); err != nil {
+				if err := r.safeSend(conn, reply); err != nil {
 					return err
 				}
 				continue
@@ -233,7 +244,7 @@ func (r *Runner) heartbeat(ctx context.Context, conn *websocket.Conn, frame []by
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := ws.SendText(conn, frame); err != nil {
+			if err := r.safeSend(conn, frame); err != nil {
 				return
 			}
 		}
