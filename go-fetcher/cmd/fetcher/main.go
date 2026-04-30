@@ -191,11 +191,42 @@ func main() {
 		})
 	}
 
-	// Initial prewarm — top-N hot symbols apply to every venue. Once
-	// arb compute lands (Phase 4 future), per-venue prewarm replaces this.
-	startSymbols := bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN)
-	l.Info().Strs("bootstrap_symbols", startSymbols).Msg("symbol bootstrap")
+	// Initial prewarm. During shadow-mode rollout we want Go's hot-list
+	// to match Python's so the diff comparison is apples-to-apples; that
+	// means reading from Python's cache dir (env BOOTSTRAP_FROM_DIR,
+	// default /tmp/avalant_cache) rather than our own write dir. Falls
+	// back to cfg.CacheDir, then Default20.
+	bootstrapDir := os.Getenv("AVALANT_BOOTSTRAP_FROM_DIR")
+	if bootstrapDir == "" {
+		bootstrapDir = "/tmp/avalant_cache"
+	}
+	startSymbols := bootstrap.TopSymbols(bootstrapDir, cfg.PrewarmTopN)
+	if len(startSymbols) < 5 {
+		startSymbols = bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN)
+	}
+	l.Info().Strs("bootstrap_symbols", startSymbols).Str("from_dir", bootstrapDir).Msg("symbol bootstrap")
 	mgr.PrewarmAll(startSymbols)
+
+	// Periodic prewarm refresh — pick up new top-N from Python's
+	// funding.json every 30s. Once Go owns the funding compute (already
+	// does — it writes funding.json itself) and Python is decommissioned,
+	// this becomes a no-op. For now, the shadow mode benefits from
+	// staying in sync with Python's hot list.
+	g.Go(func() error {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-gctx.Done():
+				return nil
+			case <-t.C:
+				syms := bootstrap.TopSymbols(bootstrapDir, cfg.PrewarmTopN)
+				if len(syms) >= 5 {
+					mgr.PrewarmAll(syms)
+				}
+			}
+		}
+	})
 
 	if err := g.Wait(); err != nil {
 		l.Error().Err(err).Msg("fetcher exited with error")
