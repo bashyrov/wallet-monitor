@@ -2158,7 +2158,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
           ? '<span class="pill tr" style="font-size:10px"><span class="pill-dot"></span>Trade</span>'
           : '<span class="pill ro" style="font-size:10px"><span class="pill-dot"></span>Read-only</span>';
         const bal = w.error
-          ? `<span style="color:var(--red);font-size:10.5px" title="${w.error}">err</span>`
+          ? `<span style="color:var(--red);font-size:10.5px" title="${_walletBalErrAttr(w.error)}">${_walletBalErrLabel(w.error)}</span>`
           : fmt(w.balance_usdt);
         return `<tr>
           <td>${EX_LABEL[w.exchange]||w.exchange}</td>
@@ -2219,6 +2219,23 @@ const fmtDate=ts=>{const d=new Date(ts*1000);return d.toLocaleDateString('en-US'
 const fmtDateFull=ts=>{const d=new Date(ts*1000);return d.toLocaleDateString('ru-RU')+', '+d.toLocaleTimeString('ru-RU');};
 const fmtCD=ts=>{if(!ts)return'—';const s=ts-Math.floor(Date.now()/1000);if(s<=0)return'00:00:00';const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;return`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;};
 function fmtBookP(v){if(!v)return'—';if(v>=10000)return v.toLocaleString('en-US',{maximumFractionDigits:1});if(v>=1)return(+v).toFixed(4);return(+v).toFixed(6);}
+// Classify a balance-fetch error string into a short, human label. The full
+// message stays in the tooltip — this is just the inline tag so users see
+// "IP block" / "bad key" instead of an opaque "err".
+function _walletBalErrLabel(msg){
+  if(!msg) return 'fail';
+  const s = String(msg).toLowerCase();
+  if(s.includes('whitelist') || s.includes('ip address') || s.includes('ip not') || s.includes('unmatched ip')) return 'IP block';
+  if(s.includes('invalid api') || s.includes('api-key') || s.includes('api key') || s.includes('bad key')) return 'bad key';
+  if(s.includes('signature') || s.includes('sign mismatch') || s.includes('bad signature')) return 'bad sig';
+  if(s.includes('permission') || s.includes('insufficient') || s.includes('not allowed')) return 'no perm';
+  if(s.includes('rate') || s.includes('too many') || s.includes('429')) return 'rate-limit';
+  if(s.includes('timeout') || s.includes('timed out')) return 'timeout';
+  if(s.includes('network') || s.includes('connect') || s.includes('econnrefused')) return 'no net';
+  if(s.includes('expired') || s.includes('disabled')) return 'key off';
+  return 'fail';
+}
+function _walletBalErrAttr(msg){return String(msg||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 // Mobile-only collapse for the order-book column. CSS hides .books-row by
 // default at <=900px and reveals it when .col-books carries .is-open.
@@ -4544,7 +4561,7 @@ async function accLoadBalances(){
       : `$${Number(v).toFixed(2)}`;
     tbody.innerHTML = rows.map(w => {
       const bal = w.error
-        ? `<span style="color:var(--red);font-size:10.5px" title="${w.error}">err</span>`
+        ? `<span style="color:var(--red);font-size:10.5px" title="${_walletBalErrAttr(w.error)}">${_walletBalErrLabel(w.error)}</span>`
         : fmt(w.balance_usdt);
       return `<tr>
         <td><span class="ex-pill">${(EX_LABEL[w.exchange]||w.exchange)}</span></td>

@@ -126,13 +126,17 @@ _FILE_CHECK_INTERVAL = 0.1  # re-open file at most every 100ms per worker
 # smallest acceptable value — serving 20 levels when the caller asked for 12
 # is strictly better than serving zero.
 _VALID_LIMITS = {
-    "binance":  [5, 10, 20, 50, 100, 500, 1000],   # /fapi/v1/depth
-    "aster":    [5, 10, 20, 50, 100, 500, 1000],   # Binance fork
-    "bybit":    [1, 50, 200, 500, 1000],           # /v5/market/orderbook
-    "bitget":   [5, 15, 50, 100, 200, 1000],       # /mix/market/merge-depth
-    "mexc":     [5, 10, 20, 50, 100, 200, 500, 1000],  # contract depth
-    "okx":      [1, 5, 10, 20, 50, 100, 200, 400],     # /market/books
-    "gate":     [5, 10, 20, 50, 100],              # /futures/usdt/order_book
+    "binance":      [5, 10, 20, 50, 100, 500, 1000],   # /fapi/v1/depth
+    "aster":        [5, 10, 20, 50, 100, 500, 1000],   # Binance fork
+    "bybit":        [1, 50, 200, 500, 1000],           # /v5/market/orderbook
+    "bitget":       [5, 15, 50, 100, 200, 1000],       # /mix/market/merge-depth
+    "mexc":         [5, 10, 20, 50, 100, 200, 500, 1000],  # contract depth
+    "okx":          [1, 5, 10, 20, 50, 100, 200, 400],     # /market/books
+    "gate":         [5, 10, 20, 50, 100],              # /futures/usdt/order_book
+    "binance_spot": [5, 10, 20, 50, 100, 500, 1000, 5000],
+    "bitget_spot":  [1, 5, 15, 50, 100, 200],
+    "mexc_spot":    [5, 10, 20, 50, 100, 500, 1000, 5000],
+    "okx_spot":     [1, 5, 10, 20, 50, 100, 200, 400],
 }
 
 
@@ -310,6 +314,72 @@ async def _fetch_direct_raw(exchange: str, symbol: str, limit: int) -> dict | No
         # error handling. Live orderbook for Ethereal needs the dedicated
         # SDK-runner adapter (see orderbook_ws/ethereal_sdk.py).
         return None
+    # ── Spot venues ──────────────────────────────────────────────────────────
+    # Spot orderbooks back the spot leg of /arb?type=spot pages. The WS
+    # adapters (BinanceSpotWS, KuCoinSpotWS, …) handle the live path; this
+    # block is the REST backstop when WS drops. Without it the spot ladder
+    # stays blank with no recovery.
+    if exchange == "binance_spot":
+        r = await c.get(f"https://api.binance.com/api/v3/depth?symbol={symbol}USDT&limit={limit}")
+        d = r.json()
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "bybit_spot":
+        lim = max(1, min(200, int(limit)))
+        r = await c.get(f"https://api.bybit.com/v5/market/orderbook?category=spot&symbol={symbol}USDT&limit={lim}")
+        d = r.json().get("result", {}) or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("b", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("a", [])]}
+    if exchange == "okx_spot":
+        r = await c.get(f"https://www.okx.com/api/v5/market/books?instId={symbol}-USDT&sz={limit}")
+        d = (r.json().get("data") or [{}])[0] or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "gate_spot":
+        lim = max(1, min(100, int(limit)))
+        r = await c.get(
+            f"https://api.gateio.ws/api/v4/spot/order_book?currency_pair={symbol}_USDT&limit={lim}&with_id=false"
+        )
+        d = r.json() or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "kucoin_spot":
+        # KuCoin spot offers only fixed-depth public endpoints (level2_20 /
+        # level2_100). Pick the smallest one that covers the request.
+        depth = 20 if limit <= 20 else 100
+        r = await c.get(
+            f"https://api.kucoin.com/api/v1/market/orderbook/level2_{depth}?symbol={symbol}-USDT"
+        )
+        d = (r.json() or {}).get("data", {}) or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "bitget_spot":
+        r = await c.get(
+            f"https://api.bitget.com/api/v2/spot/market/merge-depth?symbol={symbol}USDT&limit={limit}"
+        )
+        d = (r.json() or {}).get("data", {}) or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "bingx_spot":
+        lim = max(5, min(100, int(limit)))
+        r = await c.get(
+            f"https://open-api.bingx.com/openApi/spot/v1/market/depth?symbol={symbol}-USDT&limit={lim}"
+        )
+        d = (r.json() or {}).get("data", {}) or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "htx_spot":
+        # HTX spot uses lowercase symbol + step0 (no aggregation).
+        sym = (symbol + "usdt").lower()
+        r = await c.get(f"https://api.huobi.pro/market/depth?symbol={sym}&type=step0&depth=20")
+        d = (r.json() or {}).get("tick", {}) or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "mexc_spot":
+        r = await c.get(f"https://api.mexc.com/api/v3/depth?symbol={symbol}USDT&limit={limit}")
+        d = r.json() or {}
+        return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
     return None
 
 
@@ -710,6 +780,15 @@ _WS_DEPTH = {
     "bybit":      200,
     "okx":        200,
     "bitget":     200,
+    "binance_spot": 20,
+    "bybit_spot":   50,
+    "okx_spot":     50,
+    "gate_spot":    20,
+    "kucoin_spot": 100,
+    "bitget_spot": 100,
+    "bingx_spot":  100,
+    "htx_spot":     20,
+    "mexc_spot":    20,
 }
 
 
