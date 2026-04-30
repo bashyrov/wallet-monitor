@@ -49,16 +49,22 @@ func (a *Futures) Name() string                    { return "bybit" }
 func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	args := make([]string, len(symbols))
-	for i, s := range symbols {
-		args[i] = "orderbook.50." + strings.ToUpper(s) + "USDT"
+	// Bybit rejects the WHOLE subscribe payload if even one topic is
+	// invalid — symptom: "error:handler not found,topic:orderbook.50.X".
+	// Bootstrap pulls top-N from Python's funding.json which can include
+	// symbols that exist on Binance/Gate/etc but not on Bybit (e.g.
+	// SPYX). Send one args list per topic so a single bad symbol just
+	// fails alone and the rest still subscribe.
+	frames := make([][]byte, 0, len(symbols))
+	for _, s := range symbols {
+		frame := map[string]any{
+			"op":   "subscribe",
+			"args": []string{"orderbook.50." + strings.ToUpper(s) + "USDT"},
+		}
+		b, _ := ws.MarshalJSON(frame)
+		frames = append(frames, b)
 	}
-	frame := map[string]any{
-		"op":   "subscribe",
-		"args": args,
-	}
-	b, _ := ws.MarshalJSON(frame)
-	return [][]byte{b}
+	return frames
 }
 
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
@@ -127,49 +133,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}, nil
 }
 
-// Bybit V5 keepalive — observed in prod (Singapore IP):
-//   1. Client must send {"op":"ping"} every <30s, else server closes.
-//   2. Server ALSO sends {"op":"ping"} unsolicited and expects
-//      {"op":"pong"} reply within ~10s. Without reply, server closes.
-// Both directions handled here: Heartbeat for client→server, PongFor
-// for server→client. Bug found via wire trace — adapter parsed ack/pong
-// but missed inbound ping, which silently killed the connection.
+// Bybit V5 keepalive: client sends {"op":"ping"} every <30s. Server
+// replies {"op":"pong","success":true,...}. Bybit DOES NOT send
+// unsolicited pings to clients on public streams — we don't reply to
+// anything. (Replying with "op":"pong" got the connection error
+// "invalid op" — bybit treats client-sent pong as malformed.)
 func (a *Futures) Heartbeat() []byte                { return []byte(`{"op":"ping"}`) }
 func (a *Futures) HeartbeatInterval() time.Duration { return 20 * time.Second }
-func (a *Futures) PongFor(frame []byte) []byte {
-	// Quick prefix check before parse — bybit's data frames don't have
-	// `"op":"ping"` so this filter avoids per-frame JSON parsing on the
-	// hot path (300+ delta frames/s/symbol).
-	if !bytesContainsOpPing(frame) {
-		return nil
-	}
-	return []byte(`{"op":"pong"}`)
-}
-func (a *Futures) UseLibPings() bool { return false }
-
-// bytesContainsOpPing — true if the frame contains the literal substring
-// `"op":"ping"`. Cheap and good enough — false positives only occur if
-// the substring shows up inside another payload (extremely unlikely
-// given Bybit's JSON shapes).
-func bytesContainsOpPing(b []byte) bool {
-	const needle = `"op":"ping"`
-	if len(b) < len(needle) {
-		return false
-	}
-	for i := 0; i <= len(b)-len(needle); i++ {
-		match := true
-		for j := 0; j < len(needle); j++ {
-			if b[i+j] != needle[j] {
-				match = false
-				break
-			}
-		}
-		if match {
-			return true
-		}
-	}
-	return false
-}
+func (a *Futures) PongFor(_ []byte) []byte          { return nil }
+func (a *Futures) UseLibPings() bool                { return false }
 func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
 func (a *Futures) MaxSymbols() int                  { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
