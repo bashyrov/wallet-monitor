@@ -597,13 +597,21 @@ body.light .bnav-item.active{color:#000;}
   .left-stack{flex:none;}
   .main{flex-direction:column;overflow:visible;height:auto;min-height:0;flex:none;max-height:none;border-bottom:none;}
   .col-left,.col-books,.col-info{width:100%;min-width:0;border-right:none;border-left:none;border-bottom:none;}
-  .col-left{max-height:none;}
+  /* Drop the desktop flex-basis (0 0 46%) on the column-stacked mobile
+     layout — with parent .main having height:auto, a percentage basis
+     resolves to 0 and overflow:hidden clips everything inside, which is
+     why the active tab pane appeared blank. flex:none + height:auto
+     lets col-left size to its actual content (chart-tabs + tab-pane). */
+  .col-left{flex:none;height:auto;max-height:none;overflow:visible;}
   /* Charts column: sized to its active tab. Bumped chart heights so the
      content is actually readable on phones — the previous 320/260 left
      candle bodies as 1-2px slivers under labels and toolbars. */
   .tab-pane.active{min-height:auto;}
-  .spread-section{flex:0 0 auto;height:480px;}
-  .fund-section{flex:0 0 auto;height:380px;}
+  /* !important needed — the inline style="flex:1" on these wrappers
+     would otherwise grow them to a 0-basis flex item under a 0-height
+     parent and squash the chart to nothing. Force the explicit height. */
+  .spread-section{flex:0 0 auto !important;height:480px !important;}
+  .fund-section{flex:0 0 auto !important;height:380px !important;}
   .overview-scroll,.info-scroll,.all-ex-scroll{max-height:none;overflow-y:visible;}
   /* For panes without an inner section (Overview / Info / All Rates),
      give the pane itself a minimum so the table isn't crushed under
@@ -663,8 +671,8 @@ body.light .bnav-item.active{color:#000;}
   /* Tab-scoped TF buttons bigger touch target */
   .tf-btn{padding:5px 10px;font-size:11px;}
   /* Charts a bit shorter */
-  .spread-section{height:280px;}
-  .fund-section{height:220px;}
+  .spread-section{height:280px !important;}
+  .fund-section{height:220px !important;}
   .books-row{height:auto;flex-direction:column;}
   .book-panel{height:340px;border-right:none;border-bottom:1px solid var(--border);}
   .book-panel:last-child{border-bottom:none;}
