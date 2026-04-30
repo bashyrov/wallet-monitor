@@ -132,8 +132,23 @@ def unarchive_wallet(db: Session, wallet_id: int, user_id: int, user: User | Non
 
 
 def create_wallet(db: Session, body: WalletCreate, user_id: int, user: User | None = None) -> WalletOut:
+    # Lock the user row for the duration of this transaction. Postgres
+    # serializes concurrent /api/wallets POSTs for the same user — without
+    # this, two parallel requests both saw count<limit, both inserted, and
+    # the user ended up over the portfolio_limit / exchange_keys_per_venue
+    # cap. SQLite ignores `with_for_update` (no row-level locks) but local
+    # dev runs single-process anyway.
+    locked_user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .with_for_update()
+        .first()
+    )
+    if locked_user is None:
+        from backend.domain.errors import WalletLimitReached
+        raise WalletLimitReached(0)
     if user is None:
-        user = db.query(User).filter(User.id == user_id).first()
+        user = locked_user
     limits = plan_service.effective_limits(db, user)
 
     purpose = body.purpose if body.wallet_type == "exchange" else "portfolio"

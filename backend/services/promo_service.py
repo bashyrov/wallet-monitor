@@ -136,12 +136,22 @@ def create_code(db: Session, code: str, fields: dict[str, Any]) -> PromoCode:
     bonus_days = _coerce_bonus_days(fields.get("bonus_days"))
     if discount == 0 and bonus_days == 0:
         raise ValueError("promo must grant either a discount_pct > 0 or bonus_days > 0 (or both)")
+    # Default per_user_max_uses to 1 when bonus_days > 0 — without a cap a
+    # single user can redeem the same bonus-days code over and over and
+    # extend their subscription indefinitely. Admin can still explicitly
+    # set per_user_max_uses to null/0 ("unlimited") via the API by passing
+    # the field; only the unset/empty case gets the default.
+    raw_per_user = fields.get("per_user_max_uses")
+    if bonus_days > 0 and raw_per_user is None and "per_user_max_uses" not in fields:
+        per_user = 1
+    else:
+        per_user = _coerce_per_user(raw_per_user)
     promo = PromoCode(
         code=code_n,
         discount_pct=discount,
         bonus_days=bonus_days,
         max_uses=fields.get("max_uses"),
-        per_user_max_uses=_coerce_per_user(fields.get("per_user_max_uses")),
+        per_user_max_uses=per_user,
         target_user_id=fields.get("target_user_id") or None,
         applies_to_plan_ids=fields.get("applies_to_plan_ids") or None,
         is_active=bool(fields.get("is_active", True)),
