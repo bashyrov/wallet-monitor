@@ -94,12 +94,18 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}, nil
 }
 
-// Hyperliquid uses lib WS pings.
+// Hyperliquid keepalive — server sends ping frames, gorilla auto-replies
+// with WS-frame pong. No app-level heartbeat required.
 func (a *Futures) Heartbeat() []byte                { return nil }
 func (a *Futures) HeartbeatInterval() time.Duration { return 0 }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return true }
-func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
-func (a *Futures) MaxSymbols() int                  { return 0 }
-func (a *Futures) DecompressGzip() bool             { return false }
-func (a *Futures) OnReconnect()                     {}
+
+// HL drops the connection (close 1006, no frame) when we send 20+
+// subscribes in <100 ms — observed in prod shadow validation. 100 ms
+// gives us 10 subs/s, well under whatever the per-IP limit actually
+// is. 20 symbols × 100 ms = 2 s subscribe phase, acceptable.
+func (a *Futures) SubscribeDelay() time.Duration { return 100 * time.Millisecond }
+func (a *Futures) MaxSymbols() int               { return 0 }
+func (a *Futures) DecompressGzip() bool          { return false }
+func (a *Futures) OnReconnect()                  {}

@@ -89,10 +89,13 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 	return []funding.Tick{tick}, nil
 }
 
-func (a *Adapter) Heartbeat() []byte                { return nil }
-func (a *Adapter) HeartbeatInterval() time.Duration { return 0 }
+// Bybit V5 public stream wants app-level {"op":"ping"} every <30s —
+// see the orderbook adapter's note for the prod observation behind
+// this. Same fix here.
+func (a *Adapter) Heartbeat() []byte                { return []byte(`{"op":"ping"}`) }
+func (a *Adapter) HeartbeatInterval() time.Duration { return 20 * time.Second }
 func (a *Adapter) PongFor(_ []byte) []byte          { return nil }
-func (a *Adapter) UseLibPings() bool                { return true }
+func (a *Adapter) UseLibPings() bool                { return false }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {

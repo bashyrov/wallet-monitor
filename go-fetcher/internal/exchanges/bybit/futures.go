@@ -127,12 +127,16 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}, nil
 }
 
-// Bybit V5 sends a private-stream "ping" every 20s — but for public
-// streams the lib-level WS ping is honoured. No app-level heartbeat needed.
-func (a *Futures) Heartbeat() []byte                { return nil }
-func (a *Futures) HeartbeatInterval() time.Duration { return 0 }
+// Bybit V5 actually requires app-level {"op":"ping"} every <30s on
+// public streams — observed in prod shadow validation: without it the
+// server closes after exactly 30s (same as my staleness watchdog
+// threshold, which made it look like a watchdog issue). Reply is
+// {"op":"pong","success":true} which we just consume as a non-data
+// frame.
+func (a *Futures) Heartbeat() []byte                { return []byte(`{"op":"ping"}`) }
+func (a *Futures) HeartbeatInterval() time.Duration { return 20 * time.Second }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
-func (a *Futures) UseLibPings() bool                { return true }
+func (a *Futures) UseLibPings() bool                { return false }
 func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
 func (a *Futures) MaxSymbols() int                  { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
