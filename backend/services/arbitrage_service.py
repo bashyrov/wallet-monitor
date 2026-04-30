@@ -612,6 +612,91 @@ async def _fetch_lighter() -> list[dict]:
     return out
 
 
+async def _fetch_backpack() -> list[dict]:
+    """Backpack perps — public REST, no auth required.
+
+    Three endpoints joined by symbol:
+      /api/v1/markets    — fundingInterval (ms) + marketType filter
+      /api/v1/markPrices — fundingRate, markPrice, nextFundingTimestamp
+      /api/v1/tickers    — 24h quoteVolume in USDC
+
+    Symbol convention: <BASE>_USDC_PERP — we strip the suffix.
+    """
+    mk_resp, mp_resp, tk_resp = await asyncio.gather(
+        _http.get("https://api.backpack.exchange/api/v1/markets"),
+        _http.get("https://api.backpack.exchange/api/v1/markPrices"),
+        _http.get("https://api.backpack.exchange/api/v1/tickers"),
+        return_exceptions=True,
+    )
+    if any(isinstance(x, Exception) for x in (mk_resp, mp_resp, tk_resp)):
+        return []
+    try:
+        mk_resp.raise_for_status()
+        mp_resp.raise_for_status()
+        tk_resp.raise_for_status()
+    except Exception:
+        return []
+    markets = mk_resp.json() or []
+    mark_prices = mp_resp.json() or []
+    tickers = tk_resp.json() or []
+
+    # symbol → fundingInterval_h (default 1h if absent)
+    ivl_by_sym: dict[str, float] = {}
+    for m in markets:
+        if (m.get("marketType") or "") != "PERP":
+            continue
+        sym = m.get("symbol") or ""
+        ivl_ms = m.get("fundingInterval")
+        if not sym:
+            continue
+        try:
+            ivl_by_sym[sym] = max(1.0, float(ivl_ms) / 3_600_000.0) if ivl_ms else 1.0
+        except (TypeError, ValueError):
+            ivl_by_sym[sym] = 1.0
+
+    # symbol → 24h quote volume (USDC ≈ USD)
+    vol_by_sym: dict[str, float] = {}
+    for t in tickers:
+        sym = t.get("symbol") or ""
+        if not sym.endswith("_USDC_PERP"):
+            continue
+        try:
+            vol_by_sym[sym] = float(t.get("quoteVolume") or 0)
+        except (TypeError, ValueError):
+            continue
+
+    out: list[dict] = []
+    for mp in mark_prices:
+        sym = mp.get("symbol") or ""
+        if not sym.endswith("_USDC_PERP"):
+            continue
+        base = sym[:-len("_USDC_PERP")]
+        if not base or sym not in ivl_by_sym:
+            continue
+        try:
+            price = float(mp.get("markPrice") or 0)
+            rate = float(mp.get("fundingRate") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price <= 0 or rate == 0:
+            continue
+        next_ts_ms = mp.get("nextFundingTimestamp")
+        try:
+            next_ts = int(next_ts_ms) // 1000 if next_ts_ms else 0
+        except (TypeError, ValueError):
+            next_ts = 0
+        out.append({
+            "symbol": base,
+            "exchange": "backpack",
+            "price": price,
+            "rate": rate,
+            "next_ts": next_ts,
+            "interval_h": ivl_by_sym[sym],
+            "volume_usd": vol_by_sym.get(sym, 0.0),
+        })
+    return out
+
+
 async def _fetch_hyperliquid() -> list[dict]:
     r = await _http.post(
         "https://api.hyperliquid.xyz/info",
@@ -1137,6 +1222,7 @@ FETCHERS: dict[str, object] = {
     "htx":         _fetch_htx,
     "extended":    _fetch_extended,
     "lighter":     _fetch_lighter,
+    "backpack":    _fetch_backpack,
 }
 
 

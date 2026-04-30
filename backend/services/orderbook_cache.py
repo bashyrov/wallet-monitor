@@ -240,6 +240,20 @@ async def _fetch_direct_raw(exchange: str, symbol: str, limit: int) -> dict | No
         d = (r.json() or {}).get("tick", {}) or {}
         return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
                 "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "backpack":
+        # Backpack perp orderbook. Symbol shape: <BASE>_USDC_PERP.
+        # Without &limit they return the full book (~6k levels) — cap to caller's
+        # request to keep parse + transfer in line with other venues.
+        r = await c.get(
+            f"https://api.backpack.exchange/api/v1/depth?symbol={symbol}_USDC_PERP&limit={limit}"
+        )
+        d = r.json() or {}
+        # Backpack sorts asks ASC (best ask first) and bids ASC (worst bid first).
+        # Reverse bids so the caller sees best-first like every other venue.
+        bids = [[float(x[0]), float(x[1])] for x in d.get("bids", [])]
+        bids.sort(key=lambda x: x[0], reverse=True)
+        return {"bids": bids,
+                "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
     if exchange == "lighter":
         # Lighter zk-perp REST. Uses integer market_id, not symbol — we
         # maintain a 1h-cached symbol→id map fetched from /api/v1/orderBooks.
