@@ -76,10 +76,8 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Ret string `json:"retMsg"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
-		println("[bybit.Parse] unmarshal err:", err.Error(), "frame:", string(frame[:min(len(frame), 200)]))
 		return nil, err
 	}
-	println("[bybit.Parse] topic:", msg.Topic, "type:", msg.Type, "op:", msg.Op, "data.s:", msg.Data.Symbol, "b:", len(msg.Data.Bids))
 	if msg.Op != "" || msg.Ret != "" {
 		// subscribe ack / pong — not data
 		return nil, nil
@@ -129,16 +127,49 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}, nil
 }
 
-// Bybit V5 actually requires app-level {"op":"ping"} every <30s on
-// public streams — observed in prod shadow validation: without it the
-// server closes after exactly 30s (same as my staleness watchdog
-// threshold, which made it look like a watchdog issue). Reply is
-// {"op":"pong","success":true} which we just consume as a non-data
-// frame.
+// Bybit V5 keepalive — observed in prod (Singapore IP):
+//   1. Client must send {"op":"ping"} every <30s, else server closes.
+//   2. Server ALSO sends {"op":"ping"} unsolicited and expects
+//      {"op":"pong"} reply within ~10s. Without reply, server closes.
+// Both directions handled here: Heartbeat for client→server, PongFor
+// for server→client. Bug found via wire trace — adapter parsed ack/pong
+// but missed inbound ping, which silently killed the connection.
 func (a *Futures) Heartbeat() []byte                { return []byte(`{"op":"ping"}`) }
 func (a *Futures) HeartbeatInterval() time.Duration { return 20 * time.Second }
-func (a *Futures) PongFor(_ []byte) []byte          { return nil }
-func (a *Futures) UseLibPings() bool                { return false }
+func (a *Futures) PongFor(frame []byte) []byte {
+	// Quick prefix check before parse — bybit's data frames don't have
+	// `"op":"ping"` so this filter avoids per-frame JSON parsing on the
+	// hot path (300+ delta frames/s/symbol).
+	if !bytesContainsOpPing(frame) {
+		return nil
+	}
+	return []byte(`{"op":"pong"}`)
+}
+func (a *Futures) UseLibPings() bool { return false }
+
+// bytesContainsOpPing — true if the frame contains the literal substring
+// `"op":"ping"`. Cheap and good enough — false positives only occur if
+// the substring shows up inside another payload (extremely unlikely
+// given Bybit's JSON shapes).
+func bytesContainsOpPing(b []byte) bool {
+	const needle = `"op":"ping"`
+	if len(b) < len(needle) {
+		return false
+	}
+	for i := 0; i <= len(b)-len(needle); i++ {
+		match := true
+		for j := 0; j < len(needle); j++ {
+			if b[i+j] != needle[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
 func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
 func (a *Futures) MaxSymbols() int                  { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
