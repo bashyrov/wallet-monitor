@@ -21,8 +21,12 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/bootstrap"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/config"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/binance"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bybit"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/okx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
@@ -73,9 +77,14 @@ func main() {
 		}
 	})
 
-	// WS adapters — populated in Phase 1+.
+	// WS adapters. Each runner gets the bootstrap symbol list — top-N
+	// from Python's funding.json if present, else hardcoded majors. Phase 4
+	// replaces this with a Redis-driven prewarm + on-demand subscribe.
+	startSymbols := bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN)
+	l.Info().Strs("bootstrap_symbols", startSymbols).Msg("symbol bootstrap")
 	for _, runner := range buildRunners(cfg, store) {
 		runner := runner
+		runner.SetSymbols(startSymbols)
 		g.Go(func() error {
 			runner.Run(gctx)
 			return nil
@@ -99,10 +108,11 @@ func buildRunners(cfg config.Config, store *cache.Store) []*ws.Runner {
 	}
 
 	registry := []entry{
-		// Phase 1 — added in next commit.
-		// {name: "binance", factory: func() *ws.Runner { return binance.NewFutures(store) }},
-		// {name: "bybit",   factory: func() *ws.Runner { return bybit.NewFutures(store) }},
-		// {name: "okx",     factory: func() *ws.Runner { return okx.NewFutures(store) }},
+		// Phase 1 — reference adapters. Each implements ws.Adapter and
+		// addresses every applicable bug from PLAN.md by design.
+		{name: "binance", factory: func() *ws.Runner { return binance.NewFutures(store) }},
+		{name: "bybit", factory: func() *ws.Runner { return bybit.NewFutures(store) }},
+		{name: "okx", factory: func() *ws.Runner { return okx.NewFutures(store) }},
 	}
 
 	want := func(name string) bool {
