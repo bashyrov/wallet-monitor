@@ -31,6 +31,7 @@ from backend.services.user_streams.hyperliquid import HyperliquidUserStream
 from backend.services.user_streams.kucoin import KuCoinUserStream
 from backend.services.user_streams.mexc import MEXCUserStream
 from backend.services.user_streams.backpack import BackpackUserStream
+from backend.services.user_streams.lighter import LighterUserStream
 
 ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "binance": BinanceUserStream,
@@ -44,6 +45,7 @@ ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "kucoin": KuCoinUserStream,
     "mexc": MEXCUserStream,
     "backpack": BackpackUserStream,
+    "lighter": LighterUserStream,
 }
 
 

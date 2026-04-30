@@ -61,3 +61,4 @@ h11==0.16.0
 idna==3.11
 typing_extensions==4.15.0
 ethereal-sdk>=0.1.4
+lighter-sdk==1.0.9
