@@ -2673,7 +2673,14 @@ function renderBook(d,side){
   const groupSize=getGroupSize(refPrice,_depthGroupIdx[side]);
   updateDepthLabels(side,refPrice);
 
-  const asks=groupBookLevels(rawAsks,groupSize).sort((a,b)=>b[0]-a[0]).slice(0,50);
+  // asks: pick the LOWEST 50 (closest to market) then reverse so the
+  // table renders from highest down to lowest with the spread at the
+  // bottom. Previous "sort desc + first 50" was picking the HIGHEST 50
+  // — which on venues that ship deep books with dust orders far from
+  // market (Bybit limit=200, HTX) showed only those dust levels and
+  // hid the actual best ask. Bids stay sort-desc + first 50 because
+  // the highest bid IS the best bid (closest to market).
+  const asks=groupBookLevels(rawAsks,groupSize).sort((a,b)=>a[0]-b[0]).slice(0,50).reverse();
   const bids=groupBookLevels(rawBids,groupSize).sort((a,b)=>b[0]-a[0]).slice(0,50);
 
   const maxA=asks.length?Math.max(...asks.map(x=>x[1])):1;
