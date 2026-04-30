@@ -1847,6 +1847,17 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     setT('pt-margin', margin > 0 ? margin.toFixed(2) + ' USDT' : '—');
     const btn = $('pt-submit');
     if (btn) {
+      // External-trade venue (Paradex): turn the button into a link to the
+      // venue's market page since we can't sign orders for them yet.
+      const ext = (typeof _EXTERNAL_TRADE_URLS !== 'undefined') && _EXTERNAL_TRADE_URLS[SHORT];
+      if (ext) {
+        btn.disabled = false;
+        btn.onclick = () => window.open(ext(SYM), '_blank', 'noopener');
+        btn.textContent = `Open Short on ${EX_LABEL[SHORT] || SHORT} ↗`;
+        btn.style.opacity = '1';
+        return;
+      }
+      btn.onclick = () => _pt_submit();
       const ok = !!_pt.wallet_id && tokQty > 0;
       btn.disabled = !ok;
       if (!_pt.wallet_id) btn.textContent = 'Open Short · add trade keys';
@@ -4741,11 +4752,31 @@ function tradeRecalc(leg){
   _renderSubmit(leg);
 }
 
+// Exchanges where Avalant can't yet place orders programmatically — point the
+// user at the venue's own UI for that token instead of pretending to trade.
+const _EXTERNAL_TRADE_URLS = {
+  paradex: (sym) => `https://app.paradex.trade/trade?market=${encodeURIComponent(sym)}-USD-PERP`,
+};
+
 function _renderSubmit(leg){
   const btn = document.getElementById('trade-submit-' + leg);
   if (!btn) return;
   const t = _trade[leg];
   const actionText = leg === 'long' ? 'Open Long' : 'Open Short';
+
+  // External-trade venues (e.g. Paradex — Stark signing not yet wired):
+  // turn the button into a link to the venue's market page for this token.
+  const ex = leg === 'long' ? LONG : SHORT;
+  const extUrl = _EXTERNAL_TRADE_URLS[ex];
+  if (extUrl) {
+    btn.disabled = false;
+    btn.onclick = () => window.open(extUrl(SYM), '_blank', 'noopener');
+    btn.textContent = `${actionText} on ${EX_LABEL[ex] || ex} ↗`;
+    _renderArbBtn();
+    return;
+  }
+  btn.onclick = () => tradeOpen(leg);
+
   // Layered state so the user knows what's blocking the submit.
   // Balance > 0 is NOT required to enable the button — the exchange will
   // reject if there isn't enough margin; users still want to preview the
@@ -4794,6 +4825,15 @@ function _renderArbBtn(){
   const btn = document.getElementById('trade-arb-btn');
   const txt = document.getElementById('trade-arb-text');
   if (!btn || !txt) return;
+  // Two-leg open is impossible if either leg is an external-trade venue
+  // (e.g. Paradex). Point the user at the per-leg buttons instead.
+  const extLeg = _EXTERNAL_TRADE_URLS[LONG] ? EX_LABEL[LONG]
+               : _EXTERNAL_TRADE_URLS[SHORT] ? EX_LABEL[SHORT] : null;
+  if (extLeg) {
+    btn.disabled = true;
+    txt.textContent = `Open Both · ${extLeg} needs a manual order`;
+    return;
+  }
   const L = _trade.long, S = _trade.short;
   const bothKeysOk = L.keyStatus === 'ok' && S.keyStatus === 'ok';
   const bothQty    = L.qty > 0 && S.qty > 0;
