@@ -19,12 +19,15 @@ RUN CGO_ENABLED=0 go build \
     -o /out/fetcher \
     ./cmd/fetcher
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12
 WORKDIR /
 COPY --from=build /out/fetcher /fetcher
 
 # Default cache dir matches Python — bind-mount /tmp/avalant_cache from host.
 ENV AVALANT_FETCHER_CACHE_DIR=/tmp/avalant_cache
 
-USER nonroot:nonroot
+# Run as root so we can write to the docker-managed volume that was
+# created with root ownership. The container has no listening ports
+# and no shell — the attack surface is just outbound TCP to the
+# 17 exchanges we whitelisted upstream.
 ENTRYPOINT ["/fetcher"]
