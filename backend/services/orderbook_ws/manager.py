@@ -24,10 +24,12 @@ def is_ws_supported(exchange: str) -> bool:
     return exchange.lower() in ADAPTERS
 
 
-_REDIS_MIN_INTERVAL_S = 0.02  # cap per-symbol Redis writes — 50 Hz matches
-# Bybit's fastest-cadence stream (orderbook.50 = 20 ms). Above 50 Hz adds
-# Redis load without giving the broadcaster anything fresher to send. Was
-# 50 ms which left a noticeable lag on the /ws/book hot path.
+_REDIS_MIN_INTERVAL_S = 0.05  # 20 Hz per-symbol Redis writes. With 250
+# subscriptions across 11 venues that's ~5 K writes/sec into Redis (was
+# ~12 K at 50 Hz). The /ws/book broadcaster ticks at 25 ms — at 50 ms
+# Redis cadence the worst-case tick latency is 75 ms (50 + 25), still
+# imperceptible in the UI ladder. Drops the per-cb CPU work by half
+# without touching freshness on any human-visible path.
 
 
 class WSManager:

@@ -86,10 +86,14 @@ class BybitWS(WSAdapter):
         self._books: dict[str, dict[str, dict]] = {}  # sym → {"bids": {p:q}, "asks": {p:q}}
 
     def build_subscribe(self, symbols):
-        # orderbook.50 = snapshot stream at 20 ms cadence (vs 100 ms delta on
-        # .200). 50 levels is plenty for /arb display (shows 14) and arb
-        # compute (top-of-book). Trades 5× message rate for 5× freshness.
-        args = [f"orderbook.50.{s}USDT" for s in symbols]
+        # orderbook.200 = 100 ms snapshot stream with 200 levels. We only
+        # render 14 in the UI, but the cadence trade is what matters: the
+        # 20 ms .50 stream pushed ~50 messages/sec/symbol. With 30 hot
+        # symbols that's 1500 messages/sec just for Bybit, each parsed +
+        # book-merged + Redis-written by the worker. 100 ms cadence cuts
+        # that 5× without touching anything human-visible — arb compute
+        # is 0.3-1 s and the UI ladder shows the same top-of-book.
+        args = [f"orderbook.200.{s}USDT" for s in symbols]
         # Bybit limits 10 topics per subscribe frame
         frames = []
         for i in range(0, len(args), 10):
@@ -103,7 +107,7 @@ class BybitWS(WSAdapter):
         if msg.get("op") or msg.get("success") is not None:
             return None
         topic = msg.get("topic", "")
-        if not topic.startswith("orderbook.50."):
+        if not topic.startswith("orderbook.200."):
             return None
         sym_pair = topic.split(".")[-1]  # BTCUSDT
         if not sym_pair.endswith("USDT"):
