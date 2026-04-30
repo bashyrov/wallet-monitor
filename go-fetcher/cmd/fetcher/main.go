@@ -40,6 +40,11 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/okx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/paradex"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/whitebit"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
+	fbinance "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/binance"
+	fbitget "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/bitget"
+	fbybit "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/bybit"
+	fokx "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/okx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
@@ -59,12 +64,15 @@ func main() {
 	store := cache.New()
 	dumper := cache.NewDumper(store, cfg.CacheDir, cfg.FileDumpInterval)
 
+	fundingStore := funding.NewStore()
+	fundingDumper := funding.NewDumper(fundingStore, cfg.CacheDir, 500*time.Millisecond)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	// File dumper.
+	// Orderbook file dumper.
 	g.Go(func() error {
 		err := dumper.Run(gctx)
 		if err != nil && err != context.Canceled {
@@ -72,6 +80,31 @@ func main() {
 		}
 		return nil
 	})
+
+	// Funding file dumper (writes funding.<ex>.json + funding.json).
+	g.Go(func() error {
+		err := fundingDumper.Run(gctx)
+		if err != nil && err != context.Canceled {
+			return err
+		}
+		return nil
+	})
+
+	// Funding adapters — Phase 3a covers binance/bybit/okx/bitget.
+	// Remaining 8 venues land in Phase 3b.
+	for _, fa := range []funding.Adapter{
+		fbinance.New(),
+		fbybit.New(),
+		fokx.New(),
+		fbitget.New(),
+	} {
+		runner := funding.NewRunner(fa, fundingStore)
+		runner.SetSymbols(bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN))
+		g.Go(func() error {
+			runner.Run(gctx)
+			return nil
+		})
+	}
 
 	// Cache pruner — every 60s, drops symbols not requested in
 	// IdleTimeout. Mirrors Python's "orderbook poller idle, stopping" log.
