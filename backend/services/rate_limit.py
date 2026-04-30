@@ -72,6 +72,12 @@ _BUCKETS: dict[str, _Bucket] = {
     # Generic admin write actions — guard against an admin-key leak that
     # tries to mass-mutate plans / promos.
     "admin_write":       _Bucket(max_attempts=60, window_sec=60,  block_sec=120),
+    # Public screener feeds (/funding, /long-short, /spot-short, /dex-short,
+    # /all-arbitrage). Frontend uses WS for live updates; REST is cold-start
+    # + intermittent poll — 120/min/IP is generous for legit traffic. Bots
+    # blasting the same IP at 1000+ req/sec get 429 without us hitting the
+    # arb _http pool. Cloudflare Free covers L3/L4; this covers L7.
+    "screener_public":   _Bucket(max_attempts=120, window_sec=60, block_sec=120),
 }
 
 

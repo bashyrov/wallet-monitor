@@ -87,24 +87,35 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-@router.post("/register", response_model=Token, status_code=201)
+@router.post("/register", status_code=201)
 def register(body: UserRegister, request: Request, response: Response, db: Session = Depends(get_db)):
     ip = _get_ip(request)
     _check_rate_limit(ip)
-    if svc.get_user_by_email(db, body.email):
-        _record_attempt(ip)
-        logger.warning("Register attempt with existing email from IP %s", ip)
-        raise HTTPException(status_code=409, detail="Email already registered")
+    # Email collision is silent — leaking "this email is registered" lets
+    # attackers enumerate the user base via /register against a list of
+    # leaked emails. Always return the same generic 201 shape; the legit
+    # owner gets a heads-up email on their existing address instead.
+    # Username collision stays public — usernames are visible on shared
+    # cards / leaderboards anyway, so there's nothing to leak.
     if svc.get_user_by_username(db, body.username):
         _record_attempt(ip)
         logger.warning("Register attempt with existing username from IP %s", ip)
         raise HTTPException(status_code=409, detail="Username already taken")
+    if svc.get_user_by_email(db, body.email):
+        _record_attempt(ip)
+        logger.info("Register attempt with existing email from IP %s — silent", ip)
+        # TODO: notify the existing email address ("someone tried to register
+        # with your address — was this you?") once the mailer is universal.
+        return {
+            "status": "pending",
+            "message": "Account creation submitted. If this email is new, we've sent a verification link.",
+        }
     user = svc.register_user(db, body.username, body.email, body.password)
     _clear_attempts(ip)
     logger.info("New user registered: %s (id=%d, admin=%s)", user.username, user.id, user.is_admin)
     token = svc.create_token(user.id)
     _set_session_cookie(response, token)
-    return Token(access_token=token)
+    return {"access_token": token, "token_type": "bearer"}
 
 
 @router.post("/login", response_model=Token)

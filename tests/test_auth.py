@@ -42,14 +42,31 @@ def test_register_duplicate_username(client):
     assert r.status_code == 409
 
 
-def test_register_duplicate_email(client):
+def test_register_duplicate_email_silent(client):
+    """Email collision is silent to prevent enumeration of registered
+    users — second registration returns 201 with `status:"pending"` and
+    no access_token. The legit owner gets a heads-up via email instead
+    (once the mailer is universal). Username collision still surfaces
+    as 409 since usernames are public."""
     client.post("/api/auth/register", json={
         "username": "user_a", "email": "same@test.com", "password": "pass1234",
     })
     r = client.post("/api/auth/register", json={
         "username": "user_b", "email": "same@test.com", "password": "pass1234",
     })
-    assert r.status_code == 409
+    assert r.status_code == 201
+    body = r.json()
+    assert body.get("status") == "pending"
+    assert "access_token" not in body
+    # Existing user must NOT be replaced — login with the original creds works.
+    login = client.post("/api/auth/login", json={
+        "login": "same@test.com", "password": "pass1234",
+    })
+    assert login.status_code == 200
+    me = client.get("/api/auth/me",
+                    headers={"Authorization": f"Bearer {login.json()['access_token']}"})
+    assert me.status_code == 200
+    assert me.json()["username"] == "user_a"
 
 
 def test_register_short_password(client):

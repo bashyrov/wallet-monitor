@@ -18,7 +18,16 @@ import os as _os
 import time
 
 import httpx
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
+
+from backend.services import rate_limit as _rl
+
+
+def _enforce_screener_rl(request: Request) -> None:
+    """Rate-limit dep for public screener feeds. 120/min/IP — well above
+    legit poll cadence (frontend uses WS for live), well below what an
+    L7 flood needs to soak the _arb_http pool."""
+    _rl.enforce("screener_public", request)
 
 
 def _read_ws_dump_for(exchange: str, cache_dir: str = "/tmp/avalant_cache") -> tuple[list, float]:
@@ -73,27 +82,27 @@ _OI_TTL  = 60.0     # open-interest: 60s
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────
 
-@router.get("/funding")
+@router.get("/funding", dependencies=[Depends(_enforce_screener_rl)])
 async def funding_rates():
     """Funding rates across perpetual futures exchanges. Cached 30s per exchange."""
     return await get_funding_data()
 
 
-@router.get("/long-short")
+@router.get("/long-short", dependencies=[Depends(_enforce_screener_rl)])
 async def long_short_opportunities():
     """Cross-exchange funding arbitrage (perp-long vs perp-short) with price spread + fees.
     Canonical endpoint for the Long/Short mode."""
     return await get_arbitrage_opportunities()
 
 
-@router.get("/arbitrage", deprecated=True)
+@router.get("/arbitrage", deprecated=True, dependencies=[Depends(_enforce_screener_rl)])
 async def arbitrage_opportunities():
     """Legacy alias for /long-short. Kept so existing bookmarks / API clients
     don't 404 after the rename. Remove once frontend callers are migrated."""
     return await get_arbitrage_opportunities()
 
 
-@router.get("/spot-short")
+@router.get("/spot-short", dependencies=[Depends(_enforce_screener_rl)])
 async def spot_short_opportunities():
     """Spot-short cash-and-carry: buy spot on one venue, short perp on another.
     Canonical endpoint."""
@@ -101,14 +110,14 @@ async def spot_short_opportunities():
     return await get_spot_arbitrage_opportunities()
 
 
-@router.get("/spot-arbitrage", deprecated=True)
+@router.get("/spot-arbitrage", deprecated=True, dependencies=[Depends(_enforce_screener_rl)])
 async def spot_arbitrage_opportunities():
     """Legacy alias for /spot-short."""
     from backend.services.spot_arbitrage_service import get_spot_arbitrage_opportunities
     return await get_spot_arbitrage_opportunities()
 
 
-@router.get("/dex-short")
+@router.get("/dex-short", dependencies=[Depends(_enforce_screener_rl)])
 async def dex_short_opportunities():
     """DEX-short cash-and-carry: buy spot on a DEX (via DexScreener), short perp on CEX.
     Canonical endpoint."""
@@ -116,14 +125,14 @@ async def dex_short_opportunities():
     return await get_dex_arbitrage_opportunities()
 
 
-@router.get("/dex-arbitrage", deprecated=True)
+@router.get("/dex-arbitrage", deprecated=True, dependencies=[Depends(_enforce_screener_rl)])
 async def dex_arbitrage_opportunities():
     """Legacy alias for /dex-short."""
     from backend.services.dex_arbitrage_service import get_dex_arbitrage_opportunities
     return await get_dex_arbitrage_opportunities()
 
 
-@router.get("/all-arbitrage")
+@router.get("/all-arbitrage", dependencies=[Depends(_enforce_screener_rl)])
 async def all_arbitrage():
     """Combined futures-arb + spot-short arb + dex-short arb, sorted by net profit."""
     from backend.services.spot_arbitrage_service import get_spot_arbitrage_opportunities as _spot

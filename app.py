@@ -464,9 +464,11 @@ _CSP = "; ".join([
     "font-src 'self' data: https://fonts.gstatic.com",
     # img-src must allow exchange logos/avatars + base64 inline + telegram CDN.
     "img-src 'self' data: blob: https:",
-    # WS connections + same-origin XHR; tighten to wss://avalant.xyz once we
-    # confirm no other endpoints are dialled.
-    "connect-src 'self' https: wss:",
+    # Same-origin XHR + WSS (covers /api/* and /ws/screener/ws/*) plus
+    # DexScreener which the spot/dex chart hits client-side. All exchange
+    # APIs are proxied through our backend so we don't need to allow them
+    # here. Narrows the XSS exfil surface from "any HTTPS host" to two.
+    "connect-src 'self' https://api.dexscreener.com",
     # The Login Widget renders an iframe pointing at oauth.telegram.org.
     "frame-src 'self' https://oauth.telegram.org https://telegram.org",
     "frame-ancestors 'none'",

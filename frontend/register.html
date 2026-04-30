@@ -406,6 +406,15 @@ async function handleRegister(e) {
       errEl.style.display = 'block';
       return;
     }
+    // Email-collision is silent on the backend — same 201 shape, but the
+    // response carries `status:"pending"` with no token. Show a generic
+    // success message instead of blowing up trying to log in.
+    if (!data.access_token) {
+      errEl.style.color = 'var(--text2)';
+      errEl.textContent = data.message || 'Account creation submitted. Check your email for verification.';
+      errEl.style.display = 'block';
+      return;
+    }
     const meResp = await fetch('/api/auth/me', {
       headers: { 'Authorization': 'Bearer ' + data.access_token }
     });
