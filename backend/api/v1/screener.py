@@ -432,7 +432,10 @@ _SPOT_OB_EX = {"binance","bybit","okx","gate","kucoin","mexc","bitget","bingx","
 async def get_spot_orderbook(
     symbol: str = Query(..., pattern=r"^[A-Za-z0-9]{1,24}$"),
     exchange: str = Query(..., min_length=2, max_length=24),
-    limit: int = Query(20, ge=1, le=100),
+    # Match /orderbook's le=500 — frontend always polls limit=200 and was
+    # 422'ing every spot ladder (mexc/bybit/htx/...) on the validation gate.
+    # The orderbook_cache layer normalises per-venue (5/20/100 etc) anyway.
+    limit: int = Query(200, ge=1, le=500),
 ):
     """Spot orderbook for a CEX venue. Routes through the cache + WS
     pipeline (key '<ex>_spot') so subsequent /ws/book subscribers see live
@@ -468,7 +471,7 @@ async def get_orderbook(
 async def get_orderbooks(
     pairs: str = Query(..., min_length=3, max_length=256,
                        description="Comma-separated exchange:SYMBOL pairs, e.g. binance:BTC,okx:BTC"),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=500),
 ):
     """Batch variant of /orderbook — fetches every (exchange, symbol) pair in
     parallel and returns them as one map. Saves a round-trip when the /arb
