@@ -84,6 +84,18 @@ class StreamTask:
             self._set_state("DEAD")
             return
 
+        # Startup stagger: spread the initial connect across a 0-3s window
+        # so 5+ wallets coming up at once don't fire 5 simultaneous
+        # listenKey/login REST calls and trip per-IP weight (Binance 418
+        # comes from this exact pattern). Deterministic per-(user, wallet)
+        # so retries land at the same offset rather than fluttering.
+        startup_delay = ((self.user_id * 31 + self.wallet_id * 7) % 30) / 10.0
+        try:
+            await asyncio.wait_for(self.stop_event.wait(), timeout=startup_delay)
+            return  # stop_event fired during startup delay
+        except asyncio.TimeoutError:
+            pass
+
         try:
             while not self.stop_event.is_set():
                 # Try to (re)connect
