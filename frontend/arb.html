@@ -403,11 +403,7 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
   </div>
 
   <!-- CENTER: order books + history -->
-  <div class="col-books" id="col-books-main">
-    <button class="books-toggle" type="button" onclick="_toggleBooksCol(this)" aria-expanded="false">
-      <span class="bt-label">Show order books</span>
-      <span class="bt-chevron">▾</span>
-    </button>
+  <div class="col-books">
     <div class="books-row">
       <!-- Long book -->
       <div class="book-panel">
@@ -1043,11 +1039,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
           </div>
 
           <!-- CENTER: order books (futures-style .book-panel for all types) -->
-          <div class="col-books" id="col-books-pair">
-            <button class="books-toggle" type="button" onclick="_toggleBooksCol(this)" aria-expanded="false">
-              <span class="bt-label">Show order books</span>
-              <span class="bt-chevron">▾</span>
-            </button>
+          <div class="col-books">
             <div class="books-row">
               ${!IS_DEX ? `
               <!-- LONG (SPOT) book — CEX spot venue -->
@@ -1855,17 +1847,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     setT('pt-margin', margin > 0 ? margin.toFixed(2) + ' USDT' : '—');
     const btn = $('pt-submit');
     if (btn) {
-      // External-trade venue (Paradex): turn the button into a link to the
-      // venue's market page since we can't sign orders for them yet.
-      const ext = (typeof _EXTERNAL_TRADE_URLS !== 'undefined') && _EXTERNAL_TRADE_URLS[SHORT];
-      if (ext) {
-        btn.disabled = false;
-        btn.onclick = () => window.open(ext(SYM), '_blank', 'noopener');
-        btn.textContent = `Open Short on ${EX_LABEL[SHORT] || SHORT} ↗`;
-        btn.style.opacity = '1';
-        return;
-      }
-      btn.onclick = () => _pt_submit();
       const ok = !!_pt.wallet_id && tokQty > 0;
       btn.disabled = !ok;
       if (!_pt.wallet_id) btn.textContent = 'Open Short · add trade keys';
@@ -3229,7 +3210,7 @@ document.addEventListener('fullscreenchange',()=>{
 // ── Navigate modal ────────────────────────────────────────────────────────────
 // Sourced from /api/meta/venues via exchanges.js — fallback to the static
 // list while the meta fetch is in flight (fresh-load race).
-const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter','backpack','kraken'];
+const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter'];
 function _exchangesList(){
   const lst = (window.EX && window.EX.lists && window.EX.lists.screener_all) || [];
   return lst.length ? lst : _EXCHANGES_FALLBACK;
@@ -4201,27 +4182,767 @@ async function _removeManualPair(sym, longEx, shortEx){
   } catch {}
 }
 
-// Spot/short pair confirm-or-reject handler. Bound to inline buttons in
-// the position card via data-payload (sym + spot_wallet_id + short ex/wallet).
-async function _ssPairDecide(btn, decision){
-  let payload;
-  try { payload = JSON.parse(btn.getAttribute('data-payload') || '{}'); }
-  catch { return; }
-  if (!payload.symbol || !payload.spot_wallet_id || !payload.short_exchange || !payload.short_wallet_id) return;
-  btn.disabled = true;
+// One-shot migration of any legacy localStorage entries → backend, then
+// clear the local cache so we don't keep re-uploading on every load.
+async function _migrateLegacyManualPairs(){
+  let legacy = [];
+  try { legacy = JSON.parse(localStorage.getItem(_MANUAL_PAIRS_KEY) || '[]') || []; }
+  catch { legacy = []; }
+  if (!Array.isArray(legacy) || !legacy.length) return;
+  for (const p of legacy){
+    if (!p || !p.symbol || !p.long_exchange || !p.short_exchange) continue;
+    try {
+      await Auth.apiFetch('/trade/pair/sync', {
+        method: 'POST',
+        body: JSON.stringify({ symbol: p.symbol, long_exchange: p.long_exchange, short_exchange: p.short_exchange }),
+      });
+    } catch {}
+  }
+  try { localStorage.removeItem(_MANUAL_PAIRS_KEY); } catch {}
+}
+
+function _acc_pair_positions(rows){
+  const tagged = rows.map((p, i) => ({
+    p,
+    key: p.position_id || `${p.exchange}:${p.symbol}:${i}`,
+    notional: Math.abs(Number(p.quantity || 0) * Number(p.mark_price || 0)),
+  }));
+  const bySym = {};
+  for (const t of tagged) (bySym[t.p.symbol] = bySym[t.p.symbol] || []).push(t);
+  const pairs = [];
+  const used = new Set();
+
+  // 1. MANUAL pairs first — user explicitly marked these as arb pairs.
+  //    Match by symbol + exchanges + sides. Bypasses any size threshold.
+  const manual = _loadManualPairs();
+  for (const mp of manual) {
+    const group = bySym[mp.symbol];
+    if (!group) continue;
+    const l = group.find(t => t.p.exchange === mp.long_exchange  && t.p.side === 'buy'  && !used.has(t.key));
+    const s = group.find(t => t.p.exchange === mp.short_exchange && t.p.side === 'sell' && !used.has(t.key));
+    if (!l || !s) continue;
+    used.add(l.key); used.add(s.key);
+    pairs.push({symbol: mp.symbol, long: l.p, short: s.p, _manual: true});
+  }
+
+  // 2. AUTO-DETECT for the rest. Rule: notional diff% must be within
+  //    spread_pct ± 5%, where spread_pct is the price spread between
+  //    the two legs at their entry prices. So a 20% spread arb whose
+  //    sizes naturally differ by 20% (e.g. 1000 USDT long, 1200 USDT
+  //    short) gets paired; a 0% spread accepts only tight (≤5%) size
+  //    mismatch. This matches the user's mental model — they entered
+  //    the spread, the size diff IS the spread.
+  for (const [sym, group] of Object.entries(bySym)) {
+    const longs  = group.filter(t => t.p.side === 'buy'  && !used.has(t.key));
+    const shorts = group.filter(t => t.p.side === 'sell' && !used.has(t.key));
+    const candidates = [];
+    for (const l of longs) for (const s of shorts) {
+      const maxN = Math.max(l.notional, s.notional);
+      if (maxN <= 0) continue;
+      const lEntry = Number(l.p.entry_price || 0);
+      const sEntry = Number(s.p.entry_price || 0);
+      // Spread between the legs' entry prices, in %.
+      const spreadPct = (lEntry > 0 && sEntry > 0)
+        ? Math.abs((sEntry - lEntry) / lEntry) * 100
+        : 0;
+      const diffPct = (Math.abs(l.notional - s.notional) / maxN) * 100;
+      // Match if the size difference is within ±5% of the spread.
+      const tolerance = 5;
+      if (Math.abs(diffPct - spreadPct) > tolerance) continue;
+      candidates.push({l, s, diffPct, spreadPct});
+    }
+    // Best candidate first = smallest deviation from the expected spread.
+    candidates.sort((a, b) => Math.abs(a.diffPct - a.spreadPct) - Math.abs(b.diffPct - b.spreadPct));
+    for (const c of candidates) {
+      if (used.has(c.l.key) || used.has(c.s.key)) continue;
+      used.add(c.l.key); used.add(c.s.key);
+      pairs.push({symbol: sym, long: c.l.p, short: c.s.p});
+    }
+  }
+  const singles = tagged.filter(t => !used.has(t.key)).map(t => t.p);
+  return {pairs, singles};
+}
+
+// Sticky positions cache — keeps the last successful payload so brief
+// network blips, 5xx hiccups, or transient empty responses don't blank
+// the table while a position is actually open. Only clear after N
+// consecutive empty responses (genuine "all closed" state).
+let _accLastPositions = null;
+let _accEmptyStreak = 0;
+const _EMPTY_STREAK_LIMIT = 3;
+
+// Diff-aware render: store the last-written HTML so we don't trash the DOM
+// (and trigger a visible flicker) when the data hasn't changed across the
+// 8-10s refresh tick. Backed by a key per target element.
+// Stored on window so the spot/dex code path (which throws past this line
+// for futures-mode setup) can still access it from earlier in the script.
+function _renderIfChanged(elId, html){
+  if (!window._lastRenderedHTML) window._lastRenderedHTML = new Map();
+  const prev = window._lastRenderedHTML.get(elId);
+  if (prev === html) return;
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = html;
+  window._lastRenderedHTML.set(elId, html);
+}
+
+// Null-safe textContent setter — some pages render only a subset of
+// the summary cards (futures pair page replaced the legacy uPnL/realized
+// /fees grid with a closed-P&L grid for Stage 2c, which means the old
+// `acc-pos-count` etc. only exist on the spot/dex pages now).
+function _setText(elId, value) {
+  const el = document.getElementById(elId);
+  if (el) el.textContent = value;
+}
+
+async function accLoadPositions(){
+  const tbody = document.getElementById('acc-positions-body');
+  const empty = document.getElementById('acc-positions-empty');
+  let rows;
   try {
-    const path = decision === 'paired' ? '/trade/pair/spot-short/sync' : '/trade/pair/spot-short/unsync';
-    const r = await Auth.apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
-    if (!r.ok) {
-      _toast('Pair update failed', 'error');
-      btn.disabled = false;
+    const r = await Auth.apiFetch('/trade/positions');
+    if (!r.ok) throw new Error();
+    rows = await r.json();
+  } catch {
+    // Network/server hiccup — keep showing the last state, do not blank.
+    return;
+  }
+  if (!rows.length){
+    _accEmptyStreak++;
+    if (_accLastPositions && _accEmptyStreak < _EMPTY_STREAK_LIMIT){
+      // Probably a transient blip — keep showing the last good payload.
       return;
     }
-    _toast(decision === 'paired' ? 'Pair confirmed' : 'Marked as not paired', 'success');
+    _setText('acc-cnt-positions', '0');
+    _setText('acc-pos-count', '0');
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    _accLastPositions = [];
+    return;
+  }
+  _accEmptyStreak = 0;
+  _accLastPositions = rows;
+  _setText('acc-cnt-positions', rows.length);
+  _setText('acc-pos-count', rows.length);
+  empty.style.display = 'none';
+
+    const {pairs, singles} = _acc_pair_positions(rows);
+    const sumUsd = (v) => (v>=0?'+':'−') + '$' + Math.abs(v).toFixed(2);
+    const rowFor = (p) => {
+      const sideCls  = p.side === 'buy' ? 'acc-side-long' : 'acc-side-short';
+      const sideText = p.side === 'buy' ? 'LONG' : 'SHORT';
+      const pnl = Number(p.unrealized_pnl_usd || 0);
+      const mark = Number(p.mark_price || 0);
+      const qty  = Number(p.quantity || 0);
+      const sizeUsd = qty * mark;
+      const pnlCls = pnl >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
+      const pnlPct = (p.entry_price > 0 && qty > 0) ? (pnl / (p.entry_price * qty) * 100) : 0;
+      const funding = (p.funding_pnl_usd != null)
+        ? `<span class="${(Number(p.funding_pnl_usd)||0)>=0?'acc-pos-pnl-pos':'acc-pos-pnl-neg'}">${sumUsd(Number(p.funding_pnl_usd))}</span>`
+        : '<span style="color:var(--text3)">—</span>';
+      return `
+        <tr>
+          <td><span class="sym">${p.symbol}</span><span style="color:var(--text3);margin-left:3px">USDT</span></td>
+          <td><span class="ex-pill">${(EX_LABEL[p.exchange]||p.exchange)}</span></td>
+          <td class="${sideCls}">${sideText}</td>
+          <td class="num">${qty.toFixed(4)}<br><span style="color:var(--text3);font-size:10px">${sizeUsd.toFixed(2)} USDT</span></td>
+          <td class="num">${Number(p.entry_price||0).toFixed(4)}</td>
+          <td class="num" style="color:var(--text2)">${mark.toFixed(4)}</td>
+          <td class="num">${funding}</td>
+          <td class="num ${pnlCls}">${sumUsd(pnl)}</td>
+          <td class="num ${pnlCls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
+          <td style="white-space:nowrap">
+            <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button>
+            <button class="pos-share" title="Share P&amp;L card"
+                    data-share='${_htmlEsc(JSON.stringify({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct}))}'
+                    onclick='_openShareFromBtn(this)'
+                    style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:4px">↗</button>
+          </td>
+        </tr>`;
+    };
+
+    // Paired rows — stacked as a clickable header + both legs grouped below.
+    // Header is a collapsible "summary" by default; click toggles the legs.
+    // State persists in _accPairOpen so it survives re-renders from the
+    // 10s refresh tick. Default collapsed.
+    // Defensive: if a row's shape is unexpected (e.g. WS snapshot fields
+    // missing), don't let one broken row blank out the whole table.
+    // Wrap rowFor to log + fall back to a minimal placeholder.
+    const safeRowFor = (p) => {
+      try { return rowFor(p); }
+      catch (e) {
+        console.error('[positions] rowFor failed:', e, 'row=', p);
+        return `<tr><td colspan="10" style="color:var(--red);font-size:11px">Row render error · check console</td></tr>`;
+      }
+    };
+
+    const pairHtml = pairs.map((pair, pi) => {
+      const lp = Number(pair.long.unrealized_pnl_usd || 0);
+      const sp = Number(pair.short.unrealized_pnl_usd || 0);
+      const totalPnl = lp + sp;
+      const lf = Number(pair.long.funding_pnl_usd || 0);
+      const sf = Number(pair.short.funding_pnl_usd || 0);
+      const hasFunding = (pair.long.funding_pnl_usd != null) || (pair.short.funding_pnl_usd != null);
+      const totalFunding = hasFunding ? (lf + sf) : null;
+      const lq = Number(pair.long.quantity || 0) * Number(pair.long.mark_price || 0);
+      const sq = Number(pair.short.quantity || 0) * Number(pair.short.mark_price || 0);
+      const pairUsd = (lq + sq) / 2;
+      // Net P&L = price uPnL + accumulated funding (paid/received).
+      // For arb pairs the funding is the actual carry — including it in the
+      // headline number gives the trader the real take-home, not just the
+      // mark-to-market on prices.
+      const netPnl = totalPnl + (hasFunding ? totalFunding : 0);
+      const pnlCls = netPnl >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
+      const fundCls = hasFunding && totalFunding >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
+      const combinedPct = pairUsd > 0 ? (netPnl / pairUsd * 100) : 0;
+      // Entry spread: divergence between the two legs' entry prices, measured
+      // relative to the long leg. Positive = short entered higher than long
+      // (favourable for a long-short arb). This is the "spread I entered at".
+      const leEntry = Number(pair.long.entry_price || 0);
+      const seEntry = Number(pair.short.entry_price || 0);
+      const entrySpread = (leEntry > 0 && seEntry > 0) ? ((seEntry - leEntry) / leEntry * 100) : null;
+      const entrySpreadTxt = entrySpread != null
+        ? `<span class="${entrySpread>=0?'acc-pos-pnl-pos':'acc-pos-pnl-neg'}">${entrySpread>=0?'+':''}${entrySpread.toFixed(4)}%</span>`
+        : '<span style="color:var(--text3)">—</span>';
+      const pairKey = `${pair.symbol}:${pair.long.exchange}:${pair.short.exchange}`;
+      const isOpen = _accPairOpen.has(pairKey);
+      const caret = isOpen ? '▾' : '▸';
+      const header = `
+        <tr class="acc-pair-header" data-pair-key="${pairKey}" onclick="_accPairToggle('${pairKey}')"
+            style="background:rgba(26,255,171,0.04);border-top:1px solid rgba(26,255,171,0.18);cursor:pointer;user-select:none">
+          <td colspan="2" style="padding:8px 10px">
+            <span style="color:var(--green);font-family:monospace;margin-right:6px">${caret}</span>
+            <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ PAIR</span>
+            <span class="sym" style="margin-left:6px">${pair.symbol}</span>
+            <span style="color:var(--text3);margin-left:3px">USDT</span>
+            <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
+          </td>
+          <td colspan="2" class="num" style="color:var(--text2);font-size:11px">
+            ${pairUsd.toFixed(2)} USDT / leg
+            <br><span style="color:var(--text3);font-size:10px">entry spread ${entrySpreadTxt}</span>
+          </td>
+          <td colspan="2" class="num" style="color:var(--text3);font-size:11px">Δ pair</td>
+          <td class="num">${hasFunding ? `<span class="${fundCls}">${sumUsd(totalFunding)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+          <td class="num ${pnlCls}" style="font-weight:700"
+              title="${hasFunding ? `Price uPnL ${sumUsd(totalPnl)} + Funding ${sumUsd(totalFunding)} = Net ${sumUsd(netPnl)}` : `Price uPnL ${sumUsd(totalPnl)}`}">
+            ${sumUsd(netPnl)}
+          </td>
+          <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
+          <td style="white-space:nowrap">
+            <button class="pos-close"
+                    onclick="event.stopPropagation();_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')"
+                    style="background:var(--green);border:none;color:#0a0a0f;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-weight:700;font-family:inherit">Close Both</button>
+            <button title="Share pair P&amp;L card"
+                    data-share-pair='${_htmlEsc(JSON.stringify({
+                      symbol: pair.symbol,
+                      long: {
+                        exchange: pair.long.exchange,
+                        side: pair.long.side,
+                        quantity: Number(pair.long.quantity || 0),
+                        entry_price: Number(pair.long.entry_price || 0),
+                        mark_price: Number(pair.long.mark_price || 0),
+                        leverage: Number(pair.long.leverage || 1),
+                        unrealized_pnl_usd: Number(pair.long.unrealized_pnl_usd || 0),
+                      },
+                      short: {
+                        exchange: pair.short.exchange,
+                        side: pair.short.side,
+                        quantity: Number(pair.short.quantity || 0),
+                        entry_price: Number(pair.short.entry_price || 0),
+                        mark_price: Number(pair.short.mark_price || 0),
+                        leverage: Number(pair.short.leverage || 1),
+                        unrealized_pnl_usd: Number(pair.short.unrealized_pnl_usd || 0),
+                      },
+                      total_pnl_usd: netPnl,            // includes funding
+                      total_price_pnl_usd: totalPnl,    // price-only uPnL
+                      total_funding_usd: hasFunding ? totalFunding : null,
+                      pair_size_usd: pairUsd,
+                      combined_pct: combinedPct,
+                      entry_spread_pct: entrySpread,
+                    }))}'
+                    onclick='event.stopPropagation();_openSharePairFromBtn(this)'
+                    style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:4px">↗</button>
+          </td>
+        </tr>`;
+      const legs = isOpen ? (safeRowFor(pair.long) + safeRowFor(pair.short)) : '';
+      return header + legs;
+    }).join('');
+    const singlesHtml = singles.map(safeRowFor).join('');
+    _renderIfChanged('acc-positions-body', pairHtml + singlesHtml);
+
+    // P&L pane: total uPnL + total funding across all positions.
+    const upnlSum = rows.reduce((a, p) => a + (Number(p.unrealized_pnl_usd)||0), 0);
+    const upEl = document.getElementById('acc-upnl');
+    if (upEl) { upEl.textContent = (upnlSum>=0?'+':'') + '$' + Math.abs(upnlSum).toFixed(2); upEl.className = 'acc-sum-val ' + (upnlSum>=0?'pos':'neg'); }
+    const fundingSum = rows.reduce((a, p) => a + (Number(p.funding_pnl_usd)||0), 0);
+    const fEl = document.getElementById('acc-funding-24h');
+    if (fEl && rows.some(p => p.funding_pnl_usd != null)) {
+      fEl.textContent = (fundingSum>=0?'+':'') + '$' + Math.abs(fundingSum).toFixed(2);
+      fEl.className = 'acc-sum-val ' + (fundingSum>=0?'pos':'neg');
+    }
+}
+
+async function _tradeClosePair(longWid, shortWid, sym){
+  const ok = await Confirm.ask({
+    title: 'Close both legs?',
+    message: 'The long and short positions on this pair will be closed at market with reduce-only orders.',
+    okText: 'Close both',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const [lr, sr] = await Promise.allSettled([
+      Auth.apiFetch('/trade/close', {method:'POST', body: JSON.stringify({wallet_id: longWid,  symbol: sym})}),
+      Auth.apiFetch('/trade/close', {method:'POST', body: JSON.stringify({wallet_id: shortWid, symbol: sym})}),
+    ]);
+    const okCount = [lr, sr].filter(r => r.status === 'fulfilled' && r.value.ok).length;
+    if (okCount === 2)      _toast('Pair closed', 'success');
+    else if (okCount === 1) _toast('One leg closed — the other failed; see Order History', 'warn');
+    else                    _toast('Close pair failed — see Order History for details', 'error');
     refreshTradePositions();
+    _reloadTradeStatus();
+    if (typeof accLoadPositions === 'function') accLoadPositions();
+    if (typeof accLoadOrders === 'function') accLoadOrders();
   } catch (e) {
-    _toast('Pair update failed', 'error');
-    btn.disabled = false;
+    _toast('Close pair failed — see Order History for details', 'error');
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  }
+}
+
+async function accLoadBalances(){
+  const tbody = document.getElementById('acc-balances-body');
+  const empty = document.getElementById('acc-balances-empty');
+  // /trade/balances filters to screener-purpose wallets server-side and
+  // returns USDT free balance per key (null when the read fails).
+  try {
+    const r = await Auth.apiFetch('/trade/balances');
+    if (!r.ok) throw new Error();
+    const rows = await r.json();
+    if (!rows.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    const fmt = (v) => v == null
+      ? '<span style="color:var(--text3)">—</span>'
+      : `$${Number(v).toFixed(2)}`;
+    tbody.innerHTML = rows.map(w => {
+      const bal = w.error
+        ? `<span style="color:var(--red);font-size:10.5px" title="${w.error}">err</span>`
+        : fmt(w.balance_usdt);
+      return `<tr>
+        <td><span class="ex-pill">${(EX_LABEL[w.exchange]||w.exchange)}</span></td>
+        <td><span class="sym" style="font-family:Inter,sans-serif;font-weight:600;font-size:11.5px;color:var(--text)">${w.name}</span></td>
+        <td>${w.can_trade
+            ? '<span style="color:var(--yellow);font-weight:600;font-size:10.5px">TRADE</span>'
+            : '<span style="color:var(--teal);font-weight:600;font-size:10.5px">READ</span>'}</td>
+        <td class="num">${bal}</td>
+        <td class="num" style="color:var(--text3)">—</td>
+        <td class="num" style="color:var(--text3)">—</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('acc-cnt-balances').textContent = rows.length;
+  } catch {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    document.getElementById('acc-cnt-balances').textContent = '0';
+  }
+}
+
+// ── Watchlist star on infobar ──
+let _wlArbId=null;
+async function initArbWatch(){
+  try{
+    const r=await Auth.apiFetch('/screener/watchlist');
+    if(!r.ok)return;
+    const rows=await r.json();
+    const hit=rows.find(x=>x.symbol===SYM&&x.long_exchange===LONG&&x.short_exchange===SHORT);
+    if(hit){_wlArbId=hit.id;document.getElementById('wl-star')?.classList.add('on');}
+  }catch(_){}
+}
+async function toggleArbWatch(){
+  const btn=document.getElementById('wl-star');if(!btn)return;
+  btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),320);
+  try{
+    if(_wlArbId){
+      const r=await Auth.apiFetch(`/screener/watchlist/${_wlArbId}`,{method:'DELETE'});
+      if(!r.ok)throw new Error();
+      _wlArbId=null;btn.classList.remove('on');_toast('Removed from watchlist');
+    }else{
+      const r=await Auth.apiFetch('/screener/watchlist',{method:'POST',body:JSON.stringify({symbol:SYM,long_exchange:LONG,short_exchange:SHORT})});
+      if(!r.ok)throw new Error();
+      const j=await r.json();_wlArbId=j.id;btn.classList.add('on');_toast('Added to watchlist');
+    }
+  }catch{_toast('Watchlist action failed');}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LIVE TRADING PANEL
+// ═══════════════════════════════════════════════════════════════════════
+const LEVELS = [1, 2, 3, 5, 10, 20, 25, 50, 75, 100, 125];
+const _trade = {
+  long:  { leverage: 3, maxLeverage: 125, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
+  short: { leverage: 3, maxLeverage: 125, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
+};
+let _tradePosTimer = null;
+
+async function initTradePanel(){
+  setT('trade-leg-long-ex',  EX_LABEL[LONG]  || LONG);
+  setT('trade-leg-short-ex', EX_LABEL[SHORT] || SHORT);
+  _trade.long.last  = _opp?.long_price  || 0;
+  _trade.short.last = _opp?.short_price || 0;
+  setT('trade-last-long',  _trade.long.last  ? '$' + Number(_trade.long.last).toFixed(4)  : '—');
+  setT('trade-last-short', _trade.short.last ? '$' + Number(_trade.short.last).toFixed(4) : '—');
+  // Placeholder while /trade/status is in flight — otherwise the user sees
+  // stale "— USDT" for a couple of seconds and assumes the balance is gone.
+  ['long', 'short'].forEach(side => {
+    const bal = document.getElementById('trade-bal-' + side);
+    if (bal) bal.textContent = 'Loading…';
+    const st = document.getElementById('trade-leg-' + side + '-status');
+    if (st) { st.textContent = '…'; st.className = 'trade-leg-status missing'; }
+  });
+  _renderLev('long'); _renderLev('short');
+  _renderSubmit('long'); _renderSubmit('short');
+
+  try {
+    const r = await Auth.apiFetch('/trade/status?symbol=' + SYM + '&long_ex=' + LONG + '&short_ex=' + SHORT);
+    if (r.ok) _applyTradeStatus(await r.json());
+  } catch {}
+
+  // Fetch public max leverage per exchange so the stepper can't exceed it
+  try {
+    const r = await Auth.apiFetch('/trade/leverage-limits?symbol=' + SYM + '&long_ex=' + LONG + '&short_ex=' + SHORT);
+    if (r.ok) {
+      const d = await r.json();
+      if (d.long  && d.long.max_leverage)  _trade.long.maxLeverage  = d.long.max_leverage;
+      if (d.short && d.short.max_leverage) _trade.short.maxLeverage = d.short.max_leverage;
+      // Clamp current choice
+      if (_trade.long.leverage  > _trade.long.maxLeverage)  { _trade.long.leverage  = _trade.long.maxLeverage;  _renderLev('long');  tradeRecalc('long'); }
+      if (_trade.short.leverage > _trade.short.maxLeverage) { _trade.short.leverage = _trade.short.maxLeverage; _renderLev('short'); tradeRecalc('short'); }
+      // Visual hint next to leverage value
+      _setLevHint('long',  _trade.long.maxLeverage);
+      _setLevHint('short', _trade.short.maxLeverage);
+    }
+  } catch {}
+
+  refreshTradePositions();
+  _tradePosTimer = setInterval(refreshTradePositions, 8000);
+}
+
+function _applyTradeStatus(s){
+  ['long','short'].forEach(side => {
+    const info = s[side] || {};
+    _trade[side].walletId  = info.wallet_id || null;
+    _trade[side].keyStatus = info.status    || 'missing';   // ok | disabled | missing
+    _trade[side].balance   = info.balance_usdt || 0;
+    const st = document.getElementById(`trade-leg-${side}-status`);
+    if (st) {
+      if (info.status === 'ok')           { st.textContent = 'Keys · OK';       st.className = 'trade-leg-status ok'; }
+      else if (info.status === 'admin_blocked') { st.textContent = 'Trading paused by admin'; st.className = 'trade-leg-status disabled'; }
+      else if (info.status === 'disabled'){ st.textContent = 'Trade disabled';  st.className = 'trade-leg-status disabled'; }
+      else                                 { st.textContent = 'No trade key';   st.className = 'trade-leg-status missing'; }
+    }
+    const bal = document.getElementById(`trade-bal-${side}`);
+    if (bal) bal.textContent = (info.balance_usdt != null) ? (Number(info.balance_usdt).toFixed(2) + ' USDT') : '— USDT';
+  });
+  _renderSubmit('long'); _renderSubmit('short');
+}
+
+function tradeSwitchTab(btn){
+  const leg = btn.dataset.leg;
+  document.querySelectorAll(`.trade-tab[data-leg="${leg}"]`).forEach(b => b.classList.toggle('is-active', b === btn));
+}
+
+function tradeSetMargin(el){
+  const leg = el.parentElement.dataset.leg;
+  _trade[leg].margin = el.dataset.v;
+  el.parentElement.querySelectorAll('.trade-dd-chip').forEach(c => c.classList.toggle('is-active', c === el));
+  // Margin mode doesn't change the calculated numbers, but rerender so the
+  // submit button reflects the active mode immediately.
+  tradeRecalc(leg);
+}
+
+function tradeSetUnit(el){
+  const leg = el.dataset.leg;
+  const newUnit = el.dataset.v;
+  const t = _trade[leg];
+  if (newUnit === t.unit) return;
+  // Convert the value in the input box to the new unit so the user doesn't
+  // have to retype. Token↔USDT conversion uses the leg's last price.
+  const inp = document.getElementById('trade-size-' + leg);
+  const cur = parseFloat(inp.value) || 0;
+  if (cur > 0 && t.last > 0) {
+    if (t.unit === 'token' && newUnit === 'usdt') {
+      inp.value = (cur * t.last).toFixed(2);
+    } else if (t.unit === 'usdt' && newUnit === 'token') {
+      inp.value = (cur / t.last).toFixed(4);
+    }
+  }
+  t.unit = newUnit;
+  document.querySelectorAll(`.trade-unit[data-leg="${leg}"]`).forEach(b => b.classList.toggle('is-active', b === el));
+  inp.placeholder = newUnit === 'token' ? `Size in ${SYM}` : 'Size in USDT';
+  // Recompute t.qty from the (possibly converted) input and re-render.
+  tradeSizeInput(leg);
+}
+
+function tradeLevStep(ev, leg, dir){
+  ev.preventDefault(); ev.stopPropagation();
+  const max = _trade[leg].maxLeverage || 125;
+  const cur = _trade[leg].leverage;
+  let idx = LEVELS.indexOf(cur);
+  if (idx < 0) idx = 2;
+  idx = Math.max(0, Math.min(LEVELS.length - 1, idx + dir));
+  let next = LEVELS[idx];
+  if (next > max) {
+    next = max;
+    _toast && _toast(`Max leverage on ${EX_LABEL[leg==='long'?LONG:SHORT]||''}: ${max}×`);
+  }
+  _trade[leg].leverage = next;
+  _renderLev(leg);
+  tradeRecalc(leg);
+}
+
+function _setLevHint(leg, max){
+  const el = document.getElementById('trade-lev-val-' + leg);
+  if (!el) return;
+  el.title = `Max on exchange: ${max}×`;
+}
+
+function _renderLev(leg){
+  const el = document.getElementById('trade-lev-val-' + leg);
+  if (el) el.textContent = _trade[leg].leverage + '×';
+}
+
+function tradeSlide(leg, pct){
+  document.getElementById('trade-slider-' + leg).value = pct;
+  const t = _trade[leg];
+  if (!t.balance || !t.last) { tradeRecalc(leg); return; }
+  // Usable notional = balance × leverage × (pct/100)
+  const notional = t.balance * t.leverage * (pct / 100);
+  const qtyTok = t.last > 0 ? notional / t.last : 0;
+  const inp = document.getElementById('trade-size-' + leg);
+  if (t.unit === 'token') inp.value = qtyTok > 0 ? qtyTok.toFixed(4) : '';
+  else                    inp.value = notional > 0 ? notional.toFixed(2) : '';
+  t.qty = qtyTok;
+  tradeRecalc(leg);
+}
+
+function tradeSizeInput(leg){
+  const t = _trade[leg];
+  const v = parseFloat(document.getElementById('trade-size-' + leg).value) || 0;
+  if (t.unit === 'token') t.qty = v;
+  else                    t.qty = t.last > 0 ? v / t.last : 0;
+  tradeRecalc(leg);
+}
+
+function tradeRecalc(leg){
+  const t = _trade[leg];
+  const posVal = t.qty * t.last;
+  const margin = t.leverage > 0 ? posVal / t.leverage : 0;
+  setT('trade-posval-' + leg, posVal.toFixed(2) + ' USDT');
+  setT('trade-margin-' + leg, margin.toFixed(2) + ' USDT');
+  _renderSubmit(leg);
+}
+
+function _renderSubmit(leg){
+  const btn = document.getElementById('trade-submit-' + leg);
+  if (!btn) return;
+  const t = _trade[leg];
+  const actionText = leg === 'long' ? 'Open Long' : 'Open Short';
+  // Layered state so the user knows what's blocking the submit.
+  // Balance > 0 is NOT required to enable the button — the exchange will
+  // reject if there isn't enough margin; users still want to preview the
+  // order size on a freshly-funded key.
+  let reason = null;
+  if (t.keyStatus === 'missing')             reason = 'add API key';
+  else if (t.keyStatus === 'admin_blocked')  reason = 'paused by admin';
+  else if (t.keyStatus === 'disabled')       reason = 'enable trading';
+  else if (!t.last)                          reason = 'waiting for price';
+  else if (!t.qty)                           reason = 'enter size';
+  btn.disabled = !!reason;
+  if (reason) {
+    btn.textContent = `${actionText} · ${reason}`;
+  } else {
+    // Show order size in whichever unit the user is working in. Underneath,
+    // quantity sent to the exchange is always TOKEN — the USDT view is just
+    // a display convenience, converted from t.last mid price at paint time.
+    const usd = t.qty * t.last;
+    btn.textContent = t.unit === 'usdt'
+      ? `${actionText} · ${usd.toFixed(2)} USDT (${t.qty.toFixed(4)} ${SYM})`
+      : `${actionText} · ${t.qty.toFixed(4)} ${SYM} (${usd.toFixed(2)} USDT)`;
+  }
+  _renderArbBtn();
+}
+
+function toggleTradeCard(ev){
+  // Don't toggle when the user clicked the Keys button inside the header
+  if (ev && ev.target && ev.target.closest('.trade-keys-link')) return;
+  const card = document.getElementById('trade-card');
+  if (!card) return;
+  const nowCollapsed = card.classList.toggle('is-collapsed');
+  try { localStorage.setItem('trade-card-open', nowCollapsed ? '0' : '1'); } catch {}
+}
+
+// Restore last open/closed state (default: open)
+(function _restoreTradeCardState(){
+  try {
+    if (localStorage.getItem('trade-card-open') === '0') {
+      const card = document.getElementById('trade-card');
+      if (card) card.classList.add('is-collapsed');
+    }
+  } catch {}
+})();
+
+function _renderArbBtn(){
+  const btn = document.getElementById('trade-arb-btn');
+  const txt = document.getElementById('trade-arb-text');
+  if (!btn || !txt) return;
+  const L = _trade.long, S = _trade.short;
+  const bothKeysOk = L.keyStatus === 'ok' && S.keyStatus === 'ok';
+  const bothQty    = L.qty > 0 && S.qty > 0;
+  const enabled    = bothKeysOk && bothQty;
+  btn.disabled = !enabled;
+  if (!bothKeysOk) { txt.textContent = 'Open Both · need trade keys on both exchanges'; return; }
+  if (!bothQty)    { txt.textContent = 'Open Both · enter size on both legs'; return; }
+  txt.textContent = `Open Both · ${L.qty.toFixed(4)} long on ${EX_LABEL[LONG]||LONG} / ${S.qty.toFixed(4)} short on ${EX_LABEL[SHORT]||SHORT}`;
+}
+
+async function tradeOpenArb(){
+  if (_tradeInflight.arb) return;
+  const L = _trade.long, S = _trade.short;
+  _showLegErr('long', null); _showLegErr('short', null);
+  if (L.qty <= 0 || S.qty <= 0) { _toast('Enter size on both legs'); return; }
+  if (!L.walletId || !S.walletId) { _toast('Screener API keys missing on one of the exchanges'); return; }
+  // Market order on both legs — fire both without a price-confirmation prompt.
+  _tradeInflight.arb = true;
+  const btn = document.getElementById('trade-arb-btn');
+  const txt = document.getElementById('trade-arb-text');
+  const prev = txt.textContent;
+  btn.disabled = true; txt.innerHTML = '<span class="trade-busy-ring"></span>Submitting both legs…';
+  try {
+    const r = await Auth.apiFetch('/trade/open-arb', {
+      method: 'POST',
+      body: JSON.stringify({
+        symbol: SYM,
+        long_wallet_id:  L.walletId, long_quantity:  L.qty, long_leverage:  L.leverage, long_margin_mode:  L.margin,
+        short_wallet_id: S.walletId, short_quantity: S.qty, short_leverage: S.leverage, short_margin_mode: S.margin,
+      }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || 'Request failed');
+    if (body.fully_filled) {
+      _toast('Both legs filled ✓', 'success');
+      document.getElementById('trade-size-long').value = '';
+      document.getElementById('trade-size-short').value = '';
+      _trade.long.qty = 0; _trade.short.qty = 0;
+      tradeRecalc('long'); tradeRecalc('short');
+    } else {
+      if (body.long?.ok && !body.short?.ok) {
+        _showLegErr('short', 'SHORT failed: ' + (body.short.error || 'unknown'));
+        _toast('Long filled, SHORT failed', 'error');
+      } else if (body.short?.ok && !body.long?.ok) {
+        _showLegErr('long',  'LONG failed: '  + (body.long.error  || 'unknown'));
+        _toast('Short filled, LONG failed', 'error');
+      } else {
+        _showLegErr('long',  body.long?.error  || 'Both legs failed');
+        _showLegErr('short', body.short?.error || 'Both legs failed');
+      }
+    }
+    refreshTradePositions();
+    _reloadTradeStatus();
+    if (typeof accLoadPositions === 'function') accLoadPositions();
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  } catch (e) {
+    _showLegErr('long', e.message || 'Order failed');
+    _showLegErr('short', e.message || 'Order failed');
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  } finally {
+    _tradeInflight.arb = false;
+    txt.textContent = prev; _renderArbBtn();
+  }
+}
+
+function _showLegErr(leg, msg){
+  const el = document.getElementById('trade-err-' + leg);
+  if (!el) return;
+  if (!msg) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = `<span class="tx">${String(msg).replace(/</g,'&lt;')}</span><button class="tc" onclick="_showLegErr('${leg}', null)">×</button>`;
+  el.style.display = 'flex';
+}
+
+const _tradeInflight = { long: false, short: false, arb: false };
+
+async function tradeOpen(leg){
+  if (_tradeInflight[leg]) return;
+  const t = _trade[leg];
+  _showLegErr(leg, null);
+  if (!t.qty || t.qty <= 0) { _showLegErr(leg, 'Enter size first'); return; }
+  if (!t.walletId)          { _showLegErr(leg, 'Set a Screener API key for this exchange on /profile'); return; }
+  const sideText = leg === 'long' ? 'LONG' : 'SHORT';
+  // Market order — fire immediately without a price-confirmation prompt.
+  // The button itself already shows the size (e.g. "Open Long · 12.3456 TOK"),
+  // which is the only confirmation the user needs for a taker order.
+  _tradeInflight[leg] = true;
+  const btn = document.getElementById('trade-submit-' + leg);
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.innerHTML = '<span class="trade-busy-ring"></span>Submitting…';
+  try {
+    const r = await Auth.apiFetch('/trade/open', {
+      method: 'POST',
+      body: JSON.stringify({
+        wallet_id: t.walletId, symbol: SYM,
+        side: leg === 'long' ? 'buy' : 'sell',
+        quantity: t.qty, leverage: t.leverage, margin_mode: t.margin,
+      }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || 'Order failed');
+    _toast(`${sideText} order placed · ${body.order_id || 'OK'}`, 'success');
+    // Immediate refresh, balance, positions everywhere
+    refreshTradePositions();
+    _reloadTradeStatus();
+    if (typeof accLoadPositions === 'function') accLoadPositions();
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+    // Reset size
+    document.getElementById('trade-size-' + leg).value = '';
+    _trade[leg].qty = 0; tradeRecalc(leg);
+  } catch (e) {
+    _showLegErr(leg, e.message || 'Order failed');
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  } finally {
+    _tradeInflight[leg] = false;
+    btn.textContent = prev; _renderSubmit(leg);
+  }
+}
+
+async function _reloadTradeStatus(){
+  try {
+    const r = await Auth.apiFetch('/trade/status?symbol=' + SYM + '&long_ex=' + LONG + '&short_ex=' + SHORT);
+    if (r.ok) _applyTradeStatus(await r.json());
+  } catch {}
+}
+
+async function tradeClose(wid, posId){
+  const ok = await Confirm.ask({
+    title: 'Close this position?',
+    message: 'The position will be closed at market with a reduce-only order.',
+    okText: 'Close at market',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const r = await Auth.apiFetch('/trade/close', {
+      method: 'POST',
+      body: JSON.stringify({ wallet_id: wid, symbol: SYM }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || 'Close failed');
+    _toast('Position closed', 'success');
+    refreshTradePositions();
+    _reloadTradeStatus();
+    if (typeof accLoadPositions === 'function') accLoadPositions();
+    if (typeof accLoadOrders === 'function') accLoadOrders();
+  } catch (e) {
+    _toast('Close failed — see Order History for details', 'error');
+    if (typeof accLoadOrders === 'function') accLoadOrders();
   }
 }
 
@@ -4230,7 +4951,7 @@ let _tpLastPositions = null;
 let _tpEmptyStreak = 0;
 
 async function refreshTradePositions(){
-  let rows, spotPairs = [];
+  let rows;
   try {
     const r = await Auth.apiFetch('/trade/positions?symbol=' + SYM);
     if (!r.ok) return;
@@ -4238,16 +4959,21 @@ async function refreshTradePositions(){
   } catch {
     return;
   }
-  // Spot/short pair candidates — fire-and-forget; don't block position
-  // render if this 404s on older deployments.
-  try {
-    const r2 = await Auth.apiFetch('/trade/spot-short-pairs');
-    if (r2.ok) {
-      const all = await r2.json();
-      spotPairs = (all || []).filter(p => (p.symbol || '').toUpperCase() === SYM);
+  const wrap = document.getElementById('trade-positions');
+  const list = document.getElementById('trade-positions-list');
+  if (!rows.length){
+    _tpEmptyStreak++;
+    if (_tpLastPositions && _tpEmptyStreak < _EMPTY_STREAK_LIMIT){
+      // Likely a transient blip — keep the row visible.
+      return;
     }
-  } catch {}
-
+    _tpLastPositions = [];
+    wrap.style.display = 'none';
+    return;
+  }
+  _tpEmptyStreak = 0;
+  _tpLastPositions = rows;
+  wrap.style.display = 'block';
   const html = rows.map(p => {
     const pnlCls = p.unrealized_pnl_usd >= 0 ? 'pos' : 'neg';
     const sideCls = p.side === 'buy' ? 'side-long' : 'side-short';
@@ -4255,7 +4981,15 @@ async function refreshTradePositions(){
     const entry = Number(p.entry_price || 0);
     const mark = Number(p.mark_price || 0);
     const pnl = Number(p.unrealized_pnl_usd || 0);
-    const funding = Number(p.funding_pnl_usd || 0);
+    const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
+    const shareData = _htmlEsc(JSON.stringify({
+      symbol: p.symbol, exchange: p.exchange, side: p.side,
+      quantity: qty, entry_price: entry, mark_price: mark,
+      leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
+      unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
+    }));
+    return `
+      <div class="trade-position-row">
         <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
         <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
         <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
@@ -4264,8 +4998,446 @@ async function refreshTradePositions(){
         <button class="pos-share" title="Share P&amp;L card" data-share='${shareData}'
                 onclick='_openShareFromBtn(this)'
                 style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:4px">↗</button>
-        ${fundingRow}
-        ${spotPairRow}
+      </div>`;
+  }).join('');
+  _renderIfChanged('trade-positions-list', html);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  KEYS POPUP — opens from "Keys ⚙" in the trading card and account toolbar
+// ═══════════════════════════════════════════════════════════════════════
+async function openKeysPopup(){
+  const bd = document.getElementById('keys-pop-backdrop');
+  bd.classList.add('open');
+  await _renderKeysPop();
+}
+function closeKeysPopup(){
+  document.getElementById('keys-pop-backdrop')?.classList.remove('open');
+}
+
+async function _renderKeysPop(){
+  const body = document.getElementById('keys-pop-body');
+  if (!body) return;
+  body.innerHTML = '<div class="keys-pop-empty"><span class="spinner"></span> Loading keys…</div>';
+  try {
+    const r = await Auth.apiFetch('/wallets');
+    if (!r.ok) throw new Error();
+    const all = await r.json();
+    const legs = [
+      { side:'long',  exch: LONG,  label: EX_LABEL[LONG]  || LONG  },
+      { side:'short', exch: SHORT, label: EX_LABEL[SHORT] || SHORT },
+    ];
+    body.innerHTML = legs.map(leg => {
+      const keys = all.filter(w => w.wallet_type === 'exchange' && !w.is_archived && (w.type_value||'').toLowerCase() === leg.exch);
+      const hasTrade = keys.some(k => k.purpose === 'screener' || k.purpose === 'both');
+      return `
+        <div class="kp-leg">
+          <div class="kp-leg-hdr">
+            <span class="kp-leg-badge ${leg.side}">${leg.side.toUpperCase()}</span>
+            <span class="kp-leg-ex">${leg.label}</span>
+            <span class="kp-leg-status ${hasTrade ? 'ok' : 'missing'}">${hasTrade ? 'Trade key ✓' : 'No trade key'}</span>
+          </div>
+          <div class="kp-leg-body">
+            ${keys.length ? keys.map(k => `
+              <div class="kp-key-row">
+                <span class="kp-key-name">${_htmlEsc(k.name)}</span>
+                <span class="kp-key-mask">${_htmlEsc(k.display_info)}</span>
+                <span class="kp-key-pills">
+                  ${k.purpose === 'both'
+                    ? '<span class="kp-pill p">PORTFOLIO</span><span class="kp-pill s">SCREENER</span>'
+                    : k.purpose === 'screener'
+                      ? '<span class="kp-pill s">SCREENER</span>'
+                      : '<span class="kp-pill p">PORTFOLIO</span>'}
+                </span>
+              </div>`).join('')
+              : '<div class="kp-empty">No API key yet for ' + leg.label + '.</div>'}
+            <a class="kp-add" href="/profile#keys-card" target="_blank" rel="noopener">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 2v8M2 6h8"/></svg>
+              Add ${leg.label} key
+            </a>
+          </div>
+        </div>`;
+    }).join('');
+  } catch {
+    body.innerHTML = '<div class="keys-pop-empty">Could not load keys. Try again.</div>';
+  }
+}
+
+function _htmlEsc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeKeysPopup(); });
+</script>
+
+<!-- Mobile bottom navigation -->
+<nav class="bottom-nav" id="bottom-nav">
+  <a href="/app" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
+    Portfolio
+  </a>
+  <a href="/screener?mode=arb" class="bnav-item active">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M3 5h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Screener
+  </a>
+  <a href="/watchlist" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M10 2L12.3 7.1L18 7.9L14 11.9L15 18L10 15L5 18L6 11.9L2 7.9L7.7 7.1z"/></svg>
+    Watchlist
+  </a>
+  <a href="/pricing" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
+    Pricing
+  </a>
+  <a href="/profile" class="bnav-item">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3 18c0-3.3 3.1-5.8 7-5.8s7 2.5 7 5.8" stroke="currentColor" stroke-width="1.5"/></svg>
+    Profile
+  </a>
+</nav>
+
+<!-- ── API Keys popup (opens from trading card's "Keys ⚙") ── -->
+<div class="keys-pop-backdrop" id="keys-pop-backdrop" onclick="if(event.target===this) closeKeysPopup()">
+  <div class="keys-pop" role="dialog" aria-modal="true">
+    <div class="keys-pop-hdr">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="9" r="3"/><path d="M8 9h7M12 9v3M14 9v2"/></svg>
+      <span class="keys-pop-title">API Keys for this pair</span>
+      <span class="keys-pop-spacer"></span>
+      <a class="keys-pop-link" href="/profile#keys-card" target="_blank" rel="noopener">All keys ↗</a>
+      <button class="keys-pop-close" onclick="closeKeysPopup()" aria-label="Close">×</button>
+    </div>
+    <div class="keys-pop-body" id="keys-pop-body">
+      <div class="keys-pop-empty"><span class="spinner"></span> Loading…</div>
+    </div>
+  </div>
+</div>
+
+<style>
+.keys-pop-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.58);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;z-index:600;opacity:0;pointer-events:none;transition:opacity .14s;}
+.keys-pop-backdrop.open{opacity:1;pointer-events:auto;}
+.keys-pop{width:min(560px,calc(100vw - 28px));max-height:min(80vh,680px);background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 24px 68px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;transform:translateY(8px) scale(0.98);transition:transform .16s cubic-bezier(.16,1,.3,1);}
+.keys-pop-backdrop.open .keys-pop{transform:translateY(0) scale(1);}
+.keys-pop-hdr{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface2);}
+.keys-pop-title{font-size:14px;font-weight:700;letter-spacing:-0.01em;color:var(--text);}
+.keys-pop-spacer{flex:1}
+.keys-pop-link{font-size:11px;color:var(--text3);text-decoration:none;padding:4px 9px;border-radius:6px;border:1px solid var(--border);transition:color .15s,border-color .15s;}
+.keys-pop-link:hover{color:var(--green);border-color:rgba(26,255,171,0.35);}
+.keys-pop-close{width:28px;height:28px;border-radius:7px;background:transparent;border:1px solid var(--border);color:var(--text2);cursor:pointer;font-family:inherit;font-size:16px;line-height:1;}
+.keys-pop-close:hover{color:var(--red);border-color:var(--red);}
+.keys-pop-body{flex:1;overflow-y:auto;padding:14px 16px;}
+.keys-pop-empty{padding:36px 18px;text-align:center;color:var(--text3);font-size:12.5px;}
+.kp-leg{margin-bottom:14px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);}
+.kp-leg:last-child{margin-bottom:0;}
+.kp-leg-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);}
+.kp-leg-badge{font-size:9px;font-weight:800;padding:2px 7px;border-radius:4px;letter-spacing:0.05em;}
+.kp-leg-badge.long{color:var(--green);background:rgba(26,255,171,0.1);border:1px solid rgba(26,255,171,0.35);}
+.kp-leg-badge.short{color:var(--red);background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.35);}
+.kp-leg-ex{font-family:Inter,sans-serif;font-size:12.5px;font-weight:700;color:var(--text);flex:1;}
+.kp-leg-status{font-size:10px;padding:2px 7px;border-radius:999px;font-weight:600;letter-spacing:0.02em;}
+.kp-leg-status.ok{color:var(--green);background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.28);}
+.kp-leg-status.missing{color:var(--text3);background:var(--surface3);border:1px solid var(--border);}
+.kp-leg-body{padding:10px 12px;}
+.kp-key-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:5px;background:var(--surface2);}
+.kp-key-row:last-child{margin-bottom:0;}
+.kp-key-name{flex:1;font-size:12px;color:var(--text);font-weight:500;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kp-key-mask{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text3);}
+.kp-key-pills{display:flex;gap:4px;}
+.kp-pill{font-size:9.5px;padding:1px 6px;border-radius:4px;font-weight:700;letter-spacing:0.04em;}
+.kp-pill.p{background:rgba(6,182,212,0.14);color:var(--teal);border:1px solid rgba(6,182,212,0.35);}
+.kp-pill.s{background:rgba(229,192,123,0.12);color:var(--yellow);border:1px solid rgba(229,192,123,0.35);}
+.kp-add{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:7px;background:var(--surface3);border:1px solid var(--border);color:var(--text);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s,background .15s;margin-top:6px;}
+.kp-add:hover{color:var(--green);border-color:rgba(26,255,171,0.4);background:rgba(26,255,171,0.06);}
+.kp-empty{padding:10px 2px;font-size:11.5px;color:var(--text3);}
+
+/* Exchange status strip — sticky bottom */
+.ex-status-strip{position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(19,18,23,.94);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-top:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text3);}
+.ex-status-strip .lbl{font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-size:10px;}
+.ex-status-strip .as-ex{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);}
+.ex-status-strip .as-ex .d{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--text3);}
+.ex-status-strip .as-ex .d.live{background:var(--green);box-shadow:0 0 6px rgba(26,255,171,.55);}
+.ex-status-strip .as-ex .d.slow{background:var(--yellow);}
+.ex-status-strip .as-ex .d.stale{background:var(--red);}
+body.light .ex-status-strip{background:rgba(255,255,255,.96);}
+body{padding-bottom:44px;}
+@media (max-width:768px){body{padding-bottom:140px;} .ex-status-strip{bottom:88px;}}
+.ex-status-strip .as-toggle{margin-left:auto;background:transparent;border:0;color:var(--text3);cursor:pointer;padding:2px 6px;font-size:13px;line-height:1;border-radius:4px;}
+.ex-status-strip .as-toggle:hover{color:var(--text);background:var(--surface3);}
+.ex-status-strip.is-hidden{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;border-top:0;padding:0;}
+.ex-status-strip.is-hidden > :not(.as-show){display:none !important;}
+.ex-status-strip.is-hidden .as-show{display:inline-flex !important;}
+.ex-status-strip .as-show{display:none;position:fixed;right:12px;bottom:12px;z-index:41;background:var(--surface2);border:1px solid var(--border);color:var(--text2);border-radius:999px;padding:6px 12px;gap:6px;font-size:11px;cursor:pointer;align-items:center;}
+.ex-status-strip .as-show:hover{color:var(--text);}
+</style>
+
+<!-- Exchange status strip — sticky bottom (hide-state in localStorage) -->
+<div class="ex-status-strip" id="ex-status-strip">
+  <span class="lbl">Exchange status</span>
+  <div id="ex-status-items" style="display:contents"></div>
+  <button class="as-toggle" type="button" onclick="toggleExStatusBar()" title="Hide status strip" aria-label="Hide status strip">×</button>
+  <button class="as-show" type="button" onclick="toggleExStatusBar()" title="Show exchange status">
+    <span class="d live" style="display:inline-block;width:6px;height:6px;border-radius:50%"></span>
+    Status
+  </button>
+</div>
+<script>
+  function toggleExStatusBar(){
+    const el = document.getElementById('ex-status-strip');
+    const hidden = el.classList.toggle('is-hidden');
+    try { localStorage.setItem('ex-status-hidden', hidden ? '1' : '0'); } catch(_){}
+  }
+  (function(){
+    try {
+      if (localStorage.getItem('ex-status-hidden') === '1') {
+        document.getElementById('ex-status-strip').classList.add('is-hidden');
+      }
+    } catch(_){}
+  })();
+</script>
+
+<script>
+(function(){
+  const _FALLBACK = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx','whitebit','hyperliquid','aster','ethereal','paradex','extended','lighter'];
+  let EXES = (window.EX && window.EX.lists && window.EX.lists.screener_all && window.EX.lists.screener_all.length) ? window.EX.lists.screener_all : _FALLBACK;
+  const LABELS = (window.EX && window.EX.labels) || {};
+  const FRESH_S = 8, STALE_S = 30;
+  const wrap = document.getElementById('ex-status-items');
+  function rebuild(){
+    wrap.innerHTML = EXES.map(e => `<span class="as-ex" id="exs-${e}"><span class="d"></span><span class="nm">${LABELS[e]||e}</span><span class="age" style="font-family:var(--mono);color:var(--text3)">—</span></span>`).join('');
+  }
+  rebuild();
+  if (window.EX && window.EX.ready) {
+    window.EX.ready.then(() => {
+      if (window.EX.lists.screener_all.length) {
+        EXES = window.EX.lists.screener_all;
+        rebuild();
+      }
+    });
+  }
+
+  async function tick(){
+    try {
+      const r = await Auth.apiFetch('/screener/exchange-health');
+      if (!r.ok) return;
+      const j = await r.json();
+      const exs = (j && j.exchanges) || {};
+      for (const ex of EXES) {
+        const h = exs[ex] || {};
+        const el = document.getElementById('exs-'+ex);
+        if (!el) continue;
+        const d = el.querySelector('.d');
+        const a = el.querySelector('.age');
+        const age = (typeof h.age_s === 'number') ? h.age_s : null;
+        const healthy = (h.healthy !== false) && age != null && age <= STALE_S;
+        const kls = (age == null) ? 'stale' : age <= FRESH_S ? 'live' : age <= STALE_S ? 'slow' : 'stale';
+        d.className = 'd ' + kls;
+        a.textContent = age == null ? '—' : (age < 60 ? age.toFixed(1)+'s' : Math.round(age/60)+'m');
+        el.title = `${LABELS[ex]||ex} — ${h.via || '?'}${age != null ? ' · '+age.toFixed(1)+'s' : ''}`;
+      }
+    } catch(_) {}
+  }
+  tick();
+  setInterval(tick, 3000);
+})();
+</script>
+
+<!-- ═══ Manual pair-sync modal ════════════════════════════════════════════ -->
+<div class="sc-backdrop" id="sync-backdrop" onclick="if(event.target===this)closeSyncPairs()">
+  <div class="sc-modal" role="dialog" aria-label="Sync pairs" style="max-width:560px">
+    <div class="sc-head">
+      <span class="sc-title">Sync arbitrage pairs</span>
+      <button class="sc-x" onclick="closeSyncPairs()" aria-label="Close">&times;</button>
+    </div>
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);line-height:1.5">
+      Pick a <span style="color:var(--green);font-weight:700">LONG</span> + <span style="color:var(--red);font-weight:700">SHORT</span> position to mark them as a pair. Pairs persist on this device and show up grouped in the Positions table with combined P&amp;L.
+    </div>
+    <div id="sync-list" style="padding:10px 14px;max-height:50vh;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div class="sc-actions">
+      <button class="sc-btn sc-btn-primary" id="sync-pair-btn" onclick="confirmSyncPair()" disabled>
+        Pair selected
+      </button>
+      <button class="sc-btn" onclick="closeSyncPairs()">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _syncRows = [], _syncSelected = new Set();
+
+async function openSyncPairs(){
+  const bd = document.getElementById('sync-backdrop');
+  if (!bd) return;
+  bd.classList.add('open');
+  _syncSelected.clear();
+  // Load current positions
+  document.getElementById('sync-list').innerHTML = '<div style="padding:20px;color:var(--text3);font-size:12px;text-align:center">Loading positions…</div>';
+  try {
+    const r = await Auth.apiFetch('/trade/positions');
+    if (!r.ok) throw new Error();
+    _syncRows = await r.json();
+  } catch {
+    document.getElementById('sync-list').innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px;text-align:center">Failed to load positions.</div>';
+    return;
+  }
+  _renderSyncList();
+}
+function closeSyncPairs(){
+  document.getElementById('sync-backdrop')?.classList.remove('open');
+}
+
+function _renderSyncList(){
+  const wrap = document.getElementById('sync-list');
+  if (!wrap) return;
+  const manual = _loadManualPairs();
+  const exLbl = (e) => (window.EX && window.EX.labels && window.EX.labels[e]) || (e || '').toUpperCase();
+
+  // Section 1: existing manual pairs (with "Unpair" button)
+  const pairedHTML = manual.length ? `
+    <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:4px 0">Active pairs (${manual.length})</div>
+    ${manual.map((p, i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface2);border:1px solid var(--green);border-radius:6px;font-size:12px">
+        <span style="color:var(--text)">${p.symbol}</span>
+        <span style="color:var(--text3);font-size:10px">${exLbl(p.long_exchange)} <span style="color:var(--green)">⇄</span> ${exLbl(p.short_exchange)}</span>
+        <button onclick='_syncUnpair(${i})' style="margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:5px;cursor:pointer;font-size:10.5px">Unpair</button>
+      </div>
+    `).join('')}
+    <div style="height:6px"></div>
+  ` : '';
+
+  // Section 2: pickable single positions
+  const isInManualPair = (p) => manual.some(m => m.symbol === p.symbol &&
+    ((m.long_exchange === p.exchange && p.side === 'buy') ||
+     (m.short_exchange === p.exchange && p.side === 'sell')));
+  const pickable = _syncRows.filter(p => !isInManualPair(p) && Math.abs(Number(p.quantity || 0)) > 0);
+  const rowsHTML = pickable.length ? pickable.map(p => {
+    const k = `${p.symbol}|${p.exchange}|${p.side}`;
+    const isSel = _syncSelected.has(k);
+    const sideTxt = p.side === 'buy' ? 'LONG' : 'SHORT';
+    const sideCol = p.side === 'buy' ? 'var(--green)' : 'var(--red)';
+    const qty = Number(p.quantity || 0).toFixed(4);
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:${isSel?'rgba(26,255,171,0.10)':'var(--surface2)'};border:1px solid ${isSel?'var(--green)':'var(--border)'};border-radius:6px;cursor:pointer;font-size:12px;transition:background .12s,border-color .12s" onclick="_syncToggle('${k}')">
+        <input type="checkbox" ${isSel?'checked':''} style="cursor:pointer" onclick="event.stopPropagation();_syncToggle('${k}')">
+        <span style="color:${sideCol};font-weight:700;font-size:10px">${sideTxt}</span>
+        <span style="color:var(--text)">${p.symbol}</span>
+        <span style="color:var(--text3);font-size:10px">${exLbl(p.exchange)}</span>
+        <span class="mono" style="color:var(--text3);margin-left:auto;font-size:10.5px">${qty}</span>
+      </div>`;
+  }).join('') : '<div style="padding:14px;color:var(--text3);font-size:12px;text-align:center">No unpaired positions.</div>';
+
+  wrap.innerHTML = pairedHTML + rowsHTML;
+
+  // Enable button only when 2 selected (one long + one short, different exchanges)
+  const sels = [..._syncSelected].map(k => {
+    const [sym, ex, side] = k.split('|');
+    return { sym, ex, side };
+  });
+  const valid = sels.length === 2 && sels[0].sym === sels[1].sym &&
+                sels[0].side !== sels[1].side && sels[0].ex !== sels[1].ex;
+  document.getElementById('sync-pair-btn').disabled = !valid;
+}
+
+function _syncToggle(k){
+  if (_syncSelected.has(k)) _syncSelected.delete(k);
+  else {
+    if (_syncSelected.size >= 2){
+      // Replace oldest
+      const first = _syncSelected.values().next().value;
+      _syncSelected.delete(first);
+    }
+    _syncSelected.add(k);
+  }
+  _renderSyncList();
+}
+
+async function confirmSyncPair(){
+  const sels = [..._syncSelected].map(k => {
+    const [sym, ex, side] = k.split('|');
+    return { sym, ex, side };
+  });
+  if (sels.length !== 2) return;
+  const longSel = sels.find(s => s.side === 'buy');
+  const shortSel = sels.find(s => s.side === 'sell');
+  if (!longSel || !shortSel || longSel.sym !== shortSel.sym) return;
+  await _addManualPair(longSel.sym, longSel.ex, shortSel.ex);
+  _syncSelected.clear();
+  if (typeof toast === 'function') toast(`Paired ${longSel.sym} ${longSel.ex.toUpperCase()} ⇄ ${shortSel.ex.toUpperCase()}`, 'success');
+  if (typeof accLoadPositions === 'function') accLoadPositions();
+  _renderSyncList();
+}
+
+async function _syncUnpair(idx){
+  const arr = _loadManualPairs();
+  const p = arr[idx];
+  if (!p) return;
+  await _removeManualPair(p.symbol, p.long_exchange, p.short_exchange);
+  if (typeof accLoadPositions === 'function') accLoadPositions();
+  _renderSyncList();
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSyncPairs(); });
+</script>
+
+<!-- ═══ Share P&L card modal ═══════════════════════════════════════════════ -->
+<div class="sc-backdrop" id="sc-backdrop" onclick="if(event.target===this)closeShareCard()">
+  <div class="sc-modal" role="dialog" aria-label="Share P&L">
+    <div class="sc-head">
+      <span class="sc-title">Share P&amp;L</span>
+      <button class="sc-x" onclick="closeShareCard()" aria-label="Close">&times;</button>
+    </div>
+    <div class="sc-controls">
+      <div class="sc-toggle" id="sc-toggle">
+        <button class="sc-tog-btn" data-mode="pct" onclick="setShareMode('pct')">ROI</button>
+        <button class="sc-tog-btn" data-mode="usd" onclick="setShareMode('usd')">PNL</button>
+        <button class="sc-tog-btn is-active" data-mode="both" onclick="setShareMode('both')">ROI&nbsp;·&nbsp;PNL</button>
+      </div>
+      <!-- Pair-view toggle removed — pair cards always render the combined
+           layout showing both legs' entries side-by-side. -->
+      <div class="sc-toggle" id="sc-pair-view" style="display:none"></div>
+    </div>
+    <div class="sc-preview-wrap">
+      <canvas id="sc-canvas" width="1080" height="1080"></canvas>
+    </div>
+    <div class="sc-actions">
+      <button class="sc-btn sc-btn-primary" onclick="downloadShareCard()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v9M4 7l4 4 4-4M2 13h12"/></svg>
+        Download PNG
+      </button>
+      <button class="sc-btn" onclick="copyShareCard()" id="sc-copy-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M11 4V2.5A1.5 1.5 0 0 0 9.5 1h-6A1.5 1.5 0 0 0 2 2.5v6A1.5 1.5 0 0 0 3.5 10H5"/></svg>
+        Copy image
+      </button>
+      <button class="sc-btn" onclick="copyShareText()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        Copy text
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+.sc-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:700;opacity:0;pointer-events:none;transition:opacity .15s;}
+.sc-backdrop.open{opacity:1;pointer-events:auto;}
+.sc-modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:min(640px, 92vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;transform:translateY(8px) scale(.98);transition:transform .15s ease;box-shadow:0 24px 80px rgba(0,0,0,0.5);}
+.sc-backdrop.open .sc-modal{transform:translateY(0) scale(1);}
+.sc-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);}
+.sc-title{font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text2);}
+.sc-x{background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;line-height:1;padding:0 4px;font-family:inherit;transition:color .12s;}
+.sc-x:hover{color:var(--text);}
+.sc-controls{display:flex;align-items:center;justify-content:center;padding:12px 18px 4px;}
+.sc-toggle{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px;}
+.sc-tog-btn{background:none;border:none;color:var(--text3);font-family:inherit;font-size:13px;font-weight:600;padding:7px 22px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s;}
+.sc-tog-btn.is-active{background:var(--surface3);color:var(--text);}
+.sc-pair-view-btn{background:none;border:none;color:var(--text3);font-family:inherit;font-size:12px;font-weight:600;padding:6px 14px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s;}
+.sc-pair-view-btn.is-active{background:var(--surface3);color:var(--text);}
+.sc-preview-wrap{padding:14px 18px;display:flex;justify-content:center;flex:1;min-height:0;overflow:auto;background:radial-gradient(ellipse at center,rgba(26,255,171,0.05),transparent 60%);}
+/* Canvas itself is transparent outside the rounded shape (alpha channel).
+   No CSS background — the canvas paints its own card. Drop-shadow filter
+   follows the actual rounded edges instead of a square box-shadow. */
+#sc-canvas{display:block;width:100%;max-width:480px;height:auto;background:transparent;filter:drop-shadow(0 16px 50px rgba(0,0,0,0.55)) drop-shadow(0 0 0 rgba(0,0,0,0.04));}
+.sc-actions{display:flex;gap:8px;padding:12px 18px 18px;border-top:1px solid var(--border);background:var(--surface2);}
+.sc-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--surface3);border:1px solid var(--border);color:var(--text2);padding:10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;transition:background .12s,color .12s,border-color .12s;}
+.sc-btn:hover{background:var(--surface);color:var(--text);}
+.sc-btn-primary{background:var(--green);color:#0a0a0f;border-color:transparent;}
+.sc-btn-primary:hover{background:#0fffa3;color:#0a0a0f;filter:brightness(1.05);}
+@media (max-width: 560px){
+  .sc-actions{flex-direction:column;}
+}
 </style>
 
 <script>
