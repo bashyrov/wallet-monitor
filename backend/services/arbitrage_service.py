@@ -543,6 +543,75 @@ async def _fetch_paradex() -> list[dict]:
     return out
 
 
+async def _fetch_lighter() -> list[dict]:
+    """Lighter zk perp-DEX. Public REST — no auth required.
+
+    Two endpoints joined by symbol:
+      /api/v1/funding-rates   — every market's current rate (Lighter exposes
+                                its own + reference rates from binance/bybit/
+                                hyperliquid; we filter exchange=='lighter')
+      /api/v1/exchangeStats   — last_trade_price + daily quote volume
+
+    Funding interval is 1h (confirmed via /api/v1/fundings, timestamps spaced
+    3600s apart). Pay times are on the hour UTC.
+    """
+    fr_resp, st_resp = await asyncio.gather(
+        _http.get("https://mainnet.zklighter.elliot.ai/api/v1/funding-rates"),
+        _http.get("https://mainnet.zklighter.elliot.ai/api/v1/exchangeStats"),
+        return_exceptions=True,
+    )
+    if isinstance(fr_resp, Exception) or isinstance(st_resp, Exception):
+        return []
+    try:
+        fr_resp.raise_for_status()
+        st_resp.raise_for_status()
+    except Exception:
+        return []
+    rates = (fr_resp.json() or {}).get("funding_rates") or []
+    stats = (st_resp.json() or {}).get("order_book_stats") or []
+
+    rate_by_sym: dict[str, float] = {}
+    for r in rates:
+        if (r.get("exchange") or "").lower() != "lighter":
+            continue
+        sym = (r.get("symbol") or "").upper()
+        if not sym:
+            continue
+        try:
+            rate_by_sym[sym] = float(r.get("rate") or 0)
+        except (TypeError, ValueError):
+            continue
+
+    now_ts = int(time.time())
+    next_ts = (now_ts // 3600 + 1) * 3600
+
+    out: list[dict] = []
+    for s in stats:
+        sym = (s.get("symbol") or "").upper()
+        if sym not in rate_by_sym:
+            continue
+        try:
+            price = float(s.get("last_trade_price") or 0)
+            vol_usd = float(s.get("daily_quote_token_volume") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price <= 0:
+            continue
+        rate = rate_by_sym[sym]
+        if rate == 0:
+            continue
+        out.append({
+            "symbol": sym,
+            "exchange": "lighter",
+            "price": price,
+            "rate": rate,
+            "next_ts": next_ts,
+            "interval_h": 1.0,
+            "volume_usd": vol_usd,
+        })
+    return out
+
+
 async def _fetch_hyperliquid() -> list[dict]:
     r = await _http.post(
         "https://api.hyperliquid.xyz/info",
@@ -1067,6 +1136,7 @@ FETCHERS: dict[str, object] = {
     "paradex":     _fetch_paradex,
     "htx":         _fetch_htx,
     "extended":    _fetch_extended,
+    "lighter":     _fetch_lighter,
 }
 
 
