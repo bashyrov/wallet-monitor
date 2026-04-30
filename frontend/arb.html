@@ -5365,7 +5365,15 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeKeysP
 .ex-status-strip .as-ex .d.stale{background:var(--red);}
 body.light .ex-status-strip{background:rgba(255,255,255,.96);}
 body{padding-bottom:44px;}
-@media (max-width:768px){body{padding-bottom:140px;} .ex-status-strip{bottom:88px;}}
+@media (max-width:768px){
+  body{padding-bottom:88px;}
+  /* Hide the exchange status strip on mobile — its 11 round chips wrap
+     across 2-3 rows on a phone, eat ~80px of viewport, and the freshness
+     dots are tiny enough to be unreadable anyway. The bottom-nav already
+     conveys "site is live"; ops use /health/streams for the per-venue
+     state. */
+  .ex-status-strip{display:none !important;}
+}
 .ex-status-strip .as-toggle{margin-left:auto;background:transparent;border:0;color:var(--text3);cursor:pointer;padding:2px 6px;font-size:13px;line-height:1;border-radius:4px;}
 .ex-status-strip .as-toggle:hover{color:var(--text);background:var(--surface3);}
 .ex-status-strip.is-hidden{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;border-top:0;padding:0;}
