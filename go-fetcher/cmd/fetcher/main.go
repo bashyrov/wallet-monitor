@@ -227,13 +227,17 @@ func main() {
 	l.Info().Strs("bootstrap_symbols", startSymbols).Str("from_dir", bootstrapDir).Msg("symbol bootstrap")
 	mgr.PrewarmAll(startSymbols)
 
-	// Periodic prewarm refresh — pick up new top-N from Python's
-	// funding.json every 30s. Once Go owns the funding compute (already
-	// does — it writes funding.json itself) and Python is decommissioned,
-	// this becomes a no-op. For now, the shadow mode benefits from
-	// staying in sync with Python's hot list.
+	// Periodic prewarm refresh — every 5 MINUTES, not 30s. Frequent
+	// refresh churns the symbol set under the runner's feet and triggers
+	// a reconnect every cycle (any removed symbol forces a reconnect
+	// because most venues lack reliable batched-unsubscribe). Combined
+	// with the 30s stale-frames watchdog, that's a perfect storm — venues
+	// like Binance and Bybit, which take 1-2s to subscribe-ack the new
+	// set, never get past the first frame before we churn them again.
+	// 5 min keeps Go in rough sync with Python's hot list while letting
+	// each connection settle.
 	g.Go(func() error {
-		t := time.NewTicker(30 * time.Second)
+		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for {
 			select {
