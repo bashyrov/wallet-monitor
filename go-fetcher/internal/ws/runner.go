@@ -302,9 +302,11 @@ func (r *Runner) session(ctx context.Context) error {
 
 // subscribe sends BuildSubscribe frames. Caller already holds wanted set.
 func (r *Runner) subscribe(conn *websocket.Conn, syms []string) error {
+	r.log.Info().Int("syms", len(syms)).Msg("subscribe")
 	r.symMu.Lock()
 	frames := r.a.BuildSubscribe(syms)
 	r.symMu.Unlock()
+	r.log.Info().Int("syms", len(syms)).Int("frames", len(frames)).Msg("subscribe frames built")
 
 	delay := r.a.SubscribeDelay()
 	for i, f := range frames {
