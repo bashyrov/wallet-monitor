@@ -553,14 +553,37 @@ import os
 _AUTH_PAGES  = {"app", "profile", "archive", "watchlist"}
 _ADMIN_PAGES = {"admin", "admin-user"}
 
+_FRONTEND_ROOT = os.path.realpath("frontend")
+
+
+def _safe_frontend_path(rel: str) -> str | None:
+    """Resolve `rel` under frontend/ and reject anything that escapes the
+    directory via `..` traversal. Returns the absolute path or None.
+
+    Without this, `GET /..%2F.env` would serve the entire .env file
+    (SECRET_KEY, ENCRYPTION_KEY, webhook secrets, TG tokens, DB password)
+    because `os.path.join("frontend", "../.env")` produces `frontend/../.env`,
+    which `os.path.exists` happily resolves to the project's .env.
+    """
+    candidate = os.path.realpath(os.path.join(_FRONTEND_ROOT, rel))
+    # candidate must be the frontend root or a descendant of it.
+    if candidate != _FRONTEND_ROOT and not candidate.startswith(_FRONTEND_ROOT + os.sep):
+        return None
+    return candidate
+
+
 @app.get("/{page:path}", include_in_schema=False)
 async def serve_page(page: str, request: Request, db: Session = Depends(get_db)):
     if page.startswith("api"):
         raise HTTPException(status_code=404)
+    # Reject any traversal attempt up-front — both encoded and decoded forms
+    # land here as plain ".." segments after FastAPI's path conversion.
+    if ".." in page.split("/"):
+        raise HTTPException(status_code=404)
     # Static files (have extension) — serve directly from frontend/
     if "." in page.split("/")[-1]:
-        filepath = os.path.join("frontend", page)
-        if os.path.exists(filepath):
+        filepath = _safe_frontend_path(page)
+        if filepath and os.path.isfile(filepath):
             # Cache-bust window: 60 s on text assets so a deploy-fix
             # propagates within a minute even to clients that didn't
             # hard-reload. Images / fonts get the longer default since
@@ -574,7 +597,12 @@ async def serve_page(page: str, request: Request, db: Session = Depends(get_db))
         raise HTTPException(status_code=404)
 
     base = page.split("/")[0] if page else ""
-    filepath = "frontend/index.html" if not page else os.path.join("frontend", page + ".html")
+    if not page:
+        filepath = _safe_frontend_path("index.html")
+    else:
+        filepath = _safe_frontend_path(page + ".html")
+    if filepath is None:
+        raise HTTPException(status_code=404)
 
     if base in _AUTH_PAGES or base in _ADMIN_PAGES:
         from backend.services.auth_service import decode_token, get_user_by_id
