@@ -470,7 +470,8 @@ _CSP = "; ".join([
     # here. Narrows the XSS exfil surface from "any HTTPS host" to two.
     "connect-src 'self' https://api.dexscreener.com",
     # The Login Widget renders an iframe pointing at oauth.telegram.org.
-    "frame-src 'self' https://oauth.telegram.org https://telegram.org",
+    # DexScreener iframe is the chart on /arb?type=dex pages.
+    "frame-src 'self' https://oauth.telegram.org https://telegram.org https://dexscreener.com",
     "frame-ancestors 'none'",
     "form-action 'self'",
     "base-uri 'self'",

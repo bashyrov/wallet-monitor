@@ -404,6 +404,10 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
 
   <!-- CENTER: order books + history -->
   <div class="col-books">
+    <button type="button" class="books-toggle" onclick="_toggleBooksCol(this)" aria-expanded="false">
+      <span>Show order books</span>
+      <span class="bt-chevron">▾</span>
+    </button>
     <div class="books-row">
       <!-- Long book -->
       <div class="book-panel">
@@ -1040,6 +1044,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
           <!-- CENTER: order books (futures-style .book-panel for all types) -->
           <div class="col-books">
+            <button type="button" class="books-toggle" onclick="_toggleBooksCol(this)" aria-expanded="false">
+              <span>Show order books</span>
+              <span class="bt-chevron">▾</span>
+            </button>
             <div class="books-row">
               ${!IS_DEX ? `
               <!-- LONG (SPOT) book — CEX spot venue -->
@@ -2211,6 +2219,17 @@ const fmtDate=ts=>{const d=new Date(ts*1000);return d.toLocaleDateString('en-US'
 const fmtDateFull=ts=>{const d=new Date(ts*1000);return d.toLocaleDateString('ru-RU')+', '+d.toLocaleTimeString('ru-RU');};
 const fmtCD=ts=>{if(!ts)return'—';const s=ts-Math.floor(Date.now()/1000);if(s<=0)return'00:00:00';const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;return`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;};
 function fmtBookP(v){if(!v)return'—';if(v>=10000)return v.toLocaleString('en-US',{maximumFractionDigits:1});if(v>=1)return(+v).toFixed(4);return(+v).toFixed(6);}
+
+// Mobile-only collapse for the order-book column. CSS hides .books-row by
+// default at <=900px and reveals it when .col-books carries .is-open.
+function _toggleBooksCol(btn){
+  const col = btn.closest('.col-books');
+  if (!col) return;
+  const open = col.classList.toggle('is-open');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const lbl = btn.querySelector('span:first-child');
+  if (lbl) lbl.textContent = open ? 'Hide order books' : 'Show order books';
+}
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function switchChartTab(name,el){
@@ -4741,15 +4760,30 @@ function tradeRecalc(leg){
   _renderSubmit(leg);
 }
 
+// Exchanges where we can't trade programmatically (Paradex Stark sigs not
+// yet wired). Submit button becomes a link to the venue's market page.
+const _EXTERNAL_TRADE_URLS = {
+  paradex: (sym) => `https://app.paradex.trade/trade?market=${encodeURIComponent(sym)}-USD-PERP`,
+};
+
 function _renderSubmit(leg){
   const btn = document.getElementById('trade-submit-' + leg);
   if (!btn) return;
   const t = _trade[leg];
   const actionText = leg === 'long' ? 'Open Long' : 'Open Short';
-  // Layered state so the user knows what's blocking the submit.
-  // Balance > 0 is NOT required to enable the button — the exchange will
-  // reject if there isn't enough margin; users still want to preview the
-  // order size on a freshly-funded key.
+
+  // External-trade venues (Paradex): turn the button into a redirect.
+  const ex = leg === 'long' ? LONG : SHORT;
+  const extUrl = _EXTERNAL_TRADE_URLS[ex];
+  if (extUrl) {
+    btn.disabled = false;
+    btn.onclick = () => window.open(extUrl(SYM), '_blank', 'noopener');
+    btn.textContent = `${actionText} on ${EX_LABEL[ex] || ex} ↗`;
+    _renderArbBtn();
+    return;
+  }
+  btn.onclick = () => tradeOpen(leg);
+
   let reason = null;
   if (t.keyStatus === 'missing')             reason = 'add API key';
   else if (t.keyStatus === 'admin_blocked')  reason = 'paused by admin';
@@ -4794,6 +4828,15 @@ function _renderArbBtn(){
   const btn = document.getElementById('trade-arb-btn');
   const txt = document.getElementById('trade-arb-text');
   if (!btn || !txt) return;
+  // Two-leg open is impossible if either leg is an external-trade venue
+  // (Paradex). User has to use the per-leg button to redirect.
+  const extLeg = _EXTERNAL_TRADE_URLS[LONG] ? EX_LABEL[LONG]
+               : _EXTERNAL_TRADE_URLS[SHORT] ? EX_LABEL[SHORT] : null;
+  if (extLeg) {
+    btn.disabled = true;
+    txt.textContent = `Open Both · ${extLeg} needs a manual order`;
+    return;
+  }
   const L = _trade.long, S = _trade.short;
   const bothKeysOk = L.keyStatus === 'ok' && S.keyStatus === 'ok';
   const bothQty    = L.qty > 0 && S.qty > 0;
@@ -4951,7 +4994,7 @@ let _tpLastPositions = null;
 let _tpEmptyStreak = 0;
 
 async function refreshTradePositions(){
-  let rows;
+  let rows, spotPairs = [];
   try {
     const r = await Auth.apiFetch('/trade/positions?symbol=' + SYM);
     if (!r.ok) return;
@@ -4959,12 +5002,20 @@ async function refreshTradePositions(){
   } catch {
     return;
   }
+  // Spot/short pair candidates — fire-and-forget; don't block on it.
+  try {
+    const r2 = await Auth.apiFetch('/trade/spot-short-pairs');
+    if (r2.ok) {
+      const all = await r2.json();
+      spotPairs = (all || []).filter(p => (p.symbol || '').toUpperCase() === SYM);
+    }
+  } catch {}
+
   const wrap = document.getElementById('trade-positions');
   const list = document.getElementById('trade-positions-list');
   if (!rows.length){
     _tpEmptyStreak++;
     if (_tpLastPositions && _tpEmptyStreak < _EMPTY_STREAK_LIMIT){
-      // Likely a transient blip — keep the row visible.
       return;
     }
     _tpLastPositions = [];
@@ -4974,6 +5025,13 @@ async function refreshTradePositions(){
   _tpEmptyStreak = 0;
   _tpLastPositions = rows;
   wrap.style.display = 'block';
+
+  const spotByShort = {};
+  for (const p of spotPairs){
+    const key = `${(p.short.exchange||'').toLowerCase()}|${p.short.wallet_id||0}`;
+    spotByShort[key] = p;
+  }
+
   const html = rows.map(p => {
     const pnlCls = p.unrealized_pnl_usd >= 0 ? 'pos' : 'neg';
     const sideCls = p.side === 'buy' ? 'side-long' : 'side-short';
@@ -4981,6 +5039,7 @@ async function refreshTradePositions(){
     const entry = Number(p.entry_price || 0);
     const mark = Number(p.mark_price || 0);
     const pnl = Number(p.unrealized_pnl_usd || 0);
+    const funding = Number(p.funding_pnl_usd || 0);
     const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
     const shareData = _htmlEsc(JSON.stringify({
       symbol: p.symbol, exchange: p.exchange, side: p.side,
@@ -4988,8 +5047,47 @@ async function refreshTradePositions(){
       leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
       unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
     }));
+
+    let fundingRow = '';
+    if (p.funding_pnl_usd !== null && p.funding_pnl_usd !== undefined) {
+      const fLabel = funding >= 0 ? 'Funding earned' : 'Funding paid';
+      const fColor = funding >= 0 ? 'var(--green)' : 'var(--red)';
+      fundingRow = `<div style="grid-column:1/-1;font-size:10px;color:var(--text3);padding:2px 0 0 4px">
+        ${fLabel}: <span style="color:${fColor}">${funding>=0?'+':''}$${Math.abs(funding).toFixed(2)}</span>
+      </div>`;
+    }
+
+    let spotPairRow = '';
+    if (p.side !== 'buy') {
+      const spKey = `${(p.exchange||'').toLowerCase()}|${p.wallet_id||0}`;
+      const sp = spotByShort[spKey];
+      if (sp) {
+        const spotEx = EX_LABEL[(sp.spot.exchange||'').toLowerCase()] || sp.spot.exchange;
+        const spotQty = Number(sp.spot.qty || 0).toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
+        const reason = sp.match_reason || '';
+        const decided = sp.decision === 'paired';
+        const tag = decided ? '✓ confirmed' : '◆ auto-detected';
+        const tagColor = decided ? 'var(--green)' : 'var(--text3)';
+        const dp = _htmlEsc(JSON.stringify({
+          symbol: SYM, spot_wallet_id: sp.spot.wallet_id,
+          short_exchange: sp.short.exchange, short_wallet_id: sp.short.wallet_id,
+        }));
+        const buttonsHtml = decided
+          ? `<button data-payload='${dp}' onclick="_ssPairDecide(this,'unpaired')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Unpair</button>`
+          : `<button data-payload='${dp}' onclick="_ssPairDecide(this,'paired')" style="background:transparent;border:1px solid var(--green);color:var(--green);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Confirm pair</button>
+             <button data-payload='${dp}' onclick="_ssPairDecide(this,'unpaired')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Not paired</button>`;
+        spotPairRow = `<div style="grid-column:1/-1;display:flex;gap:6px;align-items:center;font-size:10.5px;padding:5px 4px 0;border-top:1px dashed var(--border);margin-top:5px;color:var(--text2);flex-wrap:wrap">
+          <span style="color:var(--green);font-weight:600">SPOT</span>
+          <span>${spotQty} ${SYM} on ${spotEx}</span>
+          <span style="color:${tagColor};font-size:10px">${tag}</span>
+          <span style="color:var(--text3);font-size:10px">${_htmlEsc(reason)}</span>
+          <span style="margin-left:auto;display:flex;gap:4px">${buttonsHtml}</span>
+        </div>`;
+      }
+    }
+
     return `
-      <div class="trade-position-row">
+      <div class="trade-position-row" style="display:grid;grid-template-columns:auto auto 1fr auto auto auto">
         <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
         <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
         <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
@@ -4998,9 +5096,29 @@ async function refreshTradePositions(){
         <button class="pos-share" title="Share P&amp;L card" data-share='${shareData}'
                 onclick='_openShareFromBtn(this)'
                 style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:4px">↗</button>
+        ${fundingRow}
+        ${spotPairRow}
       </div>`;
   }).join('');
   _renderIfChanged('trade-positions-list', html);
+}
+
+async function _ssPairDecide(btn, decision){
+  let payload;
+  try { payload = JSON.parse(btn.getAttribute('data-payload') || '{}'); }
+  catch { return; }
+  if (!payload.symbol || !payload.spot_wallet_id || !payload.short_exchange || !payload.short_wallet_id) return;
+  btn.disabled = true;
+  try {
+    const path = decision === 'paired' ? '/trade/pair/spot-short/sync' : '/trade/pair/spot-short/unsync';
+    const r = await Auth.apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) { _toast('Pair update failed', 'error'); btn.disabled = false; return; }
+    _toast(decision === 'paired' ? 'Pair confirmed' : 'Marked as not paired', 'success');
+    refreshTradePositions();
+  } catch {
+    _toast('Pair update failed', 'error');
+    btn.disabled = false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -5165,8 +5283,8 @@ body{padding-bottom:44px;}
 .ex-status-strip .as-show:hover{color:var(--text);}
 </style>
 
-<!-- Exchange status strip — sticky bottom (hide-state in localStorage) -->
-<div class="ex-status-strip" id="ex-status-strip">
+<!-- Exchange status strip — collapsed by default; user opt-in expand persists -->
+<div class="ex-status-strip is-hidden" id="ex-status-strip">
   <span class="lbl">Exchange status</span>
   <div id="ex-status-items" style="display:contents"></div>
   <button class="as-toggle" type="button" onclick="toggleExStatusBar()" title="Hide status strip" aria-label="Hide status strip">×</button>
@@ -5183,8 +5301,9 @@ body{padding-bottom:44px;}
   }
   (function(){
     try {
-      if (localStorage.getItem('ex-status-hidden') === '1') {
-        document.getElementById('ex-status-strip').classList.add('is-hidden');
+      // Default closed — only stored '0' (user explicitly opened it) reveals.
+      if (localStorage.getItem('ex-status-hidden') === '0') {
+        document.getElementById('ex-status-strip').classList.remove('is-hidden');
       }
     } catch(_){}
   })();
