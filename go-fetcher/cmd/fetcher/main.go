@@ -41,10 +41,18 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/paradex"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/whitebit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
+	faster "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/aster"
 	fbinance "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/binance"
+	fbingx "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/bingx"
 	fbitget "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/bitget"
 	fbybit "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/bybit"
+	fgate "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/gate"
+	fhtx "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/htx"
+	fhyperliquid "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/hyperliquid"
+	fkucoin "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/kucoin"
+	fmexc "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/mexc"
 	fokx "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/okx"
+	fwhitebit "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/whitebit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
@@ -90,13 +98,20 @@ func main() {
 		return nil
 	})
 
-	// Funding adapters — Phase 3a covers binance/bybit/okx/bitget.
-	// Remaining 8 venues land in Phase 3b.
+	// Funding adapters — all 12 venues live (Phase 3a + 3b).
 	for _, fa := range []funding.Adapter{
 		fbinance.New(),
 		fbybit.New(),
 		fokx.New(),
 		fbitget.New(),
+		faster.New(),
+		fgate.New(),
+		fkucoin.New(),
+		fmexc.New(),
+		fbingx.New(),
+		fhtx.New(),
+		fhyperliquid.New(),
+		fwhitebit.New(),
 	} {
 		runner := funding.NewRunner(fa, fundingStore)
 		runner.SetSymbols(bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN))
