@@ -967,10 +967,14 @@ def freshness_by_exchange() -> dict[str, dict]:
 # Top-N opps that get orderbook subscriptions. Drastically reduced from 100
 # to 30 — In/Out columns dropped from screener (basis-only display), so the
 # orderbook is now only needed for /arb detail page on-demand. Keeping a
-# small hot-list around means clicking a top-30 opp opens the detail page
-# with the book already warm. Pairs outside top-30 fetch on /arb open
-# (1-2s warmup is acceptable for a deliberate click-through).
-PREWARM_TOP_N        = 30
+# Small hot-list around means clicking a top opp opens the detail page
+# with the book already warm. Pairs outside fetch on /arb open
+# (1-2s warmup is acceptable for a deliberate click-through). Trimmed
+# 30 → 20 — the top-20 by basis cover ~95 % of clicks, and each
+# subscription costs CPU on the worker (parse + book-merge + Redis).
+# At ~11 venues × 20 = 220 active WS subs (vs 330 prior). Override via
+# env if a deployment wants more breadth.
+PREWARM_TOP_N        = int(os.environ.get("AVALANT_PREWARM_TOP_N") or 20)
 def _env_float(name: str, default: float) -> float:
     try:
         v = os.environ.get(name)

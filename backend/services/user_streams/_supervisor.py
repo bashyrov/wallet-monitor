@@ -29,13 +29,23 @@ Reads in trade_service:
 from __future__ import annotations
 
 import asyncio
-import json
+import json as _stdlib_json
 import logging
 import random
 import time
 from typing import Any
 
 import websockets
+
+# Hot path — every user-stream WS frame goes through json.loads here.
+# orjson is 2-3× faster on parse; falls back to stdlib if not installed.
+try:
+    import orjson as _orjson
+    class json:  # noqa: N801 — keep `json.loads` call sites unchanged
+        loads = staticmethod(_orjson.loads)
+        dumps = staticmethod(_orjson.dumps)
+except ImportError:  # pragma: no cover
+    json = _stdlib_json  # type: ignore[misc]
 
 from backend.services.user_streams import get_adapter
 from backend.services.user_streams import _snapshot
