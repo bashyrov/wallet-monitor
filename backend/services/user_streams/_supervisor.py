@@ -223,8 +223,31 @@ class StreamTask:
                             )
                             break
                         try:
-                            data = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+                            # HTX pushes gzipped frames — adapters that need
+                            # them decode in pong_for / parse_event themselves.
+                            if isinstance(raw, (str, bytes)):
+                                try:
+                                    data = json.loads(raw)
+                                except Exception:
+                                    # Adapter may handle non-JSON (e.g. gzip
+                                    # bytes); pass raw through.
+                                    data = raw
+                            else:
+                                data = raw
                         except Exception:
+                            continue
+                        # Reply to app-level pings before dispatching to
+                        # parse_event — HTX/Bitget keepalives need a {pong}
+                        # within ~30s or the venue closes the socket.
+                        try:
+                            pong = adapter.pong_for(data) if hasattr(adapter, "pong_for") else None
+                        except Exception:
+                            pong = None
+                        if pong is not None:
+                            try:
+                                await ws.send(pong)
+                            except Exception:
+                                pass
                             continue
                         try:
                             evt = adapter.parse_event(data)

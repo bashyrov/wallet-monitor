@@ -69,3 +69,11 @@ class BaseUserStream:
         """Periodic task running alongside the WS recv loop. Used by
         Binance / Aster for listenKey PUT every 30 min. Default: no-op."""
         return None
+
+    @classmethod
+    def pong_for(cls, msg) -> str | bytes | None:
+        """Return a pong frame to send IF this is a server ping that needs
+        an app-level response. Default: None (rely on websockets-lib pings).
+        HTX, Bitget, MEXC override this to keep the socket alive past their
+        ~30s server-side timeout."""
+        return None

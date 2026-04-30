@@ -9,10 +9,35 @@ In one screen the trader sees funding-rate spreads (long/short between exchanges
 **Brand**: `avalant_` — Inter 800, 18px, blinking green `_` cursor. Accent `#1AFFAB` (neon green). Logo at `/avalant_favicon.svg`, full at `/avalant-logo.svg`.
 
 **Supported venues**:
-- **11 CEX** for screener feeds + portfolio: Binance, OKX, Bybit, Gate, MEXC, KuCoin, Bitget, Backpack, BingX, WhiteBIT, Kraken (read-only screener)
-- **5 Perp DEX**: Hyperliquid, Aster, Lighter, Ethereal, Paradex
+- **11 CEX** for screener feeds + portfolio: Binance, OKX, Bybit, Gate, MEXC, KuCoin, Bitget, Backpack, BingX, WhiteBIT, Kraken
+- **6 Perp DEX**: Hyperliquid, Aster, Lighter, Ethereal, Paradex, Extended
 - **8 Spot exchanges** for spot-short feeds: Binance, Bybit, OKX, Gate, KuCoin, MEXC, Bitget, BingX
 - **14 chains**: Tron, Solana, Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Linea, Scroll, Mantle, Blast
+
+**Coverage matrix** (after `feat/dex-parity`):
+
+```
+                screener  ob-WS  ob-REST  balance  trade  user-WS  funding-paid
+binance/bybit/  ✓         ✓      ✓        ✓        ✓      ✓        ✓
+okx/gate/kucoin
+mexc/bitget/
+bingx/aster/    ✓         ✓      ✓        ✓        ✓      ✓        ✓
+hyperliquid/
+htx/lighter
+kraken          ✓         ✓      ✓        ✓        ✓      ✓        ✓
+backpack        ✓         ✓      ✓        ✓        ✓      ✓        ·
+whitebit        ✓         ✓      ✓        ✓        ✓      ✓        ·
+ethereal        ✓         ·      ·        ✓        ✓      ·        ·
+paradex         ✓         ✓      ✓        ✓        R      ·        ·
+extended        ✓         ·      ✓        ✓        ·      ·        ·
+```
+
+Legend: `✓` shipped · `R` read-only (balance only) · `·` not implemented.
+
+Blocked items:
+- **Paradex trading** — `paradex-py 0.5.6` requires `starknet-py <0.29` which is incompatible with Python 3.13. Awaiting upstream.
+- **Extended trading** — `x10-python-trading` pins pydantic 2.5.3 / eth-account 0.11 / websockets 12 — would downgrade and break Hyperliquid + Ethereal adapters. Needs separate dep-triage branch.
+- **Ethereal orderbook + user-stream** — public WS uses Socket.IO and the SDK's documented stream types (L2Book/Ticker/OrderFill) are all rejected by the live server as "Invalid stream subscription type". REST API has no orderbook endpoint either.
 
 ---
 
@@ -413,9 +438,13 @@ Fonts: Inter (UI), JetBrains Mono (numbers/prices/addresses).
 
 ## Trade adapters
 
-Currently shipping `place_order` + `close_position` + `set_leverage` for: **binance, bybit, okx, gate, kucoin, mexc, bitget, bingx, hyperliquid, aster, ethereal, backpack**.
+Currently shipping `place_order` + `close_position` + `set_leverage` for: **binance, bybit, okx, gate, kucoin, mexc, bitget, bingx, hyperliquid, aster, ethereal, backpack, lighter, kraken, htx, whitebit**.
 
-**Read-only** (in `_READONLY` set): `lighter, paradex, kraken, htx, extended, whitebit`.
+**Read-only** (in `_READONLY` set): `paradex` (Stark signing blocked by Python 3.13 + paradex-py SDK constraints).
+
+**Spot/short pair detection**: `list_user_spot_short_pairs()` cross-references open SHORT futures positions with non-stable spot holdings from `BalanceSnapshot.totals`. Auto-pairs when notional matches within ±5% AND (if the spot snapshot is fresh) the spot was last refreshed within ±10 min of the short open. Manual paired/unpaired decisions persist in the same `TradePairDecision` table with `leg_a_key` prefix `spot|`. Endpoint: `GET /api/trade/spot-short-pairs`.
+
+**Funding-paid tracking**: `funding_pnl_usd` is populated on live positions for binance, bybit, okx, aster, gate, kucoin, mexc, bitget, bingx, hyperliquid, kraken, lighter, htx. `reconcile_service` mirrors the field into `leg_a_funding_pnl_usd` so closed-pair P&L correctly nets out funding cost.
 
 **Trade delay** (`plan.trade_delay_ms`) is enforced in BOTH `place_open_order` AND `close_position` in `trade_service.py`. Free plan: 500ms throttle.
 

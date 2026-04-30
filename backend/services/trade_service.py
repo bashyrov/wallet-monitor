@@ -1097,12 +1097,27 @@ def _spot_short_pair_decision_keys(symbol: str, spot_wallet_id: int,
             f"{symbol}|{short_ex}|{short_wallet_id}")
 
 
-def _spot_short_can_pair(spot: dict, short: dict, spot_price: float | None) -> tuple[bool, str | None]:
-    """Notional + (best-effort) time match. Returns (ok, reason)."""
+def _spot_short_can_pair(spot: dict, short, spot_price: float | None) -> tuple[bool, str | None]:
+    """Notional + best-effort time match. Returns (ok, reason).
+
+    Time match: if both `spot.snapshot_at` and `short.opened_at` are
+    available, require them within ±10 min. The spot snapshot_at is the
+    last balance refresh, NOT the actual purchase time — but the
+    portfolio fetcher runs every 60s, so a fresh `BalanceSnapshot` row
+    after the spot was bought lands within minutes. If snapshot_at is
+    older than the short open by hours, the spot existed BEFORE the
+    short — a real time-paired open would have a snapshot_at near or
+    after the short open. Older snapshots mean either the spot was a
+    pre-existing long-term holding (not a hedge for THIS short) or
+    the portfolio fetcher hasn't run since.
+
+    Result of the time check goes into the reason string so the UI can
+    show "notional + time match" vs "notional only — spot held since…".
+    """
     if not spot_price or spot_price <= 0:
         return False, "no spot price"
-    short_qty = float(short.get("quantity") or 0)
-    short_entry = float(short.get("entry_price") or 0)
+    short_qty = float(short.get("quantity") or 0) if isinstance(short, dict) else float(getattr(short, "quantity", 0) or 0)
+    short_entry = float(short.get("entry_price") or 0) if isinstance(short, dict) else float(getattr(short, "entry_price", 0) or 0)
     spot_qty = float(spot.get("qty") or 0)
     if short_qty <= 0 or short_entry <= 0 or spot_qty <= 0:
         return False, "zero qty/price"
@@ -1114,6 +1129,32 @@ def _spot_short_can_pair(spot: dict, short: dict, spot_price: float | None) -> t
     diff_pct = abs(short_notional - spot_notional) / base * 100.0
     if diff_pct > _SPOT_NOTIONAL_TOLERANCE_PCT:
         return False, f"notional diff {diff_pct:.1f}% > {_SPOT_NOTIONAL_TOLERANCE_PCT:.0f}%"
+
+    # Time match — both timestamps optional.
+    short_opened = short.get("opened_at") if isinstance(short, dict) else getattr(short, "opened_at", None)
+    spot_snap = spot.get("snapshot_at")
+    time_match: bool | None = None
+    if short_opened and spot_snap:
+        try:
+            from datetime import datetime as _dt
+            so = short_opened if hasattr(short_opened, "year") else _dt.fromisoformat(str(short_opened).replace("Z", "+00:00"))
+            ss = _dt.fromisoformat(str(spot_snap).replace("Z", "+00:00"))
+            if so.tzinfo and not ss.tzinfo:
+                ss = ss.replace(tzinfo=so.tzinfo)
+            elif ss.tzinfo and not so.tzinfo:
+                so = so.replace(tzinfo=ss.tzinfo)
+            delta = abs((ss - so).total_seconds())
+            time_match = delta <= _SPOT_TIME_WINDOW_S
+        except Exception:
+            time_match = None
+
+    if time_match is True:
+        return True, f"notional within {diff_pct:.1f}% + time match (≤10 min)"
+    if time_match is False:
+        # Notional matches but spot snapshot far from short open — surface
+        # as a manual-confirm pair with a hint that the time window didn't
+        # match. Frontend can color-code this differently.
+        return True, f"notional within {diff_pct:.1f}% (spot held outside ±10 min window)"
     return True, f"notional within {diff_pct:.1f}%"
 
 
@@ -1142,7 +1183,12 @@ async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
     """For each open SHORT position, surface matching SPOT holdings as pair
     candidates. The frontend renders these alongside long/short pairs
     on the /arb pair card so basis traders see one row per real position.
+
+    Live SHORT data (qty, entry_price) comes from list_user_positions; the
+    open-time stamp is enriched from TradePosition rows so the time-window
+    match in _spot_short_can_pair has something to compare against.
     """
+    from backend.db.models import TradePosition
     positions = await list_user_positions(db, user_id)
     shorts = [p for p in positions if (p.get("side") or "").lower() == "sell"]
     if not shorts:
@@ -1150,6 +1196,28 @@ async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
     spots = _list_user_spot_holdings(db, user_id)
     if not spots:
         return []
+
+    # Enrich live shorts with opened_at from the persistent table.
+    db_opens = (
+        db.query(TradePosition)
+        .filter(
+            TradePosition.user_id == user_id,
+            TradePosition.kind == "single",
+            TradePosition.status == "open",
+            TradePosition.leg_a_side == "sell",
+        )
+        .all()
+    )
+    opened_at_by_key: dict[tuple[str, int], Any] = {}
+    for r in db_opens:
+        sym = (r.symbol or "").upper()
+        if r.leg_a_wallet_id:
+            opened_at_by_key[(sym, int(r.leg_a_wallet_id))] = r.opened_at
+    for s in shorts:
+        sym = (s.get("symbol") or "").upper()
+        wid = s.get("wallet_id")
+        if sym and wid is not None:
+            s.setdefault("opened_at", opened_at_by_key.get((sym, int(wid))))
 
     # Index spot holdings by asset for O(1) lookup
     spot_by_asset: dict[str, list[dict]] = {}

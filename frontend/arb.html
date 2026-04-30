@@ -4991,7 +4991,7 @@ let _tpLastPositions = null;
 let _tpEmptyStreak = 0;
 
 async function refreshTradePositions(){
-  let rows;
+  let rows, spotPairs = [];
   try {
     const r = await Auth.apiFetch('/trade/positions?symbol=' + SYM);
     if (!r.ok) return;
@@ -4999,6 +4999,16 @@ async function refreshTradePositions(){
   } catch {
     return;
   }
+  // Spot/short pair candidates — fire-and-forget; don't block position
+  // render if this 404s on older deployments.
+  try {
+    const r2 = await Auth.apiFetch('/trade/spot-short-pairs');
+    if (r2.ok) {
+      const all = await r2.json();
+      spotPairs = (all || []).filter(p => (p.symbol || '').toUpperCase() === SYM);
+    }
+  } catch {}
+
   const wrap = document.getElementById('trade-positions');
   const list = document.getElementById('trade-positions-list');
   if (!rows.length){
@@ -5014,6 +5024,15 @@ async function refreshTradePositions(){
   _tpEmptyStreak = 0;
   _tpLastPositions = rows;
   wrap.style.display = 'block';
+
+  // Index spot pairs by short wallet+exchange so we can attach a hint
+  // under the matching short row.
+  const spotByShort = {};
+  for (const p of spotPairs){
+    const key = `${(p.short.exchange||'').toLowerCase()}|${p.short.wallet_id||0}`;
+    spotByShort[key] = p;
+  }
+
   const html = rows.map(p => {
     const pnlCls = p.unrealized_pnl_usd >= 0 ? 'pos' : 'neg';
     const sideCls = p.side === 'buy' ? 'side-long' : 'side-short';
@@ -5021,6 +5040,7 @@ async function refreshTradePositions(){
     const entry = Number(p.entry_price || 0);
     const mark = Number(p.mark_price || 0);
     const pnl = Number(p.unrealized_pnl_usd || 0);
+    const funding = Number(p.funding_pnl_usd || 0);
     const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
     const shareData = _htmlEsc(JSON.stringify({
       symbol: p.symbol, exchange: p.exchange, side: p.side,
@@ -5028,8 +5048,39 @@ async function refreshTradePositions(){
       leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
       unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
     }));
+
+    // Funding sub-row (cumulative funding paid/earned). Only render if the
+    // adapter populated funding_pnl_usd — null/undefined means we don't
+    // know yet, no row at all (don't show "-$0.00" misleadingly).
+    let fundingRow = '';
+    if (p.funding_pnl_usd !== null && p.funding_pnl_usd !== undefined) {
+      const fCls = funding >= 0 ? 'pos' : 'neg';
+      const fLabel = funding >= 0 ? 'Funding earned' : 'Funding paid';
+      fundingRow = `<div style="grid-column:1/-1;font-size:10px;color:var(--text3);padding:2px 0 0 4px">
+        ${fLabel}: <span class="${fCls}" style="color:${funding>=0?'var(--green)':'var(--red)'}">${funding>=0?'+':''}$${Math.abs(funding).toFixed(2)}</span>
+      </div>`;
+    }
+
+    // Spot/short pair hint — only on SHORT positions when a candidate exists.
+    let spotPairRow = '';
+    if (p.side !== 'buy') {
+      const spKey = `${(p.exchange||'').toLowerCase()}|${p.wallet_id||0}`;
+      const sp = spotByShort[spKey];
+      if (sp) {
+        const spotEx = EX_LABEL[(sp.spot.exchange||'').toLowerCase()] || sp.spot.exchange;
+        const spotQty = Number(sp.spot.qty || 0).toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
+        const tag = sp.auto_paired ? '◆ auto' : '◇ manual';
+        const reason = sp.match_reason || '';
+        spotPairRow = `<div style="grid-column:1/-1;display:flex;gap:6px;align-items:center;font-size:10.5px;padding:5px 4px 0;border-top:1px dashed var(--border);margin-top:5px;color:var(--text2)">
+          <span style="color:var(--green);font-weight:600">SPOT</span>
+          <span>${spotQty} ${SYM} on ${spotEx}</span>
+          <span style="color:var(--text3);margin-left:auto">${tag} · ${_htmlEsc(reason)}</span>
+        </div>`;
+      }
+    }
+
     return `
-      <div class="trade-position-row">
+      <div class="trade-position-row" style="display:grid;grid-template-columns:auto auto 1fr auto auto auto">
         <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
         <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
         <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
@@ -5038,6 +5089,8 @@ async function refreshTradePositions(){
         <button class="pos-share" title="Share P&amp;L card" data-share='${shareData}'
                 onclick='_openShareFromBtn(this)'
                 style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:4px">↗</button>
+        ${fundingRow}
+        ${spotPairRow}
       </div>`;
   }).join('');
   _renderIfChanged('trade-positions-list', html);

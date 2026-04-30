@@ -135,15 +135,21 @@ class HtxUserStream(BaseUserStream):
         return None
 
     @classmethod
+    def pong_for(cls, raw) -> str | None:
+        msg = raw if isinstance(raw, dict) else cls._decode(raw)
+        if isinstance(msg, dict) and msg.get("action") == "ping":
+            return json.dumps({"action": "pong", "data": msg.get("data") or {"ts": 0}})
+        return None
+
+    @classmethod
     def parse_event(cls, raw: Any) -> UserStreamEvent | None:
         # Supervisor passes already-decoded dicts in most adapters; HTX
         # frames may still be raw bytes if gzip wasn't decoded upstream.
         msg = raw if isinstance(raw, dict) else cls._decode(raw)
         if not isinstance(msg, dict):
             return None
-
-        # Heartbeat — caller should pong, but we don't have ws here. Return None
-        # so the supervisor continues, and rely on websockets-lib pings.
+        # Pings handled in pong_for — supervisor short-circuits before
+        # parse_event is called for ping frames.
         if msg.get("action") == "ping":
             return None
 

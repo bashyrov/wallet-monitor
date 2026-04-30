@@ -1308,6 +1308,187 @@ class HtxWS(WSAdapter):
         return token, bids, asks
 
 
+# ── Kraken Futures linear-perp WS ────────────────────────────────────────────
+class KrakenWS(WSAdapter):
+    """Kraken Futures public book feed.
+
+    URL: wss://futures.kraken.com/ws/v1
+    Subscribe: {"event":"subscribe","feed":"book","product_ids":["PF_XBTUSD"]}
+    First push: book_snapshot (full bids+asks). Subsequent: book (single
+    side+price+qty diffs). Maintain a sparse book per symbol.
+    """
+    name = "kraken"
+    url = "wss://futures.kraken.com/ws/v1"
+    subscribe_delay = 0.02
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
+    @staticmethod
+    def _norm(sym: str) -> str:
+        sym = (sym or "").upper()
+        if sym == "BTC":
+            sym = "XBT"
+        return f"PF_{sym}USD"
+
+    @staticmethod
+    def _denorm(pf_sym: str) -> str:
+        s = pf_sym
+        if s.startswith("PF_"):
+            s = s[3:]
+        if s.endswith("USD"):
+            s = s[:-3]
+        return "BTC" if s == "XBT" else s
+
+    def build_subscribe(self, symbols):
+        product_ids = [self._norm(s) for s in symbols]
+        return {"event": "subscribe", "feed": "book", "product_ids": product_ids}
+
+    def parse_message(self, msg):
+        if not isinstance(msg, dict):
+            return None
+        feed = msg.get("feed") or ""
+        product = msg.get("product_id") or ""
+        if not product.startswith("PF_"):
+            return None
+        sym = self._denorm(product)
+        book = self._books.setdefault(sym, {"bids": {}, "asks": {}})
+
+        if feed == "book_snapshot":
+            book["bids"].clear()
+            book["asks"].clear()
+            for b in msg.get("bids") or []:
+                try:
+                    book["bids"][float(b["price"])] = float(b["qty"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+            for a in msg.get("asks") or []:
+                try:
+                    book["asks"][float(a["price"])] = float(a["qty"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+        elif feed == "book":
+            try:
+                side = (msg.get("side") or "").lower()  # "buy" | "sell"
+                px = float(msg.get("price"))
+                qty = float(msg.get("qty"))
+            except (TypeError, ValueError):
+                return None
+            tgt = book["bids"] if side == "buy" else book["asks"]
+            if qty <= 0:
+                tgt.pop(px, None)
+            else:
+                tgt[px] = qty
+        else:
+            return None
+
+        bids = sorted(book["bids"].items(), key=lambda kv: kv[0], reverse=True)[:50]
+        asks = sorted(book["asks"].items(), key=lambda kv: kv[0])[:50]
+        return sym, [list(x) for x in bids], [list(x) for x in asks]
+
+
+# ── Backpack perp WS ─────────────────────────────────────────────────────────
+class BackpackWS(WSAdapter):
+    """Backpack perp orderbook diff feed.
+
+    URL: wss://ws.backpack.exchange
+    Subscribe: {"method":"SUBSCRIBE","params":["depth.<SYM>_USDC_PERP"]}
+    Only diff stream available — bid/ask updates with qty=0 = delete.
+    Need a REST snapshot at connect time to seed before applying diffs.
+    Symbols arrive as <BASE>_USDC_PERP in stream names.
+    """
+    name = "backpack"
+    url = "wss://ws.backpack.exchange"
+    subscribe_delay = 0.02
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+        self._seeded: set[str] = set()
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+        self._seeded.clear()
+
+    async def _seed_rest(self, sym: str) -> None:
+        if sym in self._seeded:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=4) as c:
+                r = await c.get(
+                    f"https://api.backpack.exchange/api/v1/depth"
+                    f"?symbol={sym}_USDC_PERP&limit=200"
+                )
+                d = r.json() or {}
+        except Exception:
+            return
+        book = self._books.setdefault(sym, {"bids": {}, "asks": {}})
+        for b in d.get("bids") or []:
+            try:
+                book["bids"][float(b[0])] = float(b[1])
+            except (TypeError, ValueError, IndexError):
+                pass
+        for a in d.get("asks") or []:
+            try:
+                book["asks"][float(a[0])] = float(a[1])
+            except (TypeError, ValueError, IndexError):
+                pass
+        self._seeded.add(sym)
+
+    async def _send_subscribe(self, only=None):
+        # Seed REST snapshot before subscribing so diffs apply on top of a
+        # consistent state.
+        syms = sorted(only) if only else sorted(self._symbols - self._subscribed)
+        for s in syms:
+            await self._seed_rest(s)
+        await super()._send_subscribe(only=only)
+
+    def build_subscribe(self, symbols):
+        return {
+            "method": "SUBSCRIBE",
+            "params": [f"depth.{s}_USDC_PERP" for s in symbols],
+        }
+
+    def parse_message(self, msg):
+        if not isinstance(msg, dict):
+            return None
+        stream = msg.get("stream") or ""
+        if not stream.startswith("depth."):
+            return None
+        sym = stream[len("depth."):]
+        if sym.endswith("_USDC_PERP"):
+            sym = sym[:-len("_USDC_PERP")]
+        else:
+            return None
+        data = msg.get("data") or {}
+        book = self._books.setdefault(sym, {"bids": {}, "asks": {}})
+        for px_qty in data.get("a") or []:
+            try:
+                px = float(px_qty[0]); qty = float(px_qty[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if qty <= 0:
+                book["asks"].pop(px, None)
+            else:
+                book["asks"][px] = qty
+        for px_qty in data.get("b") or []:
+            try:
+                px = float(px_qty[0]); qty = float(px_qty[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if qty <= 0:
+                book["bids"].pop(px, None)
+            else:
+                book["bids"][px] = qty
+        bids = sorted(book["bids"].items(), key=lambda kv: kv[0], reverse=True)[:50]
+        asks = sorted(book["asks"].items(), key=lambda kv: kv[0])[:50]
+        return sym, [list(x) for x in bids], [list(x) for x in asks]
+
+
 # ── Lighter zk-perp WS ───────────────────────────────────────────────────────
 class LighterWS(WSAdapter):
     """Lighter zk-perp orderbook WS.
@@ -1435,6 +1616,8 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "paradex":      ParadexWS,
     "htx":          HtxWS,
     "lighter":      LighterWS,
+    "kraken":       KrakenWS,
+    "backpack":     BackpackWS,
     # extended/ethereal still REST-only:
     #   • extended uses per-market WS URLs — incompatible with the single-
     #     connection-per-exchange model in WSManager. Needs a per-symbol
