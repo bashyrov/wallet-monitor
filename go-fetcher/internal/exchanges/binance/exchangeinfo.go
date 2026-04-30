@@ -2,6 +2,7 @@ package binance
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -80,10 +81,23 @@ func (f *tradingFilter) refresh(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
+	// Bug observed in prod: from a banned IP (HTTP 418), the body is
+	// {"code":-1003,"msg":"..."} which decodes into exchangeInfo with
+	// Symbols=nil. We then cached an EMPTY TRADING set for 10 minutes
+	// and Parse() filtered out every single symbol → no books written.
+	// Bail out on non-200 so the IsTrading() fallback (return true)
+	// kicks in and the WS data stream stays usable.
+	if resp.StatusCode != 200 {
+		return errors.New("exchangeInfo http " + resp.Status)
+	}
+
 	var info exchangeInfo
 	dec := sonic.ConfigStd.NewDecoder(resp.Body)
 	if err := dec.Decode(&info); err != nil {
 		return err
+	}
+	if len(info.Symbols) == 0 {
+		return errors.New("exchangeInfo empty symbols list")
 	}
 
 	out := make(map[string]struct{}, len(info.Symbols))

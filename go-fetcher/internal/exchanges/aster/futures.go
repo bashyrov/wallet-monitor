@@ -78,9 +78,13 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Bids   [][]string `json:"bids"`
 		Asks   [][]string `json:"asks"`
 	}
-	if len(wrap.Data) > 0 {
-		_ = ws.UnmarshalJSON(wrap.Data, &inner)
+	// Bare /ws frames have e/E/T/s/b/a at top level (no `data` wrapper) —
+	// fall back to parsing the whole frame when wrap.Data is empty.
+	dataBytes := []byte(wrap.Data)
+	if len(dataBytes) == 0 {
+		dataBytes = frame
 	}
+	_ = ws.UnmarshalJSON(dataBytes, &inner)
 	if sym == "" {
 		sym = strings.ToUpper(inner.Symbol)
 	}

@@ -76,8 +76,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Ret string `json:"retMsg"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
+		println("[bybit.Parse] unmarshal err:", err.Error(), "frame:", string(frame[:min(len(frame), 200)]))
 		return nil, err
 	}
+	println("[bybit.Parse] topic:", msg.Topic, "type:", msg.Type, "op:", msg.Op, "data.s:", msg.Data.Symbol, "b:", len(msg.Data.Bids))
 	if msg.Op != "" || msg.Ret != "" {
 		// subscribe ack / pong — not data
 		return nil, nil
