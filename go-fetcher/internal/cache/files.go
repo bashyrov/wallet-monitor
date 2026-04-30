@@ -77,12 +77,15 @@ func (d *Dumper) dump() error {
 		bucket[sym] = v
 	}
 
-	// Per-exchange dumps (books.<ex>.json) — Python expects this
-	// format: {"<sym>": {"bids": [...], "asks": [...], "ts": ..., ...}}
+	// Per-exchange dumps (books.<ex>.json). Python's master merger
+	// expects keys in flat "<exchange>:<symbol>" form so the union over
+	// all per-venue files is bytewise compatible with the merged
+	// books.json. Verified against prod: backend/services/orderbook_cache.py
+	// reads {"binance:BTC": {...}, "binance:ETH": {...}}.
 	for ex, bucket := range byExchange {
 		out := make(map[string]any, len(bucket))
 		for sym, e := range bucket {
-			out[sym] = entryToJSON(e)
+			out[ex+":"+sym] = entryToJSON(e)
 		}
 		path := filepath.Join(d.cacheDir, "books."+ex+".json")
 		if err := writeAtomic(path, out); err != nil {
