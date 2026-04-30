@@ -32,6 +32,7 @@ from backend.services.user_streams.kucoin import KuCoinUserStream
 from backend.services.user_streams.mexc import MEXCUserStream
 from backend.services.user_streams.backpack import BackpackUserStream
 from backend.services.user_streams.lighter import LighterUserStream
+from backend.services.user_streams.whitebit import WhitebitUserStream
 
 ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "binance": BinanceUserStream,
@@ -46,6 +47,7 @@ ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "mexc": MEXCUserStream,
     "backpack": BackpackUserStream,
     "lighter": LighterUserStream,
+    "whitebit": WhitebitUserStream,
 }
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 
 import httpx
@@ -1307,6 +1308,118 @@ class HtxWS(WSAdapter):
         return token, bids, asks
 
 
+# ── Lighter zk-perp WS ───────────────────────────────────────────────────────
+class LighterWS(WSAdapter):
+    """Lighter zk-perp orderbook WS.
+
+    Subscribe shape is `order_book/<market_id>` (integer). We resolve
+    symbol→id at connect time via a cached REST call to /api/v1/orderBooks.
+    First message on each subscription is a full snapshot under
+    `order_book.{asks,bids}`; subsequent messages are diffs (size==0 = delete).
+
+    Maintains a per-symbol sparse book to apply diffs and emit a single
+    consistent snapshot on each push.
+    """
+    name = "lighter"
+    url = "wss://mainnet.zklighter.elliot.ai/stream"
+    # No app-level heartbeat — the websockets lib ping is enough.
+    subscribe_delay = 0.02
+
+    # Class-level caches (shared across reconnects)
+    _id_by_sym: dict[str, int] = {}
+    _sym_by_id: dict[int, str] = {}
+    _id_cache_at: float = 0.0
+    _ID_CACHE_TTL_S: float = 3600.0
+
+    def __init__(self, update_cb):
+        super().__init__(update_cb)
+        # sparse books per symbol — apply diffs, emit consistent snapshot
+        self._books: dict[str, dict[str, dict[float, float]]] = {}
+
+    def on_reconnect(self) -> None:
+        self._books.clear()
+
+    @classmethod
+    async def _refresh_id_map(cls) -> None:
+        import httpx as _hx
+        try:
+            async with _hx.AsyncClient(timeout=10) as c:
+                r = await c.get("https://mainnet.zklighter.elliot.ai/api/v1/orderBooks")
+                data = r.json() or {}
+        except Exception as exc:
+            logger.warning("lighter WS: id-map refresh failed: %s", exc)
+            return
+        new_id_by: dict[str, int] = {}
+        new_sym_by: dict[int, str] = {}
+        for b in (data.get("order_books") or []):
+            if (b.get("market_type") or "").lower() != "perp":
+                continue
+            if (b.get("status") or "").lower() != "active":
+                continue
+            sym = (b.get("symbol") or "").upper()
+            mid = b.get("market_id")
+            if sym and isinstance(mid, int):
+                new_id_by[sym] = mid
+                new_sym_by[mid] = sym
+        if new_id_by:
+            cls._id_by_sym = new_id_by
+            cls._sym_by_id = new_sym_by
+            cls._id_cache_at = time.time()
+
+    async def _send_subscribe(self, only=None):
+        # Override base: first ensure the symbol→id map is fresh, then defer
+        # to the standard frame-build/send path. Without this the sync
+        # build_subscribe would have an empty map and silently subscribe to
+        # nothing on first connect.
+        if not self._id_by_sym or (time.time() - self._id_cache_at) > self._ID_CACHE_TTL_S:
+            await self._refresh_id_map()
+        await super()._send_subscribe(only=only)
+
+    def build_subscribe(self, symbols):
+        frames = []
+        for s in symbols:
+            mid = self._id_by_sym.get((s or "").upper())
+            if mid is None:
+                continue
+            frames.append({"type": "subscribe", "channel": f"order_book/{mid}"})
+        return frames
+
+    def parse_message(self, msg):
+        if not isinstance(msg, dict):
+            return None
+        ch = msg.get("channel") or ""
+        if not ch.startswith("order_book:"):
+            return None
+        try:
+            mid = int(ch.split(":", 1)[1])
+        except (ValueError, IndexError):
+            return None
+        sym = self._sym_by_id.get(mid)
+        if not sym:
+            return None
+        ob = msg.get("order_book") or {}
+        book = self._books.setdefault(sym, {"bids": {}, "asks": {}})
+        for raw_asks, side in ((ob.get("asks") or [], "asks"),
+                               (ob.get("bids") or [], "bids")):
+            tgt = book[side]
+            for o in raw_asks:
+                try:
+                    px = float(o.get("price") or 0)
+                    sz = float(o.get("size") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if px <= 0:
+                    continue
+                if sz <= 0:
+                    tgt.pop(px, None)
+                else:
+                    tgt[px] = sz
+        # Emit best 50/side, sorted bids desc / asks asc
+        bids = sorted(book["bids"].items(), key=lambda kv: kv[0], reverse=True)[:50]
+        asks = sorted(book["asks"].items(), key=lambda kv: kv[0])[:50]
+        return sym, [list(x) for x in bids], [list(x) for x in asks]
+
+
 ADAPTERS: dict[str, type[WSAdapter]] = {
     "binance":      BinanceWS,
     "bybit":        BybitWS,
@@ -1321,18 +1434,15 @@ ADAPTERS: dict[str, type[WSAdapter]] = {
     "kucoin":       KuCoinWS,
     "paradex":      ParadexWS,
     "htx":          HtxWS,
-    # extended/lighter/ethereal still REST-only:
+    "lighter":      LighterWS,
+    # extended/ethereal still REST-only:
     #   • extended uses per-market WS URLs — incompatible with the single-
     #     connection-per-exchange model in WSManager. Needs a per-symbol
     #     adapter spawn path before we can wire it in.
-    #   • lighter publishes integer market IDs that change on listings; need
-    #     a cold-start REST fetch of /api/v1/orderBooks to map id↔symbol
-    #     before subscribe. Doable, but requires extending the adapter base
-    #     to allow async pre-subscribe work.
-    #   • ethereal — public WS endpoint + subscribe format unverified against
-    #     their docs. Risk of silent reconnect-loop in prod, deferring.
-    # All three keep working through the existing REST poller in
-    # orderbook_cache._fetch_direct.
+    #   • ethereal — Socket.IO transport (incompatible with raw `websockets`).
+    #     REST has no orderbook endpoint. Needs a separate SDK-driven runner.
+    # Both keep working through the existing REST poller in
+    # orderbook_cache._fetch_direct (lighter has REST too as a fallback).
     # Spot — only on the big-3 venues for now (covers ~70-80% of spot-short
     # opp volume). Extending to the rest needs per-venue WS work (kucoin has
     # an odd token-auth flow, gate uses different sub format, etc.).
