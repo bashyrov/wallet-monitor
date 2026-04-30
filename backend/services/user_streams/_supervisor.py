@@ -118,16 +118,22 @@ class StreamTask:
         try:
             ws_url, ws_headers = await adapter.get_ws_url(self.creds)
         except Exception as exc:
-            # Detect "key invalid" so we don't waste retries (and don't
-            # spam Binance's auth endpoint). Different venues use
-            # different status codes / messages, but they all surface as
-            # the auth-step failing.
+            # Detect "key invalid" / "IP banned" / "rate limited" so we
+            # don't waste retries (and don't spam the auth endpoint —
+            # which on Binance EXTENDS the rate-limit ban window with
+            # each retry). Different venues use different status codes
+            # but they all surface as the auth/setup step failing.
             msg = str(exc).lower()
-            if any(s in msg for s in ("401", "403", "invalid api", "api-key", "-2014", "-2015", "signature", "unauthorized")):
+            if any(s in msg for s in (
+                "401", "403", "418", "banned",
+                "invalid api", "api-key", "-2014", "-2015",
+                "-1003",  # Binance rate-limit error code
+                "signature", "unauthorized",
+            )):
                 logger.warning(
-                    "userstream %s: AUTH FAILED for user=%s wallet=%s — "
-                    "marking DEAD until user updates their key",
-                    self.exchange, self.user_id, self.wallet_id,
+                    "userstream %s: AUTH/RATE-LIMIT FAILED for user=%s wallet=%s — "
+                    "marking DEAD (will retry after fetcher restart): %s",
+                    self.exchange, self.user_id, self.wallet_id, str(exc)[:200],
                 )
                 self.auth_failed = True
                 self._reconnect_attempt = len(_RECONNECT_BACKOFF_S)  # exhaust
