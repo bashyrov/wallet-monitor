@@ -245,6 +245,10 @@ def set_plan(
     # Invalidate the auth cache so the next /me read sees the new plan.
     from backend.services.auth_cache import invalidate_user
     invalidate_user(user.id)
+    # Plan-row cache is per-process — flush it on any plan-affecting change
+    # so /me handlers don't serve stale limits from before this update.
+    from backend.services.plan_service import invalidate_plan_cache
+    invalidate_plan_cache()
 
     # Auto-archive surplus wallets if the new plan has a smaller portfolio
     # quota — without this, a downgrade leaves the user above the cap until

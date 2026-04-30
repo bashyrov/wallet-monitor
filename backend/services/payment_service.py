@@ -223,6 +223,13 @@ def _activate_user(db: Session, payment: Payment) -> None:
         _wq.enforce_for_user(db, user)
     except Exception:
         pass
+    # Plan-row cache flush — webhook just promoted the user to a new plan,
+    # /me must see the new limits immediately, not after the 60s TTL.
+    try:
+        from backend.services.plan_service import invalidate_plan_cache
+        invalidate_plan_cache()
+    except Exception:
+        pass
     # Admin push-notification — fire-and-forget, never blocks the webhook.
     try:
         from backend.services.admin_alert_service import alert_payment

@@ -26,6 +26,7 @@ Exposes:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -73,21 +74,69 @@ class EffectiveLimits:
         return is_unlimited(self.exchange_keys_per_venue)
 
 
+# Plan rows change rarely (admin-only via set_plan / set_value). /me hits
+# this on every authenticated request — typically 3 DB queries per call
+# (get_user_plan + get_free_plan + wallet count). At 50 req/s on app + app2
+# that's 300 DB queries/s just for plan resolution. Cache the rows in-process
+# with a short TTL; admin mutations call invalidate_plan_cache() to flush.
+_PLAN_CACHE_TTL_S = 60.0
+_plan_cache: dict[str, tuple[Any, float]] = {}
+
+
+def _cache_get(key: str) -> Any:
+    entry = _plan_cache.get(key)
+    if entry and (time.monotonic() - entry[1]) < _PLAN_CACHE_TTL_S:
+        return entry[0]
+    return None
+
+
+def _cache_set(key: str, value: Any) -> None:
+    _plan_cache[key] = (value, time.monotonic())
+
+
+def invalidate_plan_cache() -> None:
+    """Flush the per-process plan cache. Called from set_plan, plans CRUD,
+    and set_value when KEY_HIDDEN_SYMBOLS / similar plan-affecting keys
+    change."""
+    _plan_cache.clear()
+
+
 def get_plan(db: Session, plan_id: int) -> Plan | None:
-    return db.query(Plan).filter(Plan.id == plan_id).first()
+    cache_key = f"id:{plan_id}"
+    hit = _cache_get(cache_key)
+    if hit is not None:
+        return hit
+    plan = db.query(Plan).filter(Plan.id == plan_id).first()
+    if plan is not None:
+        _cache_set(cache_key, plan)
+    return plan
 
 
 def get_plan_by_slug(db: Session, slug: str) -> Plan | None:
-    return db.query(Plan).filter(Plan.slug == slug).first()
+    cache_key = f"slug:{slug}"
+    hit = _cache_get(cache_key)
+    if hit is not None:
+        return hit
+    plan = db.query(Plan).filter(Plan.slug == slug).first()
+    if plan is not None:
+        _cache_set(cache_key, plan)
+    return plan
 
 
 def get_free_plan(db: Session) -> Plan | None:
-    return (
+    cache_key = "free"
+    hit = _cache_get(cache_key)
+    if hit is not None:
+        return hit
+    plan = (
         db.query(Plan)
         .filter(Plan.is_free.is_(True), Plan.is_active.is_(True))
         .order_by(Plan.sort_order.asc(), Plan.id.asc())
         .first()
     )
+    if plan is not None:
+        _cache_set(cache_key, plan)
+    return plan
 
 
 def get_user_plan(db: Session, user: User) -> Plan:
@@ -189,6 +238,7 @@ def update_plan(db: Session, plan: Plan, fields: dict[str, Any]) -> Plan:
             setattr(plan, k, v)
     db.commit()
     db.refresh(plan)
+    invalidate_plan_cache()
     return plan
 
 
@@ -200,6 +250,7 @@ def create_plan(db: Session, slug: str, fields: dict[str, Any]) -> Plan:
     db.add(plan)
     db.commit()
     db.refresh(plan)
+    invalidate_plan_cache()
     return plan
 
 
@@ -211,3 +262,4 @@ def delete_plan(db: Session, plan: Plan) -> None:
         raise ValueError("free plan cannot be deleted")
     plan.is_active = False
     db.commit()
+    invalidate_plan_cache()

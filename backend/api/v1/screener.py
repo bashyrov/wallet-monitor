@@ -718,14 +718,22 @@ BROADCAST_INTERVAL = _env_float("AVALANT_BROADCAST_INTERVAL", 0.25)
 
 
 async def _push(clients: set[WebSocket], msg: str) -> None:
-    dead: set[WebSocket] = set()
-    for ws in list(clients):
-        try:
-            await ws.send_text(msg)
-        except Exception:
-            dead.add(ws)
-    clients -= dead
+    """Fan-out send. Sequential per-client await turned the broadcast loop
+    into an N×latency bottleneck — 50 clients × 5 ms send = 250 ms, exactly
+    one BROADCAST_INTERVAL, so the loop perpetually ran on its own tail.
+    asyncio.gather fires all sends concurrently; per-client latency is now
+    bounded by the slowest client, not the sum.
+    """
+    snapshot = list(clients)
+    if not snapshot:
+        return
+    results = await asyncio.gather(
+        *(ws.send_text(msg) for ws in snapshot),
+        return_exceptions=True,
+    )
+    dead = {ws for ws, r in zip(snapshot, results) if isinstance(r, Exception)}
     if dead:
+        clients -= dead
         logger.debug("Screener WS: removed %d dead connections", len(dead))
 
 
@@ -1520,6 +1528,12 @@ async def _book_broadcast_loop() -> None:
                     all_pairs.update(subs.keys())
             redis_entries = _redis_batch_read(list(all_pairs)) if all_pairs else {}
             file_memo_refreshed = False
+            # Build per-client payloads first, fire all sends concurrently.
+            # Sequential await per-client made this loop scale O(clients ×
+            # send_latency) per tick — at 25 ms BOOK_BROADCAST_INTERVAL and
+            # 50 clients × 5 ms send, the loop ran on its own tail. Now total
+            # tick time is bounded by the slowest single client.
+            send_tasks = []
             for ws, subs in list(_book_ws_subs.items()):
                 if not subs:
                     continue
@@ -1527,8 +1541,6 @@ async def _book_broadcast_loop() -> None:
                 for pair, last_ts in list(subs.items()):
                     entry = redis_entries.get(pair)
                     if entry is None:
-                        # Fallback to file-memo (master-merged books.json)
-                        # only when Redis didn't have the pair this tick.
                         if not file_memo_refreshed:
                             _ob._refresh_file_memo()
                             file_memo_refreshed = True
@@ -1546,12 +1558,11 @@ async def _book_broadcast_loop() -> None:
                     }
                     subs[pair] = ts
                 if payload:
-                    try:
-                        await ws.send_json({"books": payload})
-                    except Exception:
-                        # Client gone or wire error — drop the sub; next send will
-                        # fully clean up on receive-loop side.
-                        pass
+                    send_tasks.append(ws.send_json({"books": payload}))
+            if send_tasks:
+                # Failures from dead clients drop here; the receive-loop side
+                # cleans up the WS entry on the next iteration.
+                await asyncio.gather(*send_tasks, return_exceptions=True)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
