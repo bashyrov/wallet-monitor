@@ -1,7 +1,10 @@
 import os
 import time
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
+
+from backend.api.deps import get_admin_user
+from backend.db.models import User
 
 router = APIRouter(tags=["health"])
 
@@ -9,6 +12,34 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@router.get("/health/streams")
+def health_streams(_: User = Depends(get_admin_user)):
+    """Admin-only WS user-stream health snapshot.
+
+    For each supervised stream returns state (LIVE/DEGRADED/DEAD/INIT),
+    last-frame age in seconds, total events seen since connect, and the
+    auth_failed flag. Sorted by state severity so broken streams surface
+    first.
+
+    Use this to spot:
+      - DEAD streams that need a reconnect kick
+      - LIVE streams without recent frames (network blackholes that
+        websockets-lib pings missed)
+      - auth_failed=True wallets pending a key update
+    """
+    from backend.services.user_streams._supervisor import list_active_streams
+    rows = list_active_streams()
+    counts = {"LIVE": 0, "DEGRADED": 0, "DEAD": 0, "INIT": 0}
+    for r in rows:
+        counts[r["state"]] = counts.get(r["state"], 0) + 1
+    return {
+        "ts": int(time.time()),
+        "total": len(rows),
+        "by_state": counts,
+        "streams": rows,
+    }
 
 
 @router.get("/banner")

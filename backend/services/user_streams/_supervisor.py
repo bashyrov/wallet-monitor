@@ -72,6 +72,11 @@ class StreamTask:
         # won't restart this stream until the user updates their key
         # (which produces a different wallet credentials blob).
         self.auth_failed: bool = False
+        # Telemetry — populated by the recv loop so /health/streams can
+        # surface "stream alive but no frames in last 90s" cases.
+        self.last_msg_at: float = 0.0
+        self.connected_at: float = 0.0
+        self.events_total: int = 0
 
     def __repr__(self) -> str:
         return f"<Stream user={self.user_id} wallet={self.wallet_id} ex={self.exchange} state={self.state}>"
@@ -202,6 +207,7 @@ class StreamTask:
 
                 # Reset reconnect attempt counter — we're LIVE
                 self._reconnect_attempt = 0
+                self.connected_at = time.time()
                 self._set_state("LIVE")
                 logger.info(
                     "userstream %s: LIVE (user=%s wallet=%s)",
@@ -216,6 +222,8 @@ class StreamTask:
                     while not self.stop_event.is_set():
                         try:
                             raw = await asyncio.wait_for(ws.recv(), timeout=_WS_RECV_TIMEOUT_S)
+                            self.last_msg_at = time.time()
+                            self.events_total += 1
                         except asyncio.TimeoutError:
                             logger.warning(
                                 "userstream %s: 60s without message, treating as dead (user=%s)",
@@ -385,6 +393,34 @@ class StreamTask:
 # ── Supervisor singleton ────────────────────────────────────────────────────
 _streams: dict[tuple[int, int], StreamTask] = {}
 _stop_supervisor = asyncio.Event() if False else None  # set in start()
+
+
+def list_active_streams() -> list[dict]:
+    """Snapshot of every supervised user-stream — used by /health/streams.
+
+    Returns one row per (user_id, wallet_id) covering the lifecycle state
+    machine, last-frame timestamp, total events seen since connect, and
+    the auth-failed flag. Sorted by state severity (DEAD → DEGRADED →
+    LIVE → INIT) so ops sees broken streams first.
+    """
+    now = time.time()
+    out: list[dict] = []
+    state_rank = {"DEAD": 0, "DEGRADED": 1, "INIT": 2, "LIVE": 3}
+    for s in _streams.values():
+        connected_age_s = (now - s.connected_at) if s.connected_at else None
+        last_msg_age_s = (now - s.last_msg_at) if s.last_msg_at else None
+        out.append({
+            "user_id": s.user_id,
+            "wallet_id": s.wallet_id,
+            "exchange": s.exchange,
+            "state": s.state,
+            "auth_failed": bool(s.auth_failed),
+            "connected_age_s": round(connected_age_s, 1) if connected_age_s is not None else None,
+            "last_msg_age_s": round(last_msg_age_s, 1) if last_msg_age_s is not None else None,
+            "events_total": s.events_total,
+        })
+    out.sort(key=lambda r: (state_rank.get(r["state"], 99), r["exchange"], r["user_id"]))
+    return out
 
 
 async def _ensure_stream(user_id: int, wallet_id: int, exchange: str, creds: dict) -> None:

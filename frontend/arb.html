@@ -5136,10 +5136,10 @@ async function refreshTradePositions(){
     // know yet, no row at all (don't show "-$0.00" misleadingly).
     let fundingRow = '';
     if (p.funding_pnl_usd !== null && p.funding_pnl_usd !== undefined) {
-      const fCls = funding >= 0 ? 'pos' : 'neg';
       const fLabel = funding >= 0 ? 'Funding earned' : 'Funding paid';
-      fundingRow = `<div style="grid-column:1/-1;font-size:10px;color:var(--text3);padding:2px 0 0 4px">
-        ${fLabel}: <span class="${fCls}" style="color:${funding>=0?'var(--green)':'var(--red)'}">${funding>=0?'+':''}$${Math.abs(funding).toFixed(2)}</span>
+      const fColor = funding >= 0 ? 'var(--green)' : 'var(--red)';
+      fundingRow = `<div class="tp-funding-row">
+        ${fLabel}: <span style="color:${fColor}">${funding>=0?'+':''}$${Math.abs(funding).toFixed(2)}</span>
       </div>`;
     }
 
@@ -5152,8 +5152,6 @@ async function refreshTradePositions(){
         const spotEx = EX_LABEL[(sp.spot.exchange||'').toLowerCase()] || sp.spot.exchange;
         const spotQty = Number(sp.spot.qty || 0).toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
         const reason = sp.match_reason || '';
-        // Decision-aware label: 'auto' = our heuristic, 'paired' = user
-        // confirmed, 'unpaired' would never reach this row (filtered server-side).
         const decided = sp.decision === 'paired';
         const tag = decided ? '✓ confirmed' : '◆ auto-detected';
         const tagColor = decided ? 'var(--green)' : 'var(--text3)';
@@ -5164,21 +5162,21 @@ async function refreshTradePositions(){
           short_wallet_id: sp.short.wallet_id,
         }));
         const buttonsHtml = decided
-          ? `<button class="ssp-btn-reject" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'unpaired')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Unpair</button>`
-          : `<button class="ssp-btn-pair" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'paired')" style="background:transparent;border:1px solid var(--green);color:var(--green);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Confirm pair</button>
-             <button class="ssp-btn-reject" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'unpaired')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Not paired</button>`;
-        spotPairRow = `<div style="grid-column:1/-1;display:flex;gap:6px;align-items:center;font-size:10.5px;padding:5px 4px 0;border-top:1px dashed var(--border);margin-top:5px;color:var(--text2);flex-wrap:wrap">
+          ? `<button class="ssp-btn-reject" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'unpaired')">Unpair</button>`
+          : `<button class="ssp-btn-pair" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'paired')">Confirm pair</button>
+             <button class="ssp-btn-reject" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'unpaired')">Not paired</button>`;
+        spotPairRow = `<div class="tp-spotpair-row">
           <span style="color:var(--green);font-weight:600">SPOT</span>
           <span>${spotQty} ${SYM} on ${spotEx}</span>
           <span style="color:${tagColor};font-size:10px">${tag}</span>
           <span style="color:var(--text3);font-size:10px">${_htmlEsc(reason)}</span>
-          <span style="margin-left:auto;display:flex;gap:4px">${buttonsHtml}</span>
+          <span class="tp-actions">${buttonsHtml}</span>
         </div>`;
       }
     }
 
     return `
-      <div class="trade-position-row" style="display:grid;grid-template-columns:auto auto 1fr auto auto auto">
+      <div class="trade-position-row tp-grid">
         <span class="${sideCls}">${p.side === 'buy' ? 'LONG' : 'SHORT'}</span>
         <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
         <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
@@ -5628,6 +5626,65 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSyncP
 .sc-btn-primary:hover{background:#0fffa3;color:#0a0a0f;filter:brightness(1.05);}
 @media (max-width: 560px){
   .sc-actions{flex-direction:column;}
+}
+
+/* ── Position card (with funding + spot-pair sub-rows) ──────────────────── */
+.trade-position-row.tp-grid{
+  display:grid;
+  grid-template-columns:auto auto 1fr auto auto auto;
+  gap:6px;
+  align-items:center;
+  padding:7px 4px;
+}
+.tp-funding-row{
+  grid-column:1/-1;
+  font-size:10px;
+  color:var(--text3);
+  padding:2px 0 0 4px;
+}
+.tp-spotpair-row{
+  grid-column:1/-1;
+  display:flex;
+  gap:6px;
+  align-items:center;
+  flex-wrap:wrap;
+  font-size:10.5px;
+  padding:5px 4px 0;
+  border-top:1px dashed var(--border);
+  margin-top:5px;
+  color:var(--text2);
+}
+.tp-spotpair-row .tp-actions{margin-left:auto;display:flex;gap:4px;}
+.ssp-btn-pair{background:transparent;border:1px solid var(--green);color:var(--green);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit;}
+.ssp-btn-reject{background:transparent;border:1px solid var(--border);color:var(--text3);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit;}
+.ssp-btn-pair:hover{background:rgba(26,255,171,.08);}
+.ssp-btn-reject:hover{background:rgba(255,255,255,.04);}
+
+@media (max-width: 560px){
+  .trade-position-row.tp-grid{
+    grid-template-columns:auto 1fr auto;  /* SIDE | qty | actions  — collapse exchange + pnl into wrapped flow */
+    grid-template-rows:auto auto auto;
+    row-gap:4px;
+  }
+  /* Exchange chip wraps to its own visual row by spanning all cols on a sub-row */
+  .trade-position-row.tp-grid > span:nth-child(2){
+    grid-column:1/-1;
+    font-size:9px;
+    color:var(--text3);
+  }
+  /* PnL wraps next to qty so the close button stays right-aligned */
+  .trade-position-row.tp-grid > .pos-pnl{
+    grid-column:2;
+    grid-row:3;
+    text-align:right;
+  }
+  .trade-position-row.tp-grid > .pos-close{
+    grid-column:3;
+    grid-row:3;
+  }
+  .trade-position-row.tp-grid > .pos-share{display:none;}
+  .tp-spotpair-row{font-size:10px;}
+  .tp-spotpair-row .tp-actions{margin-left:0;width:100%;justify-content:flex-end;}
 }
 </style>
 

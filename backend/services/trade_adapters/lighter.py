@@ -139,28 +139,46 @@ class LighterAdapter:
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:
         out = {"can_read": False, "can_trade": False, "balance_usdt": None, "error": None}
+
+        def _friendly(e, fallback: str) -> str:
+            msg = str(e)
+            ml = msg.lower()
+            if "account_index" in ml and ("integer" in ml or "invalid" in ml):
+                return "account_index must be a positive integer (the numeric Lighter account ID)"
+            if "api_private_key" in ml or "missing api_secret" in ml:
+                return "Missing api_private_key — paste the hex-encoded ZK signing key (with or without 0x)"
+            if "account not found" in ml or "21100" in ml:
+                return "Lighter account not found — double-check the account_index"
+            if "signature" in ml or "verify" in ml:
+                return "Signing failed — api_private_key doesn't match this account_index"
+            if "401" in ml or "403" in ml or "unauthorized" in ml:
+                return "Lighter rejected the key — verify it's an active API key for this account"
+            return f"{fallback}: {msg[:140]}"
+
         try:
             bal = await cls.fetch_balance(creds)
             out["can_read"] = True
             out["balance_usdt"] = float(bal.get("usdt") or 0)
         except Exception as e:
-            out["error"] = f"Lighter rejected the key: {str(e)[:180]}"
+            out["error"] = _friendly(e, "Lighter rejected the key")
             return out
         if need_trade:
-            sc, _ = await _build_signer(creds)
+            sc = None
             try:
+                sc, _ = await _build_signer(creds)
                 err = await sc.check_client()
                 if err:
-                    out["error"] = f"Lighter signer check failed: {str(err)[:180]}"
+                    out["error"] = _friendly(err, "Lighter signer check failed")
                 else:
                     out["can_trade"] = True
             except Exception as e:
-                out["error"] = f"Lighter signer init failed: {str(e)[:180]}"
+                out["error"] = _friendly(e, "Lighter signer init failed")
             finally:
-                try:
-                    await sc.close()
-                except Exception:
-                    pass
+                if sc is not None:
+                    try:
+                        await sc.close()
+                    except Exception:
+                        pass
         return out
 
     @classmethod

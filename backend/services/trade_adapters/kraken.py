@@ -157,20 +157,35 @@ class KrakenAdapter:
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:
         out = {"can_read": False, "can_trade": False, "balance_usdt": None, "error": None}
+
+        def _friendly(e: Exception, fallback: str) -> str:
+            msg = str(e)
+            ml = msg.lower()
+            if "authenticationerror" in ml or "401" in ml or "invalid api key" in ml:
+                return "Invalid API key — check key, secret, and that it's enabled for Futures (not Spot)"
+            if "signaturedidnotmatch" in ml or "signature" in ml:
+                return "Signature mismatch — API secret is wrong (must be the base64 secret from the futures key page)"
+            if "permission" in ml or "notauthorized" in ml or "403" in ml:
+                return "API key lacks the required permission — enable General + Funding read"
+            if "ipaddress" in ml or "ip" in ml and "whitelist" in ml:
+                return "Server IP not whitelisted on this Kraken Futures key"
+            if "ratelimited" in ml or "429" in ml:
+                return "Kraken rate-limited the request — try again in a minute"
+            return f"{fallback}: {msg[:140]}"
+
         try:
             bal = await cls.fetch_balance(creds)
             out["can_read"] = True
             out["balance_usdt"] = float(bal.get("usdt") or 0)
         except Exception as e:
-            out["error"] = f"Kraken rejected the key: {str(e)[:180]}"
+            out["error"] = _friendly(e, "Kraken rejected the key")
             return out
         if need_trade:
             try:
-                # leveragepreferences GET → harmless trading-permission check
                 await _signed_request(creds, "GET", "/leveragepreferences")
                 out["can_trade"] = True
             except Exception as e:
-                out["error"] = f"Kraken trade permission missing: {str(e)[:180]}"
+                out["error"] = _friendly(e, "Kraken trade permission missing")
         return out
 
     @classmethod

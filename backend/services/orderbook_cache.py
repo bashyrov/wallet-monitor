@@ -366,18 +366,74 @@ class FetchOutcome:
     ERROR = "error"
 
 
+# ── Per-exchange circuit breaker ─────────────────────────────────────────────
+# After N consecutive errors within a short window, pause REST polling for
+# the venue for COOLDOWN_S. Prevents one slow/down venue from soaking up
+# the per-pool connection budget while spamming the same 5xx in a tight
+# loop. Auto-resets on the first success after the cooldown.
+_CB_FAIL_THRESHOLD = 5      # errors in WINDOW before tripping
+_CB_WINDOW_S = 30.0         # window for the consecutive-error count
+_CB_COOLDOWN_S = 60.0       # how long to stay open
+_cb_state: dict[str, dict] = {}  # exchange → {"fail_count", "first_fail_at", "open_until"}
+
+
+def _cb_is_open(exchange: str) -> bool:
+    s = _cb_state.get(exchange)
+    if not s:
+        return False
+    open_until = s.get("open_until") or 0.0
+    if open_until and time.time() < open_until:
+        return True
+    return False
+
+
+def _cb_record_error(exchange: str) -> None:
+    now = time.time()
+    s = _cb_state.setdefault(exchange, {"fail_count": 0, "first_fail_at": 0.0, "open_until": 0.0})
+    # Reset window if too much time passed since the first failure
+    if s["first_fail_at"] and (now - s["first_fail_at"]) > _CB_WINDOW_S:
+        s["fail_count"] = 0
+        s["first_fail_at"] = now
+    if s["fail_count"] == 0:
+        s["first_fail_at"] = now
+    s["fail_count"] += 1
+    if s["fail_count"] >= _CB_FAIL_THRESHOLD:
+        s["open_until"] = now + _CB_COOLDOWN_S
+        logger.warning(
+            "circuit breaker: %s opened — %d errors in %.1fs, paused %ds",
+            exchange, s["fail_count"], now - s["first_fail_at"], int(_CB_COOLDOWN_S),
+        )
+
+
+def _cb_record_success(exchange: str) -> None:
+    s = _cb_state.get(exchange)
+    if s and (s.get("fail_count") or s.get("open_until")):
+        if s.get("open_until"):
+            logger.info("circuit breaker: %s closed — first success after cooldown", exchange)
+        s["fail_count"] = 0
+        s["first_fail_at"] = 0.0
+        s["open_until"] = 0.0
+
+
 async def _fetch_direct_with_status(exchange: str, symbol: str, limit: int) -> tuple[str, dict | None, str | None]:
     """Returns (outcome, data, error). Outcome is one of FetchOutcome.*."""
+    if _cb_is_open(exchange):
+        return FetchOutcome.ERROR, None, f"{exchange} paused by circuit breaker"
     try:
         data = await _fetch_direct_raw(exchange, symbol, limit)
     except Exception as exc:
         logger.debug("orderbook fetch %s/%s failed: %s", exchange, symbol, exc)
+        _cb_record_error(exchange)
         return FetchOutcome.ERROR, None, f"{type(exc).__name__}: {exc}"
     if data is None:
         # Unrecognised exchange — treat as a config error, not transient.
         return FetchOutcome.ERROR, None, f"unsupported exchange: {exchange}"
     if not data.get("bids") and not data.get("asks"):
+        # Empty book is not a circuit-breaker trip — venue answered cleanly,
+        # the symbol is just delisted/halted/thin. Don't penalise the venue
+        # for one bad symbol.
         return FetchOutcome.EMPTY, data, None
+    _cb_record_success(exchange)
     return FetchOutcome.OK, data, None
 
 
