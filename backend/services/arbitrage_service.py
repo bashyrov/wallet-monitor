@@ -2123,27 +2123,55 @@ def get_exchange_health() -> dict[str, dict]:
 
 def get_cached_rates() -> dict[str, dict]:
     """Return flat dict {exchange:symbol → {rate, interval_h, price}} from current cache.
-    Used by the alert service to check spreads without triggering new fetches.
+    Used by the alert service and the /screener/pair fallback to look up an
+    arbitrary (exchange, symbol) without triggering a fresh fetch.
+
+    On web workers the in-process `_cache` is empty (only the fetcher writes
+    to it). Falls back to the shared `funding.json` dump so /arb pair
+    lookups for symbols outside the top-500 opp list still resolve — without
+    this, /arb showed all dashes for any non-popular pair on web role.
     """
     from backend.services import admin_settings
     disabled_ex = admin_settings.get_disabled_exchanges()
     hidden_sym = admin_settings.get_hidden_symbols()
     result: dict[str, dict] = {}
-    for exchange, (rows, _) in _cache.items():
-        if exchange in disabled_ex:
+
+    if _cache:
+        for exchange, (rows, _) in _cache.items():
+            if exchange in disabled_ex:
+                continue
+            for row in rows:
+                sym = row["symbol"]
+                if sym in hidden_sym:
+                    continue
+                ivl = row.get("interval_h")
+                if ivl is None:
+                    continue
+                result[f"{exchange}:{sym}"] = {
+                    "rate":       row.get("rate", 0.0),
+                    "interval_h": ivl,
+                    "price":      row.get("price", 0.0),
+                }
+        return result
+
+    # Web-role fallback: in-process cache empty (no fetcher in this process),
+    # read the shared funding.json dump written by the fetcher every ~2 s.
+    cached = _read_file_cache("funding.json", max_age=120.0)
+    if not cached or not cached.get("rows"):
+        return result
+    for row in cached["rows"]:
+        sym = row.get("symbol")
+        ex = row.get("exchange")
+        if not sym or not ex:
             continue
-        for row in rows:
-            sym = row["symbol"]
-            if sym in hidden_sym:
-                continue
-            ivl = row.get("interval_h")
-            if ivl is None:
-                # Skip rather than expose a guessed interval — the alert
-                # service would normalise spreads incorrectly.
-                continue
-            result[f"{exchange}:{sym}"] = {
-                "rate":       row.get("rate", 0.0),
-                "interval_h": ivl,
-                "price":      row.get("price", 0.0),
-            }
+        if ex in disabled_ex or sym in hidden_sym:
+            continue
+        ivl = row.get("interval_h")
+        if ivl is None:
+            continue
+        result[f"{ex}:{sym}"] = {
+            "rate":       row.get("rate", 0.0),
+            "interval_h": ivl,
+            "price":      row.get("price", 0.0),
+        }
     return result
