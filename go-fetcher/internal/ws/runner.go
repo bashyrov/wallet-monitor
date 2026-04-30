@@ -202,6 +202,7 @@ func (r *Runner) session(ctx context.Context) error {
 	for {
 		mt, raw, err := conn.ReadMessage()
 		if err != nil {
+			r.log.Debug().Err(err).Int("frames", frameCount).Msg("ws read failed — session ending")
 			if frameCount > 0 {
 				return err // transient — frames flowed
 			}
