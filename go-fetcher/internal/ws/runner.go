@@ -218,9 +218,29 @@ func (r *Runner) session(ctx context.Context) error {
 			}
 		}
 
-		// Plain-text "ping"/"Ping" frames — KuCoin / Bitget V2 / BingX
-		// all use this in some variant. PongFor returns the reply or nil.
+		// Plain-text "ping"/"pong"/"Ping"/"Pong" frames — Bitget V2
+		// replies "pong" to our app-level "ping"; KuCoin sends server
+		// "ping" expecting "pong"; BingX sends "Ping" expecting "Pong".
+		// All four shapes are transparent at the data-stream layer:
+		// runner consumes them so Parse() doesn't see noisy bytes.
 		if mt == websocket.TextMessage || mt == websocket.BinaryMessage {
+			trimmed := bytes.TrimSpace(raw)
+			if len(trimmed) > 0 && len(trimmed) <= 8 {
+				low := bytes.ToLower(trimmed)
+				if bytes.Equal(low, []byte("pong")) {
+					continue
+				}
+				if bytes.Equal(low, []byte("ping")) {
+					// adapter's PongFor decides reply (different venues
+					// want different cases — runner stays neutral).
+					if reply := r.a.PongFor(raw); reply != nil {
+						if err := SendText(conn, reply); err != nil {
+							return err
+						}
+					}
+					continue
+				}
+			}
 			if reply := r.a.PongFor(raw); reply != nil {
 				if err := SendText(conn, reply); err != nil {
 					return err

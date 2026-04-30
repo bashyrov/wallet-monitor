@@ -24,9 +24,22 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/bootstrap"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/config"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/aster"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/backpack"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/binance"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bingx"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bitget"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bybit"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/gate"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/htx"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/hyperliquid"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/kraken"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/kucoin"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/lighter"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/mexc"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/okx"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/paradex"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/whitebit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
@@ -108,11 +121,26 @@ func buildRunners(cfg config.Config, store *cache.Store) []*ws.Runner {
 	}
 
 	registry := []entry{
-		// Phase 1 — reference adapters. Each implements ws.Adapter and
-		// addresses every applicable bug from PLAN.md by design.
+		// Phase 1 + 2 — all 16 orderbook WS adapters. Each implements
+		// ws.Adapter and addresses every applicable bug from PLAN.md by
+		// design. Order matches PLAN.md sequencing (simple → complex).
 		{name: "binance", factory: func() *ws.Runner { return binance.NewFutures(store) }},
 		{name: "bybit", factory: func() *ws.Runner { return bybit.NewFutures(store) }},
 		{name: "okx", factory: func() *ws.Runner { return okx.NewFutures(store) }},
+		{name: "aster", factory: func() *ws.Runner { return aster.NewFutures(store) }},
+		{name: "gate", factory: func() *ws.Runner { return gate.NewFutures(store) }},
+		{name: "mexc", factory: func() *ws.Runner { return mexc.NewFutures(store) }},
+		{name: "whitebit", factory: func() *ws.Runner { return whitebit.NewFutures(store) }},
+		{name: "bingx", factory: func() *ws.Runner { return bingx.NewFutures(store) }},
+		{name: "htx", factory: func() *ws.Runner { return htx.NewFutures(store) }},
+		{name: "kraken", factory: func() *ws.Runner { return kraken.NewFutures(store) }},
+		{name: "kucoin", factory: func() *ws.Runner { return kucoin.NewFutures(store) }},
+		{name: "bitget", factory: func() *ws.Runner { return bitget.NewFutures(store) }},
+		{name: "bitget_spot", factory: func() *ws.Runner { return bitget.NewSpot(store) }},
+		{name: "hyperliquid", factory: func() *ws.Runner { return hyperliquid.NewFutures(store) }},
+		{name: "paradex", factory: func() *ws.Runner { return paradex.NewFutures(store) }},
+		{name: "lighter", factory: func() *ws.Runner { return lighter.NewFutures(store) }},
+		{name: "backpack", factory: func() *ws.Runner { return backpack.NewFutures(store) }},
 	}
 
 	want := func(name string) bool {
