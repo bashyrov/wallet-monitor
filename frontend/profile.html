@@ -666,7 +666,16 @@
       </div>
 
       <div id="tfa-off-view">
-        <button id="tfa-enable-btn" onclick="tfaSetup()" style="padding:10px 16px;border-radius:8px;background:var(--green);color:#001a0d;border:0;cursor:pointer;font-weight:700;font-size:13px">Enable 2FA</button>
+        <button id="tfa-enable-btn" onclick="tfaEnableShow()" style="padding:10px 16px;border-radius:8px;background:var(--green);color:#001a0d;border:0;cursor:pointer;font-weight:700;font-size:13px">Enable 2FA</button>
+        <div id="tfa-enable-form" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2)">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Confirm with your password to begin setup.</div>
+          <input id="tfa-enable-pwd" type="password" placeholder="Current password" autocomplete="current-password" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;margin-bottom:8px">
+          <div style="display:flex;gap:8px">
+            <button onclick="tfaSetup()" id="tfa-enable-submit" style="flex:1;padding:9px;border-radius:7px;background:var(--green);color:#001a0d;border:0;cursor:pointer;font-weight:600;font-size:12.5px">Continue</button>
+            <button onclick="tfaEnableHide()" style="padding:9px 14px;border-radius:7px;background:transparent;color:var(--text3);border:1px solid var(--border);cursor:pointer">Cancel</button>
+          </div>
+          <div id="tfa-enable-err" style="display:none;font-size:11.5px;color:var(--red);margin-top:8px"></div>
+        </div>
       </div>
 
       <div id="tfa-setup-view" style="display:none;margin-top:12px">
@@ -1049,18 +1058,42 @@ function _loadQRLib() {
   return _qrLibPromise;
 }
 
+function tfaEnableShow() {
+  document.getElementById('tfa-enable-btn').style.display = 'none';
+  document.getElementById('tfa-enable-form').style.display = 'block';
+  document.getElementById('tfa-enable-pwd').focus();
+}
+function tfaEnableHide() {
+  document.getElementById('tfa-enable-form').style.display = 'none';
+  document.getElementById('tfa-enable-btn').style.display = '';
+  document.getElementById('tfa-enable-pwd').value = '';
+  document.getElementById('tfa-enable-err').style.display = 'none';
+}
+
 async function tfaSetup() {
-  const errEl = document.getElementById('tfa-setup-err');
-  const btn   = document.getElementById('tfa-enable-btn');
-  errEl.style.display = 'none';
-  btn.disabled = true; btn.textContent = 'Loading…';
+  const setupErr = document.getElementById('tfa-setup-err');
+  const enableErr = document.getElementById('tfa-enable-err');
+  const submit = document.getElementById('tfa-enable-submit');
+  const pwd = document.getElementById('tfa-enable-pwd').value || '';
+  setupErr.style.display = 'none';
+  enableErr.style.display = 'none';
+  if (!pwd) {
+    enableErr.textContent = 'Enter your password';
+    enableErr.style.display = 'block';
+    return;
+  }
+  submit.disabled = true; submit.textContent = 'Loading…';
   try {
-    const r = await Auth.apiFetch('/auth/me/2fa/setup', { method: 'POST' });
+    const r = await Auth.apiFetch('/auth/me/2fa/setup', {
+      method: 'POST',
+      body: JSON.stringify({ password: pwd }),
+    });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'setup failed');
     document.getElementById('tfa-secret').textContent = j.secret;
     document.getElementById('tfa-off-view').style.display   = 'none';
     document.getElementById('tfa-setup-view').style.display = 'block';
+    document.getElementById('tfa-enable-pwd').value = '';
     const QR = await _loadQRLib();
     QR.toCanvas(j.otpauth_uri, { width: 180, margin: 1 }, (err, canvas) => {
       const wrap = document.getElementById('tfa-qr');
@@ -1070,10 +1103,10 @@ async function tfaSetup() {
     });
     document.getElementById('tfa-verify-code').focus();
   } catch (e) {
-    errEl.textContent = e.message || 'Setup failed';
-    errEl.style.display = 'block';
+    enableErr.textContent = e.message || 'Setup failed';
+    enableErr.style.display = 'block';
   } finally {
-    btn.disabled = false; btn.textContent = 'Enable 2FA';
+    submit.disabled = false; submit.textContent = 'Continue';
   }
 }
 

@@ -230,10 +230,44 @@ async def login_totp(body: dict, request: Request, response: Response, db: Sessi
 
 
 @router.post("/me/2fa/setup")
-def me_2fa_setup(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def me_2fa_setup(body: dict, request: Request,
+                        current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
     """Generate (but DO NOT arm) a fresh TOTP secret. User scans the
     otpauth URI as a QR code in their authenticator app and confirms
-    via /me/2fa/verify with a generated code."""
+    via /me/2fa/verify with a generated code.
+
+    Requires the current password — without this, an attacker on a
+    hijacked session could replace a verified TOTP secret with their
+    own and lock the legitimate owner out at the next login. /disable
+    has always required the password; setup is the symmetric gate.
+    Throttled per-user same as disable.
+    """
+    from backend.services import login_throttle
+    ip = _get_ip(request)
+    throttle_key = f"pwd:{current_user.id}"
+    retry_after = login_throttle.check(throttle_key)
+    if retry_after:
+        await login_throttle.response_delay()
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    pwd = body.get("password") or ""
+    if not svc.verify_password(pwd, current_user.hashed_password):
+        cooldown = login_throttle.register_failure(throttle_key)
+        await login_throttle.response_delay()
+        logger.warning("2FA setup: bad password uid=%s ip=%s", current_user.id, ip)
+        if cooldown:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                headers={"Retry-After": str(cooldown)},
+            )
+        raise HTTPException(status_code=401, detail="Password mismatch")
+    login_throttle.clear(throttle_key)
+
     from backend.services import totp as _totp
     secret = _totp.generate_secret()
     current_user.totp_secret_enc = _totp.encrypt_secret(secret)
