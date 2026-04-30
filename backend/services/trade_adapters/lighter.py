@@ -299,6 +299,10 @@ class LighterAdapter:
                     upnl = float(p.unrealized_pnl or 0)
                 except (TypeError, ValueError):
                     upnl = 0.0
+                try:
+                    funding = float(getattr(p, "realized_funding", None) or 0)
+                except (TypeError, ValueError):
+                    funding = 0.0
                 out.append({
                     "exchange": "lighter",
                     "symbol": sym,
@@ -306,6 +310,7 @@ class LighterAdapter:
                     "quantity": abs(qty),
                     "entry_price": entry,
                     "unrealized_pnl_usd": upnl,
+                    "funding_pnl_usd": funding,
                     "leverage": int(p.allocated_margin or 0) or None,
                     "margin_mode": "cross",
                 })

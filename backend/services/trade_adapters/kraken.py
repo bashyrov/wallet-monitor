@@ -253,14 +253,22 @@ class KrakenAdapter:
             if qty == 0:
                 continue
             side = "buy" if (p.get("side") or "").lower() == "long" else "sell"
+            try:
+                funding = float(p.get("unrealizedFunding") or 0)
+            except (TypeError, ValueError):
+                funding = 0.0
+            try:
+                pnl = float(p.get("pnl") or 0)
+            except (TypeError, ValueError):
+                pnl = 0.0
             out.append({
                 "exchange": "kraken",
                 "symbol": base,
                 "side": side,
                 "quantity": abs(qty),
                 "entry_price": float(p.get("price") or 0),
-                "unrealized_pnl_usd": float(p.get("unrealizedFunding") or 0)
-                                       + float(p.get("pnl") or 0),
+                "unrealized_pnl_usd": funding + pnl,
+                "funding_pnl_usd": funding,  # paid funding (negative when user pays)
                 "leverage": None,
                 "margin_mode": "cross",
             })

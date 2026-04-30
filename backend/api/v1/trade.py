@@ -84,6 +84,18 @@ def pnl(
     return trade_service.list_user_pnl(db, user.id, days=days)
 
 
+@router.get("/spot-short-pairs")
+async def spot_short_pairs(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Spot/short pair candidates — for every open short futures position,
+    surface matching spot holdings (notional within ±5%) so basis traders
+    see the implicit pair as a single position. Frontend renders these
+    alongside long/short pairs on /arb."""
+    return await trade_service.list_user_spot_short_pairs(db, user.id)
+
+
 # ── Pair decisions ──────────────────────────────────────────────────────────
 class PairIn(BaseModel):
     symbol: str

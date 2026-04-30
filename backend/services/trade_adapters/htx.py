@@ -297,6 +297,10 @@ class HtxAdapter:
                 continue
             qty_base = volume * cs
             side = "buy" if (p.get("direction") or "").lower() == "buy" else "sell"
+            try:
+                funding = float(p.get("settlement_asset_funding_fee") or p.get("funding_fee") or 0)
+            except (TypeError, ValueError):
+                funding = 0.0
             out.append({
                 "exchange": "htx",
                 "symbol": base,
@@ -304,6 +308,7 @@ class HtxAdapter:
                 "quantity": qty_base,
                 "entry_price": float(p.get("cost_open") or p.get("cost_hold") or 0),
                 "unrealized_pnl_usd": float(p.get("profit_unreal") or 0),
+                "funding_pnl_usd": funding,
                 "leverage": int(float(p.get("lever_rate") or 0)) or None,
                 "margin_mode": "cross",
             })

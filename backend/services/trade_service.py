@@ -1010,3 +1010,196 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
     out = [r for r in results if isinstance(r, dict)]
     _BALANCES_CACHE[user_id] = (_time.time(), out)
     return out
+
+
+# ── Spot / short pair detection ──────────────────────────────────────────────
+# A user holding 0.5 BTC spot on Binance + a short BTC perp on Bybit is
+# implicitly running a spot/short basis trade. Surface those pairs in /arb
+# the same way long/short pairs work, so funding accrual and PnL are
+# reported as one position rather than two unrelated rows.
+#
+# Data sources:
+#   - Spot side: BalanceSnapshot.totals — already populated by the
+#     portfolio fetcher every cycle. Asset symbol + qty per wallet, no
+#     extra API calls needed.
+#   - Short side: list_user_positions() — futures positions across all
+#     trade-enabled wallets.
+#
+# Pair matching rules (mirrors _pnl_can_pair for long/short):
+#   1. Same symbol on both legs.
+#   2. Spot notional within ±5% of short notional (approximate basis-
+#      neutral hedge — overshooting the spot side is a stronger basis bet
+#      and worth surfacing as a maybe-pair, undershooting too).
+#   3. If the spot side's snapshot_at is available, opened within 10 min
+#      of the short. Otherwise (snapshot lag/no time), we surface the
+#      pair with `time_match: null` so the user can confirm.
+#
+# Pair decisions live in the same TradePairDecision table — leg_a_key
+# becomes "<symbol>|spot|<wallet_id>" and leg_b_key "<symbol>|<short_ex>|<wallet_id>".
+_SPOT_STABLE = {"USDT", "USDC", "USD", "DAI", "FDUSD", "TUSD", "BUSD"}
+_SPOT_NOTIONAL_TOLERANCE_PCT = 5.0
+_SPOT_TIME_WINDOW_S = 10 * 60
+
+
+def _list_user_spot_holdings(db: Session, user_id: int) -> list[dict]:
+    """Per-(wallet, asset) spot holdings from BalanceSnapshot.totals.
+
+    Returns rows shaped:
+      {wallet_id, exchange, asset, qty, snapshot_at}
+    Stablecoins filtered out (they're the quote side, not a tradable
+    asset for spot/short matching).
+    """
+    from backend.db.models import BalanceSnapshot
+    rows = (
+        db.query(BalanceSnapshot, Wallet)
+        .join(Wallet, Wallet.id == BalanceSnapshot.wallet_id)
+        .filter(
+            BalanceSnapshot.user_id == user_id,
+            Wallet.is_archived == False,  # noqa: E712
+            Wallet.wallet_type.in_(("exchange", "perpdex")),
+        )
+        .all()
+    )
+    out: list[dict] = []
+    for snap, wallet in rows:
+        totals = snap.totals or {}
+        if not isinstance(totals, dict):
+            continue
+        for asset, raw_qty in totals.items():
+            asset_u = (asset or "").upper()
+            if not asset_u or asset_u in _SPOT_STABLE:
+                continue
+            try:
+                qty = float(raw_qty) if not isinstance(raw_qty, dict) else float(raw_qty.get("total") or 0)
+            except (TypeError, ValueError):
+                continue
+            if qty <= 0:
+                continue
+            out.append({
+                "wallet_id": wallet.id,
+                "exchange": wallet.type_value,
+                "wallet_name": wallet.name,
+                "asset": asset_u,
+                "qty": qty,
+                "snapshot_at": snap.snapshot_at.isoformat() if snap.snapshot_at else None,
+            })
+    return out
+
+
+def _spot_short_pair_decision_keys(symbol: str, spot_wallet_id: int,
+                                     short_ex: str, short_wallet_id: int) -> tuple[str, str]:
+    """Decision keys used when persisting a manual spot/short pair-decision.
+
+    Same column shape as long/short pairs so we don't need to touch the
+    schema, just convention: leg_a is always the spot side.
+    """
+    return (f"{symbol}|spot|{spot_wallet_id}",
+            f"{symbol}|{short_ex}|{short_wallet_id}")
+
+
+def _spot_short_can_pair(spot: dict, short: dict, spot_price: float | None) -> tuple[bool, str | None]:
+    """Notional + (best-effort) time match. Returns (ok, reason)."""
+    if not spot_price or spot_price <= 0:
+        return False, "no spot price"
+    short_qty = float(short.get("quantity") or 0)
+    short_entry = float(short.get("entry_price") or 0)
+    spot_qty = float(spot.get("qty") or 0)
+    if short_qty <= 0 or short_entry <= 0 or spot_qty <= 0:
+        return False, "zero qty/price"
+    short_notional = short_qty * short_entry
+    spot_notional = spot_qty * spot_price
+    base = max(short_notional, spot_notional)
+    if base <= 0:
+        return False, "zero notional"
+    diff_pct = abs(short_notional - spot_notional) / base * 100.0
+    if diff_pct > _SPOT_NOTIONAL_TOLERANCE_PCT:
+        return False, f"notional diff {diff_pct:.1f}% > {_SPOT_NOTIONAL_TOLERANCE_PCT:.0f}%"
+    return True, f"notional within {diff_pct:.1f}%"
+
+
+async def _spot_price_lookup(symbols: list[str]) -> dict[str, float]:
+    """Pull last-trade price for each base from the screener's funding cache —
+    avoids per-symbol REST calls. Falls back to 0 (caller treats as unknown)."""
+    out: dict[str, float] = {}
+    try:
+        from backend.services.arbitrage_service import _cache as _arb_cache
+    except Exception:
+        return out
+    for ex_name, (rows, _ts) in _arb_cache.items():
+        for r in rows or []:
+            sym = (r.get("symbol") or "").upper()
+            px = r.get("price")
+            if not sym or not isinstance(px, (int, float)) or sym in out:
+                continue
+            if sym in symbols:
+                out[sym] = float(px)
+        if len(out) == len(symbols):
+            break
+    return out
+
+
+async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
+    """For each open SHORT position, surface matching SPOT holdings as pair
+    candidates. The frontend renders these alongside long/short pairs
+    on the /arb pair card so basis traders see one row per real position.
+    """
+    positions = await list_user_positions(db, user_id)
+    shorts = [p for p in positions if (p.get("side") or "").lower() == "sell"]
+    if not shorts:
+        return []
+    spots = _list_user_spot_holdings(db, user_id)
+    if not spots:
+        return []
+
+    # Index spot holdings by asset for O(1) lookup
+    spot_by_asset: dict[str, list[dict]] = {}
+    for s in spots:
+        spot_by_asset.setdefault(s["asset"], []).append(s)
+
+    # Read pair-decision table once — the same table powers long/short and
+    # spot/short, distinguished by leg_a_key prefix "spot|".
+    from backend.db.models import TradePairDecision
+    decisions = {
+        (d.leg_a_key, d.leg_b_key): d.decision
+        for d in db.query(TradePairDecision).filter(TradePairDecision.user_id == user_id).all()
+    }
+
+    # One last_trade_price lookup for every short symbol — avoids 1-call-per-pair.
+    sym_set = sorted({(p.get("symbol") or "").upper() for p in shorts})
+    px_map = await _spot_price_lookup(sym_set)
+
+    out: list[dict] = []
+    for short in shorts:
+        sym = (short.get("symbol") or "").upper()
+        if sym not in spot_by_asset:
+            continue
+        spot_price = px_map.get(sym) or float(short.get("entry_price") or 0)
+        for spot in spot_by_asset[sym]:
+            ok, reason = _spot_short_can_pair(spot, short, spot_price)
+            if not ok:
+                continue
+            leg_a, leg_b = _spot_short_pair_decision_keys(
+                sym, spot["wallet_id"],
+                (short.get("exchange") or "").lower(), short.get("wallet_id") or 0,
+            )
+            decision = decisions.get((leg_a, leg_b))
+            if decision == "unpaired":
+                continue  # user explicitly rejected this pair
+            out.append({
+                "kind": "spot_short_pair",
+                "symbol": sym,
+                "spot": {
+                    "wallet_id": spot["wallet_id"],
+                    "exchange": spot["exchange"],
+                    "wallet_name": spot["wallet_name"],
+                    "qty": spot["qty"],
+                    "qty_usd": spot["qty"] * spot_price,
+                    "snapshot_at": spot["snapshot_at"],
+                },
+                "short": short,
+                "auto_paired": (decision == "paired") or (decision is None),
+                "decision": decision or "auto",
+                "match_reason": reason,
+                "spot_price_estimate": spot_price,
+            })
+    return out
