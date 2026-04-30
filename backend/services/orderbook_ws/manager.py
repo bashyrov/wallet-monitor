@@ -24,8 +24,10 @@ def is_ws_supported(exchange: str) -> bool:
     return exchange.lower() in ADAPTERS
 
 
-_REDIS_MIN_INTERVAL_S = 0.05  # cap per-symbol Redis writes — 20 Hz is
-# more than the 150 ms frontend poll; anything above is wasted Redis load.
+_REDIS_MIN_INTERVAL_S = 0.02  # cap per-symbol Redis writes — 50 Hz matches
+# Bybit's fastest-cadence stream (orderbook.50 = 20 ms). Above 50 Hz adds
+# Redis load without giving the broadcaster anything fresher to send. Was
+# 50 ms which left a noticeable lag on the /ws/book hot path.
 
 
 class WSManager:

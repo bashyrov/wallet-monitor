@@ -1474,31 +1474,53 @@ async def arb_ws(websocket: WebSocket) -> None:
 # traffic is unchanged (zero extra calls to Binance/Bybit/etc).
 _book_ws_subs: dict[WebSocket, dict[str, float]] = {}
 _book_broadcast_task: asyncio.Task | None = None
-BOOK_BROADCAST_INTERVAL = _env_float("AVALANT_BOOK_BROADCAST_INTERVAL", 0.1)
+# 25ms cadence (down from 100ms) trims ~75ms off the worst-case
+# orderbook → browser latency. Cost: 4× more diff-push CPU on the
+# broadcast loop, but each tick is cheap (~1-2ms per client) and the
+# broadcaster is single-process so the 4× is bounded by `len(clients)`,
+# not by exchange count.
+BOOK_BROADCAST_INTERVAL = _env_float("AVALANT_BOOK_BROADCAST_INTERVAL", 0.025)
 BOOK_MAX_PAIRS_PER_CLIENT = 100  # /arb needs 2, /screener live In/Out needs ~80 for top-40 rows
 
 
 async def _book_broadcast_loop() -> None:
-    """Push fresh orderbook frames to subscribed clients. Reads the shared
-    books.json via orderbook_cache._refresh_file_memo — no exchange calls.
+    """Push fresh orderbook frames to subscribed clients.
 
-    NOTE: we import the module (not its _file_memo binding) because
-    _refresh_file_memo rebinds the module-level name on every reload — a
-    `from … import _file_memo` at top level would freeze our reference to
-    the initial (empty) dict."""
+    Read path: per-key Redis (`ob:<ex>:<sym>`) populated by the orderbook
+    workers on every WS update (see WSManager._update_cb). Falls back to
+    the file-based `_file_memo` only if Redis is unreachable. Reading per
+    key from Redis means the broadcaster sees worker updates within the
+    50 ms write throttle — vs the 100-230 ms master-merger tick of the
+    file path. End-to-end orderbook → browser latency drops from ~250-
+    400 ms to ~100-150 ms on the SG box.
+    """
     from backend.services import orderbook_cache as _ob
+    from backend.services.orderbook_redis import read_book as _redis_read
     while True:
         try:
             await asyncio.sleep(BOOK_BROADCAST_INTERVAL)
             if not _book_ws_subs:
                 continue
-            _ob._refresh_file_memo()
+            file_memo_refreshed = False
             for ws, subs in list(_book_ws_subs.items()):
                 if not subs:
                     continue
                 payload: dict[str, dict] = {}
                 for pair, last_ts in list(subs.items()):
-                    entry = _ob._file_memo.get(pair)
+                    # Try Redis first (fresh, per-update). pair is "ex:sym".
+                    entry = None
+                    try:
+                        ex, _, sym = pair.partition(":")
+                        if ex and sym:
+                            entry = _redis_read(ex, sym)
+                    except Exception:
+                        entry = None
+                    if entry is None:
+                        # Fallback to file-memo (master-merged books.json)
+                        if not file_memo_refreshed:
+                            _ob._refresh_file_memo()
+                            file_memo_refreshed = True
+                        entry = _ob._file_memo.get(pair)
                     if not entry:
                         continue
                     ts = entry.get("ts", 0.0)
