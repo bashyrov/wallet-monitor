@@ -101,11 +101,11 @@ func (a *Futures) HeartbeatInterval() time.Duration { return 0 }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return true }
 
-// HL drops the connection (close 1006, no frame) when we send 20+
-// subscribes in <100 ms — observed in prod shadow validation. 100 ms
-// gives us 10 subs/s, well under whatever the per-IP limit actually
-// is. 20 symbols × 100 ms = 2 s subscribe phase, acceptable.
-func (a *Futures) SubscribeDelay() time.Duration { return 100 * time.Millisecond }
+// HL drops the connection with "write: broken pipe" after 4-8 subscribe
+// frames in succession — confirmed in prod logs after the 100ms test.
+// 500ms gives us 2 subs/s, ~10s subscribe phase for 20 symbols. Subs
+// happen once per connection so the long phase is acceptable.
+func (a *Futures) SubscribeDelay() time.Duration { return 500 * time.Millisecond }
 func (a *Futures) MaxSymbols() int               { return 0 }
 func (a *Futures) DecompressGzip() bool          { return false }
 func (a *Futures) OnReconnect()                  {}

@@ -231,6 +231,9 @@ func (r *Runner) session(ctx context.Context) error {
 			return err
 		}
 		r.lastMsg.Store(time.Now())
+		if frameCount < 3 {
+			r.log.Info().Int("mt", mt).Int("len", len(raw)).Str("preview", string(raw[:min(80, len(raw))])).Msg("recv frame")
+		}
 
 		// Decompress gzip if the adapter says so. HTX / BingX stream
 		// gzip-compressed text frames.
