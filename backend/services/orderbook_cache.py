@@ -714,10 +714,15 @@ def touch_user_sub(exchange: str, symbol: str) -> None:
     worker can call this — the prewarm owner reads the file on every tick
     and keeps matching pairs subscribed even when they drop out of the
     top-N arb hot list. File grows bounded (~few dozen KB) because entries
-    older than USER_SUBS_TTL are pruned on every read."""
+    older than USER_SUBS_TTL are pruned on every read.
+
+    Phase-6 rollout: also publish to the Redis `book:subscribe` channel
+    so the Go fetcher (running alongside in shadow / cutover) picks up
+    the on-demand subscribe in <100ms instead of waiting for the
+    prewarm cycle."""
+    key = f"{exchange.lower()}:{symbol.upper()}"
     try:
         os.makedirs(_CACHE_DIR, exist_ok=True)
-        key = f"{exchange.lower()}:{symbol.upper()}"
         now = time.time()
         data: dict = {}
         if os.path.exists(_USER_SUBS_FILE):
@@ -736,6 +741,17 @@ def touch_user_sub(exchange: str, symbol: str) -> None:
         os.replace(tmp, _USER_SUBS_FILE)
     except Exception as exc:
         logger.debug("touch_user_sub failed: %s", exc)
+    # Fire-and-forget publish to Go fetcher. Never blocks the caller —
+    # if Redis is down, the file path above is still authoritative for
+    # the Python prewarm owner. Reuses the cached redis client from
+    # orderbook_redis (single connection per worker, lazy + backoff).
+    try:
+        from backend.services.orderbook_redis import _get_client  # noqa
+        cli = _get_client()
+        if cli is not None:
+            cli.publish("book:subscribe", key)
+    except Exception:
+        pass
 
 
 def read_user_subs() -> dict[str, list[str]]:

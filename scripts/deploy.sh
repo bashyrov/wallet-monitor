@@ -96,6 +96,16 @@ deploy_fetcher() {
   smoke
 }
 
+deploy_go_fetcher() {
+  step "Pulling latest code"
+  git pull --ff-only
+  step "Rebuilding go-fetcher (Go sidecar; runs alongside Python fetcher)"
+  docker compose up -d --build go-fetcher
+  echo "  → go-fetcher started; default shadow mode = /tmp/avalant_cache_go"
+  echo "    cutover: set GO_FETCHER_CACHE_DIR=/tmp/avalant_cache in .env"
+  smoke
+}
+
 deploy_migrations() {
   step "Pulling latest code"
   git pull --ff-only
@@ -173,6 +183,7 @@ case "${1:-auto}" in
   frontend)    deploy_frontend ;;
   backend)     deploy_backend ;;
   fetcher)     deploy_fetcher ;;
+  go-fetcher)  deploy_go_fetcher ;;
   migrations)  deploy_migrations ;;
   nginx)       deploy_nginx ;;
   all)         deploy_all ;;

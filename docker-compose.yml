@@ -221,6 +221,36 @@ services:
       # (e.g. dumping a frontend asset from the fetcher container).
       - ./frontend:/app/frontend:ro
 
+  # Go-rewrite of the Python fetcher hot path. Runs in shadow mode by
+  # default (writes to /tmp/avalant_cache_go in its own scratch dir,
+  # not the shared volume), so it can run safely alongside the Python
+  # fetcher during the parallel-run validation window. Cutover flips
+  # the volume mount to /tmp/avalant_cache (same as Python writes to)
+  # and stops the Python fetcher.
+  go-fetcher:
+    build:
+      context: ./go-fetcher
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      # Shadow-mode default: write to a sibling cache dir so the
+      # Python web/admin/trade roles continue reading Python's
+      # books.json untouched. Override to /tmp/avalant_cache for
+      # cutover.
+      AVALANT_FETCHER_CACHE_DIR: ${GO_FETCHER_CACHE_DIR:-/tmp/avalant_cache_go}
+      AVALANT_PREWARM_TOP_N: ${AVALANT_PREWARM_TOP_N:-20}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - avalant_cache:/tmp/avalant_cache         # mounted RW so we can
+                                                  # bootstrap top-N from
+                                                  # Python's funding.json
+      - avalant_cache_go:/tmp/avalant_cache_go   # shadow scratch
+      - avalant_logs:/var/log/avalant
+
   nginx:
     image: nginx:alpine
     restart: unless-stopped
@@ -253,4 +283,5 @@ volumes:
   certbot_certs:
   certbot_www:
   avalant_cache:
+  avalant_cache_go:
   avalant_logs:
