@@ -3221,7 +3221,7 @@ document.addEventListener('fullscreenchange',()=>{
 // ── Navigate modal ────────────────────────────────────────────────────────────
 // Sourced from /api/meta/venues via exchanges.js — fallback to the static
 // list while the meta fetch is in flight (fresh-load race).
-const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter'];
+const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter','backpack','kraken'];
 function _exchangesList(){
   const lst = (window.EX && window.EX.lists && window.EX.lists.screener_all) || [];
   return lst.length ? lst : _EXCHANGES_FALLBACK;
@@ -5232,7 +5232,7 @@ body{padding-bottom:44px;}
 
 <script>
 (function(){
-  const _FALLBACK = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx','whitebit','hyperliquid','aster','ethereal','paradex','extended','lighter'];
+  const _FALLBACK = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx','whitebit','hyperliquid','aster','ethereal','paradex','extended','lighter','backpack','kraken'];
   let EXES = (window.EX && window.EX.lists && window.EX.lists.screener_all && window.EX.lists.screener_all.length) ? window.EX.lists.screener_all : _FALLBACK;
   const LABELS = (window.EX && window.EX.labels) || {};
   const FRESH_S = 8, STALE_S = 30;

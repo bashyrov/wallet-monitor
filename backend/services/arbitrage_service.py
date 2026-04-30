@@ -612,6 +612,56 @@ async def _fetch_lighter() -> list[dict]:
     return out
 
 
+async def _fetch_kraken() -> list[dict]:
+    """Kraken Futures linear perps — public REST, no auth required.
+
+    Single endpoint: /derivatives/api/v3/tickers returns markPrice +
+    fundingRate + 24h volume in one call. We filter to PF_ prefix
+    (linear USD-collateralised perps; PI_ is the legacy inverse set
+    we ignore). Funding interval is 1h.
+
+    Symbol convention: PF_<TOKEN>USD. Kraken uses XBT for Bitcoin —
+    we normalise back to BTC so the screener cross-joins the way
+    `BTC` does on every other venue.
+    """
+    try:
+        r = await _http.get("https://futures.kraken.com/derivatives/api/v3/tickers")
+        r.raise_for_status()
+    except Exception:
+        return []
+    items = (r.json() or {}).get("tickers") or []
+    now_ts = int(time.time())
+    next_ts = (now_ts // 3600 + 1) * 3600
+    out: list[dict] = []
+    for t in items:
+        sym = t.get("symbol") or ""
+        if not sym.startswith("PF_") or not sym.endswith("USD"):
+            continue
+        if t.get("suspended"):
+            continue
+        token = sym[len("PF_"):-len("USD")]
+        if token == "XBT":
+            token = "BTC"
+        try:
+            price = float(t.get("markPrice") or t.get("last") or 0)
+            rate = float(t.get("fundingRate") or 0)
+            vol = float(t.get("volumeQuote") or t.get("vol24h") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price <= 0 or rate == 0:
+            continue
+        out.append({
+            "symbol": token,
+            "exchange": "kraken",
+            "price": price,
+            "rate": rate,
+            "next_ts": next_ts,
+            "interval_h": 1.0,
+            "volume_usd": vol,
+        })
+    return out
+
+
 async def _fetch_backpack() -> list[dict]:
     """Backpack perps — public REST, no auth required.
 
@@ -1223,6 +1273,7 @@ FETCHERS: dict[str, object] = {
     "extended":    _fetch_extended,
     "lighter":     _fetch_lighter,
     "backpack":    _fetch_backpack,
+    "kraken":      _fetch_kraken,
 }
 
 

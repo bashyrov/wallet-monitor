@@ -240,6 +240,20 @@ async def _fetch_direct_raw(exchange: str, symbol: str, limit: int) -> dict | No
         d = (r.json() or {}).get("tick", {}) or {}
         return {"bids": [[float(x[0]), float(x[1])] for x in d.get("bids", [])],
                 "asks": [[float(x[0]), float(x[1])] for x in d.get("asks", [])]}
+    if exchange == "kraken":
+        # Kraken Futures linear perps. Symbol: PF_<TOKEN>USD with the
+        # XBT alias for BTC. Orderbook returns bids sorted ASC (worst-first)
+        # — flip so callers see best-first.
+        token = "XBT" if symbol == "BTC" else symbol
+        r = await c.get(
+            f"https://futures.kraken.com/derivatives/api/v3/orderbook?symbol=PF_{token}USD"
+        )
+        d = (r.json() or {}).get("orderBook") or {}
+        bids = [[float(x[0]), float(x[1])] for x in d.get("bids", [])]
+        asks = [[float(x[0]), float(x[1])] for x in d.get("asks", [])]
+        bids.sort(key=lambda x: x[0], reverse=True)
+        asks.sort(key=lambda x: x[0])
+        return {"bids": bids, "asks": asks}
     if exchange == "backpack":
         # Backpack perp orderbook. Symbol shape: <BASE>_USDC_PERP.
         # Without &limit they return the full book (~6k levels) — cap to caller's
