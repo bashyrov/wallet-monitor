@@ -34,12 +34,26 @@ type Entry struct {
 // Store is the in-process cache. Safe for concurrent Store / Snapshot /
 // Touch calls.
 type Store struct {
-	mu     sync.RWMutex
-	books  map[string]*Entry // key = "<exchange>:<symbol>"
+	mu    sync.RWMutex
+	books map[string]*Entry // key = "<exchange>:<symbol>"
+
+	// Optional hook fired on every Store() call. Used by the Phase 6
+	// rollout to mirror updates into Redis (`ob:<ex>:<sym>` keys) so
+	// Python web's existing read path picks up Go-fetched data without
+	// any code change on the web side.
+	onUpdate func(exchange, symbol string, bids, asks []ws.Level)
 }
 
 func New() *Store {
 	return &Store{books: make(map[string]*Entry, 1024)}
+}
+
+// SetOnUpdate registers a hook called on every Store() with the parsed
+// snapshot. Set once at wiring time; nil hook is a no-op.
+func (s *Store) SetOnUpdate(fn func(exchange, symbol string, bids, asks []ws.Level)) {
+	s.mu.Lock()
+	s.onUpdate = fn
+	s.mu.Unlock()
 }
 
 // Store overwrites the entry for (exchange, symbol). Called by WS runner
@@ -47,7 +61,6 @@ func New() *Store {
 func (s *Store) Store(exchange, symbol string, snap ws.Snapshot, source string) {
 	key := exchange + ":" + symbol
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	e, ok := s.books[key]
 	if !ok {
 		e = &Entry{}
@@ -59,6 +72,12 @@ func (s *Store) Store(exchange, symbol string, snap ws.Snapshot, source string) 
 	e.Source = source
 	if e.LastRequestAt.IsZero() {
 		e.LastRequestAt = e.UpdatedAt
+	}
+	hook := s.onUpdate
+	s.mu.Unlock()
+
+	if hook != nil {
+		hook(exchange, symbol, snap.Bids, snap.Asks)
 	}
 }
 

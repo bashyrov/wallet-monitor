@@ -101,6 +101,26 @@ func main() {
 		}
 	}()
 
+	// Redis writer — mirror every orderbook update into ob:<ex>:<sym>
+	// keys (TTL 10s) matching Python's orderbook_redis.py write shape.
+	// This is the cutover-critical path: Python web's /orderbook reads
+	// Redis first, file second. Mirroring makes the cutover instant —
+	// once Go is writing to Redis, stopping Python fetcher is safe.
+	writer, werr := redisbus.NewWriter(cfg.RedisURL, cfg.RedisWriteThrottle)
+	if werr != nil {
+		l.Warn().Err(werr).Msg("redis writer disabled")
+	}
+	defer func() {
+		if writer != nil {
+			_ = writer.Close()
+		}
+	}()
+	if writer != nil {
+		store.SetOnUpdate(func(ex, sym string, bids, asks []ws.Level) {
+			writer.WriteBook(ex, sym, bids, asks)
+		})
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
