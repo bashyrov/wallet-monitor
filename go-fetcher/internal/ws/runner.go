@@ -120,7 +120,7 @@ func (r *Runner) SetSymbols(syms []string) {
 	if conn != nil && len(added) > 0 {
 		go func() {
 			if err := r.subscribe(conn, added); err != nil {
-				r.log.Debug().Err(err).Msg("delta subscribe failed")
+				r.log.Warn().Err(err).Msg("delta subscribe failed")
 			}
 		}()
 	}
@@ -311,8 +311,10 @@ func (r *Runner) subscribe(conn *websocket.Conn, syms []string) error {
 	delay := r.a.SubscribeDelay()
 	for i, f := range frames {
 		if err := r.safeSend(conn, f); err != nil {
+			r.log.Warn().Err(err).Int("frame", i).Msg("subscribe send failed")
 			return err
 		}
+		r.log.Info().Int("frame", i).Int("bytes", len(f)).Msg("subscribe frame sent")
 		if delay > 0 && i < len(frames)-1 {
 			time.Sleep(delay)
 		}
