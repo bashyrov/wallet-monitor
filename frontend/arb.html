@@ -1698,7 +1698,15 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // 300ms REST polling with a live feed, dropping the orderbook latency
   // from ~300ms (poll interval + RTT) to ~100ms (WS push).
   let _ptBookWs = null, _ptLastWsAt = 0, _ptWsBackoff = 1000;
-  const _ptBookPair = (side) => (side === 'long' ? LONG : SHORT).toLowerCase() + ':' + SYM.toUpperCase();
+  // On spot pages the LONG side is a CEX *spot* venue — its books live
+  // under '<ex>_spot:<symbol>' in books.json. Without the suffix the WS
+  // server hands back the futures book (or empty for spot-only tokens
+  // like PAXG / XAUT) and the ladder stays blank.
+  const _ptBookPair = (side) => {
+    const ex = (side === 'long' ? LONG : SHORT).toLowerCase();
+    const isSpotLeg = (side === 'long' && TYPE === 'spot');
+    return (isSpotLeg ? ex + '_spot' : ex) + ':' + SYM.toUpperCase();
+  };
   function _openPtBookWs() {
     if (_ptBookWs && (_ptBookWs.readyState === 0 || _ptBookWs.readyState === 1)) return;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
