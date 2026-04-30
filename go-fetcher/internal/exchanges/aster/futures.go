@@ -20,11 +20,12 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-const futuresWS = "wss://fstream.asterdex.com/stream?streams="
+// Bare /ws — same architecture fix as binance/futures.go (no
+// URL+SUBSCRIBE duplicate-subscribe).
+const futuresWS = "wss://fstream.asterdex.com/ws"
 
 type Futures struct {
 	store *cache.Store
-	syms  []string
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
@@ -34,21 +35,10 @@ func NewFutures(store *cache.Store) *ws.Runner {
 	})
 }
 
-func (a *Futures) Name() string { return "aster" }
-
-func (a *Futures) URL(_ context.Context) (string, error) {
-	if len(a.syms) == 0 {
-		return futuresWS + "btcusdt@depth20@100ms", nil
-	}
-	parts := make([]string, len(a.syms))
-	for i, s := range a.syms {
-		parts[i] = strings.ToLower(s) + "usdt@depth20@100ms"
-	}
-	return futuresWS + strings.Join(parts, "/"), nil
-}
+func (a *Futures) Name() string                          { return "aster" }
+func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	a.syms = symbols
 	if len(symbols) == 0 {
 		return nil
 	}

@@ -36,17 +36,19 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-const futuresWS = "wss://fstream.binance.com/stream?streams="
+// Bare WS endpoint — no streams in URL. We subscribe via SUBSCRIBE
+// method frames after connect. Mixing URL + SUBSCRIBE caused duplicate
+// subscribes on reconnect (URL re-subscribed via path AND SUBSCRIBE
+// re-subscribed via method) — Binance silently dropped the connection.
+const futuresWS = "wss://fstream.binance.com/ws"
 
 // Futures is the ws.Adapter implementation for Binance USDT-perp.
 type Futures struct {
 	store  *cache.Store
 	filter *tradingFilter
-	syms   []string // last subscribed set — used to rebuild the combined-stream URL
 }
 
-// NewFutures returns a Runner ready to call .Run(ctx) on. The store is the
-// shared cache. SetSymbols on the returned Runner triggers (re)subscribe.
+// NewFutures returns a Runner ready to call .Run(ctx) on.
 func NewFutures(store *cache.Store) *ws.Runner {
 	a := &Futures{store: store, filter: NewFuturesTradingFilter()}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
@@ -54,40 +56,13 @@ func NewFutures(store *cache.Store) *ws.Runner {
 	})
 }
 
-func (a *Futures) Name() string { return "binance" }
+func (a *Futures) Name() string                          { return "binance" }
+func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
-// URL builds the combined-stream URL with all wanted symbols. Binance
-// allows up to 1024 streams per connection — well above our top-100.
-//
-// IMPORTANT: this needs the wanted symbol set *before* the URL is built.
-// The runner's SetSymbols path holds the symbol mutex during the build —
-// see runner.go for the call sequence.
-func (a *Futures) URL(_ context.Context) (string, error) {
-	if len(a.syms) == 0 {
-		// Empty subscribe — connect to a placeholder so the runner has a
-		// live socket; first SetSymbols call will trigger a reconnect with
-		// the real list (see runner: SetSymbols + hasRemoved closes conn).
-		return futuresWS + "btcusdt@depth20@100ms", nil
-	}
-	parts := make([]string, len(a.syms))
-	for i, s := range a.syms {
-		parts[i] = strings.ToLower(s) + "usdt@depth20@100ms"
-	}
-	return futuresWS + strings.Join(parts, "/"), nil
-}
-
-// BuildSubscribe — Binance combined-stream URL already encodes the subs in
-// the WS path, so the SUBSCRIBE method frame is redundant (the connection
-// is already subscribed on connect). We return nil to skip sending. Delta
-// subscribes (added symbols) require sending {"method":"SUBSCRIBE","params":...}
-// — that path handles them correctly.
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	a.syms = symbols // remember for URL() rebuild on reconnect
 	if len(symbols) == 0 {
 		return nil
 	}
-	// Always send a SUBSCRIBE request — covers the delta-add case where
-	// URL was already used at connect time. Server ack is "result: null".
 	params := make([]string, len(symbols))
 	for i, s := range symbols {
 		params[i] = strings.ToLower(s) + "usdt@depth20@100ms"
