@@ -625,6 +625,43 @@ def set_pair_decision(db: Session, user_id: int, symbol: str,
     )
 
 
+def set_spot_short_pair_decision(db: Session, user_id: int, symbol: str,
+                                   spot_wallet_id: int,
+                                   short_exchange: str, short_wallet_id: int,
+                                   decision: str) -> None:
+    """Persist a spot/short pair decision. Uses the same TradePairDecision
+    table — leg_a is always the spot side, conventionally keyed
+    "<symbol>|spot|<wallet_id>"."""
+    if decision not in ("paired", "unpaired"):
+        raise TradeError("Invalid decision", kind="user")
+    leg_a, leg_b = _spot_short_pair_decision_keys(
+        (symbol or "").upper(), int(spot_wallet_id),
+        (short_exchange or "").lower(), int(short_wallet_id),
+    )
+    from backend.db.models import TradePairDecision
+    row = (
+        db.query(TradePairDecision)
+        .filter(
+            TradePairDecision.user_id == user_id,
+            TradePairDecision.leg_a_key == leg_a,
+            TradePairDecision.leg_b_key == leg_b,
+        )
+        .first()
+    )
+    if row:
+        row.decision = decision
+        row.updated_at = datetime.utcnow()
+    else:
+        db.add(TradePairDecision(
+            user_id=user_id, leg_a_key=leg_a, leg_b_key=leg_b, decision=decision,
+        ))
+    db.commit()
+    logger.info(
+        "Spot/short pair decision: user=%s sym=%s spot_wallet=%s short_ex=%s short_wallet=%s decision=%s",
+        user_id, symbol, spot_wallet_id, short_exchange, short_wallet_id, decision,
+    )
+
+
 def list_pair_decisions(db: Session, user_id: int) -> list[dict]:
     """Return active (decision != 'unpaired') pair decisions for the user.
 
@@ -733,16 +770,53 @@ def _pnl_can_pair(long_pos, short_pos, paired: set, unpaired: set) -> bool:
     return True
 
 
+def _spot_short_paired_keys(db: Session, user_id: int) -> set[tuple[str, str]]:
+    """Return {(symbol, short_exchange)} for which the user has an active
+    spot/short pair-decision marked 'paired'. Used to tag closed shorts
+    in the P&L tab so the UI hints that the spot side's PnL lives on the
+    venue rather than in our DB."""
+    from backend.db.models import TradePairDecision
+    out: set[tuple[str, str]] = set()
+    rows = (
+        db.query(TradePairDecision)
+        .filter(
+            TradePairDecision.user_id == user_id,
+            TradePairDecision.decision == "paired",
+        )
+        .all()
+    )
+    for r in rows:
+        if not (r.leg_a_key or "").startswith(""):
+            continue
+        try:
+            sym, leg_a_kind, _ = (r.leg_a_key or "").split("|")
+        except ValueError:
+            continue
+        if leg_a_kind != "spot":
+            continue
+        try:
+            _, short_ex, _ = (r.leg_b_key or "").split("|")
+        except ValueError:
+            continue
+        out.add((sym.upper(), short_ex.lower()))
+    return out
+
+
 def list_user_pnl(db: Session, user_id: int, *, days: int = 30) -> list[dict]:
     """P&L tab — closed positions over the last `days` days, grouped into
     pairs where pair-decision OR auto-detect (spread%±5% / 5-min window)
     applies. Partial-closed pairs (one leg closed, the other still open)
     are filtered out — those still belong in the live Positions tab.
+
+    Closed SHORT positions whose user has a 'paired' spot/short decision
+    on the same (symbol, exchange) are tagged `paired_with_spot=True` so
+    the UI can show them as basis-trade closures instead of plain shorts.
     """
     from backend.db.models import TradePosition
     from datetime import timedelta as _td
     cutoff = datetime.utcnow() - _td(days=int(days))
     paired, unpaired = _pnl_pair_decisions(db, user_id)
+    spot_paired_keys = _spot_short_paired_keys(db, user_id)
 
     closed = (
         db.query(TradePosition)
@@ -827,14 +901,20 @@ def list_user_pnl(db: Session, user_id: int, *, days: int = 30) -> list[dict]:
                 continue
 
         used_ids.add(r.id)
-        out.append(_serialize_pnl_single(r))
+        # Tag closed shorts that had a paired spot leg — the spot PnL lives
+        # on the venue, not in our DB, so we surface it as a basis-trade
+        # closure rather than a plain single short.
+        is_short = side == "sell"
+        ex_lc = (r.leg_a_exchange or "").lower()
+        paired_w_spot = is_short and (sym, ex_lc) in spot_paired_keys
+        out.append(_serialize_pnl_single(r, paired_with_spot=paired_w_spot))
 
     return out
 
 
-def _serialize_pnl_single(r) -> dict:
+def _serialize_pnl_single(r, *, paired_with_spot: bool = False) -> dict:
     return {
-        "kind": "single",
+        "kind": "spot_short_paired" if paired_with_spot else "single",
         "id": r.id,
         "symbol": r.symbol,
         "exchange": r.leg_a_exchange,
@@ -852,6 +932,11 @@ def _serialize_pnl_single(r) -> dict:
         "closed_at": r.closed_at.isoformat() if r.closed_at else None,
         "opened_externally": bool(r.opened_externally),
         "closed_externally": bool(r.closed_externally),
+        # Tag set on shorts that had a paired spot leg via TradePairDecision.
+        # The spot leg's PnL isn't tracked here (we don't keep historical
+        # balance snapshots), so the row is marked so the UI can hint the
+        # full P&L lives on the venue's spot history.
+        "paired_with_spot": paired_with_spot,
     }
 
 

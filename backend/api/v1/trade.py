@@ -96,6 +96,51 @@ async def spot_short_pairs(
     return await trade_service.list_user_spot_short_pairs(db, user.id)
 
 
+class SpotShortPairIn(BaseModel):
+    symbol: str
+    spot_wallet_id: int = Field(..., gt=0)
+    short_exchange: str = Field(..., min_length=2, max_length=24)
+    short_wallet_id: int = Field(..., gt=0)
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _v(cls, v): return _vsym(v)
+
+
+@router.post("/pair/spot-short/sync")
+def spot_short_pair_sync(
+    body: SpotShortPairIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        trade_service.set_spot_short_pair_decision(
+            db, user.id, body.symbol,
+            body.spot_wallet_id, body.short_exchange, body.short_wallet_id,
+            decision="paired",
+        )
+    except trade_service.TradeError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@router.post("/pair/spot-short/unsync")
+def spot_short_pair_unsync(
+    body: SpotShortPairIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        trade_service.set_spot_short_pair_decision(
+            db, user.id, body.symbol,
+            body.spot_wallet_id, body.short_exchange, body.short_wallet_id,
+            decision="unpaired",
+        )
+    except trade_service.TradeError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
 # ── Pair decisions ──────────────────────────────────────────────────────────
 class PairIn(BaseModel):
     symbol: str

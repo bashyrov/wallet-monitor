@@ -211,6 +211,10 @@ class WhitebitAdapter:
             sym_clean = market.replace("_PERP", "")
             if symbol and sym_clean.upper() != symbol.upper():
                 continue
+            try:
+                funding = float(p.get("fundingFee") or p.get("funding") or 0)
+            except (TypeError, ValueError):
+                funding = 0.0
             out.append({
                 "exchange": "whitebit",
                 "symbol": sym_clean,
@@ -219,6 +223,7 @@ class WhitebitAdapter:
                 "entry_price": float(p.get("entryPrice") or p.get("basePrice") or 0),
                 "mark_price": float(p.get("markPrice") or p.get("currentPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealizedPnl") or p.get("pnl") or 0),
+                "funding_pnl_usd": funding if funding else None,
                 "leverage": int(float(p.get("leverage") or 1)),
                 "position_id": market,
             })

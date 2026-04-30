@@ -4193,6 +4193,30 @@ async function _removeManualPair(sym, longEx, shortEx){
   } catch {}
 }
 
+// Spot/short pair confirm-or-reject handler. Bound to inline buttons in
+// the position card via data-payload (sym + spot_wallet_id + short ex/wallet).
+async function _ssPairDecide(btn, decision){
+  let payload;
+  try { payload = JSON.parse(btn.getAttribute('data-payload') || '{}'); }
+  catch { return; }
+  if (!payload.symbol || !payload.spot_wallet_id || !payload.short_exchange || !payload.short_wallet_id) return;
+  btn.disabled = true;
+  try {
+    const path = decision === 'paired' ? '/trade/pair/spot-short/sync' : '/trade/pair/spot-short/unsync';
+    const r = await Auth.apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) {
+      _toast('Pair update failed', 'error');
+      btn.disabled = false;
+      return;
+    }
+    _toast(decision === 'paired' ? 'Pair confirmed' : 'Marked as not paired', 'success');
+    refreshTradePositions();
+  } catch (e) {
+    _toast('Pair update failed', 'error');
+    btn.disabled = false;
+  }
+}
+
 // One-shot migration of any legacy localStorage entries → backend, then
 // clear the local cache so we don't keep re-uploading on every load.
 async function _migrateLegacyManualPairs(){
@@ -4960,6 +4984,25 @@ async function _reloadTradeStatus(){
   } catch {}
 }
 
+// Spot trade page URL per exchange — used after closing a short to offer
+// a manual spot-side close. We don't try to sell spot via our adapters
+// (16 venues, each with a different spot-API quirk); a redirect to the
+// venue's existing UI is safer and doesn't add a new abuse surface.
+const _SPOT_TRADE_URLS = {
+  binance:  (s) => `https://www.binance.com/en/trade/${s}_USDT?type=spot`,
+  bybit:    (s) => `https://www.bybit.com/en/trade/spot/${s}/USDT`,
+  okx:      (s) => `https://www.okx.com/trade-spot/${s.toLowerCase()}-usdt`,
+  gate:     (s) => `https://www.gate.com/trade/${s}_USDT`,
+  kucoin:   (s) => `https://www.kucoin.com/trade/${s}-USDT`,
+  mexc:     (s) => `https://www.mexc.com/exchange/${s}_USDT`,
+  bitget:   (s) => `https://www.bitget.com/spot/${s}USDT`,
+  bingx:    (s) => `https://bingx.com/spot/${s}USDT`,
+  htx:      (s) => `https://www.htx.com/trade/${s.toLowerCase()}_usdt`,
+  kraken:   (s) => `https://www.kraken.com/c/buy/${s.toLowerCase()}-usd`,
+  whitebit: (s) => `https://whitebit.com/trade/${s}_USDT`,
+  backpack: (s) => `https://backpack.exchange/trade/${s}_USDC`,
+};
+
 async function tradeClose(wid, posId){
   const ok = await Confirm.ask({
     title: 'Close this position?',
@@ -4968,6 +5011,25 @@ async function tradeClose(wid, posId){
     danger: true,
   });
   if (!ok) return;
+
+  // Snapshot the spot pair (if any) BEFORE closing — refreshTradePositions
+  // will clear it once the short is gone.
+  let pairedSpot = null;
+  try {
+    const pos = (_tpLastPositions || []).find(p => p.wallet_id === wid && (p.position_id === posId || p.symbol === SYM));
+    if (pos && (pos.side || '').toLowerCase() === 'sell') {
+      const r = await Auth.apiFetch('/trade/spot-short-pairs');
+      if (r.ok) {
+        const all = await r.json();
+        pairedSpot = (all || []).find(p =>
+          (p.symbol || '').toUpperCase() === SYM &&
+          (p.short.exchange || '').toLowerCase() === (pos.exchange || '').toLowerCase() &&
+          p.short.wallet_id === wid
+        );
+      }
+    }
+  } catch {}
+
   try {
     const r = await Auth.apiFetch('/trade/close', {
       method: 'POST',
@@ -4983,6 +5045,26 @@ async function tradeClose(wid, posId){
   } catch (e) {
     _toast('Close failed — see Order History for details', 'error');
     if (typeof accLoadOrders === 'function') accLoadOrders();
+    return;
+  }
+
+  // After a successful short close, prompt to also sell the paired spot
+  // on the venue's UI. Skipped silently if no pair / no URL template.
+  if (pairedSpot) {
+    const spotEx = (pairedSpot.spot.exchange || '').toLowerCase();
+    const url = _SPOT_TRADE_URLS[spotEx] && _SPOT_TRADE_URLS[spotEx](SYM);
+    const qty = Number(pairedSpot.spot.qty || 0).toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
+    if (url) {
+      const wantSell = await Confirm.ask({
+        title: 'Sell paired spot?',
+        message: `You hold ${qty} ${SYM} on ${EX_LABEL[spotEx] || spotEx}. Open ${EX_LABEL[spotEx] || spotEx} to sell?`,
+        okText: 'Open exchange ↗',
+        danger: false,
+      });
+      if (wantSell) {
+        window.open(url, '_blank', 'noopener');
+      }
+    }
   }
 }
 
@@ -5069,12 +5151,28 @@ async function refreshTradePositions(){
       if (sp) {
         const spotEx = EX_LABEL[(sp.spot.exchange||'').toLowerCase()] || sp.spot.exchange;
         const spotQty = Number(sp.spot.qty || 0).toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
-        const tag = sp.auto_paired ? '◆ auto' : '◇ manual';
         const reason = sp.match_reason || '';
-        spotPairRow = `<div style="grid-column:1/-1;display:flex;gap:6px;align-items:center;font-size:10.5px;padding:5px 4px 0;border-top:1px dashed var(--border);margin-top:5px;color:var(--text2)">
+        // Decision-aware label: 'auto' = our heuristic, 'paired' = user
+        // confirmed, 'unpaired' would never reach this row (filtered server-side).
+        const decided = sp.decision === 'paired';
+        const tag = decided ? '✓ confirmed' : '◆ auto-detected';
+        const tagColor = decided ? 'var(--green)' : 'var(--text3)';
+        const decisionPayload = _htmlEsc(JSON.stringify({
+          symbol: SYM,
+          spot_wallet_id: sp.spot.wallet_id,
+          short_exchange: sp.short.exchange,
+          short_wallet_id: sp.short.wallet_id,
+        }));
+        const buttonsHtml = decided
+          ? `<button class="ssp-btn-reject" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'unpaired')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Unpair</button>`
+          : `<button class="ssp-btn-pair" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'paired')" style="background:transparent;border:1px solid var(--green);color:var(--green);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Confirm pair</button>
+             <button class="ssp-btn-reject" data-payload='${decisionPayload}' onclick="_ssPairDecide(this, 'unpaired')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit">Not paired</button>`;
+        spotPairRow = `<div style="grid-column:1/-1;display:flex;gap:6px;align-items:center;font-size:10.5px;padding:5px 4px 0;border-top:1px dashed var(--border);margin-top:5px;color:var(--text2);flex-wrap:wrap">
           <span style="color:var(--green);font-weight:600">SPOT</span>
           <span>${spotQty} ${SYM} on ${spotEx}</span>
-          <span style="color:var(--text3);margin-left:auto">${tag} · ${_htmlEsc(reason)}</span>
+          <span style="color:${tagColor};font-size:10px">${tag}</span>
+          <span style="color:var(--text3);font-size:10px">${_htmlEsc(reason)}</span>
+          <span style="margin-left:auto;display:flex;gap:4px">${buttonsHtml}</span>
         </div>`;
       }
     }
