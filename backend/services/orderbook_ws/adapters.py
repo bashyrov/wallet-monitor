@@ -909,15 +909,17 @@ class BitgetSpotWS(WSAdapter):
     instType=SPOT. Full snapshot + delta protocol, need to maintain a local
     price→size dict to apply deltas (size='0' removes the level).
 
-    Bitget V2 expects the CLIENT to send a literal `ping` text frame
-    every 30 s; the server replies with `pong`. Without that the server
-    closes the socket with "no close frame received" after ~25 s — what
-    we were observing in production. heartbeat_frame() returns the raw
-    `ping` text and the base loop fires it on the configured interval.
+    Bitget V2 expects the CLIENT to send a literal `ping` text frame and
+    IGNORES websockets-lib control pings — leaving lib pings on causes the
+    server to drop us silently within ~30s, which is exactly what the spot
+    adapter was hitting in production ("no frames for 32s — forcing
+    reconnect"). Mirror the futures sister: disable lib pings + drive
+    keepalive purely via the heartbeat_frame text frame.
     """
     name = "bitget_spot"
     url = "wss://ws.bitget.com/v2/ws/public"
-    ping_interval = 25.0  # under Bitget's 30 s server-side timeout
+    ping_interval = None  # type: ignore[assignment]
+    ping_timeout = None   # type: ignore[assignment]
 
     def __init__(self, update_cb):
         super().__init__(update_cb)
