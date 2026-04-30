@@ -24,12 +24,14 @@ from .aster import AsterAdapter
 from .ethereal import EtherealAdapter
 from .htx import HtxAdapter
 from .lighter import LighterAdapter
+from .kraken import KrakenAdapter
 from .readonly import make_readonly_adapter
 
 # ── All exchanges/DEXes with full trade adapters ────────────────────────────
 TRADE_SUPPORTED: set[str] = {
-    # CEX (8)
+    # CEX (9)
     "binance", "bybit", "okx", "gate", "mexc", "kucoin", "bitget", "backpack",
+    "kraken",
     # BingX + WhiteBIT
     "bingx", "whitebit",
     # Perp DEX (4) — require private key / API wallet / ZK key
@@ -56,6 +58,7 @@ ADAPTERS: dict[str, type] = {
     "aster":        AsterAdapter,
     "ethereal":     EtherealAdapter,
     "lighter":      LighterAdapter,
+    "kraken":       KrakenAdapter,
 }
 
 # ── Read-only: Paradex still blocked (paradex-py SDK requires starknet-py

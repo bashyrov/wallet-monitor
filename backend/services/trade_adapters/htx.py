@@ -33,7 +33,45 @@ from backend.providers.exchanges._signing import b64_hmac_sha256
 
 SPOT_BASE = "https://api.huobi.pro"
 SPOT_HOST = "api.huobi.pro"
+FUT_BASE = "https://api.hbdm.com"
+FUT_HOST = "api.hbdm.com"
 logger = logging.getLogger("avalant.trade.htx")
+
+# Futures contract metadata cache (contract_size per symbol)
+_FUT_INSTR: dict[str, dict] = {}
+_FUT_INSTR_TS: float = 0.0
+_FUT_INSTR_TTL = 1800.0
+_FUT_INSTR_LOCK = asyncio.Lock()
+
+
+async def _fut_contracts() -> dict[str, dict]:
+    """{contract_code: {contract_size, price_tick, status}} for HTX linear swap."""
+    global _FUT_INSTR_TS
+    if _FUT_INSTR and (time.time() - _FUT_INSTR_TS) < _FUT_INSTR_TTL:
+        return _FUT_INSTR
+    async with _FUT_INSTR_LOCK:
+        if _FUT_INSTR and (time.time() - _FUT_INSTR_TS) < _FUT_INSTR_TTL:
+            return _FUT_INSTR
+        try:
+            async with httpx.AsyncClient(timeout=8) as c:
+                r = await c.get(f"{FUT_BASE}/linear-swap-api/v1/swap_contract_info")
+                items = (r.json() or {}).get("data") or []
+        except Exception:
+            return _FUT_INSTR
+        out = {}
+        for it in items:
+            code = it.get("contract_code") or ""
+            if not code or it.get("contract_status") != 1:
+                continue
+            out[code] = {
+                "contract_size": float(it.get("contract_size") or 0),
+                "price_tick": float(it.get("price_tick") or 0),
+            }
+        if out:
+            _FUT_INSTR.clear()
+            _FUT_INSTR.update(out)
+            _FUT_INSTR_TS = time.time()
+        return _FUT_INSTR
 
 # {api_key: (account_id, ts)} — HTX account ids are stable, cache forever.
 _ACCT_CACHE: dict[str, int] = {}
@@ -114,54 +152,159 @@ class HtxAdapter:
                 free_usdt += float(row.get("balance") or 0)
         return {"usdt": free_usdt}
 
+    # ── Futures-side signing (api.hbdm.com) ──────────────────────────────────
+    @classmethod
+    async def _signed_fut(
+        cls, creds: dict, method: str, path: str,
+        params: dict | None = None, body: dict | None = None,
+    ) -> Any:
+        import json as _j
+        p: dict[str, Any] = dict(params or {})
+        p["AccessKeyId"] = creds["api_key"]
+        p["SignatureMethod"] = "HmacSHA256"
+        p["SignatureVersion"] = "2"
+        p["Timestamp"] = _ts()
+        payload = _sign_payload(method, FUT_HOST, path, p)
+        p["Signature"] = b64_hmac_sha256(creds["api_secret"], payload)
+        qs = urlencode(p, quote_via=quote)
+        url = f"{FUT_BASE}{path}?{qs}"
+        async with httpx.AsyncClient(timeout=10) as c:
+            if method == "POST":
+                r = await c.post(
+                    url,
+                    content=_j.dumps(body or {}, separators=(",", ":")),
+                    headers={"Content-Type": "application/json"},
+                )
+            else:
+                r = await c.get(url)
+        if r.status_code >= 400:
+            raise RuntimeError(f"HTX-fut {r.status_code}: {r.text[:200]}")
+        data = r.json()
+        if isinstance(data, dict) and data.get("status") == "error":
+            raise RuntimeError(f"HTX-fut: {data.get('err_msg') or data.get('err-msg') or data}")
+        return data
+
     @classmethod
     async def set_leverage(
         cls, creds: dict, symbol: str, leverage: int, margin_mode: str,
     ) -> None:
-        raise RuntimeError(
-            "HTX futures trading not implemented in this adapter yet — spot only."
-        )
+        contract_code = f"{symbol.upper()}-USDT"
+        try:
+            await cls._signed_fut(creds, "POST",
+                                   "/linear-swap-api/v1/swap_cross_switch_lever_rate",
+                                   body={
+                                       "contract_code": contract_code,
+                                       "lever_rate": int(max(1, leverage)),
+                                   })
+        except Exception as e:
+            logger.info("htx set_leverage(%s, %sx) note: %s", contract_code, leverage, e)
 
     @classmethod
     async def place_order(
         cls, creds: dict, symbol: str, side: str,
         quantity: float, leverage: int = 1, margin_mode: str = "isolated",
     ) -> dict:
-        acct = await cls._spot_account_id(creds)
-        sym = cls._symbol(symbol)
-        side_l = side.lower()
-        if side_l not in ("buy", "sell"):
-            raise ValueError(f"invalid side {side}")
-        # MARKET orders on HTX: type = "<side>-market"; for market-buy the
-        # `amount` field is interpreted as USDT spent, for market-sell as
-        # base asset quantity. We expose quantity = base units, so
-        # market-buy needs to be routed differently — force limit
-        # execution at market for consistency.
-        body = {
-            "account-id": str(acct),
-            "amount": f"{quantity:.8f}".rstrip("0").rstrip("."),
-            "symbol": sym,
-            "type": f"{side_l}-market",
-            "source": "spot-api",
-        }
-        if side_l == "buy":
+        contract_code = f"{symbol.upper()}-USDT"
+        contracts = await _fut_contracts()
+        info = contracts.get(contract_code)
+        if not info:
+            raise RuntimeError(f"HTX-fut: no active contract for {contract_code}")
+        contract_size = info["contract_size"]
+        if contract_size <= 0:
+            raise RuntimeError(f"HTX-fut: invalid contract_size for {contract_code}")
+        # Quantity comes in as base units; HTX wants integer "volume" of contracts.
+        volume = int(round(float(quantity) / contract_size))
+        if volume <= 0:
             raise RuntimeError(
-                "HTX market-buy takes quote-asset (USDT) amount, not base quantity. "
-                "Use a limit order for market-buy until this adapter adds quote-mode."
+                f"HTX-fut: qty {quantity} below 1 contract ({contract_size} {symbol})"
             )
-        data = await cls._signed(creds, "POST", "/v1/order/orders/place", body=body)
-        order_id = str(data.get("data") or "")
-        return {"order_id": order_id, "avg_price": 0.0}  # fill-price requires /v1/order/orders/{id}
+        is_buy = (side or "").lower() in ("buy", "long")
+        body = {
+            "contract_code": contract_code,
+            "volume": volume,
+            "direction": "buy" if is_buy else "sell",
+            "offset": "open",
+            "lever_rate": int(max(1, leverage)),
+            "order_price_type": "optimal_20",  # market-equivalent: take best-of-20 levels
+        }
+        data = await cls._signed_fut(creds, "POST",
+                                      "/linear-swap-api/v1/swap_cross_order",
+                                      body=body)
+        d = data.get("data") or {}
+        return {"order_id": str(d.get("order_id_str") or d.get("order_id") or ""),
+                "avg_price": 0.0}
 
     @classmethod
     async def close_position(cls, creds: dict, symbol: str, side: str) -> dict:
-        raise RuntimeError(
-            "HTX is spot-only in this adapter — use place_order(side='sell', ...) "
-            "to unwind a spot position."
-        )
+        contract_code = f"{symbol.upper()}-USDT"
+        positions = await cls.list_positions(creds, symbol=symbol)
+        match = next((p for p in positions if (p.get("symbol") or "").upper() == symbol.upper()), None)
+        if not match:
+            return {"order_id": "", "closed_qty": 0.0, "realized_pnl_usd": 0.0}
+        qty = abs(float(match.get("quantity") or 0))
+        if qty <= 0:
+            return {"order_id": "", "closed_qty": 0.0, "realized_pnl_usd": 0.0}
+        contracts = await _fut_contracts()
+        info = contracts.get(contract_code) or {"contract_size": 0}
+        cs = info["contract_size"]
+        if cs <= 0:
+            return {"order_id": "", "closed_qty": 0.0, "realized_pnl_usd": 0.0}
+        volume = int(round(qty / cs))
+        opposite = "sell" if (match.get("side") or "").lower() == "buy" else "buy"
+        body = {
+            "contract_code": contract_code,
+            "volume": volume,
+            "direction": opposite,
+            "offset": "close",
+            "lever_rate": match.get("leverage") or 1,
+            "order_price_type": "optimal_20",
+        }
+        data = await cls._signed_fut(creds, "POST",
+                                      "/linear-swap-api/v1/swap_cross_order",
+                                      body=body)
+        d = data.get("data") or {}
+        return {
+            "order_id": str(d.get("order_id_str") or d.get("order_id") or ""),
+            "closed_qty": qty,
+            "realized_pnl_usd": float(match.get("unrealized_pnl_usd") or 0),
+        }
 
     @classmethod
     async def list_positions(
         cls, creds: dict, symbol: str | None = None,
     ) -> list[dict]:
-        return []
+        try:
+            data = await cls._signed_fut(creds, "POST",
+                                          "/linear-swap-api/v1/swap_cross_position_info",
+                                          body={})
+        except Exception as e:
+            logger.debug("htx list_positions: %s", e)
+            return []
+        items = data.get("data") or []
+        out: list[dict] = []
+        contracts = await _fut_contracts()
+        for p in items:
+            cc = p.get("contract_code") or ""
+            base = cc.replace("-USDT", "").upper()
+            if symbol and base != symbol.upper():
+                continue
+            cs = (contracts.get(cc) or {}).get("contract_size") or 1.0
+            try:
+                volume = float(p.get("volume") or 0)
+            except (TypeError, ValueError):
+                volume = 0.0
+            if volume == 0:
+                continue
+            qty_base = volume * cs
+            side = "buy" if (p.get("direction") or "").lower() == "buy" else "sell"
+            out.append({
+                "exchange": "htx",
+                "symbol": base,
+                "side": side,
+                "quantity": qty_base,
+                "entry_price": float(p.get("cost_open") or p.get("cost_hold") or 0),
+                "unrealized_pnl_usd": float(p.get("profit_unreal") or 0),
+                "leverage": int(float(p.get("lever_rate") or 0)) or None,
+                "margin_mode": "cross",
+            })
+        return out
