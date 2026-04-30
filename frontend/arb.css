@@ -609,14 +609,21 @@ body.light .bnav-item.active{color:#000;}
      give the pane itself a minimum so the table isn't crushed under
      its header. */
   #pane-overview.active, #pane-info.active, #pane-allrates.active{min-height:420px;}
-  /* Chart tabs: wrap to two rows so all six (Entry/Exit, Price History,
-     Funding History, Overview, Info, All Rates) are visible at once.
-     The previous horizontal-scroll-with-no-scrollbar approach hid the
-     last 2-3 tabs entirely on 360-560px viewports because the scrollbar
-     is hidden and there's no other affordance — users couldn't tell the
-     tabs were there to scroll to. */
-  .chart-tabs{flex-wrap:wrap;row-gap:0;column-gap:0;}
-  .chart-tab{flex:1 1 auto;min-width:0;justify-content:center;padding:0 8px;font-size:11.5px;}
+  /* Chart tabs stay on a single row with horizontal scroll. Wrapping to
+     two rows pushes the active pane content below the fold. To make the
+     hidden overflow discoverable, fade the right edge with a mask so
+     users see there's more to scroll to. */
+  .chart-tabs{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    overflow-y:hidden;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+    -webkit-mask-image:linear-gradient(to right, black 0, black calc(100% - 32px), transparent 100%);
+            mask-image:linear-gradient(to right, black 0, black calc(100% - 32px), transparent 100%);
+  }
+  .chart-tabs::-webkit-scrollbar{display:none;}
+  .chart-tab{flex-shrink:0;}
   /* Orderbooks hidden on mobile — charts above and P&L below give the signal */
   .col-books{display:none !important;}
   /* Right P&L panel → full width */
@@ -651,7 +658,7 @@ body.light .bnav-item.active{color:#000;}
   .ex-card:nth-child(n){border-bottom:1px solid var(--border);border-right:none;}
   .metric-block{min-width:100%;padding:10px 16px;border-bottom:1px solid var(--border);}
   .metric-val{font-size:22px;}
-  .chart-tab{padding:0 6px;font-size:11px;height:36px;}
+  .chart-tab{padding:0 12px;font-size:12px;height:38px;}
   .chart-controls{flex-wrap:wrap;gap:5px;padding:8px 10px;}
   /* Tab-scoped TF buttons bigger touch target */
   .tf-btn{padding:5px 10px;font-size:11px;}
