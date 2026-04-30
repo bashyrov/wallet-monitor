@@ -424,16 +424,6 @@ async def _fetch_direct_with_status(exchange: str, symbol: str, limit: int) -> t
     except Exception as exc:
         logger.debug("orderbook fetch %s/%s failed: %s", exchange, symbol, exc)
         _cb_record_error(exchange)
-        return FetchOutcome.ERROR, None, f"{type(exc).__name__}: {exc}"
-    if data is None:
-        # Unrecognised exchange — treat as a config error, not transient.
-        return FetchOutcome.ERROR, None, f"unsupported exchange: {exchange}"
-    if not data.get("bids") and not data.get("asks"):
-        # Empty book is not a circuit-breaker trip — venue answered cleanly,
-        # the symbol is just delisted/halted/thin. Don't penalise the venue
-        # for one bad symbol.
-        return FetchOutcome.EMPTY, data, None
-    _cb_record_success(exchange)
     return FetchOutcome.OK, data, None
 
 
