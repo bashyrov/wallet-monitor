@@ -99,6 +99,11 @@ func (d *Dumper) dump() error {
 		return err
 	}
 
+	// books.master.json — subset for spot/exotic venues so Python's
+	// merger stays happy if it's still consuming this file in parallel.
+	if err := d.writeMasterFile(snap); err != nil {
+		return err
+	}
 	return nil
 }
 

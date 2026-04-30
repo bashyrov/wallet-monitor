@@ -31,10 +31,23 @@ type Dumper struct {
 	store    *Store
 	cacheDir string
 	interval time.Duration
+	// Optional cross-pollination source. When set, every dump pass
+	// fills mark_price on funding ticks where the REST endpoint
+	// doesn't carry it (HTX is the canonical case) by looking up the
+	// midprice from the orderbook cache. obSource takes (exchange,
+	// symbol) and returns (bestBid, bestAsk, ok).
+	obSource func(exchange, symbol string) (bestBid, bestAsk float64, ok bool)
 }
 
 func NewDumper(store *Store, cacheDir string, interval time.Duration) *Dumper {
 	return &Dumper{store: store, cacheDir: cacheDir, interval: interval}
+}
+
+// SetOrderbookSource enables HTX-class mark-price fill from the live
+// orderbook cache. Caller passes a bound closure on the *cache.Store —
+// avoids importing cache here and any potential cycle.
+func (d *Dumper) SetOrderbookSource(fn func(exchange, symbol string) (bestBid, bestAsk float64, ok bool)) {
+	d.obSource = fn
 }
 
 func (d *Dumper) Run(ctx context.Context) error {
@@ -57,6 +70,24 @@ func (d *Dumper) Run(ctx context.Context) error {
 
 func (d *Dumper) dump() error {
 	byEx := d.store.SnapshotByExchange()
+
+	// Cross-pollinate: HTX-class venues that report rate-only via REST
+	// inherit mark price from the orderbook midprice.
+	if d.obSource != nil {
+		for venue, bucket := range byEx {
+			for sym, t := range bucket {
+				if t.MarkPrice != 0 {
+					continue
+				}
+				bid, ask, ok := d.obSource(venue, sym)
+				if !ok || bid <= 0 || ask <= 0 {
+					continue
+				}
+				t.MarkPrice = (bid + ask) / 2
+				bucket[sym] = t
+			}
+		}
+	}
 
 	// Per-venue files
 	for ex, bucket := range byEx {

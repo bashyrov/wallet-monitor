@@ -54,6 +54,8 @@ import (
 	fokx "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/okx"
 	fwhitebit "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/whitebit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
@@ -74,6 +76,30 @@ func main() {
 
 	fundingStore := funding.NewStore()
 	fundingDumper := funding.NewDumper(fundingStore, cfg.CacheDir, 500*time.Millisecond)
+	// HTX-class venues that report rate-only via REST inherit mark from
+	// the orderbook midprice — Phase 4 cross-pollination.
+	fundingDumper.SetOrderbookSource(func(ex, sym string) (float64, float64, bool) {
+		e, ok := store.Get(ex, sym)
+		if !ok || len(e.Bids) == 0 || len(e.Asks) == 0 {
+			return 0, 0, false
+		}
+		return e.Bids[0][0], e.Asks[0][0], true
+	})
+
+	mgr := symbols.New()
+
+	// Redis pub/sub bridge — book:subscribe / book:unsubscribe events
+	// from Python web roles route into the SymbolManager so /arb pair
+	// pages get on-demand subscribe behaviour.
+	subscriber, err := redisbus.NewSubscriber(cfg.RedisURL, mgr)
+	if err != nil {
+		l.Warn().Err(err).Msg("redis subscriber disabled — falling back to prewarm-only")
+	}
+	defer func() {
+		if subscriber != nil {
+			_ = subscriber.Close()
+		}
+	}()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -98,7 +124,22 @@ func main() {
 		return nil
 	})
 
-	// Funding adapters — all 12 venues live (Phase 3a + 3b).
+	// Symbol manager reconciliation loop.
+	g.Go(func() error {
+		mgr.Run(gctx)
+		return nil
+	})
+
+	// Redis subscriber (skipped silently if REDIS_URL unset).
+	if subscriber != nil {
+		g.Go(func() error {
+			subscriber.Run(gctx)
+			return nil
+		})
+	}
+
+	// Funding adapters — all 12 venues. Each registered with the
+	// SymbolManager so prewarm + user-touch flow applies uniformly.
 	for _, fa := range []funding.Adapter{
 		fbinance.New(),
 		fbybit.New(),
@@ -114,7 +155,7 @@ func main() {
 		fwhitebit.New(),
 	} {
 		runner := funding.NewRunner(fa, fundingStore)
-		runner.SetSymbols(bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN))
+		mgr.RegisterFunding(fa.Name(), runner)
 		g.Go(func() error {
 			runner.Run(gctx)
 			return nil
@@ -138,19 +179,23 @@ func main() {
 		}
 	})
 
-	// WS adapters. Each runner gets the bootstrap symbol list — top-N
-	// from Python's funding.json if present, else hardcoded majors. Phase 4
-	// replaces this with a Redis-driven prewarm + on-demand subscribe.
-	startSymbols := bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN)
-	l.Info().Strs("bootstrap_symbols", startSymbols).Msg("symbol bootstrap")
-	for _, runner := range buildRunners(cfg, store) {
-		runner := runner
-		runner.SetSymbols(startSymbols)
+	// Orderbook adapters. SymbolManager.RegisterOrderbook + the initial
+	// prewarm are the two inputs that decide what each runner subscribes
+	// to; from there reconcile() drives all updates (every 5s).
+	for _, e := range orderbookRegistry(cfg, store) {
+		mgr.RegisterOrderbook(e.name, e.runner)
+		runner := e.runner
 		g.Go(func() error {
 			runner.Run(gctx)
 			return nil
 		})
 	}
+
+	// Initial prewarm — top-N hot symbols apply to every venue. Once
+	// arb compute lands (Phase 4 future), per-venue prewarm replaces this.
+	startSymbols := bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN)
+	l.Info().Strs("bootstrap_symbols", startSymbols).Msg("symbol bootstrap")
+	mgr.PrewarmAll(startSymbols)
 
 	if err := g.Wait(); err != nil {
 		l.Error().Err(err).Msg("fetcher exited with error")
@@ -159,16 +204,23 @@ func main() {
 	l.Info().Msg("avalant-fetcher stopped cleanly")
 }
 
-// buildRunners — registry of all adapters. Empty in Phase 0; Phase 1 adds
-// Binance/Bybit/OKX, Phase 2 the rest. Filtered by cfg.WorkerExchanges
+// orderbookEntry pairs a venue name with its instantiated Runner so the
+// Symbol manager can route subscribe events by name.
+type orderbookEntry struct {
+	name   string
+	runner *ws.Runner
+}
+
+// orderbookRegistry instantiates every registered venue's WS adapter and
+// returns them paired with the venue name. Filtered by cfg.WorkerExchanges
 // when set (allows per-replica sharding).
-func buildRunners(cfg config.Config, store *cache.Store) []*ws.Runner {
-	type entry struct {
+func orderbookRegistry(cfg config.Config, store *cache.Store) []orderbookEntry {
+	type spec struct {
 		name    string
 		factory func() *ws.Runner
 	}
 
-	registry := []entry{
+	all := []spec{
 		// Phase 1 + 2 — all 16 orderbook WS adapters. Each implements
 		// ws.Adapter and addresses every applicable bug from PLAN.md by
 		// design. Order matches PLAN.md sequencing (simple → complex).
@@ -203,10 +255,10 @@ func buildRunners(cfg config.Config, store *cache.Store) []*ws.Runner {
 		return false
 	}
 
-	out := make([]*ws.Runner, 0, len(registry))
-	for _, e := range registry {
-		if want(e.name) {
-			out = append(out, e.factory())
+	out := make([]orderbookEntry, 0, len(all))
+	for _, s := range all {
+		if want(s.name) {
+			out = append(out, orderbookEntry{name: s.name, runner: s.factory()})
 		}
 	}
 	return out
