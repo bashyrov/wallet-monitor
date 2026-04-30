@@ -211,9 +211,20 @@ class WSAdapter:
         # Faster initial reconnect — most failures recover within 1-2s, no
         # reason to wait a whole second on the very first retry.
         backoff = 0.3
+        # Separate policy-violation backoff. 1008 (Binance) / 3001 (Aster)
+        # / 4400 / 4401 mean the server is REJECTING our subscribe — fast
+        # retry just burns CPU and deepens the ban. We hold a much longer
+        # cooldown that grows independently of `backoff` and only resets
+        # after we successfully process a data frame (not just connect).
+        policy_backoff = 30.0
+        # Tracks whether the current connection has received any data
+        # frame (vs just opening + immediately closing on subscribe ack).
+        # The transient `backoff` is only legitimately reset when frames
+        # actually flow.
         while not self._stop:
             hb_task: asyncio.Task | None = None
             wd_task: asyncio.Task | None = None
+            self._frames_this_session = 0
             try:
                 connect_url = await self.get_url()
                 async with websockets.connect(
@@ -228,7 +239,6 @@ class WSAdapter:
                     max_size=4 * 1024 * 1024,
                 ) as ws:
                     self._ws = ws
-                    backoff = 0.3
                     self._last_msg_at = time.time()
                     # Fresh connection — re-subscribe to everything we want
                     self._subscribed.clear()
@@ -298,6 +308,14 @@ class WSAdapter:
                             continue
                         sym, bids, asks = parsed
                         if bids or asks:
+                            self._frames_this_session += 1
+                            # Real data flowed — venue accepts us. Reset
+                            # both backoffs. Without this gate the policy
+                            # cooldown would never decay even when bans
+                            # are eventually lifted.
+                            if self._frames_this_session == 1:
+                                backoff = 0.3
+                                policy_backoff = 30.0
                             if sym not in self._first_seen:
                                 self._first_seen.add(sym)
                                 t0 = self._sub_sent_at.pop(sym, None)
@@ -310,6 +328,29 @@ class WSAdapter:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                # Detect server-side rejection codes that indicate persistent
+                # policy violation (rate-limit ban, IP-soft-ban, malformed
+                # subscribe). Fast retry on these just burns CPU and may
+                # deepen the ban — venues like Binance count rejected
+                # connections against a per-IP weight budget.
+                msg = str(exc)
+                is_policy = any(s in msg for s in (
+                    "1008", "3001", "4400", "4401",
+                    "policy violation", "illegal request", "Invalid request",
+                ))
+                if is_policy and self._frames_this_session == 0:
+                    # Server kicked us before any data flowed = likely a
+                    # subscribe rejection or IP soft-ban. Hold off long.
+                    jitter = random.uniform(0, 5)
+                    wait = policy_backoff + jitter
+                    logger.warning(
+                        "%s WS policy-violation: %s (cooldown %.1fs)",
+                        self.name, exc, wait,
+                    )
+                    policy_backoff = min(policy_backoff * 1.5, 600.0)  # cap 10 min
+                    self._ws = None
+                    await asyncio.sleep(wait)
+                    continue
                 jitter = random.uniform(0, 0.5)
                 wait = backoff + jitter
                 logger.warning("%s WS error: %s (retry in %.1fs)", self.name, exc, wait)
