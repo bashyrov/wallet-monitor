@@ -28,6 +28,9 @@ from backend.services.user_streams.bitget import BitgetUserStream
 from backend.services.user_streams.gate import GateUserStream
 from backend.services.user_streams.bingx import BingXUserStream
 from backend.services.user_streams.hyperliquid import HyperliquidUserStream
+from backend.services.user_streams.kucoin import KuCoinUserStream
+from backend.services.user_streams.mexc import MEXCUserStream
+from backend.services.user_streams.backpack import BackpackUserStream
 
 ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "binance": BinanceUserStream,
@@ -38,6 +41,9 @@ ADAPTERS: dict[str, Type[BaseUserStream]] = {
     "gate": GateUserStream,
     "bingx": BingXUserStream,
     "hyperliquid": HyperliquidUserStream,
+    "kucoin": KuCoinUserStream,
+    "mexc": MEXCUserStream,
+    "backpack": BackpackUserStream,
 }
 
 
