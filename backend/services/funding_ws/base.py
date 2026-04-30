@@ -268,8 +268,14 @@ class FundingWSAdapter:
     async def _run(self) -> None:
         import random
         backoff = 1.0
+        # Same policy-violation cooldown as orderbook_ws: when the venue
+        # closes with 1008/1011/3001/4400/4401 BEFORE any data flows, fast
+        # retry just burns CPU and may deepen the ban (HL closes funding WS
+        # with 1011 "Too many errors" on weight-exceeded). Hold off long.
+        policy_backoff = 30.0
         while not self._stop:
             hb_task: asyncio.Task | None = None
+            self._frames_this_session = 0
             try:
                 async with websockets.connect(
                     self.url,
@@ -280,7 +286,6 @@ class FundingWSAdapter:
                     max_size=8 * 1024 * 1024,  # funding broadcasts can be large (500-row arrays)
                 ) as ws:
                     self._ws = ws
-                    backoff = 1.0
                     subs = self.build_subscribe()
                     if subs is not None:
                         frames = subs if isinstance(subs, list) else [subs]
@@ -344,9 +349,37 @@ class FundingWSAdapter:
                                 pass
                         if changed:
                             self._last_update_ts = now
+                            # Real data flowed — venue accepts us. Reset both
+                            # backoffs only after frames actually flow, not
+                            # on bare TCP connect (the previous reset point
+                            # was hit even on rejected sessions and made
+                            # `backoff` never grow under sustained denial).
+                            if self._frames_this_session == 0:
+                                backoff = 1.0
+                                policy_backoff = 30.0
+                            self._frames_this_session += 1
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                msg = str(exc)
+                is_policy = any(s in msg for s in (
+                    "1008", "1011", "3001", "4400", "4401",
+                    "policy violation", "Too many errors",
+                    "illegal request", "Invalid request",
+                ))
+                if is_policy and self._frames_this_session == 0:
+                    jitter = random.uniform(0, 5)
+                    wait = policy_backoff + jitter
+                    logger.warning(
+                        "%s funding WS policy-violation: %s (cooldown %.1fs)",
+                        self.name, exc, wait,
+                    )
+                    policy_backoff = min(policy_backoff * 1.5, 600.0)
+                    self._ws = None
+                    if hb_task and not hb_task.done():
+                        hb_task.cancel()
+                    await asyncio.sleep(wait)
+                    continue
                 jitter = random.uniform(0, 1.0)
                 wait = backoff + jitter
                 logger.warning("%s funding WS error: %s (retry in %.1fs)", self.name, exc, wait)
