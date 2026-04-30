@@ -2177,7 +2177,9 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // One-time migration of legacy localStorage Sync entries on first load.
   if (typeof _migrateLegacyManualPairs === 'function') _migrateLegacyManualPairs();
   _ptLoadAcc();
-  setInterval(_ptLoadAcc, 10000);
+  // 30s — backend is WS-fed by 11 user-stream adapters + reconcile worker.
+  // 10s polling was needed when REST was authoritative; now it's just load.
+  setInterval(_ptLoadAcc, 30000);
 
   throw new Error('_arb_type_gate');  // stop the rest of this futures-specific script
 }
@@ -3853,12 +3855,16 @@ async function initAccBlock(){
   await _migrateLegacyManualPairs();
   await _refreshPairDecisions();
   await Promise.all([accLoadKeyCounts(), accLoadPositions(), accLoadBalances(), accLoadOrders(), accLoadPnl()]);
-  // Keep positions + balances + orders fresh; refresh pair decisions too
-  // so a Sync from another tab/device propagates within ~10s. P&L
-  // refreshes on a slower 30s cadence — the reconcile worker only writes
-  // closures every 60s, so 10s polling here would just be noise.
-  setInterval(() => { _refreshPairDecisions(); accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 10000);
-  setInterval(() => { accLoadPnl(); }, 30000);
+  // Backend is now WS-fed: WS user-streams (11 venues) push position/
+  // balance changes the moment they happen on the exchange, the
+  // snapshot store is always fresh, and the reconcile worker (60s)
+  // catches anything WS missed. Polling every 10s was needed when REST
+  // was the source of truth — now it just adds load. 30s gives near-
+  // real-time UX (events are usually visible within 1s of an exchange
+  // push because /ws/long-short funding ticks push price changes that
+  // trigger a re-render with current snapshot data).
+  setInterval(() => { _refreshPairDecisions(); accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 30000);
+  setInterval(() => { accLoadPnl(); }, 60000);
 }
 
 async function accLoadOrders(){

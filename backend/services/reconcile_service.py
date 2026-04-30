@@ -40,7 +40,13 @@ from backend.services import trade_service
 
 logger = logging.getLogger("avalant.reconcile")
 
-_LOOP_INTERVAL_S = 60.0
+# 5-minute reconcile cycle. WS user-streams (11 venues) handle live
+# position changes; reconcile is now a safety net for events the WS
+# missed (subscribe-time race, brief disconnect, externally-opened
+# positions on exchanges that don't push diffs). 60s was the right
+# cadence when REST was the only source — now it's overkill and
+# generates needless API load.
+_LOOP_INTERVAL_S = 300.0
 _thread: threading.Thread | None = None
 _stop = threading.Event()
 # Match window for linking a new trade_position to a recent trade_orders

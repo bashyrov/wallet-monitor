@@ -141,6 +141,14 @@ class StreamTask:
                 "invalid api", "api-key", "-2014", "-2015",
                 "-1003",  # Binance rate-limit error code
                 "signature", "unauthorized",
+                # IP-whitelist patterns (kucoin "invalid request ip",
+                # mexc "ip is not in the whitelist", bybit similar).
+                # User must whitelist the new server IP in their key.
+                "not in the whitelist", "not in whitelist",
+                "invalid request ip", "ip address is not allowed",
+                "trusted ip", "ip whitelist",
+                "400002",  # kucoin invalid timestamp / ip
+                "400006",  # kucoin invalid ip
             )):
                 logger.warning(
                     "userstream %s: AUTH/RATE-LIMIT FAILED for user=%s wallet=%s — "
