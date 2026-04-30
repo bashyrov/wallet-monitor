@@ -18,8 +18,14 @@ try:
     import orjson as _orjson
     class json:  # noqa: N801 — keep `json.loads` / `json.dumps` call sites unchanged
         loads = staticmethod(_orjson.loads)
-        # orjson.dumps returns bytes; ws.send accepts either bytes or str
-        dumps = staticmethod(_orjson.dumps)
+        # orjson.dumps returns bytes which the websockets lib serialises as
+        # a BINARY frame. Bitget V2's `books` channel silently rejects
+        # binary subscribes (other venues happen to accept either). Decode
+        # to str so subscribe frames go out as TEXT — matches what every
+        # caller of json.dumps() across the codebase expects.
+        @staticmethod
+        def dumps(*args, **kwargs) -> str:  # type: ignore[override]
+            return _orjson.dumps(*args, **kwargs).decode("utf-8")
 except ImportError:  # pragma: no cover
     json = _stdlib_json  # type: ignore[misc]
 
