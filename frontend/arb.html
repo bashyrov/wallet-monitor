@@ -4844,8 +4844,9 @@ function toggleTradeCard(ev){
 }
 
 // Mobile-only orderbook column toggle. The CSS hides .books-row by
-// default at ≤900px and reveals it when .col-books has .is-open. The
-// preference is persisted per-page so refreshes don't re-collapse.
+// default at ≤900px and reveals it when .col-books has .is-open.
+// State is intentionally NOT persisted — books reset to collapsed on
+// every page load and the user has to opt in each time.
 function _toggleBooksCol(btn){
   const col = btn.closest('.col-books');
   if (!col) return;
@@ -4853,31 +4854,7 @@ function _toggleBooksCol(btn){
   btn.setAttribute('aria-expanded', opened ? 'true' : 'false');
   const label = btn.querySelector('.bt-label');
   if (label) label.textContent = opened ? 'Hide order books' : 'Show order books';
-  try { localStorage.setItem('arb-books-open', opened ? '1' : '0'); } catch {}
 }
-
-(function _restoreBooksColState(){
-  try {
-    if (localStorage.getItem('arb-books-open') !== '1') return;
-    // Defer until DOM is ready in case col-books is rendered by a template.
-    const apply = () => {
-      document.querySelectorAll('.col-books').forEach(col => {
-        col.classList.add('is-open');
-        const btn = col.querySelector('.books-toggle');
-        if (btn) {
-          btn.setAttribute('aria-expanded', 'true');
-          const label = btn.querySelector('.bt-label');
-          if (label) label.textContent = 'Hide order books';
-        }
-      });
-    };
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', apply, { once: true });
-    } else {
-      apply();
-    }
-  } catch {}
-})();
 
 // Restore last open/closed state (default: open)
 (function _restoreTradeCardState(){
