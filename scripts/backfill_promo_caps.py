@@ -1,14 +1,13 @@
-"""One-shot backfill: cap per_user_max_uses=1 on all bonus_days promos.
+"""One-shot backfill: cap per_user_max_uses=1 on every promo with NULL.
 
-Without a per-user cap, a single user can redeem the same bonus_days
-code repeatedly and stack subscription days indefinitely. Tightens
-existing promos to the same default new ones now get from
-promo_service.create_code (default 1 when bonus_days > 0 and the
-admin didn't explicitly opt out).
+Without a per-user cap, a single user can redeem the same code over
+and over — stack discounts on parallel checkouts or extend bonus_days
+indefinitely. Tightens existing promos to the same default new ones
+get from promo_service.create_code.
 
-Idempotent — safe to re-run. Promos that already have an explicit
-per_user_max_uses (any value) are left untouched. Run from the
-repo root:
+Applies to ALL promos (discount and bonus-days alike). Promos that
+already have an explicit per_user_max_uses (any value) are left
+untouched. Idempotent — safe to re-run.
 
     python -m scripts.backfill_promo_caps          # dry-run
     python -m scripts.backfill_promo_caps --apply  # commit changes
@@ -32,17 +31,14 @@ def main() -> int:
     try:
         rows = (
             db.query(PromoCode)
-            .filter(
-                PromoCode.bonus_days > 0,
-                PromoCode.per_user_max_uses.is_(None),
-            )
+            .filter(PromoCode.per_user_max_uses.is_(None))
             .all()
         )
         if not rows:
             print("No leaky promos found — nothing to do.")
             return 0
 
-        print(f"Found {len(rows)} promos with bonus_days > 0 and per_user_max_uses=NULL:")
+        print(f"Found {len(rows)} promos with per_user_max_uses=NULL:")
         print(f"{'code':<20}{'discount_pct':<14}{'bonus_days':<12}{'used_count':<12}{'is_active'}")
         print("-" * 68)
         for r in rows:
