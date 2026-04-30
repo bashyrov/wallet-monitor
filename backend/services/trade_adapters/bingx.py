@@ -96,14 +96,20 @@ class BingxAdapter:
         params = dict(params or {})
         params["timestamp"] = int(time.time() * 1000)
         sig = cls._sign(params, creds["api_secret"])
-        params["signature"] = sig
+        # Build the query string EXACTLY the same way we signed it — passing
+        # params= to httpx may URL-encode differently (e.g. + vs %2B,
+        # comma vs %2C) which corrupts the signature. Append the query
+        # string to the URL ourselves so the bytes on the wire match what
+        # we hashed.
+        sorted_qs = urllib.parse.urlencode(sorted(params.items()), doseq=True)
+        sorted_qs += f"&signature={sig}"
         headers = {"X-BX-APIKEY": creds["api_key"]}
-        url = BASE + path
+        url = f"{BASE}{path}?{sorted_qs}"
         async with httpx.AsyncClient(timeout=10) as c:
             if method == "GET":
-                r = await c.get(url, params=params, headers=headers)
+                r = await c.get(url, headers=headers)
             else:
-                r = await c.post(url, params=params, headers=headers)
+                r = await c.post(url, headers=headers)
             body = r.json()
             code = str(body.get("code", 0))
             if code != "0" and r.status_code >= 400 or code not in ("0", "200"):
@@ -136,13 +142,33 @@ class BingxAdapter:
             except RuntimeError:
                 pass  # already set
 
+        async def _lev_side(s: str):
+            try:
+                await cls._req(creds, "POST", "/openApi/swap/v2/trade/leverage", {
+                    "symbol": sym, "side": s, "leverage": int(leverage),
+                })
+            except RuntimeError as e:
+                # 80012 / 109400 "leverage not modified" — fine
+                if not any(c in str(e) for c in ("80012", "109400", "100413")):
+                    raise
+
         async def _lev():
+            # Try BOTH first (one-way mode); on hedge-mode rejection, set
+            # both LONG and SHORT separately. BingX errors with code 100400
+            # "side error" if BOTH is sent in hedge mode.
             try:
                 await cls._req(creds, "POST", "/openApi/swap/v2/trade/leverage", {
                     "symbol": sym, "side": "BOTH", "leverage": int(leverage),
                 })
             except RuntimeError as e:
-                raise RuntimeError(_friendly_error(*_split_code(e)))
+                s = str(e)
+                if any(t in s for t in ("hedge", "Hedge", "side", "100400", "LONG", "SHORT")):
+                    # Hedge mode — set both legs
+                    await asyncio.gather(_lev_side("LONG"), _lev_side("SHORT"),
+                                          return_exceptions=True)
+                else:
+                    if not any(c in s for c in ("80012", "109400")):
+                        raise RuntimeError(_friendly_error(*_split_code(e)))
 
         await asyncio.gather(_mode(), _lev())
 
@@ -176,11 +202,15 @@ class BingxAdapter:
         step = info.get("stepSize") or 0
         qty_r = _round_qty(quantity, step, prec)
         qty_s = _qty_str(qty_r, prec)
+        # Hedge-mode accounts require positionSide=LONG/SHORT; one-way
+        # accounts ignore it. Sending it in both modes is safe.
+        position_side = "LONG" if side == "buy" else "SHORT"
         try:
             r = await cls._req(creds, "POST", "/openApi/swap/v2/trade/order", {
                 "symbol": sym,
                 "type": "MARKET",
                 "side": "BUY" if side == "buy" else "SELL",
+                "positionSide": position_side,
                 "quantity": qty_s,
             })
         except RuntimeError as e:
@@ -194,27 +224,60 @@ class BingxAdapter:
         sym = cls._symbol(symbol)
         positions = await cls._req(creds, "GET", "/openApi/swap/v2/user/positions", {"symbol": sym})
         pos_list = positions if isinstance(positions, list) else []
+        # In hedge mode `positionSide` is "LONG"/"SHORT". Match the requested
+        # side rather than picking the first non-zero leg, otherwise we'd
+        # close the wrong direction in a paired arb position.
         target = None
+        want_pside = "LONG" if side.lower() == "buy" else "SHORT"
         for p in pos_list:
             amt = float(p.get("positionAmt") or p.get("availableAmt") or 0)
-            if amt != 0:
+            if amt == 0:
+                continue
+            ps = (p.get("positionSide") or "").upper()
+            if ps == want_pside:
                 target = p
                 break
+        # Fallback: any non-zero leg (one-way mode where positionSide="BOTH")
+        if target is None:
+            for p in pos_list:
+                amt = float(p.get("positionAmt") or p.get("availableAmt") or 0)
+                if amt != 0:
+                    target = p
+                    break
         if not target:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         amt = float(target.get("positionAmt") or target.get("availableAmt") or 0)
-        reduce_side = "SELL" if amt > 0 else "BUY"
+        position_side = (target.get("positionSide") or "BOTH").upper()
+        # In HEDGE mode positionAmt is always positive (magnitude held);
+        # direction is encoded in positionSide. To close LONG you SELL,
+        # to close SHORT you BUY. In ONE-WAY (positionSide=BOTH) the sign
+        # of positionAmt encodes direction.
+        if position_side == "LONG":
+            reduce_side = "SELL"
+        elif position_side == "SHORT":
+            reduce_side = "BUY"
+        else:
+            reduce_side = "SELL" if amt > 0 else "BUY"
         info = (await _exchange_info()).get(sym) or {}
         prec = info.get("quantityPrecision", 2)
         qty_s = _qty_str(abs(amt), prec)
+        # Hedge mode (positionSide=LONG/SHORT): BingX rejects reduceOnly.
+        #   "In the Hedge mode, the 'ReduceOnly' field can not be filled."
+        # The positionSide already disambiguates which leg to flatten, so
+        # reduceOnly is redundant. One-way mode (positionSide=BOTH) accepts
+        # reduceOnly. Detect mode and adjust.
+        is_hedge = position_side in ("LONG", "SHORT")
+        body = {
+            "symbol": sym,
+            "type": "MARKET",
+            "side": reduce_side,
+            "positionSide": position_side,
+            "quantity": qty_s,
+        }
+        if not is_hedge:
+            body["reduceOnly"] = "true"
         try:
-            r = await cls._req(creds, "POST", "/openApi/swap/v2/trade/order", {
-                "symbol": sym,
-                "type": "MARKET",
-                "side": reduce_side,
-                "quantity": qty_s,
-                "reduceOnly": "true",
-            })
+            r = await cls._req(creds, "POST", "/openApi/swap/v2/trade/order", body)
         except RuntimeError as e:
             raise RuntimeError(_friendly_error(*_split_code(e)))
         return {"order_id": str((r or {}).get("orderId", "")), "closed_qty": abs(amt), "realized_pnl_usd": 0.0}
@@ -247,23 +310,42 @@ class BingxAdapter:
             if amt == 0:
                 continue
             sym_raw = str(p.get("symbol", ""))
+            # In hedge mode positionAmt is always positive, direction comes
+            # from positionSide. Reflect that in side parsing.
+            ps = (p.get("positionSide") or "").upper()
+            if ps == "LONG":
+                side_parsed = "buy"
+            elif ps == "SHORT":
+                side_parsed = "sell"
+            else:
+                side_parsed = "buy" if amt > 0 else "sell"
+            iso_flag = p.get("isolated")
+            if iso_flag is None:
+                margin_mode = None
+            else:
+                margin_mode = "isolated" if bool(iso_flag) else "cross"
             positions.append({
                 "exchange": "bingx",
                 "symbol": sym_raw.replace("-USDT", ""),
                 "_api_symbol": sym_raw,
-                "side": "buy" if amt > 0 else "sell",
+                "side": side_parsed,
                 "quantity": abs(amt),
                 "entry_price": float(p.get("avgPrice") or 0),
                 "mark_price": float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealizedProfit") or 0),
                 "leverage": int(float(p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": sym_raw,
             })
         if not positions:
             return []
         since_ms = int((_t.time() - 7 * 86400) * 1000)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
+            cached_funding(api_key, p["_api_symbol"],
+                           lambda p=p: cls._funding_pnl(creds, p["_api_symbol"], since_ms))
+            for p in positions
         ], return_exceptions=True)
         for p, f in zip(positions, fundings):
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None

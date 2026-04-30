@@ -7,6 +7,11 @@ __pycache__/
 dist/
 build/
 
+# ── Frontend ──────────────────────────────────────────
+# node_modules excluded; frontend/dist/ is committed (built bundles).
+frontend/node_modules/
+!frontend/dist/
+
 # ── Virtual envs ──────────────────────────────────────
 .venv/
 venv/

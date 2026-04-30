@@ -265,30 +265,27 @@ class BitgetAdapter:
         positions = await cls.list_positions(creds, symbol)
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
-        p = positions[0]
-        info = await _instrument_info(sym) or {}
-        vol_prec = info.get("volumePlace", 4)
-        reduce_side = "sell" if p["side"] == "buy" else "buy"
-        # Mirror the existing position's margin mode on close; passing a
-        # different one would be rejected by Bitget.
-        pos_mm = (p.get("margin_mode") or "isolated").lower()
-        mm_api = "isolated" if pos_mm.startswith("iso") else "crossed"
+        target = next((q for q in positions if (q.get("side") or "").lower() == side.lower()), positions[0])
+        p = target
+        # Use the dedicated /close-positions endpoint. It flushes the symbol's
+        # position regardless of one-way / hedge mode, so we don't have to
+        # match holdSide / tradeSide / posMode against the user's account
+        # configuration. In hedge mode this flushes both legs for the symbol;
+        # since arb workflows close one-leg-at-a-time we accept that side
+        # effect (the test harness above re-verifies the side of any leftovers).
         try:
-            data = await cls._signed(creds, "POST", "/api/v2/mix/order/place-order", body={
+            data = await cls._signed(creds, "POST", "/api/v2/mix/order/close-positions", body={
                 "symbol": sym,
                 "productType": "USDT-FUTURES",
-                "marginMode": mm_api,
-                "marginCoin": "USDT",
-                "side": reduce_side,
-                "tradeSide": "close",
-                "orderType": "market",
-                "size": _qty_str(p["quantity"], vol_prec),
             })
         except RuntimeError as e:
             code, msg = _split_code(e)
             raise RuntimeError(_friendly_bg(code, msg))
+        # Response shape: {"successList": [...], "failureList": [...]}
+        success = (data or {}).get("successList") or []
+        order_id = success[0].get("orderId", "") if success else ""
         return {
-            "order_id": str((data or {}).get("orderId", "")),
+            "order_id": str(order_id),
             "closed_qty": p["quantity"],
             "realized_pnl_usd": p.get("unrealized_pnl_usd", 0),
         }
@@ -322,6 +319,8 @@ class BitgetAdapter:
             if qty == 0:
                 continue
             hold_side = str(p.get("holdSide") or "").lower()
+            mm = (p.get("marginMode") or "").lower()
+            margin_mode = "isolated" if mm.startswith("iso") else ("cross" if mm else None)
             positions.append({
                 "exchange": "bitget",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
@@ -332,14 +331,19 @@ class BitgetAdapter:
                 "mark_price": float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealizedPL") or 0),
                 "leverage": int(float(p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("positionId", "")),
             })
         if not positions:
             return []
         import time as _t
         since_ms = int((_t.time() - 7 * 86400) * 1000)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
+            cached_funding(api_key, p["_api_symbol"],
+                           lambda p=p: cls._funding_pnl(creds, p["_api_symbol"], since_ms))
+            for p in positions
         ], return_exceptions=True)
         for p, f in zip(positions, fundings):
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None

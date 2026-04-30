@@ -162,7 +162,14 @@ class BybitAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         sym = cls._symbol(symbol)
-        # Parallel: independent endpoints; saves ~100-200ms on first order.
+        # Bybit V5 has TWO margin-mode endpoints:
+        #   /v5/position/switch-isolated  — per-symbol, works on Classic
+        #     and UTA-Inverse. UTA-Linear returns 100028 ("unified account
+        #     is forbidden").
+        #   /v5/account/set-margin-mode   — account-wide, used by UTA.
+        #     Values: REGULAR_MARGIN (cross) | ISOLATED_MARGIN | PORTFOLIO_MARGIN.
+        # We try the per-symbol path first (cheaper, doesn't affect other
+        # symbols), then fall back to the account-wide one for UTA users.
         async def _mode():
             try:
                 await cls._signed(creds, "POST", "/v5/position/switch-isolated", {
@@ -173,8 +180,29 @@ class BybitAdapter:
                     "sellLeverage": str(int(leverage)),
                 })
             except RuntimeError as e:
-                if not any(code in str(e) for code in ("110026", "110043", "110027")):
-                    raise
+                msg = str(e)
+                if any(code in msg for code in ("110026", "110043", "110027")):
+                    return  # already set / not modified / not allowed-but-OK
+                if "100028" in msg:
+                    # UTA-Linear: switch via account-level set-margin-mode.
+                    setting = "ISOLATED_MARGIN" if margin_mode == "isolated" else "REGULAR_MARGIN"
+                    try:
+                        await cls._signed(creds, "POST", "/v5/account/set-margin-mode", {
+                            "setMarginMode": setting,
+                        })
+                    except RuntimeError as e2:
+                        msg2 = str(e2)
+                        # ret_code 30086 = "already in this margin mode" — non-fatal
+                        if "30086" in msg2 or "already" in msg2.lower():
+                            return
+                        import logging as _l
+                        _l.getLogger("avalant.trade").warning(
+                            "Bybit set-margin-mode failed for %s (%s): %s",
+                            sym, setting, msg2,
+                        )
+                        return
+                    return
+                raise
 
         async def _lev():
             try:
@@ -185,6 +213,7 @@ class BybitAdapter:
                     "sellLeverage": str(int(leverage)),
                 })
             except RuntimeError as e:
+                # 110043 leverage not modified (already set) — non-fatal
                 if "110043" not in str(e):
                     raise
 
@@ -352,6 +381,21 @@ class BybitAdapter:
             if qty == 0:
                 continue
             side = "buy" if p.get("side") == "Buy" else "sell"
+            # Bybit margin-mode determination:
+            #   Classic: position.tradeMode (0=cross, 1=isolated) is reliable
+            #   UTA-Linear: tradeMode is always 0 regardless of actual mode;
+            #     truth is at account level (account.marginMode).
+            # If tradeMode is 1 we know it's isolated. If 0 we need to
+            # fall back to account info for UTA users.
+            tm = p.get("tradeMode")
+            if tm == 1:
+                margin_mode = "isolated"
+            elif tm == 0:
+                # Defer to account-level mode (one extra REST call, cached
+                # below for the rest of this list_positions invocation).
+                margin_mode = "_uta_lookup"
+            else:
+                margin_mode = None
             positions.append({
                 "exchange": "bybit",
                 "symbol": str(p.get("symbol", "")).replace("USDT", ""),
@@ -362,13 +406,36 @@ class BybitAdapter:
                 "mark_price":  float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealisedPnl") or 0),
                 "leverage": int(float(p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("symbol", "")),
             })
         if not positions:
             return []
+        # UTA users: fetch account.marginMode once and patch any position
+        # that we couldn't resolve from tradeMode alone.
+        needs_uta = any(p.get("margin_mode") == "_uta_lookup" for p in positions)
+        if needs_uta:
+            try:
+                info = await cls._signed(creds, "GET", "/v5/account/info", {})
+                acct_mode = (info.get("marginMode") or "").upper()
+                if acct_mode.startswith("ISOLATED"):
+                    uta_mode = "isolated"
+                elif acct_mode.startswith("REGULAR") or acct_mode.startswith("PORTFOLIO"):
+                    uta_mode = "cross"
+                else:
+                    uta_mode = None
+            except Exception:
+                uta_mode = None
+            for p in positions:
+                if p.get("margin_mode") == "_uta_lookup":
+                    p["margin_mode"] = uta_mode
         since_ms = int((time.time() - 7 * 86400) * 1000)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
+            cached_funding(api_key, p["_api_symbol"],
+                           lambda p=p: cls._funding_pnl(creds, p["_api_symbol"], since_ms))
+            for p in positions
         ], return_exceptions=True)
         for p, f in zip(positions, fundings):
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None

@@ -24,8 +24,10 @@ def is_ws_supported(exchange: str) -> bool:
     return exchange.lower() in ADAPTERS
 
 
-_REDIS_MIN_INTERVAL_S = 0.05  # cap per-symbol Redis writes — 20 Hz is
-# more than the 150 ms frontend poll; anything above is wasted Redis load.
+_REDIS_MIN_INTERVAL_S = 0.02  # cap per-symbol Redis writes — 50 Hz matches
+# Bybit's fastest-cadence stream (orderbook.50 = 20 ms). Above 50 Hz adds
+# Redis load without giving the broadcaster anything fresher to send. Was
+# 50 ms which left a noticeable lag on the /ws/book hot path.
 
 
 class WSManager:
@@ -35,7 +37,9 @@ class WSManager:
 
     def _update_cb(self, exchange: str, symbol: str, bids: list, asks: list) -> None:
         """Called by each adapter on every incoming book update."""
-        from backend.services.orderbook_cache import _book_cache
+        from backend.services.orderbook_cache import (
+            _book_cache, _first_req_at, _first_data_logged,
+        )
         key = f"{exchange}:{symbol}"
         entry = _book_cache.setdefault(key, {})
         now = time.time()
@@ -44,6 +48,14 @@ class WSManager:
         # keep last_request fresh so file-dumper includes it
         if "last_request" not in entry or now - entry.get("last_request", 0) > 5:
             entry["last_request"] = now
+        if key not in _first_data_logged:
+            t0 = _first_req_at.get(key)
+            if t0 is not None:
+                logger.info(
+                    "orderbook first-data %s via WS in %.2fs",
+                    key, now - t0,
+                )
+                _first_data_logged.add(key)
         # Publish to Redis at WS cadence — HTTP /orderbook no longer waits
         # for the 100-230 ms merger tick to propagate. Throttled per symbol
         # so bybit's 20 ms snapshot stream doesn't pound Redis at 12 K/s.

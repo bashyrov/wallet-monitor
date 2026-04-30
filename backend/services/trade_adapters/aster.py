@@ -175,29 +175,38 @@ class AsterAdapter:
             "realized_pnl_usd": p.get("unrealized_pnl_usd", 0),
         }
 
-    @classmethod
-    async def _funding_pnl(cls, creds: dict, api_symbol: str, since_ms: int) -> float | None:
-        """Aster is a Binance fork — same /fapi/v1/income with FUNDING_FEE."""
-        try:
-            data = await cls._signed(creds, "GET", "/fapi/v1/income", {
-                "symbol": api_symbol, "incomeType": "FUNDING_FEE",
-                "startTime": since_ms, "limit": 1000,
-            })
-            return sum(float(x.get("income") or 0) for x in (data or []))
-        except Exception:
-            return None
+    # Per-user funding cache — bulk fetch (no symbol filter) once per 30s
+    # then bucket by symbol in memory. Same shape as the Binance adapter.
+    _FUNDING_CACHE: dict[str, tuple[float, dict[str, float]]] = {}
+    _FUNDING_CACHE_TTL_S = 30.0
 
     @classmethod
-    async def _funding_pnl(cls, creds: dict, api_symbol: str, since_ms: int) -> float | None:
-        """Aster is a Binance fork — same /fapi/v1/income with FUNDING_FEE."""
+    async def _funding_pnl_bulk(cls, creds: dict, since_ms: int) -> dict[str, float]:
+        """Aster is a Binance fork — single /fapi/v1/income call returns
+        all FUNDING_FEE events for the account. Bucketed per-symbol in
+        memory so list_positions can dispatch with zero extra API calls."""
+        import time as _t
+        api_key = (creds.get("api_key") or "").strip()
+        cached = cls._FUNDING_CACHE.get(api_key)
+        if cached and (_t.time() - cached[0]) < cls._FUNDING_CACHE_TTL_S:
+            return cached[1]
         try:
             data = await cls._signed(creds, "GET", "/fapi/v1/income", {
-                "symbol": api_symbol, "incomeType": "FUNDING_FEE",
-                "startTime": since_ms, "limit": 1000,
+                "incomeType": "FUNDING_FEE",
+                "startTime": since_ms,
+                "limit": 1000,
             })
-            return sum(float(x.get("income") or 0) for x in (data or []))
         except Exception:
-            return None
+            return {}
+        out: dict[str, float] = {}
+        for ev in (data or []):
+            sym = (ev.get("symbol") or "").upper()
+            try:
+                out[sym] = out.get(sym, 0.0) + float(ev.get("income") or 0)
+            except (TypeError, ValueError):
+                continue
+        cls._FUNDING_CACHE[api_key] = (_t.time(), out)
+        return out
 
     @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
@@ -224,12 +233,11 @@ class AsterAdapter:
             return []
         import time as _t
         since_ms = int((_t.time() - 7 * 86400) * 1000)
-        fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_api_symbol"], since_ms) for p in positions
-        ], return_exceptions=True)
-        for p, f in zip(positions, fundings):
-            p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
-            p.pop("_api_symbol", None)
+        funding_by_sym = await cls._funding_pnl_bulk(creds, since_ms)
+        for p in positions:
+            api_sym = p.pop("_api_symbol", "")
+            v = funding_by_sym.get((api_sym or "").upper())
+            p["funding_pnl_usd"] = v if v is not None else None
         return positions
 
     @classmethod

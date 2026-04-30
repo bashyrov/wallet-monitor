@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections import defaultdict
 from decimal import Decimal
 from typing import Optional, Dict, Any
@@ -10,6 +11,8 @@ from binance.async_client import AsyncClient
 
 from backend.domain import ExchangeWallet
 from backend.providers.base_wallet_provider import BaseWalletProvider
+
+logger = logging.getLogger("avalant.providers.binance")
 from settings import settings
 
 from backend.providers.exchanges._signing import ms, hex_hmac_sha256
@@ -57,6 +60,28 @@ class BinanceProvider(BaseWalletProvider):
         r.raise_for_status()
         return r.json()
 
+    async def _signed_sapi_post(
+        self,
+        creds: dict[str, str],
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Same signing as _signed_sapi_get but POST. Used by funding-wallet
+        and a few other endpoints that strictly require POST."""
+        params = dict(params or {})
+        params["timestamp"] = int(ms())
+        params.setdefault("recvWindow", 5000)
+
+        qs = urlencode(params, doseq=True)
+        sig = hex_hmac_sha256(creds["api_secret"], qs)
+
+        url = f"{self.base_url}{path}?{qs}&signature={sig}"
+        headers = {"X-MBX-APIKEY": creds["api_key"]}
+
+        r = await self._http.post(url, headers=headers)
+        r.raise_for_status()
+        return r.json()
+
     async def get_spot_balance(self) -> dict[str, Decimal]:
         totals = defaultdict(Decimal)
         spot_account = await self.client.get_account()
@@ -95,24 +120,87 @@ class BinanceProvider(BaseWalletProvider):
 
         return {k: v for k, v in totals.items() if v != 0}
 
+    async def get_funding_wallet(self, creds: dict[str, str]) -> dict[str, Decimal]:
+        """Funding wallet — separate bucket for fiat conversions, P2P,
+        copy-trade balance, etc. Endpoint POSTs but is signed exactly like
+        the GETs, just a different verb."""
+        try:
+            data = await self._signed_sapi_post(creds, "/sapi/v1/asset/get-funding-asset", {})
+        except Exception as exc:
+            logger.warning("Binance funding-wallet fetch failed: %s", exc)
+            return {}
+        out = defaultdict(Decimal)
+        for it in (data or []):
+            asset = (it.get("asset") or "").strip()
+            free = Decimal(str(it.get("free") or "0"))
+            locked = Decimal(str(it.get("locked") or "0"))
+            freeze = Decimal(str(it.get("freeze") or "0"))
+            total = free + locked + freeze
+            if asset and total != 0:
+                out[asset] += total
+        return dict(out)
+
+    async def get_cross_margin_balances(self, creds: dict[str, str]) -> dict[str, Decimal]:
+        """Cross-margin account. Some users keep balances here for
+        leveraged spot trades. Endpoint: /sapi/v1/margin/account."""
+        try:
+            data = await self._signed_sapi_get(creds, "/sapi/v1/margin/account", {})
+        except Exception as exc:
+            logger.warning("Binance cross-margin fetch failed: %s", exc)
+            return {}
+        out = defaultdict(Decimal)
+        for asset_row in (data.get("userAssets") or []):
+            asset = (asset_row.get("asset") or "").strip()
+            net = Decimal(str(asset_row.get("netAsset") or "0"))
+            if asset and net != 0:
+                out[asset] += net
+        return dict(out)
+
     async def fetch_balance(self, wallet: ExchangeWallet):
         creds = self.creds_execution(wallet)
         self.client = await AsyncClient.create(creds["api_key"], creds["api_secret"])
 
         try:
-            spot, futures, earn = await asyncio.gather(
+            # Pull every Binance bucket in parallel. Each can fail
+            # independently (e.g. user disabled futures permission on the
+            # API key) — we log and continue rather than dropping the
+            # whole portfolio fetch.
+            spot, futures, earn, funding, cross_margin = await asyncio.gather(
                 self.get_spot_balance(),
                 self.get_futures_balance(),
                 self.get_simple_earn_balances(creds),
+                self.get_funding_wallet(creds),
+                self.get_cross_margin_balances(creds),
                 return_exceptions=True,
             )
 
-            if isinstance(spot, Exception): raise spot
-            if isinstance(futures, Exception): futures, upnl = {}, None
-            else: futures, upnl = futures
-            if isinstance(earn, Exception): earn = {}
+            if isinstance(spot, Exception):
+                logger.warning("Binance spot fetch failed: %s", spot)
+                raise spot
+            if isinstance(futures, Exception):
+                logger.warning("Binance futures fetch failed: %s", futures)
+                futures, upnl = {}, None
+            else:
+                futures, upnl = futures
+            if isinstance(earn, Exception):
+                logger.warning("Binance earn fetch failed: %s", earn)
+                earn = {}
+            if isinstance(funding, Exception):
+                logger.warning("Binance funding fetch failed: %s", funding)
+                funding = {}
+            if isinstance(cross_margin, Exception):
+                logger.warning("Binance cross-margin fetch failed: %s", cross_margin)
+                cross_margin = {}
 
-            return self._build_result(wallet, self.name, spot, futures, earn, upnl_usd=upnl)
+            # Merge funding + cross-margin into the spot bucket (these are
+            # all "spendable" classifications, not earn-locked).
+            merged_spot = defaultdict(Decimal, spot)
+            for asset, amt in funding.items():
+                merged_spot[asset] += amt
+            for asset, amt in cross_margin.items():
+                merged_spot[asset] += amt
+
+            return self._build_result(wallet, self.name, dict(merged_spot), futures, earn, upnl_usd=upnl)
 
         finally:
             await self.client.close_connection()

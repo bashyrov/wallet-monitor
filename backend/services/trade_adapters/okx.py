@@ -175,17 +175,31 @@ class OKXAdapter:
             await cls._req(creds, "POST", "/api/v5/account/set-position-mode", {"posMode": "long_short_mode"})
         except RuntimeError:
             pass
-        # Set margin mode via set-leverage (OKX sets margin mode per instrument with leverage call)
+        # In `long_short_mode` + `isolated`, OKX requires `posSide` on the
+        # set-leverage call (51000 "Parameter posSide error" otherwise).
+        # We have to set leverage for BOTH long and short legs since either
+        # could be opened next. In `cross`, posSide is forbidden.
+        async def _try(extra: dict) -> None:
+            try:
+                await cls._req(creds, "POST", "/api/v5/account/set-leverage", {
+                    "instId": inst_id,
+                    "lever": str(int(leverage)),
+                    "mgnMode": mgn,
+                    **extra,
+                })
+            except RuntimeError as e:
+                s = str(e)
+                # 59001 "Account level too low" / 59000 "Position exists" — non-fatal
+                if "59001" in s or "59000" in s:
+                    return
+                raise
         try:
-            await cls._req(creds, "POST", "/api/v5/account/set-leverage", {
-                "instId": inst_id,
-                "lever": str(int(leverage)),
-                "mgnMode": mgn,
-            })
+            if mgn == "isolated":
+                await asyncio.gather(_try({"posSide": "long"}), _try({"posSide": "short"}))
+            else:
+                await _try({})
         except RuntimeError as e:
-            s = str(e)
-            if "59001" not in s and "59000" not in s:
-                raise RuntimeError(_friendly_okx(*_split_code(e)))
+            raise RuntimeError(_friendly_okx(*_split_code(e)))
 
     # ── Preflight ──
     @classmethod
@@ -285,32 +299,34 @@ class OKXAdapter:
         positions = await cls.list_positions(creds, symbol)
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
-        p = positions[0]
-        close_side = "sell" if p["side"] == "buy" else "buy"
-        pos_side = "long" if p["side"] == "buy" else "short"
-        # Match the position's own margin mode — closing in a different mode
-        # would be rejected by OKX ("52000: Position & order tdMode mismatch").
+        # Match by side — in hedge mode the same instId can have both long
+        # and short positions; closing the wrong leg is silently no-op.
+        target = next((q for q in positions if (q.get("side") or "").lower() == side.lower()), positions[0])
+        p = target
+        pos_side = "long" if (p.get("side") or "").lower() == "buy" else "short"
         td_mode = p.get("margin_mode") or "isolated"
         td_mode = "isolated" if td_mode.lower().startswith("iso") else "cross"
 
-        instruments = await _instruments()
-        info = instruments.get(inst_id) or {}
-        ct_val = info.get("ctVal", 1)
-        contracts = p["quantity"] / ct_val if ct_val > 0 else p["quantity"]
-
+        # Use the dedicated close-position endpoint instead of placing an
+        # opposing reduce-only market order. The native flatten:
+        #   - succeeds in both one-way and hedge mode
+        #   - doesn't require us to compute the contract size correctly
+        #   - returns cleanly even when the position was just closed by
+        #     someone else (idempotent)
+        # Contrast: a reduce-only POST /trade/order with sz=contracts would
+        # error 51121 "all operations failed" if the cached qty is stale,
+        # which happens whenever the user just trimmed the position.
         try:
-            r = await cls._req(creds, "POST", "/api/v5/trade/order", {
+            r = await cls._req(creds, "POST", "/api/v5/trade/close-position", {
                 "instId": inst_id,
-                "tdMode": td_mode,
-                "side": close_side,
+                "mgnMode": td_mode,
                 "posSide": pos_side,
-                "ordType": "market",
-                "sz": _qty_to_str(contracts),
-                "reduceOnly": True,
             })
         except RuntimeError as e:
             raise RuntimeError(_friendly_okx(*_split_code(e)))
-        order_id = r[0].get("ordId", "") if r else ""
+        order_id = ""
+        if r and isinstance(r, list) and r[0].get("clOrdId"):
+            order_id = r[0].get("clOrdId", "")
         return {"order_id": str(order_id), "closed_qty": p["quantity"], "realized_pnl_usd": p.get("unrealized_pnl_usd", 0)}
 
     # ── Positions ──
@@ -332,12 +348,21 @@ class OKXAdapter:
         if symbol:
             path += f"&instId={_okx_symbol(symbol)}"
         data = await cls._req(creds, "GET", path)
+        # Pull instruments cache once — OKX position responses sometimes omit
+        # ctVal (and we'd silently default to 1, multiplying quantity by 1
+        # instead of e.g. 1000 for DOGE-USDT-SWAP). Quote: BUG: previously
+        # qty came back as 0.15 instead of 150 → close-by-coins computed
+        # contracts=0.15/1000=0.00015 and rejected as "qty too small".
+        instruments = await _instruments()
         positions = []
         for p in data:
             pos = float(p.get("pos") or 0)
             if pos == 0:
                 continue
-            ct_val = float(p.get("ctVal") or 1)
+            inst_id = p.get("instId", "")
+            # Prefer the position's own ctVal; fall back to instruments cache
+            # which is the source of truth from /public/instruments.
+            ct_val = float(p.get("ctVal") or 0) or instruments.get(inst_id, {}).get("ctVal", 1)
             qty_coins = abs(pos) * ct_val
             ps = p.get("posSide", "")
             if ps == "long":
@@ -346,8 +371,9 @@ class OKXAdapter:
                 side = "sell"
             else:
                 side = "buy" if pos > 0 else "sell"
-            inst_id = p.get("instId", "")
             sym = inst_id.replace("-USDT-SWAP", "")
+            mgn = (p.get("mgnMode") or "").lower()
+            margin_mode = "isolated" if mgn.startswith("iso") else ("cross" if mgn else None)
             positions.append({
                 "exchange": "okx",
                 "symbol": sym,
@@ -358,14 +384,19 @@ class OKXAdapter:
                 "mark_price": float(p.get("markPx") or 0),
                 "unrealized_pnl_usd": float(p.get("upl") or 0),
                 "leverage": int(float(p.get("lever") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": inst_id,
             })
         if not positions:
             return []
         import time as _t
         since_ms = int((_t.time() - 7 * 86400) * 1000)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_inst_id"], since_ms) for p in positions
+            cached_funding(api_key, p["_inst_id"],
+                           lambda p=p: cls._funding_pnl(creds, p["_inst_id"], since_ms))
+            for p in positions
         ], return_exceptions=True)
         for p, f in zip(positions, fundings):
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None

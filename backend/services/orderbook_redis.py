@@ -125,3 +125,34 @@ def read_book(exchange: str, symbol: str) -> dict | None:
     except Exception as exc:
         logger.debug("orderbook_redis read failed: %s", exc)
         return None
+
+
+def read_books_batch(pairs: list[str]) -> dict[str, dict]:
+    """Single MGET that fetches every requested `ob:<ex>:<sym>` key.
+
+    `pairs` are the bare "<ex>:<sym>" strings (no `ob:` prefix). Returns
+    a dict mapping pair → {ts, data}. Missing or malformed entries are
+    omitted. One round-trip to Redis no matter how many pairs — the
+    /ws/book broadcaster used to do N individual GET calls per tick,
+    which dominated app/app2 CPU.
+    """
+    if not pairs:
+        return {}
+    c = _get_client()
+    if c is None:
+        return {}
+    try:
+        keys = [f"ob:{p}" for p in pairs]
+        raws = c.mget(keys)
+    except Exception as exc:
+        logger.debug("orderbook_redis mget failed: %s", exc)
+        return {}
+    out: dict[str, dict] = {}
+    for pair, raw in zip(pairs, raws):
+        if not raw:
+            continue
+        try:
+            out[pair] = _loads(raw)
+        except Exception:
+            continue
+    return out

@@ -186,18 +186,29 @@ class KuCoinAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         sym = cls._symbol(symbol)
-        # KuCoin: margin mode is set per-position via the order's leverage param
-        # Change leverage via risk limit endpoint
+        # KuCoin enforces per-symbol margin mode independently of the order's
+        # marginMode field — if they don't match, place_order fails with
+        # "The order's margin mode does not match the selected one." Switch
+        # the symbol-level mode explicitly via the v2 endpoint before placing.
+        target_mode = "ISOLATED" if margin_mode == "isolated" else "CROSS"
+        try:
+            await cls._signed(creds, "POST", "/api/v2/position/changeMarginMode", body={
+                "symbol": sym,
+                "marginMode": target_mode,
+            })
+        except RuntimeError:
+            # Already in target mode → KuCoin returns an error code we don't
+            # care about (300013 / similar). Non-fatal.
+            pass
+
         try:
             await cls._signed(creds, "POST", "/api/v1/position/risk-limit-level/change", body={
                 "symbol": sym,
-                "level": 1,  # default risk level
+                "level": 1,
             })
         except RuntimeError:
-            pass  # risk limit may already be at level 1
+            pass
 
-        # Leverage is set on each order via the leverage parameter — no separate endpoint needed
-        # But we can validate the symbol exists
         info = await _instrument_info(sym)
         if not info:
             raise RuntimeError(f"{sym} is not listed on KuCoin Futures.")
@@ -259,13 +270,17 @@ class KuCoinAdapter:
             raise RuntimeError(f"Quantity below minimum for {sym}")
         # Clamp to the per-symbol max. Set a safe default if caller passed 0/neg.
         lev = max(1, min(int(leverage or 1), max_lev))
+        # KuCoin requires a unique clientOid per order — without it some
+        # accounts return "200002 Parameter error" (vague). Generate a UUID.
+        import uuid as _uuid
         body = {
+            "clientOid": str(_uuid.uuid4()),
             "symbol": sym,
             "side": "buy" if side == "buy" else "sell",
             "type": "market",
             "size": qty_lots,
             "leverage": lev,
-            # KuCoin Futures: tdMode "ISOLATED" | "CROSS" — without this the
+            # KuCoin Futures: marginMode "ISOLATED" | "CROSS" — without this the
             # server may default to whatever the account has cached.
             "marginMode": "ISOLATED" if margin_mode == "isolated" else "CROSS",
         }
@@ -284,8 +299,10 @@ class KuCoinAdapter:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
         p = positions[0]
         reduce_side = "sell" if p["side"] == "buy" else "buy"
+        import uuid as _uuid
         try:
             data = await cls._signed(creds, "POST", "/api/v1/orders", body={
+                "clientOid": str(_uuid.uuid4()),
                 "symbol": sym,
                 "side": reduce_side,
                 "type": "market",
@@ -337,11 +354,14 @@ class KuCoinAdapter:
             return []
         # 7-day window for accumulated funding. See binance adapter note.
         since_ms = int((_t.time() - 7 * 86400) * 1000)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         infos, fundings = await asyncio.gather(
             asyncio.gather(*[_instrument_info(p.get("symbol") or cls._symbol(str(p.get("symbol", "")).replace("USDTM", "")))
                              for p in pending], return_exceptions=True),
-            asyncio.gather(*[cls._funding_pnl(creds, p.get("symbol"), since_ms) for p in pending],
-                           return_exceptions=True),
+            asyncio.gather(*[cached_funding(api_key, p.get("symbol") or "",
+                                            lambda p=p: cls._funding_pnl(creds, p.get("symbol"), since_ms))
+                             for p in pending], return_exceptions=True),
         )
         out = []
         for p, info, funding in zip(pending, infos, fundings):
@@ -350,6 +370,15 @@ class KuCoinAdapter:
             if base_sym == "XBT":
                 base_sym = "BTC"
             multiplier = float((info or {}).get("multiplier") or 1) if not isinstance(info, Exception) else 1.0
+            # KuCoin: crossMode flag (true=cross, false=isolated). Some
+            # responses use marginMode string instead.
+            mm_raw = (p.get("marginMode") or "")
+            if mm_raw:
+                margin_mode = "isolated" if str(mm_raw).lower().startswith("iso") else "cross"
+            elif "crossMode" in p:
+                margin_mode = "cross" if bool(p.get("crossMode")) else "isolated"
+            else:
+                margin_mode = None
             out.append({
                 "exchange": "kucoin",
                 "symbol": base_sym,
@@ -360,6 +389,7 @@ class KuCoinAdapter:
                 "unrealized_pnl_usd": float(p.get("unrealisedPnl") or 0),
                 "funding_pnl_usd": funding if isinstance(funding, (int, float)) else None,
                 "leverage": int(float(p.get("realLeverage") or p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("id", "")),
             })
         return out

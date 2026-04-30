@@ -3,12 +3,25 @@ from __future__ import annotations
 
 import asyncio
 import gzip
-import json
+import json as _stdlib_json
 import logging
 import time
 from abc import abstractmethod
 
 import websockets
+
+# Hot-path JSON: orderbook WS workers parse 500-2000 messages/sec/exchange.
+# orjson is 2-3× faster than stdlib. Falls back to stdlib if the wheel
+# didn't install (shouldn't — pinned in requirements.txt — but the fetcher
+# boots either way).
+try:
+    import orjson as _orjson
+    class json:  # noqa: N801 — keep `json.loads` / `json.dumps` call sites unchanged
+        loads = staticmethod(_orjson.loads)
+        # orjson.dumps returns bytes; ws.send accepts either bytes or str
+        dumps = staticmethod(_orjson.dumps)
+except ImportError:  # pragma: no cover
+    json = _stdlib_json  # type: ignore[misc]
 
 logger = logging.getLogger("avalant.ws")
 

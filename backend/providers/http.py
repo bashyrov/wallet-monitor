@@ -43,6 +43,17 @@ class RetryClient(httpx.AsyncClient):
         max_retries: int = _DEFAULT_MAX_RETRIES,
         **kwargs,
     ):
+        # Default to a generous keepalive pool so repeat requests to the
+        # same host (e.g. one user-stream listenKey + many position pulls
+        # to fapi.binance.com) reuse the established TCP+TLS connection
+        # instead of re-handshaking. Caller can override by passing their
+        # own `limits=`.
+        kwargs.setdefault(
+            "limits",
+            httpx.Limits(max_connections=100,
+                         max_keepalive_connections=40,
+                         keepalive_expiry=60.0),
+        )
         super().__init__(*args, **kwargs)
         self._initial_wait = initial_wait
         self._max_wait = max_wait

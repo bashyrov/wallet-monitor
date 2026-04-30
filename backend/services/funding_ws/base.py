@@ -25,12 +25,23 @@ from __future__ import annotations
 
 import asyncio
 import gzip
-import json
+import json as _stdlib_json
 import logging
 import time
 from abc import abstractmethod
 
 import websockets
+
+# Hot-path JSON for funding WS: 11 venues, ~500-1500 msg/sec total.
+# orjson 2-3× faster than stdlib for parse/serialise. Falls back to stdlib
+# if the wheel didn't install.
+try:
+    import orjson as _orjson
+    class json:  # noqa: N801 — keep `json.loads` / `json.dumps` call sites unchanged
+        loads = staticmethod(_orjson.loads)
+        dumps = staticmethod(_orjson.dumps)
+except ImportError:  # pragma: no cover
+    json = _stdlib_json  # type: ignore[misc]
 
 logger = logging.getLogger("avalant.funding_ws")
 

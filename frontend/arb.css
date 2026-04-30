@@ -144,6 +144,46 @@ body.light .alert-block:hover{background:#F4F4F4;}
 .acc-side-short{color:var(--red);font-weight:700;font-size:11px;}
 .acc-pos-pnl-pos{color:var(--green);font-weight:700;}
 .acc-pos-pnl-neg{color:var(--red);font-weight:700;}
+
+/* Order History */
+.oh-status{display:inline-block;padding:2px 8px;border-radius:999px;font-family:'Inter',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;}
+.oh-status.filled  {background:rgba(26,255,171,0.12);color:#1AFFAB;border:1px solid rgba(26,255,171,0.30);}
+.oh-status.failed  {background:rgba(248,113,113,0.12);color:#F87171;border:1px solid rgba(248,113,113,0.30);}
+.oh-status.pending {background:rgba(229,192,123,0.12);color:#E5C07B;border:1px solid rgba(229,192,123,0.30);}
+.oh-status.partial {background:rgba(229,192,123,0.12);color:#E5C07B;border:1px solid rgba(229,192,123,0.30);}
+.oh-status.canceled{background:var(--surface3);color:var(--text3);border:1px solid var(--border);}
+.oh-side-buy {color:var(--green);font-weight:700;font-size:11px;}
+.oh-side-sell{color:var(--red);font-weight:700;font-size:11px;}
+.oh-intent{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;font-family:'Inter',sans-serif;font-weight:600;}
+.oh-chev{display:inline-block;width:14px;height:14px;cursor:pointer;color:var(--text3);transition:transform .15s, color .15s;}
+.oh-chev:hover{color:var(--text);}
+.oh-chev.open{transform:rotate(90deg);color:var(--green);}
+.oh-detail-row td{background:var(--surface);border-top:1px dashed var(--border);padding:14px 16px;}
+.oh-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;font-family:'Inter',sans-serif;font-size:11.5px;}
+.oh-detail-grid .k{color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:2px;}
+.oh-detail-grid .v{color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11.5px;word-break:break-all;}
+.oh-detail-err{margin-top:10px;padding:9px 12px;border-radius:7px;background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.25);color:#FFB6B6;font-size:11.5px;font-family:'Inter',sans-serif;line-height:1.5;}
+.oh-detail-err .lbl{font-size:9.5px;font-weight:700;color:#F87171;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;font-family:'Inter',sans-serif;}
+.oh-detail-raw{margin-top:10px;padding:9px 12px;border-radius:7px;background:var(--bg);border:1px solid var(--border);color:var(--text2);font-family:'JetBrains Mono',monospace;font-size:10.5px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;}
+
+/* P&L tab */
+.pnl-type{display:inline-block;padding:2px 8px;border-radius:999px;font-family:'Inter',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;}
+.pnl-type.pair  {background:rgba(146,91,214,0.14);color:#B27CE8;border:1px solid rgba(146,91,214,0.34);}
+.pnl-type.single{background:var(--surface3);color:var(--text2);border:1px solid var(--border);}
+.pnl-venue-row{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);}
+.pnl-venue-row .ex-pill{font-size:10px;padding:1px 6px;}
+.pnl-row-pos td{color:var(--text);}
+.pnl-pl-pos{color:var(--green);font-weight:700;}
+.pnl-pl-neg{color:var(--red);font-weight:700;}
+.pnl-detail-row td{background:var(--surface);border-top:1px dashed var(--border);padding:14px 16px;}
+.pnl-leg-card{display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 1fr;gap:8px 14px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;margin-bottom:8px;align-items:center;font-family:'JetBrains Mono',monospace;font-size:11.5px;}
+.pnl-leg-card .leg-label{font-family:'Inter',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;}
+.pnl-leg-card .leg-label.long{color:#1AFFAB;}
+.pnl-leg-card .leg-label.short{color:#F87171;}
+.pnl-leg-card .k{color:var(--text3);font-size:9.5px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;font-family:'Inter',sans-serif;}
+.pnl-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;}
+.pnl-summary .lbl{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:3px;font-family:'Inter',sans-serif;}
+.pnl-summary .val{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;}
 .acc-empty{padding:44px 24px;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.55;}
 .acc-empty .acc-empty-icon{width:46px;height:46px;margin:0 auto 14px;border-radius:12px;background:var(--surface);border:1px dashed var(--border);display:inline-flex;align-items:center;justify-content:center;color:var(--text3);}
 .acc-empty h4{margin:0 0 4px;font-size:13px;font-weight:700;color:var(--text);letter-spacing:-0.01em;font-family:'Inter',sans-serif;}
@@ -558,12 +598,17 @@ body.light .bnav-item.active{color:#000;}
   .main{flex-direction:column;overflow:visible;height:auto;min-height:0;flex:none;max-height:none;border-bottom:none;}
   .col-left,.col-books,.col-info{width:100%;min-width:0;border-right:none;border-left:none;border-bottom:none;}
   .col-left{max-height:none;}
-  /* Charts column: sized to its active tab, no forced 520px min that left
-     a big blank below short tabs like All Rates / Info. */
+  /* Charts column: sized to its active tab. Bumped chart heights so the
+     content is actually readable on phones — the previous 320/260 left
+     candle bodies as 1-2px slivers under labels and toolbars. */
   .tab-pane.active{min-height:auto;}
-  .spread-section{flex:0 0 auto;height:320px;}
-  .fund-section{flex:0 0 auto;height:260px;}
+  .spread-section{flex:0 0 auto;height:480px;}
+  .fund-section{flex:0 0 auto;height:380px;}
   .overview-scroll,.info-scroll,.all-ex-scroll{max-height:none;overflow-y:visible;}
+  /* For panes without an inner section (Overview / Info / All Rates),
+     give the pane itself a minimum so the table isn't crushed under
+     its header. */
+  #pane-overview.active, #pane-info.active, #pane-allrates.active{min-height:420px;}
   /* Chart tabs: never wrap to a second row — scroll horizontally so
      Entry/Exit / Price History / Funding / Overview / Info / All Rates
      stay on one line on 360px phones. */

@@ -65,10 +65,76 @@ async def orders(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Recent trade fills across the user's screener wallets. Used by the
-    Order History tab on /arb. Filters to type=trade|fill — deposits
-    and withdrawals don't belong here."""
+    """Order History — every order our service sent to a venue for this
+    user. Used by the Order History tab on /arb. Internal errors are
+    sanitized; exchange errors are surfaced verbatim."""
     return await trade_service.list_user_orders(db, user.id, limit=limit, symbol=symbol)
+
+
+@router.get("/pnl")
+def pnl(
+    days: int = Query(30, ge=1, le=365),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """P&L tab — closed positions over the last `days` days. Pair-eligible
+    closed singles are grouped via the user's pair decisions or the
+    spread%±5% / 5-min-window auto rule. Partial-closed pairs are filtered
+    out — those still belong on the live Positions tab."""
+    return trade_service.list_user_pnl(db, user.id, days=days)
+
+
+# ── Pair decisions ──────────────────────────────────────────────────────────
+class PairIn(BaseModel):
+    symbol: str
+    long_exchange: str = Field(..., min_length=2, max_length=24)
+    short_exchange: str = Field(..., min_length=2, max_length=24)
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _v(cls, v): return _vsym(v)
+
+
+@router.get("/pair/decisions")
+def pair_decisions(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Active 'paired' decisions for the user — drives the manual-pair list
+    in the Sync ⇆ modal, replacing the legacy localStorage cache."""
+    return trade_service.list_pair_decisions(db, user.id)
+
+
+@router.post("/pair/sync")
+def pair_sync(
+    body: PairIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        trade_service.set_pair_decision(
+            db, user.id, body.symbol, body.long_exchange, body.short_exchange,
+            decision="paired",
+        )
+    except trade_service.TradeError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@router.post("/pair/unsync")
+def pair_unsync(
+    body: PairIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        trade_service.set_pair_decision(
+            db, user.id, body.symbol, body.long_exchange, body.short_exchange,
+            decision="unpaired",
+        )
+    except trade_service.TradeError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
 
 
 @router.get("/supported")
@@ -149,9 +215,12 @@ async def open_arb(
                 db, user.id, wid, body.symbol, side, qty, lev, mode,
             )
             return {"leg": leg, "ok": True, **r}
+        except trade_service.TradeError as e:
+            msg = "Unexpected error — see Order History" if e.kind == "internal" else str(e)
+            return {"leg": leg, "ok": False, "error": msg}
         except Exception as e:
-            logger.warning("open-arb %s failed: %s", leg, e)
-            return {"leg": leg, "ok": False, "error": str(e)}
+            logger.exception("open-arb %s unexpected: %s", leg, e)
+            return {"leg": leg, "ok": False, "error": "Unexpected error — see Order History"}
 
     long_res, short_res = await asyncio.gather(
         _one("long",  body.long_wallet_id,  body.long_quantity,
@@ -188,11 +257,14 @@ async def open_order(
             db, user.id, body.wallet_id, body.symbol, body.side, body.quantity,
             body.leverage, body.margin_mode,
         )
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    except trade_service.TradeError as e:
+        # Internal errors are sanitized so we don't leak internals to the
+        # client. The truth is in trade_orders for support to see.
+        msg = "Unexpected error — see Order History" if e.kind == "internal" else str(e)
+        raise HTTPException(400, msg)
     except Exception as e:
-        logger.warning("open order failed uid=%s wid=%s: %s", user.id, body.wallet_id, e)
-        raise HTTPException(502, f"Exchange rejected order: {e}")
+        logger.exception("open order unexpected uid=%s wid=%s: %s", user.id, body.wallet_id, e)
+        raise HTTPException(500, "Unexpected error — see Order History")
 
 
 class CloseIn(BaseModel):
@@ -213,11 +285,12 @@ async def close_order(
 ):
     try:
         return await trade_service.close_position(db, user.id, body.wallet_id, body.symbol, body.side)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    except trade_service.TradeError as e:
+        msg = "Unexpected error — see Order History" if e.kind == "internal" else str(e)
+        raise HTTPException(400, msg)
     except Exception as e:
-        logger.warning("close failed uid=%s wid=%s: %s", user.id, body.wallet_id, e)
-        raise HTTPException(502, f"Exchange rejected close: {e}")
+        logger.exception("close unexpected uid=%s wid=%s: %s", user.id, body.wallet_id, e)
+        raise HTTPException(500, "Unexpected error — see Order History")
 
 
 # ── Enable/disable trading on a wallet (switch purpose) ──────────────────────

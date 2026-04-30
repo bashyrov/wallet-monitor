@@ -114,7 +114,23 @@ class MexcAdapter:
                 import json as jsonlib
                 r = await c.post(url, content=jsonlib.dumps(body or {}, separators=(",", ":")), headers=headers)
 
-        j = r.json()
+        # MEXC's edge (Akamai) returns 403 + HTML "Access Denied" for blocked
+        # IPs — without this guard we'd fall through to r.json() and surface
+        # an unhelpful JSONDecodeError. Detect non-JSON content and raise a
+        # clean message so the user understands their orders never reached
+        # MEXC's servers.
+        ct = (r.headers.get("content-type") or "").lower()
+        if "application/json" not in ct:
+            if r.status_code == 403 or "Access Denied" in r.text:
+                raise RuntimeError(
+                    "MEXC blocked at edge — REST trading is not available from this IP. "
+                    "Use a region MEXC accepts (Asia AWS) or trade via the web UI."
+                )
+            raise RuntimeError(f"MEXC HTTP {r.status_code}: non-JSON response (likely edge-blocked)")
+        try:
+            j = r.json()
+        except Exception:
+            raise RuntimeError(f"MEXC HTTP {r.status_code}: invalid JSON: {r.text[:200]}")
         code = j.get("code")
         if code is not None and int(code) != 0:
             raise RuntimeError(f"MEXC {code}: {j.get('msg', r.text)}")
@@ -264,6 +280,9 @@ class MexcAdapter:
             if vol == 0:
                 continue
             pos_type = int(p.get("positionType", 0))  # 1=long, 2=short
+            # MEXC openType: 1=isolated, 2=cross
+            ot = p.get("openType")
+            margin_mode = "isolated" if ot == 1 else ("cross" if ot == 2 else None)
             positions.append({
                 "exchange": "mexc",
                 "symbol": str(p.get("symbol", "")).replace("_USDT", ""),
@@ -274,14 +293,19 @@ class MexcAdapter:
                 "mark_price": float(p.get("markPrice") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealisedPnl") or 0),
                 "leverage": int(float(p.get("leverage") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": str(p.get("positionId", "")),
             })
         if not positions:
             return []
         import time as _t
         since_ms = int((_t.time() - 7 * 86400) * 1000)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_api_symbol"], p["position_id"], since_ms) for p in positions
+            cached_funding(api_key, f"{p['_api_symbol']}|{p['position_id']}",
+                           lambda p=p: cls._funding_pnl(creds, p["_api_symbol"], p["position_id"], since_ms))
+            for p in positions
         ], return_exceptions=True)
         for p, f in zip(positions, fundings):
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None

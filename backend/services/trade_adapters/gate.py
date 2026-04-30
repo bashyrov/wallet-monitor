@@ -147,23 +147,24 @@ class GateAdapter:
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         contract = _gate_symbol(symbol)
-        # Gate sets leverage per position; 0 = cross, >0 = isolated with that leverage
+        # Gate's leverage endpoint takes `leverage` as a QUERY parameter, not
+        # a JSON body — sending it in the body produces "Missing required
+        # parameter: leverage" even though the spec is unambiguous.
+        # 0 = cross, >0 = isolated with that leverage.
         lev_val = int(leverage) if margin_mode == "isolated" else 0
         try:
             await cls._req(creds, "POST",
                            f"/api/v4/futures/usdt/positions/{contract}/leverage",
-                           body={"leverage": lev_val})
+                           query={"leverage": lev_val})
         except RuntimeError as e:
             s = str(e)
-            # "leverage not changed" is fine
             if "not changed" not in s.lower() and "same" not in s.lower():
                 raise RuntimeError(_friendly_gate(*_split_label(e)))
-        # If isolated, also set the cross_leverage_limit (some Gate accounts need this)
         if margin_mode == "isolated":
             try:
                 await cls._req(creds, "POST",
                                f"/api/v4/futures/usdt/positions/{contract}/leverage",
-                               body={"leverage": int(leverage)})
+                               query={"leverage": int(leverage), "cross_leverage_limit": "0"})
             except RuntimeError:
                 pass
 
@@ -264,19 +265,53 @@ class GateAdapter:
         if not positions:
             return {"order_id": None, "closed_qty": 0, "realized_pnl_usd": 0}
 
-        p = positions[0]
+        # Find the position matching the side we want to close. In dual-mode
+        # there can be both long+short on the same contract — pick the right one.
+        target = None
+        for p in positions:
+            if (p.get("side") or "").lower() == side.lower():
+                target = p
+                break
+        if target is None:
+            target = positions[0]
+
+        # Gate has two close paths:
+        #   single-mode (default): `close: true, size: 0` auto-flattens whichever
+        #     direction holds an open position. Fails with POSITION_DUAL_MODE
+        #     if the account has dual-mode enabled.
+        #   dual-mode: must use `auto_size: "close_long"` or `"close_short"`
+        #     (size still 0). Identifies which leg to flatten explicitly.
+        # Try the single-mode path first; on dual-mode error, retry with auto_size.
+        body_single = {
+            "contract": contract,
+            "size": 0,
+            "price": "0",
+            "tif": "ioc",
+            "close": True,
+        }
         try:
-            r = await cls._req(creds, "POST", "/api/v4/futures/usdt/orders", body={
-                "contract": contract,
-                "size": 0,
-                "price": "0",
-                "tif": "ioc",
-                "close": True,
-            })
+            r = await cls._req(creds, "POST", "/api/v4/futures/usdt/orders", body=body_single)
         except RuntimeError as e:
-            raise RuntimeError(_friendly_gate(*_split_label(e)))
+            label, msg = _split_label(e)
+            if label == "POSITION_DUAL_MODE":
+                # Dual-mode: explicitly specify which leg to close.
+                auto_size = "close_long" if (target.get("side") or "").lower() == "buy" else "close_short"
+                body_dual = {
+                    "contract": contract,
+                    "size": 0,
+                    "price": "0",
+                    "tif": "ioc",
+                    "auto_size": auto_size,
+                    "reduce_only": True,
+                }
+                try:
+                    r = await cls._req(creds, "POST", "/api/v4/futures/usdt/orders", body=body_dual)
+                except RuntimeError as e2:
+                    raise RuntimeError(_friendly_gate(*_split_label(e2)))
+            else:
+                raise RuntimeError(_friendly_gate(label, msg))
         order_id = str(r.get("id", ""))
-        return {"order_id": order_id, "closed_qty": p["quantity"], "realized_pnl_usd": p.get("unrealized_pnl_usd", 0)}
+        return {"order_id": order_id, "closed_qty": target["quantity"], "realized_pnl_usd": target.get("unrealized_pnl_usd", 0)}
 
     # ── Positions ──
     @classmethod
@@ -306,6 +341,10 @@ class GateAdapter:
             quanto = all_contracts.get(cname, {}).get("quanto_multiplier", 1)
             qty_coins = abs(size) * quanto
             sym = cname.replace("_USDT", "")
+            # Gate: leverage=0 means cross margin; >0 means isolated with
+            # that leverage. There's no separate marginMode field.
+            lev_val = float(p.get("leverage") or 0)
+            margin_mode = "isolated" if lev_val > 0 else "cross"
             positions.append({
                 "exchange": "gate",
                 "symbol": sym,
@@ -315,14 +354,19 @@ class GateAdapter:
                 "entry_price": float(p.get("entry_price") or 0),
                 "mark_price": float(p.get("mark_price") or 0),
                 "unrealized_pnl_usd": float(p.get("unrealised_pnl") or 0),
-                "leverage": int(float(p.get("leverage") or 1)),
+                "leverage": int(lev_val) if lev_val > 0 else int(float(p.get("cross_leverage_limit") or 1)),
+                "margin_mode": margin_mode,
                 "position_id": cname,
             })
         if not positions:
             return []
         since_s = int(time.time() - 7 * 86400)
+        from backend.services.trade_adapters._funding_cache import cached_funding
+        api_key = (creds.get("api_key") or "").strip()
         fundings = await asyncio.gather(*[
-            cls._funding_pnl(creds, p["_contract"], since_s) for p in positions
+            cached_funding(api_key, p["_contract"],
+                           lambda p=p: cls._funding_pnl(creds, p["_contract"], since_s))
+            for p in positions
         ], return_exceptions=True)
         for p, f in zip(positions, fundings):
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None

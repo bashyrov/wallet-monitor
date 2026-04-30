@@ -454,52 +454,9 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
                 # No gross<=0 filter — show every spread, frontend styles
                 # negatives differently.
 
-                # In/Out from the live orderbook cache.
-                # Best  case: both sides streamed via WS → real bid/ask on
-                #             both legs, in_pct + out_pct use the actual
-                #             book top, book_ok=true.
-                # Mid   case: only the perp side is streamed (Contabo can
-                #             reach most perp WS endpoints; spot ones get
-                #             handshake-blocked from cloud IPs). Fall back
-                #             to spot ticker last-price as a synthetic
-                #             bid_sp = ask_sp = spot_price. Result is a
-                #             tighter approximation than basis_pct alone
-                #             and reads correctly in 95% of cases — error
-                #             is bounded by the spot bid-ask spread, which
-                #             is tiny on the venues that dominate volume.
-                #             book_ok stays false so the UI keeps the "·"
-                #             marker for full transparency.
-                # Worst case: neither side. Leaves null → "—" in the UI.
-                in_pct: float | None = None
-                out_pct: float | None = None
-                book_ok = False
-                try:
-                    from backend.services.orderbook_cache import top_levels
-                    spot_lv = top_levels(f"{spot_ex}_spot", sym)
-                    perp_lv = top_levels(perp_ex, sym)
-                    # Promote ticker prices to bid==ask synthetic levels
-                    # whenever the live book isn't there. We end up with
-                    # values for every row that has BOTH ticker prices —
-                    # i.e. every row in the feed. book_ok=true only when
-                    # both sides streamed real WS books.
-                    if spot_lv:
-                        bid_sp, ask_sp = spot_lv
-                    elif spot_price and spot_price > 0:
-                        bid_sp = ask_sp = float(spot_price)
-                    else:
-                        bid_sp = ask_sp = 0.0
-                    if perp_lv:
-                        bid_pr, ask_pr = perp_lv
-                    elif perp_price and perp_price > 0:
-                        bid_pr = ask_pr = float(perp_price)
-                    else:
-                        bid_pr = ask_pr = 0.0
-                    if ask_sp > 0 and ask_pr > 0 and bid_sp > 0 and bid_pr > 0:
-                        in_pct  = (bid_pr - ask_sp) / ask_sp * 100
-                        out_pct = (bid_sp - ask_pr) / ask_pr * 100
-                        book_ok = bool(spot_lv and perp_lv)
-                except Exception:
-                    pass
+                # In/Out compute REMOVED — screener now displays basis only,
+                # detail page reads basis_pct directly. No orderbook lookup
+                # in the spot-arb hot path.
 
                 opps.append({
                     "type": "spot_short",
@@ -513,9 +470,6 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
                     "funding_rate": rate_f,
                     "short_funding_8h": short_funding,
                     "basis_pct": basis_pct,
-                    "in_pct":  round(in_pct, 4)  if in_pct  is not None else None,
-                    "out_pct": round(out_pct, 4) if out_pct is not None else None,
-                    "book_ok": book_ok,
                     "gross": gross,
                     "fee_spot": fee_spot_rt,
                     "fee_perp": fee_perp_rt,

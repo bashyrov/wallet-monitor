@@ -282,11 +282,13 @@ class BingXWS(WSAdapter):
         return None
 
     def build_subscribe(self, symbols):
-        # @depth5 ships at the highest cadence — 100ms updates vs ~5-10s
-        # for depth100. We only need top-of-book for In/Out, so 5 levels
-        # is plenty.
+        # @depth20 — 20 levels at 100ms cadence. The earlier @depth5
+        # was only top-5 which is fine for In/Out but limits the
+        # /arb book pane. depth100 ships at 5-10s which is too slow
+        # for our use; depth20 is the sweet spot — 4× more levels at
+        # the same 100ms tick rate.
         return [
-            {"id": str(i), "reqType": "sub", "dataType": f"{s}-USDT@depth5"}
+            {"id": str(i), "reqType": "sub", "dataType": f"{s}-USDT@depth20"}
             for i, s in enumerate(symbols)
         ]
 
@@ -772,7 +774,7 @@ class KuCoinWS(WSAdapter):
 class ParadexWS(WSAdapter):
     """Paradex Starknet perp. Public WS at `wss://ws.api.prod.paradex.trade/v1`.
 
-    Channel naming: `order_book.{market}.snapshot@15@100ms` — 15 levels
+    Channel naming: `order_book.{market}.snapshot@20@100ms` — 20 levels
     per side, 100 ms broadcast cadence. Messages carry either snapshot
     (`update_type=s`) or delta (`update_type=d`) arrays of
     `{side, price, size}` objects. We keep a running dict per symbol.
@@ -796,7 +798,7 @@ class ParadexWS(WSAdapter):
             {
                 "jsonrpc": "2.0",
                 "method":  "subscribe",
-                "params":  {"channel": f"order_book.{s}-USD-PERP.snapshot@15@100ms"},
+                "params":  {"channel": f"order_book.{s}-USD-PERP.snapshot@20@100ms"},
                 "id":      i + 1,
             }
             for i, s in enumerate(symbols)
