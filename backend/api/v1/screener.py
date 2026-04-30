@@ -1495,28 +1495,31 @@ async def _book_broadcast_loop() -> None:
     400 ms to ~100-150 ms on the SG box.
     """
     from backend.services import orderbook_cache as _ob
-    from backend.services.orderbook_redis import read_book as _redis_read
+    from backend.services.orderbook_redis import read_books_batch as _redis_batch_read
     while True:
         try:
             await asyncio.sleep(BOOK_BROADCAST_INTERVAL)
             if not _book_ws_subs:
                 continue
+            # Collect every unique pair across all subscribed clients so we
+            # do exactly ONE Redis MGET per broadcast tick — instead of
+            # N (clients × pairs) individual GET calls. This was the
+            # dominant CPU cost on app/app2 once we moved to Redis reads.
+            all_pairs: set[str] = set()
+            for subs in _book_ws_subs.values():
+                if subs:
+                    all_pairs.update(subs.keys())
+            redis_entries = _redis_batch_read(list(all_pairs)) if all_pairs else {}
             file_memo_refreshed = False
             for ws, subs in list(_book_ws_subs.items()):
                 if not subs:
                     continue
                 payload: dict[str, dict] = {}
                 for pair, last_ts in list(subs.items()):
-                    # Try Redis first (fresh, per-update). pair is "ex:sym".
-                    entry = None
-                    try:
-                        ex, _, sym = pair.partition(":")
-                        if ex and sym:
-                            entry = _redis_read(ex, sym)
-                    except Exception:
-                        entry = None
+                    entry = redis_entries.get(pair)
                     if entry is None:
                         # Fallback to file-memo (master-merged books.json)
+                        # only when Redis didn't have the pair this tick.
                         if not file_memo_refreshed:
                             _ob._refresh_file_memo()
                             file_memo_refreshed = True
