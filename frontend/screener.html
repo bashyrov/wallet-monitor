@@ -1011,7 +1011,7 @@ function applyDex(keepPage = false) {
     if (minNet != null && r.net_profit < minNet) return false;
     if (minGS  != null && r.gross < minGS) return false;
     if (minVol && (r.perp_volume_usd || 0) < minVol) return false;
-    if (typeof r.in_pct !== 'number' || typeof r.out_pct !== 'number') return false;
+    if (r.in_pct === null || r.out_pct === null) return false;
     return true;
   });
   const dir = _dexSort.dir === 'desc' ? -1 : 1;
@@ -1230,7 +1230,7 @@ function applySpot(keepPage = false) {
     if (minNet != null && r.net_profit < minNet) return false;
     if (minGS  != null && r.gross < minGS) return false;
     if (minVol && (Math.min(r.spot_volume_usd || 0, r.perp_volume_usd || 0) < minVol)) return false;
-    if (typeof r.in_pct !== 'number' || typeof r.out_pct !== 'number') return false;
+    if (r.in_pct === null || r.out_pct === null) return false;
     return true;
   });
   const dir = _spotSort.dir === 'desc' ? -1 : 1;
@@ -1977,11 +1977,13 @@ function applyArb(keepPage = false) {
       if (vMin < minVol) return false;
     }
     if (_validOnly && !r.valid_price) return false;
-    // Only show rows for which In/Out has resolved to a real number.
-    // Rows whose books haven't been subscribed yet stay out of the
-    // displayed table; their keys are still warmed by refreshInOut so
-    // they appear automatically once the books land.
-    if (typeof r.in_pct !== 'number' || typeof r.out_pct !== 'number') return false;
+    // Hide rows whose In/Out has been positively determined as null
+    // (the orderbook isn't available on one of the venues). Rows still
+    // warming (in_pct === undefined — fetch hasn't returned yet) stay
+    // visible with the "…" placeholder so first-paint isn't blank.
+    // Once the next /in-out tick lands, this filter will pull them in
+    // or out depending on whether data resolved.
+    if (r.in_pct === null || r.out_pct === null) return false;
     return true;
   });
   if (!keepPage) _pageA = 0;
