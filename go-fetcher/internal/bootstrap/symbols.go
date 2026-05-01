@@ -27,22 +27,30 @@ var Default20 = []string{
 	"FIL", "ETC", "NEAR", "ICP", "APT",
 }
 
-// TopSymbols returns up to `n` symbols. We used to try to read top-N
-// from Python's funding.json but the schema there is per-(symbol,
-// exchange) row with no per-symbol aggregate spread — so picking
-// top-N from there gave arbitrary symbols and hit "subscribe to a
-// coin that doesn't exist on Hyperliquid/Bybit" → broken pipes.
+// TopSymbols returns up to `n` symbols ranked by max 24h volume across
+// all exchanges. Reads funding.json (written by funding/files.go) which
+// contains a row per (symbol, exchange). Falls back to Default20 when
+// the file is absent (cold start) or unparseable.
 //
-// Default20 is hand-picked majors that exist on all 16 venues. Once
-// arb compute lands in the Go fetcher itself, the prewarm becomes
-// data-driven.
+// Why this exists:
+//   - At small n (≤20) Default20 is fine — those are the universal
+//     majors that exist on every venue.
+//   - At larger n (e.g. 1000) we need actual top-N by liquidity so
+//     prewarm covers what users will see in the screener. Volume rank
+//     is the right metric: a token with no volume isn't worth keeping
+//     in the WS subscription set even if some venue lists it.
 func TopSymbols(cacheDir string, n int) []string {
+	if got := readFromFunding(cacheDir, n); len(got) >= 5 {
+		return got
+	}
 	if n >= len(Default20) {
 		return Default20
 	}
 	return Default20[:n]
 }
 
+// readFromFunding ranks symbols by max(volume_usd_24h) across all
+// venues that quote them. Returns up to n unique symbols, descending.
 func readFromFunding(cacheDir string, n int) []string {
 	path := filepath.Join(cacheDir, "funding.json")
 	data, err := os.ReadFile(path)
@@ -50,14 +58,13 @@ func readFromFunding(cacheDir string, n int) []string {
 		return nil
 	}
 
-	// Python writes funding.json as:
-	//   { "rows": [{ "symbol": "...", "rates": {...}, "spread_pct": ... }, ...] }
-	// We use spread_pct (abs) as the sort key — matches the prewarm
-	// ranking in arbitrage_service.
+	// funding.json shape (per-(symbol, exchange) row):
+	//   { "rows": [{"symbol":"BTC","exchange":"binance","volume_usd_24h":...,
+	//               "rate":..., "next_funding_ts":..., "interval_h":...}, ...] }
 	var doc struct {
 		Rows []struct {
-			Symbol     string  `json:"symbol"`
-			SpreadPct  float64 `json:"spread_pct"`
+			Symbol       string  `json:"symbol"`
+			VolumeUSD24h float64 `json:"volume_usd_24h"`
 		} `json:"rows"`
 	}
 	if err := sonic.Unmarshal(data, &doc); err != nil {
@@ -67,25 +74,37 @@ func readFromFunding(cacheDir string, n int) []string {
 		return nil
 	}
 
-	// Sort by abs(spread_pct) desc.
-	sort.Slice(doc.Rows, func(i, j int) bool {
-		return abs(doc.Rows[i].SpreadPct) > abs(doc.Rows[j].SpreadPct)
-	})
-
-	out := make([]string, 0, n)
-	seen := make(map[string]struct{}, n)
+	// Aggregate: for each symbol take the max volume across the venues
+	// that list it. Median or sum could also work, but max best
+	// represents "this symbol has somewhere to trade".
+	maxVol := make(map[string]float64, len(doc.Rows))
 	for _, r := range doc.Rows {
 		if r.Symbol == "" {
 			continue
 		}
-		if _, dup := seen[r.Symbol]; dup {
-			continue
+		if v := r.VolumeUSD24h; v > maxVol[r.Symbol] {
+			maxVol[r.Symbol] = v
 		}
-		seen[r.Symbol] = struct{}{}
-		out = append(out, r.Symbol)
-		if len(out) >= n {
-			break
+	}
+	type sv struct {
+		sym string
+		vol float64
+	}
+	ranked := make([]sv, 0, len(maxVol))
+	for s, v := range maxVol {
+		if v <= 0 {
+			continue // no volume info — won't make a usable WS subscription
 		}
+		ranked = append(ranked, sv{sym: s, vol: v})
+	}
+	sort.Slice(ranked, func(i, j int) bool { return ranked[i].vol > ranked[j].vol })
+
+	if n > len(ranked) {
+		n = len(ranked)
+	}
+	out := make([]string, n)
+	for i := 0; i < n; i++ {
+		out[i] = ranked[i].sym
 	}
 	return out
 }
