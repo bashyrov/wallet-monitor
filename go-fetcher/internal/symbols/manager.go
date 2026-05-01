@@ -109,6 +109,117 @@ func (m *Manager) PrewarmAll(syms []string) {
 	}
 }
 
+// PrewarmFromArbFiles reads arbitrage.json / spot_arbitrage.json /
+// dex_arbitrage.json and applies a per-venue prewarm set: each venue
+// gets exactly the symbols that appear as one of its legs in the
+// top-N arb opportunities. The bootstrap volume-rank fallback union
+// is added so we don't lose major pairs (BTC, ETH, …) on any venue
+// just because they missed an arb cycle.
+//
+// Effect on the screener: by the time a user opens /screener every
+// (long_ex, short_ex) pair from arbitrage.json has its books
+// subscribed, so /api/screener/in-out resolves to real numbers on
+// the very first call.
+//
+// Symbol-set churn between cycles is naturally small — the top-N
+// changes one or two pairs per refresh, not the whole set — so
+// the SetSymbols delta-subscribe doesn't overwhelm rate-limited
+// adapters the way the per-row Touch flood did in Phase B v1.
+func (m *Manager) PrewarmFromArbFiles(cacheDir string, fallback []string) {
+	type futOpp struct {
+		Symbol         string `json:"symbol"`
+		LongExchange   string `json:"long_exchange"`
+		ShortExchange  string `json:"short_exchange"`
+	}
+	type spotOpp struct {
+		Symbol        string `json:"symbol"`
+		SpotExchange  string `json:"spot_exchange"`
+		ShortExchange string `json:"short_exchange"`
+	}
+	type dexOpp struct {
+		Symbol        string `json:"symbol"`
+		ShortExchange string `json:"short_exchange"`
+	}
+
+	tryRead := func(path string, into any) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return
+		}
+		_ = sonic.Unmarshal(data, into)
+	}
+
+	// venue -> set(symbol)
+	per := make(map[string]map[string]struct{}, 32)
+	add := func(venue, sym string) {
+		if venue == "" || sym == "" {
+			return
+		}
+		bucket, ok := per[venue]
+		if !ok {
+			bucket = make(map[string]struct{}, 64)
+			per[venue] = bucket
+		}
+		bucket[sym] = struct{}{}
+	}
+
+	{
+		var doc struct{ Opps []futOpp `json:"opportunities"` }
+		tryRead(filepath.Join(cacheDir, "arbitrage.json"), &doc)
+		for _, o := range doc.Opps {
+			add(o.LongExchange, o.Symbol)
+			add(o.ShortExchange, o.Symbol)
+		}
+	}
+	{
+		var doc struct{ Opps []spotOpp `json:"opportunities"` }
+		tryRead(filepath.Join(cacheDir, "spot_arbitrage.json"), &doc)
+		for _, o := range doc.Opps {
+			if o.SpotExchange != "" {
+				add(o.SpotExchange+"_spot", o.Symbol)
+			}
+			add(o.ShortExchange, o.Symbol)
+		}
+	}
+	{
+		var doc struct{ Opps []dexOpp `json:"opportunities"` }
+		tryRead(filepath.Join(cacheDir, "dex_arbitrage.json"), &doc)
+		for _, o := range doc.Opps {
+			add(o.ShortExchange, o.Symbol)
+		}
+	}
+
+	// Apply per venue + add fallback majors.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	totalSyms := 0
+	venues := make(map[string]struct{}, len(m.obRunners)+len(m.fundingRunners))
+	for v := range m.obRunners {
+		venues[v] = struct{}{}
+	}
+	for v := range m.fundingRunners {
+		venues[v] = struct{}{}
+	}
+	for v := range venues {
+		bucket := per[v]
+		if bucket == nil {
+			bucket = make(map[string]struct{}, len(fallback))
+		}
+		for _, s := range fallback {
+			if s != "" {
+				bucket[s] = struct{}{}
+			}
+		}
+		m.prewarm[v] = bucket
+		totalSyms += len(bucket)
+	}
+	log.L().Info().
+		Int("venues", len(venues)).
+		Int("arb_venues", len(per)).
+		Int("symbols_total", totalSyms).
+		Msg("prewarm refreshed from arb files")
+}
+
 // Touch records a fresh user-subscribe on (venue, symbol). Called from
 // the Redis subscriber on every book:subscribe message.
 func (m *Manager) Touch(venue, symbol string) {

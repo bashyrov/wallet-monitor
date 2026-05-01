@@ -264,34 +264,50 @@ func main() {
 	if bootstrapDir == "" {
 		bootstrapDir = "/tmp/avalant_cache"
 	}
+	// Initial prewarm: cross-venue volume-rank top-N. Used until the
+	// arb compute writes its first arbitrage.json (a few hundred ms
+	// after start) — after that the per-venue arb-derived prewarm
+	// takes over.
 	startSymbols := bootstrap.TopSymbols(bootstrapDir, cfg.PrewarmTopN)
 	if len(startSymbols) < 5 {
 		startSymbols = bootstrap.TopSymbols(cfg.CacheDir, cfg.PrewarmTopN)
 	}
-	l.Info().Strs("bootstrap_symbols", startSymbols).Str("from_dir", bootstrapDir).Msg("symbol bootstrap")
+	{
+		head := startSymbols
+		if len(head) > 20 {
+			head = head[:20]
+		}
+		l.Info().Strs("bootstrap_symbols_first20", head).Int("total", len(startSymbols)).Str("from_dir", bootstrapDir).Msg("symbol bootstrap")
+	}
 	mgr.PrewarmAll(startSymbols)
 
-	// Periodic prewarm refresh — every 5 MINUTES, not 30s. Frequent
-	// refresh churns the symbol set under the runner's feet and triggers
-	// a reconnect every cycle (any removed symbol forces a reconnect
-	// because most venues lack reliable batched-unsubscribe). Combined
-	// with the 30s stale-frames watchdog, that's a perfect storm — venues
-	// like Binance and Bybit, which take 1-2s to subscribe-ack the new
-	// set, never get past the first frame before we churn them again.
-	// 5 min keeps Go in rough sync with Python's hot list while letting
-	// each connection settle.
+	// Periodic prewarm refresh — every 60 s, sourced from the arb
+	// output files. Per-venue prewarm = exactly the symbols that
+	// appear as one of that venue's legs in the top-1000 arb opps
+	// (futures + spot + dex), unioned with Default20 majors as a
+	// floor so common pairs always stay subscribed.
+	//
+	// Why this works without the Phase B v1 churn: the prewarm set
+	// changes by ~5-20 symbols per minute (only when the arb top
+	// shuffles in/out a token), not 1000 in one go. SetSymbols sees
+	// a small delta and the runners can keep up.
 	g.Go(func() error {
-		t := time.NewTicker(5 * time.Minute)
+		// Initial fire after 5s — gives arb compute time to produce
+		// its first arbitrage.json so we don't blank-prewarm.
+		t := time.NewTicker(60 * time.Second)
 		defer t.Stop()
+		select {
+		case <-gctx.Done():
+			return nil
+		case <-time.After(5 * time.Second):
+		}
+		mgr.PrewarmFromArbFiles(cfg.CacheDir, bootstrap.Default20)
 		for {
 			select {
 			case <-gctx.Done():
 				return nil
 			case <-t.C:
-				syms := bootstrap.TopSymbols(bootstrapDir, cfg.PrewarmTopN)
-				if len(syms) >= 5 {
-					mgr.PrewarmAll(syms)
-				}
+				mgr.PrewarmFromArbFiles(cfg.CacheDir, bootstrap.Default20)
 			}
 		}
 	})
