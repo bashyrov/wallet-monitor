@@ -600,6 +600,7 @@ async def in_out_basis(
     file_memo = _obc._file_memo
 
     book_by: dict[tuple[str, str], dict] = {}
+    misses: list[tuple[str, str]] = []
     for ex, sym in fetch_keys:
         pair = f"{ex}:{sym}"
         if pair in redis_hits:
@@ -610,6 +611,25 @@ async def in_out_basis(
             book_by[(ex, sym)] = fd
         else:
             book_by[(ex, sym)] = {"bids": [], "asks": []}
+            misses.append((ex, sym))
+
+    # For pairs that were missing from BOTH Redis and the file memo, fire
+    # the touch_user_sub path. This publishes a `book:subscribe` event to
+    # the Go fetcher's redis pub/sub which expands the per-venue WS sub
+    # set; ~2-5s later the book lands in Redis and a subsequent /in-out
+    # call for the same pair returns real values. The first call after
+    # render still returns null for these (which the frontend renders as
+    # "—"), but the user sees live values within one cycle.
+    #
+    # Capped per request because this DOES write a file under the hood,
+    # so 50 visible rows × every 3s × N users could create disk churn.
+    if misses:
+        try:
+            from backend.services.orderbook_cache import touch_user_sub
+            for ex, sym in misses[:32]:
+                touch_user_sub(ex, sym)
+        except Exception:  # noqa: BLE001
+            pass
 
     # DEX prices read from dex_arbitrage.json — already loaded periodically.
     dex_px_by: dict[str, float] = {}
