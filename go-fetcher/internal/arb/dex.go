@@ -193,72 +193,132 @@ func (c *DEXCompute) tick(ctx context.Context) {
 		candidates = candidates[:symbolBatchLimit]
 	}
 
-	// Parallel DexScreener fetches.
-	type fetched struct {
-		sym  string
-		info *dexInfo
-	}
-	results := make(chan fetched, len(candidates))
-	const workers = 12
-	sem := make(chan struct{}, workers)
-	var wg sync.WaitGroup
-	dsCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	// Batched DexScreener fetch — the /tokens/<addr1>,<addr2>,...
+	// endpoint accepts up to 30 addresses per call. With ~320 candidates
+	// per cycle this is ~11 HTTP calls instead of 320. DexScreener's
+	// public limit is 300 req/min; the previous per-symbol fan-out
+	// blew past that and the second cycle onward got 100% 429.
+	const batchSize = 30
+	dsCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	// Debug counters — surfaced in the cycle-end log so we can see WHERE
-	// rows are being dropped (404 vs no-pools vs filter vs consensus).
-	var (
-		cntHTTPErr    int64
-		cntHTTPOK     int64
-		cntNoPairs    int64
-		cntChainMiss  int64
-		cntQuoteFilt  int64
-		cntLiqFloor   int64
-		cntConsensFL  int64
-		cntHits       int64
-	)
+	// Index candidates by (chain, address). Same contract on a different
+	// chain is a separate candidate entry, but addresses dedupe across
+	// chains — DexScreener returns all pools for an address regardless
+	// of chain, and we filter later.
+	addrSet := make(map[string]struct{}, len(candidates))
+	for _, c := range candidates {
+		addrSet[c.entry.contract] = struct{}{}
+	}
+	addrs := make([]string, 0, len(addrSet))
+	for a := range addrSet {
+		addrs = append(addrs, a)
+	}
+	// Stable order so cache keys (later) are deterministic if we add caching.
+	sort.Strings(addrs)
 
-	for _, cand := range candidates {
-		cand := cand
+	// Fetch in batches with bounded concurrency. 4 parallel × 30 addrs
+	// each at ~0.5s/call = ~5s for 11 batches; comfortable inside the
+	// 60s context. Stays under 300 req/min by an order of magnitude.
+	type batchResult struct {
+		pairs []dsPair
+		err   error
+	}
+	batches := make([][]string, 0, (len(addrs)+batchSize-1)/batchSize)
+	for i := 0; i < len(addrs); i += batchSize {
+		end := i + batchSize
+		if end > len(addrs) {
+			end = len(addrs)
+		}
+		batches = append(batches, addrs[i:end])
+	}
+
+	poolsByKey := make(map[string][]dsPair, len(addrs))
+	var poolsMu sync.Mutex
+	var wg sync.WaitGroup
+	const workers = 4
+	sem := make(chan struct{}, workers)
+	var (
+		cntBatchOK  int64
+		cntBatch429 int64
+		cntBatchErr int64
+	)
+	for _, batch := range batches {
+		batch := batch
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			info, reason := fetchDexPoolDbg(dsCtx, cand.entry.chain, cand.entry.contract)
-			switch reason {
-			case "http_err":  atomic.AddInt64(&cntHTTPErr, 1)
-			case "ok":        atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntHits, 1)
-			case "no_pairs":  atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntNoPairs, 1)
-			case "chain":     atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntChainMiss, 1)
-			case "quote":     atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntQuoteFilt, 1)
-			case "liq":       atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntLiqFloor, 1)
-			case "consensus": atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntConsensFL, 1)
+			pairs, status, err := fetchDexBatch(dsCtx, batch)
+			if err != nil {
+				if status == 429 {
+					atomic.AddInt64(&cntBatch429, 1)
+				} else {
+					atomic.AddInt64(&cntBatchErr, 1)
+				}
+				return
 			}
-			results <- fetched{sym: cand.sym, info: info}
+			atomic.AddInt64(&cntBatchOK, 1)
+			poolsMu.Lock()
+			for _, p := range pairs {
+				key := p.ChainID + ":" + strings.ToLower(p.BaseToken.Address)
+				poolsByKey[key] = append(poolsByKey[key], p)
+			}
+			poolsMu.Unlock()
 		}()
 	}
 	wg.Wait()
-	close(results)
 
+	// Per-candidate pool-pick + consensus, now from the in-memory map.
 	dexBySym := make(map[string]*dexInfo, len(candidates))
-	for r := range results {
-		if r.info != nil {
-			dexBySym[r.sym] = r.info
+	var (
+		cntNoPairs   int64
+		cntQuoteFilt int64
+		cntLiqFloor  int64
+		cntConsensus int64
+	)
+	for _, cand := range candidates {
+		key := cand.entry.chain + ":" + cand.entry.contract
+		pools := poolsByKey[key]
+		if len(pools) == 0 {
+			cntNoPairs++
+			continue
+		}
+		info, reason := pickFromPools(cand.entry.chain, cand.entry.contract, pools)
+		switch reason {
+		case "ok":
+			dexBySym[cand.sym] = info
+		case "quote":
+			cntQuoteFilt++
+		case "liq":
+			cntLiqFloor++
+		case "consensus":
+			cntConsensus++
 		}
 	}
 
 	log.L().Info().
 		Int("scanned", len(candidates)).
 		Int("hits", len(dexBySym)).
-		Int64("http_err", cntHTTPErr).
-		Int64("http_ok", cntHTTPOK).
+		Int("batches", len(batches)).
+		Int64("batch_ok", cntBatchOK).
+		Int64("batch_429", cntBatch429).
+		Int64("batch_err", cntBatchErr).
 		Int64("no_pairs", cntNoPairs).
-		Int64("chain_miss", cntChainMiss).
 		Int64("quote_filt", cntQuoteFilt).
 		Int64("liq_floor", cntLiqFloor).
-		Int64("consensus_fail", cntConsensFL).
+		Int64("consensus_fail", cntConsensus).
 		Msg("dex cycle complete")
+
+	// If the cycle was completely starved (all batches errored), keep
+	// the previous file rather than clobbering it with empty data.
+	// Otherwise users see "DEX/Short — no opportunities" while we're
+	// being rate-limited even though the data was fine 30s earlier.
+	if cntBatchOK == 0 && len(dexBySym) == 0 {
+		log.L().Warn().Msg("dex cycle starved (all batches failed) — keeping prior file")
+		return
+	}
 
 	// Build opps.
 	now := time.Now()
@@ -495,61 +555,64 @@ func (c *DEXCompute) refreshCG(ctx context.Context) {
 	log.L().Info().Int("symbols", len(newCache)).Msg("CG cache refreshed")
 }
 
-// fetchDexPool returns the best-liquidity pool for (chain, address) from
-// DexScreener with cross-pool consensus check. Returns nil if no pool
-// passes the liquidity / volume floors or all pools disagree.
-func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
-	info, _ := fetchDexPoolDbg(ctx, chain, address)
-	return info
+// dsPair is the subset of DexScreener pair fields we care about. Decoded
+// once per batch and held in memory for the consensus pass.
+type dsPair struct {
+	ChainID    string `json:"chainId"`
+	DexID      string `json:"dexId"`
+	URL        string `json:"url"`
+	PriceUSD   string `json:"priceUsd"`
+	BaseToken  struct {
+		Symbol  string `json:"symbol"`
+		Address string `json:"address"`
+	} `json:"baseToken"`
+	QuoteToken struct {
+		Symbol string `json:"symbol"`
+	} `json:"quoteToken"`
+	Liquidity struct {
+		USD float64 `json:"usd"`
+	} `json:"liquidity"`
+	Volume struct {
+		H24 float64 `json:"h24"`
+	} `json:"volume"`
+	PairAddress string `json:"pairAddress"`
 }
 
-// fetchDexPoolDbg is the same as fetchDexPool but additionally returns a
-// short string describing where the row was dropped. Used by the cycle
-// instrumentation in tick(); production callers use fetchDexPool.
-func fetchDexPoolDbg(ctx context.Context, chain, address string) (*dexInfo, string) {
-	url := fmt.Sprintf("https://api.dexscreener.com/latest/dex/tokens/%s", address)
+// fetchDexBatch hits /tokens/<addr1>,<addr2>,... — DexScreener accepts up
+// to 30 addresses per call, returning all pools across all chains for the
+// requested tokens. Returns (pairs, statusCode, err).
+func fetchDexBatch(ctx context.Context, addrs []string) ([]dsPair, int, error) {
+	if len(addrs) == 0 {
+		return nil, 0, nil
+	}
+	url := "https://api.dexscreener.com/latest/dex/tokens/" + strings.Join(addrs, ",")
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.L().Debug().Err(err).Str("addr", address).Msg("dex req-build err")
-		return nil, "http_err"
+		return nil, 0, err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 avalant-fetcher/go")
-	httpClient := &http.Client{Timeout: 6 * time.Second}
-	resp, err := httpClient.Do(req)
+	cl := &http.Client{Timeout: 8 * time.Second}
+	resp, err := cl.Do(req)
 	if err != nil {
-		log.L().Warn().Err(err).Str("addr", address).Msg("dex http-do err")
-		return nil, "http_err"
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		log.L().Warn().Int("status", resp.StatusCode).Str("addr", address).Msg("dex http non-200")
-		return nil, "http_err"
+		return nil, resp.StatusCode, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var doc struct {
-		Pairs []struct {
-			ChainID    string `json:"chainId"`
-			DexID      string `json:"dexId"`
-			URL        string `json:"url"`
-			PriceUSD   string `json:"priceUsd"`
-			BaseToken  struct {
-				Symbol  string `json:"symbol"`
-				Address string `json:"address"`
-			} `json:"baseToken"`
-			QuoteToken struct {
-				Symbol string `json:"symbol"`
-			} `json:"quoteToken"`
-			Liquidity struct {
-				USD float64 `json:"usd"`
-			} `json:"liquidity"`
-			Volume struct {
-				H24 float64 `json:"h24"`
-			} `json:"volume"`
-			PairAddress string `json:"pairAddress"`
-		} `json:"pairs"`
+		Pairs []dsPair `json:"pairs"`
 	}
 	if err := sonic.ConfigStd.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		return nil, "http_err"
+		return nil, resp.StatusCode, err
 	}
+	return doc.Pairs, 200, nil
+}
+
+// pickFromPools applies the quote-filter / liquidity-floor / consensus
+// check on a slice of pre-grouped pools (already filtered by chain+base
+// address). Returns (info, reason). reason ∈ {"ok","quote","liq","consensus"}.
+func pickFromPools(chain, address string, pairs []dsPair) (*dexInfo, string) {
 	addrLow := strings.ToLower(address)
 
 	type pool struct {
@@ -560,21 +623,17 @@ func fetchDexPoolDbg(ctx context.Context, chain, address string) (*dexInfo, stri
 		vol     float64
 		pairURL string
 	}
-	var (
-		anyChain  bool // saw a pair on the requested chain (regardless of address match)
-		anyMatch  bool // saw a pair on chain with matching base address
-		anyQuote  bool // saw a pair with our base on chain & accepted quote
-	)
-	pools := make([]pool, 0, len(doc.Pairs))
-	for _, p := range doc.Pairs {
+	var anyQuote bool
+	pools := make([]pool, 0, len(pairs))
+	for _, p := range pairs {
+		// Defence: caller already grouped by (chain, address) but we
+		// re-verify so a key collision can't poison the result.
 		if p.ChainID != chain {
 			continue
 		}
-		anyChain = true
 		if strings.ToLower(p.BaseToken.Address) != addrLow {
 			continue
 		}
-		anyMatch = true
 		quoteSym := strings.ToUpper(p.QuoteToken.Symbol)
 		if _, ok := acceptedQuotes[quoteSym]; !ok {
 			continue
@@ -594,16 +653,10 @@ func fetchDexPoolDbg(ctx context.Context, chain, address string) (*dexInfo, stri
 		})
 	}
 	if len(pools) == 0 {
-		if !anyChain {
-			return nil, "chain"
-		}
-		if !anyMatch {
-			return nil, "no_pairs"
-		}
 		if !anyQuote {
 			return nil, "quote"
 		}
-		return nil, "no_pairs"
+		return nil, "liq"
 	}
 	eligible := make([]pool, 0, len(pools))
 	for _, p := range pools {
@@ -614,8 +667,6 @@ func fetchDexPoolDbg(ctx context.Context, chain, address string) (*dexInfo, stri
 	if len(eligible) == 0 {
 		return nil, "liq"
 	}
-	// Consensus: median price of top-5 by liquidity; pick best whose
-	// price is within max-dev of median.
 	sort.Slice(pools, func(i, j int) bool { return pools[i].liq > pools[j].liq })
 	voters := pools
 	if len(voters) > 5 {
