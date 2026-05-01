@@ -209,10 +209,26 @@ func (c *Compute) tick() {
 				if longPE.mark <= 0 || shortPE.mark <= 0 {
 					continue
 				}
+				// Ticker-collision guard: when the two venues' marks differ
+				// by more than 50% (ratio test, not bps), the ticker almost
+				// certainly identifies different tokens — e.g. EDGE on Gate
+				// trades at $0.10 vs $1.20 on Aster/Binance/OKX/Bybit (12×
+				// gap). The previous |price_spread| > 100% threshold let
+				// 12× collisions pass because they're below 100% in
+				// absolute terms only when computed off the larger leg.
+				// max/min ratio is symmetric and unambiguous.
+				hi, lo := longPE.mark, shortPE.mark
+				if hi < lo {
+					hi, lo = lo, hi
+				}
+				if lo <= 0 || hi/lo > 1.5 {
+					continue
+				}
 				priceSpread := (shortPE.mark - longPE.mark) / longPE.mark
 				net := gross + priceSpread - totalFees
 
-				// |price_spread|>100% → likely ticker-collision; skip.
+				// |price_spread|>100% — extra belt for any case the ratio
+				// test let through (shouldn't happen if ratio < 1.5).
 				if math.Abs(priceSpread) > highSpreadThreshold {
 					continue
 				}
