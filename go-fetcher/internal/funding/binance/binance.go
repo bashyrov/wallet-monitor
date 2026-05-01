@@ -21,11 +21,13 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
+var _ = strings.HasSuffix // silence unused-import if no other strings.* below
+
 const (
-	// Combined-stream URL — single-stream `/ws/!markPrice@arr@1s` form
-	// silently fails to deliver frames (verified prod). Same pattern
-	// works for !markPriceArr.
-	wsURL   = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s"
+	// Combined-stream with BOTH markPrice and ticker — matches Python's
+	// funding_ws adapter exactly. Single-stream with just markPrice
+	// silently times out from Singapore IP; the dual-stream form works.
+	wsURL   = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
 	restURL = "https://fapi.binance.com/fapi/v1/premiumIndex"
 )
 
@@ -40,22 +42,37 @@ func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
 func (a *Adapter) BuildSubscribe(_ []string) [][]byte { return nil }
 
 func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
-	// Combined-stream wrapper: {"stream":"!markPrice@arr@1s","data":[...]}
-	// Inner data is the array of mark-price events for all USDT-perps.
+	// Combined-stream wrapper. Stream is one of:
+	//   "!markPrice@arr@1s" — array of {s, p (mark), i (index), r (rate), T (next)}
+	//   "!ticker@arr"       — array of {s, c (last), v (vol), q (quote vol), ...}
+	// We parse markPrice for funding rate; ticker frames are dropped
+	// (volume comes from REST backstop where binance allows it).
 	var wrap struct {
 		Stream string `json:"stream"`
-		Data   []struct {
-			Symbol      string `json:"s"`
-			MarkPrice   string `json:"p"`
-			IndexPrice  string `json:"i"`
-			Rate        string `json:"r"`
-			NextFunding int64  `json:"T"`
-		} `json:"data"`
+		Data   []map[string]any `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &wrap); err != nil {
 		return nil, nil
 	}
-	rows := wrap.Data
+	if !strings.Contains(wrap.Stream, "markPrice") {
+		return nil, nil
+	}
+	type row struct {
+		Symbol      string `json:"s"`
+		MarkPrice   string `json:"p"`
+		IndexPrice  string `json:"i"`
+		Rate        string `json:"r"`
+		NextFunding int64  `json:"T"`
+	}
+	// Re-decode strictly via the typed shape.
+	body, err := ws.MarshalJSON(wrap.Data)
+	if err != nil {
+		return nil, nil
+	}
+	var rows []row
+	if err := ws.UnmarshalJSON(body, &rows); err != nil {
+		return nil, nil
+	}
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Symbol, "USDT") {
