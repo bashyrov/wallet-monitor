@@ -153,6 +153,22 @@ func main() {
 		return arbCompute.Run(gctx)
 	})
 
+	// Spot arb compute — Python's spot_arbitrage_service. REST tickers
+	// from 9 spot venues + funding store join → spot_arbitrage.json
+	// every 2s.
+	spotCompute := arb.NewSpotCompute(fundingStore, cfg.CacheDir, 2*time.Second)
+	g.Go(func() error {
+		return spotCompute.Run(gctx)
+	})
+
+	// DEX arb stub — writes valid empty dex_arbitrage.json. Full port
+	// (CoinGecko + DexScreener) deferred to next sprint. Until then
+	// /screener DEX tab is empty.
+	dexCompute := arb.NewDEXCompute(cfg.CacheDir, 30*time.Second)
+	g.Go(func() error {
+		return dexCompute.Run(gctx)
+	})
+
 	// Symbol manager reconciliation loop.
 	g.Go(func() error {
 		mgr.Run(gctx)
