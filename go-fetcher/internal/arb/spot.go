@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
@@ -49,12 +50,13 @@ func spotFeeOf(ex string) float64 {
 // spot_arbitrage.json.
 type SpotCompute struct {
 	store    *funding.Store
+	books    *cache.Store
 	cacheDir string
 	interval time.Duration
 }
 
-func NewSpotCompute(store *funding.Store, cacheDir string, interval time.Duration) *SpotCompute {
-	return &SpotCompute{store: store, cacheDir: cacheDir, interval: interval}
+func NewSpotCompute(store *funding.Store, books *cache.Store, cacheDir string, interval time.Duration) *SpotCompute {
+	return &SpotCompute{store: store, books: books, cacheDir: cacheDir, interval: interval}
 }
 
 func (c *SpotCompute) Run(ctx context.Context) error {
@@ -178,6 +180,10 @@ func (c *SpotCompute) tick(ctx context.Context) {
 				if net > 0 {
 					netAPR = net * (365.0 * 3.0)
 				}
+				// Bake top-of-book in/out — spot leg via <ex>_spot, perp
+				// short via the bare exchange name. nil/null when either
+				// side's book isn't subscribed (frontend hides those rows).
+				inPct, outPct := computeInOutPair(c.books, spotEx+"_spot", perpEx, sym)
 				opps = append(opps, map[string]any{
 					"type":              "spot_short",
 					"symbol":            sym,
@@ -198,6 +204,8 @@ func (c *SpotCompute) tick(ctx context.Context) {
 					"net_apr":           netAPR,
 					"interval_h":        intH,
 					"next_ts":           nextTsOf(pd.NextFunding),
+					"in_pct":            inPct,
+					"out_pct":           outPct,
 				})
 			}
 		}

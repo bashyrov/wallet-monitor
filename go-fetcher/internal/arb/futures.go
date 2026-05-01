@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
@@ -86,6 +87,7 @@ const (
 // ticker, builds opportunities, dumps arbitrage.json.
 type Compute struct {
 	store    *funding.Store
+	books    *cache.Store // optional — for baking in/out top-of-book into each opp
 	cacheDir string
 	interval time.Duration
 
@@ -99,9 +101,10 @@ type oppKey struct {
 	long, short string
 }
 
-func NewCompute(store *funding.Store, cacheDir string, interval time.Duration) *Compute {
+func NewCompute(store *funding.Store, books *cache.Store, cacheDir string, interval time.Duration) *Compute {
 	return &Compute{
 		store:     store,
+		books:     books,
 		cacheDir:  cacheDir,
 		interval:  interval,
 		firstSeen: make(map[oppKey]time.Time, 4096),
@@ -245,6 +248,12 @@ func (c *Compute) tick() {
 					continue
 				}
 
+				// Bake live entry/exit basis from top-of-book directly
+				// into the opp. Frontend reads in_pct/out_pct from this
+				// payload — no separate /api/screener/in-out call. Avoids
+				// the round-trip + URL-length + disk-thrash issues we
+				// saw when /in-out polled every 3 s with 256-key batches.
+				inPct, outPct := c.computeInOut(longPE.ex, shortPE.ex, sym)
 				opps = append(opps, map[string]any{
 					"symbol":            sym,
 					"long_exchange":     longPE.ex,
@@ -268,6 +277,8 @@ func (c *Compute) tick() {
 					"next_ts_short":     shortPE.nextTs,
 					"long_interval_h":   longPE.ivl,
 					"short_interval_h":  shortPE.ivl,
+					"in_pct":            inPct,
+					"out_pct":           outPct,
 				})
 			}
 		}
@@ -327,6 +338,76 @@ func (c *Compute) tick() {
 	if err := writeAtomic(filepath.Join(c.cacheDir, "arbitrage.json"), out); err != nil {
 		log.L().Warn().Err(err).Msg("arb write failed")
 	}
+}
+
+// computeInOut is a method shim over computeInOutPair for the futures
+// Compute struct (legacy receiver shape).
+func (c *Compute) computeInOut(longEx, shortEx, sym string) (*float64, *float64) {
+	return computeInOutPair(c.books, longEx, shortEx, sym)
+}
+
+// computeInOutPair returns top-of-book entry/exit basis as percentages,
+// or (nil, nil) if either venue's book isn't subscribed yet. Returning
+// pointers lets us serialise as JSON null when the data isn't ready —
+// the frontend filters on null to hide rows.
+//
+//	in_pct  = (bestBidShort - bestAskLong)  / bestAskLong  * 100
+//	out_pct = (bestBidLong  - bestAskShort) / bestAskShort * 100
+//
+// Used by all three arb compute paths (futures / spot / dex) to bake
+// the values into each opp so the screener doesn't have to call a
+// separate /api/screener/in-out endpoint.
+func computeInOutPair(books *cache.Store, longEx, shortEx, sym string) (*float64, *float64) {
+	if books == nil {
+		return nil, nil
+	}
+	longE, lok := books.Get(longEx, sym)
+	shortE, sok := books.Get(shortEx, sym)
+	if !lok || !sok {
+		return nil, nil
+	}
+	if len(longE.Asks) == 0 || len(longE.Bids) == 0 ||
+		len(shortE.Asks) == 0 || len(shortE.Bids) == 0 {
+		return nil, nil
+	}
+	// ws.Level is [2]float64 = [price, size]
+	bestAskLong := longE.Asks[0][0]
+	bestBidLong := longE.Bids[0][0]
+	bestAskShort := shortE.Asks[0][0]
+	bestBidShort := shortE.Bids[0][0]
+	if bestAskLong <= 0 || bestBidLong <= 0 || bestAskShort <= 0 || bestBidShort <= 0 {
+		return nil, nil
+	}
+	in := round4((bestBidShort - bestAskLong) / bestAskLong * 100)
+	out := round4((bestBidLong - bestAskShort) / bestAskShort * 100)
+	return &in, &out
+}
+
+// computeInOutDex — DEX/short variant. The "long" side has no orderbook
+// (it's a DEX with a single mid price baked into the opp at compute
+// time); only the perp short side has a book to walk. Computes:
+//
+//	in_pct  = (bestBidShort - dexPrice)   / dexPrice    * 100
+//	out_pct = (dexPrice - bestAskShort)   / bestAskShort * 100
+func computeInOutDex(books *cache.Store, shortEx, sym string, dexPrice float64) (*float64, *float64) {
+	if books == nil || dexPrice <= 0 {
+		return nil, nil
+	}
+	shortE, ok := books.Get(shortEx, sym)
+	if !ok {
+		return nil, nil
+	}
+	if len(shortE.Asks) == 0 || len(shortE.Bids) == 0 {
+		return nil, nil
+	}
+	bestAskShort := shortE.Asks[0][0]
+	bestBidShort := shortE.Bids[0][0]
+	if bestAskShort <= 0 || bestBidShort <= 0 {
+		return nil, nil
+	}
+	in := round4((bestBidShort - dexPrice) / dexPrice * 100)
+	out := round4((dexPrice - bestAskShort) / bestAskShort * 100)
+	return &in, &out
 }
 
 func nextTsOf(t time.Time) int64 {

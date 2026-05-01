@@ -15,6 +15,7 @@ import (
 
 	"github.com/bytedance/sonic"
 
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
@@ -37,6 +38,7 @@ type dexInfo struct {
 // store, builds dex-short opportunities, writes dex_arbitrage.json.
 type DEXCompute struct {
 	store    *funding.Store
+	books    *cache.Store
 	cacheDir string
 	interval time.Duration
 
@@ -104,9 +106,10 @@ var acceptedQuotes = map[string]struct{}{
 	"SOL": {}, "ETH": {}, "BNB": {}, "MATIC": {}, "WMATIC": {},
 }
 
-func NewDEXCompute(store *funding.Store, cacheDir string, interval time.Duration) *DEXCompute {
+func NewDEXCompute(store *funding.Store, books *cache.Store, cacheDir string, interval time.Duration) *DEXCompute {
 	return &DEXCompute{
 		store:     store,
+		books:     books,
 		cacheDir:  cacheDir,
 		interval:  interval,
 		cgCache:   make(map[string]cgEntry),
@@ -375,6 +378,10 @@ func (c *DEXCompute) tick(ctx context.Context) {
 			if net > 0 {
 				netAPR = net * (365.0 * 3.0)
 			}
+			// Bake top-of-book in/out — DEX side has no orderbook adapter
+			// (single mid-price from DexScreener), so the perp short leg
+			// alone drives the live values.
+			inPct, outPct := computeInOutDex(c.books, perpEx, sym, dex.Price)
 			opps = append(opps, map[string]any{
 				"type":              "dex_short",
 				"symbol":            sym,
@@ -399,6 +406,8 @@ func (c *DEXCompute) tick(ctx context.Context) {
 				"net_apr":           netAPR,
 				"interval_h":        intH,
 				"next_ts":           nextTsOf(p.NextFunding),
+				"in_pct":            inPct,
+				"out_pct":           outPct,
 			})
 		}
 	}

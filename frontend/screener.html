@@ -1069,8 +1069,8 @@ function renderDex() {
           <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.perp_price)} · <span style="font-family:var(--mono)">${fmtVol(r.perp_volume_usd)}</span></div>
         </div>
       </td>
-      <td class="td-inout" data-io="in" data-io-key="dex:${r.symbol}:dex:${r.short_exchange}"><span class="io-pending">…</span></td>
-      <td class="td-inout" data-io="out" data-io-key="dex:${r.symbol}:dex:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout">${_fmtIO(r.in_pct)}</td>
+      <td class="td-inout">${_fmtIO(r.out_pct)}</td>
       <td class="td-spread"><span class="${(r.basis_pct || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.basis_pct || 0) >= 0 ? '+' : '')}${(r.basis_pct || 0).toFixed(4)}%</span></td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
       <td class="td-fees">
@@ -1084,7 +1084,7 @@ function renderDex() {
   }).join('');
   renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
   renderDexCards();
-  if (_mode === 'dex') refreshInOut();
+  // in/out comes baked into row data — no fetch needed.
 }
 
 function renderDexCards() {
@@ -1297,8 +1297,8 @@ function renderSpot() {
           <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.perp_price)} · <span style="font-family:var(--mono)">${fmtVol(r.perp_volume_usd)}</span></div>
         </div>
       </td>
-      <td class="td-inout" data-io="in" data-io-key="spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
-      <td class="td-inout" data-io="out" data-io-key="spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout">${_fmtIO(r.in_pct)}</td>
+      <td class="td-inout">${_fmtIO(r.out_pct)}</td>
       <td class="td-spread"><span class="${(r.basis_pct || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.basis_pct || 0) >= 0 ? '+' : '')}${(r.basis_pct || 0).toFixed(4)}%</span></td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
       <td class="td-fees">
@@ -1312,7 +1312,7 @@ function renderSpot() {
   }).join('');
   renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
   renderSpotCards();
-  if (_mode === 'spot') refreshInOut();
+  // in/out comes baked into row data — no fetch needed.
 }
 
 function renderSpotCards() {
@@ -2079,6 +2079,18 @@ const fmtCountdown = window.FMT.countdown;
 const fmtVol       = window.FMT.volume;
 const fmtPct       = window.FMT.pct;
 
+// Render an In/Out cell value baked into the row by the Go arb
+// compute (futures.go / spot.go / dex.go). Backend returns null when
+// the orderbook isn't subscribed yet — those rows are filtered out
+// upstream so we shouldn't normally hit the null branch here, but
+// keep a graceful fallback just in case.
+function _fmtIO(v) {
+  if (v == null || typeof v !== 'number') return '<span class="io-na">—</span>';
+  const sign = v >= 0 ? '+' : '';
+  const cls  = v > 0 ? 'rate-pos' : v < 0 ? 'rate-neg' : 'rate-zero';
+  return `<span class="${cls}" style="font-family:var(--mono);font-size:11px">${sign}${v.toFixed(4)}%</span>`;
+}
+
 function fmtExRate(ex, rate_pct, symbol) {
   const sign = rate_pct >= 0 ? '+' : '';
   const cls  = rate_pct > 0 ? 'rate-pos' : rate_pct < 0 ? 'rate-neg' : 'rate-zero';
@@ -2191,8 +2203,8 @@ function renderArb() {
           <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.short_price)} · <span style="font-family:var(--mono)">${fmtVol(r.short_volume)}</span></div>
         </div>
       </td>
-      <td class="td-inout" data-io="in" data-io-key="futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
-      <td class="td-inout" data-io="out" data-io-key="futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout">${_fmtIO(r.in_pct)}</td>
+      <td class="td-inout">${_fmtIO(r.out_pct)}</td>
       <td class="td-spread"><span class="${(r.price_spread || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.price_spread || 0) >= 0 ? '+' : '')}${(r.price_spread || 0).toFixed(4)}%</span></td>
       <td class="td-gross">${grossSign}${r.gross_funding.toFixed(4)}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
       <td class="td-fees">
@@ -2208,7 +2220,7 @@ function renderArb() {
   }).join('');
   renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');
   renderArbCards();
-  if (_mode === 'arb') refreshInOut();
+  // in/out comes baked into row data — no fetch needed.
 }
 
 // ── mobile sort bar ───────────────────────────────────────────────────────────
@@ -2662,14 +2674,15 @@ function _pingInOutPulse() {
   }
 }
 
-// Active-section refresh loop. 3s cadence is the right tradeoff: fresh enough
-// to read as "live", slow enough to not hammer the orderbook cache.
-_inOutTimer = setInterval(() => {
-  if (document.hidden) return;
-  refreshInOut();
-}, 3000);
-// Trigger immediately on mode switch + after each render-completion event.
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshInOut(); });
+// /screener/in-out polling retired: in_pct/out_pct are now baked into
+// each row by the Go arb compute (futures.go / spot.go / dex.go) and
+// arrive in the /screener/long-short etc. payloads directly. The
+// _inOutTimer / refreshInOut machinery stays defined for back-compat
+// if any other code path ever needs an ad-hoc fetch, but nothing
+// fires it on a schedule any more.
+// (was: setInterval(refreshInOut, 3000) — caused 256-key POST batches
+// every 3 s × N users which saturated apps / disk under load.)
+void _inOutTimer; // silence "unused" — declared higher up.
 
 // ── Initial REST load (instant, before WS connects) ───────────────────────────
 (async function preload() {

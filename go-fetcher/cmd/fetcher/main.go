@@ -148,7 +148,7 @@ func main() {
 	// Futures arb compute — port of Python's arbitrage_service.py. Reads
 	// the funding store, builds cross-venue opportunities, writes
 	// arbitrage.json every 700ms (matches AVALANT_ARB_CACHE_TTL on prod).
-	arbCompute := arb.NewCompute(fundingStore, cfg.CacheDir, 700*time.Millisecond)
+	arbCompute := arb.NewCompute(fundingStore, store, cfg.CacheDir, 700*time.Millisecond)
 	g.Go(func() error {
 		return arbCompute.Run(gctx)
 	})
@@ -156,7 +156,7 @@ func main() {
 	// Spot arb compute — Python's spot_arbitrage_service. REST tickers
 	// from 9 spot venues + funding store join → spot_arbitrage.json
 	// every 2s.
-	spotCompute := arb.NewSpotCompute(fundingStore, cfg.CacheDir, 2*time.Second)
+	spotCompute := arb.NewSpotCompute(fundingStore, store, cfg.CacheDir, 2*time.Second)
 	g.Go(func() error {
 		return spotCompute.Run(gctx)
 	})
@@ -164,7 +164,7 @@ func main() {
 	// DEX arb compute — Python's dex_arbitrage_service port. CoinGecko
 	// symbol→contract cache (1h TTL) + DexScreener pool fetches with
 	// cross-pool consensus check. Writes dex_arbitrage.json every 30s.
-	dexCompute := arb.NewDEXCompute(fundingStore, cfg.CacheDir, 30*time.Second)
+	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 30*time.Second)
 	g.Go(func() error {
 		return dexCompute.Run(gctx)
 	})
