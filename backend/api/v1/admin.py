@@ -301,7 +301,7 @@ def set_referral_pct(
     db.commit()
     from backend.services import audit_log as _al
     _al.record(
-        db, request,
+        db, request=request,
         actor=current_admin,
         action="referral.pct.set",
         target_type="user",

@@ -105,12 +105,16 @@ See `DEPLOY.md` for the full picture. There are 6 scopes:
 **Source of truth**: `users.plan_id` (FK → plans). The legacy `users.plan` string column is a mirror. `plan_service.get_user_plan(db, user)` is the only correct read path.
 
 **Plan upgrade invariant** — `user.plan_id` can only change via:
-1. `INITIAL_ADMIN_USERNAME` env match at register time → admin + Unlim
-2. PATCH `/api/admin/users/{id}/plan` (admin-only, `Depends(get_admin_user)`)
-3. `payment_service._activate_user` (signature-verified webhook only)
-4. Manual SQL on the host
+1. PATCH `/api/admin/users/{id}/plan` (admin-only, `Depends(get_admin_user)`)
+2. `payment_service._activate_user` (signature-verified webhook only)
+3. Manual SQL on the host
 
 No client-controlled path grants a plan upgrade.
+
+**Admin grant invariant** — `users.is_admin = TRUE` can only happen via:
+1. Manual SQL on the host (`UPDATE users SET is_admin=TRUE WHERE …`)
+
+The legacy `INITIAL_ADMIN_USERNAME` and `AVALANT_ALLOW_FIRST_USER_ADMIN` env-var paths were removed (2026-05-02). The TG-widget login also never grants admin. There is no API surface — registering, logging in, linking TG, no combination of those produces an admin.
 
 **Auto-archive on downgrade**: `wallet_quota.enforce_for_user(db, user)` is called from `set_plan` and from `/api/auth/me`. Surplus portfolio wallets archive oldest-first; `purpose='both'` rows downgrade to `'screener'`.
 
@@ -158,7 +162,7 @@ Display tz settable via `/admin → Maintenance`.
 - 30-day rolling cookie + JWT lifetime
 
 ### Admin
-- **Promotion is opt-in only**: `register_user` grants admin via `INITIAL_ADMIN_USERNAME` env match OR `AVALANT_ALLOW_FIRST_USER_ADMIN=1` (dev-only). Manual SQL on the host is the other path. No first-user-wins fallback in prod.
+- **Promotion is SQL-only**: there is exactly one path — direct UPDATE on the host. `INITIAL_ADMIN_USERNAME` and `AVALANT_ALLOW_FIRST_USER_ADMIN` are no longer honoured. TG-widget login never grants admin.
 - **TOTP 2FA** (admin-only): `pyotp` + Fernet-encrypted secret at rest. `users.totp_verified_at` is the armed flag. Login flow gates admin sessions on a second factor when `totp_verified_at` is set. Failed TOTP triggers `admin_alert_service.alert_admin_security` to admin TG.
 - **Honeypot autoban** (`backend/services/honeypot_service.py`): a logged-in non-admin who hits `/api/admin/*`, `/admin`, or `/admin-user` is auto-blocked, audit-logged (`security.admin_probe_block`), and admins get a TG ping. Anonymous probes get plain 401 — too noisy to ban automatically.
 
@@ -534,7 +538,6 @@ ACCESS_TOKEN_EXPIRE_DAYS=30
 LOG_LEVEL=INFO
 AVALANT_LOG_FORMAT=text|json
 AVALANT_COOKIE_SECURE=1
-INITIAL_ADMIN_USERNAME=<your-username>   # only this user gets admin on register
 
 # Telegram bots
 TG_BOT_TOKEN=<alerts-bot-token>
@@ -568,7 +571,6 @@ AVALANT_FETCHER_MODE=multiprocess
 AVALANT_WORKER_EXCHANGES=binance,bybit,okx,...
 
 # Dev only — NEVER set in production
-AVALANT_ALLOW_FIRST_USER_ADMIN=1         # opt-in to first-user-wins admin
 AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email tokens in JSON
 ```
 
@@ -580,7 +582,7 @@ AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email to
 2. **Passphrase exchanges**: OKX, KuCoin, Bitget. Indicated by `needs_passphrase = True`.
 3. **`credentials` in DB** is Fernet-encrypted. Cache: derive once per process.
 4. **`return_exceptions=True`** in `asyncio.gather` — one provider failing doesn't crash others.
-5. **First user is NOT admin in prod** — set `INITIAL_ADMIN_USERNAME` env or use `AVALANT_ALLOW_FIRST_USER_ADMIN=1` (dev only).
+5. **First user is NOT admin** — admin is SQL-only on the host. `INITIAL_ADMIN_USERNAME` and `AVALANT_ALLOW_FIRST_USER_ADMIN` env vars are no longer honoured.
 6. **SQLite quirk**: use `sa.true()` / `sa.false()` in migrations, not `'true'` strings — SQLite stores literal text and Python treats it as truthy.
 7. **bcrypt<5**: passlib 1.7.4 is incompatible with bcrypt 5.x. Pin `bcrypt>=4,<5`.
 8. **`postgres://` → `postgresql://`** normalization in `db/base.py` and `alembic/env.py`.
@@ -613,7 +615,7 @@ AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email to
 35. **`/avashare` and `/api/popups`** are blocked by portfolio maintenance scope. `/pricing` and `/checkout` stay open intentionally so users can renew.
 36. **Encryption key rotation**: `python scripts/rotate_encryption_key.py` with `AVALANT_OLD_ENCRYPTION_KEY` + `AVALANT_NEW_ENCRYPTION_KEY` env. Idempotent — re-run after a partial failure tries OLD then NEW per row.
 37. **register strips secrets**: `AVALANT_AUTH_DEV_EXPOSE_TOKEN=1` is the only way to get raw password-reset / email-verify tokens back from the API. Default never exposes.
-38. **Admin promotion paths**: `INITIAL_ADMIN_USERNAME` env match | `AVALANT_ALLOW_FIRST_USER_ADMIN=1` on empty DB | manual SQL. No client path.
+38. **Admin promotion path**: SQL on the host. Only path. Legacy env vars removed.
 39. **2FA TOTP gates admin login only**. Regular users have no 2FA option yet.
 40. **Compose env-block must list each var** — a host `.env` entry isn't auto-forwarded; `x-app-env: &app-env` in `docker-compose.yml` enumerates every `${VAR:-default}` it passes into containers.
 
@@ -695,7 +697,7 @@ AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email to
 
 ## Decisions to NOT revisit (don't touch)
 
-- **First-user-wins admin is OFF in prod**. Only `INITIAL_ADMIN_USERNAME` or manual SQL grants admin.
+- **Admin is SQL-only**. No env-var path, no client path, no register flow grants admin.
 - **`secure=True` on session cookies** in prod. Override only via `AVALANT_COOKIE_SECURE=0` for localhost dev.
 - **WS token via first frame**, never URL.
 - **TG-login bot replies with a button**, not just a confirmation message — mobile tabs freeze when TG opens.
@@ -712,7 +714,7 @@ AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email to
 - **`/admin → Maintenance` toggles are runtime**. No deploy needed.
 - **Frontend is bind-mounted** — never copy frontend INTO image at build time only; compose mount must persist.
 - **No CSRF**, no email comms (Telegram-only), no Stripe (CryptoCloud-only).
-- **First-user-wins** legacy fallback removed — no admin via /register without explicit env.
+- **Admin is SQL-only**. Env-var auto-grant paths (`INITIAL_ADMIN_USERNAME`, `AVALANT_ALLOW_FIRST_USER_ADMIN`) are no longer honoured. TG-widget login also never grants admin.
 
 ---
 

@@ -165,12 +165,8 @@ def find_or_create_user_from_widget(db: Session, payload: dict[str, Any]) -> tup
         tg_id=tg_id,
         tg_username=tg_username or None,
     )
-    # First user rule (same as register_user): promote to admin + unlim
-    user_count = db.query(User).count()
-    if user_count == 0:
-        user.is_admin = True
-        user.plan = "unlim"
-
+    # No client-controlled admin promotion — TG-widget login mirrors
+    # register_user policy: is_admin can only flip via SQL on the host.
     db.add(user)
     db.commit()
     db.refresh(user)

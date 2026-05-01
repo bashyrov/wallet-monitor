@@ -84,48 +84,25 @@ def get_user_by_id(db: Session, user_id: int) -> User | None:
 
 
 def register_user(db: Session, username: str, email: str, password: str) -> User:
-    """Register a new user.
+    """Register a new user. Always created with is_admin=False.
 
-    Admin promotion happens ONLY through one of these paths:
-      1. INITIAL_ADMIN_USERNAME env matches the username being registered
-         (set on the server, never via the API).
-      2. AVALANT_ALLOW_FIRST_USER_ADMIN=1 env is explicitly set AND the
-         users table is empty — strictly a dev/local convenience that has
-         to be opted in. Production must NEVER set this.
-      3. Manual SQL on the host: UPDATE users SET is_admin=TRUE WHERE …
-
-    Every user registered via the public API is otherwise basic — no
-    "first registration wins" races, no client-controlled flag, no
-    admin-grant via this entry point.
+    Admin grant has exactly ONE path: manual SQL on the host
+    (`UPDATE users SET is_admin=TRUE WHERE …`). No client-controlled
+    flag, no env-var auto-grant, no first-registration-wins race. Once
+    a user is admin they stay admin until SQL flips it back — there is
+    no API surface to elevate or demote.
     """
-    import os
-    from sqlalchemy import func
-
     uname = username.lower().strip()
-    seed_name = (os.environ.get("INITIAL_ADMIN_USERNAME") or "").lower().strip()
-    allow_first = (os.environ.get("AVALANT_ALLOW_FIRST_USER_ADMIN") or "").strip() == "1"
-
-    make_admin = False
-    if seed_name and uname == seed_name:
-        make_admin = True
-    elif allow_first and db.query(func.count(User.id)).scalar() == 0:
-        make_admin = True
-
     user = User(
         username=uname,
         email=email.lower().strip(),
         hashed_password=hash_password(password),
-        is_admin=make_admin,
-        plan="unlim" if make_admin else "basic",
+        is_admin=False,
+        plan="basic",
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    if make_admin:
-        logger.warning(
-            "ADMIN seeded via register_user: username=%s seed_name=%s allow_first=%s",
-            uname, seed_name or "<unset>", allow_first,
-        )
     return user
 
 

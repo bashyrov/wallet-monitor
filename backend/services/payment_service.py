@@ -223,7 +223,7 @@ def _activate_user(db: Session, payment: Payment) -> None:
             db,
             referee=user,
             payment=payment,
-            amount_usd=payment.final_amount_usd or payment.amount_usd or 0,
+            amount_usd=payment.final_amount_usd or 0,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("referral credit failed for payment=%s user=%s: %s",
@@ -248,7 +248,7 @@ def _activate_user(db: Session, payment: Payment) -> None:
     # Admin push-notification — fire-and-forget, never blocks the webhook.
     try:
         from backend.services.admin_alert_service import alert_payment
-        amount = float(payment.amount_usd or 0)
+        amount = float(payment.final_amount_usd or 0)
         slug = (plan.slug if plan else (user.plan or "?"))
         alert_payment(user, slug, amount)
     except Exception:

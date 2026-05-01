@@ -99,8 +99,22 @@ def auth(token):
 
 @pytest.fixture
 def admin_token(client):
-    """First registered user becomes admin automatically."""
-    return _register(client, "admin", "admin@test.com", "adminpass")
+    """Register a user, then flip is_admin via direct DB update.
+
+    Production grants admin only through manual SQL on the host — there
+    is no API path. The fixture mirrors that contract exactly.
+    """
+    token = _register(client, "admin", "admin@test.com", "adminpass")
+    from backend.db.models import User
+    session = _Session()
+    try:
+        u = session.query(User).filter(User.username == "admin").first()
+        u.is_admin = True
+        u.plan = "unlim"
+        session.commit()
+    finally:
+        session.close()
+    return token
 
 
 @pytest.fixture

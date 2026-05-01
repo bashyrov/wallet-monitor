@@ -108,10 +108,19 @@ class ReferralEarning(Base):
                         nullable=True, unique=True)
     pct = Column(Float, nullable=False)            # commission % at credit time
     amount_usd = Column(Numeric(14, 2), nullable=False)
+    # When the user submits a payout request, every UNCLAIMED earning row
+    # is linked to that payout (`payout_request_id` set). On admin cancel,
+    # the link is cleared and the earnings return to the "available" pool.
+    # On admin completion, the link stays — those earnings are paid out.
+    # `available_balance = sum(amount_usd) WHERE payout_request_id IS NULL`.
+    payout_request_id = Column(Integer,
+                               ForeignKey("referral_payout_requests.id", ondelete="SET NULL"),
+                               nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     referrer = relationship("User", foreign_keys=[referrer_id], back_populates="referral_earnings")
     referee = relationship("User", foreign_keys=[referee_id])
+    payout_request = relationship("ReferralPayoutRequest", foreign_keys=[payout_request_id])
 
 
 class ReferralPayoutRequest(Base):
