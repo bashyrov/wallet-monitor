@@ -22,7 +22,10 @@ import (
 )
 
 const (
-	wsURL   = "wss://fstream.binance.com/ws/!markPrice@arr@1s"
+	// Combined-stream URL — single-stream `/ws/!markPrice@arr@1s` form
+	// silently fails to deliver frames (verified prod). Same pattern
+	// works for !markPriceArr.
+	wsURL   = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s"
 	restURL = "https://fapi.binance.com/fapi/v1/premiumIndex"
 )
 
@@ -37,19 +40,22 @@ func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
 func (a *Adapter) BuildSubscribe(_ []string) [][]byte { return nil }
 
 func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
-	// Frame is an ARRAY of mark-price events for all USDT-perp symbols.
-	// Shape: [{e:"markPriceUpdate",E,T,s,p,i,P,r,T},...]
-	var rows []struct {
-		Symbol      string `json:"s"`
-		MarkPrice   string `json:"p"`
-		IndexPrice  string `json:"i"`
-		Rate        string `json:"r"`
-		NextFunding int64  `json:"T"`
+	// Combined-stream wrapper: {"stream":"!markPrice@arr@1s","data":[...]}
+	// Inner data is the array of mark-price events for all USDT-perps.
+	var wrap struct {
+		Stream string `json:"stream"`
+		Data   []struct {
+			Symbol      string `json:"s"`
+			MarkPrice   string `json:"p"`
+			IndexPrice  string `json:"i"`
+			Rate        string `json:"r"`
+			NextFunding int64  `json:"T"`
+		} `json:"data"`
 	}
-	if err := ws.UnmarshalJSON(frame, &rows); err != nil {
-		// Non-array frames (subscription ack, error events) — ignore.
+	if err := ws.UnmarshalJSON(frame, &wrap); err != nil {
 		return nil, nil
 	}
+	rows := wrap.Data
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Symbol, "USDT") {

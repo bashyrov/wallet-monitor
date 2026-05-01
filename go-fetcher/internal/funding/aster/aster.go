@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	wsURL   = "wss://fstream.asterdex.com/ws/!markPrice@arr@1s"
+	wsURL   = "wss://fstream.asterdex.com/stream?streams=!markPrice@arr@1s"
 	restURL = "https://fapi.asterdex.com/fapi/v1/premiumIndex"
 )
 
@@ -28,16 +28,21 @@ func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
 func (a *Adapter) BuildSubscribe(_ []string) [][]byte    { return nil }
 
 func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
-	var rows []struct {
-		Symbol      string `json:"s"`
-		MarkPrice   string `json:"p"`
-		IndexPrice  string `json:"i"`
-		Rate        string `json:"r"`
-		NextFunding int64  `json:"T"`
+	// Combined-stream wrapper — same shape Aster as Binance fork.
+	var wrap struct {
+		Stream string `json:"stream"`
+		Data   []struct {
+			Symbol      string `json:"s"`
+			MarkPrice   string `json:"p"`
+			IndexPrice  string `json:"i"`
+			Rate        string `json:"r"`
+			NextFunding int64  `json:"T"`
+		} `json:"data"`
 	}
-	if err := ws.UnmarshalJSON(frame, &rows); err != nil {
+	if err := ws.UnmarshalJSON(frame, &wrap); err != nil {
 		return nil, nil
 	}
+	rows := wrap.Data
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Symbol, "USDT") {
