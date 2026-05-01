@@ -87,17 +87,29 @@ func (a *Spot) BuildSubscribe(symbols []string) [][]byte {
 	if len(symbols) == 0 {
 		return nil
 	}
-	params := make([]string, len(symbols))
-	for i, s := range symbols {
-		params[i] = strings.ToLower(s) + "usdt@depth20@100ms"
+	// Same 200-stream chunk limit as the futures adapter — Binance's
+	// public WS rejects oversized SUBSCRIBE frames.
+	const chunkSize = 200
+	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
+	id := time.Now().UnixNano()
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		params := make([]string, end-i)
+		for j, s := range symbols[i:end] {
+			params[j] = strings.ToLower(s) + "usdt@depth20@100ms"
+		}
+		frame := map[string]any{
+			"method": "SUBSCRIBE",
+			"params": params,
+			"id":     id + int64(i),
+		}
+		b, _ := ws.MarshalJSON(frame)
+		frames = append(frames, b)
 	}
-	frame := map[string]any{
-		"method": "SUBSCRIBE",
-		"params": params,
-		"id":     time.Now().UnixNano(),
-	}
-	b, _ := ws.MarshalJSON(frame)
-	return [][]byte{b}
+	return frames
 }
 
 // Parse — combined-stream wrapper {"stream":"btcusdt@depth20@100ms","data":

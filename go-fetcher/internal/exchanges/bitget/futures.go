@@ -68,17 +68,32 @@ func (a *Adapter) Name() string                          { return a.cacheKey }
 func (a *Adapter) URL(_ context.Context) (string, error) { return baseURL, nil }
 
 func (a *Adapter) BuildSubscribe(symbols []string) [][]byte {
-	args := make([]map[string]string, len(symbols))
-	for i, s := range symbols {
-		args[i] = map[string]string{
-			"instType": a.instType,
-			"channel":  "books",
-			"instId":   strings.ToUpper(s) + "USDT",
-		}
+	if len(symbols) == 0 {
+		return nil
 	}
-	frame := map[string]any{"op": "subscribe", "args": args}
-	b, _ := ws.MarshalJSON(frame)
-	return [][]byte{b}
+	// Bitget V2 has an undocumented per-frame `args` cap; with
+	// AVALANT_PREWARM_TOP_N=1000 a single subscribe frame got the
+	// connection closed silently. Chunk to ≤200 args/frame.
+	const chunkSize = 200
+	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		args := make([]map[string]string, end-i)
+		for j, s := range symbols[i:end] {
+			args[j] = map[string]string{
+				"instType": a.instType,
+				"channel":  "books",
+				"instId":   strings.ToUpper(s) + "USDT",
+			}
+		}
+		frame := map[string]any{"op": "subscribe", "args": args}
+		b, _ := ws.MarshalJSON(frame)
+		frames = append(frames, b)
+	}
+	return frames
 }
 
 func (a *Adapter) Parse(frame []byte) (*ws.Snapshot, error) {

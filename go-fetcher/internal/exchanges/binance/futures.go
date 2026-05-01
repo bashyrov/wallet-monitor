@@ -63,17 +63,31 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(symbols) == 0 {
 		return nil
 	}
-	params := make([]string, len(symbols))
-	for i, s := range symbols {
-		params[i] = strings.ToLower(s) + "usdt@depth20@100ms"
+	// Binance closes the WS with 1008 policy-violation on a single
+	// SUBSCRIBE frame > ~25 KB or with too many streams in one go. With
+	// PREWARM_TOP_N=1000 the prior single-frame approach blew that
+	// limit (26 KB, 1000 params). Chunk into ≤200 streams per frame.
+	const chunkSize = 200
+	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
+	id := time.Now().UnixNano()
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		params := make([]string, end-i)
+		for j, s := range symbols[i:end] {
+			params[j] = strings.ToLower(s) + "usdt@depth20@100ms"
+		}
+		frame := map[string]any{
+			"method": "SUBSCRIBE",
+			"params": params,
+			"id":     id + int64(i),
+		}
+		b, _ := ws.MarshalJSON(frame)
+		frames = append(frames, b)
 	}
-	frame := map[string]any{
-		"method": "SUBSCRIBE",
-		"params": params,
-		"id":     time.Now().UnixNano(),
-	}
-	b, _ := ws.MarshalJSON(frame)
-	return [][]byte{b}
+	return frames
 }
 
 // Parse one frame.
