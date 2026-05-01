@@ -25,11 +25,12 @@ import (
 const futuresWS = "wss://fstream.asterdex.com/ws"
 
 type Futures struct {
-	store *cache.Store
+	store  *cache.Store
+	filter *tradingFilter
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store}
+	a := &Futures{store: store, filter: newTradingFilter()}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("aster", snap.Symbol, snap, "ws")
 	})
@@ -42,19 +43,32 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(symbols) == 0 {
 		return nil
 	}
-	// Aster (Binance fork) inherits Binance's SUBSCRIBE-frame size limit.
-	// Chunk to 200 streams per frame so the same prewarm-1000 set works
-	// here as it does for binance.
+	// Filter against Aster exchangeInfo — Aster (Binance fork) closes
+	// the connection with 1008 if even one stream in a SUBSCRIBE frame
+	// names a non-listed symbol. Cross-venue prewarm-1000 inevitably
+	// contains symbols Aster doesn't list (it's perp-only with ~370
+	// pairs vs MEXC's 2000+ longtail). Filter once at subscribe time;
+	// IsTrading returns true on REST error so we fail-open.
+	ctx := context.Background()
+	listed := make([]string, 0, len(symbols))
+	for _, s := range symbols {
+		if a.filter.IsTrading(ctx, strings.ToUpper(s)+"USDT") {
+			listed = append(listed, s)
+		}
+	}
+	if len(listed) == 0 {
+		return nil
+	}
 	const chunkSize = 200
-	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
+	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()
-	for i := 0; i < len(symbols); i += chunkSize {
+	for i := 0; i < len(listed); i += chunkSize {
 		end := i + chunkSize
-		if end > len(symbols) {
-			end = len(symbols)
+		if end > len(listed) {
+			end = len(listed)
 		}
 		params := make([]string, end-i)
-		for j, s := range symbols[i:end] {
+		for j, s := range listed[i:end] {
 			params[j] = strings.ToLower(s) + "usdt@depth20@100ms"
 		}
 		frame := map[string]any{"method": "SUBSCRIBE", "params": params, "id": id + int64(i)}

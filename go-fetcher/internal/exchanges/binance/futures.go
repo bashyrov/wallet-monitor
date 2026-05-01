@@ -63,20 +63,36 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(symbols) == 0 {
 		return nil
 	}
+	// Filter against the exchangeInfo cache. Binance returns 1008
+	// "Invalid request" if even one stream in a SUBSCRIBE frame names
+	// a non-listed symbol — i.e. the WHOLE frame gets rejected. With
+	// PREWARM_TOP_N=1000 sourced from a cross-venue volume rank the
+	// list inevitably contains MEXC/BingX-only longtails (ASTEROID,
+	// MORI, …), so unfiltered we never get past the first frame.
+	ctx := context.Background()
+	listed := make([]string, 0, len(symbols))
+	for _, s := range symbols {
+		if a.filter.IsTrading(ctx, strings.ToUpper(s)+"USDT") {
+			listed = append(listed, s)
+		}
+	}
+	if len(listed) == 0 {
+		return nil
+	}
 	// Binance closes the WS with 1008 policy-violation on a single
 	// SUBSCRIBE frame > ~25 KB or with too many streams in one go. With
 	// PREWARM_TOP_N=1000 the prior single-frame approach blew that
 	// limit (26 KB, 1000 params). Chunk into ≤200 streams per frame.
 	const chunkSize = 200
-	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
+	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()
-	for i := 0; i < len(symbols); i += chunkSize {
+	for i := 0; i < len(listed); i += chunkSize {
 		end := i + chunkSize
-		if end > len(symbols) {
-			end = len(symbols)
+		if end > len(listed) {
+			end = len(listed)
 		}
 		params := make([]string, end-i)
-		for j, s := range symbols[i:end] {
+		for j, s := range listed[i:end] {
 			params[j] = strings.ToLower(s) + "usdt@depth20@100ms"
 		}
 		frame := map[string]any{
