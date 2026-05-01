@@ -504,6 +504,125 @@ async def get_orderbooks(
     return out
 
 
+@router.get("/in-out")
+async def in_out_basis(
+    items: str = Query(..., max_length=4096,
+                       description="Comma-separated keys: type:SYM:longEx:shortEx — type=futures|spot|dex"),
+):
+    """Per-row live entry/exit basis for the screener tables.
+
+    For each row computes:
+        in_pct  = (bestBidShort - bestAskLong)  / bestAskLong  * 100
+        out_pct = (bestBidLong  - bestAskShort) / bestAskShort * 100
+
+    Routing:
+        type=futures - long+short via /orderbook (perp)
+        type=spot    - long via <ex>_spot, short via perp
+        type=dex     - long is dex_arbitrage.json dex_price (single, no orderbook),
+                       short via perp orderbook
+
+    Top-of-book only (limit=1) — top-of-book is the right metric for screener;
+    /arb has the size-aware variant via sampleEntryExit().
+    """
+    from backend.services.orderbook_cache import get_cached_orderbook
+    import asyncio as _asyncio
+
+    parsed: list[tuple[str, str, str, str]] = []
+    for raw in items.split(",")[:64]:  # cap
+        raw = raw.strip()
+        if not raw:
+            continue
+        parts = raw.split(":")
+        if len(parts) != 4:
+            continue
+        typ, sym, le, se = (parts[0].lower(), parts[1].upper(),
+                            parts[2].lower(), parts[3].lower())
+        if typ not in ("futures", "spot", "dex"):
+            continue
+        if le and le not in _ORDERBOOK_EX and le not in _SPOT_OB_EX and typ != "dex":
+            continue
+        if se not in _ORDERBOOK_EX:
+            continue
+        parsed.append((typ, sym, le, se))
+
+    if not parsed:
+        return {}
+
+    # Build orderbook fetch list. dex rows only need short side.
+    fetch_keys: set[tuple[str, str]] = set()
+    for typ, sym, le, se in parsed:
+        fetch_keys.add((se, sym))
+        if typ == "futures":
+            fetch_keys.add((le, sym))
+        elif typ == "spot":
+            fetch_keys.add((f"{le}_spot", sym))
+    fetches = list(fetch_keys)
+    results = await _asyncio.gather(
+        *(get_cached_orderbook(ex, sym, 5) for ex, sym in fetches),
+        return_exceptions=True,
+    )
+    book_by: dict[tuple[str, str], dict] = {}
+    for k, r in zip(fetches, results):
+        book_by[k] = r if isinstance(r, dict) else {"bids": [], "asks": []}
+
+    # DEX prices read from dex_arbitrage.json — already loaded periodically.
+    dex_px_by: dict[str, float] = {}
+    if any(t == "dex" for t, *_ in parsed):
+        try:
+            from backend.services.dex_arbitrage_service import (
+                get_dex_arbitrage_opportunities,
+            )
+            dex_data = await get_dex_arbitrage_opportunities()
+            for opp in (dex_data or {}).get("opportunities", []):
+                s = opp.get("symbol")
+                px = opp.get("dex_price")
+                if s and px:
+                    dex_px_by[s] = float(px)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _top(book: dict, side: str) -> float:
+        levels = book.get(side) or []
+        if not levels:
+            return 0.0
+        try:
+            return float(levels[0][0])
+        except (TypeError, ValueError, IndexError):
+            return 0.0
+
+    out: dict[str, dict] = {}
+    for typ, sym, le, se in parsed:
+        key = f"{typ}:{sym}:{le}:{se}"
+        s_book = book_by.get((se, sym), {"bids": [], "asks": []})
+        bestBidShort = _top(s_book, "bids")
+        bestAskShort = _top(s_book, "asks")
+
+        if typ == "dex":
+            dex_px = dex_px_by.get(sym, 0.0)
+            if dex_px <= 0 or bestBidShort <= 0 or bestAskShort <= 0:
+                out[key] = {"in": None, "out": None}
+                continue
+            in_pct = (bestBidShort - dex_px) / dex_px * 100.0
+            out_pct = (dex_px - bestAskShort) / bestAskShort * 100.0
+            out[key] = {"in": round(in_pct, 4), "out": round(out_pct, 4)}
+            continue
+
+        l_book = book_by.get(
+            (le if typ == "futures" else f"{le}_spot", sym),
+            {"bids": [], "asks": []},
+        )
+        bestAskLong = _top(l_book, "asks")
+        bestBidLong = _top(l_book, "bids")
+        if bestAskLong <= 0 or bestBidLong <= 0 or bestAskShort <= 0 or bestBidShort <= 0:
+            out[key] = {"in": None, "out": None}
+            continue
+        in_pct = (bestBidShort - bestAskLong) / bestAskLong * 100.0
+        out_pct = (bestBidLong - bestAskShort) / bestAskShort * 100.0
+        out[key] = {"in": round(in_pct, 4), "out": round(out_pct, 4)}
+
+    return out
+
+
 @router.get("/arb-price-history")
 async def arb_price_history(
     symbol: str = Query(...),
