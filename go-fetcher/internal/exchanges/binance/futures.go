@@ -30,22 +30,27 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-// Bare WS endpoint — no streams in URL. We subscribe via SUBSCRIBE
-// method frames after connect. Mixing URL + SUBSCRIBE caused duplicate
-// subscribes on reconnect (URL re-subscribed via path AND SUBSCRIBE
-// re-subscribed via method) — Binance silently dropped the connection.
-const futuresWS = "wss://fstream.binance.com/ws"
+// Combined-stream base. With AVALANT_PREWARM_TOP_N=1000 the SUBSCRIBE-
+// method approach kept hitting Binance's 1008 policy violation (it has
+// some undocumented threshold — frame chunking + 250ms delay still got
+// rejected at 600 streams). Combined-stream URL bypasses SUBSCRIBE
+// entirely: the URL itself enumerates the streams and Binance just
+// starts pushing data. Same pattern binance_spot uses successfully.
+const futuresCombinedBase = "wss://fstream.binance.com/stream"
 
 // Futures is the ws.Adapter implementation for Binance USDT-perp.
 type Futures struct {
 	store  *cache.Store
 	filter *tradingFilter
+	mu     sync.Mutex
+	syms   []string
 }
 
 // NewFutures returns a Runner ready to call .Run(ctx) on.
@@ -56,19 +61,28 @@ func NewFutures(store *cache.Store) *ws.Runner {
 	})
 }
 
-func (a *Futures) Name() string                          { return "binance" }
-func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
+func (a *Futures) Name() string { return "binance" }
+
+func (a *Futures) URL(_ context.Context) (string, error) {
+	a.mu.Lock()
+	syms := a.syms
+	a.mu.Unlock()
+	// First dial happens before BuildSubscribe — fall back to BTC so the
+	// dial succeeds. Symbol manager then re-URLs on the next reconcile.
+	if len(syms) == 0 {
+		return futuresCombinedBase + "?streams=btcusdt@depth20@100ms", nil
+	}
+	parts := make([]string, len(syms))
+	for i, s := range syms {
+		parts[i] = strings.ToLower(s) + "usdt@depth20@100ms"
+	}
+	return futuresCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
+}
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	if len(symbols) == 0 {
-		return nil
-	}
-	// Filter against the exchangeInfo cache. Binance returns 1008
-	// "Invalid request" if even one stream in a SUBSCRIBE frame names
-	// a non-listed symbol — i.e. the WHOLE frame gets rejected. With
-	// PREWARM_TOP_N=1000 sourced from a cross-venue volume rank the
-	// list inevitably contains MEXC/BingX-only longtails (ASTEROID,
-	// MORI, …), so unfiltered we never get past the first frame.
+	// Filter against exchangeInfo so the combined-stream URL doesn't
+	// include non-listed symbols (Binance ignores those silently in
+	// URL form, no error — but no point sending them either).
 	ctx := context.Background()
 	listed := make([]string, 0, len(symbols))
 	for _, s := range symbols {
@@ -76,13 +90,16 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 			listed = append(listed, s)
 		}
 	}
+	a.mu.Lock()
+	a.syms = append(a.syms[:0], listed...)
+	a.mu.Unlock()
+	// Combined-stream URL already carries the subscriptions. Also emit
+	// a SUBSCRIBE frame so symbol additions on existing connections
+	// (after reconnect-suppress) still take effect — Binance accepts
+	// chunked SUBSCRIBE on /stream endpoints too.
 	if len(listed) == 0 {
 		return nil
 	}
-	// Binance closes the WS with 1008 policy-violation on a single
-	// SUBSCRIBE frame > ~25 KB or with too many streams in one go. With
-	// PREWARM_TOP_N=1000 the prior single-frame approach blew that
-	// limit (26 KB, 1000 params). Chunk into ≤200 streams per frame.
 	const chunkSize = 200
 	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()

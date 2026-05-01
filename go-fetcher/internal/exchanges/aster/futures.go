@@ -14,19 +14,22 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-// Bare /ws — same architecture fix as binance/futures.go (no
-// URL+SUBSCRIBE duplicate-subscribe).
-const futuresWS = "wss://fstream.asterdex.com/ws"
+// Combined-stream base — see binance/futures.go for why we moved off
+// the bare /ws + SUBSCRIBE flow at large prewarm sizes.
+const futuresCombinedBase = "wss://fstream.asterdex.com/stream"
 
 type Futures struct {
 	store  *cache.Store
 	filter *tradingFilter
+	mu     sync.Mutex
+	syms   []string
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
@@ -36,19 +39,28 @@ func NewFutures(store *cache.Store) *ws.Runner {
 	})
 }
 
-func (a *Futures) Name() string                          { return "aster" }
-func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
+func (a *Futures) Name() string { return "aster" }
+
+func (a *Futures) URL(_ context.Context) (string, error) {
+	a.mu.Lock()
+	syms := a.syms
+	a.mu.Unlock()
+	if len(syms) == 0 {
+		return futuresCombinedBase + "?streams=btcusdt@depth20@100ms", nil
+	}
+	parts := make([]string, len(syms))
+	for i, s := range syms {
+		parts[i] = strings.ToLower(s) + "usdt@depth20@100ms"
+	}
+	return futuresCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
+}
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	if len(symbols) == 0 {
-		return nil
-	}
 	// Filter against Aster exchangeInfo — Aster (Binance fork) closes
 	// the connection with 1008 if even one stream in a SUBSCRIBE frame
 	// names a non-listed symbol. Cross-venue prewarm-1000 inevitably
-	// contains symbols Aster doesn't list (it's perp-only with ~370
-	// pairs vs MEXC's 2000+ longtail). Filter once at subscribe time;
-	// IsTrading returns true on REST error so we fail-open.
+	// contains symbols Aster doesn't list. Filter once at subscribe
+	// time; IsTrading returns true on REST error so we fail-open.
 	ctx := context.Background()
 	listed := make([]string, 0, len(symbols))
 	for _, s := range symbols {
@@ -56,6 +68,9 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 			listed = append(listed, s)
 		}
 	}
+	a.mu.Lock()
+	a.syms = append(a.syms[:0], listed...)
+	a.mu.Unlock()
 	if len(listed) == 0 {
 		return nil
 	}
