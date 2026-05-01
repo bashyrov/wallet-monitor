@@ -46,6 +46,11 @@ type Config struct {
 
 	// Log level
 	LogLevel string
+
+	// WS broadcaster HTTP listen port. Empty = disabled (Python keeps
+	// owning /api/screener/ws/*). Default "8090" for prod where nginx
+	// is configured to upstream the path family at this port.
+	WSBroadcastPort string
 }
 
 // Load reads env-vars and applies defaults. Never returns error — missing
@@ -60,6 +65,7 @@ func Load() Config {
 		IdleTimeout:        getenvDur("AVALANT_ORDERBOOK_IDLE_TIMEOUT", 60*time.Second),
 		WorkerExchanges:    splitCSV(getenv("AVALANT_WORKER_EXCHANGES", "")),
 		LogLevel:           getenv("LOG_LEVEL", "info"),
+		WSBroadcastPort:    getenv("AVALANT_WS_BROADCAST_PORT", ""),
 	}
 }
 

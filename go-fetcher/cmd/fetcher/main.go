@@ -58,6 +58,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/wsbroadcast"
+	"net/http"
 )
 
 func main() {
@@ -168,6 +170,61 @@ func main() {
 	g.Go(func() error {
 		return dexCompute.Run(gctx)
 	})
+
+	// WS broadcaster for /api/screener/ws/* — drains arbitrage.json,
+	// computes diff vs last broadcast, fans out to connected clients.
+	// nginx routes the /api/screener/ws/* path family at this port;
+	// everything else stays on the Python app. Disabled when
+	// AVALANT_WS_BROADCAST_PORT is empty / unset.
+	if cfg.WSBroadcastPort != "" {
+		secret := os.Getenv("SECRET_KEY")
+		if secret == "" {
+			l.Warn().Msg("SECRET_KEY unset — WS broadcaster will reject every authed connection")
+		}
+		// Redis reader for /ws/book — same connection family as the
+		// writer, but a separate client so the read MGET path doesn't
+		// share a connection slot with the chatty per-update writes.
+		bookReader, brErr := redisbus.NewReader(cfg.RedisURL)
+		if brErr != nil {
+			l.Warn().Err(brErr).Msg("redis reader init failed — /ws/book will fall back to in-process cache")
+		}
+		defer func() {
+			if bookReader != nil {
+				_ = bookReader.Close()
+			}
+		}()
+		wsSvc := wsbroadcast.NewService(
+			wsbroadcast.NewJWTValidator(secret),
+			wsbroadcast.NewLongShort(cfg.CacheDir),
+			wsbroadcast.NewFunding(cfg.CacheDir),
+			wsbroadcast.NewBook(bookReader, store, mgr),
+		)
+		mux := http.NewServeMux()
+		wsSvc.Routes(mux)
+		srv := &http.Server{Addr: ":" + cfg.WSBroadcastPort, Handler: mux}
+		g.Go(func() error {
+			wsSvc.Run(gctx)
+			return nil
+		})
+		g.Go(func() error {
+			l.Info().Str("addr", srv.Addr).Msg("ws-broadcaster listening")
+			errCh := make(chan error, 1)
+			go func() { errCh <- srv.ListenAndServe() }()
+			select {
+			case <-gctx.Done():
+				shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = srv.Shutdown(shCtx)
+				return nil
+			case err := <-errCh:
+				if err != nil && err != http.ErrServerClosed {
+					l.Error().Err(err).Msg("ws-broadcaster server exited")
+					return err
+				}
+				return nil
+			}
+		})
+	}
 
 	// Symbol manager reconciliation loop.
 	g.Go(func() error {
