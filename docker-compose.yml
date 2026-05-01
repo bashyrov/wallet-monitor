@@ -244,6 +244,15 @@ services:
       AVALANT_FETCHER_CACHE_DIR: ${GO_FETCHER_CACHE_DIR:-/tmp/avalant_cache_go}
       AVALANT_PREWARM_TOP_N: ${AVALANT_PREWARM_TOP_N:-20}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # WS broadcaster — when set, the Go fetcher binds an HTTP listener
+      # on this port and serves /api/screener/ws/long-short (+ /ws/arb
+      # legacy alias). nginx upstreams those paths to go-fetcher:8090.
+      # Empty = disabled (Python keeps owning the channel).
+      AVALANT_WS_BROADCAST_PORT: "8090"
+      # Same secret Python signs JWTs with — first-frame {"auth":"<JWT>"}
+      # is validated here so authed users get a uid attached. Required:
+      # without it the broadcaster runs anon-only.
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
     volumes:
       - avalant_cache:/tmp/avalant_cache         # mounted RW so we can
                                                   # bootstrap top-N from
