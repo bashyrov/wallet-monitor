@@ -8,6 +8,7 @@ class UserRegister(BaseModel):
     username: str
     email: EmailStr
     password: str
+    referral_code: Optional[str] = None
 
     @field_validator("username")
     @classmethod
@@ -22,6 +23,18 @@ class UserRegister(BaseModel):
     def password_length(cls, v: str) -> str:
         if len(v) < 6:
             raise ValueError("Password must be at least 6 characters")
+        return v
+
+    @field_validator("referral_code")
+    @classmethod
+    def referral_code_clean(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip().upper()
+        if not v:
+            return None
+        if len(v) > 16:
+            raise ValueError("Referral code too long")
         return v
 
 

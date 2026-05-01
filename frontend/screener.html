@@ -270,6 +270,8 @@
               <th onclick="sortArb('total_fees')"     data-acol="total_fees"     data-tip="Estimated taker fees for opening both legs (0.06% per side)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_profit')"     data-acol="net_profit"     data-tip="Net profit per 8h = gross funding − fees − price spread cost">Net profit <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_apr')"        data-acol="net_apr"        data-tip="Annualised net profit (net × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
+              <th data-tip="Live entry basis from top-of-book — (bestBidShort − bestAskLong) / bestAskLong · refreshed every 3s">In</th>
+              <th data-tip="Live exit basis from top-of-book — (bestBidLong − bestAskShort) / bestAskShort · refreshed every 3s">Out</th>
               <th data-tip="Whether mark prices are close enough for the spread not to eat the profit">Status</th>
               <th></th>
             </tr>
@@ -295,10 +297,12 @@
               <th onclick="sortSpot('total_fees')"      data-scol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
               <th onclick="sortSpot('net_apr')"         data-scol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
+              <th data-tip="Live entry basis from top-of-book — (bestBidShort_perp − bestAskLong_spot) / bestAskLong_spot">In</th>
+              <th data-tip="Live exit basis from top-of-book — (bestBidLong_spot − bestAskShort_perp) / bestAskShort_perp">Out</th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-spot"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+          <tbody id="tbody-spot"><tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
@@ -319,10 +323,12 @@
               <th onclick="sortDex('total_fees')"      data-dcol="total_fees"      data-tip="DEX round-trip (~0.8%) + perp round-trip. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('net_profit')"      data-dcol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
               <th onclick="sortDex('net_apr')"         data-dcol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
+              <th data-tip="Live entry basis from short-perp top-of-book vs DEX price — (bestBidShort − dexPrice) / dexPrice">In</th>
+              <th data-tip="Live exit basis — (dexPrice − bestAskShort) / bestAskShort">Out</th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-dex"><tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
+          <tbody id="tbody-dex"><tr><td colspan="12" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-dex"></div>
@@ -943,7 +949,7 @@ let _dexSort = { col: 'net_profit', dir: 'desc' };
 async function loadDex() {
   if (!_dexRows.length) {
     document.getElementById('tbody-dex').innerHTML =
-      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
+      '<tr><td colspan="12" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/dex-short');
@@ -963,7 +969,7 @@ async function loadDex() {
     // Network / 5xx — leave the previous table intact, don't stomp on
     // user's view. Only show "Failed" if we have nothing at all.
     if (!_dexRows.length) {
-      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="10" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="12" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_dexTimer);
@@ -1012,7 +1018,7 @@ function renderDex() {
   const page = _dexFiltered.slice(start, start + PAGE_SIZE);
   if (!_dexFiltered.length) {
     const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
     renderDexCards();
     return;
@@ -1057,6 +1063,8 @@ function renderDex() {
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       <td>${fmtApr(r.net_apr)}</td>
+      <td class="td-inout" data-io="in" data-io-key="dex:${r.symbol}:dex:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout" data-io="out" data-io-key="dex:${r.symbol}:dex:${r.short_exchange}"><span class="io-pending">…</span></td>
       <td style="display:flex;gap:4px;align-items:center">
         <a href="/arb?type=dex&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain)}&long=${esc(r.dex_name)}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address)}&pair=${esc((r.dex_pair_url||'').split('/').pop())}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
       </td>
@@ -1064,6 +1072,7 @@ function renderDex() {
   }).join('');
   renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
   renderDexCards();
+  if (_mode === 'dex') refreshInOut();
 }
 
 function renderDexCards() {
@@ -1158,7 +1167,7 @@ let _spotSort = { col: 'basis_pct', dir: 'desc' };
 async function loadSpot() {
   if (!_spotRows.length) {
     document.getElementById('tbody-spot').innerHTML =
-      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
+      '<tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/spot-short');
@@ -1175,7 +1184,7 @@ async function loadSpot() {
     applySpot();
   } catch (e) {
     if (!_spotRows.length) {
-      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="11" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_spotTimer);
@@ -1233,7 +1242,7 @@ function renderSpot() {
   const page = _spotFiltered.slice(start, start + PAGE_SIZE);
   if (!_spotFiltered.length) {
     const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
     renderSpotCards();
     return;
@@ -1278,6 +1287,8 @@ function renderSpot() {
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       <td>${fmtApr(r.net_apr)}</td>
+      <td class="td-inout" data-io="in" data-io-key="spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout" data-io="out" data-io-key="spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
       <td style="display:flex;gap:4px;align-items:center">
         <a href="/arb?type=spot&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
       </td>
@@ -1285,6 +1296,7 @@ function renderSpot() {
   }).join('');
   renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
   renderSpotCards();
+  if (_mode === 'spot') refreshInOut();
 }
 
 function renderSpotCards() {
@@ -1835,7 +1847,7 @@ async function loadArb() {
     applyArb();
   } else {
     document.getElementById('tbody-arb').innerHTML =
-      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
+      '<tr><td colspan="12" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
     document.getElementById('cards-arb').innerHTML =
       '<div class="empty-msg"><span class="spinner"></span>Computing…</div>';
   }
@@ -2093,7 +2105,7 @@ function renderArb() {
   const page  = _filteredArb.slice(start, start + PAGE_SIZE);
   if (!_filteredArb.length) {
     const msg = _arbRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');
     renderArbCards();
     return;
@@ -2139,6 +2151,8 @@ function renderArb() {
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       <td>${fmtApr(r.net_apr)}</td>
+      <td class="td-inout" data-io="in" data-io-key="futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout" data-io="out" data-io-key="futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
       <td class="td-status">${validBadge}</td>
       <td style="display:flex;gap:4px;align-items:center">
         ${_starBtn(r.symbol, r.long_exchange, r.short_exchange)}
@@ -2148,6 +2162,7 @@ function renderArb() {
   }).join('');
   renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');
   renderArbCards();
+  if (_mode === 'arb') refreshInOut();
 }
 
 // ── mobile sort bar ───────────────────────────────────────────────────────────
@@ -2447,6 +2462,85 @@ document.querySelectorAll('.vol-chip[data-v="0"]').forEach(el => el.classList.ad
 const _pt = document.getElementById('panel-toggle'); if (_pt) _pt.style.left = '260px';
 
 setInterval(tickCountdowns, 1000);
+
+// ── Live In/Out columns ─────────────────────────────────────────────────────
+// Fetches top-of-book entry/exit basis for currently visible screener rows.
+// Throttled per-mode: only the active section is queried; cap 64 rows/cycle.
+// Backend endpoint /screener/in-out batches the orderbook calls.
+const _inOutCache = new Map();   // key → {in, out, ts}
+let _inOutTimer = null;
+
+function _activeInOutSection() {
+  if (_mode === 'arb')  return 'tbody-arb';
+  if (_mode === 'spot') return 'tbody-spot';
+  if (_mode === 'dex')  return 'tbody-dex';
+  return null;
+}
+
+function _applyInOutCells(payload) {
+  const tbId = _activeInOutSection();
+  if (!tbId) return;
+  const tbody = document.getElementById(tbId);
+  if (!tbody) return;
+  for (const td of tbody.querySelectorAll('td.td-inout[data-io-key]')) {
+    const key = td.getAttribute('data-io-key');
+    const slot = payload[key];
+    if (!slot) continue;
+    const which = td.getAttribute('data-io');
+    const v = slot[which];
+    if (v == null) {
+      td.innerHTML = '<span class="io-na">—</span>';
+      continue;
+    }
+    const sign = v >= 0 ? '+' : '';
+    const cls  = v > 0 ? 'rate-pos' : v < 0 ? 'rate-neg' : 'rate-zero';
+    td.innerHTML = `<span class="${cls}" style="font-family:var(--mono);font-size:11px">${sign}${v.toFixed(4)}%</span>`;
+  }
+}
+
+async function refreshInOut() {
+  const tbId = _activeInOutSection();
+  if (!tbId) return;
+  const tbody = document.getElementById(tbId);
+  if (!tbody) return;
+  // Collect unique keys for visible rows.
+  const seen = new Set();
+  for (const td of tbody.querySelectorAll('td.td-inout[data-io-key]')) {
+    const k = td.getAttribute('data-io-key');
+    if (k) seen.add(k);
+  }
+  if (!seen.size) return;
+  const items = Array.from(seen).slice(0, 64);
+  // Apply cached values immediately so paging-back doesn't show "…".
+  const cached = {};
+  const fresh = [];
+  const now = Date.now();
+  for (const k of items) {
+    const c = _inOutCache.get(k);
+    if (c && now - c.ts < 6000) cached[k] = c;
+    else fresh.push(k);
+  }
+  if (Object.keys(cached).length) _applyInOutCells(cached);
+  if (!fresh.length) return;
+  try {
+    const r = await Auth.apiFetch(`/screener/in-out?items=${encodeURIComponent(fresh.join(','))}`);
+    if (!r.ok) return;
+    const j = await r.json();
+    for (const k of Object.keys(j)) {
+      _inOutCache.set(k, { in: j[k].in, out: j[k].out, ts: Date.now() });
+    }
+    _applyInOutCells(j);
+  } catch {}
+}
+
+// Active-section refresh loop. 3s cadence is the right tradeoff: fresh enough
+// to read as "live", slow enough to not hammer the orderbook cache.
+_inOutTimer = setInterval(() => {
+  if (document.hidden) return;
+  refreshInOut();
+}, 3000);
+// Trigger immediately on mode switch + after each render-completion event.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshInOut(); });
 
 // ── Initial REST load (instant, before WS connects) ───────────────────────────
 (async function preload() {

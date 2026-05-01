@@ -332,6 +332,11 @@
       </div>
     </div>
 
+    <div class="form-group">
+      <label class="form-label">Referral code <span style="color:var(--text3);font-weight:400">· optional</span></label>
+      <input id="f-ref" class="form-input" type="text" placeholder="e.g. AVL7XK2" autocomplete="off" maxlength="16" style="text-transform:uppercase;letter-spacing:0.05em">
+    </div>
+
     <div id="reg-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--red-dim);border-radius:7px;"></div>
 
     <button type="submit" class="btn-submit" id="btn-submit">Create Account</button>
@@ -362,6 +367,15 @@
 <script>
 Auth.redirectIfAuthed('/app');
 
+// Prefill referral code from ?ref= so shared links carry the credit.
+try {
+  const ref = new URLSearchParams(window.location.search).get('ref');
+  if (ref) {
+    const inp = document.getElementById('f-ref');
+    if (inp) inp.value = ref.trim().toUpperCase();
+  }
+} catch {}
+
 function togglePw(id, btn) {
   const inp = document.getElementById(id);
   const show = inp.type === 'password';
@@ -381,6 +395,7 @@ async function handleRegister(e) {
   const email = document.getElementById('f-email').value.trim();
   const password = document.getElementById('f-password').value;
   const password2 = document.getElementById('f-password2').value;
+  const referral_code = (document.getElementById('f-ref').value || '').trim().toUpperCase();
 
   if (password !== password2) {
     errEl.textContent = 'Passwords do not match';
@@ -392,10 +407,12 @@ async function handleRegister(e) {
   btn.textContent = 'Creating account…';
 
   try {
+    const body = { username, email, password };
+    if (referral_code) body.referral_code = referral_code;
     const resp = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email, password }),
+      body: JSON.stringify(body),
     });
     const data = await resp.json();
     if (!resp.ok) {

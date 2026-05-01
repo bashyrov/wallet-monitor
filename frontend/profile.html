@@ -518,11 +518,11 @@
       <div class="profile-email" id="profile-email"></div>
       <div class="profile-joined" id="profile-joined"></div>
     </div>
-    <button class="avashare-btn" onclick="openAvashare()" title="AvaShare — cashback on exchange fees">
+    <button class="avashare-btn" onclick="openAvashare()" title="Avashare — your referral programme">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <path d="M8 2v12M3 5l5-3 5 3M3 11l5 3 5-3"/>
       </svg>
-      <span>AvaShare</span>
+      <span>Avashare</span>
     </button>
   </div>
 
@@ -2431,9 +2431,9 @@ try {
     <div class="avs-head">
       <div class="avs-title-row">
         <div style="flex:1">
-          <div class="avs-kicker">AvaShare · Partner programme</div>
-          <div class="avs-title">Cashback on <span class="accent">every trade</span>.</div>
-          <div class="avs-sub">Sign up on any exchange below through our referral link and earn a share of the commissions you pay — forever.</div>
+          <div class="avs-kicker">Avashare · Refer & earn</div>
+          <div class="avs-title">Earn <span class="accent" id="avs-pct-headline">20%</span> from every payment your invitees make.</div>
+          <div class="avs-sub">Share your code, your friends sign up — every package they buy credits commission to your balance. Withdraw to any TRC20 USDT address.</div>
         </div>
         <button class="avs-close" onclick="closeAvashare()" aria-label="Close">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
@@ -2443,100 +2443,177 @@ try {
 
     <div class="avs-stats">
       <div class="avs-stat">
-        <div class="avs-stat-val" id="avs-stat-live">—</div>
-        <div class="avs-stat-lb">Live programmes</div>
+        <div class="avs-stat-val" id="avs-stat-earned">$0.00</div>
+        <div class="avs-stat-lb">Total earned</div>
       </div>
       <div class="avs-stat">
-        <div class="avs-stat-val" id="avs-stat-max"><span style="color:#1AFFAB">—</span></div>
-        <div class="avs-stat-lb">Max rate</div>
+        <div class="avs-stat-val" id="avs-stat-available"><span style="color:#1AFFAB">$0.00</span></div>
+        <div class="avs-stat-lb">Available now</div>
       </div>
       <div class="avs-stat">
-        <div class="avs-stat-val">$0<span style="color:#676B7E;font-size:12px">·fees</span></div>
-        <div class="avs-stat-lb">Extra cost</div>
+        <div class="avs-stat-val" id="avs-stat-refs">0</div>
+        <div class="avs-stat-lb">Referees</div>
       </div>
     </div>
 
-    <div class="avs-body" id="avs-body"></div>
+    <div class="avs-body" id="avs-body">
+      <div style="padding:18px;text-align:center;color:var(--text3)">Loading…</div>
+    </div>
 
     <div class="avs-foot">
       <div class="avs-foot-left">
         <span class="avs-foot-dot"></span>
-        <span>Paid monthly in USDT</span>
+        <span>Manual review · USDT TRC20 only</span>
       </div>
-      <div class="avs-foot-right">No account takeover · Links only</div>
+      <div class="avs-foot-right">Paid out by admin within 1–3 business days</div>
     </div>
   </div>
 </div>
 
 <script>
-const _avsProgrammes = [
-  { id: 'gate',        name: 'Gate.io',     pct: 20,   url: 'https://www.gate.com/ru/signup/AVJMB1FB?ref_type=103', code: 'AVJMB1FB',  color: '#E40C5B' },
-  { id: 'bybit',       name: 'Bybit',       pct: 20,   url: 'https://partner.bybit.com/b/58945',                   code: '58945',     color: '#F7A600' },
-  { id: 'okx',         name: 'OKX',         pct: 15,   url: 'https://www.okx.com/join/AVALANT',                    code: 'AVALANT',   color: '#E0E0E0' },
-  { id: 'kucoin',      name: 'KuCoin',      pct: 15,   url: 'https://www.kucoin.com/r/rf/QBA39VTM',                code: 'QBA39VTM',  color: '#00BC8C' },
-  { id: 'bingx',       name: 'BingX',       pct: 5,    url: 'https://bingxdao.com/invite/DULALM/',                 code: 'DULALM',    color: '#1DB8F2' },
-  { id: 'bitget',      name: 'Bitget',      pct: null, url: 'https://www.bitgetapps.com/ru/referral/register?clacCode=X76Y2U1U&from=%2Fru%2Fevents%2Freferral-all-program&source=events&utmSource=PremierInviter', code: 'X76Y2U1U', color: '#00B4D8', unknownPct: true },
-  { id: 'binance',     name: 'Binance',     pct: null, url: null, code: null, color: '#F0B90B' },
-  { id: 'mexc',        name: 'MEXC',        pct: null, url: null, code: null, color: '#00C09A' },
-  { id: 'backpack',    name: 'Backpack',    pct: null, url: null, code: null, color: '#4ADE80' },
-  { id: 'hyperliquid', name: 'Hyperliquid', pct: null, url: null, code: null, color: '#48CDD8' },
-  { id: 'aster',       name: 'Aster',       pct: null, url: null, code: null, color: '#FF8C00' },
-  { id: 'lighter',     name: 'Lighter',     pct: null, url: null, code: null, color: '#A78BFA' },
-  { id: 'paradex',     name: 'Paradex',     pct: null, url: null, code: null, color: '#FF6A6A' },
-];
+let _avsData = null;
+
+function _avsFmt(v) {
+  return '$' + Number(v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function _avsRender() {
+  const d = _avsData;
+  if (!d) return;
+  document.getElementById('avs-pct-headline').textContent = `${d.commission_pct}%`;
+  document.getElementById('avs-stat-earned').textContent = _avsFmt(d.totals.earned_usd);
+  document.getElementById('avs-stat-available').innerHTML =
+    `<span style="color:#1AFFAB">${_avsFmt(d.totals.available_usd)}</span>`;
+  document.getElementById('avs-stat-refs').textContent = d.totals.referees;
+
+  const link = d.link;
+  const code = d.code;
+  const addr = d.payout_address || '';
+  const recentEarnings = (d.history || []).slice(0, 5);
+  const payouts = d.payouts || [];
+
+  const histHtml = recentEarnings.length
+    ? recentEarnings.map(h => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-top:1px solid var(--border);font-size:12px">
+          <span style="color:var(--text2)">${new Date(h.created_at).toLocaleDateString()}</span>
+          <span style="color:var(--text3)">${h.pct}% commission</span>
+          <span style="font-family:var(--mono);color:var(--green);font-weight:600">+${_avsFmt(h.amount_usd)}</span>
+        </div>`).join('')
+    : `<div style="padding:14px 12px;color:var(--text3);font-size:12px;text-align:center">No commissions yet — share your code to start earning.</div>`;
+
+  const payoutsHtml = payouts.length
+    ? payouts.slice(0, 8).map(p => {
+        const cls = p.status === 'paid' ? 'color:#1AFFAB' : p.status === 'rejected' ? 'color:#F87171' : 'color:#E5C07B';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-top:1px solid var(--border);font-size:12px">
+          <span style="color:var(--text2)">${new Date(p.created_at).toLocaleDateString()}</span>
+          <span style="font-family:var(--mono)">${_avsFmt(p.amount_usd)}</span>
+          <span style="${cls};font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:0.04em">${p.status}</span>
+        </div>`;
+      }).join('')
+    : '';
+
+  document.getElementById('avs-body').innerHTML = `
+    <div class="avs-section-title">Your code</div>
+    <div style="padding:0 16px 14px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:8px;align-items:center;background:var(--surface3);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+        <div style="font-family:var(--mono);font-size:18px;font-weight:700;letter-spacing:0.1em;color:var(--green);flex:1">${code}</div>
+        <button onclick="_avsCopy('${code}', this)" style="background:none;border:1px solid var(--border);color:var(--text2);padding:6px 10px;border-radius:7px;cursor:pointer;font-size:11px">Copy code</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;background:var(--surface3);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${link}</div>
+        <button onclick="_avsCopy('${link}', this)" style="background:none;border:1px solid var(--border);color:var(--text2);padding:6px 10px;border-radius:7px;cursor:pointer;font-size:11px">Copy link</button>
+      </div>
+    </div>
+
+    <div class="avs-section-title">Request payout</div>
+    <div style="padding:0 16px 16px">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input id="avs-addr" placeholder="TRC20 USDT address (T…)" value="${addr}"
+               style="padding:10px 12px;border:1px solid var(--border);background:var(--surface3);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px">
+        <div style="display:flex;gap:8px">
+          <input id="avs-amt" type="number" step="0.01" min="1" placeholder="Amount in USDT"
+                 style="flex:1;padding:10px 12px;border:1px solid var(--border);background:var(--surface3);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px">
+          <button onclick="_avsRequestPayout()" id="avs-payout-btn"
+                  style="padding:10px 16px;border-radius:8px;background:var(--green);color:#000;font-weight:700;border:none;cursor:pointer">
+            Request
+          </button>
+        </div>
+        <div id="avs-payout-msg" style="font-size:11px;color:var(--text3);min-height:14px"></div>
+      </div>
+    </div>
+
+    <div class="avs-section-title">Recent commissions</div>
+    <div style="margin:0 16px 14px;background:var(--surface3);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      ${histHtml}
+    </div>
+
+    ${payoutsHtml ? `
+      <div class="avs-section-title">Payout history</div>
+      <div style="margin:0 16px 14px;background:var(--surface3);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        ${payoutsHtml}
+      </div>` : ''}
+  `;
+}
+
+async function _avsLoad() {
+  try {
+    const r = await Auth.apiFetch('/referrals/me');
+    if (!r.ok) throw new Error('load failed');
+    _avsData = await r.json();
+    _avsRender();
+  } catch (e) {
+    document.getElementById('avs-body').innerHTML =
+      `<div style="padding:20px;color:var(--red);text-align:center;font-size:12px">Failed to load: ${e.message}</div>`;
+  }
+}
+
+function _avsCopy(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  });
+}
+
+async function _avsRequestPayout() {
+  const addr = document.getElementById('avs-addr').value.trim();
+  const amt = parseFloat(document.getElementById('avs-amt').value);
+  const msg = document.getElementById('avs-payout-msg');
+  const btn = document.getElementById('avs-payout-btn');
+  msg.style.color = 'var(--text3)';
+  if (!addr || !addr.startsWith('T') || addr.length !== 34) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'TRC20 address must start with T and be 34 chars';
+    return;
+  }
+  if (!amt || amt <= 0) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'Amount must be a positive number';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Requesting…';
+  try {
+    const r = await Auth.apiFetch('/referrals/me/payout', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({amount_usd: amt, address: addr}),
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.detail || `HTTP ${r.status}`);
+    }
+    msg.style.color = 'var(--green)'; msg.textContent = 'Payout request submitted — admin will review shortly.';
+    document.getElementById('avs-amt').value = '';
+    await _avsLoad();
+  } catch (e) {
+    msg.style.color = 'var(--red)'; msg.textContent = String(e.message || e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Request';
+  }
+}
 
 function openAvashare() {
-  const body = document.getElementById('avs-body');
-  const live = _avsProgrammes.filter(p => p.url);
-  const soon = _avsProgrammes.filter(p => !p.url);
-  const maxPct = Math.max(...live.map(p => p.pct || 0));
-
-  document.getElementById('avs-stat-live').innerHTML =
-    `${live.length}<span style="color:#676B7E;font-size:12px"> / ${_avsProgrammes.length}</span>`;
-  document.getElementById('avs-stat-max').innerHTML =
-    `<span style="color:#1AFFAB">${maxPct}%</span>`;
-
-  const renderRow = (p) => {
-    const initial = p.name.charAt(0);
-    const hasRef = !!p.url;
-    const isTop = hasRef && p.pct === maxPct;
-    let pctHtml;
-    if (p.pct != null) pctHtml = `<div class="avs-pct">${p.pct}%</div>`;
-    else if (p.unknownPct) pctHtml = `<div class="avs-pct unknown">TBD</div>`;
-    else pctHtml = `<div class="avs-pct none">—</div>`;
-
-    return `
-      <div class="avs-row ${hasRef ? '' : 'soon'} ${isTop ? 'featured' : ''}">
-        <div class="avs-row-logo" style="color:${p.color};background:${p.color}1a;">${initial}</div>
-        <div class="avs-row-info">
-          <div class="avs-row-name">
-            ${p.name}
-            ${isTop ? '<span class="avs-row-badge">top rate</span>' : ''}
-          </div>
-          <div class="avs-row-sub">
-            ${p.code
-              ? `Referral code <span class="code">${p.code}</span>`
-              : 'Ref programme coming soon'}
-          </div>
-        </div>
-        ${pctHtml}
-        ${hasRef
-          ? `<a class="avs-join" href="${p.url}" target="_blank" rel="noopener">
-               Sign up
-               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h8v8M5 11L13 3"/></svg>
-             </a>`
-          : `<span class="avs-soon">Soon</span>`}
-      </div>`;
-  };
-
-  body.innerHTML =
-    `<div class="avs-section-title">Available now — ${live.length}</div>` +
-    live.map(renderRow).join('') +
-    (soon.length ? `<div class="avs-section-title">Partners coming soon</div>` : '') +
-    soon.map(renderRow).join('');
-
   document.getElementById('avs-bg').classList.add('open');
   document.body.style.overflow = 'hidden';
+  _avsLoad();
 }
 
 function closeAvashare() {
