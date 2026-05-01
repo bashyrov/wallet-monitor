@@ -624,7 +624,6 @@ async def _in_out_resolve(items: str):
     file_memo = _obc._file_memo
 
     book_by: dict[tuple[str, str], dict] = {}
-    misses: list[tuple[str, str]] = []
     for ex, sym in fetch_keys:
         pair = f"{ex}:{sym}"
         if pair in redis_hits:
@@ -635,25 +634,16 @@ async def _in_out_resolve(items: str):
             book_by[(ex, sym)] = fd
         else:
             book_by[(ex, sym)] = {"bids": [], "asks": []}
-            misses.append((ex, sym))
 
-    # For pairs that were missing from BOTH Redis and the file memo, fire
-    # the touch_user_sub path. This publishes a `book:subscribe` event to
-    # the Go fetcher's redis pub/sub which expands the per-venue WS sub
-    # set; ~2-5s later the book lands in Redis and a subsequent /in-out
-    # call for the same pair returns real values. The first call after
-    # render still returns null for these (which the frontend renders as
-    # "—"), but the user sees live values within one cycle.
-    #
-    # Capped per request because this DOES write a file under the hood,
-    # so 50 visible rows × every 3s × N users could create disk churn.
-    if misses:
-        try:
-            from backend.services.orderbook_cache import touch_user_sub
-            for ex, sym in misses[:32]:
-                touch_user_sub(ex, sym)
-        except Exception:  # noqa: BLE001
-            pass
+    # touch_user_sub on misses removed: it writes user_subs.json on
+    # every call (atomic-rename pattern → 1 read + 1 write per call).
+    # With 10 /in-out calls/sec × 30 misses each, that was 300 file
+    # writes/sec and was driving 11 %+ iowait + saturating both Python
+    # workers. Phase B prewarm (PrewarmFromArbFiles in go-fetcher,
+    # every 60 s) covers the warming path: pairs in the top-1000
+    # tracked set get books subscribed automatically. Misses past
+    # that set just stay null — they're outside the screener's
+    # actionable window anyway.
 
     # DEX prices read from dex_arbitrage.json — already loaded periodically.
     dex_px_by: dict[str, float] = {}
@@ -718,8 +708,8 @@ async def _in_out_resolve(items: str):
         n_null     = len(out) - n_resolved
         sample_misses = [k for k, v in out.items() if v.get("in") is None][:3]
         logger.info(
-            "in-out: req=%d redis=%d ok=%d null=%d touched=%d misses=%s",
-            len(parsed), len(redis_hits), n_resolved, n_null, len(misses),
+            "in-out: req=%d redis=%d ok=%d null=%d misses=%s",
+            len(parsed), len(redis_hits), n_resolved, n_null,
             sample_misses,
         )
     except Exception:  # noqa: BLE001
