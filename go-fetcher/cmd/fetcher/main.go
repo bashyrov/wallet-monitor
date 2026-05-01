@@ -175,29 +175,24 @@ func main() {
 		return nil
 	})
 
-	// Tracked-set auto-touch: every 30 s read arbitrage.json /
-	// spot_arbitrage.json / dex_arbitrage.json and refresh the user-
-	// touch set with every (exchange, symbol) appearing in those
-	// files. The arb compute caps each at top-1000 by basis, so this
-	// keeps every WS subscription warm for the screener's "tracked
-	// set" without depending on per-row user-touch from the web side.
-	// IdleWindow is 120 s, so a 30 s refresh cadence keeps entries
-	// that stay in the top alive while letting fall-outs expire.
-	g.Go(func() error {
-		// Initial fire — gives the manager something to subscribe on
-		// even before the first reconcile tick.
-		mgr.TouchFromArbFiles(cfg.CacheDir)
-		t := time.NewTicker(30 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-gctx.Done():
-				return nil
-			case <-t.C:
-				mgr.TouchFromArbFiles(cfg.CacheDir)
-			}
-		}
-	})
+	// Tracked-set auto-touch is intentionally disabled. The previous
+	// version called Manager.TouchFromArbFiles every 30 s for the full
+	// 1000-pair tracked set, which caused a flood of SetSymbols calls
+	// across all 24 venue runners. Adapters with strict rate limits
+	// (Binance public WS at 5 msg/s, Aster as a fork) ended up in a
+	// 1008 policy-close loop because the cumulative SUBSCRIBE volume
+	// blew past their thresholds even with chunking + 250 ms delay.
+	//
+	// User-touch from the web (POST /api/screener/in-out → file +
+	// pub/sub bridge → mgr.Touch) covers the same ground at a
+	// natural cadence: 256 keys per 3 s tick, scoped to whatever the
+	// user is actively viewing. The manager's IdleWindow drops
+	// stale touches; freshly-touched pairs subscribe within one
+	// reconcile (5 s).
+	//
+	// `TouchFromArbFiles` stays as a function for future use (e.g.,
+	// when adapters get per-venue split connections to absorb the
+	// bigger churn).
 
 	// Redis subscriber (skipped silently if REDIS_URL unset).
 	if subscriber != nil {
