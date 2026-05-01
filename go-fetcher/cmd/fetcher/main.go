@@ -327,6 +327,14 @@ func orderbookRegistry(cfg config.Config, store *cache.Store) []orderbookEntry {
 		{name: "gate_spot", factory: func() *ws.Runner { return gate.NewSpot(store) }},
 		{name: "kucoin_spot", factory: func() *ws.Runner { return kucoin.NewSpot(store) }},
 		{name: "bingx_spot", factory: func() *ws.Runner { return bingx.NewSpot(store) }},
+		// Phase 8b — spot for the rest of the CEXes that have a spot
+		// product. MEXC spot is on the wbs-api.mexc.com Protobuf endpoint
+		// and Hyperliquid spot uses @<index> pair IDs that need a
+		// spotMeta REST seed; both deferred to a follow-up.
+		{name: "htx_spot", factory: func() *ws.Runner { return htx.NewSpot(store) }},
+		{name: "whitebit_spot", factory: func() *ws.Runner { return whitebit.NewSpot(store) }},
+		{name: "kraken_spot", factory: func() *ws.Runner { return kraken.NewSpot(store) }},
+		{name: "backpack_spot", factory: func() *ws.Runner { return backpack.NewSpot(store) }},
 		{name: "hyperliquid", factory: func() *ws.Runner { return hyperliquid.NewFutures(store) }},
 		{name: "paradex", factory: func() *ws.Runner { return paradex.NewFutures(store) }},
 		{name: "lighter", factory: func() *ws.Runner { return lighter.NewFutures(store) }},
