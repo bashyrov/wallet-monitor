@@ -21,8 +21,6 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-var _ = strings.HasSuffix // silence unused-import if no other strings.* below
-
 const (
 	// Combined-stream with BOTH markPrice and ticker — matches Python's
 	// funding_ws adapter exactly. Single-stream with just markPrice
@@ -55,6 +53,39 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 	if err := ws.UnmarshalJSON(frame, &wrap); err != nil {
 		return nil, nil
 	}
+
+	// !ticker@arr — supplies 24h quote volume (q field). Critical for
+	// the volume filter; markPrice stream alone has no volume.
+	if strings.Contains(wrap.Stream, "ticker") {
+		type tk struct {
+			Symbol string `json:"s"`
+			Quote  string `json:"q"`
+		}
+		body, err := ws.MarshalJSON(wrap.Data)
+		if err != nil {
+			return nil, nil
+		}
+		var rows []tk
+		if err := ws.UnmarshalJSON(body, &rows); err != nil {
+			return nil, nil
+		}
+		out := make([]funding.Tick, 0, len(rows))
+		for _, r := range rows {
+			if !strings.HasSuffix(r.Symbol, "USDT") {
+				continue
+			}
+			vol, _ := strconv.ParseFloat(r.Quote, 64)
+			if vol > 0 {
+				out = append(out, funding.Tick{
+					Symbol:    strings.TrimSuffix(r.Symbol, "USDT"),
+					Volume24h: vol,
+					IntervalH: 8,
+				})
+			}
+		}
+		return out, nil
+	}
+
 	if !strings.Contains(wrap.Stream, "markPrice") {
 		return nil, nil
 	}

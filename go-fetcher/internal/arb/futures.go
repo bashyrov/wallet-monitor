@@ -70,6 +70,12 @@ const (
 
 	// File-cache cap — same as Python's _ARB_FILE_TOP_N.
 	arbFileTopN = 500
+
+	// Default volume floor — 24h USD volume. Drops delisted/halted
+	// contracts that the venue still emits funding rows for, plus
+	// dead-microcap pairs which would dominate the screener with
+	// stale data. User policy: 20k USD/24h is the floor.
+	minVolumeUSD = 20_000
 )
 
 // Compute is the periodic arb-compute service. Reads funding.Store on a
@@ -137,6 +143,19 @@ func (c *Compute) tick() {
 				continue // empty entry, skip
 			}
 			if t.IntervalH <= 0 {
+				continue
+			}
+			// Filter delisted/halted contracts by venue exchangeInfo.
+			// Aster ships SETTLING (DAM/MATIC), Binance ships
+			// SETTLING/BREAK (NTRN). HL filters via isDelisted in
+			// its own adapter.
+			if !IsListed(ex, sym) {
+				continue
+			}
+			// Default volume filter — drop microcap noise. 20k USD/24h
+			// is the user-requested floor: real trading pairs always
+			// clear this; delisted/dead pairs typically don't.
+			if t.Volume24h > 0 && t.Volume24h < minVolumeUSD {
 				continue
 			}
 			bySym[sym] = append(bySym[sym], entry{ex: ex, t: t})

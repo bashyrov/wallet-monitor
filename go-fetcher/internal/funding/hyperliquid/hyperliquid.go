@@ -59,7 +59,8 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	}
 	var meta struct {
 		Universe []struct {
-			Name string `json:"name"`
+			Name       string `json:"name"`
+			IsDelisted bool   `json:"isDelisted"`
 		} `json:"universe"`
 	}
 	if err := sonic.Unmarshal(doc[0], &meta); err != nil {
@@ -83,6 +84,13 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	for i, c := range ctxs {
 		token := meta.Universe[i].Name
 		if token == "" {
+			continue
+		}
+		// HL keeps delisted markets in /metaAndAssetCtxs with funding=0
+		// and stale mark. CYBER/CATI/LISTA/STG/MKR all have
+		// isDelisted=true. Skip them — otherwise they generate
+		// phantom arb opps with wide basis vs live venues.
+		if meta.Universe[i].IsDelisted {
 			continue
 		}
 		// Hyperliquid quotes funding PER HOUR, not 8h — flag intervalH=1.

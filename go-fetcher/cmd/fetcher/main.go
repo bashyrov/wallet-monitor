@@ -161,10 +161,10 @@ func main() {
 		return spotCompute.Run(gctx)
 	})
 
-	// DEX arb stub — writes valid empty dex_arbitrage.json. Full port
-	// (CoinGecko + DexScreener) deferred to next sprint. Until then
-	// /screener DEX tab is empty.
-	dexCompute := arb.NewDEXCompute(cfg.CacheDir, 30*time.Second)
+	// DEX arb compute — Python's dex_arbitrage_service port. CoinGecko
+	// symbol→contract cache (1h TTL) + DexScreener pool fetches with
+	// cross-pool consensus check. Writes dex_arbitrage.json every 30s.
+	dexCompute := arb.NewDEXCompute(fundingStore, cfg.CacheDir, 30*time.Second)
 	g.Go(func() error {
 		return dexCompute.Run(gctx)
 	})

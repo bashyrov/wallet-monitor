@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	wsURL   = "wss://fstream.asterdex.com/stream?streams=!markPrice@arr@1s"
+	wsURL   = "wss://fstream.asterdex.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
 	restURL = "https://fapi.asterdex.com/fapi/v1/premiumIndex"
 )
 
@@ -28,21 +28,58 @@ func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
 func (a *Adapter) BuildSubscribe(_ []string) [][]byte    { return nil }
 
 func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
-	// Combined-stream wrapper — same shape Aster as Binance fork.
+	// Combined-stream — Aster uses Binance's protocol exactly.
+	// markPrice@arr@1s for funding+mark; ticker@arr for volume.
 	var wrap struct {
-		Stream string `json:"stream"`
-		Data   []struct {
-			Symbol      string `json:"s"`
-			MarkPrice   string `json:"p"`
-			IndexPrice  string `json:"i"`
-			Rate        string `json:"r"`
-			NextFunding int64  `json:"T"`
-		} `json:"data"`
+		Stream string           `json:"stream"`
+		Data   []map[string]any `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &wrap); err != nil {
 		return nil, nil
 	}
-	rows := wrap.Data
+
+	if strings.Contains(wrap.Stream, "ticker") {
+		type tk struct {
+			Symbol string `json:"s"`
+			Quote  string `json:"q"`
+		}
+		body, _ := ws.MarshalJSON(wrap.Data)
+		var rows []tk
+		if err := ws.UnmarshalJSON(body, &rows); err != nil {
+			return nil, nil
+		}
+		out := make([]funding.Tick, 0, len(rows))
+		for _, r := range rows {
+			if !strings.HasSuffix(r.Symbol, "USDT") {
+				continue
+			}
+			vol, _ := strconv.ParseFloat(r.Quote, 64)
+			if vol > 0 {
+				out = append(out, funding.Tick{
+					Symbol:    strings.TrimSuffix(r.Symbol, "USDT"),
+					Volume24h: vol,
+					IntervalH: 8,
+				})
+			}
+		}
+		return out, nil
+	}
+
+	if !strings.Contains(wrap.Stream, "markPrice") {
+		return nil, nil
+	}
+	type row struct {
+		Symbol      string `json:"s"`
+		MarkPrice   string `json:"p"`
+		IndexPrice  string `json:"i"`
+		Rate        string `json:"r"`
+		NextFunding int64  `json:"T"`
+	}
+	body, _ := ws.MarshalJSON(wrap.Data)
+	var rows []row
+	if err := ws.UnmarshalJSON(body, &rows); err != nil {
+		return nil, nil
+	}
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Symbol, "USDT") {

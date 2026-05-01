@@ -15,7 +15,10 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const restURL = "https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex"
+const (
+	restURL    = "https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex"
+	tickerURL  = "https://open-api.bingx.com/openApi/swap/v2/quote/ticker"
+)
 
 type Adapter struct{}
 
@@ -46,6 +49,28 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	if err := funding.HTTPGet(ctx, restURL, &doc); err != nil {
 		return nil, err
 	}
+
+	// Fetch volume in parallel; non-fatal on failure.
+	volBySymbol := make(map[string]float64, len(doc.Data))
+	var tdoc struct {
+		Data []struct {
+			Symbol      string `json:"symbol"`
+			QuoteVolume string `json:"quoteVolume"`
+		} `json:"data"`
+	}
+	if err := funding.HTTPGet(ctx, tickerURL, &tdoc); err == nil {
+		for _, r := range tdoc.Data {
+			if !strings.HasSuffix(r.Symbol, "-USDT") {
+				continue
+			}
+			token := strings.TrimSuffix(r.Symbol, "-USDT")
+			vol, _ := strconv.ParseFloat(r.QuoteVolume, 64)
+			if vol > 0 {
+				volBySymbol[token] = vol
+			}
+		}
+	}
+
 	out := make([]funding.Tick, 0, len(doc.Data))
 	for _, r := range doc.Data {
 		if !strings.HasSuffix(r.Symbol, "-USDT") {
@@ -60,6 +85,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			Rate:      rate,
 			MarkPrice: mark,
 			IndexPrice: idx,
+			Volume24h: volBySymbol[token],
 			IntervalH: 8,
 		}
 		if r.NextFundingTime > 0 {
