@@ -42,17 +42,17 @@ func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
 func (a *Adapter) BuildSubscribe(_ []string) [][]byte { return nil }
 
 func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
-	// Combined-stream wrapper. Stream is one of:
-	//   "!markPrice@arr@1s" — array of {s, p (mark), i (index), r (rate), T (next)}
-	//   "!ticker@arr"       — array of {s, c (last), v (vol), q (quote vol), ...}
-	// We parse markPrice for funding rate; ticker frames are dropped
-	// (volume comes from REST backstop where binance allows it).
+	// Combined-stream wrapper.
 	var wrap struct {
 		Stream string `json:"stream"`
 		Data   []map[string]any `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &wrap); err != nil {
+		println("[binance.funding] unmarshal err:", err.Error(), "frame[:100]=", string(frame[:min(100, len(frame))]))
 		return nil, nil
+	}
+	if wrap.Stream == "" {
+		println("[binance.funding] no stream key, frame[:120]=", string(frame[:min(120, len(frame))]))
 	}
 	if !strings.Contains(wrap.Stream, "markPrice") {
 		return nil, nil
