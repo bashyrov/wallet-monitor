@@ -37,6 +37,13 @@ type Store struct {
 	mu    sync.RWMutex
 	books map[string]*Entry // key = "<exchange>:<symbol>"
 
+	// versions holds a per-venue update counter, bumped on every Store()
+	// call for that exchange. The Dumper uses this to skip rewriting
+	// books.<ex>.json files for venues that haven't changed since the
+	// last tick — a 100ms cadence × 12 venues was burning ~70% I/O on
+	// idle venues that already had fresh files on disk.
+	versions map[string]uint64
+
 	// Optional hook fired on every Store() call. Used by the Phase 6
 	// rollout to mirror updates into Redis (`ob:<ex>:<sym>` keys) so
 	// Python web's existing read path picks up Go-fetched data without
@@ -45,7 +52,10 @@ type Store struct {
 }
 
 func New() *Store {
-	return &Store{books: make(map[string]*Entry, 1024)}
+	return &Store{
+		books:    make(map[string]*Entry, 1024),
+		versions: make(map[string]uint64, 32),
+	}
 }
 
 // SetOnUpdate registers a hook called on every Store() with the parsed
@@ -73,6 +83,7 @@ func (s *Store) Store(exchange, symbol string, snap ws.Snapshot, source string) 
 	if e.LastRequestAt.IsZero() {
 		e.LastRequestAt = e.UpdatedAt
 	}
+	s.versions[exchange]++
 	hook := s.onUpdate
 	s.mu.Unlock()
 
@@ -119,6 +130,19 @@ func (s *Store) Snapshot() map[string]Entry {
 	out := make(map[string]Entry, len(s.books))
 	for k, v := range s.books {
 		out[k] = *v
+	}
+	return out
+}
+
+// Versions returns a copy of the per-venue update counter map. Callers
+// (the file dumper) compare against their own last-seen value to decide
+// whether a venue's file needs rewriting.
+func (s *Store) Versions() map[string]uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]uint64, len(s.versions))
+	for k, v := range s.versions {
+		out[k] = v
 	}
 	return out
 }

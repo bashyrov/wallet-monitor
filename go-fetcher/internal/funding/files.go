@@ -189,6 +189,9 @@ func buildRows(byEx map[string]map[string]Tick) []map[string]any {
 	return rows
 }
 
+// No fsync — funding.json is ephemeral cache; the rename(tmp→final) is
+// the consistency anchor for readers, and a crash loses at most the
+// last 500ms tick which the next dump replaces.
 func writeAtomic(path string, v any) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp.")
@@ -196,13 +199,7 @@ func writeAtomic(path string, v any) error {
 		return err
 	}
 	tmpPath := tmp.Name()
-	enc := json.NewEncoder(tmp)
-	if err := enc.Encode(v); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
+	if err := json.NewEncoder(tmp).Encode(v); err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
 		return err

@@ -308,6 +308,11 @@ func round6(x float64) float64 { return math.Round(x*1e6) / 1e6 }
 
 // writeAtomic — own copy because importing cache would create a cycle
 // (cache → ws, but funding/arb shouldn't depend on cache). Tiny.
+//
+// No fsync — these are ephemeral cache files (arbitrage.json, etc.); a
+// crash loses at most the latest tick's dump, which the next cycle
+// rewrites. Skipping fsync removes the per-write disk-flush wait that
+// was the dominant cost on the 700ms compute cadence.
 func writeAtomic(path string, v any) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp.")
@@ -316,11 +321,6 @@ func writeAtomic(path string, v any) error {
 	}
 	tmpPath := tmp.Name()
 	if err := json.NewEncoder(tmp).Encode(v); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
 		return err
