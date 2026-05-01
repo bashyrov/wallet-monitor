@@ -29,8 +29,10 @@ import (
 const futuresWS = "wss://ws.okx.com:8443/ws/v5/public"
 
 type Futures struct {
-	store *cache.Store
-	books map[string]*book
+	store      *cache.Store
+	cacheKey   string // "okx" | "okx_spot"
+	instSuffix string // "-USDT-SWAP" | "-USDT"
+	books      map[string]*book
 }
 
 type book struct {
@@ -39,13 +41,32 @@ type book struct {
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, books: make(map[string]*book)}
+	a := &Futures{
+		store:      store,
+		cacheKey:   "okx",
+		instSuffix: "-USDT-SWAP",
+		books:      make(map[string]*book),
+	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("okx", snap.Symbol, snap, "ws")
 	})
 }
 
-func (a *Futures) Name() string                          { return "okx" }
+// NewSpot — OKX V5 spot orderbook (instId form `BTC-USDT`). Same WS host
+// and channel as futures; only the suffix changes.
+func NewSpot(store *cache.Store) *ws.Runner {
+	a := &Futures{
+		store:      store,
+		cacheKey:   "okx_spot",
+		instSuffix: "-USDT",
+		books:      make(map[string]*book),
+	}
+	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
+		store.Store("okx_spot", snap.Symbol, snap, "ws")
+	})
+}
+
+func (a *Futures) Name() string                          { return a.cacheKey }
 func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
@@ -53,7 +74,7 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	for i, s := range symbols {
 		args[i] = map[string]string{
 			"channel": "books",
-			"instId":  strings.ToUpper(s) + "-USDT-SWAP",
+			"instId":  strings.ToUpper(s) + a.instSuffix,
 		}
 	}
 	frame := map[string]any{
@@ -88,13 +109,13 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if msg.Arg.Channel != "books" {
 		return nil, nil
 	}
-	if !strings.HasSuffix(msg.Arg.InstID, "-USDT-SWAP") {
+	if !strings.HasSuffix(msg.Arg.InstID, a.instSuffix) {
 		return nil, nil
 	}
 	if len(msg.Data) == 0 {
 		return nil, nil
 	}
-	token := strings.TrimSuffix(msg.Arg.InstID, "-USDT-SWAP")
+	token := strings.TrimSuffix(msg.Arg.InstID, a.instSuffix)
 	bk, ok := a.books[token]
 	if !ok {
 		bk = &book{bids: make(map[float64]float64), asks: make(map[float64]float64)}

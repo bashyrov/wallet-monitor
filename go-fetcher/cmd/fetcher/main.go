@@ -317,6 +317,16 @@ func orderbookRegistry(cfg config.Config, store *cache.Store) []orderbookEntry {
 		{name: "kucoin", factory: func() *ws.Runner { return kucoin.NewFutures(store) }},
 		{name: "bitget", factory: func() *ws.Runner { return bitget.NewFutures(store) }},
 		{name: "bitget_spot", factory: func() *ws.Runner { return bitget.NewSpot(store) }},
+		// Phase 8 — spot orderbook coverage for the rest of the 8-venue
+		// spot-arb set. Same WS hosts/families as the futures adapters
+		// where possible; KuCoin and BingX needed separate spot.go files
+		// because the WS host differs from futures.
+		{name: "binance_spot", factory: func() *ws.Runner { return binance.NewSpot(store) }},
+		{name: "bybit_spot", factory: func() *ws.Runner { return bybit.NewSpot(store) }},
+		{name: "okx_spot", factory: func() *ws.Runner { return okx.NewSpot(store) }},
+		{name: "gate_spot", factory: func() *ws.Runner { return gate.NewSpot(store) }},
+		{name: "kucoin_spot", factory: func() *ws.Runner { return kucoin.NewSpot(store) }},
+		{name: "bingx_spot", factory: func() *ws.Runner { return bingx.NewSpot(store) }},
 		{name: "hyperliquid", factory: func() *ws.Runner { return hyperliquid.NewFutures(store) }},
 		{name: "paradex", factory: func() *ws.Runner { return paradex.NewFutures(store) }},
 		{name: "lighter", factory: func() *ws.Runner { return lighter.NewFutures(store) }},
