@@ -335,6 +335,10 @@ func orderbookRegistry(cfg config.Config, store *cache.Store) []orderbookEntry {
 		{name: "whitebit_spot", factory: func() *ws.Runner { return whitebit.NewSpot(store) }},
 		{name: "kraken_spot", factory: func() *ws.Runner { return kraken.NewSpot(store) }},
 		{name: "backpack_spot", factory: func() *ws.Runner { return backpack.NewSpot(store) }},
+		// Perp DEX with a spot product. Hyperliquid is the only one in
+		// the current set; the rest (paradex, lighter, etc.) are
+		// derivatives-only.
+		{name: "hyperliquid_spot", factory: func() *ws.Runner { return hyperliquid.NewSpot(store) }},
 		{name: "hyperliquid", factory: func() *ws.Runner { return hyperliquid.NewFutures(store) }},
 		{name: "paradex", factory: func() *ws.Runner { return paradex.NewFutures(store) }},
 		{name: "lighter", factory: func() *ws.Runner { return lighter.NewFutures(store) }},
