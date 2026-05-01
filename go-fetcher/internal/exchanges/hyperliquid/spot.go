@@ -167,9 +167,20 @@ func (a *Spot) BuildSubscribe(symbols []string) [][]byte {
 		log.L().Warn().Err(err).Msg("hl spotMeta refresh failed — proceeding with stale map")
 	}
 
-	frames := make([][]byte, 0, len(symbols))
-	for _, s := range symbols {
-		coin, ok := spotMeta.coinFor(s)
+	// Sentinel: always include PURR (canonical HL spot pair) so the WS
+	// stays alive even when the prewarm list — borrowed from the perp
+	// market — has no HL-spot intersection. Without it the connection
+	// idles, hits the 30s stale watchdog, and reconnects forever.
+	wanted := append([]string{"PURR"}, symbols...)
+	seen := make(map[string]struct{}, len(wanted))
+	frames := make([][]byte, 0, len(wanted))
+	for _, s := range wanted {
+		token := strings.ToUpper(s)
+		if _, dup := seen[token]; dup {
+			continue
+		}
+		seen[token] = struct{}{}
+		coin, ok := spotMeta.coinFor(token)
 		if !ok {
 			continue // not a spot pair on HL — silently skip
 		}
