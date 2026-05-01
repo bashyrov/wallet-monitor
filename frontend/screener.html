@@ -266,12 +266,12 @@
               <th onclick="sortArb('symbol')"        data-acol="symbol"        data-tip="Perpetual contract ticker">Token <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('long_exchange')"  data-acol="long_exchange"  data-tip="Exchange to go long (pay negative funding) + 24h volume. Rate normalised to per-8h for comparison">Long / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('short_exchange')" data-acol="short_exchange" data-tip="Exchange to go short (receive positive funding) + 24h volume. Rate normalised to per-8h for comparison">Short / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('in_pct')"  data-acol="in_pct"  class="sorted" data-tip="Live entry basis from top-of-book — (bestBidShort − bestAskLong) / bestAskLong · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
+              <th onclick="sortArb('out_pct')" data-acol="out_pct" data-tip="Live exit basis from top-of-book — (bestBidLong − bestAskShort) / bestAskShort · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('price_spread')"   data-acol="price_spread"   data-tip="Mark-price basis between the two venues = (shortPx − longPx) / longPx. Top-N tracked set is ranked by this.">Basis <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('gross_funding')"  data-acol="gross_funding"  data-tip="short_rate − long_rate normalised to per-8h. Regardless of each exchange's actual interval">Gross /8h <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('total_fees')"     data-acol="total_fees"     data-tip="Estimated taker fees for opening both legs (0.06% per side)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_profit')"     data-acol="net_profit"     data-tip="Net profit per 8h = gross funding − fees − price spread cost">Net profit <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('net_apr')"        data-acol="net_apr"        data-tip="Annualised net profit (net × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('in_pct')"  data-acol="in_pct"  class="sorted" data-tip="Live entry basis from top-of-book — (bestBidShort − bestAskLong) / bestAskLong · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
-              <th onclick="sortArb('out_pct')" data-acol="out_pct" data-tip="Live exit basis from top-of-book — (bestBidLong − bestAskShort) / bestAskShort · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
               <th data-tip="Whether mark prices are close enough for the spread not to eat the profit">Status</th>
               <th></th>
             </tr>
@@ -293,12 +293,12 @@
               <th onclick="sortSpot('symbol')"          data-scol="symbol"          data-tip="Token ticker">Token <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('spot_exchange')"   data-scol="spot_exchange"   data-tip="Spot venue to buy — price + 24h volume">Spot / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('short_exchange')"  data-scol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('in_pct')"  data-scol="in_pct"  class="sorted" data-tip="Live entry basis from top-of-book — (bestBidShort_perp − bestAskLong_spot) / bestAskLong_spot · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
+              <th onclick="sortSpot('out_pct')" data-scol="out_pct" data-tip="Live exit basis from top-of-book — (bestBidLong_spot − bestAskShort_perp) / bestAskShort_perp · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       data-tip="Mark-price basis = (perpPx − spotPx) / spotPx">Basis <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('short_funding_8h')" data-scol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('total_fees')"      data-scol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('net_apr')"         data-scol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('in_pct')"  data-scol="in_pct"  class="sorted" data-tip="Live entry basis from top-of-book — (bestBidShort_perp − bestAskLong_spot) / bestAskLong_spot · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
-              <th onclick="sortSpot('out_pct')" data-scol="out_pct" data-tip="Live exit basis from top-of-book — (bestBidLong_spot − bestAskShort_perp) / bestAskShort_perp · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
@@ -319,12 +319,12 @@
               <th onclick="sortDex('symbol')"          data-dcol="symbol"          data-tip="Token ticker (exists on a DEX AND on at least one CEX perp)">Token <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('dex_name')"        data-dcol="dex_name"        data-tip="DEX venue + chain (best-liquidity USD-quoted pair). Liquidity · 24h volume shown below.">DEX / Liquidity <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('short_exchange')"  data-dcol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('in_pct')"  data-dcol="in_pct"  class="sorted" data-tip="Live entry basis from short-perp top-of-book vs DEX price — (bestBidShort − dexPrice) / dexPrice · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
+              <th onclick="sortDex('out_pct')" data-dcol="out_pct" data-tip="Live exit basis — (dexPrice − bestAskShort) / bestAskShort · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('basis_pct')"       data-dcol="basis_pct"       data-tip="Basis = (perp − dex) / dex. Positive = perp trades above DEX, you capture the gap at entry">Basis <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('short_funding_8h')" data-dcol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('total_fees')"      data-dcol="total_fees"      data-tip="DEX round-trip (~0.8%) + perp round-trip. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('net_profit')"      data-dcol="net_profit"      data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↕</span></th>
-              <th onclick="sortDex('net_apr')"         data-dcol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
-              <th onclick="sortDex('in_pct')"  data-dcol="in_pct"  class="sorted" data-tip="Live entry basis from short-perp top-of-book vs DEX price — (bestBidShort − dexPrice) / dexPrice · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
-              <th onclick="sortDex('out_pct')" data-dcol="out_pct" data-tip="Live exit basis — (dexPrice − bestAskShort) / bestAskShort · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
@@ -999,7 +999,7 @@ function sortDex(col) {
   applyDex();
 }
 
-function applyDex() {
+function applyDex(keepPage = false) {
   const q = (document.getElementById('search').value || '').trim().toUpperCase();
   const minNet = parseFloat(document.getElementById('f-min-net').value) || null;
   const minGS  = parseFloat(document.getElementById('f-min-gs').value) || null;
@@ -1011,6 +1011,7 @@ function applyDex() {
     if (minNet != null && r.net_profit < minNet) return false;
     if (minGS  != null && r.gross < minGS) return false;
     if (minVol && (r.perp_volume_usd || 0) < minVol) return false;
+    if (typeof r.in_pct !== 'number' || typeof r.out_pct !== 'number') return false;
     return true;
   });
   const dir = _dexSort.dir === 'desc' ? -1 : 1;
@@ -1019,7 +1020,7 @@ function applyDex() {
     if (typeof av === 'string') return (av || '').localeCompare(bv || '') * dir;
     return ((av ?? 0) - (bv ?? 0)) * dir;
   });
-  _pageDX = 0;
+  if (!keepPage) _pageDX = 0;
   renderDex();
 }
 
@@ -1067,14 +1068,14 @@ function renderDex() {
           <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.perp_price)} · <span style="font-family:var(--mono)">${fmtVol(r.perp_volume_usd)}</span></div>
         </div>
       </td>
+      <td class="td-inout" data-io="in" data-io-key="dex:${r.symbol}:dex:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout" data-io="out" data-io-key="dex:${r.symbol}:dex:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-spread"><span class="${(r.basis_pct || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.basis_pct || 0) >= 0 ? '+' : '')}${(r.basis_pct || 0).toFixed(4)}%</span></td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
       <td class="td-fees">
         <span title="dex rt: ${r.fee_dex.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
-      <td>${fmtApr(r.net_apr)}</td>
-      <td class="td-inout" data-io="in" data-io-key="dex:${r.symbol}:dex:${r.short_exchange}"><span class="io-pending">…</span></td>
-      <td class="td-inout" data-io="out" data-io-key="dex:${r.symbol}:dex:${r.short_exchange}"><span class="io-pending">…</span></td>
       <td style="display:flex;gap:4px;align-items:center">
         <a href="/arb?type=dex&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain)}&long=${esc(r.dex_name)}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address)}&pair=${esc((r.dex_pair_url||'').split('/').pop())}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
       </td>
@@ -1217,7 +1218,7 @@ function sortSpot(col) {
   applySpot();
 }
 
-function applySpot() {
+function applySpot(keepPage = false) {
   const q = (document.getElementById('search').value || '').trim().toUpperCase();
   const minNet = parseFloat(document.getElementById('f-min-net').value) || null;
   const minGS  = parseFloat(document.getElementById('f-min-gs').value) || null;
@@ -1229,6 +1230,7 @@ function applySpot() {
     if (minNet != null && r.net_profit < minNet) return false;
     if (minGS  != null && r.gross < minGS) return false;
     if (minVol && (Math.min(r.spot_volume_usd || 0, r.perp_volume_usd || 0) < minVol)) return false;
+    if (typeof r.in_pct !== 'number' || typeof r.out_pct !== 'number') return false;
     return true;
   });
   const dir = _spotSort.dir === 'desc' ? -1 : 1;
@@ -1243,7 +1245,7 @@ function applySpot() {
     if (bv == null) bv = dir === -1 ? NULL_DESC : NULL_ASC;
     return (av - bv) * dir;
   });
-  _pageSP = 0;
+  if (!keepPage) _pageSP = 0;
   renderSpot();
 }
 
@@ -1291,14 +1293,14 @@ function renderSpot() {
           <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.perp_price)} · <span style="font-family:var(--mono)">${fmtVol(r.perp_volume_usd)}</span></div>
         </div>
       </td>
+      <td class="td-inout" data-io="in" data-io-key="spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout" data-io="out" data-io-key="spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-spread"><span class="${(r.basis_pct || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.basis_pct || 0) >= 0 ? '+' : '')}${(r.basis_pct || 0).toFixed(4)}%</span></td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
       <td class="td-fees">
         <span title="spot rt: ${r.fee_spot.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
-      <td>${fmtApr(r.net_apr)}</td>
-      <td class="td-inout" data-io="in" data-io-key="spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
-      <td class="td-inout" data-io="out" data-io-key="spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
       <td style="display:flex;gap:4px;align-items:center">
         <a href="/arb?type=spot&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
       </td>
@@ -1975,6 +1977,11 @@ function applyArb(keepPage = false) {
       if (vMin < minVol) return false;
     }
     if (_validOnly && !r.valid_price) return false;
+    // Only show rows for which In/Out has resolved to a real number.
+    // Rows whose books haven't been subscribed yet stay out of the
+    // displayed table; their keys are still warmed by refreshInOut so
+    // they appear automatically once the books land.
+    if (typeof r.in_pct !== 'number' || typeof r.out_pct !== 'number') return false;
     return true;
   });
   if (!keepPage) _pageA = 0;
@@ -2172,14 +2179,14 @@ function renderArb() {
           <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.short_price)} · <span style="font-family:var(--mono)">${fmtVol(r.short_volume)}</span></div>
         </div>
       </td>
+      <td class="td-inout" data-io="in" data-io-key="futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-inout" data-io="out" data-io-key="futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
+      <td class="td-spread"><span class="${(r.price_spread || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.price_spread || 0) >= 0 ? '+' : '')}${(r.price_spread || 0).toFixed(4)}%</span></td>
       <td class="td-gross">${grossSign}${r.gross_funding.toFixed(4)}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
       <td class="td-fees">
         <span title="long: ${r.fee_long}% + short: ${r.fee_short}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
-      <td>${fmtApr(r.net_apr)}</td>
-      <td class="td-inout" data-io="in" data-io-key="futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
-      <td class="td-inout" data-io="out" data-io-key="futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}"><span class="io-pending">…</span></td>
       <td class="td-status">${validBadge}</td>
       <td style="display:flex;gap:4px;align-items:center">
         ${_starBtn(r.symbol, r.long_exchange, r.short_exchange)}
@@ -2497,6 +2504,9 @@ setInterval(tickCountdowns, 1000);
 // Backend endpoint /screener/in-out batches the orderbook calls.
 const _inOutCache = new Map();   // key → {in, out, ts}
 let _inOutTimer = null;
+// Per-mode rotating offset so refreshInOut walks all `_arbRows`/spot/dex
+// keys over multiple ticks, not just the same first 256 forever.
+const _inOutRotateOffset = { 'tbody-arb': 0, 'tbody-spot': 0, 'tbody-dex': 0 };
 
 function _activeInOutSection() {
   if (_mode === 'arb')  return 'tbody-arb';
@@ -2551,47 +2561,50 @@ function _writeInOutOntoRows(payload) {
     r.in_pct  = slot.in;
     r.out_pct = slot.out;
   }
-  // Sort exactly ONCE per mode after the first in/out tick lands — that's
-  // when default sort by in_pct becomes meaningful (rows had undefined
-  // values before). After that, live ticks only update cell innerHTML; we
-  // do NOT re-sort or re-render the table:
-  //   1. tbody innerHTML rebuild for 50 rows every 3s caused visible
-  //      scroll-jank — most of "site is laggy" was DOM thrash, not network.
-  //   2. Re-ordering rows mid-read is hostile to the user — they pick a row
-  //      to act on, then 3 seconds later it's halfway down the page.
-  // User can re-press the sort header to re-lock against current values.
-  const liveCols = new Set(['in_pct', 'out_pct']);
-  if (matchArb && !_inOutFirstSorted.arb && liveCols.has(_sortA.col)) {
-    _inOutFirstSorted.arb = true;
-    sortARows(true);
-  } else if (matchSpot && !_inOutFirstSorted.spot && liveCols.has(_spotSort.col)) {
-    _inOutFirstSorted.spot = true;
-    const dir = _spotSort.dir === 'desc' ? -1 : 1;
-    const col = _spotSort.col;
-    _spotFiltered.sort((a, b) => ((a[col] ?? -Infinity) - (b[col] ?? -Infinity)) * dir);
-    renderSpot();
-  } else if (matchDex && !_inOutFirstSorted.dex && liveCols.has(_dexSort.col)) {
-    _inOutFirstSorted.dex = true;
-    const dir = _dexSort.dir === 'desc' ? -1 : 1;
-    const col = _dexSort.col;
-    _dexFiltered.sort((a, b) => ((a[col] ?? -Infinity) - (b[col] ?? -Infinity)) * dir);
-    renderDex();
-  }
+  // Re-apply the filter so rows whose in/out just resolved enter the
+  // visible set, and rows whose values went null drop out. keepPage=true
+  // so the user doesn't get yanked back to page 1 every 3s.
+  if (matchArb)       applyArb(true);
+  else if (matchSpot) applySpot(true);
+  else if (matchDex)  applyDex(true);
 }
 
 async function refreshInOut() {
   const tbId = _activeInOutSection();
   if (!tbId) return;
-  const tbody = document.getElementById(tbId);
-  if (!tbody) return;
-  // Collect unique keys for visible rows.
-  const seen = new Set();
-  for (const td of tbody.querySelectorAll('td.td-inout[data-io-key]')) {
-    const k = td.getAttribute('data-io-key');
-    if (k) seen.add(k);
+
+  // Collect keys from ALL rows in the active mode's data array — not
+  // just visible — so the user-touch path warms books for the full
+  // top-N tracked set. Rows without in/out get filtered out of the
+  // displayed table by applyArb/applySpot/applyDex, but still need
+  // their books warmed so they can become visible in subsequent ticks.
+  let allKeys = [];
+  if (tbId === 'tbody-arb') {
+    allKeys = _arbRows.map(r => `futures:${r.symbol}:${r.long_exchange}:${r.short_exchange}`);
+  } else if (tbId === 'tbody-spot') {
+    allKeys = _spotRows.map(r => `spot:${r.symbol}:${r.spot_exchange}:${r.short_exchange}`);
+  } else if (tbId === 'tbody-dex') {
+    allKeys = _dexRows.map(r => `dex:${r.symbol}:dex:${r.short_exchange}`);
   }
-  if (!seen.size) return;
-  const items = Array.from(seen).slice(0, 64);
+  if (!allKeys.length) return;
+  // Dedupe.
+  const dedup = Array.from(new Set(allKeys));
+  // Rotate through the full set in chunks of 256, advancing the
+  // offset each tick. With 1000 rows / 256 per call / 3s tick the
+  // full set is covered in ~12s, fast enough for the user to see
+  // In/Out filling in continuously after page load.
+  const off = _inOutRotateOffset[tbId] || 0;
+  const chunk = 256;
+  let items;
+  if (dedup.length <= chunk) {
+    items = dedup;
+  } else {
+    items = [];
+    for (let i = 0; i < chunk; i++) {
+      items.push(dedup[(off + i) % dedup.length]);
+    }
+    _inOutRotateOffset[tbId] = (off + chunk) % dedup.length;
+  }
   // Apply cached values immediately so paging-back doesn't show "…".
   const cached = {};
   const fresh = [];

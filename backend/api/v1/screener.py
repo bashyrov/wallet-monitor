@@ -550,7 +550,12 @@ async def in_out_basis(
         read_books_batch = None
 
     parsed: list[tuple[str, str, str, str]] = []
-    for raw in items.split(",")[:64]:  # cap
+    # Cap bumped 64 -> 256 because the screener now ranks the top
+    # 1000 by basis and prefers to keep In/Out visible for as many of
+    # those as books are subscribed for. The frontend rotates through
+    # the full set in chunks of 256 so the user-touch path warms all
+    # of them within ~12s of page load.
+    for raw in items.split(",")[:256]:  # cap
         raw = raw.strip()
         if not raw:
             continue

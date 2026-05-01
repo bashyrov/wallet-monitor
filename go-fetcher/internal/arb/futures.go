@@ -68,8 +68,12 @@ const (
 	// ticker-collisions. Python's threshold; we keep it.
 	highSpreadThreshold = 1.0
 
-	// File-cache cap — same as Python's _ARB_FILE_TOP_N.
-	arbFileTopN = 500
+	// File-cache cap — top-N kept in arbitrage.json. Bumped from 500 to
+	// 1000: the screener's "tracked set" is whatever ends up in this
+	// file, and the user-touch path auto-subscribes orderbooks for
+	// every (sym, ex) pair we surface. Top-1000 by basis covers more
+	// of the actionable arb space without saturating the WS layer.
+	arbFileTopN = 1000
 
 	// Default volume floor — 24h USD volume. Drops delisted/halted
 	// contracts that the venue still emits funding rows for, plus
@@ -263,8 +267,21 @@ func (c *Compute) tick() {
 	}
 	c.mu.Unlock()
 
+	// Sort by |basis| (price_spread) descending — that's the cap-key.
+	// The file becomes the screener's "tracked set": pairs end up here
+	// when their basis is wide, and the symbol manager auto-subscribes
+	// their books on user-touch. Within the top-N the frontend re-sorts
+	// by live in/out for the user-visible ordering.
 	sort.Slice(opps, func(i, j int) bool {
-		return opps[i]["net_profit"].(float64) > opps[j]["net_profit"].(float64)
+		ai, _ := opps[i]["price_spread"].(float64)
+		aj, _ := opps[j]["price_spread"].(float64)
+		if ai < 0 {
+			ai = -ai
+		}
+		if aj < 0 {
+			aj = -aj
+		}
+		return ai > aj
 	})
 
 	// Cap to top-N for the file write.
