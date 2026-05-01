@@ -213,6 +213,21 @@ def _activate_user(db: Session, payment: Payment) -> None:
             logger.info("promo bonus_days=%d added to payment %s (user=%s)",
                         bonus, payment.id, payment.user_id)
     user.plan_expires_at = payment.activated_until
+    # Referral commission — credit the referrer (if any) for this confirmed
+    # activation. Idempotent (UNIQUE on payment_id). Errors don't block the
+    # plan activation: we'd rather honour the user's payment than reject it
+    # because of a referral-bookkeeping bug.
+    try:
+        from backend.services import referral_service
+        referral_service.credit_commission(
+            db,
+            referee=user,
+            payment=payment,
+            amount_usd=payment.final_amount_usd or payment.amount_usd or 0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("referral credit failed for payment=%s user=%s: %s",
+                       payment.id, user.id, exc)
     db.commit()
     # If the new plan is _smaller_ than the previous one (rare but
     # possible: admin manually flipped plan_id then user paid for a

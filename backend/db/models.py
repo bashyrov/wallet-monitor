@@ -57,8 +57,86 @@ class User(Base):
     # the user has to contact support to unlock.
     failed_login_attempts = Column(Integer, nullable=False, default=0)
 
+    # Referral program (Avashare).
+    # `referral_code` — short uppercase string the user shares; auto-generated
+    #   on first registration. UNIQUE; case-insensitive equality enforced via
+    #   index on UPPER() in the migration.
+    # `referred_by_id` — FK to the user who referred them. NULL for users who
+    #   registered without a code (or whose code was invalid). Set once at
+    #   registration time and never mutated — flipping it later would require
+    #   reconciling all earnings ledgers and isn't worth the surface area.
+    # `referral_pct_override` — admin-tunable per-user commission rate (0..100).
+    #   NULL = use the global default (20%). Always read via
+    #   referral_service.get_commission_pct(user) so the default lives in one
+    #   place.
+    # `referral_payout_address` — TRC20 USDT address the user has nominated
+    #   for payouts. Validated by referral_service.verify_trc20_address before
+    #   write — see service for the regex.
+    referral_code = Column(String, nullable=True, unique=True, index=True)
+    referred_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                            nullable=True, index=True)
+    referral_pct_override = Column(Float, nullable=True)
+    referral_payout_address = Column(String, nullable=True)
+
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")
+    referrer = relationship("User", remote_side="User.id", foreign_keys=[referred_by_id])
+    referral_earnings = relationship("ReferralEarning", foreign_keys="ReferralEarning.referrer_id",
+                                     back_populates="referrer", cascade="all, delete-orphan")
+    referral_payouts = relationship("ReferralPayoutRequest", foreign_keys="ReferralPayoutRequest.user_id",
+                                    back_populates="user", cascade="all, delete-orphan")
+
+
+class ReferralEarning(Base):
+    """One row per credited commission. Source of truth for "earned" totals.
+
+    Created by payment_service._activate_user only on successful, signature-
+    verified webhook activations. Never created on cart math, promo math, or
+    intent-to-pay events.
+
+    `amount_usd` is a snapshot at credit time; the linked payment's amount
+    can drift if we ever re-issue an invoice, so always sum from this column,
+    not from payments.
+    """
+    __tablename__ = "referral_earnings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    referrer_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    referee_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    payment_id = Column(Integer, ForeignKey("payments.id", ondelete="SET NULL"),
+                        nullable=True, unique=True)
+    pct = Column(Float, nullable=False)            # commission % at credit time
+    amount_usd = Column(Numeric(14, 2), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    referrer = relationship("User", foreign_keys=[referrer_id], back_populates="referral_earnings")
+    referee = relationship("User", foreign_keys=[referee_id])
+
+
+class ReferralPayoutRequest(Base):
+    """User-initiated payout request. Admin reviews + marks as paid manually.
+
+    Lifecycle: pending → paid (admin clicks "mark as done") OR pending →
+    rejected (admin can reject with a reason; user can re-submit later).
+
+    Available balance at any point in time = sum(earnings) − sum(paid +
+    pending payouts). The pending guard prevents double-spend across two
+    submissions before admin confirms the first.
+    """
+    __tablename__ = "referral_payout_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    amount_usd = Column(Numeric(14, 2), nullable=False)
+    address = Column(String, nullable=False)       # TRC20 USDT
+    status = Column(String, nullable=False, default="pending")  # pending | paid | rejected
+    note = Column(String, nullable=True)           # admin's optional rejection reason / payout tx hash
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id], back_populates="referral_payouts")
 
 
 class Wallet(Base):

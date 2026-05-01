@@ -90,6 +90,7 @@ def admin_list_users(
             "last_active_at": last_active,
             "wallets": wc,
             "created_at": u.created_at.strftime("%Y-%m-%d %H:%M"),
+            "referral_pct_override": getattr(u, 'referral_pct_override', None),
         })
     return result
 
@@ -268,6 +269,46 @@ def set_plan(
         "plan_expires_at": expires,
         "wallet_limit": wallet_limit(plan),
     }
+
+
+# ═══ Referral commission override ═════════════════════════════════════════════
+
+class _ReferralPctBody(BaseModel):
+    pct: float | None = None  # null = clear override → user falls back to global default
+
+
+@router.patch("/users/{user_id}/referral-pct")
+def set_referral_pct(
+    user_id: int,
+    body: _ReferralPctBody,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if body.pct is not None:
+        try:
+            v = float(body.pct)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="pct must be a number 0..100")
+        if v < 0 or v > 100:
+            raise HTTPException(status_code=400, detail="pct must be between 0 and 100")
+        user.referral_pct_override = v
+    else:
+        user.referral_pct_override = None
+    db.commit()
+    from backend.services import audit_log as _al
+    _al.record(
+        db, request,
+        actor=current_admin,
+        action="referral.pct.set",
+        target_type="user",
+        target_id=user.id,
+        delta={"pct": user.referral_pct_override},
+    )
+    return {"id": user.id, "referral_pct_override": user.referral_pct_override}
 
 
 # ═══ Screener runtime controls ════════════════════════════════════════════════

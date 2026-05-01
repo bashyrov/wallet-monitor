@@ -112,6 +112,32 @@ def register(body: UserRegister, request: Request, response: Response, db: Sessi
         }
     user = svc.register_user(db, body.username, body.email, body.password)
     _clear_attempts(ip)
+    # Referral capture — optional. Invalid / unknown codes are silently
+    # dropped (we don't want a broken share link to block registration).
+    # Self-referral is rejected for the same reason as promo per_user_max:
+    # the obvious abuse path. No mid-flight reassignment after this point.
+    if body.referral_code:
+        try:
+            from backend.services import referral_service
+            referrer = referral_service.find_referrer_by_code(db, body.referral_code)
+            if referrer and referrer.id != user.id:
+                user.referred_by_id = referrer.id
+                db.add(user)
+                db.flush()
+                logger.info(
+                    "Referral capture: user=%s (id=%d) referred_by=%s (id=%d)",
+                    user.username, user.id, referrer.username, referrer.id,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Referral capture failed for %s: %s", user.username, exc)
+    # Mint the new user's own code so they can share immediately.
+    try:
+        from backend.services import referral_service
+        referral_service.ensure_referral_code(db, user)
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Referral code mint failed for %s: %s", user.username, exc)
+        db.rollback()
     logger.info("New user registered: %s (id=%d, admin=%s)", user.username, user.id, user.is_admin)
     token = svc.create_token(user.id)
     _set_session_cookie(response, token)
