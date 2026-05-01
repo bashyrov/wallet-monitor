@@ -206,7 +206,12 @@ func (a *Futures) PongFor(_ []byte) []byte { return nil }
 // 1011 keepalive on lib-pings within the configured timeout.
 func (a *Futures) UseLibPings() bool { return true }
 
-func (a *Futures) SubscribeDelay() time.Duration { return 0 }
+// Binance public WS allows 5 messages/sec. Each SUBSCRIBE chunk counts
+// as one. With 1000-stream prewarm split into 5 chunks of 200, sending
+// them back-to-back hits 70+ msg/s and the server returns 1008 policy
+// violation. 250 ms = 4 msg/s, comfortably under the 5/s ceiling with
+// margin for any other client noise on the same connection.
+func (a *Futures) SubscribeDelay() time.Duration { return 250 * time.Millisecond }
 func (a *Futures) MaxSymbols() int               { return 200 }
 func (a *Futures) DecompressGzip() bool          { return false }
 func (a *Futures) OnReconnect()                  {}

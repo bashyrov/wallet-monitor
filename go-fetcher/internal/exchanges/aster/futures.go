@@ -139,7 +139,10 @@ func (a *Futures) Heartbeat() []byte                { return nil }
 func (a *Futures) HeartbeatInterval() time.Duration { return 0 }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return true }
-func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
-func (a *Futures) MaxSymbols() int                  { return 200 }
+
+// Aster (Binance fork) inherits the public-WS 5 msg/s rate limit. With
+// chunked SUBSCRIBE frames, a 250ms delay keeps us under that ceiling.
+func (a *Futures) SubscribeDelay() time.Duration { return 250 * time.Millisecond }
+func (a *Futures) MaxSymbols() int               { return 200 }
 func (a *Futures) DecompressGzip() bool             { return false }
 func (a *Futures) OnReconnect()                     {}
