@@ -74,14 +74,30 @@ func (a *Spot) URL(_ context.Context) (string, error) {
 	return spotCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
 }
 
-// BuildSubscribe — combined-stream URL already carries the subscriptions,
-// no SUBSCRIBE frame needed. We capture the symbol list so URL() can
-// rebuild correctly on reconnect.
+// BuildSubscribe — capture the symbol list (so URL() can rebuild on
+// reconnect) AND emit a SUBSCRIBE frame to bind the streams on the
+// already-open connection. The URL was built at dial-time with whatever
+// symbols we knew then (often just the default BTC fallback); the
+// runtime SUBSCRIBE attaches the rest. Binance combined-stream accepts
+// SUBSCRIBE frames the same way the bare /ws endpoint does.
 func (a *Spot) BuildSubscribe(symbols []string) [][]byte {
 	a.mu.Lock()
 	a.syms = append(a.syms[:0], symbols...)
 	a.mu.Unlock()
-	return nil
+	if len(symbols) == 0 {
+		return nil
+	}
+	params := make([]string, len(symbols))
+	for i, s := range symbols {
+		params[i] = strings.ToLower(s) + "usdt@depth20@100ms"
+	}
+	frame := map[string]any{
+		"method": "SUBSCRIBE",
+		"params": params,
+		"id":     time.Now().UnixNano(),
+	}
+	b, _ := ws.MarshalJSON(frame)
+	return [][]byte{b}
 }
 
 // Parse — combined-stream wrapper {"stream":"btcusdt@depth20@100ms","data":
