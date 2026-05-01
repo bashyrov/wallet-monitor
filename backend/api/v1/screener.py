@@ -536,9 +536,9 @@ async def in_out_basis(
     """
     from backend.services.orderbook_cache import _file_lookup
     try:
-        from backend.services.orderbook_redis import read_book
+        from backend.services.orderbook_redis import read_books_batch
     except Exception:  # noqa: BLE001
-        read_book = None
+        read_books_batch = None
 
     parsed: list[tuple[str, str, str, str]] = []
     for raw in items.split(",")[:64]:  # cap
@@ -561,23 +561,6 @@ async def in_out_basis(
     if not parsed:
         return {}
 
-    # Cache-only book lookup. Order: Redis -> file memo -> empty.
-    # No REST, no WS subscribe — see docstring for rationale.
-    def _quick_book(ex: str, sym: str) -> dict:
-        if read_book is not None:
-            try:
-                rb = read_book(ex, sym)
-                if rb:
-                    d = rb.get("data") or {}
-                    if d.get("bids") or d.get("asks"):
-                        return d
-            except Exception:  # noqa: BLE001
-                pass
-        fd = _file_lookup(f"{ex}:{sym}")
-        if fd and (fd.get("bids") or fd.get("asks")):
-            return fd
-        return {"bids": [], "asks": []}
-
     # Build orderbook fetch list. dex rows only need short side.
     fetch_keys: set[tuple[str, str]] = set()
     for typ, sym, le, se in parsed:
@@ -586,9 +569,34 @@ async def in_out_basis(
             fetch_keys.add((le, sym))
         elif typ == "spot":
             fetch_keys.add((f"{le}_spot", sym))
-    book_by: dict[tuple[str, str], dict] = {
-        (ex, sym): _quick_book(ex, sym) for (ex, sym) in fetch_keys
-    }
+
+    # Single Redis MGET for every (ex, sym) — one round-trip total instead
+    # of N sequential GETs. The 64-row screener page shrinks from ~700 ms
+    # of accumulated Redis RTT to a single ~5 ms MGET.
+    redis_hits: dict[str, dict] = {}
+    if read_books_batch is not None:
+        pair_strings = [f"{ex}:{sym}" for (ex, sym) in fetch_keys]
+        try:
+            raw = read_books_batch(pair_strings)
+            for k, v in raw.items():
+                d = (v or {}).get("data") or {}
+                if d.get("bids") or d.get("asks"):
+                    redis_hits[k] = d
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Fall through to file memo only for pairs Redis didn't have.
+    book_by: dict[tuple[str, str], dict] = {}
+    for ex, sym in fetch_keys:
+        pair = f"{ex}:{sym}"
+        if pair in redis_hits:
+            book_by[(ex, sym)] = redis_hits[pair]
+            continue
+        fd = _file_lookup(pair)
+        if fd and (fd.get("bids") or fd.get("asks")):
+            book_by[(ex, sym)] = fd
+        else:
+            book_by[(ex, sym)] = {"bids": [], "asks": []}
 
     # DEX prices read from dex_arbitrage.json — already loaded periodically.
     dex_px_by: dict[str, float] = {}
