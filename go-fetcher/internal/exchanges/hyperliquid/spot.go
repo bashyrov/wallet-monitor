@@ -113,7 +113,20 @@ func (c *spotMetaCache) Refresh(ctx context.Context) error {
 		if base == "" || quote != "USDC" {
 			continue
 		}
-		coin := "@" + strconv.Itoa(u.Index)
+		// HL closes the WS with 1006 if we subscribe to the canonical
+		// pair (PURR/USDC, index 0) using "@0" form — it expects the
+		// readable name there. Non-canonical pairs only have the "@N"
+		// label and the readable name is just "@N", so use that. Probe-
+		// confirmed: subscribe payload "@1" is accepted, "@0" is not.
+		var coin string
+		if strings.Contains(u.Name, "/") {
+			coin = u.Name // e.g. "PURR/USDC"
+		} else {
+			coin = u.Name // already "@N"
+		}
+		// On the response side the `coin` field also follows the same
+		// rule — canonical name for PURR/USDC, "@N" otherwise. Track
+		// both forms for the reverse map so Parse can find any frame.
 		bySym[base] = coin
 		byIdx[coin] = base
 	}
@@ -212,12 +225,11 @@ func (a *Spot) Parse(frame []byte) (*ws.Snapshot, error) {
 	if msg.Channel != "l2Book" {
 		return nil, nil
 	}
-	// Spot frames carry coin = "@<idx>". The futures adapter sees the
-	// same channel name with bare-token coins, so the @-prefix is what
-	// distinguishes us from cross-leak.
-	if !strings.HasPrefix(msg.Data.Coin, "@") {
-		return nil, nil
-	}
+	// Spot frames carry coin = "@<idx>" for non-canonical pairs and
+	// "<BASE>/USDC" for the canonical PURR/USDC. The futures adapter
+	// uses bare-token coins ("BTC", "ETH"…) on the same WS host, so we
+	// filter via the spotMeta map — anything we don't recognise falls
+	// through to the futures Parse via the runner's adapter dispatch.
 	token, ok := spotMeta.tokenFor(msg.Data.Coin)
 	if !ok {
 		return nil, nil
