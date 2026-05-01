@@ -258,6 +258,7 @@
 
     <!-- ── ARBITRAGE SECTION ── -->
     <div id="section-arb">
+      <div class="io-hint"><span class="io-fresh-pulse on"></span>In/Out — live entry/exit basis from top-of-book · refreshes every 3s</div>
       <div class="table-wrap">
         <table id="tbl-arb">
           <thead>
@@ -266,12 +267,11 @@
               <th onclick="sortArb('long_exchange')"  data-acol="long_exchange"  data-tip="Exchange to go long (pay negative funding) + 24h volume. Rate normalised to per-8h for comparison">Long / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('short_exchange')" data-acol="short_exchange" data-tip="Exchange to go short (receive positive funding) + 24h volume. Rate normalised to per-8h for comparison">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('gross_funding')"  data-acol="gross_funding"  data-tip="short_rate − long_rate normalised to per-8h. Regardless of each exchange's actual interval">Gross /8h <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('price_spread')"   data-acol="price_spread"   class="sorted" data-tip="Mark-price spread between the two venues = (shortPx − longPx) / longPx">Basis <span class="sort-arrow">↓</span></th>
               <th onclick="sortArb('total_fees')"     data-acol="total_fees"     data-tip="Estimated taker fees for opening both legs (0.06% per side)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_profit')"     data-acol="net_profit"     data-tip="Net profit per 8h = gross funding − fees − price spread cost">Net profit <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_apr')"        data-acol="net_apr"        data-tip="Annualised net profit (net × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
-              <th data-tip="Live entry basis from top-of-book — (bestBidShort − bestAskLong) / bestAskLong · refreshed every 3s">In</th>
-              <th data-tip="Live exit basis from top-of-book — (bestBidLong − bestAskShort) / bestAskShort · refreshed every 3s">Out</th>
+              <th onclick="sortArb('in_pct')"  data-acol="in_pct"  class="sorted" data-tip="Live entry basis from top-of-book — (bestBidShort − bestAskLong) / bestAskLong · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
+              <th onclick="sortArb('out_pct')" data-acol="out_pct" data-tip="Live exit basis from top-of-book — (bestBidLong − bestAskShort) / bestAskShort · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
               <th data-tip="Whether mark prices are close enough for the spread not to eat the profit">Status</th>
               <th></th>
             </tr>
@@ -285,6 +285,7 @@
 
     <!-- ── SPOT / SHORT SECTION (mirrors ARBITRAGE layout) ── -->
     <div id="section-spot" style="display:none">
+      <div class="io-hint"><span class="io-fresh-pulse on"></span>In/Out — live entry/exit basis from top-of-book · refreshes every 3s</div>
       <div class="table-wrap">
         <table id="tbl-spot">
           <thead>
@@ -293,16 +294,15 @@
               <th onclick="sortSpot('spot_exchange')"   data-scol="spot_exchange"   data-tip="Spot venue to buy — price + 24h volume">Spot / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('short_exchange')"  data-scol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('short_funding_8h')" data-scol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       class="sorted" data-tip="Mark-price basis = (perpPx − spotPx) / spotPx">Basis <span class="sort-arrow">↓</span></th>
               <th onclick="sortSpot('total_fees')"      data-scol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
+              <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('net_apr')"         data-scol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
-              <th data-tip="Live entry basis from top-of-book — (bestBidShort_perp − bestAskLong_spot) / bestAskLong_spot">In</th>
-              <th data-tip="Live exit basis from top-of-book — (bestBidLong_spot − bestAskShort_perp) / bestAskShort_perp">Out</th>
+              <th onclick="sortSpot('in_pct')"  data-scol="in_pct"  class="sorted" data-tip="Live entry basis from top-of-book — (bestBidShort_perp − bestAskLong_spot) / bestAskLong_spot · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
+              <th onclick="sortSpot('out_pct')" data-scol="out_pct" data-tip="Live exit basis from top-of-book — (bestBidLong_spot − bestAskShort_perp) / bestAskShort_perp · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-spot"><tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+          <tbody id="tbody-spot"><tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
@@ -311,6 +311,7 @@
 
     <!-- ── DEX / SHORT SECTION (mirrors SPOT layout) ── -->
     <div id="section-dex" style="display:none">
+      <div class="io-hint"><span class="io-fresh-pulse on"></span>In/Out — live entry/exit basis from top-of-book · refreshes every 3s</div>
       <div class="table-wrap">
         <table id="tbl-dex">
           <thead>
@@ -319,16 +320,15 @@
               <th onclick="sortDex('dex_name')"        data-dcol="dex_name"        data-tip="DEX venue + chain (best-liquidity USD-quoted pair). Liquidity · 24h volume shown below.">DEX / Liquidity <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('short_exchange')"  data-dcol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('short_funding_8h')" data-dcol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
-              <th onclick="sortDex('basis_pct')"       data-dcol="basis_pct"       data-tip="Basis = (perp − dex) / dex. Positive = perp trades above DEX, you capture the gap at entry">Basis <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('total_fees')"      data-dcol="total_fees"      data-tip="DEX round-trip (~0.8%) + perp round-trip. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
-              <th onclick="sortDex('net_profit')"      data-dcol="net_profit"      class="sorted" data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↓</span></th>
+              <th onclick="sortDex('net_profit')"      data-dcol="net_profit"      data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('net_apr')"         data-dcol="net_apr"         data-tip="Annualised net (8h × 3 × 365)">Net APR <span class="sort-arrow">↕</span></th>
-              <th data-tip="Live entry basis from short-perp top-of-book vs DEX price — (bestBidShort − dexPrice) / dexPrice">In</th>
-              <th data-tip="Live exit basis — (dexPrice − bestAskShort) / bestAskShort">Out</th>
+              <th onclick="sortDex('in_pct')"  data-dcol="in_pct"  class="sorted" data-tip="Live entry basis from short-perp top-of-book vs DEX price — (bestBidShort − dexPrice) / dexPrice · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
+              <th onclick="sortDex('out_pct')" data-dcol="out_pct" data-tip="Live exit basis — (dexPrice − bestAskShort) / bestAskShort · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-dex"><tr><td colspan="12" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
+          <tbody id="tbody-dex"><tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-dex"></div>
@@ -637,7 +637,7 @@ let _sortF = { col: 'apr', asc: false };
 // Default sort = In (entry-divergence). Rows without a live orderbook
 // have null in_pct and sink to the bottom — so the top of the table is
 // always the most-actionable rows with real bid/ask quotes.
-let _sortA = { col: 'price_spread', asc: false };
+let _sortA = { col: 'in_pct', asc: false };
 let _validOnly = false;
 let _crossOnly = true;   // show only tokens on 2+ exchanges by default
 
@@ -944,12 +944,12 @@ let _dexRows = [];
 let _dexFiltered = [];
 let _dexTimer = null;
 let _pageDX = 0;
-let _dexSort = { col: 'net_profit', dir: 'desc' };
+let _dexSort = { col: 'in_pct', dir: 'desc' };
 
 async function loadDex() {
   if (!_dexRows.length) {
     document.getElementById('tbody-dex').innerHTML =
-      '<tr><td colspan="12" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
+      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/dex-short');
@@ -969,7 +969,7 @@ async function loadDex() {
     // Network / 5xx — leave the previous table intact, don't stomp on
     // user's view. Only show "Failed" if we have nothing at all.
     if (!_dexRows.length) {
-      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="12" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="10" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_dexTimer);
@@ -1018,7 +1018,7 @@ function renderDex() {
   const page = _dexFiltered.slice(start, start + PAGE_SIZE);
   if (!_dexFiltered.length) {
     const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="12" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
     renderDexCards();
     return;
@@ -1057,7 +1057,6 @@ function renderDex() {
         </div>
       </td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
-      <td class="td-spread"><span class="${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span></td>
       <td class="td-fees">
         <span title="dex rt: ${r.fee_dex.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
@@ -1162,12 +1161,12 @@ let _spotRows = [];
 let _spotFiltered = [];
 let _spotTimer = null;
 let _pageSP = 0;
-let _spotSort = { col: 'basis_pct', dir: 'desc' };
+let _spotSort = { col: 'in_pct', dir: 'desc' };
 
 async function loadSpot() {
   if (!_spotRows.length) {
     document.getElementById('tbody-spot').innerHTML =
-      '<tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
+      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/spot-short');
@@ -1184,7 +1183,7 @@ async function loadSpot() {
     applySpot();
   } catch (e) {
     if (!_spotRows.length) {
-      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="11" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="10" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_spotTimer);
@@ -1242,7 +1241,7 @@ function renderSpot() {
   const page = _spotFiltered.slice(start, start + PAGE_SIZE);
   if (!_spotFiltered.length) {
     const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="11" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
     renderSpotCards();
     return;
@@ -1281,7 +1280,6 @@ function renderSpot() {
         </div>
       </td>
       <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
-      <td class="td-spread"><span class="${r.basis_pct >= 0 ? 'rate-pos' : 'rate-neg'}">${(r.basis_pct >= 0 ? '+' : '') + r.basis_pct.toFixed(4)}%</span></td>
       <td class="td-fees">
         <span title="spot rt: ${r.fee_spot.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
@@ -1847,7 +1845,7 @@ async function loadArb() {
     applyArb();
   } else {
     document.getElementById('tbody-arb').innerHTML =
-      '<tr><td colspan="12" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
+      '<tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Computing arbitrage…</td></tr>';
     document.getElementById('cards-arb').innerHTML =
       '<div class="empty-msg"><span class="spinner"></span>Computing…</div>';
   }
@@ -2105,7 +2103,7 @@ function renderArb() {
   const page  = _filteredArb.slice(start, start + PAGE_SIZE);
   if (!_filteredArb.length) {
     const msg = _arbRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="12" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');
     renderArbCards();
     return;
@@ -2145,7 +2143,6 @@ function renderArb() {
         </div>
       </td>
       <td class="td-gross">${grossSign}${r.gross_funding.toFixed(4)}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
-      <td class="td-spread"><span class="${(r.price_spread || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.price_spread || 0) >= 0 ? '+' : '')}${(r.price_spread || 0).toFixed(4)}%</span></td>
       <td class="td-fees">
         <span title="long: ${r.fee_long}% + short: ${r.fee_short}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
@@ -2176,10 +2173,11 @@ const SORT_CHIPS_F = [
   { col: 'next_ts',  label: 'Next' },
 ];
 const SORT_CHIPS_A = [
+  { col: 'in_pct',        label: 'In' },
+  { col: 'out_pct',       label: 'Out' },
   { col: 'net_profit',    label: 'Net profit' },
   { col: 'net_apr',       label: 'Net APR' },
   { col: 'gross_funding', label: 'Gross' },
-  { col: 'price_spread',  label: 'Basis' },
   { col: 'symbol',        label: 'Token' },
   { col: 'total_fees',    label: 'Fees' },
 ];
@@ -2498,6 +2496,52 @@ function _applyInOutCells(payload) {
   }
 }
 
+// Augment the underlying row arrays with the latest in/out so the sort-
+// comparator sees them. Re-sorts the active table only if its current
+// sort-col is one of in_pct/out_pct — otherwise we only update the cells.
+function _writeInOutOntoRows(payload) {
+  // Build sym|long|short → values map for fast lookup.
+  // Key shape: type:SYM:longEx:shortEx — e.g. "futures:BTC:binance:bybit".
+  const matchArb = _mode === 'arb';
+  const matchSpot = _mode === 'spot';
+  const matchDex = _mode === 'dex';
+  let arr = null;
+  let typPrefix = '';
+  if (matchArb)  { arr = _arbRows;  typPrefix = 'futures:'; }
+  if (matchSpot) { arr = _spotRows; typPrefix = 'spot:';    }
+  if (matchDex)  { arr = _dexRows;  typPrefix = 'dex:';     }
+  if (!arr) return;
+  for (const r of arr) {
+    let key;
+    if (matchArb)  key = `${typPrefix}${r.symbol}:${r.long_exchange}:${r.short_exchange}`;
+    if (matchSpot) key = `${typPrefix}${r.symbol}:${r.spot_exchange}:${r.short_exchange}`;
+    if (matchDex)  key = `${typPrefix}${r.symbol}:dex:${r.short_exchange}`;
+    const slot = payload[key];
+    if (!slot) continue;
+    r.in_pct  = slot.in;
+    r.out_pct = slot.out;
+  }
+  // Re-sort if the active sort col is one of the live ones. Filtered arrays
+  // share row references with the master arrays, so the writes above are
+  // already visible to the sorter. Avoid going through applyArb/applySpot/
+  // applyDex — those reset pagination, which would yank the user back to
+  // page 0 every 3 seconds.
+  const liveCols = new Set(['in_pct', 'out_pct']);
+  if (matchArb && liveCols.has(_sortA.col)) {
+    sortARows(true);  // sortARows already supports keepPage
+  } else if (matchSpot && liveCols.has(_spotSort.col)) {
+    const dir = _spotSort.dir === 'desc' ? -1 : 1;
+    const col = _spotSort.col;
+    _spotFiltered.sort((a, b) => ((a[col] ?? -Infinity) - (b[col] ?? -Infinity)) * dir);
+    renderSpot();
+  } else if (matchDex && liveCols.has(_dexSort.col)) {
+    const dir = _dexSort.dir === 'desc' ? -1 : 1;
+    const col = _dexSort.col;
+    _dexFiltered.sort((a, b) => ((a[col] ?? -Infinity) - (b[col] ?? -Infinity)) * dir);
+    renderDex();
+  }
+}
+
 async function refreshInOut() {
   const tbId = _activeInOutSection();
   if (!tbId) return;
@@ -2520,7 +2564,10 @@ async function refreshInOut() {
     if (c && now - c.ts < 6000) cached[k] = c;
     else fresh.push(k);
   }
-  if (Object.keys(cached).length) _applyInOutCells(cached);
+  if (Object.keys(cached).length) {
+    _applyInOutCells(cached);
+    _writeInOutOntoRows(cached);
+  }
   if (!fresh.length) return;
   try {
     const r = await Auth.apiFetch(`/screener/in-out?items=${encodeURIComponent(fresh.join(','))}`);
@@ -2530,7 +2577,20 @@ async function refreshInOut() {
       _inOutCache.set(k, { in: j[k].in, out: j[k].out, ts: Date.now() });
     }
     _applyInOutCells(j);
+    _writeInOutOntoRows(j);
+    _pingInOutPulse();
   } catch {}
+}
+
+// Tiny visual "fresh tick" pulse on the In column header — accompanies the
+// 3s cadence so the user sees the data is live without spamming a counter.
+function _pingInOutPulse() {
+  for (const el of document.querySelectorAll('.io-fresh-pulse')) {
+    el.classList.remove('on');
+    // force reflow → re-trigger the keyframe
+    void el.offsetWidth;
+    el.classList.add('on');
+  }
 }
 
 // Active-section refresh loop. 3s cadence is the right tradeoff: fresh enough

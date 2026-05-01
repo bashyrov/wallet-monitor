@@ -317,6 +317,36 @@ body { padding-bottom: 44px; }
 .ex-status-dot.slow  { background: var(--yellow); }
 .ex-status-dot.stale { background: var(--red); }
 
+/* Live In/Out columns. The fresh-pulse dot in the header blinks once per
+   3-second cycle so the user reads "live" without having to count seconds. */
+.io-fresh-pulse {
+  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--green); margin-left: 4px; vertical-align: middle;
+  opacity: 0.45; box-shadow: 0 0 4px rgba(26,255,171,0.4);
+}
+.io-fresh-pulse.on { animation: ioPulse 800ms ease-out; }
+@keyframes ioPulse {
+  0%   { opacity: 1; transform: scale(1.6); box-shadow: 0 0 10px rgba(26,255,171,0.9); }
+  100% { opacity: 0.45; transform: scale(1); box-shadow: 0 0 4px rgba(26,255,171,0.4); }
+}
+.io-pending { color: var(--text3); font-size: 11px; }
+.io-na      { color: var(--text3); font-family: var(--mono); font-size: 11px; }
+.td-inout   { font-family: var(--mono); }
+
+/* Refresh-cadence hint above each screener table. The pulse-dot is the same
+   visual we use in the column header so the user wires "this dot = live tick"
+   in their head. */
+.io-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 500;
+  color: var(--text3); letter-spacing: 0.04em;
+  padding: 8px 16px 0; text-transform: none;
+}
+.io-hint .io-fresh-pulse { margin-left: 0; }
+@media (max-width: 768px) {
+  .io-hint { padding: 6px 12px 0; font-size: 10px; }
+}
+
 .lp-ex-actions { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
 .lp-ex-action {
   flex: 1; padding: 6px 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
