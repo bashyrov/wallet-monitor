@@ -27,13 +27,16 @@ var Default20 = []string{
 	"FIL", "ETC", "NEAR", "ICP", "APT",
 }
 
-// TopSymbols returns up to `n` symbols, preferring those with highest
-// abs(funding-rate spread) from Python's funding.json if available.
+// TopSymbols returns up to `n` symbols. We used to try to read top-N
+// from Python's funding.json but the schema there is per-(symbol,
+// exchange) row with no per-symbol aggregate spread — so picking
+// top-N from there gave arbitrary symbols and hit "subscribe to a
+// coin that doesn't exist on Hyperliquid/Bybit" → broken pipes.
+//
+// Default20 is hand-picked majors that exist on all 16 venues. Once
+// arb compute lands in the Go fetcher itself, the prewarm becomes
+// data-driven.
 func TopSymbols(cacheDir string, n int) []string {
-	syms := readFromFunding(cacheDir, n)
-	if len(syms) >= 5 {
-		return syms
-	}
 	if n >= len(Default20) {
 		return Default20
 	}
