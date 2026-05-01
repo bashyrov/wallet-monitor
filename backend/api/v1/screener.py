@@ -534,7 +534,16 @@ async def in_out_basis(
     are always WS-subscribed) and the user's perception is "live" the moment
     a tick lands, not a perfect reading on the first poll after page load.
     """
-    from backend.services.orderbook_cache import _file_lookup
+    # Direct file-memo access — _file_lookup() can't be used here because
+    # its freshness check compares `time.time()` (seconds) against the go-
+    # fetcher-written `ts` field (milliseconds), so it always rejects every
+    # entry as stale. We also can't go through `entry.get("data")` because
+    # the per-venue and merged JSON files store bids/asks at the top level,
+    # not under a "data" wrapper. The books.<ex>.json files are written
+    # every 100ms by the dumper so any entry we read is fresh-enough by
+    # construction. Bypass the broken helpers and read the in-memory memo
+    # the orderbook_cache populates.
+    from backend.services import orderbook_cache as _obc
     try:
         from backend.services.orderbook_redis import read_books_batch
     except Exception:  # noqa: BLE001
@@ -585,14 +594,18 @@ async def in_out_basis(
         except Exception:  # noqa: BLE001
             pass
 
-    # Fall through to file memo only for pairs Redis didn't have.
+    # Fall through to the in-memory book memo for pairs Redis didn't have.
+    # Refresh the memo at most once per call (it self-throttles inside).
+    _obc._refresh_file_memo()
+    file_memo = _obc._file_memo
+
     book_by: dict[tuple[str, str], dict] = {}
     for ex, sym in fetch_keys:
         pair = f"{ex}:{sym}"
         if pair in redis_hits:
             book_by[(ex, sym)] = redis_hits[pair]
             continue
-        fd = _file_lookup(pair)
+        fd = file_memo.get(pair)
         if fd and (fd.get("bids") or fd.get("asks")):
             book_by[(ex, sym)] = fd
         else:
