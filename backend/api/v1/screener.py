@@ -691,6 +691,23 @@ async def in_out_basis(
         out_pct = (bestBidLong - bestAskShort) / bestAskShort * 100.0
         out[key] = {"in": round(in_pct, 4), "out": round(out_pct, 4)}
 
+    # Log a one-line summary so we can see the hit/miss split per call.
+    # Sampled at 1/10 to avoid log-spam under load.
+    import random
+    if random.random() < 0.1:
+        n_resolved = sum(1 for v in out.values() if v.get("in") is not None)
+        n_null     = len(out) - n_resolved
+        sample_misses = [k for k, v in out.items() if v.get("in") is None][:3]
+        try:
+            import logging
+            logging.getLogger("avalant.screener.in_out").info(
+                "in-out: requested=%d redis_hits=%d resolved=%d null=%d touches_fired=%d sample_misses=%s",
+                len(parsed), len(redis_hits), n_resolved, n_null, len(misses),
+                sample_misses,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     return out
 
 

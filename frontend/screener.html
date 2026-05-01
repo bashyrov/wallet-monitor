@@ -1011,6 +1011,7 @@ function applyDex(keepPage = false) {
     if (minNet != null && r.net_profit < minNet) return false;
     if (minGS  != null && r.gross < minGS) return false;
     if (minVol && (r.perp_volume_usd || 0) < minVol) return false;
+    if ((r.basis_pct || 0) < 0) return false;
     if (r.in_pct === null || r.out_pct === null) return false;
     return true;
   });
@@ -1230,6 +1231,9 @@ function applySpot(keepPage = false) {
     if (minNet != null && r.net_profit < minNet) return false;
     if (minGS  != null && r.gross < minGS) return false;
     if (minVol && (Math.min(r.spot_volume_usd || 0, r.perp_volume_usd || 0) < minVol)) return false;
+    // Drop reverse direction (negative basis = perp below spot, no
+    // arb to capture).
+    if ((r.basis_pct || 0) < 0) return false;
     if (r.in_pct === null || r.out_pct === null) return false;
     return true;
   });
@@ -1976,7 +1980,13 @@ function applyArb(keepPage = false) {
       const vMin = Math.min(r.long_volume || 0, r.short_volume || 0);
       if (vMin < minVol) return false;
     }
-    if (_validOnly && !r.valid_price) return false;
+    // Always drop the reverse-direction leg (valid_price=false): rows
+    // where buying long is at a HIGHER price than selling short — the
+    // basis goes against the trade and the row is essentially noise.
+    // Each opp is computed both ways by the backend; only the
+    // positive-basis direction is actionable. Previously this was an
+    // opt-in (_validOnly toggle); now mandatory for the screener.
+    if (!r.valid_price) return false;
     // Hide rows whose In/Out has been positively determined as null
     // (the orderbook isn't available on one of the venues). Rows still
     // warming (in_pct === undefined — fetch hasn't returned yet) stay
