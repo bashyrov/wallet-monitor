@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -203,6 +204,20 @@ func (c *DEXCompute) tick(ctx context.Context) {
 	var wg sync.WaitGroup
 	dsCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
+
+	// Debug counters — surfaced in the cycle-end log so we can see WHERE
+	// rows are being dropped (404 vs no-pools vs filter vs consensus).
+	var (
+		cntHTTPErr    int64
+		cntHTTPOK     int64
+		cntNoPairs    int64
+		cntChainMiss  int64
+		cntQuoteFilt  int64
+		cntLiqFloor   int64
+		cntConsensFL  int64
+		cntHits       int64
+	)
+
 	for _, cand := range candidates {
 		cand := cand
 		wg.Add(1)
@@ -210,7 +225,16 @@ func (c *DEXCompute) tick(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			info := fetchDexPool(dsCtx, cand.entry.chain, cand.entry.contract)
+			info, reason := fetchDexPoolDbg(dsCtx, cand.entry.chain, cand.entry.contract)
+			switch reason {
+			case "http_err":  atomic.AddInt64(&cntHTTPErr, 1)
+			case "ok":        atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntHits, 1)
+			case "no_pairs":  atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntNoPairs, 1)
+			case "chain":     atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntChainMiss, 1)
+			case "quote":     atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntQuoteFilt, 1)
+			case "liq":       atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntLiqFloor, 1)
+			case "consensus": atomic.AddInt64(&cntHTTPOK, 1); atomic.AddInt64(&cntConsensFL, 1)
+			}
 			results <- fetched{sym: cand.sym, info: info}
 		}()
 	}
@@ -223,6 +247,18 @@ func (c *DEXCompute) tick(ctx context.Context) {
 			dexBySym[r.sym] = r.info
 		}
 	}
+
+	log.L().Info().
+		Int("scanned", len(candidates)).
+		Int("hits", len(dexBySym)).
+		Int64("http_err", cntHTTPErr).
+		Int64("http_ok", cntHTTPOK).
+		Int64("no_pairs", cntNoPairs).
+		Int64("chain_miss", cntChainMiss).
+		Int64("quote_filt", cntQuoteFilt).
+		Int64("liq_floor", cntLiqFloor).
+		Int64("consensus_fail", cntConsensFL).
+		Msg("dex cycle complete")
 
 	// Build opps.
 	now := time.Now()
@@ -463,20 +499,28 @@ func (c *DEXCompute) refreshCG(ctx context.Context) {
 // DexScreener with cross-pool consensus check. Returns nil if no pool
 // passes the liquidity / volume floors or all pools disagree.
 func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
+	info, _ := fetchDexPoolDbg(ctx, chain, address)
+	return info
+}
+
+// fetchDexPoolDbg is the same as fetchDexPool but additionally returns a
+// short string describing where the row was dropped. Used by the cycle
+// instrumentation in tick(); production callers use fetchDexPool.
+func fetchDexPoolDbg(ctx context.Context, chain, address string) (*dexInfo, string) {
 	url := fmt.Sprintf("https://api.dexscreener.com/latest/dex/tokens/%s", address)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil
+		return nil, "http_err"
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 avalant-fetcher/go")
 	httpClient := &http.Client{Timeout: 6 * time.Second}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil
+		return nil, "http_err"
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil
+		return nil, "http_err"
 	}
 	var doc struct {
 		Pairs []struct {
@@ -501,7 +545,7 @@ func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
 		} `json:"pairs"`
 	}
 	if err := sonic.ConfigStd.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		return nil
+		return nil, "http_err"
 	}
 	addrLow := strings.ToLower(address)
 
@@ -513,18 +557,26 @@ func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
 		vol     float64
 		pairURL string
 	}
+	var (
+		anyChain  bool // saw a pair on the requested chain (regardless of address match)
+		anyMatch  bool // saw a pair on chain with matching base address
+		anyQuote  bool // saw a pair with our base on chain & accepted quote
+	)
 	pools := make([]pool, 0, len(doc.Pairs))
 	for _, p := range doc.Pairs {
 		if p.ChainID != chain {
 			continue
 		}
+		anyChain = true
 		if strings.ToLower(p.BaseToken.Address) != addrLow {
 			continue
 		}
+		anyMatch = true
 		quoteSym := strings.ToUpper(p.QuoteToken.Symbol)
 		if _, ok := acceptedQuotes[quoteSym]; !ok {
 			continue
 		}
+		anyQuote = true
 		px, _ := strconv.ParseFloat(p.PriceUSD, 64)
 		if px <= 0 {
 			continue
@@ -539,7 +591,16 @@ func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
 		})
 	}
 	if len(pools) == 0 {
-		return nil
+		if !anyChain {
+			return nil, "chain"
+		}
+		if !anyMatch {
+			return nil, "no_pairs"
+		}
+		if !anyQuote {
+			return nil, "quote"
+		}
+		return nil, "no_pairs"
 	}
 	eligible := make([]pool, 0, len(pools))
 	for _, p := range pools {
@@ -548,7 +609,7 @@ func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
 		}
 	}
 	if len(eligible) == 0 {
-		return nil
+		return nil, "liq"
 	}
 	// Consensus: median price of top-5 by liquidity; pick best whose
 	// price is within max-dev of median.
@@ -564,7 +625,7 @@ func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
 	sort.Float64s(prices)
 	median := prices[len(prices)/2]
 	if median <= 0 {
-		return nil
+		return nil, "consensus"
 	}
 	sort.Slice(eligible, func(i, j int) bool { return eligible[i].liq > eligible[j].liq })
 	var best *pool
@@ -575,7 +636,7 @@ func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
 		}
 	}
 	if best == nil {
-		return nil
+		return nil, "consensus"
 	}
 	return &dexInfo{
 		Symbol:       best.symbol,
@@ -586,5 +647,5 @@ func fetchDexPool(ctx context.Context, chain, address string) *dexInfo {
 		VolumeUSD:    best.vol,
 		BaseAddress:  addrLow,
 		PairURL:      best.pairURL,
-	}
+	}, "ok"
 }
