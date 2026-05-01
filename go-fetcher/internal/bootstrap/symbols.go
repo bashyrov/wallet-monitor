@@ -59,12 +59,13 @@ func readFromFunding(cacheDir string, n int) []string {
 	}
 
 	// funding.json shape (per-(symbol, exchange) row):
-	//   { "rows": [{"symbol":"BTC","exchange":"binance","volume_usd_24h":...,
-	//               "rate":..., "next_funding_ts":..., "interval_h":...}, ...] }
+	//   { "rows": [{"symbol":"BTC","exchange":"binance","volume_usd":...,
+	//               "rate":..., "next_ts":..., "interval_h":...,
+	//               "price":..., "apr":..., "cross_listed":...}, ...] }
 	var doc struct {
 		Rows []struct {
-			Symbol       string  `json:"symbol"`
-			VolumeUSD24h float64 `json:"volume_usd_24h"`
+			Symbol    string  `json:"symbol"`
+			VolumeUSD float64 `json:"volume_usd"`
 		} `json:"rows"`
 	}
 	if err := sonic.Unmarshal(data, &doc); err != nil {
@@ -82,7 +83,7 @@ func readFromFunding(cacheDir string, n int) []string {
 		if r.Symbol == "" {
 			continue
 		}
-		if v := r.VolumeUSD24h; v > maxVol[r.Symbol] {
+		if v := r.VolumeUSD; v > maxVol[r.Symbol] {
 			maxVol[r.Symbol] = v
 		}
 	}
