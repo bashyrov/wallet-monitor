@@ -510,16 +510,19 @@ func fetchDexPoolDbg(ctx context.Context, chain, address string) (*dexInfo, stri
 	url := fmt.Sprintf("https://api.dexscreener.com/latest/dex/tokens/%s", address)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
+		log.L().Debug().Err(err).Str("addr", address).Msg("dex req-build err")
 		return nil, "http_err"
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 avalant-fetcher/go")
 	httpClient := &http.Client{Timeout: 6 * time.Second}
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		log.L().Warn().Err(err).Str("addr", address).Msg("dex http-do err")
 		return nil, "http_err"
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		log.L().Warn().Int("status", resp.StatusCode).Str("addr", address).Msg("dex http non-200")
 		return nil, "http_err"
 	}
 	var doc struct {
