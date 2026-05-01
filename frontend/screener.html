@@ -651,8 +651,12 @@ let _openFundingKey = null;  // symbol+exchange
 let _openArbKey    = null;   // symbol+long+short
 
 // ── WebSocket state ────────────────────────────────────────────────────────────
-let _ws    = null;  // funding WebSocket
+// /ws/funding was retired — it pushed a ~90 KB gzip full-snapshot every 200ms
+// to every screener visitor regardless of which tab they were on, costing
+// ~27 MB/min of pure waste on Long/Short, Spot/Short, etc. The Funding tab
+// now polls /api/screener/funding via setInterval (see _fundingPoll below).
 let _wsArb = null;  // arbitrage WebSocket
+let _fundingPollTimer = null;
 
 // ── init nav ───────────────────────────────────────────────────────────────────
 (function initNav() {
@@ -932,7 +936,7 @@ function switchMode(mode) {
   renderAlphaStatus();
   if (mode === 'arb' && !_arbRows.length) loadArb();
   else if (mode === 'alpha') loadAlpha();
-  else if (mode === 'funding') applyFilter();
+  else if (mode === 'funding') { _pollFunding(false); applyFilter(); }
   else if (mode === 'spot') loadSpot();
   else if (mode === 'dex') loadDex();
   else if (mode === 'all') loadAll();
@@ -1795,32 +1799,49 @@ function flushPending() {
 // Apply pending on load (in case user reloaded with a saved throttle pref)
 window.addEventListener('load', () => setThrottle(_throttle));
 
-// ── Funding WebSocket ──────────────────────────────────────────────────────────
-const _retryF      = { val: 0 };
-const _pingF       = { val: null };
-const _retryTimerF = { val: null };
+// ── Funding REST poller ────────────────────────────────────────────────────────
+// Replaced /ws/funding (which pushed a ~90 KB gzip full snapshot every 200 ms,
+// burning ~27 MB/min on every page load regardless of which tab was open).
+// Now: lazy 3s REST polling, active only while Funding Rates tab is visible
+// or no other table has data yet (so the top stats bar can still show
+// "X contracts / Y exchanges" once on first paint).
+const FUNDING_POLL_MS = 3000;
 
-const _connectFunding = _makeWs({
-  path: 'funding',
-  retryRef: _retryF, pingRef: _pingF, retryTimerRef: _retryTimerF,
-  onOpen: () => setWsStatus('live'),
-  onMessage: (data) => {
+async function _pollFunding(forceFirst = false) {
+  try {
+    const res = await Auth.apiFetch('/screener/funding');
+    if (!res.ok) return;
+    const data = await res.json();
     _pendingFunding = data;
-    if (_throttle === 'live') flushPending();
-  },
-});
-
-function connectWs() {
-  _ws = _connectFunding();
-  setWsStatus('connecting');
+    flushPending();
+    setWsStatus('live');
+  } catch (_) {
+    if (forceFirst) setWsStatus('connecting');
+  }
 }
 
+function _startFundingPoll() {
+  if (_fundingPollTimer) return;
+  _pollFunding(true);
+  _fundingPollTimer = setInterval(() => {
+    if (document.hidden) return;
+    if (_mode !== 'funding' && _rows.length) return;  // stop polling once we have a snapshot and user moved away
+    _pollFunding(false);
+  }, FUNDING_POLL_MS);
+}
+
+function _stopFundingPoll() {
+  if (_fundingPollTimer) { clearInterval(_fundingPollTimer); _fundingPollTimer = null; }
+}
+
+// Refresh button on the funding header retains its label — fires an
+// immediate fetch and (re-)starts the poll loop if needed.
 function reconnectWs() {
-  clearTimeout(_retryTimerF.val);
-  if (_ws) { _ws.onclose = null; _ws.close(); _ws = null; }
-  _retryF.val = 0;
-  connectWs();
+  _stopFundingPoll();
+  _startFundingPoll();
 }
+
+function connectWs() { _startFundingPoll(); }
 
 // /ws/book live In/Out updates removed — basis-only screener policy.
 // Detail page (/arb) maintains its own /ws/book subscription independently.
