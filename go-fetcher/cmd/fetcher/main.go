@@ -40,6 +40,7 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/okx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/paradex"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/whitebit"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/arb"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	faster "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/aster"
 	fbinance "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/binance"
@@ -142,6 +143,14 @@ func main() {
 			return err
 		}
 		return nil
+	})
+
+	// Futures arb compute — port of Python's arbitrage_service.py. Reads
+	// the funding store, builds cross-venue opportunities, writes
+	// arbitrage.json every 700ms (matches AVALANT_ARB_CACHE_TTL on prod).
+	arbCompute := arb.NewCompute(fundingStore, cfg.CacheDir, 700*time.Millisecond)
+	g.Go(func() error {
+		return arbCompute.Run(gctx)
 	})
 
 	// Symbol manager reconciliation loop.

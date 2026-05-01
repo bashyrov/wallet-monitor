@@ -101,11 +101,18 @@ func (d *Dumper) dump() error {
 		}
 	}
 
-	// Merged rows file
+	// Merged rows file — top-level shape: {ts, exchanges, rows[]}.
+	// Python emits ts as INT seconds (epoch) and exchanges as the
+	// list of enabled venues; matching exactly.
 	rows := buildRows(byEx)
+	exchanges := make([]string, 0, len(byEx))
+	for ex := range byEx {
+		exchanges = append(exchanges, ex)
+	}
 	merged := map[string]any{
-		"rows": rows,
-		"ts":   time.Now().UnixMilli(),
+		"ts":        time.Now().Unix(),
+		"exchanges": exchanges,
+		"rows":      rows,
 	}
 	if err := writeAtomic(filepath.Join(d.cacheDir, "funding.json"), merged); err != nil {
 		return err
@@ -129,78 +136,56 @@ func tickToJSON(t Tick) map[string]any {
 	return out
 }
 
-// buildRows pivots {ex: {sym: tick}} → [{symbol, rates: {ex: rate}, ...}]
-// and computes max_spread (per-symbol max abs(rate_i - rate_j) across
-// venues). Python's screener consumes this shape directly.
+// buildRows produces per-(symbol, exchange) rows matching Python's
+// arbitrage_service shape — that's what the web roles + the Go arb
+// compute layer both consume.
+//
+// Row shape (verified against prod /tmp/avalant_cache/funding.json):
+//
+//	{symbol, exchange, rate, price, volume_usd, next_ts (epoch sec),
+//	 interval_h, apr, cross_listed}
+//
+// cross_listed = true when the symbol appears on >1 venue. Python's
+// arb compute uses this as a coarse pre-filter on /api/screener/funding
+// to drop venue-exclusive coins.
 func buildRows(byEx map[string]map[string]Tick) []map[string]any {
-	// flatten — collect all symbols seen
-	syms := make(map[string]struct{}, 256)
+	// Pass 1: count per-symbol presence to compute cross_listed.
+	presence := make(map[string]int, 256)
 	for _, bucket := range byEx {
 		for sym := range bucket {
-			syms[sym] = struct{}{}
+			presence[sym]++
 		}
 	}
 
-	rows := make([]map[string]any, 0, len(syms))
-	for sym := range syms {
-		rates := make(map[string]float64, 16)
-		marks := make(map[string]float64, 16)
-		vols := make(map[string]float64, 16)
-		nexts := make(map[string]int64, 16)
-		intervals := make(map[string]float64, 16)
+	rows := make([]map[string]any, 0, 1024)
+	for ex, bucket := range byEx {
+		for sym, t := range bucket {
+			intH := t.IntervalH
+			if intH <= 0 {
+				intH = 8
+			}
+			// APR — same formula as Python: rate * (8760 / interval_h) * 100
+			rateNorm8h := t.Rate * (8.0 / intH)
+			apr := rateNorm8h * (8760.0 / 8.0) * 100.0
 
-		for ex, bucket := range byEx {
-			t, ok := bucket[sym]
-			if !ok {
-				continue
-			}
-			rates[ex] = t.Rate
-			if t.MarkPrice != 0 {
-				marks[ex] = t.MarkPrice
-			}
-			if t.Volume24h != 0 {
-				vols[ex] = t.Volume24h
+			row := map[string]any{
+				"symbol":       sym,
+				"exchange":     ex,
+				"rate":         t.Rate,
+				"price":        t.MarkPrice,
+				"volume_usd":   t.Volume24h,
+				"interval_h":   intH,
+				"apr":          apr,
+				"cross_listed": presence[sym] > 1,
 			}
 			if !t.NextFunding.IsZero() {
-				nexts[ex] = t.NextFunding.UnixMilli()
+				row["next_ts"] = t.NextFunding.Unix()
+			} else {
+				row["next_ts"] = 0
 			}
-			if t.IntervalH != 0 {
-				intervals[ex] = t.IntervalH
-			}
+			rows = append(rows, row)
 		}
-
-		// max_spread = max - min across the available venues
-		var maxSpread float64
-		var min, max float64
-		first := true
-		for _, r := range rates {
-			if first {
-				min, max = r, r
-				first = false
-				continue
-			}
-			if r < min {
-				min = r
-			}
-			if r > max {
-				max = r
-			}
-		}
-		if !first {
-			maxSpread = max - min
-		}
-
-		rows = append(rows, map[string]any{
-			"symbol":     sym,
-			"rates":      rates,
-			"marks":      marks,
-			"vols":       vols,
-			"nexts":      nexts,
-			"intervals":  intervals,
-			"max_spread": maxSpread,
-		})
 	}
-
 	return rows
 }
 
