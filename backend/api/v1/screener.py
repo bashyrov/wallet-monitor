@@ -521,11 +521,24 @@ async def in_out_basis(
         type=dex     - long is dex_arbitrage.json dex_price (single, no orderbook),
                        short via perp orderbook
 
-    Top-of-book only (limit=1) — top-of-book is the right metric for screener;
-    /arb has the size-aware variant via sampleEntryExit().
+    Top-of-book only — top-of-book is the right metric for screener; /arb has
+    the size-aware variant via sampleEntryExit().
+
+    Hot-path policy: this endpoint NEVER falls through to REST or triggers WS
+    subscribe. It only reads in-memory book caches: Redis (`ob:<ex>:<sym>`)
+    and the books.<ex>.json file memo. Anything that's not in those returns
+    `null` for that row, which the frontend renders as "—". The reason is
+    latency — the screener fires this every 3s for up to 64 rows; with REST
+    fallback in the loop a single uncached pair was costing 200-500ms and
+    starving the FastAPI worker pool. Cold rows are rare (top-vol pairs
+    are always WS-subscribed) and the user's perception is "live" the moment
+    a tick lands, not a perfect reading on the first poll after page load.
     """
-    from backend.services.orderbook_cache import get_cached_orderbook
-    import asyncio as _asyncio
+    from backend.services.orderbook_cache import _file_lookup
+    try:
+        from backend.services.orderbook_redis import read_book
+    except Exception:  # noqa: BLE001
+        read_book = None
 
     parsed: list[tuple[str, str, str, str]] = []
     for raw in items.split(",")[:64]:  # cap
@@ -548,6 +561,23 @@ async def in_out_basis(
     if not parsed:
         return {}
 
+    # Cache-only book lookup. Order: Redis -> file memo -> empty.
+    # No REST, no WS subscribe — see docstring for rationale.
+    def _quick_book(ex: str, sym: str) -> dict:
+        if read_book is not None:
+            try:
+                rb = read_book(ex, sym)
+                if rb:
+                    d = rb.get("data") or {}
+                    if d.get("bids") or d.get("asks"):
+                        return d
+            except Exception:  # noqa: BLE001
+                pass
+        fd = _file_lookup(f"{ex}:{sym}")
+        if fd and (fd.get("bids") or fd.get("asks")):
+            return fd
+        return {"bids": [], "asks": []}
+
     # Build orderbook fetch list. dex rows only need short side.
     fetch_keys: set[tuple[str, str]] = set()
     for typ, sym, le, se in parsed:
@@ -556,14 +586,9 @@ async def in_out_basis(
             fetch_keys.add((le, sym))
         elif typ == "spot":
             fetch_keys.add((f"{le}_spot", sym))
-    fetches = list(fetch_keys)
-    results = await _asyncio.gather(
-        *(get_cached_orderbook(ex, sym, 5) for ex, sym in fetches),
-        return_exceptions=True,
-    )
-    book_by: dict[tuple[str, str], dict] = {}
-    for k, r in zip(fetches, results):
-        book_by[k] = r if isinstance(r, dict) else {"bids": [], "asks": []}
+    book_by: dict[tuple[str, str], dict] = {
+        (ex, sym): _quick_book(ex, sym) for (ex, sym) in fetch_keys
+    }
 
     # DEX prices read from dex_arbitrage.json — already loaded periodically.
     dex_px_by: dict[str, float] = {}
