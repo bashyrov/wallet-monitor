@@ -594,6 +594,12 @@ let _mode = (() => {
 const _MODE_CANON = {arb:'long-short', spot:'spot-short', dex:'dex-short'};
 let _rows = [];           // funding rows
 let _arbRows = [];                    // flat array for table rendering
+// Tracks whether the first in_pct landing has triggered a one-time sort.
+// Reset to false on data reload (loadArb/loadSpot/loadDex) so a fresh
+// dataset gets sorted by live values once they arrive. Declared up-front
+// because the loadX() entry points reference it before _writeInOutOntoRows
+// is parsed (script-init timing).
+const _inOutFirstSorted = { arb: false, spot: false, dex: false };
 const _arbRowsByKey = new Map();      // key → opp, source of truth for diffs
 let _arbMeta = { fees: {}, exchanges: [] };
 const _arbKey = (o) => `${o.symbol}|${o.long_exchange}|${o.short_exchange}`;
@@ -951,6 +957,7 @@ let _pageDX = 0;
 let _dexSort = { col: 'in_pct', dir: 'desc' };
 
 async function loadDex() {
+  _inOutFirstSorted.dex = false;
   if (!_dexRows.length) {
     document.getElementById('tbody-dex').innerHTML =
       '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
@@ -1168,6 +1175,7 @@ let _pageSP = 0;
 let _spotSort = { col: 'in_pct', dir: 'desc' };
 
 async function loadSpot() {
+  _inOutFirstSorted.spot = false;
   if (!_spotRows.length) {
     document.getElementById('tbody-spot').innerHTML =
       '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
@@ -1862,6 +1870,7 @@ const _connectArb = _makeWs({
 });
 
 async function loadArb() {
+  _inOutFirstSorted.arb = false;  // fresh dataset → re-sort once on next live tick
   if (_arbRows.length) {
     applyArb();
   } else {
@@ -2542,20 +2551,27 @@ function _writeInOutOntoRows(payload) {
     r.in_pct  = slot.in;
     r.out_pct = slot.out;
   }
-  // Re-sort if the active sort col is one of the live ones. Filtered arrays
-  // share row references with the master arrays, so the writes above are
-  // already visible to the sorter. Avoid going through applyArb/applySpot/
-  // applyDex — those reset pagination, which would yank the user back to
-  // page 0 every 3 seconds.
+  // Sort exactly ONCE per mode after the first in/out tick lands — that's
+  // when default sort by in_pct becomes meaningful (rows had undefined
+  // values before). After that, live ticks only update cell innerHTML; we
+  // do NOT re-sort or re-render the table:
+  //   1. tbody innerHTML rebuild for 50 rows every 3s caused visible
+  //      scroll-jank — most of "site is laggy" was DOM thrash, not network.
+  //   2. Re-ordering rows mid-read is hostile to the user — they pick a row
+  //      to act on, then 3 seconds later it's halfway down the page.
+  // User can re-press the sort header to re-lock against current values.
   const liveCols = new Set(['in_pct', 'out_pct']);
-  if (matchArb && liveCols.has(_sortA.col)) {
-    sortARows(true);  // sortARows already supports keepPage
-  } else if (matchSpot && liveCols.has(_spotSort.col)) {
+  if (matchArb && !_inOutFirstSorted.arb && liveCols.has(_sortA.col)) {
+    _inOutFirstSorted.arb = true;
+    sortARows(true);
+  } else if (matchSpot && !_inOutFirstSorted.spot && liveCols.has(_spotSort.col)) {
+    _inOutFirstSorted.spot = true;
     const dir = _spotSort.dir === 'desc' ? -1 : 1;
     const col = _spotSort.col;
     _spotFiltered.sort((a, b) => ((a[col] ?? -Infinity) - (b[col] ?? -Infinity)) * dir);
     renderSpot();
-  } else if (matchDex && liveCols.has(_dexSort.col)) {
+  } else if (matchDex && !_inOutFirstSorted.dex && liveCols.has(_dexSort.col)) {
+    _inOutFirstSorted.dex = true;
     const dir = _dexSort.dir === 'desc' ? -1 : 1;
     const col = _dexSort.col;
     _dexFiltered.sort((a, b) => ((a[col] ?? -Infinity) - (b[col] ?? -Infinity)) * dir);
