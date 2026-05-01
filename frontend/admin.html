@@ -1196,10 +1196,10 @@
 
       <div style="display:flex;gap:8px;margin:14px 0;align-items:center">
         <span style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Status</span>
-        <button id="avs-flt-pending" class="btn-flt active" onclick="setAvshareFilter('pending')">Pending</button>
-        <button id="avs-flt-paid"    class="btn-flt"        onclick="setAvshareFilter('paid')">Paid</button>
-        <button id="avs-flt-rejected" class="btn-flt"       onclick="setAvshareFilter('rejected')">Rejected</button>
-        <button id="avs-flt-all"     class="btn-flt"        onclick="setAvshareFilter(null)">All</button>
+        <button id="avs-flt-pending"    class="btn-flt active" onclick="setAvshareFilter('pending')">Pending</button>
+        <button id="avs-flt-completed"  class="btn-flt"        onclick="setAvshareFilter('completed')">Completed</button>
+        <button id="avs-flt-cancelled"  class="btn-flt"        onclick="setAvshareFilter('cancelled')">Cancelled</button>
+        <button id="avs-flt-all"        class="btn-flt"        onclick="setAvshareFilter(null)">All</button>
         <span style="flex:1"></span>
         <span id="avs-summary" style="font-size:11px;color:var(--text3)">—</span>
       </div>
@@ -2484,7 +2484,7 @@ async function _setReferralPct(userId, username, current){
 let _avsFilter = 'pending';
 function setAvshareFilter(s){
   _avsFilter = s;
-  for (const v of ['pending','paid','rejected','all']) {
+  for (const v of ['pending','completed','cancelled','all']) {
     const el = document.getElementById('avs-flt-' + (v === null ? 'all' : v));
     if (el) el.classList.toggle('active', (s === null && v === 'all') || s === v);
   }
@@ -2506,11 +2506,13 @@ async function loadAvashareTab(){
       return;
     }
     tbody.innerHTML = rows.map(r => {
-      const cls = r.status === 'paid' ? 'color:#1AFFAB' : r.status === 'rejected' ? 'color:#F87171' : 'color:#E5C07B';
+      const cls = r.status === 'completed' ? 'color:#1AFFAB' : r.status === 'cancelled' ? 'color:#F87171' : 'color:#E5C07B';
+      const detailsBtn = `<button class="btn-block" style="background:rgba(255,255,255,0.04);color:var(--text);border-color:var(--border)" onclick="_avsAdminDetails(${r.id})">Details</button>`;
       const actions = r.status === 'pending'
-        ? `<button class="btn-block" style="background:rgba(26,255,171,0.1);color:var(--green);border-color:rgba(26,255,171,0.2)" onclick="_avsAdminResolve(${r.id},'pay')">Mark paid</button>
-           <button class="btn-block" style="background:rgba(248,113,113,0.08);color:#F87171;border-color:rgba(248,113,113,0.18);margin-left:4px" onclick="_avsAdminResolve(${r.id},'reject')">Reject</button>`
-        : '';
+        ? `${detailsBtn}
+           <button class="btn-block" style="background:rgba(26,255,171,0.1);color:var(--green);border-color:rgba(26,255,171,0.2);margin-left:4px" onclick="_avsAdminResolve(${r.id},'complete')">Complete</button>
+           <button class="btn-block" style="background:rgba(248,113,113,0.08);color:#F87171;border-color:rgba(248,113,113,0.18);margin-left:4px" onclick="_avsAdminResolve(${r.id},'cancel')">Cancel</button>`
+        : detailsBtn;
       return `<tr>
         <td style="font-size:11px;color:var(--text2)">${r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
         <td>${r.username || ('id=' + r.user_id)}</td>
@@ -2527,14 +2529,13 @@ async function loadAvashareTab(){
 }
 async function _avsAdminResolve(id, action){
   let note = null;
-  if (action === 'reject') {
-    note = prompt('Rejection reason (optional):') || null;
+  if (action === 'cancel') {
+    note = prompt('Cancellation reason (optional):') || null;
   } else {
-    note = prompt('Tx hash / note (optional):') || null;
+    note = prompt('Tx hash / payout note (optional):') || null;
   }
-  const path = action === 'pay' ? 'pay' : 'reject';
   try {
-    const r = await Auth.apiFetch(`/admin/referrals/payouts/${id}/${path}`, {
+    const r = await Auth.apiFetch(`/admin/referrals/payouts/${id}/${action}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({note}),
@@ -2543,10 +2544,67 @@ async function _avsAdminResolve(id, action){
       const j = await r.json().catch(() => ({}));
       throw new Error(j.detail || `HTTP ${r.status}`);
     }
-    toast(action === 'pay' ? 'Payout marked paid' : 'Payout rejected', 'success');
+    toast(action === 'complete' ? 'Payout marked completed' : 'Payout cancelled', 'success');
     await loadAvashareTab();
   } catch (e) {
     toast('Action failed: ' + e.message, 'error');
+  }
+}
+
+async function _avsAdminDetails(id){
+  try {
+    const r = await Auth.apiFetch(`/admin/referrals/payouts/${id}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const earningsHtml = (d.earnings || []).map(e => `
+      <tr>
+        <td style="font-size:11px;color:var(--text2)">${e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td>
+        <td>${e.referee_username || ''}<div style="font-size:11px;color:var(--text3)">${e.referee_email || ''}</div></td>
+        <td style="text-transform:uppercase;font-size:11px">${e.plan || '—'}</td>
+        <td style="font-family:var(--mono)">${Number(e.referee_paid_usd || 0).toFixed(2)}</td>
+        <td style="font-family:var(--mono);color:var(--green);font-weight:600">${Number(e.amount_usd).toFixed(2)}</td>
+        <td style="font-size:11px;color:var(--text2)">${e.pct?.toFixed?.(1) || e.pct}%</td>
+      </tr>
+    `).join('');
+    const html = `
+      <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:13px;font-weight:600">Payout #${d.id}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">${d.username} · ${d.email || ''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--mono);font-size:18px;font-weight:600">${Number(d.amount_usd).toFixed(2)} <span style="font-size:11px;color:var(--text2)">USDT</span></div>
+          <div style="font-size:11px;color:var(--text2);font-family:var(--mono)">${d.address}</div>
+        </div>
+      </div>
+      <div style="padding:6px 20px;font-size:11px;color:var(--text3);background:var(--surface3)">
+        ${(d.earnings || []).length} commissions · sum-check ${Number(d.earnings_sum_check || 0).toFixed(2)} ${Math.abs((d.earnings_sum_check || 0) - Number(d.amount_usd)) < 0.01 ? '✓' : '<span style="color:var(--red)">⚠ DRIFT</span>'}
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--surface2);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3)">
+            <th style="padding:8px 10px;text-align:left">Date</th>
+            <th style="padding:8px 10px;text-align:left">Referee</th>
+            <th style="padding:8px 10px;text-align:left">Plan</th>
+            <th style="padding:8px 10px;text-align:left">Referee paid</th>
+            <th style="padding:8px 10px;text-align:left">Commission</th>
+            <th style="padding:8px 10px;text-align:left">%</th>
+          </tr>
+        </thead>
+        <tbody>${earningsHtml || '<tr><td colspan="6" style="padding:24px;color:var(--text3);text-align:center">No linked earnings — admin must investigate.</td></tr>'}</tbody>
+      </table>
+    `;
+    let modal = document.getElementById('avs-detail-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'avs-detail-modal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
+      modal.onclick = e => { if (e.target === modal) modal.remove(); };
+      document.body.appendChild(modal);
+    }
+    modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:900px;width:100%;max-height:85vh;overflow:auto">${html}</div>`;
+  } catch (e) {
+    toast('Details failed: ' + e.message, 'error');
   }
 }
 

@@ -2493,17 +2493,24 @@ function _avsRender() {
   const payouts = d.payouts || [];
 
   const histHtml = recentEarnings.length
-    ? recentEarnings.map(h => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-top:1px solid var(--border);font-size:12px">
-          <span style="color:var(--text2)">${new Date(h.created_at).toLocaleDateString()}</span>
-          <span style="color:var(--text3)">${h.pct}% commission</span>
-          <span style="font-family:var(--mono);color:var(--green);font-weight:600">+${_avsFmt(h.amount_usd)}</span>
-        </div>`).join('')
+    ? recentEarnings.map(h => {
+        const planTxt = h.plan ? h.plan.toUpperCase() : '—';
+        const refTxt = h.referee?.username ? '@' + h.referee.username : 'invitee';
+        const claimedBadge = h.claimed
+          ? `<span style="font-size:9px;background:rgba(229,192,123,0.12);color:#E5C07B;padding:2px 6px;border-radius:4px;letter-spacing:0.04em;text-transform:uppercase">claimed</span>`
+          : '';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-top:1px solid var(--border);font-size:12px;gap:10px">
+          <span style="color:var(--text2);min-width:80px">${new Date(h.created_at).toLocaleDateString()}</span>
+          <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${refTxt} · ${planTxt}</span>
+          ${claimedBadge}
+          <span style="font-family:var(--mono);color:var(--green);font-weight:600;min-width:70px;text-align:right">+${_avsFmt(h.amount_usd)}</span>
+        </div>`;
+      }).join('')
     : `<div style="padding:14px 12px;color:var(--text3);font-size:12px;text-align:center">No commissions yet — share your code to start earning.</div>`;
 
   const payoutsHtml = payouts.length
     ? payouts.slice(0, 8).map(p => {
-        const cls = p.status === 'paid' ? 'color:#1AFFAB' : p.status === 'rejected' ? 'color:#F87171' : 'color:#E5C07B';
+        const cls = p.status === 'completed' ? 'color:#1AFFAB' : p.status === 'cancelled' ? 'color:#F87171' : 'color:#E5C07B';
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-top:1px solid var(--border);font-size:12px">
           <span style="color:var(--text2)">${new Date(p.created_at).toLocaleDateString()}</span>
           <span style="font-family:var(--mono)">${_avsFmt(p.amount_usd)}</span>
@@ -2511,6 +2518,27 @@ function _avsRender() {
         </div>`;
       }).join('')
     : '';
+
+  // Available column drives whether the request CTA is enabled. The
+  // backend recomputes the amount server-side at submit time — we only
+  // show the preview here so the user knows what they're requesting.
+  const minPayout = d.min_payout_usd || 100;
+  const available = Number(d.totals.available_usd || 0);
+  const hasPending = !!d.has_pending_payout;
+  const canRequest = !hasPending && available >= minPayout;
+
+  let payoutCta;
+  if (hasPending) {
+    payoutCta = `<div style="padding:10px 12px;border-radius:8px;border:1px solid rgba(229,192,123,0.25);background:rgba(229,192,123,0.06);color:#E5C07B;font-size:12px;text-align:center">You have a pending payout — wait for admin review before requesting another.</div>`;
+  } else if (available < minPayout) {
+    const left = (minPayout - available).toFixed(2);
+    payoutCta = `<div style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface3);color:var(--text2);font-size:12px;text-align:center">Minimum payout is $${minPayout.toFixed(2)} — earn $${left} more to unlock.</div>`;
+  } else {
+    payoutCta = `<button onclick="_avsRequestPayout()" id="avs-payout-btn"
+        style="width:100%;padding:11px 16px;border-radius:8px;background:var(--green);color:#000;font-weight:700;border:none;cursor:pointer;font-size:13px">
+      Request payout of ${_avsFmt(available)}
+    </button>`;
+  }
 
   document.getElementById('avs-body').innerHTML = `
     <div class="avs-section-title">Your code</div>
@@ -2525,19 +2553,13 @@ function _avsRender() {
       </div>
     </div>
 
-    <div class="avs-section-title">Request payout</div>
+    <div class="avs-section-title">Request payout · min $${minPayout.toFixed(2)}</div>
     <div style="padding:0 16px 16px">
       <div style="display:flex;flex-direction:column;gap:8px">
         <input id="avs-addr" placeholder="TRC20 USDT address (T…)" value="${addr}"
+               ${canRequest ? '' : 'disabled'}
                style="padding:10px 12px;border:1px solid var(--border);background:var(--surface3);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px">
-        <div style="display:flex;gap:8px">
-          <input id="avs-amt" type="number" step="0.01" min="1" placeholder="Amount in USDT"
-                 style="flex:1;padding:10px 12px;border:1px solid var(--border);background:var(--surface3);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px">
-          <button onclick="_avsRequestPayout()" id="avs-payout-btn"
-                  style="padding:10px 16px;border-radius:8px;background:var(--green);color:#000;font-weight:700;border:none;cursor:pointer">
-            Request
-          </button>
-        </div>
+        ${payoutCta}
         <div id="avs-payout-msg" style="font-size:11px;color:var(--text3);min-height:14px"></div>
       </div>
     </div>
@@ -2577,7 +2599,6 @@ function _avsCopy(text, btn) {
 
 async function _avsRequestPayout() {
   const addr = document.getElementById('avs-addr').value.trim();
-  const amt = parseFloat(document.getElementById('avs-amt').value);
   const msg = document.getElementById('avs-payout-msg');
   const btn = document.getElementById('avs-payout-btn');
   msg.style.color = 'var(--text3)';
@@ -2585,28 +2606,23 @@ async function _avsRequestPayout() {
     msg.style.color = 'var(--red)'; msg.textContent = 'TRC20 address must start with T and be 34 chars';
     return;
   }
-  if (!amt || amt <= 0) {
-    msg.style.color = 'var(--red)'; msg.textContent = 'Amount must be a positive number';
-    return;
-  }
-  btn.disabled = true; btn.textContent = 'Requesting…';
+  // Server computes the amount from unclaimed earnings — clients can't pick.
+  if (btn) { btn.disabled = true; btn.textContent = 'Requesting…'; }
   try {
     const r = await Auth.apiFetch('/referrals/me/payout', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({amount_usd: amt, address: addr}),
+      body: JSON.stringify({address: addr}),
     });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
       throw new Error(e.detail || `HTTP ${r.status}`);
     }
     msg.style.color = 'var(--green)'; msg.textContent = 'Payout request submitted — admin will review shortly.';
-    document.getElementById('avs-amt').value = '';
     await _avsLoad();
   } catch (e) {
     msg.style.color = 'var(--red)'; msg.textContent = String(e.message || e);
-  } finally {
-    btn.disabled = false; btn.textContent = 'Request';
+    if (btn) { btn.disabled = false; }
   }
 }
 

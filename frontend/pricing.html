@@ -806,7 +806,89 @@ function setMode(mode) {
   const cfg = document.getElementById('config-row');
   if (cfg) cfg.style.display = both ? '' : 'none';
   setMode(saved);
+  _checkPaymentStatus();
 })();
+
+// ── Payment-status modal — fired when CryptoCloud sends the user back
+// to /pricing?status=success or ?status=fail. Visual matches the rest
+// of the suite (avs-style modal, neon-green / red accent).
+function _checkPaymentStatus() {
+  const url = new URL(window.location.href);
+  const status = url.searchParams.get('status');
+  if (status !== 'success' && status !== 'fail') return;
+  // Pop the param off the URL so a refresh doesn't show the modal again.
+  url.searchParams.delete('status');
+  window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+  _showPayResult(status);
+}
+
+function _showPayResult(kind) {
+  const ok = kind === 'success';
+  const accent = ok ? '#1AFFAB' : '#F87171';
+  const accentBg = ok ? 'rgba(26,255,171,0.10)' : 'rgba(248,113,113,0.10)';
+  const title = ok ? 'Payment received' : 'Payment didn’t go through';
+  const sub = ok
+    ? 'Your subscription is active. Welcome aboard.'
+    : 'Nothing was charged — try again or pick a different plan.';
+  const cta = ok ? 'Open the app' : 'Try again';
+  const ctaHref = ok ? '/app' : '/pricing';
+  const icon = ok
+    ? `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
+    : `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5"/><circle cx="12" cy="16" r="0.6" fill="${accent}"/><circle cx="12" cy="12" r="9"/></svg>`;
+  const modal = document.createElement('div');
+  modal.id = 'pay-result-bg';
+  modal.style.cssText =
+    'position:fixed;inset:0;background:rgba(6,6,9,0.85);backdrop-filter:blur(6px);' +
+    'display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;' +
+    'animation:_payFadeIn .25s ease-out;';
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+
+  modal.innerHTML = `
+    <style>
+      @keyframes _payFadeIn  { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes _payRiseIn  { from { opacity: 0; transform: translateY(20px) scale(0.97) }
+                                to   { opacity: 1; transform: none } }
+      .payres-glow {
+        position: absolute; inset: -1px; border-radius: 18px; pointer-events: none;
+        background: radial-gradient(80% 80% at 50% 0%, ${accentBg} 0%, transparent 70%);
+      }
+    </style>
+    <div style="position:relative;background:#0E0E11;border:1px solid #22222A;border-radius:18px;
+                max-width:440px;width:100%;padding:38px 32px 28px;text-align:center;
+                animation:_payRiseIn .3s ease-out;box-shadow:0 24px 80px rgba(0,0,0,0.6)">
+      <div class="payres-glow"></div>
+      <div style="position:relative;z-index:1">
+        <div style="width:64px;height:64px;border-radius:50%;background:${accentBg};
+                    display:inline-flex;align-items:center;justify-content:center;margin-bottom:18px">
+          ${icon}
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${accent};
+                    letter-spacing:0.18em;text-transform:uppercase;margin-bottom:8px">
+          ${ok ? 'avalant_' : 'declined_'}
+        </div>
+        <div style="font-size:22px;font-weight:700;color:#E6E8E3;margin-bottom:8px;letter-spacing:-0.01em">
+          ${title}
+        </div>
+        <div style="font-size:13px;color:#9B9FAB;margin-bottom:22px;line-height:1.5">
+          ${sub}
+        </div>
+        <a href="${ctaHref}" style="display:inline-block;width:100%;padding:12px 18px;border-radius:9px;
+                background:${ok ? '#1AFFAB' : 'transparent'};
+                color:${ok ? '#000' : '#E6E8E3'};
+                border:1px solid ${ok ? '#1AFFAB' : '#22222A'};
+                font-weight:700;font-size:13px;text-decoration:none;
+                letter-spacing:0.02em;transition:opacity .15s">
+          ${cta}
+        </a>
+        <button onclick="document.getElementById('pay-result-bg').remove()"
+          style="display:block;margin:14px auto 0;background:none;border:none;color:#676B7E;
+                 font-size:11px;cursor:pointer;letter-spacing:0.04em">
+          Dismiss
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
 </script>
 </body>
 </html>
