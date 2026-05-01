@@ -194,11 +194,15 @@ func (c *DEXCompute) tick(ctx context.Context) {
 	}
 
 	// Batched DexScreener fetch — the /tokens/<addr1>,<addr2>,...
-	// endpoint accepts up to 30 addresses per call. With ~320 candidates
-	// per cycle this is ~11 HTTP calls instead of 320. DexScreener's
-	// public limit is 300 req/min; the previous per-symbol fan-out
-	// blew past that and the second cycle onward got 100% 429.
-	const batchSize = 30
+	// endpoint accepts multiple addresses per call but the response
+	// is CAPPED AT 30 PAIRS TOTAL regardless of how many addresses we
+	// asked about. So with batchSize=30 each token gets ~1 pool on
+	// average — kills the consensus check.
+	//
+	// batchSize=5 → ~30/5 = 6 pools per token average, enough for the
+	// top-5 voter median. ~322 candidates / 5 = 65 batches per cycle =
+	// ~130 req/min, safely under the 300/min public ceiling.
+	const batchSize = 5
 	dsCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
