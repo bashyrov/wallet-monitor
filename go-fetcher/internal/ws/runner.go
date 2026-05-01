@@ -20,8 +20,20 @@ import (
 
 // staleThreshold — max time without a single inbound frame before we
 // force-close and reconnect. Many edges keep TCP up but stop delivering
-// (bug #20). 30s matches Python.
-const staleThreshold = 30 * time.Second
+// (bug #20).
+//
+// Bumped from 30s to 90s to accommodate large prewarm sets: when the
+// adapter has SubscribeDelay (HL 500ms, KuCoin 400ms) and 100-150
+// symbols, the initial subscribe phase alone takes 40-75 s before the
+// first data frame arrives. The previous 30s threshold killed the
+// connection mid-subscribe, triggering an endless reconnect loop.
+//
+// Real stalls past 90s still recover (the watchdog runs every 5s, so
+// recovery latency is at most threshold + 5s). The downside of the
+// longer threshold is a slower hand-off when a venue genuinely freezes
+// — acceptable trade because freezes are rare and the prewarm-1000 use
+// case is what we're optimising for.
+const staleThreshold = 90 * time.Second
 
 // Runner owns one Adapter's connection lifecycle. One Runner per exchange.
 //
