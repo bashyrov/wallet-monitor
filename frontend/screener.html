@@ -2632,7 +2632,14 @@ async function refreshInOut() {
   }
   if (!fresh.length) return;
   try {
-    const r = await Auth.apiFetch(`/screener/in-out?items=${encodeURIComponent(fresh.join(','))}`);
+    // POST instead of GET — query string with 256 keys × ~40 chars each
+    // pushes past nginx's ~8 KB URL limit and returns 414. JSON body
+    // has no such cap.
+    const r = await Auth.apiFetch('/screener/in-out', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: fresh }),
+    });
     if (!r.ok) return;
     const j = await r.json();
     for (const k of Object.keys(j)) {

@@ -19,6 +19,7 @@ import time
 
 import httpx
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
 from backend.services import rate_limit as _rl
 
@@ -504,11 +505,29 @@ async def get_orderbooks(
     return out
 
 
+class _InOutBody(BaseModel):
+    items: list[str] = Field(default_factory=list, max_length=512)
+
+
+@router.post("/in-out")
+async def in_out_basis_post(body: _InOutBody):
+    """POST variant of /in-out — body carries the items list as JSON.
+    Used by the screener because nginx caps query strings at ~8 KB and
+    256-key batches push past that with their type:sym:long:short shape
+    (≈40 chars each + URL-encoded colons → ~12 KB)."""
+    return await _in_out_resolve(",".join(body.items))
+
+
 @router.get("/in-out")
 async def in_out_basis(
-    items: str = Query(..., max_length=4096,
+    items: str = Query(..., max_length=8192,
                        description="Comma-separated keys: type:SYM:longEx:shortEx — type=futures|spot|dex"),
 ):
+    """GET variant — kept for small ad-hoc tests. Frontend uses POST."""
+    return await _in_out_resolve(items)
+
+
+async def _in_out_resolve(items: str):
     """Per-row live entry/exit basis for the screener tables.
 
     For each row computes:
