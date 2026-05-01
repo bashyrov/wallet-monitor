@@ -14,22 +14,21 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-// Combined-stream base — see binance/futures.go for why we moved off
-// the bare /ws + SUBSCRIBE flow at large prewarm sizes.
-const futuresCombinedBase = "wss://fstream.asterdex.com/stream"
+// Bare /ws — combined-stream URL + SUBSCRIBE message together caused
+// Aster to drop the connection mid-subscribe ("use of closed network
+// connection" right after frame 0). Bare /ws path with chunked
+// SUBSCRIBE works.
+const futuresWS = "wss://fstream.asterdex.com/ws"
 
 type Futures struct {
 	store  *cache.Store
 	filter *tradingFilter
-	mu     sync.Mutex
-	syms   []string
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
@@ -39,28 +38,13 @@ func NewFutures(store *cache.Store) *ws.Runner {
 	})
 }
 
-func (a *Futures) Name() string { return "aster" }
-
-func (a *Futures) URL(_ context.Context) (string, error) {
-	a.mu.Lock()
-	syms := a.syms
-	a.mu.Unlock()
-	if len(syms) == 0 {
-		return futuresCombinedBase + "?streams=btcusdt@depth20@100ms", nil
-	}
-	parts := make([]string, len(syms))
-	for i, s := range syms {
-		parts[i] = strings.ToLower(s) + "usdt@depth20@100ms"
-	}
-	return futuresCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
-}
+func (a *Futures) Name() string                          { return "aster" }
+func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	// Filter against Aster exchangeInfo — Aster (Binance fork) closes
-	// the connection with 1008 if even one stream in a SUBSCRIBE frame
-	// names a non-listed symbol. Cross-venue prewarm-1000 inevitably
-	// contains symbols Aster doesn't list. Filter once at subscribe
-	// time; IsTrading returns true on REST error so we fail-open.
+	// Filter against Aster exchangeInfo so SUBSCRIBE frames don't
+	// name non-listed symbols (1008 policy violation kills the whole
+	// frame on Aster the same way as Binance).
 	ctx := context.Background()
 	listed := make([]string, 0, len(symbols))
 	for _, s := range symbols {
@@ -68,9 +52,6 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 			listed = append(listed, s)
 		}
 	}
-	a.mu.Lock()
-	a.syms = append(a.syms[:0], listed...)
-	a.mu.Unlock()
 	if len(listed) == 0 {
 		return nil
 	}
