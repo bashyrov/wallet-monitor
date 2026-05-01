@@ -83,27 +83,39 @@ func (c *spotMetaCache) Refresh(ctx context.Context) error {
 	}
 	var doc struct {
 		Universe []struct {
+			Tokens [2]int `json:"tokens"` // [base_idx, quote_idx]
+			Name   string `json:"name"`   // "PURR/USDC" for canonical, "@N" otherwise
+			Index  int    `json:"index"`
+		} `json:"universe"`
+		Tokens []struct {
 			Name  string `json:"name"`
 			Index int    `json:"index"`
-		} `json:"universe"`
+		} `json:"tokens"`
 	}
 	if err := sonic.Unmarshal(raw, &doc); err != nil {
 		return err
 	}
+	// Build idx → token-name lookup. Only canonical PURR/USDC has a
+	// readable `universe.name`; the rest are "@N" labels and the actual
+	// base symbol must be composed from tokens[u.tokens[0]].name.
+	tokenName := make(map[int]string, len(doc.Tokens))
+	for _, t := range doc.Tokens {
+		tokenName[t.Index] = strings.ToUpper(t.Name)
+	}
 	bySym := make(map[string]string, len(doc.Universe))
 	byIdx := make(map[string]string, len(doc.Universe))
 	for _, u := range doc.Universe {
-		// Only `<TOKEN>/USDC` pairs map cleanly to the screener's
-		// "<TOKEN>" symbol form. HL may at some point list non-USDC
-		// pairs; we ignore those — they wouldn't intersect anything
-		// the funding store knows about anyway.
-		if !strings.HasSuffix(u.Name, "/USDC") {
+		baseIdx := u.Tokens[0]
+		quoteIdx := u.Tokens[1]
+		base := tokenName[baseIdx]
+		quote := tokenName[quoteIdx]
+		// Only USDC-quoted pairs intersect the screener's "<base>" view.
+		if base == "" || quote != "USDC" {
 			continue
 		}
-		token := strings.ToUpper(strings.TrimSuffix(u.Name, "/USDC"))
 		coin := "@" + strconv.Itoa(u.Index)
-		bySym[token] = coin
-		byIdx[coin] = token
+		bySym[base] = coin
+		byIdx[coin] = base
 	}
 	if len(bySym) == 0 {
 		return errors.New("hl spotMeta: empty universe")
