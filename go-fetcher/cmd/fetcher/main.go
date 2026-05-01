@@ -175,6 +175,30 @@ func main() {
 		return nil
 	})
 
+	// Tracked-set auto-touch: every 30 s read arbitrage.json /
+	// spot_arbitrage.json / dex_arbitrage.json and refresh the user-
+	// touch set with every (exchange, symbol) appearing in those
+	// files. The arb compute caps each at top-1000 by basis, so this
+	// keeps every WS subscription warm for the screener's "tracked
+	// set" without depending on per-row user-touch from the web side.
+	// IdleWindow is 120 s, so a 30 s refresh cadence keeps entries
+	// that stay in the top alive while letting fall-outs expire.
+	g.Go(func() error {
+		// Initial fire — gives the manager something to subscribe on
+		// even before the first reconcile tick.
+		mgr.TouchFromArbFiles(cfg.CacheDir)
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-gctx.Done():
+				return nil
+			case <-t.C:
+				mgr.TouchFromArbFiles(cfg.CacheDir)
+			}
+		}
+	})
+
 	// Redis subscriber (skipped silently if REDIS_URL unset).
 	if subscriber != nil {
 		g.Go(func() error {

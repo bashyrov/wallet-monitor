@@ -21,8 +21,12 @@ package symbols
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/bytedance/sonic"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
@@ -128,6 +132,93 @@ func (m *Manager) Untouch(venue, symbol string) {
 		delete(bucket, symbol)
 	}
 	m.mu.Unlock()
+}
+
+// TouchFromArbFiles reads arb/spot/dex output files and refreshes the
+// user-touch set with every (exchange, symbol) pair appearing in any of
+// them. The arb compute layer writes top-N opportunities (capped by
+// |basis|) so this acts as the screener's "tracked set": as soon as a
+// pair enters the top, the orderbook adapter is told to keep its book
+// subscribed; when it falls out and the IdleWindow elapses (120 s by
+// default), the next reconcile drops it.
+//
+// Cheap operation — three JSON reads + a fixed number of map writes.
+// Errors are silenced (file may not exist yet on a fresh fetcher); we
+// just don't refresh the touch set this cycle.
+func (m *Manager) TouchFromArbFiles(cacheDir string) {
+	type futOpp struct {
+		Symbol         string `json:"symbol"`
+		LongExchange   string `json:"long_exchange"`
+		ShortExchange  string `json:"short_exchange"`
+	}
+	type spotOpp struct {
+		Symbol        string `json:"symbol"`
+		SpotExchange  string `json:"spot_exchange"`
+		ShortExchange string `json:"short_exchange"`
+	}
+	type dexOpp struct {
+		Symbol        string `json:"symbol"`
+		ShortExchange string `json:"short_exchange"`
+	}
+
+	tryRead := func(path string, into any) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return
+		}
+		_ = sonic.Unmarshal(data, into)
+	}
+
+	// Futures arb — touches both legs.
+	{
+		var doc struct {
+			Opps []futOpp `json:"opportunities"`
+		}
+		tryRead(filepath.Join(cacheDir, "arbitrage.json"), &doc)
+		for _, o := range doc.Opps {
+			if o.Symbol == "" {
+				continue
+			}
+			if o.LongExchange != "" {
+				m.Touch(o.LongExchange, o.Symbol)
+			}
+			if o.ShortExchange != "" {
+				m.Touch(o.ShortExchange, o.Symbol)
+			}
+		}
+	}
+	// Spot/Short — long leg is `<spot_exchange>_spot`.
+	{
+		var doc struct {
+			Opps []spotOpp `json:"opportunities"`
+		}
+		tryRead(filepath.Join(cacheDir, "spot_arbitrage.json"), &doc)
+		for _, o := range doc.Opps {
+			if o.Symbol == "" {
+				continue
+			}
+			if o.SpotExchange != "" {
+				m.Touch(o.SpotExchange+"_spot", o.Symbol)
+			}
+			if o.ShortExchange != "" {
+				m.Touch(o.ShortExchange, o.Symbol)
+			}
+		}
+	}
+	// DEX/Short — DEX side has no orderbook adapter, only the perp leg.
+	{
+		var doc struct {
+			Opps []dexOpp `json:"opportunities"`
+		}
+		tryRead(filepath.Join(cacheDir, "dex_arbitrage.json"), &doc)
+		for _, o := range doc.Opps {
+			if o.Symbol == "" || o.ShortExchange == "" {
+				continue
+			}
+			m.Touch(o.ShortExchange, o.Symbol)
+		}
+	}
+	log.L().Debug().Msg("symbol manager: touched arb-file pairs")
 }
 
 // Run blocks until ctx is cancelled, reconciling every 5s. Cheap operation
