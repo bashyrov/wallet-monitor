@@ -202,31 +202,31 @@ services:
       - avalant_logs:/var/log/avalant
       - ./frontend:/app/frontend:ro
 
-  fetcher:
-    build: .
-    restart: unless-stopped
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-    command: ["python", "-m", "fetcher"]
-    environment:
-      <<: *app-env
-      AVALANT_ROLE: fetcher
-      AVALANT_LOG_DIR: /var/log/avalant
-    volumes:
-      - avalant_cache:/tmp/avalant_cache
-      - avalant_logs:/var/log/avalant
-      # Fetcher itself doesn't serve frontend, but bind-mounting keeps
-      # the image identical to web replicas — handy for ad-hoc debug
-      # (e.g. dumping a frontend asset from the fetcher container).
-      - ./frontend:/app/frontend:ro
+  # Python fetcher — DECOMMISSIONED 2026-05-01 after Phase 7 cutover.
+  # Kept as a comment for two months so we can `docker compose run
+  # fetcher` for ad-hoc REST debugging if Go-fetcher hits a venue
+  # quirk. Remove this whole block in 2026-07-01 cleanup.
+  #
+  # fetcher:
+  #   build: .
+  #   restart: unless-stopped
+  #   depends_on:
+  #     pgbouncer: { condition: service_healthy }
+  #   command: ["python", "-m", "fetcher"]
+  #   environment:
+  #     <<: *app-env
+  #     AVALANT_ROLE: fetcher
+  #     AVALANT_LOG_DIR: /var/log/avalant
+  #   volumes:
+  #     - avalant_cache:/tmp/avalant_cache
+  #     - avalant_logs:/var/log/avalant
+  #     - ./frontend:/app/frontend:ro
 
-  # Go-rewrite of the Python fetcher hot path. Runs in shadow mode by
-  # default (writes to /tmp/avalant_cache_go in its own scratch dir,
-  # not the shared volume), so it can run safely alongside the Python
-  # fetcher during the parallel-run validation window. Cutover flips
-  # the volume mount to /tmp/avalant_cache (same as Python writes to)
-  # and stops the Python fetcher.
+  # Go fetcher — owns the entire hot path: orderbook WS (16+ venues),
+  # funding WS (12 venues), futures + spot arb compute, file dump,
+  # Redis writes. Python web roles read its output via the shared
+  # /tmp/avalant_cache volume (same paths as the old Python fetcher
+  # for backwards compatibility — Python's web.app.py is unchanged).
   go-fetcher:
     build:
       context: ./go-fetcher

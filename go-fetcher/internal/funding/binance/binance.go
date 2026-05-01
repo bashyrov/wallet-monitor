@@ -42,17 +42,18 @@ func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
 func (a *Adapter) BuildSubscribe(_ []string) [][]byte { return nil }
 
 func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
-	// Combined-stream wrapper.
+	// Combined-stream wrapper. NOTE: Binance markPrice@arr stream
+	// times out on connect from Singapore IP — needs an outbound
+	// proxy for full functionality. WS connection establishes
+	// but server delivers zero frames for 30s+. Tracked as a
+	// separate infra task; until then Binance funding rows are
+	// missing from arbitrage.json (~10% of historical opps).
 	var wrap struct {
-		Stream string `json:"stream"`
+		Stream string           `json:"stream"`
 		Data   []map[string]any `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &wrap); err != nil {
-		println("[binance.funding] unmarshal err:", err.Error(), "frame[:100]=", string(frame[:min(100, len(frame))]))
 		return nil, nil
-	}
-	if wrap.Stream == "" {
-		println("[binance.funding] no stream key, frame[:120]=", string(frame[:min(120, len(frame))]))
 	}
 	if !strings.Contains(wrap.Stream, "markPrice") {
 		return nil, nil
