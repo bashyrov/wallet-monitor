@@ -87,12 +87,16 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 		vol, _ := strconv.ParseFloat(d.QuoteVolume, 64)
 		nextMs, _ := strconv.ParseInt(d.NextFundingTime, 10, 64)
 		t := funding.Tick{
-			Symbol:    token,
-			Rate:      rate,
-			MarkPrice: mark,
+			Symbol:     token,
+			Rate:       rate,
+			MarkPrice:  mark,
 			IndexPrice: idx,
-			Volume24h: vol,
-			IntervalH: 8,
+			Volume24h:  vol,
+			// IntervalH NOT set — Bitget's WS payload doesn't carry the
+			// per-pair interval; forcing 8 wipes the real value (some
+			// pairs are 4h). The store preserves the last non-zero
+			// value, so once the REST backstop sets it the WS stops
+			// stomping it back to default.
 		}
 		if nextMs > 0 {
 			t.NextFunding = time.UnixMilli(nextMs)

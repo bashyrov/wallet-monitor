@@ -809,7 +809,10 @@ def _pnl_can_pair(long_pos, short_pos, paired: set, unpaired: set) -> bool:
         return False
     spread_pct = abs((se - le) / le) * 100.0
     diff_pct = abs(long_n - short_n) / max_n * 100.0
-    if abs(diff_pct - spread_pct) > 5.0:
+    # 12% tolerance (was 5%) — see _acc_pair_positions in arb.html for
+    # the matching rationale. Real-world arbs scale legs unevenly when
+    # entering at different times, so 5% missed obvious pairs.
+    if abs(diff_pct - spread_pct) > 12.0:
         return False
     # 5-minute opening window
     if long_pos.opened_at and short_pos.opened_at:

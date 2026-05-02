@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	wsURL   = "wss://fx-ws.gateio.ws/v4/ws/usdt"
-	restURL = "https://api.gateio.ws/api/v4/futures/usdt/contracts"
+	wsURL        = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+	contractsURL = "https://api.gateio.ws/api/v4/futures/usdt/contracts"
+	tickersURL   = "https://api.gateio.ws/api/v4/futures/usdt/tickers"
 )
 
 type Adapter struct{}
@@ -48,12 +49,14 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 		Channel string `json:"channel"`
 		Event   string `json:"event"`
 		Result  []struct {
-			Contract       string  `json:"contract"`
-			Last           string  `json:"last"`
-			MarkPrice      string  `json:"mark_price"`
-			IndexPrice     string  `json:"index_price"`
-			FundingRate    string  `json:"funding_rate"`
-			Volume24hUSD   string  `json:"volume_24h_settle"`
+			Contract        string `json:"contract"`
+			Last            string `json:"last"`
+			MarkPrice       string `json:"mark_price"`
+			IndexPrice      string `json:"index_price"`
+			FundingRate     string `json:"funding_rate"`
+			Volume24hUSD    string `json:"volume_24h_usd"`    // primary 24h volume in USDT
+			Volume24hQuote  string `json:"volume_24h_quote"`  // fallback when *_usd absent
+			Volume24hSettle string `json:"volume_24h_settle"` // legacy fallback
 		} `json:"result"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -71,17 +74,34 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 		mark, _ := strconv.ParseFloat(r.MarkPrice, 64)
 		idx, _ := strconv.ParseFloat(r.IndexPrice, 64)
 		rate, _ := strconv.ParseFloat(r.FundingRate, 64)
-		vol, _ := strconv.ParseFloat(r.Volume24hUSD, 64)
+		// Gate ships 24h volume under one of three field names depending
+		// on the contract / API version. Prefer `volume_24h_usd` (matches
+		// Python adapter) and fall back the chain.
+		vol := parseFloat(r.Volume24hUSD)
+		if vol == 0 {
+			vol = parseFloat(r.Volume24hQuote)
+		}
+		if vol == 0 {
+			vol = parseFloat(r.Volume24hSettle)
+		}
 		out = append(out, funding.Tick{
-			Symbol:    token,
-			Rate:      rate,
-			MarkPrice: mark,
+			Symbol:     token,
+			Rate:       rate,
+			MarkPrice:  mark,
 			IndexPrice: idx,
-			Volume24h: vol,
-			IntervalH: 8,
+			Volume24h:  vol,
+			// IntervalH NOT set here — Gate's WS payload doesn't carry the
+			// funding interval, and forcing 8 wipes the real per-pair
+			// value the REST backstop fetches from /contracts. The store's
+			// merge preserves the last non-zero IntervalH automatically.
 		})
 	}
 	return out, nil
+}
+
+func parseFloat(s string) float64 {
+	v, _ := strconv.ParseFloat(s, 64)
+	return v
 }
 
 func (a *Adapter) Heartbeat() []byte                { return nil }
@@ -91,6 +111,13 @@ func (a *Adapter) UseLibPings() bool                { return true }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
+	// Two parallel calls:
+	//   /contracts — funding_rate, funding_interval, mark_price, next_apply
+	//   /tickers   — volume_24h_settle / _quote / _usd
+	// Gate doesn't put 24h volume on /contracts and doesn't put
+	// funding_interval on /tickers, so we need both. They're cheap
+	// (cached upstream) and bounded; a 2× round-trip on a 2 s tick is
+	// negligible against the freshness gain.
 	var rows []struct {
 		Name             string `json:"name"`
 		LastPrice        string `json:"last_price"`
@@ -100,9 +127,37 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		FundingNextApply int64  `json:"funding_next_apply"`
 		FundingInterval  int64  `json:"funding_interval"`
 	}
-	if err := funding.HTTPGet(ctx, restURL, &rows); err != nil {
+	if err := funding.HTTPGet(ctx, contractsURL, &rows); err != nil {
 		return nil, err
 	}
+
+	// Best-effort volume map — non-fatal on failure.
+	volBySymbol := make(map[string]float64, len(rows))
+	var tickers []struct {
+		Contract        string `json:"contract"`
+		Volume24hSettle string `json:"volume_24h_settle"`
+		Volume24hUSD    string `json:"volume_24h_usd"`
+		Volume24hQuote  string `json:"volume_24h_quote"`
+	}
+	if err := funding.HTTPGet(ctx, tickersURL, &tickers); err == nil {
+		for _, tk := range tickers {
+			if !strings.HasSuffix(tk.Contract, "_USDT") {
+				continue
+			}
+			token := strings.TrimSuffix(tk.Contract, "_USDT")
+			v := parseFloat(tk.Volume24hUSD)
+			if v == 0 {
+				v = parseFloat(tk.Volume24hQuote)
+			}
+			if v == 0 {
+				v = parseFloat(tk.Volume24hSettle)
+			}
+			if v > 0 {
+				volBySymbol[token] = v
+			}
+		}
+	}
+
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Name, "_USDT") {
@@ -117,11 +172,12 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			intH = 8
 		}
 		t := funding.Tick{
-			Symbol:    token,
-			Rate:      rate,
-			MarkPrice: mark,
+			Symbol:     token,
+			Rate:       rate,
+			MarkPrice:  mark,
 			IndexPrice: idx,
-			IntervalH: intH,
+			Volume24h:  volBySymbol[token],
+			IntervalH:  intH,
 		}
 		if r.FundingNextApply > 0 {
 			t.NextFunding = time.Unix(r.FundingNextApply, 0)

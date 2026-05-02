@@ -2017,7 +2017,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
               onclick="window._ptPairToggle('${pairKey}')">
             <td colspan="2" style="padding:8px 10px">
               <span style="color:var(--green);font-family:monospace;margin-right:6px">${caret}</span>
-              <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ PAIR</span>
+              <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ ${_pairModeLabel(pair)}</span>
               <span style="margin-left:6px;font-weight:600">${pair.symbol}</span>
               <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
             </td>
@@ -3888,7 +3888,9 @@ function _renderPnl(rows){
     let roiCell = '—';
     let notional = 0;
     if (r.kind === 'pair'){
-      typeCell = `<span class="pnl-type pair">PAIR</span>`;
+      // Same mode rule as the live pair-card header — show Futures/Spot/DEX
+      // instead of the old generic "PAIR" pill.
+      typeCell = `<span class="pnl-type pair">${_pairModeLabel(r)}</span>`;
       venuesCell = `<span class="pnl-venue-row"><span class="ex-pill">${_esc(exLbl(r.long.exchange))}</span><span style="color:var(--green)">⇄</span><span class="ex-pill">${_esc(exLbl(r.short.exchange))}</span></span>`;
       notional = (Number(r.long.qty || 0) * Number(r.long.entry_price || 0)) || 0;
     } else {
@@ -4166,12 +4168,14 @@ function _acc_pair_positions(rows){
   }
 
   // 2. AUTO-DETECT for the rest. Rule: notional diff% must be within
-  //    spread_pct ± 5%, where spread_pct is the price spread between
-  //    the two legs at their entry prices. So a 20% spread arb whose
-  //    sizes naturally differ by 20% (e.g. 1000 USDT long, 1200 USDT
-  //    short) gets paired; a 0% spread accepts only tight (≤5%) size
-  //    mismatch. This matches the user's mental model — they entered
-  //    the spread, the size diff IS the spread.
+  //    spread_pct ± TOLERANCE_PCT.
+  //
+  //    Tightened to 12% (was 5%) after a real-world miss: LABUSDT had
+  //    diff=7.8% and spread=1.2%, delta=6.6% — clearly the same arb
+  //    pair the user opened, but the 5% rule rejected it. 12% still
+  //    keeps stray opposite-side positions on unrelated tokens from
+  //    being conflated, and the user can always Sync ⇆ to override.
+  const TOLERANCE_PCT = 12;
   for (const [sym, group] of Object.entries(bySym)) {
     const longs  = group.filter(t => t.p.side === 'buy'  && !used.has(t.key));
     const shorts = group.filter(t => t.p.side === 'sell' && !used.has(t.key));
@@ -4186,9 +4190,7 @@ function _acc_pair_positions(rows){
         ? Math.abs((sEntry - lEntry) / lEntry) * 100
         : 0;
       const diffPct = (Math.abs(l.notional - s.notional) / maxN) * 100;
-      // Match if the size difference is within ±5% of the spread.
-      const tolerance = 5;
-      if (Math.abs(diffPct - spreadPct) > tolerance) continue;
+      if (Math.abs(diffPct - spreadPct) > TOLERANCE_PCT) continue;
       candidates.push({l, s, diffPct, spreadPct});
     }
     // Best candidate first = smallest deviation from the expected spread.
@@ -4216,6 +4218,34 @@ const _EMPTY_STREAK_LIMIT = 3;
 // 8-10s refresh tick. Backed by a key per target element.
 // Stored on window so the spot/dex code path (which throws past this line
 // for futures-mode setup) can still access it from earlier in the script.
+// Pair-card mode label. The accordion header used to read "⇆ PAIR" for
+// every pair regardless of whether it was a futures-vs-futures arb or a
+// spot-vs-perp basis trade. The user wants the pair's MODE up front:
+//
+//   futures + futures  → "Futures"
+//   spot    + perp     → "Spot"
+//   DEX     + perp     → "DEX"
+//
+// The function inspects the page-level TYPE first (set from the URL),
+// then falls back to inferring from the legs (e.g. when accLoadPositions
+// runs on /app where TYPE isn't a meaningful page constant).
+function _pairModeLabel(pair) {
+  try {
+    if (typeof TYPE !== 'undefined') {
+      if (TYPE === 'spot') return 'Spot';
+      if (TYPE === 'dex')  return 'DEX';
+      if (TYPE === 'futures') return 'Futures';
+    }
+  } catch (_) {}
+  // Fallback inference: any leg flagged spot → "Spot".
+  if (pair && (pair.long?.is_spot || pair.short?.is_spot ||
+               (pair.long?.exchange || '').endsWith('_spot') ||
+               (pair.short?.exchange || '').endsWith('_spot'))) {
+    return 'Spot';
+  }
+  return 'Futures';
+}
+
 function _renderIfChanged(elId, html){
   if (!window._lastRenderedHTML) window._lastRenderedHTML = new Map();
   const prev = window._lastRenderedHTML.get(elId);
@@ -4352,7 +4382,7 @@ async function accLoadPositions(){
             style="background:rgba(26,255,171,0.04);border-top:1px solid rgba(26,255,171,0.18);cursor:pointer;user-select:none">
           <td colspan="2" style="padding:8px 10px">
             <span style="color:var(--green);font-family:monospace;margin-right:6px">${caret}</span>
-            <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ PAIR</span>
+            <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ ${_pairModeLabel(pair)}</span>
             <span class="sym" style="margin-left:6px">${pair.symbol}</span>
             <span style="color:var(--text3);margin-left:3px">USDT</span>
             <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
