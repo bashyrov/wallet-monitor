@@ -9,22 +9,38 @@ and gives the recipe for porting the rest.
 | Venue        | Python | Go reference | Tests |
 |--------------|:------:|:------------:|:-----:|
 | **binance**  |   ✓    |      ✓       |  11   |
-| bybit        |   ✓    |      ·       |   ·   |
-| okx          |   ✓    |      ·       |   ·   |
+| **bybit**    |   ✓    |      ✓       |   6   |
+| **okx**      |   ✓    |      ✓       |   8   |
 | gate         |   ✓    |      ·       |   ·   |
 | kucoin       |   ✓    |      ·       |   ·   |
 | mexc         |   ✓    |      ·       |   ·   |
 | bitget       |   ✓    |      ·       |   ·   |
 | bingx        |   ✓    |      ·       |   ·   |
-| aster        |   ✓    |      ·       |   ·   |
-| hyperliquid  |   ✓    |      ·       |   ·   |
-| ethereal     |   ✓    |      ·       |   ·   |
+| aster        |   ✓    |    (defer)   |   ·   |
+| hyperliquid  |   ✓    |    (defer)   |   ·   |
+| ethereal     |   ✓    |    (defer)   |   ·   |
 | backpack     |   ✓    |      ·       |   ·   |
-| lighter      |   ✓    |      ·       |   ·   |
+| lighter      |   ✓    |    (defer)   |   ·   |
 | kraken       |   ✓    |      ·       |   ·   |
 | htx          |   ✓    |      ·       |   ·   |
 | whitebit     |   ✓    |      ·       |   ·   |
-| paradex      | (RO)   |      ·       |   ·   |
+| paradex      | (RO)   |    (defer)   |   ·   |
+
+**Defer notes:**
+- `aster` uses EIP-712 typed-data signing (not HMAC). Needs
+  `go-ethereum/crypto`. ~3 hours work + careful test against live
+  testnet because the Aster team rejects malformed signatures
+  silently.
+- `hyperliquid` uses Stark + EIP-712. Needs a Stark library or a
+  hand-rolled implementation.
+- `ethereal` uses EIP-712 over EVM. Same dependency as Aster.
+- `lighter` uses long-lived JWT bearer (no per-request signing).
+  Trivial to port — ~30 min — but the symbol set + endpoint shape
+  needs careful translation. Postponed only because not on the
+  current cutover path.
+- `paradex` is read-only on Python (paradex-py incompatible with
+  Python 3.13). Skip the port; if/when Paradex restores support,
+  port directly in Go via Stark signing.
 
 (RO = read-only on Python today — `paradex-py` won't load on Python 3.13.)
 
