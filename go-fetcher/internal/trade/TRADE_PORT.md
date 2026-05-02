@@ -13,8 +13,8 @@ and gives the recipe for porting the rest.
 | **okx**      |   ✓    |      ✓       |   8   |
 | **gate**     |   ✓    |      ✓       |   6   |
 | kucoin       |   ✓    |      ·       |   ·   |
-| mexc         |   ✓    |      ·       |   ·   |
-| bitget       |   ✓    |      ·       |   ·   |
+| **mexc**     |   ✓    |      ✓       |   5   |
+| **bitget**   |   ✓    |      ✓       |   5   |
 | bingx        |   ✓    |      ·       |   ·   |
 | aster        |   ✓    |    (defer)   |   ·   |
 | hyperliquid  |   ✓    |    (defer)   |   ·   |
