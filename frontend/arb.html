@@ -5487,6 +5487,29 @@ let _sharePair = null;            // populated when sharing a paired position
 let _sharePairView = 'combined';  // 'combined' | 'long' | 'short'
 let _shareMode = 'both'; // 'pct' (ROI %), 'usd' (PNL $), or 'both' (% big + $ small)
 
+// Cached referral code for the current user. The card stamps "ref: <CODE>"
+// next to the avalant.xyz watermark so anyone who downloads + reposts the
+// image carries a credit-to-the-original-poster handle. We fetch lazily
+// (first render attempt) and cache for the life of the page — cheap.
+let _shareRefCode = null;
+let _shareRefFetching = false;
+async function _ensureRefCode(){
+  if (_shareRefCode || _shareRefFetching) return;
+  _shareRefFetching = true;
+  try {
+    const r = await Auth.apiFetch('/referrals/me');
+    if (r.ok) {
+      const j = await r.json();
+      _shareRefCode = (j && j.code) ? j.code : '';
+    }
+  } catch (_) {
+    // Silently swallow — the card just renders without a ref tag if we
+    // couldn't fetch (e.g. user signed out mid-session).
+  } finally {
+    _shareRefFetching = false;
+  }
+}
+
 // Reads the position from the button's data-share attribute. Browsers
 // auto-decode HTML entities when reading data-* via JS, so we get clean JSON.
 function _openShareFromBtn(btn){
@@ -5590,6 +5613,12 @@ function _renderShareCard(){
   // checking `!_sharePos` alone silently dropped pair-card renders since
   // openSharePairCard sets `_sharePair` and clears `_sharePos`.
   if (!_sharePos && !_sharePair) return;
+  // Fire-and-forget the ref-code fetch so the second render lands with
+  // the code stamped. The first render runs immediately so the card
+  // never feels laggy — the ref line just appears on the next tick.
+  if (!_shareRefCode && !_shareRefFetching) {
+    _ensureRefCode().then(() => _scEnsureFonts().then(() => _renderShareCardNow()));
+  }
   _scEnsureFonts().then(() => _renderShareCardNow());
 }
 
@@ -5932,6 +5961,16 @@ function _renderSinglePositionCard(){
   const urlW = ctx.measureText(urlText).width;
   ctx.fillText(urlText, GRID_R - urlW, valueY);
 
+  // Referral handle under the URL — viewers can register at
+  // avalant.xyz/register?ref=<CODE> for the bonus + credit goes to me.
+  if (_shareRefCode) {
+    ctx.font = '600 14px "JetBrains Mono", "Inter", monospace';
+    ctx.fillStyle = '#676B7E';
+    const refText = `ref: ${_shareRefCode}`;
+    const refW = ctx.measureText(refText).width;
+    ctx.fillText(refText, GRID_R - refW, valueY + 24);
+  }
+
   ctx.restore();  // end rounded-card clip
 
   // ──────────── ROUNDED BORDER (drawn AFTER restore so it renders on the
@@ -6209,6 +6248,15 @@ function _renderPairCombined(){
   const urlW = ctx.measureText(urlText).width;
   ctx.fillText(urlText, GRID_R - urlW, Y_FOOT_VALUE);
 
+  // Referral handle stamped under the URL on shared pair cards too.
+  if (_shareRefCode) {
+    ctx.font = '600 13px "JetBrains Mono", "Inter", monospace';
+    ctx.fillStyle = '#676B7E';
+    const refText = `ref: ${_shareRefCode}`;
+    const refW = ctx.measureText(refText).width;
+    ctx.fillText(refText, GRID_R - refW, Y_FOOT_VALUE + 22);
+  }
+
   ctx.restore();
 
   ctx.beginPath();
@@ -6262,6 +6310,13 @@ async function copyShareCard(){
 }
 
 async function copyShareText(){
+  // Make sure we've fetched the ref code at least once before the user
+  // clicks Copy, otherwise the snippet would lack their handle on first
+  // click. Cheap on the second call (cached).
+  await _ensureRefCode();
+  const url = _shareRefCode
+    ? `avalant.xyz/register?ref=${_shareRefCode}`
+    : 'avalant.xyz';
   let text;
   if (_sharePair){
     const pp = _sharePair;
@@ -6269,14 +6324,14 @@ async function copyShareText(){
     const pct = +pp.combined_pct || 0;
     const pctTxt = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
     const usdTxt = `${tot >= 0 ? '+$' : '−$'}${Math.abs(tot).toFixed(2)}`;
-    text = `PAIR ${pp.symbol} ${_shareEx(pp.long.exchange)}⇄${_shareEx(pp.short.exchange)} — ${pctTxt} (${usdTxt}) · avalant.xyz`;
+    text = `PAIR ${pp.symbol} ${_shareEx(pp.long.exchange)}⇄${_shareEx(pp.short.exchange)} — ${pctTxt} (${usdTxt}) · ${url}`;
   } else if (_sharePos){
     const p = _sharePos;
     const isLong = p.side === 'buy';
     const profit = (p.unrealized_pnl_usd || 0) >= 0;
     const pctTxt = `${profit ? '+' : ''}${(+p.pnl_pct).toFixed(2)}%`;
     const usdTxt = `${profit ? '+$' : '−$'}${Math.abs(+p.unrealized_pnl_usd).toFixed(2)}`;
-    text = `${isLong ? 'LONG' : 'SHORT'} ${p.symbol} ${p.leverage}× on ${_shareEx(p.exchange)} — ${pctTxt} (${usdTxt}) · avalant.xyz`;
+    text = `${isLong ? 'LONG' : 'SHORT'} ${p.symbol} ${p.leverage}× on ${_shareEx(p.exchange)} — ${pctTxt} (${usdTxt}) · ${url}`;
   } else {
     return;
   }

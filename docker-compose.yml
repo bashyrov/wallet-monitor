@@ -243,7 +243,17 @@ services:
       # cutover.
       AVALANT_FETCHER_CACHE_DIR: ${GO_FETCHER_CACHE_DIR:-/tmp/avalant_cache_go}
       AVALANT_PREWARM_TOP_N: ${AVALANT_PREWARM_TOP_N:-20}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # 250ms file-dump cadence (was 100ms). Web roles read books via
+      # Redis (50ms throttle on writes), so the file path is fallback
+      # only — its 100ms cadence was producing 22 MB/s of JSON
+      # marshalling for paths the web rarely touches. 250ms keeps
+      # cold-start freshness under quarter-second while cutting the
+      # marshal-loop CPU by ~60%.
+      AVALANT_FILE_DUMP_INTERVAL: ${AVALANT_FILE_DUMP_INTERVAL:-250ms}
+      # Override LOG_LEVEL specifically for go-fetcher: WARN silences the
+      # per-frame "subscribe frame sent" / "recv frame" diagnostics that
+      # added measurable CPU + log I/O on prod (~10% of one core).
+      LOG_LEVEL: ${GO_FETCHER_LOG_LEVEL:-WARN}
       # WS broadcaster — when set, the Go fetcher binds an HTTP listener
       # on this port and serves /api/screener/ws/long-short (+ /ws/arb
       # legacy alias). nginx upstreams those paths to go-fetcher:8090.

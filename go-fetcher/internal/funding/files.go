@@ -2,10 +2,11 @@ package funding
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/bytedance/sonic"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
@@ -199,7 +200,13 @@ func writeAtomic(path string, v any) error {
 		return err
 	}
 	tmpPath := tmp.Name()
-	if err := json.NewEncoder(tmp).Encode(v); err != nil {
+	data, err := sonic.ConfigStd.Marshal(v)
+	if err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
 		return err
