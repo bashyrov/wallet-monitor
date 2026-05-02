@@ -16,31 +16,26 @@ and gives the recipe for porting the rest.
 | **mexc**     |   ✓    |      ✓       |   5   |
 | **bitget**   |   ✓    |      ✓       |   5   |
 | **bingx**    |   ✓    |      ✓       |   3   |
+| **htx**      |   ✓    |      ✓       |   4   |
+| **whitebit** |   ✓    |      ✓       |   2   |
+| **kraken**   |   ✓    |      ✓       |   3   |
+| **backpack** |   ✓    |      ✓       |   4   |
 | aster        |   ✓    |    (defer)   |   ·   |
 | hyperliquid  |   ✓    |    (defer)   |   ·   |
 | ethereal     |   ✓    |    (defer)   |   ·   |
-| backpack     |   ✓    |      ·       |   ·   |
 | lighter      |   ✓    |    (defer)   |   ·   |
-| kraken       |   ✓    |      ·       |   ·   |
-| htx          |   ✓    |      ·       |   ·   |
-| whitebit     |   ✓    |      ·       |   ·   |
 | paradex      | (RO)   |    (defer)   |   ·   |
 
-**Defer notes:**
-- `aster` uses EIP-712 typed-data signing (not HMAC). Needs
-  `go-ethereum/crypto`. ~3 hours work + careful test against live
-  testnet because the Aster team rejects malformed signatures
-  silently.
-- `hyperliquid` uses Stark + EIP-712. Needs a Stark library or a
-  hand-rolled implementation.
-- `ethereal` uses EIP-712 over EVM. Same dependency as Aster.
-- `lighter` uses long-lived JWT bearer (no per-request signing).
-  Trivial to port — ~30 min — but the symbol set + endpoint shape
-  needs careful translation. Postponed only because not on the
-  current cutover path.
-- `paradex` is read-only on Python (paradex-py incompatible with
-  Python 3.13). Skip the port; if/when Paradex restores support,
-  port directly in Go via Stark signing.
+**12 of 16 venues green.** Remaining 4 all need libraries we don't
+already pull in:
+
+- `aster` — EIP-712 (Aster chain). Needs `go-ethereum/crypto`.
+- `hyperliquid` — Stark + EIP-712. Needs a Stark library.
+- `ethereal` — EIP-712 over EVM. Same library as Aster.
+- `lighter` — ZK signing via CGO (`lighter-sdk` ships per-platform
+  shared libs). Would need a Go ZK proof library.
+- `paradex` — read-only on Python today (paradex-py incompatible
+  with Python 3.13). Skip until upstream restores support.
 
 (RO = read-only on Python today — `paradex-py` won't load on Python 3.13.)
 

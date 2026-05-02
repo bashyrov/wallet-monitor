@@ -4265,14 +4265,80 @@ function _setText(elId, value) {
   if (el) el.textContent = value;
 }
 
+// Spot-short pair fetch — returns the auto-paired (spot long + perp short)
+// rows from the backend. Cached on the window so the diff renderer can
+// detect when nothing changed and skip a re-render. Errors swallowed —
+// the futures path still renders even if this one fails.
+async function _accFetchSpotShortPairs() {
+  try {
+    const r = await Auth.apiFetch('/trade/spot-short-pairs');
+    if (!r.ok) return [];
+    const j = await r.json();
+    if (!Array.isArray(j)) return [];
+    // Filter to only "auto" and "paired" — "unpaired" decisions live in the
+    // sync drawer but shouldn't render as a live arb-pair card.
+    return j.filter(p => p.auto_paired || p.decision === 'paired');
+  } catch (_) {
+    return [];
+  }
+}
+
+// Convert a spot-short-pair API row into the same shape `_acc_pair_positions`
+// produces for futures pairs, so the renderer can treat them uniformly.
+// Long leg gets `is_spot: true` so `_pairModeLabel` returns "Spot".
+function _spotShortToPair(ssp) {
+  const sp = ssp.spot || {};
+  const sh = ssp.short || {};
+  const px = Number(ssp.spot_price_estimate || sh.entry_price || 0);
+  return {
+    symbol: ssp.symbol,
+    long: {
+      exchange:           sp.exchange,
+      side:               'buy',
+      quantity:           Number(sp.qty || 0),
+      entry_price:        px,
+      mark_price:         px,
+      unrealized_pnl_usd: 0,            // spot has no upnl until close (cost basis unknown)
+      funding_pnl_usd:    null,
+      leverage:           1,
+      wallet_id:          sp.wallet_id,
+      is_spot:            true,
+      _wallet_name:       sp.wallet_name,
+    },
+    short: {
+      ...sh,
+      exchange:    sh.exchange,
+      side:        'sell',
+      quantity:    Number(sh.quantity || 0),
+      entry_price: Number(sh.entry_price || 0),
+      mark_price:  Number(sh.mark_price || 0),
+      unrealized_pnl_usd: Number(sh.unrealized_pnl_usd || 0),
+      funding_pnl_usd:    sh.funding_pnl_usd,
+      leverage:    Number(sh.leverage || 1),
+      wallet_id:   sh.wallet_id,
+    },
+    _spot_short: true,
+    _decision:   ssp.decision,
+    _match_reason: ssp.match_reason,
+  };
+}
+
 async function accLoadPositions(){
   const tbody = document.getElementById('acc-positions-body');
   const empty = document.getElementById('acc-positions-empty');
   let rows;
+  let spotShortPairs = [];
   try {
-    const r = await Auth.apiFetch('/trade/positions');
-    if (!r.ok) throw new Error();
-    rows = await r.json();
+    // Fire both fetches concurrently — spot-short uses the same
+    // list_user_positions internally, but the work IS shared at the
+    // backend cache level (4s TTL).
+    const [posResp, sspList] = await Promise.all([
+      Auth.apiFetch('/trade/positions'),
+      _accFetchSpotShortPairs(),
+    ]);
+    if (!posResp.ok) throw new Error();
+    rows = await posResp.json();
+    spotShortPairs = sspList;
   } catch {
     // Network/server hiccup — keep showing the last state, do not blank.
     return;
@@ -4297,6 +4363,23 @@ async function accLoadPositions(){
   empty.style.display = 'none';
 
     const {pairs, singles} = _acc_pair_positions(rows);
+
+    // Spot-short pairs come from a separate API. Convert + consume any
+    // singles whose (symbol, exchange, side='sell') matches a paired
+    // short so we don't double-render the same short leg.
+    const sspPairs = spotShortPairs.map(_spotShortToPair);
+    const sspShortKeys = new Set(
+      sspPairs.map(p => `${p.symbol}|${p.short.exchange}|sell`)
+    );
+    const filteredSingles = singles.filter(p => {
+      const key = `${p.symbol}|${p.exchange}|${p.side}`;
+      return !sspShortKeys.has(key);
+    });
+    // Spot pairs render BEFORE the futures pairs so they sit at the top —
+    // they're typically the longer-running cash-and-carry positions while
+    // futures pairs come and go faster.
+    const allPairs = sspPairs.concat(pairs);
+
     const sumUsd = (v) => (v>=0?'+':'−') + '$' + Math.abs(v).toFixed(2);
     const rowFor = (p) => {
       const sideCls  = p.side === 'buy' ? 'acc-side-long' : 'acc-side-short';
@@ -4346,7 +4429,7 @@ async function accLoadPositions(){
       }
     };
 
-    const pairHtml = pairs.map((pair, pi) => {
+    const pairHtml = allPairs.map((pair, pi) => {
       const lp = Number(pair.long.unrealized_pnl_usd || 0);
       const sp = Number(pair.short.unrealized_pnl_usd || 0);
       const totalPnl = lp + sp;
@@ -4400,8 +4483,11 @@ async function accLoadPositions(){
           <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
           <td style="white-space:nowrap">
             <button class="pos-close"
-                    onclick="event.stopPropagation();_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')"
-                    style="background:var(--green);border:none;color:#0a0a0f;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-weight:700;font-family:inherit">Close Both</button>
+                    onclick="event.stopPropagation();${pair._spot_short
+                      ? `tradeClose(${pair.short.wallet_id}, '${pair.short.position_id||pair.symbol}')`
+                      : `_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')`}"
+                    title="${pair._spot_short ? 'Close the short leg only — sell the spot holding manually on the exchange' : ''}"
+                    style="background:var(--green);border:none;color:#0a0a0f;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-weight:700;font-family:inherit">${pair._spot_short ? 'Close Short' : 'Close Both'}</button>
             <button title="Share pair P&amp;L card"
                     data-share-pair='${_htmlEsc(JSON.stringify({
                       symbol: pair.symbol,
@@ -4437,7 +4523,7 @@ async function accLoadPositions(){
       const legs = isOpen ? (safeRowFor(pair.long) + safeRowFor(pair.short)) : '';
       return header + legs;
     }).join('');
-    const singlesHtml = singles.map(safeRowFor).join('');
+    const singlesHtml = filteredSingles.map(safeRowFor).join('');
     _renderIfChanged('acc-positions-body', pairHtml + singlesHtml);
 
     // P&L pane: total uPnL + total funding across all positions.
