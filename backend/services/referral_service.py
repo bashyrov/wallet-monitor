@@ -414,6 +414,239 @@ def admin_complete_payout(
     return p
 
 
+# ── Reversal (refund / chargeback) ──────────────────────────────────────────
+
+class ReversalReport(dict):
+    """What `reverse_commission` did. Used by the admin UI's confirmation
+    toast and by the audit log so the operator sees a human-readable
+    summary of the side-effects."""
+    @property
+    def action(self) -> str:
+        return self.get("action", "unknown")
+
+
+def preview_reversal(db: Session, payment_id: int) -> dict:
+    """Read-only equivalent of `reverse_commission` — returns what WOULD
+    happen if the admin clicked Refund right now. Drives the detail
+    modal's preview so the operator sees the full impact (which payout
+    gets adjusted, which gets cancelled, which earnings are already
+    paid out and untouchable) before committing."""
+    earning = (
+        db.query(ReferralEarning)
+        .filter(
+            ReferralEarning.payment_id == payment_id,
+            ReferralEarning.reversal_of_id.is_(None),  # exclude reversal sibs
+        )
+        .first()
+    )
+    if earning is None:
+        return {"action": "no_earning"}
+    if earning.reversed_at is not None:
+        return {"action": "already_reversed", "earning_id": earning.id}
+
+    referrer_id = earning.referrer_id
+    amount = float(earning.amount_usd)
+    base = {"earning_id": earning.id, "amount": amount, "referrer_id": referrer_id}
+
+    if earning.payout_request_id is None:
+        return {**base, "action": "from_unclaimed"}
+
+    payout = (
+        db.query(ReferralPayoutRequest)
+        .filter(ReferralPayoutRequest.id == earning.payout_request_id)
+        .first()
+    )
+    if payout is None:
+        # Defensive: dangling FK — treat as unclaimed.
+        return {**base, "action": "from_unclaimed"}
+
+    if payout.status == PAYOUT_COMPLETED:
+        return {
+            **base,
+            "action": "from_completed_logged_only",
+            "payout_id": payout.id,
+            "payout_resolved_at": payout.resolved_at.isoformat() if payout.resolved_at else None,
+            "warning": "Partner already withdrew this commission — no auto-recovery.",
+        }
+    if payout.status == PAYOUT_PENDING:
+        new_amount = float(payout.amount_usd) - amount
+        floor = float(current_min_payout_usd())
+        if new_amount >= floor:
+            return {
+                **base,
+                "action": "from_pending_adjusted",
+                "payout_id": payout.id,
+                "old_payout_amount": float(payout.amount_usd),
+                "new_payout_amount": round(new_amount, 2),
+            }
+        return {
+            **base,
+            "action": "from_pending_cancelled",
+            "payout_id": payout.id,
+            "old_payout_amount": float(payout.amount_usd),
+            "would_be_amount": round(new_amount, 2),
+            "floor": floor,
+        }
+    # Cancelled — earnings already unlinked, treat as unclaimed.
+    return {**base, "action": "from_unclaimed"}
+
+
+def reverse_commission(db: Session, *, payment_id: int, reason: str | None) -> ReversalReport:
+    """Reverse the commission credited for `payment_id` (called when the
+    payment is refunded). Idempotent: re-running on an already-reversed
+    earning returns the existing report without side-effects.
+
+    The original earning row is never deleted — `reversed_at` is stamped
+    on it and a sibling negative-amount row is inserted so SUM-based
+    queries reflect the truth without us having to touch the column.
+
+    The negative sibling has payment_id=NULL because the UNIQUE
+    constraint on (payment_id) only enforces "one credit per payment".
+    """
+    earning = (
+        db.query(ReferralEarning)
+        .filter(
+            ReferralEarning.payment_id == payment_id,
+            ReferralEarning.reversal_of_id.is_(None),
+        )
+        .first()
+    )
+    if earning is None:
+        return ReversalReport(action="no_earning")
+    if earning.reversed_at is not None:
+        return ReversalReport(
+            action="already_reversed",
+            earning_id=earning.id,
+        )
+
+    from datetime import datetime
+    now = datetime.utcnow()
+    amount = earning.amount_usd  # Decimal from Numeric column
+    referrer_id = earning.referrer_id
+    referee_id = earning.referee_id
+    pct = earning.pct
+
+    # Stamp the original
+    earning.reversed_at = now
+    earning.reversal_reason = (reason or "")[:500]
+
+    report: dict = {
+        "earning_id": earning.id,
+        "amount": float(amount),
+        "referrer_id": referrer_id,
+    }
+
+    if earning.payout_request_id is None:
+        # Unclaimed — just insert the negative sibling, both contribute
+        # net 0 to available balance.
+        report["action"] = "from_unclaimed"
+    else:
+        payout = (
+            db.query(ReferralPayoutRequest)
+            .filter(ReferralPayoutRequest.id == earning.payout_request_id)
+            .first()
+        )
+        if payout is None or payout.status == PAYOUT_CANCELLED:
+            report["action"] = "from_unclaimed"
+            earning.payout_request_id = None
+        elif payout.status == PAYOUT_COMPLETED:
+            # Money already left to the partner — we can't recoup it.
+            # Stamp the reversal but don't touch the payout. The negative
+            # sibling row will pull the partner's available_balance down
+            # (potentially into negative territory) so any future earnings
+            # net against this debt before they can be withdrawn again.
+            report.update({
+                "action": "from_completed_logged_only",
+                "payout_id": payout.id,
+                "payout_resolved_at": payout.resolved_at.isoformat() if payout.resolved_at else None,
+            })
+        elif payout.status == PAYOUT_PENDING:
+            new_amount = payout.amount_usd - amount
+            floor = current_min_payout_usd()
+            if new_amount >= floor:
+                # Adjust the payout: subtract this earning, unlink it,
+                # the rest stays claimed for this payout.
+                payout.amount_usd = new_amount
+                earning.payout_request_id = None
+                db.add(payout)
+                report.update({
+                    "action": "from_pending_adjusted",
+                    "payout_id": payout.id,
+                    "new_payout_amount": float(new_amount),
+                })
+            else:
+                # Below floor — cancel the whole payout. Every linked
+                # earning (including this one momentarily) returns to
+                # unclaimed. The reversed earning then gets its sibling
+                # negative row inserted; the others stay positive in
+                # the pool.
+                payout.status = PAYOUT_CANCELLED
+                payout.resolved_at = now
+                payout.note = (
+                    f"auto-cancelled: refund of payment #{payment_id} "
+                    f"reduced amount to ${float(new_amount):.2f} (below ${float(floor):.2f})"
+                )
+                db.add(payout)
+                from sqlalchemy import update as _upd
+                db.execute(
+                    _upd(ReferralEarning)
+                    .where(ReferralEarning.payout_request_id == payout.id)
+                    .values(payout_request_id=None)
+                )
+                # Reload our earning since we just unlinked it via UPDATE
+                db.refresh(earning)
+                report.update({
+                    "action": "from_pending_cancelled",
+                    "payout_id": payout.id,
+                })
+        else:
+            # Defensive — should never hit
+            report["action"] = "from_unclaimed"
+
+    # Insert the negative sibling. payment_id=NULL so it doesn't collide
+    # with the UNIQUE on (payment_id).
+    sibling = ReferralEarning(
+        referrer_id=referrer_id,
+        referee_id=referee_id,
+        payment_id=None,
+        pct=pct,
+        amount_usd=-amount,
+        reversal_of_id=earning.id,
+        reversal_reason=(reason or "")[:500],
+    )
+    db.add(sibling)
+    db.flush()
+    report["sibling_earning_id"] = sibling.id
+    db.commit()
+    db.refresh(earning)
+
+    # Negative-balance alert — partner's available is now < 0 because
+    # they already withdrew. Fire-and-forget.
+    try:
+        from backend.db.models import User as _U
+        referrer = db.query(_U).filter(_U.id == referrer_id).first()
+        if referrer is not None:
+            avail = available_balance(db, referrer)
+            if avail < 0:
+                from backend.services.admin_alert_service import notify_admins
+                notify_admins(
+                    f"⚠️ Referral debt: <b>{referrer.username}</b> available "
+                    f"balance is <b>${float(avail):.2f}</b> after refund of "
+                    f"payment #{payment_id} (-${float(amount):.2f}). "
+                    f"Already withdrew via completed payout — manual review "
+                    f"required.",
+                    parse_mode="HTML",
+                )
+    except Exception:
+        pass
+
+    logger.info(
+        "referral.reverse payment=%s earning=%s amount=%s action=%s sibling=%s",
+        payment_id, earning.id, amount, report.get("action"), report.get("sibling_earning_id"),
+    )
+    return ReversalReport(**report)
+
+
 def admin_cancel_payout(
     db: Session,
     *,

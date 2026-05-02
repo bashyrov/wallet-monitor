@@ -183,6 +183,15 @@ async def create_checkout(
 
 # ── Webhook handler ───────────────────────────────────────────────────────────
 def _activate_user(db: Session, payment: Payment) -> None:
+    # Refunded payments must never re-grant a plan, even if a stale
+    # webhook reaches this code path. The admin button + the webhook
+    # branch both guard upstream, but this is the canonical place.
+    if payment.status == "refunded" or payment.refunded_at is not None:
+        logger.warning(
+            "_activate_user: refusing to activate refunded payment id=%s",
+            payment.id,
+        )
+        return
     user = db.query(User).filter(User.id == payment.user_id).first()
     if not user:
         return
@@ -287,6 +296,14 @@ def verify_and_apply_webhook(
         if payment.status == "paid":
             # Idempotent — repeated webhook delivery shouldn't double-extend.
             return payment
+        if payment.status == "refunded":
+            # Defensive: never re-activate a refunded payment, even if
+            # the provider sends a stale "paid" webhook out of order.
+            logger.warning(
+                "webhook tried to mark refunded payment %s as paid — ignoring",
+                payment.id,
+            )
+            return payment
         payment.status = "paid"
         payment.paid_at = now
         # Promo usage ledger + counter bump.
@@ -310,9 +327,118 @@ def verify_and_apply_webhook(
         if payment.status == "pending":
             payment.status = "failed" if s == "failed" else "expired"
             db.commit()
+    elif s in ("refunded", "chargeback", "reversed"):
+        # Provider-initiated refund — same code path as the admin button.
+        # Idempotent (refund_payment is a no-op when already refunded).
+        if payment.status == "paid":
+            try:
+                refund_payment(db, payment, reason=f"webhook:{s}")
+            except Exception as exc:
+                logger.error("webhook refund failed for payment %s: %s", payment.id, exc)
+        elif payment.status not in ("refunded",):
+            # Pending/failed/expired payment getting "refunded" from the
+            # provider is suspicious but harmless — just log + ignore.
+            logger.info(
+                "webhook %s for non-paid payment %s (status=%s) — ignoring",
+                s, payment.id, payment.status,
+            )
     else:
         logger.info("webhook unknown status %s for invoice %s — leaving pending", s, invoice_uuid)
     return payment
+
+
+# ── Refund flow ─────────────────────────────────────────────────────────────
+
+def refund_payment(
+    db: Session,
+    payment: Payment,
+    *,
+    reason: str | None = None,
+) -> dict:
+    """Mark a paid payment as refunded.
+
+    Idempotent: returns early if already refunded.
+
+    Side-effects:
+    - payment.status = 'refunded', refunded_at + refunded_reason stamped
+    - User's subscription is annulled (plan_expires_at = now). Auto-renew
+      cleared. The user falls back to free-tier limits via plan_service
+      on the next request — `_activate_user` refuses to re-grant a plan
+      from a `refunded` payment, so a stale provider webhook can't undo
+      the refund.
+    - referral_service.reverse_commission runs to recoup / offset the
+      partner's commission credit (if any).
+
+    Caller should already have admin privileges; this function trusts
+    its inputs.
+    """
+    out = {"payment_id": payment.id, "skipped": False}
+    if payment.status == "refunded":
+        out["skipped"] = True
+        out["reason"] = "already-refunded"
+        return out
+    if payment.status != "paid":
+        # Defensive: only paid payments can be refunded. A pending /
+        # failed / expired payment never granted anything to refund.
+        out["skipped"] = True
+        out["reason"] = f"not-paid (status={payment.status})"
+        return out
+
+    from datetime import datetime as _dt
+    now = _dt.utcnow()
+    payment.status = "refunded"
+    payment.refunded_at = now
+    payment.refunded_reason = (reason or "")[:500]
+    db.add(payment)
+
+    # Annul the user's subscription. We don't try to be clever about
+    # other paid payments the user may have — the admin can re-extend
+    # via /admin/users/{id}/plan if the refund was for one cycle and
+    # the user paid for two. Default behaviour is "this payment's plan
+    # access is gone".
+    try:
+        user = db.query(User).filter(User.id == payment.user_id).first()
+        if user is not None:
+            user.plan_expires_at = now    # immediate expiry → free tier
+            user.auto_renew = False
+            db.add(user)
+    except Exception as exc:
+        logger.warning("refund: failed to annul user plan_id=%s: %s", payment.user_id, exc)
+
+    db.flush()  # ensure payment row + user changes visible to reverse_commission
+
+    # Recoup / offset the partner's commission. May write a sibling
+    # negative earning, may adjust or cancel a pending payout, or do
+    # nothing if the partner already withdrew via a completed payout.
+    try:
+        from backend.services import referral_service
+        report = referral_service.reverse_commission(
+            db, payment_id=payment.id, reason=reason,
+        )
+        out["referral_action"] = report.get("action")
+        if "payout_id" in report:
+            out["referral_payout_id"] = report["payout_id"]
+    except Exception as exc:
+        logger.error("refund: referral reversal failed for payment=%s: %s", payment.id, exc)
+        out["referral_action"] = "error"
+
+    db.commit()
+    db.refresh(payment)
+
+    # Plan-row cache flush so /me sees the user back on the free tier
+    # immediately (no 60s wait).
+    try:
+        from backend.services.plan_service import invalidate_plan_cache
+        invalidate_plan_cache()
+    except Exception:
+        pass
+
+    logger.info(
+        "refund: payment=%s user=%s amount=%s reason=%s referral=%s",
+        payment.id, payment.user_id, payment.final_amount_usd, reason,
+        out.get("referral_action"),
+    )
+    return out
 
 
 def verify_webhook_signature(token: str | None) -> bool:

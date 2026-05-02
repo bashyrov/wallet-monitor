@@ -116,11 +116,25 @@ class ReferralEarning(Base):
     payout_request_id = Column(Integer,
                                ForeignKey("referral_payout_requests.id", ondelete="SET NULL"),
                                nullable=True, index=True)
+    # Reversal bookkeeping. The original earning is never edited or
+    # deleted — instead a sibling row with negative amount_usd is
+    # inserted, and the original is stamped with reversed_at to mark it
+    # as "credit revoked". `reversal_of_id` on the negative sibling
+    # points back at the original so the admin UI can group them.
+    # `payment_id` on the negative sibling is NULL (UNIQUE on
+    # payment_id allows multiple NULLs).
+    reversed_at = Column(DateTime, nullable=True)
+    reversal_reason = Column(String, nullable=True)
+    reversal_of_id = Column(Integer,
+                            ForeignKey("referral_earnings.id", ondelete="SET NULL"),
+                            nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     referrer = relationship("User", foreign_keys=[referrer_id], back_populates="referral_earnings")
     referee = relationship("User", foreign_keys=[referee_id])
     payout_request = relationship("ReferralPayoutRequest", foreign_keys=[payout_request_id])
+    reversal_of = relationship("ReferralEarning", remote_side="ReferralEarning.id",
+                               foreign_keys=[reversal_of_id])
 
 
 class ReferralPayoutRequest(Base):
@@ -491,9 +505,15 @@ class Payment(Base):
     provider = Column(String, nullable=False, default="cryptocloud")
     provider_invoice_id = Column(String, nullable=True, unique=True, index=True)
     provider_invoice_url = Column(String, nullable=True)
-    status = Column(String, nullable=False, default="pending", index=True)  # pending | paid | failed | expired
+    status = Column(String, nullable=False, default="pending", index=True)  # pending | paid | failed | expired | refunded
     paid_at = Column(DateTime, nullable=True)
     activated_until = Column(DateTime, nullable=True)
+    # Refund bookkeeping. Stamped by admin via /admin/payments/{id}/refund
+    # or by the webhook on a `refunded` / `chargeback` event. Once set,
+    # `_activate_user` refuses to re-process this payment so a replayed
+    # success webhook can't reverse the refund.
+    refunded_at = Column(DateTime, nullable=True)
+    refunded_reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

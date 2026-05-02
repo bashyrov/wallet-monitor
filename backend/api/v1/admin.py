@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -1125,3 +1126,197 @@ def freshness_statistics(_: User = Depends(get_admin_user)):
     empty (sampler runs in fetcher only)."""
     from backend.services.freshness_stats import read_persisted_stats
     return read_persisted_stats()
+
+
+# ── Refunds ───────────────────────────────────────────────────────────────────
+from backend.db.models import (
+    Payment as _Payment,
+    ReferralEarning as _ReferralEarning,
+    ReferralPayoutRequest as _ReferralPayoutRequest,
+)
+from backend.services import payment_service as _pay_svc
+from backend.services import referral_service as _ref_svc
+
+
+@router.get("/payments")
+def admin_list_payments(
+    q: str = Query("", max_length=64),
+    status: Optional[str] = Query(None, pattern=r"^(pending|paid|failed|expired|refunded)$"),
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    """Recent payments, newest first. Filter by user email/username +
+    by payment status. Powers the admin Refunds tab."""
+    query = db.query(_Payment).order_by(_Payment.created_at.desc())
+    if status:
+        query = query.filter(_Payment.status == status)
+    qs = (q or "").strip().lower()
+    if qs:
+        safe = qs.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{safe}%"
+        # Subquery for matching user ids by email or username
+        matching_users = (
+            db.query(User.id)
+            .filter(
+                User.username.ilike(pattern, escape="\\")
+                | User.email.ilike(pattern, escape="\\")
+            )
+        )
+        query = query.filter(_Payment.user_id.in_(matching_users))
+    rows = query.limit(limit).all()
+    out = []
+    user_cache: dict[int, tuple[str, str]] = {}
+    plan_cache: dict[int, str] = {}
+    for p in rows:
+        u = user_cache.get(p.user_id)
+        if u is None:
+            row = db.query(User.username, User.email).filter(User.id == p.user_id).first()
+            u = (row.username if row else None, row.email if row else None)
+            user_cache[p.user_id] = u
+        plan_slug = plan_cache.get(p.plan_id) if p.plan_id else None
+        if plan_slug is None and p.plan_id:
+            pr = db.query(_Plan.slug).filter(_Plan.id == p.plan_id).first()
+            plan_slug = pr.slug if pr else None
+            plan_cache[p.plan_id] = plan_slug
+        out.append({
+            "id": p.id,
+            "user_id": p.user_id,
+            "username": u[0],
+            "email": u[1],
+            "plan": plan_slug,
+            "amount_usd": float(p.final_amount_usd or 0),
+            "discount_pct": float(p.discount_pct or 0),
+            "status": p.status,
+            "provider_invoice_id": p.provider_invoice_id,
+            "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+            "refunded_at": p.refunded_at.isoformat() if p.refunded_at else None,
+            "refunded_reason": p.refunded_reason,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        })
+    return {"payments": out}
+
+
+@router.get("/payments/{payment_id}")
+def admin_payment_detail(
+    payment_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    """Full detail + a preview of what `/refund` would do.
+
+    The preview describes whether the partner's commission has already
+    been withdrawn (no auto-action), is sitting in a pending payout
+    (will be adjusted, or the payout cancelled if the result drops
+    below the floor), or is unclaimed (just nets out)."""
+    p = db.query(_Payment).filter(_Payment.id == payment_id).first()
+    if not p:
+        raise HTTPException(404, "Payment not found")
+    user_row = db.query(User).filter(User.id == p.user_id).first()
+    plan_slug = None
+    if p.plan_id:
+        pr = db.query(_Plan.slug).filter(_Plan.id == p.plan_id).first()
+        plan_slug = pr.slug if pr else None
+
+    # Linked referral earning (if any). Excludes reversal sibling rows.
+    earning = (
+        db.query(_ReferralEarning)
+        .filter(
+            _ReferralEarning.payment_id == p.id,
+            _ReferralEarning.reversal_of_id.is_(None),
+        )
+        .first()
+    )
+    referral = None
+    if earning is not None:
+        referrer = db.query(User).filter(User.id == earning.referrer_id).first()
+        payout = None
+        if earning.payout_request_id is not None:
+            pr_row = (
+                db.query(_ReferralPayoutRequest)
+                .filter(_ReferralPayoutRequest.id == earning.payout_request_id)
+                .first()
+            )
+            if pr_row:
+                payout = {
+                    "id": pr_row.id,
+                    "status": pr_row.status,
+                    "amount_usd": float(pr_row.amount_usd),
+                    "address": pr_row.address,
+                    "created_at": pr_row.created_at.isoformat() if pr_row.created_at else None,
+                    "resolved_at": pr_row.resolved_at.isoformat() if pr_row.resolved_at else None,
+                }
+        referral = {
+            "earning_id": earning.id,
+            "amount_usd": float(earning.amount_usd),
+            "pct": earning.pct,
+            "reversed_at": earning.reversed_at.isoformat() if earning.reversed_at else None,
+            "referrer": {
+                "id": referrer.id if referrer else None,
+                "username": referrer.username if referrer else None,
+                "email": referrer.email if referrer else None,
+            },
+            "payout": payout,
+        }
+
+    preview = _ref_svc.preview_reversal(db, p.id) if p.status == "paid" else None
+
+    return {
+        "id": p.id,
+        "user": {
+            "id": p.user_id,
+            "username": user_row.username if user_row else None,
+            "email": user_row.email if user_row else None,
+            "plan": user_row.plan if user_row else None,
+            "plan_expires_at": user_row.plan_expires_at.isoformat() if (user_row and user_row.plan_expires_at) else None,
+        },
+        "plan": plan_slug,
+        "amount_usd": float(p.final_amount_usd or 0),
+        "base_amount_usd": float(p.base_amount_usd or 0),
+        "discount_pct": float(p.discount_pct or 0),
+        "status": p.status,
+        "provider": p.provider,
+        "provider_invoice_id": p.provider_invoice_id,
+        "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+        "refunded_at": p.refunded_at.isoformat() if p.refunded_at else None,
+        "refunded_reason": p.refunded_reason,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+        "referral": referral,
+        "refund_preview": preview,
+    }
+
+
+class _RefundBody(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/payments/{payment_id}/refund")
+def admin_refund_payment(
+    payment_id: int,
+    body: _RefundBody,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    """Admin-initiated refund. Crypto transfer back to the user is
+    manual — this endpoint only updates internal state."""
+    p = db.query(_Payment).filter(_Payment.id == payment_id).first()
+    if not p:
+        raise HTTPException(404, "Payment not found")
+    if p.status == "refunded":
+        raise HTTPException(409, "Payment already refunded")
+    if p.status != "paid":
+        raise HTTPException(400, f"Cannot refund a payment with status={p.status}")
+    report = _pay_svc.refund_payment(db, p, reason=body.reason)
+    audit_log.record(
+        db, request=request, actor=current_admin,
+        action="payment.refund", target_type="payment", target_id=p.id,
+        delta={
+            "amount_usd": float(p.final_amount_usd or 0),
+            "user_id": p.user_id,
+            "reason": body.reason,
+            "referral_action": report.get("referral_action"),
+            "referral_payout_id": report.get("referral_payout_id"),
+        },
+    )
+    return {"ok": True, **report}
