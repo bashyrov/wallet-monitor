@@ -72,15 +72,28 @@ DEFAULT_COMMISSION_PCT = 20.0
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I to avoid handoff errors
 CODE_LENGTH = 7
 
-# Minimum withdrawal amount. Defends against TRX network fees eating
-# the whole payout AND keeps the admin queue meaningful.
-MIN_PAYOUT_USD = Decimal("100.00")
+# Default minimum withdrawal — used as the fallback when admin_settings
+# can't be reached (test isolation, cold cache). Live value is read via
+# `current_min_payout_usd()` so admins can tune it from /admin without
+# a deploy. The floor / ceiling [1, 10000] is enforced inside
+# admin_settings.get_referral_min_payout_usd to defend against typos.
+DEFAULT_MIN_PAYOUT_USD = Decimal("100.00")
 
 # Lifecycle. Only these strings are written by the service.
 PAYOUT_PENDING = "pending"
 PAYOUT_COMPLETED = "completed"
 PAYOUT_CANCELLED = "cancelled"
 _VALID_STATUSES = (PAYOUT_PENDING, PAYOUT_COMPLETED, PAYOUT_CANCELLED)
+
+
+def current_min_payout_usd() -> Decimal:
+    """Live minimum-payout floor. Admin-configurable via
+    /admin → Communications → Referral. Cached 15s by admin_settings."""
+    try:
+        from backend.services import admin_settings
+        return Decimal(str(admin_settings.get_referral_min_payout_usd()))
+    except Exception:
+        return DEFAULT_MIN_PAYOUT_USD
 
 
 # Tron base58check addresses begin with T and are 34 chars long.
@@ -332,8 +345,9 @@ def request_payout(
         raise PayoutError("You already have a pending payout request")
 
     amount = available_balance(db, user)
-    if amount < MIN_PAYOUT_USD:
-        raise PayoutError(f"Minimum payout is ${MIN_PAYOUT_USD}")
+    min_payout = current_min_payout_usd()
+    if amount < min_payout:
+        raise PayoutError(f"Minimum payout is ${min_payout}")
 
     addr = address.strip()
     user.referral_payout_address = addr

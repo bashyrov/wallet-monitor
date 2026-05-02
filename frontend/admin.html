@@ -1162,6 +1162,23 @@
       </div>
 
       <div class="mn-row" style="margin-top:14px">
+        <h3 style="margin:0 0 14px;font-size:15px">Avashare · payout floor</h3>
+        <div style="display:grid;grid-template-columns:1fr;gap:10px;max-width:520px">
+          <div>
+            <label style="font-size:12px;color:var(--text3)">Minimum payout amount (USDT)</label>
+            <input id="bc-min-payout" class="inp" type="number" min="1" max="10000" step="1" value="100">
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">
+              Users below this can earn but can't withdraw. Range $1 – $10,000.
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <button class="btn-primary" onclick="saveReferralMinPayout()">Save floor</button>
+        </div>
+        <div id="bc-min-payout-fb" style="margin-top:8px;font-size:12px;min-height:14px;color:var(--text3)"></div>
+      </div>
+
+      <div class="mn-row" style="margin-top:14px">
         <h3 style="margin:0 0 14px;font-size:15px">Send a one-off message</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:520px;margin-bottom:10px">
           <div>
@@ -2652,16 +2669,43 @@ async function refreshFreshness(){
 let _bcUserSearchTimer = null;
 
 async function loadBroadcastTab(){
-  // Pull the current expiry-notice settings so the form reflects state.
+  // Pull the current expiry-notice + referral-min settings so the form reflects state.
   try {
     const r = await Auth.apiFetch('/admin/screener-config');
     if (r.ok){
       const j = await r.json();
-      document.getElementById('bc-days').value     = j.expiry_notice_days ?? 3;
-      document.getElementById('bc-interval').value = j.expiry_notice_interval_hours ?? 24;
+      document.getElementById('bc-days').value       = j.expiry_notice_days ?? 3;
+      document.getElementById('bc-interval').value   = j.expiry_notice_interval_hours ?? 24;
+      const minEl = document.getElementById('bc-min-payout');
+      if (minEl) minEl.value = j.referral_min_payout_usd ?? 100;
     }
   } catch(_) {}
   loadBannerConfig();
+}
+
+async function saveReferralMinPayout(){
+  const fb = document.getElementById('bc-min-payout-fb');
+  const v = parseFloat(document.getElementById('bc-min-payout').value || '0');
+  fb.style.color = 'var(--text3)';
+  if (!(v >= 1 && v <= 10000)){
+    fb.style.color = 'var(--red)';
+    fb.textContent = 'Enter a number between $1 and $10,000.';
+    return;
+  }
+  try {
+    const r = await Auth.apiFetch('/admin/screener-config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ referral_min_payout_usd: v }),
+    });
+    if (!r.ok) throw new Error('save ' + r.status);
+    fb.style.color = 'var(--green)';
+    fb.textContent = `Saved · users now need ≥ $${v.toFixed(2)} to request a payout.`;
+    toast('Min payout saved', 'success');
+  } catch(e){
+    fb.style.color = 'var(--red)';
+    fb.textContent = 'Failed: ' + (e.message || e);
+  }
 }
 
 async function loadBannerConfig(){

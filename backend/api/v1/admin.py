@@ -324,6 +324,7 @@ class ScreenerConfigIn(BaseModel):
     arb_exclude_exchanges: list[str] | None = None
     expiry_notice_days: int | None = None
     expiry_notice_interval_hours: int | None = None
+    referral_min_payout_usd: float | None = None
     # Maintenance ETAs — ISO datetime (UTC) or null to clear. Admin can also
     # pass duration_minutes via the dedicated /maintenance endpoint.
     maintenance_ends_at: str | None = None
@@ -352,6 +353,7 @@ def screener_config_get(_: User = Depends(get_admin_user)):
         "arb_exclude_exchanges": sorted(admin_settings.get_arb_exclude_exchanges()),
         "expiry_notice_days": admin_settings.get_expiry_notice_days(),
         "expiry_notice_interval_hours": admin_settings.get_expiry_notice_interval_hours(),
+        "referral_min_payout_usd": admin_settings.get_referral_min_payout_usd(),
         "maintenance_ends_at": admin_settings.get_maintenance_ends_at(),
         "screener_disabled_ends_at": admin_settings.get_screener_disabled_ends_at(),
         "portfolio_disabled_ends_at": admin_settings.get_portfolio_disabled_ends_at(),
@@ -402,6 +404,9 @@ def screener_config_patch(
     if body.expiry_notice_interval_hours is not None:
         v = max(1, min(168, int(body.expiry_notice_interval_hours)))
         admin_settings.set_value(admin_settings.KEY_EXPIRY_NOTICE_INTERVAL_HOURS, v, user_id=user.id)
+    if body.referral_min_payout_usd is not None:
+        v = max(1.0, min(10000.0, float(body.referral_min_payout_usd)))
+        admin_settings.set_value(admin_settings.KEY_REFERRAL_MIN_PAYOUT_USD, v, user_id=user.id)
     # Each ETA is a JSON-passable ISO string ("2026-04-26T13:00:00+00:00")
     # or empty string / null to clear. The admin can also use the dedicated
     # POST /admin/maintenance endpoint below to set "kick off + duration"

@@ -133,7 +133,7 @@ def my_referral(
         "code": code,
         "link": _public_link(code, request),
         "commission_pct": pct,
-        "min_payout_usd": float(referral_service.MIN_PAYOUT_USD),
+        "min_payout_usd": float(referral_service.current_min_payout_usd()),
         "payout_address": user.referral_payout_address,
         "totals": {
             "earned_usd": float(earned),

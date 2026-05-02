@@ -57,6 +57,22 @@ def _clean_tables():
     from backend.api.v1.auth import _login_attempts
     _login_attempts.clear()
 
+    # Reset admin_settings TTL cache so config a previous test wrote
+    # doesn't leak forward (e.g. lowering referral_min_payout_usd).
+    try:
+        from backend.services import admin_settings
+        admin_settings._cache.clear()
+    except Exception:
+        pass
+
+    # Reset plan_service cache too — same hazard with stale plan rows.
+    try:
+        from backend.services import plan_service
+        if hasattr(plan_service, "invalidate_plan_cache"):
+            plan_service.invalidate_plan_cache()
+    except Exception:
+        pass
+
 
 # ── App / client ──────────────────────────────────────────────────────────────
 @pytest.fixture

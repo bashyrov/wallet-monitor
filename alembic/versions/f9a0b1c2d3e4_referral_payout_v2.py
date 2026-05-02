@@ -68,8 +68,25 @@ def upgrade() -> None:
             ['user_id', 'status'],
         )
 
+    # 4. Belt-and-braces CHECK constraint: lock status to the new
+    # vocabulary so a stray INSERT can't reintroduce the old strings.
+    # Postgres only — SQLite doesn't support adding CHECKs to existing
+    # tables cleanly; the service-layer guard covers it there.
+    if dialect == 'postgresql':
+        op.execute(
+            "ALTER TABLE referral_payout_requests "
+            "ADD CONSTRAINT chk_payout_status "
+            "CHECK (status IN ('pending', 'completed', 'cancelled'))"
+        )
+
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+    if dialect == 'postgresql':
+        op.execute(
+            "ALTER TABLE referral_payout_requests DROP CONSTRAINT IF EXISTS chk_payout_status"
+        )
     op.drop_index('ux_one_pending_payout_per_user', table_name='referral_payout_requests')
     op.execute(
         "UPDATE referral_payout_requests SET status='paid' WHERE status='completed'"

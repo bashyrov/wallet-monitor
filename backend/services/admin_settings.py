@@ -31,6 +31,10 @@ KEY_ARB_MIN_VOLUME_USD = "arb_min_volume_usd"
 KEY_ARB_EXCLUDE_EXCHANGES = "arb_exclude_exchanges"
 KEY_EXPIRY_NOTICE_DAYS = "expiry_notice_days"
 KEY_EXPIRY_NOTICE_INTERVAL_HOURS = "expiry_notice_interval_hours"
+# Minimum payout-request amount in USD. The user can submit only when
+# their available balance ≥ this floor; lower amounts get rejected with
+# "Minimum payout is $X". Admin tunes via /admin → Communications.
+KEY_REFERRAL_MIN_PAYOUT_USD = "referral_min_payout_usd"
 # Maintenance ETAs — ISO strings stored alongside the boolean flags. When
 # set, the lockout page renders a countdown + "ends at HH:MM <TZ>" string.
 KEY_MAINTENANCE_ENDS_AT = "maintenance_ends_at"
@@ -70,6 +74,10 @@ _DEFAULTS: dict[str, Any] = {
     # silent). 3 days × 24 h = "ping every morning starting 3 days before".
     KEY_EXPIRY_NOTICE_DAYS: 3,
     KEY_EXPIRY_NOTICE_INTERVAL_HOURS: 24,
+    # Default $100 — covers TRC20 network fee + keeps the admin queue
+    # meaningful. Floor 1, ceiling 10000 to prevent typos locking
+    # everyone out.
+    KEY_REFERRAL_MIN_PAYOUT_USD: 100,
     KEY_MAINTENANCE_ENDS_AT: None,
     KEY_SCREENER_DISABLED_ENDS_AT: None,
     KEY_PORTFOLIO_DISABLED_ENDS_AT: None,
@@ -197,6 +205,18 @@ def get_expiry_notice_interval_hours() -> int:
     except (TypeError, ValueError):
         v = int(_DEFAULTS[KEY_EXPIRY_NOTICE_INTERVAL_HOURS])
     return max(1, min(168, v))
+
+
+def get_referral_min_payout_usd() -> float:
+    """Minimum payout-request amount. Below this, the user can earn but
+    can't withdraw — keeps TRC20 fees from eating the whole transfer and
+    keeps the admin queue manageable. Floor $1 / ceiling $10k to defend
+    against typos."""
+    try:
+        v = float(get(KEY_REFERRAL_MIN_PAYOUT_USD) or 0)
+    except (TypeError, ValueError):
+        v = float(_DEFAULTS[KEY_REFERRAL_MIN_PAYOUT_USD])
+    return max(1.0, min(10000.0, v))
 
 
 def get_maintenance_tz() -> str:

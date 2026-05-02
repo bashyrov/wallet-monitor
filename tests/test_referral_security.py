@@ -353,6 +353,60 @@ def test_payout_rejects_below_minimum(client):
     assert "100" in r.json()["detail"]
 
 
+def test_admin_can_lower_min_payout(client, admin_auth):
+    """Setting min via admin endpoint takes effect immediately — same
+    user who couldn't withdraw $50 before now can after the floor moves."""
+    alice = _register(client, "alice")
+    _register(client, "bob", referral_code=_ref_me(client, alice)["code"])
+    _credit_payment("alice", "bob", 50)  # → $10 commission
+
+    h = {"Authorization": f"Bearer {alice}"}
+    addr = "T" + "A" * 33
+    # Default $100 — rejected.
+    r1 = client.post("/api/referrals/me/payout", headers=h, json={"address": addr})
+    assert r1.status_code == 400
+
+    # Admin moves the floor to $5.
+    r_admin = client.patch("/api/admin/screener-config",
+                           headers=admin_auth,
+                           json={"referral_min_payout_usd": 5.0})
+    assert r_admin.status_code == 200
+    # Bust the admin_settings cache so the new value lands immediately.
+    from backend.services import admin_settings
+    admin_settings._cache.clear()
+
+    # Same user, same balance — but now they're above the new floor.
+    r2 = client.post("/api/referrals/me/payout", headers=h, json={"address": addr})
+    assert r2.status_code == 201
+    assert abs(r2.json()["amount_usd"] - 10.0) < 0.01
+
+
+def test_user_cannot_set_min_payout(client, auth):
+    r = client.patch("/api/admin/screener-config",
+                     headers=auth,
+                     json={"referral_min_payout_usd": 1.0})
+    assert r.status_code == 403
+
+
+def test_min_payout_clamped_to_safe_range(client, admin_auth):
+    """Admin can't typo a 0 or a billion and brick the system."""
+    from backend.services import admin_settings
+
+    # Below floor — clamped to 1
+    client.patch("/api/admin/screener-config",
+                 headers=admin_auth,
+                 json={"referral_min_payout_usd": -50})
+    admin_settings._cache.clear()
+    assert admin_settings.get_referral_min_payout_usd() == 1.0
+
+    # Above ceiling — clamped to 10_000
+    client.patch("/api/admin/screener-config",
+                 headers=admin_auth,
+                 json={"referral_min_payout_usd": 1_000_000})
+    admin_settings._cache.clear()
+    assert admin_settings.get_referral_min_payout_usd() == 10000.0
+
+
 def test_payout_claims_all_unclaimed_earnings(client):
     alice = _register(client, "alice")
     for name in ("oleg", "nastya", "egor", "kostya"):
