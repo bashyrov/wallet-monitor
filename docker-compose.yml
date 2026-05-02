@@ -61,6 +61,13 @@ x-app-env: &app-env
   AVALANT_AUTH_DEV_EXPOSE_TOKEN: ${AVALANT_AUTH_DEV_EXPOSE_TOKEN:-}
   AVALANT_ALLOW_FIRST_USER_ADMIN: ${AVALANT_ALLOW_FIRST_USER_ADMIN:-}
   AVALANT_LOG_FORMAT: ${AVALANT_LOG_FORMAT:-text}
+  # Trade-engine cutover: when AVALANT_INTERNAL_SECRET is set AND a
+  # venue is listed in GO_TRADE_VENUES, the Python web role dispatches
+  # /trade/open + /trade/close into the Go fetcher's /internal/trade/*
+  # endpoints. Fall-through to local Python adapter on any failure.
+  AVALANT_INTERNAL_SECRET: ${AVALANT_INTERNAL_SECRET:-}
+  AVALANT_TRADE_PROXY_URL: ${AVALANT_TRADE_PROXY_URL:-http://go-fetcher:8090}
+  GO_TRADE_VENUES: ${GO_TRADE_VENUES:-}
   ANKR_KEY: ${ANKR_KEY:-}
   TRON_KEY: ${TRON_KEY:-}
   TRON_RPC: ${TRON_RPC:-}
@@ -263,6 +270,10 @@ services:
       # is validated here so authed users get a uid attached. Required:
       # without it the broadcaster runs anon-only.
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      # Shared-secret header /internal/trade/* checks. Empty value
+      # disables the trade endpoints entirely (returns 403 to every
+      # request). Same value lives on app + app2 via x-app-env.
+      AVALANT_INTERNAL_SECRET: ${AVALANT_INTERNAL_SECRET:-}
     volumes:
       - avalant_cache:/tmp/avalant_cache         # mounted RW so we can
                                                   # bootstrap top-N from

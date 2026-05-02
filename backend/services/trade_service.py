@@ -338,8 +338,38 @@ async def place_open_order(
     )
 
     try:
-        result = await adapter.place_order(creds, symbol, side, quantity,
-                                           leverage=leverage, margin_mode=margin_mode)
+        # Go-engine fast path: when the venue is on the cutover list and
+        # the proxy is reachable, dispatch over to go-fetcher for the
+        # signing + roundtrip. Any failure (network blip, missing env,
+        # unsupported venue) falls back to the local Python adapter so
+        # a proxy outage never blocks a user's order.
+        result = None
+        from backend.services import trade_proxy
+        if trade_proxy.is_enabled(ex):
+            try:
+                result = await trade_proxy.place_order(
+                    ex, creds, symbol, side, quantity,
+                    leverage=leverage, margin_mode=margin_mode,
+                )
+                logger.info("Order placed via go-fetcher: ex=%s sym=%s order_id=%s",
+                            ex, symbol, result.get("order_id"))
+            except trade_proxy.GoTradeError as gerr:
+                if gerr.kind in ("user", "exchange"):
+                    # Same outcome we'd get from the local adapter —
+                    # surface to the user, no fallback (the order genuinely
+                    # cannot succeed regardless of which engine signs it).
+                    _state_cache.invalidate(ex, creds, symbol)
+                    _finalize_order(db, order_row, status="failed",
+                                    error_kind=gerr.kind, error_message=gerr.message)
+                    raise TradeError(gerr.message, kind=gerr.kind)
+                logger.warning("Go proxy failed (%s) — falling back to Python: %s",
+                               gerr.kind, gerr.message)
+                result = None
+        if result is None:
+            result = await adapter.place_order(creds, symbol, side, quantity,
+                                               leverage=leverage, margin_mode=margin_mode)
+    except TradeError:
+        raise
     except RuntimeError as exc:
         # Exchange rejected the order. Surface its message verbatim — that's
         # what the user wants to see — but also persist it.
@@ -415,7 +445,26 @@ async def close_position(
     )
 
     try:
-        result = await ADAPTERS[ex].close_position(creds, symbol, side or "")
+        # Same Go-engine fast path as place_open_order. Falls back to
+        # the local adapter on any transient/internal failure.
+        result = None
+        from backend.services import trade_proxy
+        if trade_proxy.is_enabled(ex):
+            try:
+                result = await trade_proxy.close_position(ex, creds, symbol, side or "")
+                logger.info("Position closed via go-fetcher: ex=%s sym=%s", ex, symbol)
+            except trade_proxy.GoTradeError as gerr:
+                if gerr.kind in ("user", "exchange"):
+                    _finalize_order(db, order_row, status="failed",
+                                    error_kind=gerr.kind, error_message=gerr.message)
+                    raise TradeError(gerr.message, kind=gerr.kind)
+                logger.warning("Go proxy close failed (%s) — falling back: %s",
+                               gerr.kind, gerr.message)
+                result = None
+        if result is None:
+            result = await ADAPTERS[ex].close_position(creds, symbol, side or "")
+    except TradeError:
+        raise
     except RuntimeError as exc:
         msg = str(exc)
         _finalize_order(db, order_row, status="failed", error_kind="exchange",

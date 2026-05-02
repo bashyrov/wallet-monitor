@@ -57,6 +57,10 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade"
+	// Trade-adapter blank imports — each package self-registers in
+	// init() so we never have to mention them outside of import.
+	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/binance"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/wsbroadcast"
 	"net/http"
@@ -201,6 +205,11 @@ func main() {
 		)
 		mux := http.NewServeMux()
 		wsSvc.Routes(mux)
+		// Trade-engine internal HTTP routes mounted on the same listener.
+		// Reachable only from the Python web role over the docker-compose
+		// network — nginx never proxies /internal/*. Auth-gated by the
+		// AVALANT_INTERNAL_SECRET shared header.
+		trade.Routes(mux)
 		srv := &http.Server{Addr: ":" + cfg.WSBroadcastPort, Handler: mux}
 		g.Go(func() error {
 			wsSvc.Run(gctx)
