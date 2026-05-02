@@ -118,8 +118,10 @@ def test_hysteresis_skips_first_cycle():
     assert opps2[0]["short_exchange"] == "binance"
 
 
-def test_hysteresis_resets_when_opp_vanishes():
-    """If gross flips negative, drop state so the re-appearance has to re-qualify."""
+def test_hysteresis_state_persists_across_negative_gross():
+    """Behaviour change (per dex_arbitrage_service comment): no
+    gross<=0 filter — state survives even when the spread flips sign.
+    `last_seen` advances on every cycle the pair is observed."""
     dx._dex_opp_first_seen.clear()
     dx._dex_opp_last_seen.clear()
     dex = {"SOL": {"price": 100.0, "chain": "solana", "dex": "raydium",
@@ -128,10 +130,11 @@ def test_hysteresis_resets_when_opp_vanishes():
     perp_good = {"SOL": {"binance": {"price": 103.0, "volume_usd": 5_000_000,
                                       "rate": -0.001, "interval_h": 8.0}}}
     dx._build_opps_sync(dex, perp_good, 100_000)
-    assert ("SOL", "binance") in dx._dex_opp_first_seen
+    first_at = dx._dex_opp_first_seen[("SOL", "binance")]
 
-    # Cycle 2 — gross < 0 (perp below dex, positive funding), state should clear
+    # Cycle 2 — gross < 0; first_seen MUST stay, last_seen advances.
     perp_bad = {"SOL": {"binance": {"price": 97.0, "volume_usd": 5_000_000,
                                      "rate": 0.001, "interval_h": 8.0}}}
     dx._build_opps_sync(dex, perp_bad, 100_000)
-    assert ("SOL", "binance") not in dx._dex_opp_first_seen
+    assert ("SOL", "binance") in dx._dex_opp_first_seen
+    assert dx._dex_opp_first_seen[("SOL", "binance")] == first_at

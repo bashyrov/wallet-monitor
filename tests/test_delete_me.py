@@ -29,7 +29,19 @@ def test_delete_wrong_password(client):
 
 
 def test_admin_cannot_self_delete(client):
+    """Admin grant is now SQL-only — register, then flip is_admin in DB
+    to mirror the prod path. The handler still refuses self-delete on
+    admins (would leave the system without an operator)."""
     t = _register(client, "admin", "admin@test.com", password="password123")
+    from backend.db.models import User
+    from tests.conftest import _Session
+    s = _Session()
+    try:
+        u = s.query(User).filter(User.username == "admin").first()
+        u.is_admin = True
+        s.commit()
+    finally:
+        s.close()
     r = client.request("DELETE", "/api/auth/me", headers=_auth(t),
                        json={"password": "password123"})
     assert r.status_code == 400

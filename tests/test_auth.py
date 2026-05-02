@@ -13,20 +13,13 @@ def test_register_success(client):
     assert data["token_type"] == "bearer"
 
 
-def test_register_first_user_becomes_admin(client):
+def test_register_never_grants_admin(client):
+    """Policy change (2026-05-02): admin is SQL-only on the host. The
+    /register endpoint never produces is_admin=True regardless of who's
+    first or what env vars are set. See tests/test_admin_seed.py for
+    the full coverage of the admin-grant policy."""
     token = client.post("/api/auth/register", json={
-        "username": "admin", "email": "admin@test.com", "password": "pass1234",
-    }).json()["access_token"]
-    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
-    assert me["is_admin"] is True
-
-
-def test_register_second_user_not_admin(client):
-    client.post("/api/auth/register", json={
         "username": "first", "email": "first@test.com", "password": "pass1234",
-    })
-    token = client.post("/api/auth/register", json={
-        "username": "second", "email": "second@test.com", "password": "pass1234",
     }).json()["access_token"]
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
     assert me["is_admin"] is False

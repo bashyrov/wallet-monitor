@@ -91,7 +91,33 @@ def _cache_get(key: str) -> Any:
 
 
 def _cache_set(key: str, value: Any) -> None:
+    # Expunge ORM instances from their session before caching so a
+    # subsequent reader doesn't trigger a session-bound lazy-load
+    # attempt (DetachedInstanceError when the original session has
+    # since closed). Already-loaded column values stay readable on
+    # the detached instance — the Plan row is small and we always
+    # SELECT it whole, so we don't need lazy-load to work.
+    try:
+        from backend.db.models import Plan as _Plan
+        if isinstance(value, _Plan):
+            sess = _orm_session_of(value)
+            if sess is not None:
+                sess.expunge(value)
+    except Exception:
+        pass
     _plan_cache[key] = (value, time.monotonic())
+
+
+def _orm_session_of(instance) -> Any:
+    """Return the SQLAlchemy session bound to `instance`, or None if
+    detached. Wraps the inspect() call so we don't import inspect at
+    module top (kept local for cycle reasons)."""
+    try:
+        from sqlalchemy import inspect as _inspect
+        state = _inspect(instance)
+        return state.session if state.session_id else None
+    except Exception:
+        return None
 
 
 def invalidate_plan_cache() -> None:

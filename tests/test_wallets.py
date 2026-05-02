@@ -1,22 +1,8 @@
-"""Wallet CRUD — all 8 exchanges, 13 chains, 4 perp DEXes, archive, tags."""
-from unittest.mock import AsyncMock
+"""Wallet CRUD — all exchanges, chains, perp DEXes, archive, tags.
+
+`adapter.validate_key` is stubbed globally in conftest._stub_exchange_validate_key
+so we don't hit live exchange endpoints in unit tests."""
 import pytest
-
-
-@pytest.fixture(autouse=True)
-def _stub_exchange_validate_key(monkeypatch):
-    """Wallet-create calls `adapter.validate_key(creds)` against the live
-    exchange. That's network-dependent (Binance 451 on GH runners, MEXC 500s,
-    etc) and not what we're testing here. Stub every known adapter's
-    validate_key to report a clean key so the route runs through to
-    create_wallet() and we can assert persistence / display masking.
-    """
-    from backend.services import trade_adapters
-    ok = {"can_read": True, "can_trade": True, "error": None}
-    for name, adapter in (trade_adapters.ADAPTERS or {}).items():
-        if hasattr(adapter, "validate_key"):
-            monkeypatch.setattr(adapter, "validate_key", AsyncMock(return_value=ok))
-    yield
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -49,12 +35,18 @@ def _chain(client, auth, chain, address=None, name=None):
 
 
 def _perpdex(client, auth, dex, address=None, name=None):
-    return client.post("/api/wallets", json={
+    body = {
         "name": name or f"{dex} wallet",
         "wallet_type": "perpdex",
         "type_value": dex,
         "address": address or "0x1234567890abcdef1234567890abcdef12345678",
-    }, headers=auth)
+    }
+    # Paradex auth uses a JWT api_token, not the Stark address. Ship a
+    # dummy non-empty value so the validator passes — the live API is
+    # never hit in tests.
+    if dex == "paradex":
+        body["api_token"] = "dummy-paradex-jwt-for-tests"
+    return client.post("/api/wallets", json=body, headers=auth)
 
 
 # ── Options endpoint ──────────────────────────────────────────────────────────
@@ -65,38 +57,45 @@ def test_options_requires_auth(client):
 
 def test_options_returns_all_types(client, auth):
     data = client.get("/api/wallets/options", headers=auth).json()
-    assert len(data["exchange_types"]) == 8
-    assert len(data["chain_types"]) == 13
-    assert len(data["perpdex_types"]) == 5  # includes Aster (soon)
+    # Counts grow as we add venues — assert ≥, not ==.
+    assert len(data["exchange_types"]) >= 8
+    assert len(data["chain_types"]) >= 13
+    assert len(data["perpdex_types"]) >= 5
 
 
 def test_options_exchange_values(client, auth):
+    """The original 8 must always be present; new venues may join the
+    list (kraken, whitebit, bingx, htx were added later)."""
     data = client.get("/api/wallets/options", headers=auth).json()
     values = {e["value"] for e in data["exchange_types"]}
-    assert values == {"binance", "okx", "bybit", "gate", "mexc", "kucoin", "bitget", "backpack"}
+    required = {"binance", "okx", "bybit", "gate", "mexc", "kucoin", "bitget", "backpack"}
+    assert required.issubset(values), f"missing: {required - values}"
 
 
 def test_options_chain_values(client, auth):
     data = client.get("/api/wallets/options", headers=auth).json()
     values = {c["value"] for c in data["chain_types"]}
-    assert values == {
+    required = {
         "tron", "ethereum", "bsc", "polygon", "arbitrum",
         "optimism", "base", "avalanche", "zksync",
         "linea", "scroll", "mantle", "blast",
     }
+    assert required.issubset(values), f"missing: {required - values}"
 
 
 def test_options_perpdex_values(client, auth):
     data = client.get("/api/wallets/options", headers=auth).json()
     values = {p["value"] for p in data["perpdex_types"]}
-    assert values == {"hyperliquid", "aster", "lighter", "ethereal", "paradex"}
+    required = {"hyperliquid", "aster", "lighter", "ethereal", "paradex"}
+    assert required.issubset(values), f"missing: {required - values}"
 
 
-def test_options_aster_is_soon(client, auth):
+def test_options_aster_present(client, auth):
+    """Aster shipped — `soon` flag is now False. The provider just needs
+    to be in the perpdex list and use api_key auth (not address)."""
     data = client.get("/api/wallets/options", headers=auth).json()
     aster = next(p for p in data["perpdex_types"] if p["value"] == "aster")
-    assert aster.get("soon") is True
-    assert aster.get("needs_api_key") is True  # uses api_key not address
+    assert aster.get("needs_api_key") is True
 
 
 def test_aster_provider_importable():
@@ -104,10 +103,10 @@ def test_aster_provider_importable():
     assert AsterProvider.name == "AsterProvider"
 
 
-def test_aster_wallet_not_in_active_count(client, auth):
-    """Aster counts toward perp_dexes in /api/providers but is excluded from available count."""
+def test_perpdex_count_includes_aster(client, auth):
+    """Aster is no longer 'soon' — counts as a fully-active perpdex."""
     data = client.get("/api/providers").json()
-    assert data["perp_dexes"] == 4  # Aster (soon) not counted
+    assert data["perp_dexes"] >= 5
 
 
 def test_options_passphrase_flags(client, auth):
@@ -296,14 +295,21 @@ def test_unarchive_wallet(client, auth):
 
 
 def test_unarchive_blocked_when_at_limit(client, auth):
-    # Fill active slots
+    # Fill the 5 portfolio slots with 5 DIFFERENT venues (Free plan
+    # caps exchange_keys_per_venue=1 — 5× binance would be rejected
+    # at the second wallet, not the cap).
     ids = []
-    for i in range(5):
-        ids.append(_exchange(client, auth, "binance", name=f"wallet {i+1}").json()["id"])
-    # Archive one, then create another to fill the gap
+    # (venue, needs_passphrase) — pick 5 distinct venues so we don't
+    # bump into the per-venue key cap (Free plan caps to 1 per venue).
+    for ex, need_pp in (("binance", False), ("okx", True), ("bybit", False),
+                        ("gate", False), ("mexc", False)):
+        r = _exchange(client, auth, ex, passphrase=need_pp)
+        assert r.status_code == 201, f"{ex}: {r.text}"
+        ids.append(r.json()["id"])
+    # Archive one and add a different sixth to fill the gap.
     client.post(f"/api/wallets/{ids[0]}/archive", headers=auth)
-    _exchange(client, auth, "bybit", name="bybit wallet")
-    # Now at 5 active again → unarchive should fail
+    _exchange(client, auth, "kucoin", passphrase=True)
+    # At 5 active again → unarchive must 402 ("portfolio full").
     r = client.post(f"/api/wallets/{ids[0]}/unarchive", headers=auth)
     assert r.status_code == 402
 
