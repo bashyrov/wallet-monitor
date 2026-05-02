@@ -12,10 +12,10 @@ and gives the recipe for porting the rest.
 | **bybit**    |   ✓    |      ✓       |   6   |
 | **okx**      |   ✓    |      ✓       |   8   |
 | **gate**     |   ✓    |      ✓       |   6   |
-| kucoin       |   ✓    |      ·       |   ·   |
+| **kucoin**   |   ✓    |      ✓       |   5   |
 | **mexc**     |   ✓    |      ✓       |   5   |
 | **bitget**   |   ✓    |      ✓       |   5   |
-| bingx        |   ✓    |      ·       |   ·   |
+| **bingx**    |   ✓    |      ✓       |   3   |
 | aster        |   ✓    |    (defer)   |   ·   |
 | hyperliquid  |   ✓    |    (defer)   |   ·   |
 | ethereal     |   ✓    |    (defer)   |   ·   |
