@@ -62,6 +62,7 @@ import (
 	// init() so we never have to mention them outside of import.
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/binance"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/bybit"
+	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/gate"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/okx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/wsbroadcast"

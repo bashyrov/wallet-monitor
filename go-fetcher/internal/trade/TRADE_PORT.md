@@ -11,7 +11,7 @@ and gives the recipe for porting the rest.
 | **binance**  |   ✓    |      ✓       |  11   |
 | **bybit**    |   ✓    |      ✓       |   6   |
 | **okx**      |   ✓    |      ✓       |   8   |
-| gate         |   ✓    |      ·       |   ·   |
+| **gate**     |   ✓    |      ✓       |   6   |
 | kucoin       |   ✓    |      ·       |   ·   |
 | mexc         |   ✓    |      ·       |   ·   |
 | bitget       |   ✓    |      ·       |   ·   |
