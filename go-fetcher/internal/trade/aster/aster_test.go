@@ -116,6 +116,31 @@ func pad32Big(n int) []byte {
 	return out
 }
 
+// TestSignEIP712_PythonParity pins the EIP-712 signature byte-for-byte
+// against what `eth_account.sign_message(encode_typed_data(...))` produces
+// for the same key + query-string. If this fails, our Aster signatures
+// have drifted from the Python reference and the venue will reject orders.
+//
+// Reference vector (eth_account 0.13, py 3.13):
+//   priv = 0x1111…1111 (32 bytes)
+//   qs   = "quantity=0.001&side=BUY&symbol=BTCUSDT&type=MARKET"
+//   sig  = 0x9fb536dfba871c8d2411a9e31ff783e958fa664e8eecf84579b56f973f951fb9
+//          6a47d1e74ce7757abddeffe11748b931575059be786966a5ac49b6549b6ea2ae1b
+func TestSignEIP712_PythonParity(t *testing.T) {
+	const priv = "1111111111111111111111111111111111111111111111111111111111111111"
+	const qs = "quantity=0.001&side=BUY&symbol=BTCUSDT&type=MARKET"
+	want := "0x9fb536dfba871c8d2411a9e31ff783e958fa664e8eecf84579b56f973f951fb9" +
+		"6a47d1e74ce7757abddeffe11748b931575059be786966a5ac49b6549b6ea2ae1b"
+
+	got, err := signEIP712(qs, priv)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if got != want {
+		t.Errorf("sig mismatch\n got  %s\n want %s", got, want)
+	}
+}
+
 func TestRegisteredViaInit(t *testing.T) {
 	a := trade.Lookup("aster")
 	if a == nil {

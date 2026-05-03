@@ -227,6 +227,136 @@ func TestExtractOrderID_Filled(t *testing.T) {
 	}
 }
 
+// TestSignPhantomAgent_VaultAddress verifies the vault-address branch of
+// the action_hash construction (0x01 || bytes20(addr)). Vault subaccounts
+// are a real HL feature (institutional users); the codepath wasn't covered
+// by the no-vault parity test. We assert the (r,s,v) is recoverable and
+// — crucially — DIFFERENT from the no-vault sig over the same action.
+func TestSignPhantomAgent_VaultAddress(t *testing.T) {
+	priv, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	privHex := hex.EncodeToString(crypto.FromECDSA(priv))
+	signerAddr := crypto.PubkeyToAddress(priv.PublicKey).Hex()
+
+	action := orderAction{
+		Type: "order",
+		Orders: []orderLeg{{A: 0, B: true, P: "0", S: "0.001", R: false,
+			T: orderTypeBox{Limit: orderLimit{Tif: "Ioc"}}}},
+		Grouping: "na",
+	}
+	packed, _ := packAction(action)
+	const nonce int64 = 1700000000000
+	const vault = "0x1234567890abcdef1234567890abcdef12345678"
+
+	rNoVault, sNoVault, _, err := signPhantomAgent(packed, nonce, "", true, privHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rVault, sVault, vVault, err := signPhantomAgent(packed, nonce, vault, true, privHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rVault == rNoVault && sVault == sNoVault {
+		t.Errorf("vault sig should differ from no-vault sig")
+	}
+
+	// Reconstruct vault digest and recover signer.
+	var buf bytes.Buffer
+	buf.Write(packed)
+	var nonceBuf [8]byte
+	binary.BigEndian.PutUint64(nonceBuf[:], uint64(nonce))
+	buf.Write(nonceBuf[:])
+	buf.WriteByte(0x01)
+	addrBytes, _ := hex.DecodeString(strings.TrimPrefix(vault, "0x"))
+	buf.Write(addrBytes)
+	connectionID := crypto.Keccak256(buf.Bytes())
+
+	td := apitypes.TypedData{
+		Types: apitypes.Types{
+			"EIP712Domain": []apitypes.Type{
+				{Name: "name", Type: "string"}, {Name: "version", Type: "string"},
+				{Name: "chainId", Type: "uint256"}, {Name: "verifyingContract", Type: "address"},
+			},
+			"Agent": []apitypes.Type{
+				{Name: "source", Type: "string"}, {Name: "connectionId", Type: "bytes32"},
+			},
+		},
+		PrimaryType: "Agent",
+		Domain: apitypes.TypedDataDomain{
+			Name: "Exchange", Version: "1",
+			ChainId:           gethmath.NewHexOrDecimal256(1337),
+			VerifyingContract: "0x0000000000000000000000000000000000000000",
+		},
+		Message: apitypes.TypedDataMessage{"source": "a", "connectionId": connectionID},
+	}
+	domainSep, _ := td.HashStruct("EIP712Domain", td.Domain.Map())
+	msgHash, _ := td.HashStruct("Agent", td.Message)
+	digest := crypto.Keccak256(append(append([]byte{0x19, 0x01}, domainSep...), msgHash...))
+
+	rBig, _ := new(big.Int).SetString(strings.TrimPrefix(rVault, "0x"), 16)
+	sBig, _ := new(big.Int).SetString(strings.TrimPrefix(sVault, "0x"), 16)
+	sig := make([]byte, 65)
+	rBytes := rBig.Bytes()
+	sBytes := sBig.Bytes()
+	copy(sig[32-len(rBytes):32], rBytes)
+	copy(sig[64-len(sBytes):64], sBytes)
+	sig[64] = byte(vVault - 27)
+	pubBytes, err := crypto.Ecrecover(digest, sig)
+	if err != nil {
+		t.Fatalf("ecrecover: %v", err)
+	}
+	pub, _ := crypto.UnmarshalPubkey(pubBytes)
+	if got := crypto.PubkeyToAddress(*pub).Hex(); got != signerAddr {
+		t.Errorf("vault sig recovered %s, want %s", got, signerAddr)
+	}
+}
+
+// TestSignPhantomAgent_Testnet ensures source="b" produces a different
+// signature than source="a" — i.e. a testnet sig isn't valid on mainnet
+// and vice versa. Otherwise the env flip would silently route orders
+// to the wrong network.
+func TestSignPhantomAgent_Testnet(t *testing.T) {
+	priv, _ := crypto.GenerateKey()
+	privHex := hex.EncodeToString(crypto.FromECDSA(priv))
+
+	action := orderAction{
+		Type:     "order",
+		Orders:   []orderLeg{{A: 0, B: true, P: "0", S: "0.001", R: false, T: orderTypeBox{Limit: orderLimit{Tif: "Ioc"}}}},
+		Grouping: "na",
+	}
+	packed, _ := packAction(action)
+	const nonce int64 = 1700000000000
+
+	rMain, sMain, _, _ := signPhantomAgent(packed, nonce, "", true, privHex)
+	rTest, sTest, _, _ := signPhantomAgent(packed, nonce, "", false, privHex)
+	if rMain == rTest && sMain == sTest {
+		t.Errorf("mainnet/testnet sigs must differ — same key would otherwise be replayable across networks")
+	}
+}
+
+// TestPackUpdateLeverage_FieldOrder pins the msgpack key order for the
+// updateLeverage action. Same load-bearing concern as orderAction:
+// reorder = signature mismatch.
+func TestPackUpdateLeverage_FieldOrder(t *testing.T) {
+	action := updateLeverageAction{
+		Type: "updateLeverage", Asset: 0, IsCross: true, Leverage: 10,
+	}
+	packed, err := packAction(action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idxType := bytes.Index(packed, []byte("type"))
+	idxAsset := bytes.Index(packed, []byte("asset"))
+	idxIsCross := bytes.Index(packed, []byte("isCross"))
+	idxLev := bytes.Index(packed, []byte("leverage"))
+	if !(idxType < idxAsset && idxAsset < idxIsCross && idxIsCross < idxLev) {
+		t.Errorf("updateLeverage field order wrong: type=%d asset=%d isCross=%d leverage=%d",
+			idxType, idxAsset, idxIsCross, idxLev)
+	}
+}
+
 func TestRegisteredViaInit(t *testing.T) {
 	a := trade.Lookup("hyperliquid")
 	if a == nil {

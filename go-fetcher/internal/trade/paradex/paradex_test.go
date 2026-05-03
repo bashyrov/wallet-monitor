@@ -142,6 +142,89 @@ func TestRegisteredViaInit(t *testing.T) {
 	}
 }
 
+// TestOrderMessage_Roundtrip ensures the order TypedData we construct is
+// parseable by starknet.go and produces a non-zero felt hash. The auth
+// message has its own roundtrip test; until now `buildOrderMessage` was
+// only exercised by callers, never asserted.
+func TestOrderMessage_Roundtrip(t *testing.T) {
+	const address = "0x05c74db20fa8f151bfd3a7a462cf2e8d4578a88aa4bd7a1746955201c48d8e5e"
+	tdJSON := buildOrderMessage(
+		1700000000000,    // signature_timestamp_ms
+		"BTC-USD-PERP",   // market
+		"1",              // side: BUY
+		"MARKET",         // orderType
+		"100000",         // chainSize: 0.001 × 1e8
+		"0",              // chainPrice: market order
+	)
+	var tdv typeddata.TypedData
+	if err := json.Unmarshal(tdJSON, &tdv); err != nil {
+		t.Fatalf("order TypedData unmarshal: %v", err)
+	}
+	hash, err := tdv.GetMessageHash(address)
+	if err != nil {
+		t.Fatalf("get hash: %v", err)
+	}
+	if hash == nil || hash.IsZero() {
+		t.Fatalf("order hash unexpectedly zero")
+	}
+}
+
+// TestSignOrder_Recoverable signs a real order TypedData and verifies
+// via Stark VerifyFelts. Without this we'd have NO assurance that
+// signTypedData produces valid sigs over order messages — only auth.
+func TestSignOrder_Recoverable(t *testing.T) {
+	privBig, _ := new(big.Int).SetString("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", 16)
+	pubX, _ := curve.PrivateKeyToPoint(privBig)
+	const address = "0x012345abcdef"
+
+	tdJSON := buildOrderMessage(1700000000000, "BTC-USD-PERP", "1", "MARKET", "100000", "0")
+	rDec, sDec, err := signTypedData(tdJSON, address, "0x"+privBig.Text(16))
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	rBig, _ := new(big.Int).SetString(rDec, 10)
+	sBig, _ := new(big.Int).SetString(sDec, 10)
+
+	var tdv typeddata.TypedData
+	_ = json.Unmarshal(tdJSON, &tdv)
+	hash, _ := tdv.GetMessageHash(address)
+
+	rFelt := new(felt.Felt).SetBigInt(rBig)
+	sFelt := new(felt.Felt).SetBigInt(sBig)
+	pubFelt := new(felt.Felt).SetBigInt(pubX)
+	ok, err := curve.VerifyFelts(hash, rFelt, sFelt, pubFelt)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !ok {
+		t.Errorf("order signature failed Stark verify")
+	}
+}
+
+// TestAuthMessage_HashPinned pins the SNIP-12 hash that starknet.go
+// produces for our auth TypedData against a fixed (timestamp, expiration,
+// address). If a starknet.go upgrade silently changes the hash output —
+// e.g. revision-handling tweak, encoding change — this test catches it
+// before we ship and Paradex starts rejecting our sessions.
+//
+// Vector locked at starknet.go v0.17.1 / juno v0.15.11.
+func TestAuthMessage_HashPinned(t *testing.T) {
+	const address = "0x05c74db20fa8f151bfd3a7a462cf2e8d4578a88aa4bd7a1746955201c48d8e5e"
+	tdJSON := buildAuthMessage(1700000000, 1700086400)
+	var tdv typeddata.TypedData
+	if err := json.Unmarshal(tdJSON, &tdv); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := tdv.GetMessageHash(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "0x394b78da39c8e86c548e3b41ba3233fb135a06095c65eb8a1ca06a56e37728f"
+	if got := hash.String(); got != want {
+		t.Errorf("hash drift\n got  %s\n want %s\n(starknet.go upgrade may have changed SNIP-12 encoding)", got, want)
+	}
+}
+
 // Sanity: sign + verify via the felt-friendly signing path inside
 // signTypedData — make sure decimal output is not accidentally hex.
 func TestSignTypedData_DecimalOutput(t *testing.T) {
