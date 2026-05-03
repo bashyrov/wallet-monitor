@@ -9,45 +9,51 @@ In one screen the trader sees funding-rate spreads (long/short between exchanges
 **Brand**: `avalant_` — Inter 800, 18px, blinking green `_` cursor. Accent `#1AFFAB` (neon green). Logo at `/avalant_favicon.svg`, full at `/avalant-logo.svg`.
 
 **Supported venues**:
-- **11 CEX** for screener feeds + portfolio: Binance, OKX, Bybit, Gate, MEXC, KuCoin, Bitget, Backpack, BingX, WhiteBIT, Kraken
-- **6 Perp DEX**: Hyperliquid, Aster, Lighter, Ethereal, Paradex, Extended
+- **12 CEX** for screener + portfolio + trade: Binance, OKX, Bybit, Gate, MEXC, KuCoin, Bitget, Backpack, BingX, WhiteBIT, Kraken, HTX
+- **6 Perp DEX**: Hyperliquid, Aster, Ethereal, Lighter, Paradex, Extended
 - **8 Spot exchanges** for spot-short feeds: Binance, Bybit, OKX, Gate, KuCoin, MEXC, Bitget, BingX
-- **14 chains**: Tron, Solana, Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Linea, Scroll, Mantle, Blast
+- **15 chains**: Tron, Solana, Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, Avalanche, Fantom, zkSync, Linea, Scroll, Mantle, Blast
 
-**Coverage matrix** (after `feat/dex-parity`):
+**Trade-engine coverage** (Go-fetcher, after the perf/go-arb-and-trade port):
 
 ```
-                screener  ob-WS  ob-REST  balance  trade  user-WS  funding-paid
-binance/bybit/  ✓         ✓      ✓        ✓        ✓      ✓        ✓
-okx/gate/kucoin
-mexc/bitget/
-bingx/aster/    ✓         ✓      ✓        ✓        ✓      ✓        ✓
-hyperliquid/
-htx/lighter
-kraken          ✓         ✓      ✓        ✓        ✓      ✓        ✓
-backpack        ✓         ✓      ✓        ✓        ✓      ✓        ·
-whitebit        ✓         ✓      ✓        ✓        ✓      ✓        ·
-ethereal        ✓         ·      ·        ✓        ✓      ·        ·
-paradex         ✓         ✓      ✓        ✓        R      ·        ·
-extended        ✓         ·      ✓        ✓        ·      ·        ·
+              screener  ob-WS  ob-REST  balance  trade-Go     funding-paid
+binance       ✓         ✓      ✓        ✓        ✓ full       ✓
+bybit         ✓         ✓      ✓        ✓        ✓ full       ✓
+okx           ✓         ✓      ✓        ✓        ✓ full       ✓
+gate          ✓         ✓      ✓        ✓        ✓ full       ✓
+mexc          ✓         ✓      ✓        ✓        ✓ full       ✓
+kucoin        ✓         ✓      ✓        ✓        ✓ full       ✓
+bitget        ✓         ✓      ✓        ✓        ✓ full       ✓
+bingx         ✓         ✓      ✓        ✓        ✓ full       ✓
+htx           ✓         ✓      ✓        ✓        ✓ full       ·
+aster         ✓         ✓      ✓        ✓        ✓ full       ✓
+kraken        ✓         ✓      ✓        ✓        ✓ full       ✓
+backpack      ✓         ✓      ✓        ✓        ✓ full       ·
+whitebit      ✓         ✓      ✓        ✓        ✓ full       ·
+hyperliquid   ✓         ·      ·        ✓        ✓ full       ✓
+ethereal      ✓         ·      ·        ✓        ✓ full       ·
+lighter       ✓         ·      ·        ✓        RO Go        ·
+paradex       ✓         ✓      ✓        ✓        ✓ full       ·
+extended      ✓         ·      ✓        ✓        ·            ·
 ```
 
-Legend: `✓` shipped · `R` read-only (balance only) · `·` not implemented.
+Legend: `✓ full` open/close/leverage all in Go · `RO Go` reads in Go, writes return errZK · `·` not implemented.
 
-Blocked items:
-- **Paradex trading** — `paradex-py 0.5.6` requires `starknet-py <0.29` which is incompatible with Python 3.13. Awaiting upstream.
-- **Extended trading** — `x10-python-trading` pins pydantic 2.5.3 / eth-account 0.11 / websockets 12 — would downgrade and break Hyperliquid + Ethereal adapters. Needs separate dep-triage branch.
-- **Ethereal orderbook + user-stream** — public WS uses Socket.IO and the SDK's documented stream types (L2Book/Ticker/OrderFill) are all rejected by the live server as "Invalid stream subscription type". REST API has no orderbook endpoint either.
+**Blocked / partial:**
+- **Lighter trading** — ZK signing requires the CGO-bundled `lighter-sdk` native lib (per-arch builds). Reads work in Go (`/api/v1/account` REST), writes return `KindUser` errors directing the dispatcher to the Python adapter. Keep `lighter` out of `GO_TRADE_VENUES`.
+- **Extended trading** — `x10-python-trading` pins pydantic 2.5.3 / eth-account 0.11 / websockets 12 — would downgrade and break Hyperliquid + Ethereal adapters. Read-only.
+- **Ethereal orderbook + user-stream** — public WS uses Socket.IO and SDK stream types (L2Book/Ticker/OrderFill) are rejected as "Invalid stream subscription type". REST API has no orderbook endpoint. Trade works.
 
 ---
 
 ## Stack
 
-- **Backend**: FastAPI + uvicorn (2 web replicas + 1 fetcher sidecar), PostgreSQL 16 + Alembic, Redis 7, httpx, websockets
-- **Frontend**: vanilla JS + multi-page HTML, no build step, Inter / JetBrains Mono fonts
-- **Infra**: Docker Compose, nginx upstream load balancer, Let's Encrypt, PgBouncer (session mode, pool 60)
-- **Hot path**: per-exchange funding-WS adapters + REST backstop (pure-thread to avoid event-loop block); orderbook WS multiprocess workers; spot-arb refresh (2s); funding broadcast (300ms compute, 200ms broadcast)
-- **Bots**: two-bot mode — `TG_AUTH_BOT_TOKEN` for login + admin alerts + expiry reminders, `TG_BOT_TOKEN` for spread alerts. Either bot can do everything alone (single-bot fallback)
+- **Python backend**: FastAPI + uvicorn (Python 3.13, 2 web replicas — `app` and `app2`), PostgreSQL 16 via PgBouncer (session mode, pool 60), Redis 7, httpx, websockets
+- **Go data plane**: `go-fetcher` (Go 1.25), one container, owns funding-rate + orderbook WS, arb compute (futures/spot/dex), WS broadcast on `:8090`, internal trade engine on `/internal/trade/*`
+- **Frontend**: vanilla JS + multi-page HTML, no build step, Inter / JetBrains Mono fonts, lightweight-charts via unpkg CDN
+- **Infra**: Docker Compose 7 services, nginx upstream LB, Let's Encrypt via certbot
+- **Bots**: two-bot mode — `TG_AUTH_BOT_TOKEN` for login + admin alerts + expiry reminders, `TG_BOT_TOKEN` for spread alerts. Either alone runs everything (single-bot fallback)
 
 ---
 
@@ -62,35 +68,262 @@ uvicorn app:app --port 8000   # NO --reload (user preference)
 
 ### Docker / prod
 ```bash
-cp .env.sample .env             # fill secrets
+cp .env.sample .env             # fill SECRET_KEY, ENCRYPTION_KEY, POSTGRES_PASSWORD
 docker compose up -d
 ```
+
+Services on prod: `db`, `pgbouncer`, `redis`, `app`, `app2`, `go-fetcher`, `nginx`, `certbot`. App + app2 round-robin behind nginx; go-fetcher owns the data plane.
 
 ---
 
 ## Deployment workflow
 
-See `DEPLOY.md` for the full picture. There are 6 scopes:
+See `DEPLOY.md` for the full picture. The prod box is at `root@avalant.xyz:/root/wallet-monitor`. There are 7 scopes:
 
 | Command | What rebuilds | User impact |
 |---|---|---|
 | `./scripts/deploy.sh frontend` | nothing — `git pull`, files bind-mounted | new code on next request, ≤60s browser cache refresh |
 | `./scripts/deploy.sh backend` | rolling rebuild app→app2 | zero downtime |
-| `./scripts/deploy.sh fetcher` | fetcher sidecar only | 10-20s feed re-warm |
-| `./scripts/deploy.sh migrations` | alembic + rolling app/app2 | brief; pair with maintenance for breaking |
-| `./scripts/deploy.sh nginx` | nginx reload (or recreate if mount inode flipped) | none |
-| `./scripts/deploy.sh all` | everything via legacy rolling-deploy | zero downtime |
-| `./scripts/deploy.sh` (no arg) | auto-detects from `git diff` | scope-dependent |
+| `./scripts/deploy.sh fetcher` | go-fetcher only | 10–20s feed re-warm |
+| `./scripts/deploy.sh migrations` | alembic + rolling app/app2 | brief; pair with maintenance for breaking schemas |
+| `./scripts/deploy.sh nginx` | nginx reload (or recreate if mount inode flipped) | zero downtime |
+| `./scripts/deploy.sh all` | everything via legacy `rolling-deploy.sh` | zero downtime |
+| `./scripts/deploy.sh` (no arg) | auto-detects from `git diff origin/main` | scope-dependent |
 
-`./frontend` is bind-mounted into all containers as `/app/frontend:ro` — HTML/JS/CSS edits hot-swap without rebuild.
+`./frontend` is bind-mounted into all containers as `/app/frontend:ro` — HTML/JS/CSS edits hot-swap without rebuild. Cache-Control on JS/CSS is 60s; static images 86400s.
+
+**Migration race-prevention**: `app` runs `alembic upgrade head` on startup (`AVALANT_RUN_MIGRATIONS=true`); `app2` skips it (`=false`). Alembic's row-lock on `alembic_version` serialises across the two containers.
 
 **Rollback**: `git checkout <sha>` then `./scripts/deploy.sh all`.
 
 **Things that don't need a deploy** (runtime via /admin):
-- maintenance toggles, plans, promos, popups, billing periods
-- hidden symbols, disabled exchanges, trade enable/disable per venue
+- maintenance toggles + ETAs (3 scopes), banner, plans, promos, popups, billing periods
+- hidden symbols, disabled exchanges, disabled chains, disabled perpdexes, disabled wallet exchanges
+- trade enable/disable per venue (`trade_disabled_exchanges`)
 - expiry-reminder schedule, admin broadcast
-- user block/unblock, plan grant
+- user block/unblock, plan grant, per-user referral pct override
+
+---
+
+## Architecture: hot path
+
+### Two-process model
+
+After the Go-fetcher cutover, the data plane lives in Go and the web role (Python) only does the synchronous request handling.
+
+**Python web (`app`, `app2`)**:
+- Request handling, auth, billing, admin
+- Reads file caches (`books.json`, `funding.json`, `arbitrage.json`, `spot_arbitrage.json`, `dex_arbitrage.json`) written by go-fetcher
+- Telegram bot polling, expiry-notifier, alert daemon, plan-expiry daemon, reconcile_service
+- Trade requests dispatch to go-fetcher via `/internal/trade/*` if venue is in `GO_TRADE_VENUES`; otherwise local Python adapter handles it. Falls back to Python on any Go error.
+
+**Go-fetcher**:
+- Funding-rate WS (12 venues) + 2s REST backstops
+- Orderbook WS workers (24 adapters, filtered by `AVALANT_WORKER_EXCHANGES`)
+- Arb compute (3 engines): futures every 500ms → `arbitrage.json`; spot every 2s → `spot_arbitrage.json`; dex every 30s → `dex_arbitrage.json`
+- Cache + funding dumpers (100ms / 500ms cadences)
+- WS broadcaster on `:8090` for `/api/screener/ws/{long-short,arb,funding,book}`
+- `/internal/trade/*` HTTP endpoints (auth via `X-Internal-Auth` header == `AVALANT_INTERNAL_SECRET`)
+- Symbols manager: prewarm union user-touches, reconciles every 5s
+- Redis bus: receives `book:subscribe`/`book:unsubscribe` from Python web, mirrors orderbooks to `ob:<ex>:<sym>` keys (TTL 10s)
+
+### Cache files (shared volume `/tmp/avalant_cache`)
+- `books.<ex>.json` — per-exchange orderbook (Go writes)
+- `books.json` — merged orderbook (Go writes)
+- `funding.<ex>.json` — per-exchange funding (Go writes)
+- `funding.json` — merged funding (Go writes)
+- `arbitrage.json` — futures L/S opportunities (Go writes)
+- `spot_arbitrage.json` — spot-short opportunities (Go writes)
+- `dex_arbitrage.json` — DEX-short opportunities (Go writes)
+
+Python web reads these directly. Lock files (`/tmp/avalant_*.lock`) prevent concurrent writes from any legacy fallback path.
+
+### Funding feed (≤2.6s freshness across 12 venues, Go side)
+Each adapter is a `Runner{ Adapter, Store }` with two concurrent loops:
+1. **WS task** — primary sub-second updates from the venue's public stream
+2. **REST backstop** — every 2s, sweeps all subscribed symbols and merges into `Store`. Required for every adapter (closes WS gaps).
+
+Per-venue notes:
+- **Binance**: `wss://fstream.binance.com/stream?streams=!markPrice@arr@1s/!ticker@arr` (combined stream). Known issue: times out from Singapore IP without outbound proxy.
+- **MEXC**: REST-only (WS protobuf endpoint deferred).
+- **Hyperliquid**: WS disabled (REST-only via `/info?type=fundingHistory`); symbol→index lookup cached 1h via `/info?type=meta`.
+- **HTX**: REST-only (rate). Mark price comes from orderbook midprice cross-pollination.
+
+### Spot-arb (Go)
+`internal/arb/spot_compute.go` — REST tickers across 9 spot venues + funding join, writes `spot_arbitrage.json` every 2s. `|basis_pct| > 5%` rows dropped (ticker-collision filter; e.g. MEXC "META" ≠ KuCoin "META").
+
+### DEX-arb (Go)
+`internal/arb/dex_compute.go` — CoinGecko symbol→contract cache (1h TTL) + DexScreener pools, writes `dex_arbitrage.json` every 30s. Drops to 0 opps when DexScreener throttles; recovers next cycle.
+
+### Futures arb compute (Go, 500ms cycle)
+`internal/arb/compute.go` — reads funding store, builds cross-venue ranked top-1000 opportunities, writes `arbitrage.json` every 500ms. Downstream: WS broadcast diffs to clients.
+
+### WS broadcast (Go-fetcher → browser)
+- `/api/screener/ws/funding` — diff push, ~3-10KB per tick (note: clients have largely moved to 3s REST polling for funding; see frontend perf log)
+- `/api/screener/ws/long-short` — delta-encoded futures arb (canonical)
+- `/api/screener/ws/arb` — legacy alias for `/long-short`
+- `/api/screener/ws/book` — orderbook diffs, server-side filtering by subscribed pairs
+
+All four use first-frame JSON `{"auth": "<JWT>"}` after `accept()` (5s timeout → `close(4401)`). URL never carries the token.
+
+### Orderbook in Go
+- `internal/cache/Store` — concurrent-safe in-memory cache keyed by `"<ex>:<sym>"`, versioned per-venue
+- `internal/cache/Dumper` — 100ms cadence writes per-venue `books.<ex>.json` + merged `books.json`
+- `internal/redisbus/Writer` — mirrors each update to Redis (`ob:<ex>:<sym>`, TTL 10s) for fast `/ws/book` path
+- `internal/symbols/Manager` — owns prewarm + user-touches union, calls `Runner.SetSymbols()` for deltas every 5s
+
+---
+
+## Trade engine
+
+The trade engine has been ported from Python (`backend/services/trade_adapters/`) to Go (`go-fetcher/internal/trade/`). 16 of 17 venues are full-fat Go; lighter is read-only in Go (ZK signing not yet ported).
+
+### Cutover model
+1. Adapter self-registers via `init()` in Go.
+2. `app`/`app2` POST trade requests to `http://go-fetcher:8090/internal/trade/{open,close,leverage,positions,balance}` if the venue is in `GO_TRADE_VENUES` (CSV env var on Python).
+3. Auth via `X-Internal-Auth: <AVALANT_INTERNAL_SECRET>`.
+4. Any Go error (5xx, network, `KindUser`, missing auth) → falls through to local Python adapter. **Python is never blocked.**
+5. After 24h clean per venue, the Python adapter file can be removed from `ADAPTERS` and deleted.
+
+### Signing schemes per venue (Go)
+
+| Venue | Sign | Notes |
+|---|---|---|
+| binance | HMAC SHA256 hex | `X-MBX-APIKEY`, hedgeMode + exchangeInfo caches (5m / 10m) |
+| aster | HMAC SHA256 hex | Binance fork, `X-AB-APIKEY`. *Earlier note about EIP-712 was wrong; aster is plain HMAC.* |
+| bybit | HMAC SHA256 hex (v5) | `ts\|\|key\|\|recv\|\|q/body` payload |
+| okx | HMAC SHA256 base64 | passphrase required, contracts not coins (`÷ctVal`) |
+| kucoin | HMAC SHA256 base64 | passphrase required, UUID v4 client-order-id, coin↔contract conversion |
+| bitget | HMAC SHA256 hex | passphrase, base64-decoded secret first, multiplier rounding |
+| gate | HMAC SHA512 base64 | coin↔contract, short side encoded as negative qty |
+| kraken | HMAC SHA512 base64 | base64-decoded secret first |
+| mexc | HMAC SHA256 hex | sorted query, coin qty encoding |
+| bingx | HMAC SHA256 hex | sorted query string |
+| htx | HMAC SHA256 hex | canonical query string, GET only |
+| whitebit | HMAC SHA256 hex | sorted query string |
+| backpack | Ed25519 | base64 public key + base64 seed; canonical sign string `instruction=…&sortedParams&timestamp=…&window=60000` |
+| ethereal | Personal_sign (eth_sign) | linked-signer key, payload `METHOD\|\|PATH\|\|TS_NS\|\|JSON(body)` |
+| **hyperliquid** | **Phantom-agent EIP-712** | see below |
+| **paradex** | **Stark SNIP-12** | see below |
+| lighter | (not ported) | reads work; writes return `errZK` |
+
+### Hyperliquid — phantom-agent EIP-712 (real scheme)
+
+Both Python and Go now sign actions per HL's official SDK. The earlier Python implementation used `personal_sign(sha256(action_json))` — that was wrong and would be rejected by `/exchange` on real orders.
+
+```
+packed       = msgpack(action) || nonce_be8 || vault_marker
+vault_marker = 0x00                            if no vault
+             | 0x01 || bytes20(vaultAddress)   otherwise
+connectionId = keccak256(packed)
+domain       = { name: "Exchange", version: "1",
+                 chainId: 1337, verifyingContract: 0x0…0 }
+type         = Agent(string source, bytes32 connectionId)
+message      = { source: "a" (mainnet) | "b" (testnet), connectionId }
+sig          = EIP-712 sign(domain, Agent, message) by agent key
+wire         = { action, nonce, signature: {r,s,v}, vaultAddress: null }
+```
+
+**Cross-language parity is pinned** by:
+- `TestPackAction_PythonParity` in [go-fetcher/internal/trade/hyperliquid/hyperliquid_test.go](go-fetcher/internal/trade/hyperliquid/hyperliquid_test.go) — Go's msgpack output equals Python's byte-for-byte
+- `TestSignPhantomAgent_PythonParity` — `(r,s,v)` triple equals Python's for fixed key + nonce + action
+
+If you change the action struct field declaration order in Go, msgpack output changes and signatures diverge. **Don't reorder.**
+
+Python: [backend/services/trade_adapters/hyperliquid.py](backend/services/trade_adapters/hyperliquid.py) `_sign_action()`.
+Go: [go-fetcher/internal/trade/hyperliquid/hyperliquid.go](go-fetcher/internal/trade/hyperliquid/hyperliquid.go) `signPhantomAgent()`.
+
+### Paradex — Stark SNIP-12 in Go
+
+Replaces the read-only Python provider's signing path. No more dependency on `paradex-py` (broken on Python 3.13). Pure Go via `github.com/NethermindEth/starknet.go` (Stark curve + SNIP-12 typed data + Pedersen).
+
+```
+chainIdHex   = hex(int.from_bytes(b"PRIVATE_SN_PARACLEAR_MAINNET", "big"))
+auth message = SNIP-12 TypedData {
+                 domain: { name:"Paradex", chainId:chainIdHex, version:"1" },
+                 primaryType: "Request",
+                 message: { method:"POST", path:"/v1/auth", body:"0",
+                            timestamp, expiration }
+               }
+order message= SNIP-12 TypedData {
+                 domain: same,
+                 primaryType: "Order",
+                 message: { timestamp, market, side: "1"|"2",
+                            orderType: "MARKET"|"LIMIT",
+                            size: felt(qty * 1e8),
+                            price: felt(px * 1e8) | "0" for market }
+               }
+sig          = curve.SignFelts(messageHash, l2_priv_key)
+hdr (auth)   = PARADEX-STARKNET-{ACCOUNT,SIGNATURE,SIGNATURE-EXPIRATION}
+               + PARADEX-TIMESTAMP
+hdr (data)   = Bearer JWT (cached 24h, refresh leeway 5min)
+wire sig     = `["<r-decimal>","<s-decimal>"]`
+```
+
+**JWT cache**: `jwts map[lowercase_l2_addr]jwtEntry`, 24h TTL with 5-min refresh leeway. On 401 we drop the cache so the next call re-auths.
+
+**Body field workaround**: Paradex sends `body: ""` in the auth message, but `starknet.go`'s `StrToHex("")` returns `"0x"` which fails to parse as felt. We pass `body: "0"` instead — both encode to felt 0, hash matches.
+
+**Caveat**: tests cover internal consistency (Stark verify roundtrip, chain id pin, SNIP-12 message-hash, decimal output). There's NO live cross-vector against `paradex-py` (it doesn't load on 3.13 — the whole reason for the port). SNIP-12 is canonical so signatures *should* be accepted, but **the first real order on Paradex testnet is the truth check**. Keep `paradex` out of `GO_TRADE_VENUES` until that's been done.
+
+Go: [go-fetcher/internal/trade/paradex/paradex.go](go-fetcher/internal/trade/paradex/paradex.go).
+
+### Lighter — read-only in Go
+
+Lighter signs orders with a per-account ZK key. Python uses CGO-bundled `lighter-sdk` shipped per-platform; there's no Go-native equivalent. Reads work in Go (unsigned `/api/v1/account`); trade actions return:
+
+```go
+var errZK = &trade.Error{
+    Kind: trade.KindUser,
+    Message: "lighter trade actions require ZK signing (lighter-sdk CGO) — not yet ported to Go; route this venue through the Python adapter (remove from GO_TRADE_VENUES).",
+}
+```
+
+Credentials map: `APIKey` = numeric `account_index`, `APISecret` = hex private key, `Passphrase` = `api_key_index` (default `"255"`).
+
+### Internal HTTP contract (go-fetcher:8090)
+
+| Method | Path | Body |
+|---|---|---|
+| POST | `/internal/trade/open` | `{exchange, creds, request: OpenRequest}` → `Result` |
+| POST | `/internal/trade/close` | `{exchange, creds, request: CloseRequest}` → `Result` |
+| POST | `/internal/trade/leverage` | `{exchange, creds, request: LeverageRequest}` → 204 |
+| POST | `/internal/trade/positions` | `{exchange, creds, symbol?}` → `[]Position` |
+| POST | `/internal/trade/balance` | `{exchange, creds}` → `Balance` |
+| GET | `/internal/trade/health` | — | `{supported: ["binance", ...]}` |
+
+Auth header: `X-Internal-Auth: <AVALANT_INTERNAL_SECRET>` (read once at register time — secret rotation requires container restart).
+
+### Trade signing helpers (Go)
+
+`go-fetcher/internal/trade/signing.go` exports:
+- `HMACHexSHA256(secret, payload)` — Binance/Bybit/MEXC/BingX/Aster/HTX/WhiteBIT
+- `HMACBase64SHA256(secret, payload)` — OKX/KuCoin
+- `HMACBase64SHA512(secret, payload)` — Kraken/Gate/Bitget
+- `HMACWith(hashFunc, secret, payload)` — escape hatch
+- `SortedFormQuery(map[string]string)` — deterministic urlencode
+
+For exotic flavours, wrap in venue-local `_sign` helpers — don't reach into the shared package.
+
+### Test counts (Go)
+
+`binance:12 / bybit:7 / okx:9 / kucoin:6 / gate:7 / mexc:6 / bitget:5 / bingx:4 / htx:4 / whitebit:2 / kraken:3 / backpack:4 / aster:4 / ethereal:3 / hyperliquid:7 / lighter:3 / paradex:9` — total **100 tests** across 17 venues. Every venue has a `TestRegisteredViaInit` that confirms the adapter shows up via blank-import registration.
+
+### Trade dispatcher (Python)
+
+`backend/services/trade_service.py` — unified entry point. Enforces `plan.trade_delay_ms` on BOTH `place_open_order` AND `close_position` (Free plan: 500ms). Per-venue trade gate via `admin_settings.get_trade_disabled_exchanges()` blocks new positions on selected venues without disabling screener/funding/portfolio.
+
+Order types: market only. Limit/stop/TP listed in `TODO.md`.
+
+### Pair detection (spot-short)
+
+`list_user_spot_short_pairs()` in `trade_service.py` cross-references open SHORT futures positions with non-stable spot holdings from `BalanceSnapshot.totals`. Auto-pairs when notional matches within ±12% (was 5%, bumped due to mirror-pair UX feedback) AND (if the spot snapshot is fresh) the spot was last refreshed within ±10 min of the short open. Manual paired/unpaired decisions persist in `TradePairDecision` with `leg_a_key` prefix `spot|`.
+
+Endpoint: `GET /api/trade/spot-short-pairs`. Frontend `arb.html` uses `_accFetchSpotShortPairs()` + `_spotShortToPair()` to render spot positions in the per-pair panel.
+
+### Funding-paid tracking
+
+`funding_pnl_usd` populated on live positions for: binance, bybit, okx, aster, gate, kucoin, mexc, bitget, bingx, hyperliquid, kraken, lighter, htx. `reconcile_service` mirrors the field into `leg_a_funding_pnl_usd` so closed-pair P&L correctly nets out funding cost.
 
 ---
 
@@ -114,7 +347,7 @@ No client-controlled path grants a plan upgrade.
 **Admin grant invariant** — `users.is_admin = TRUE` can only happen via:
 1. Manual SQL on the host (`UPDATE users SET is_admin=TRUE WHERE …`)
 
-The legacy `INITIAL_ADMIN_USERNAME` and `AVALANT_ALLOW_FIRST_USER_ADMIN` env-var paths were removed (2026-05-02). The TG-widget login also never grants admin. There is no API surface — registering, logging in, linking TG, no combination of those produces an admin.
+The legacy `INITIAL_ADMIN_USERNAME` and `AVALANT_ALLOW_FIRST_USER_ADMIN` env-var paths were removed (2026-05-02). The TG-widget login also never grants admin. There is no API surface — registering, logging in, linking TG, no combination produces admin.
 
 **Auto-archive on downgrade**: `wallet_quota.enforce_for_user(db, user)` is called from `set_plan` and from `/api/auth/me`. Surplus portfolio wallets archive oldest-first; `purpose='both'` rows downgrade to `'screener'`.
 
@@ -124,7 +357,8 @@ The legacy `INITIAL_ADMIN_USERNAME` and `AVALANT_ALLOW_FIRST_USER_ADMIN` env-var
 
 - **Auto-renew flag** (`users.auto_renew`, default True). Cancel sets it False — plan stays active until `plan_expires_at`, but expiry reminders stop firing.
 - **Cancel/resume**: `POST /api/auth/me/subscription/cancel` and `/resume`. Profile page shows the right state (Active / Cancelled) + Renew + Cancel/Resume buttons.
-- **Expiry-reminder daemon**: `backend/services/expiry_notifier_service.py` runs every 30 min on the fetcher container. Scans users with `auto_renew=True` + `plan_expires_at` within `expiry_notice_days` (default 3, range 0–60) + `tg_chat_id` set. Sends via auth bot. Per-user throttle via `users.expiry_notice_last_sent_at` so daemon restarts don't double-fire. Schedule is admin-tunable from `/admin → Communications`.
+- **Expiry-reminder daemon**: `backend/services/expiry_notifier_service.py` runs every 30 min on the web role. Scans users with `auto_renew=True` + `plan_expires_at` within `expiry_notice_days` (default 3, range 0–60) + `tg_chat_id` set. Sends via auth bot. Per-user throttle via `users.expiry_notice_last_sent_at` so daemon restarts don't double-fire. Schedule is admin-tunable from `/admin → Communications`.
+- **Plan expiry daemon**: `backend/services/plan_expiry_service.py` runs every 10 min. Downgrades expired-plan users back to Free.
 - **Renew flow**: button on /profile → `/pricing?renew=<plan-slug>`.
 
 ---
@@ -160,6 +394,7 @@ Display tz settable via `/admin → Maintenance`.
 - `scope` claim on TOTP-challenge tokens — rejected by `get_current_user` so a leaked challenge can't masquerade as a session
 - HttpOnly + Secure session cookie (override `AVALANT_COOKIE_SECURE=0` for localhost dev only)
 - 30-day rolling cookie + JWT lifetime
+- Per-account login lockout: `login_throttle.py` counts failed attempts on `users.failed_login_attempts`, auto-locks at threshold
 
 ### Admin
 - **Promotion is SQL-only**: there is exactly one path — direct UPDATE on the host. `INITIAL_ADMIN_USERNAME` and `AVALANT_ALLOW_FIRST_USER_ADMIN` are no longer honoured. TG-widget login never grants admin.
@@ -167,26 +402,32 @@ Display tz settable via `/admin → Maintenance`.
 - **Honeypot autoban** (`backend/services/honeypot_service.py`): a logged-in non-admin who hits `/api/admin/*`, `/admin`, or `/admin-user` is auto-blocked, audit-logged (`security.admin_probe_block`), and admins get a TG ping. Anonymous probes get plain 401 — too noisy to ban automatically.
 
 ### Rate limit
-- Redis-backed sliding-window via `INCR + EXPIRE` (`backend/services/rate_limit.py`). Falls back to in-memory on Redis blip with 10s backoff.
-- Buckets: `payments_checkout` (5/min), `promo_validate` (10/min), `wallets_create` (30/h), `admin_write` (60/min).
-- IP key uses `X-Forwarded-For`; rate-limit endpoint in `auth.py` applies its own per-IP attempt counter on `/auth/*` (10/60s).
+- **Backend bucket** (`backend/services/rate_limit.py`): Redis-backed sliding-window via `INCR + EXPIRE`. Falls back to in-memory on Redis blip with 10s backoff.
+  - `payments_checkout` (5/min), `promo_validate` (10/min), `wallets_create` (30/h), `admin_write` (60/min)
+- **Per-IP attempt counter** in `auth.py` on `/auth/*` (10/60s)
+- **nginx zone limits** (in addition to backend):
+  - `auth` zone — 5 r/m + burst 10 on `/api/auth/*`
+  - `hot` zone — 20 r/m + burst 5 on `/api/portfolio/balance`
+  - `api` zone — 60 r/s + burst 40 on `/api/*` (generic fallback)
+  - `ws` zone — `limit_conn 10` per IP for WebSockets
 
 ### Encryption
 - Fernet on `wallets.credentials` (PBKDF2-SHA256 from `ENCRYPTION_KEY`, 260k iterations, hardcoded salt `b"wallet-monitor-creds-v1"`)
 - Same on `users.totp_secret_enc`
 - Cached Fernet instance — derive once per process
-- **Rotation**: `scripts/rotate_encryption_key.py` re-encrypts every wallet credential + every TOTP secret with a new key. Reads OLD/NEW from env; partial-rotation safe (each row tries OLD then NEW).
+- **Rotation**: `scripts/rotate_encryption_key.py` re-encrypts every wallet credential + every TOTP secret. Reads `AVALANT_OLD_ENCRYPTION_KEY`/`AVALANT_NEW_ENCRYPTION_KEY` from env; partial-rotation safe (each row tries OLD then NEW).
 
 ### Headers
 - `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 1; mode=block`
 - `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(), camera=(), microphone=()`
-- **CSP**: `default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; ...; frame-ancestors 'none'; upgrade-insecure-requests`. Skipped on `/api/*`.
+- **CSP**: `default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; ...; frame-ancestors 'none'; upgrade-insecure-requests`. Skipped on `/api/*`. `unpkg.com` in script-src is for `lightweight-charts` on `/arb`.
 - HSTS 1-year via nginx
 - OpenAPI hidden (`docs_url=None, redoc_url=None, openapi_url=None`)
 
 ### WebSocket auth
 - First-frame `{"auth": "<JWT>"}` after `accept()`. URL no longer carries the token (used to leak into nginx access logs).
 - 5s timeout → `close(4401)`. Applied to `/ws/funding`, `/ws/long-short`, `/ws/arb` (legacy alias), `/ws/book`.
+- nginx routes `/api/screener/ws/(long-short|arb|funding|book)` to `go-fetcher:8090` directly. Other WS paths (legacy) hit `app:8000`.
 
 ### CryptoCloud webhook
 - Strict signature validation (`payment_service.verify_webhook_signature`). If `CRYPTOCLOUD_WEBHOOK_SECRET` is unset, the route returns 503 + critical-level log (refuses, never fail-open).
@@ -207,7 +448,7 @@ Intentionally NOT added — every `/api/*` uses `Authorization: Bearer` + JSON b
 Either token alone runs everything (single-bot fallback). Auth-bot helpers `_auth_bot_token()` / `_auth_bot_username()` in `tg_auth_service.py` always prefer the auth bot when configured.
 
 ### Leader election (`backend/services/tg_bot_service.py`)
-Two web replicas + fetcher all import `start_tg_bot()`, but only ONE process polls each bot at a time. Redis SETNX with TTL 30s + compare-and-set Lua renew every 10s (`tg_bot_lock:<sha256(token)[:16]>`). If the leader crashes, the next replica picks up within 30s.
+Both web replicas import `start_tg_bot()`, but only ONE process polls each bot at a time. Redis SETNX with TTL 30s + compare-and-set Lua renew every 10s (`tg_bot_lock:<sha256(token)[:16]>`). If the leader crashes, the next replica picks up within 30s.
 
 Without `REDIS_URL`, falls back to single-replica polling — same race as before but no cross-replica coordination.
 
@@ -228,9 +469,9 @@ TG usernames can change but `tg_id` + `tg_chat_id` are stable. Every `/start` re
 
 ### Delisted-symbol filter (Binance specifically)
 Binance keeps delisted symbols in `/api/v3/ticker/24hr` (`status=BREAK`) and `/fapi/v1/premiumIndex` (`status=SETTLING`) for days. We cross-check against `/exchangeInfo`'s `status=='TRADING'` set, cached 10 min. Applies to:
-- `spot_arbitrage_service._fetch_binance_spot` (filter via `isSpotTradingAllowed`)
-- `arbitrage_service._fetch_binance` (filter via `contractType=PERPETUAL`)
-- `funding_ws.adapters.BinanceFundingWS` — both the WS push and REST backstop. Aster inherits via subclass.
+- `spot_arbitrage_service._fetch_binance_spot` (via `isSpotTradingAllowed`)
+- `arbitrage_service._fetch_binance` (via `contractType=PERPETUAL`)
+- Go's `internal/funding/binance` adapter — both WS push and REST backstop. Aster inherits via subclass.
 
 NTRN is the canary — if it appears in the feed, the filter is broken.
 
@@ -255,6 +496,20 @@ Each promo can grant a price discount AND/OR bonus subscription days, scoped per
 
 **Activation**: `_activate_user` reads the promo's `bonus_days` and adds to `activated_until` after the regular billing-period window. Logged at INFO.
 
+**Default per-user cap**: All promos default `per_user_max_uses=1` (was bonus-only; broadened in commit `14295af` so a single user can't restack a discount code).
+
+---
+
+## Referrals (Avashare)
+
+`/avashare` page + `referral_service.py` + `referral_payout_request` + `referral_earnings` tables.
+
+- **Code**: each user gets a `referral_code` (random 6-char), `referred_by_id` (FK → users) populated on register if `?ref=` in URL.
+- **Commission**: default % from `app_settings`, per-user override via `users.referral_pct_override`, partner-aware logic in `referral_service`.
+- **Payout**: USDT-TRC20. `POST /referrals/me/payout` creates a `referral_payout_request{status: 'pending'}`. Admin reviews + flips to `'paid'` or `'rejected'` via `/admin → Communications → Referrals`. Payout floor is admin-configurable (`min_referral_payout_usd` setting).
+- **Reversal**: `referral_earnings` has `reversed_at`, `reversal_reason`, `reversal_of_id` (self-FK). When a payment is refunded (admin-triggered), the earning is reversed atomically. See commit `eabb314`.
+- **CHECK constraint** on `referral_payout_requests.status` — only `pending`/`paid`/`rejected` accepted.
+
 ---
 
 ## Popups
@@ -276,303 +531,437 @@ Popup styling: backdrop with green radial glow, ID-pill in header, footer with "
 
 ## Database
 
-Production: PostgreSQL 16 via PgBouncer (session mode, pool 60). Local: SQLite. Migrations run automatically on `app` startup via `alembic upgrade head`.
+Production: PostgreSQL 16 via PgBouncer (session mode, pool 60). Local: SQLite. Migrations run automatically on `app` startup via `alembic upgrade head` (gated by `AVALANT_RUN_MIGRATIONS=true`; `app2` skips with `=false`).
 
-### Tables
-- **users** — id, username, email, hashed_password, is_admin, is_blocked, plan (legacy), plan_id (FK), plan_expires_at, request_count, last_active_at, created_at, email_verified_at, tg_username, tg_chat_id, tg_id, totp_secret_enc, totp_verified_at, **auto_renew**, **expiry_notice_last_sent_at**
+### Tables (behavior-critical fields)
+- **users** — id, username, email, hashed_password, is_admin, is_blocked, plan (legacy), plan_id (FK), plan_expires_at, request_count, last_active_at, created_at, email_verified_at, tg_username, tg_chat_id, tg_id, totp_secret_enc, totp_verified_at, **auto_renew**, **expiry_notice_last_sent_at**, **failed_login_attempts**, **referral_code**, **referred_by_id**, **referral_pct_override**, **referral_payout_address**
 - **wallets** — id, name, wallet_type, type_value, credentials (JSON, Fernet), is_archived, can_trade (legacy), purpose ('portfolio' | 'screener' | 'both'), is_main, user_id
+- **wallet_addresses** — named addresses for the address book
 - **tags** — id, name, color, user_id (NULL = system tag)
 - **wallet_tags** — M2M, CASCADE
-- **wallet_addresses** — named addresses for the address book
 - **balance_snapshots** — one per wallet, totals JSON, stable_total Float
+- **balance_history** — per-user aggregate USD over time + per-asset totals JSON
 - **provider_error_logs** — error_type bucket (rate_limit / auth / network / unknown)
-- **balance_history** — per-user aggregate USD over time
-- **arb_alerts** — user-defined spread thresholds, 1h cooldown via `last_triggered_at`
+- **arb_alerts** — user-defined spread thresholds, cooldown via `last_triggered_at`
 - **plans** — slug, name, price_usd_monthly/annual, portfolio_limit, portfolio_limit_grace, exchange_keys_per_venue, trade_delay_ms, has_portfolio, is_subscription, is_admin_only, features JSON, is_free, is_active, sort_order
 - **billing_periods** — slug, label, months, discount_pct, sort_order, is_active
 - **promo_codes** — code, discount_pct, **bonus_days**, max_uses, used_count, **per_user_max_uses**, **target_user_id**, applies_to_plan_ids, is_active, expires_at
-- **promo_code_usages** — ledger: promo_code_id × user_id × payment_id × discount_pct (used by per-user cap check + revenue stats)
-- **payments** — CryptoCloud invoice lifecycle (pending → paid / failed / expired)
-- **popups** — title, body, button_text/url, **target_type** (`everyone / authenticated / anonymous / user`), target_user_id, frequency_type (`once` / `every_n_min`), frequency_minutes, is_active
+- **promo_code_usages** — ledger: promo_code_id × user_id × payment_id × discount_pct
+- **payments** — CryptoCloud invoice lifecycle (pending → paid / failed / expired / refunded), `final_amount_usd` is the cart total (NOT `amount_usd` which doesn't exist — referral commission uses final_amount_usd, fixed in earlier commits)
+- **popups** — title, body, button_text/url, **target_type**, target_user_id, frequency_type, frequency_minutes, is_active
 - **popup_dismissals** — per-user dismissal log (anon dismissals are localStorage)
-- **app_settings** — key/value JSON for runtime knobs (maintenance, hidden symbols, etc.)
+- **app_settings** — key/value JSON for runtime knobs
 - **audit_log** — append-only ledger; admin / billing / security actions
 - **tg_link_tokens** — sha256 of single-use deep-link tokens (15min TTL)
 - **password_reset_tokens**, **email_verify_tokens** — sha256, 1h TTL
+- **trade_orders** — every order placement: user_id, wallet_id, position_id, exchange, symbol, side, intent (open|close), status, exchange_order_id, filled_qty, avg_fill_price, fee_usd, error_kind (exchange|internal|user), raw_response JSON
+- **trade_positions** — kind (single|pair), pair_kind (long_short|spot_short), leg_a_*, leg_b_*, realized_pnl_usd, entry/exit_spread_pct, opened/closed_externally
+- **trade_pair_decisions** — manual paired/unpaired decisions; `leg_a_key` prefix `spot|` for spot legs
+- **referral_earnings** — referrer_id, referee_id, payment_id, pct, amount_usd, payout_request_id, **reversed_at**, **reversal_reason**, **reversal_of_id**
+- **referral_payout_requests** — user_id, amount_usd, address, status (pending|paid|rejected), note, created_at, resolved_at
+- **paper_positions, opportunity_snapshots, exchange_health, anomaly_events, watchlist_items** — Alpha / paper-trading / analytics
 
-Recent migrations:
-- `a4b5c6d7e8f9` — users.auto_renew + expiry_notice_last_sent_at
-- `b5c6d7e8f9a0` — promo per_user_max_uses + target_user_id
-- `z3a4b5c6d7e8` — promo bonus_days
-- `y2z3a4b5c6d7` — popup target_type expansion (`all` → `authenticated`)
-- `x1y2z3a4b5c6` — admin TOTP 2FA columns
-- `w0x1y2z3a4b5` — Unlim plan + delete test users (cascade)
-
----
-
-## Architecture: hot path
-
-### Funding feed (≤2.6s freshness across 11 venues)
-Each venue runs **two concurrent loops**:
-1. **WS task** on the asyncio event loop (`_run`) — primary sub-second updates
-2. **REST backstop** in a **pure daemon thread** (`rest_refresh_sync`) — every 2s, merges into `self._rows` directly. Pure thread because `loop.run_in_executor` was blocking 5-6s under the full fetcher load.
-
-Dict key-assignment is GIL-atomic, so cross-thread writes work without locks.
-
-REST backstops covering known WS gaps:
-- Bybit (volume on partial updates)
-- OKX (price/volume — WS only has rate)
-- Gate, Bitget — full ticker + rate
-- KuCoin (volume + rate — WS lies)
-- MEXC (rate — WS doesn't supply it)
-- BingX (caps WS at ~100 symbols, REST fills all 600)
-
-Per-symbol max age across 10 exchanges: 0.04–2.62s.
-
-### Spot-arb (separate from futures)
-- Dedicated httpx client. **Never share the pool with arb `_http`** — the 8-spot gather starves under load.
-- `_spot_refresh_loop` runs every 2s on fetcher, file-locks `/tmp/avalant_spot_refresh.lock` (flock auto-releases on process death; no orphan-recovery needed).
-- Web role reads `spot_arbitrage.json` with 120s max-age. Never computes.
-- Ticker-collision filter: `|basis_pct| > 5%` rows dropped (e.g. MEXC "META" ≠ KuCoin "META").
-
-### Arb compute (300ms cycle)
-- `AVALANT_REFRESH_INTERVAL=0.3` (300ms compute), `AVALANT_BROADCAST_INTERVAL=0.2` (WS push every 200ms)
-- Two-tier cache: `_cache` (6s, price/rate), `_ivl_cache` (5min, intervals)
-- MEXC/Bitget interval fetch is slow (~40s); they're in `_SLOW_IVL` and never block user requests — fall back to 4h default while bg refresh runs
-
-### Orderbook
-- Multiprocess workers (`AVALANT_FETCHER_MODE=multiprocess`) — one process per exchange, dumps `books.<ex>.json`
-- Web reads `books.json` (merged), polls per pair from `_arb_http` (HTTP/1.1 keepalive, 200 conns, 60 keepalive)
-- 150ms per-side refresh on `/arb` page
-
-### WS broadcast
-- `/ws/funding` (full snapshot, ~300KB gzip)
-- `/ws/long-short` (delta-encoded, ~3-10KB per tick) — canonical
-- `/ws/arb` (legacy alias)
-- `/ws/book` (orderbook diffs, server-side filtering by subscribed pairs)
-
-All four use first-frame auth (no `?token=` in URL).
+### Recent migrations (newest → oldest)
+| Revision | Topic |
+|---|---|
+| `z3a4b5c6d7e8` | promo_codes.bonus_days |
+| `y2z3a4b5c6d7` | popup target_type expansion (`all` → `authenticated`/`anonymous`/`everyone`) |
+| `x1y2z3a4b5c6` | admin TOTP 2FA columns (`totp_secret_enc`, `totp_verified_at`) |
+| `w9x0y1z2a3b4` | audit_log table |
+| `w0x1y2z3a4b5` | Unlim plan + delete test users (cascade) |
+| `v8w9x0y1z2a3` | pricing rebase: Screener $45, Full $55 |
+| `u7v8w9x0y1z2` | billing_periods discount tuning |
+| `t6u7v8w9x0y1` | full plan must have has_portfolio=True |
+| `s5t6u7v8w9x0` | billing_periods table |
+| `r4s5t6u7v8w9` | rename max → platinum + pricing |
+| `q3r4s5t6u7v8` | plans + payments + promo_codes + popups + Wallet.is_main |
+| `pr1a2b3c4d5e` | password_reset_tokens |
+| `p2q3r4s5t6u7` | balance_history.totals (per-asset JSON) |
+| `o1p2q3r4s5t6` | app_settings table |
+| `n0o1p2q3r4s5` | watchlist_items.initial_spread_pct |
+| `m9n0o1p2q3r4` | wallet.purpose |
+| `l8m9n0o1p2q3` | users.tg_id + tg_link_tokens |
+| `k7l8m9n0o1p2` | wallet.can_trade |
+| `j6k7l8m9n0o1` | users.tg_chat_id |
+| `i5j6k7l8m9n0` | screener Alpha tables |
+| `h4i5j6k7l8m9` | users.tg_username + arb_alerts |
+| `g3h4i5j6k7l8` | users.plan_id + plan_expires_at |
+| `g0a1b2c3d4e5` | payments.refunded_*, referral_earnings.reversed_* |
+| `f9a0b1c2d3e4` | referral_payout_requests v2 |
+| `f2a3b4c5d6e7` | balance_history table |
+| `e8f9a0b1c2d3` | users referral fields + referral_earnings + referral_payout_requests |
+| `ev1a2b3c4d5f` | email_verify_tokens |
+| `e5f6a7b8c9d0` | balance_snapshots |
+| `e1f2a3b4c5d6` | provider_error_logs |
+| `d7e8f9a0b1c2` | trade_orders + trade_positions + trade_pair_decisions |
+| `d0e1f2a3b4c5` | users.last_active_at |
+| `c6d7e8f9a0b1` | users.failed_login_attempts |
+| `c3d4e5f6a7b8` | users.is_blocked + request_count |
+| `b5c6d7e8f9a0` | promo_codes.per_user_max_uses + target_user_id |
+| `a4b5c6d7e8f9` | users.auto_renew + expiry_notice_last_sent_at |
+| `a2b3c4d5e6f7` | tags.user_id |
+| `a1b2c3d4e5f6` | wallets.is_archived |
+| `014613d42a04` | initial schema |
 
 ---
 
-## API
+## API surface
 
+### Auth (`/api/auth`)
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| `GET /api/health` | — | — | uptime probe |
-| `GET /api/maintenance/status` | — | — | public; lockout pages poll this every 15s |
-| `GET /api/metrics` | — | — | Prometheus text format |
-| `GET /api/health/feeds`, `/api/health/fetcher` | — | — | per-feed staleness JSON |
-| `POST /api/auth/register/login/logout` | — | bcrypt + JWT |
-| `GET /api/auth/me` | Bearer | enriches with `auto_renew`, `totp_enabled`, plan info; runs `wallet_quota.enforce_for_user` |
-| `POST /api/auth/me/subscription/cancel` | Bearer | sets `auto_renew=False` |
-| `POST /api/auth/me/subscription/resume` | Bearer | sets `auto_renew=True` |
-| `POST /api/auth/login/totp` | — | second-factor for admins |
-| `POST /api/auth/me/2fa/setup`, `/verify`, `/disable` | Bearer | admin-only TOTP CRUD |
-| `POST /api/auth/tg-login`, `/tg-bot-login` | — | TG widget + bot login |
-| `GET /api/auth/tg-bot-login?token=` | — | poll endpoint for the bot login |
-| `POST /api/auth/me/tg-link-token` | Bearer | issue deep-link |
-| `GET /api/admin/*` | Admin | 36 endpoints, all gated by `Depends(get_admin_user)` (which trips the honeypot on non-admins) |
-| `POST /api/admin/maintenance` | Admin | `{scope, enabled, duration_minutes, tz?}` |
-| `POST /api/admin/broadcast` | Admin | `{text, target, target_user_id?, parse_mode}` |
-| `GET /api/screener/funding/long-short/spot-short/dex-short/all-arbitrage` | Bearer | canonical feeds |
-| `GET /api/screener/orderbook/arb-price-history/arb-history/all-exchanges-funding/open-interest` | Bearer | per-pair detail |
-| `GET /api/screener/arbitrage`, `/spot-arbitrage`, `/dex-arbitrage` | Bearer | legacy aliases |
-| `WS /api/screener/ws/funding/long-short/arb/book` | first-frame `{auth}` | live feeds |
-| `GET/POST /api/wallets`, `/api/wallets/options`, `/api/wallets/all-addresses`, `/api/wallets/{id}/addresses` | Bearer | wallet CRUD + address book |
-| `POST /api/portfolio/balance/transactions/transactions/bulk`, `GET /api/portfolio/history` | Bearer | balance fetcher |
-| `GET/POST/PATCH/DELETE /api/alerts` | Bearer | spread alerts |
-| `POST /api/promo/validate` | Bearer | dry-run promo against plan + period |
-| `POST /api/payments/checkout` | Bearer | CryptoCloud invoice |
-| `POST /api/payments/cryptocloud/webhook` | sig-verified | strict — refuses if secret unset |
-| `GET /api/popups/pending`, `POST /api/popups/{id}/dismiss` | optional Bearer | popup loader (auth + anon) |
-| `GET /api/plans`, `/api/billing-periods` | — | public catalogue |
-| `GET/POST/PATCH/DELETE /api/trade/*` | Bearer | open/close positions, list orders |
+| POST | `/auth/register` | — | Public (rate-limited per IP) |
+| POST | `/auth/login` | — | Per-account lockout via `login_throttle` |
+| POST | `/auth/login/totp` | — | Second-factor for admins |
+| POST | `/auth/me/2fa/setup` `/verify` `/disable` | Admin | TOTP CRUD |
+| POST | `/auth/logout` | Bearer | Revokes JWT |
+| GET | `/auth/me` | Bearer | Profile + plan info; runs `wallet_quota.enforce_for_user` |
+| GET | `/auth/tg-bot-username` | — | Returns `TG_BOT_USERNAME` |
+| POST | `/auth/tg-login` | — | TG widget auth (HMAC) |
+| POST | `/auth/tg-bot-login` | — | Issue deep-link |
+| GET | `/auth/tg-bot-login?token=` | — | Bot-login poll (used by `/tg-done.html`) |
+| POST | `/auth/password-reset/request` `/confirm` | — | sha256 token, 1h TTL |
+| POST | `/auth/email-verify/request` `/confirm` | Bearer / — | sha256 token, 1h TTL |
+| POST | `/auth/me/tg-link-token` | Bearer | Issue TG link |
+| DELETE | `/auth/me/tg-link` | Bearer | Unlink TG |
+| POST | `/auth/me/subscription/cancel` `/resume` | Bearer | Toggle `auto_renew` |
+| DELETE | `/auth/me` | Bearer | Account deletion (password + optional TOTP) |
+
+### Wallets (`/api/wallets`)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/wallets` | List active wallets |
+| GET | `/wallets/options` | Dropdown metadata (exchanges, chains, perpdexes) |
+| GET | `/wallets/all-addresses` | All addresses across wallets — **declared BEFORE `/{wallet_id}` in routes** |
+| POST | `/wallets` | Create wallet |
+| GET | `/wallets/archived` | Archived |
+| POST | `/wallets/{id}/archive` `/unarchive` | Soft delete + restore |
+| PATCH | `/wallets/{id}` | Update name/credentials |
+| POST | `/wallets/{id}/main` | Mark as main key (one per user+venue) |
+| DELETE | `/wallets/{id}` | Hard delete |
+| POST/DELETE | `/wallets/{id}/tags/{tag_id}` | Attach/detach tag |
+| GET/POST/DELETE | `/wallets/{id}/addresses[/{address_id}]` | Address book per wallet |
+
+### Portfolio (`/api/portfolio`)
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/portfolio/balance` | Fetch balances; counts toward `request_count` |
+| POST | `/portfolio/balance/stream` | SSE streaming variant |
+| POST | `/portfolio/transactions` | Per-wallet history |
+| POST | `/portfolio/transactions/bulk` | Bulk |
+| GET | `/portfolio/history` | Aggregate USD chart |
+| GET | `/portfolio/export` | CSV/JSON |
+
+### Screener (`/api/screener`) — REST
+| Path | Notes |
+|---|---|
+| `/screener/funding` | All funding rates (cached 30s, 120/min/IP) |
+| `/screener/long-short` | Futures L/S arb (canonical) |
+| `/screener/arbitrage` | Legacy alias |
+| `/screener/spot-short` | Spot/perp basis (canonical) |
+| `/screener/spot-arbitrage` | Legacy alias |
+| `/screener/dex-short` | DEX/perp basis (canonical) |
+| `/screener/dex-arbitrage` | Legacy alias |
+| `/screener/all-arbitrage` | Combined feed |
+| `/screener/exchange-health` | Per-venue freshness + status dots |
+| `/screener/availability` | Enabled venues + symbols pre-flight |
+| `/screener/pair?symbol=&long_ex=&short_ex=` | Single pair |
+| `/screener/orderbook?...` | Per-pair OB (Go-fetcher reads via Redis or file) |
+| `/screener/orderbooks` | Bulk OB |
+| `/screener/orderbook-spot` | Deprecated; spot now flows through unified path |
+| `/screener/in-out` | In/out basis (now baked into WS, this endpoint is legacy) |
+| `/screener/arb-price-history` | 1h candles |
+| `/screener/all-exchanges-funding` | Funding + history |
+| `/screener/open-interest` | OI per symbol |
+| `/screener/arb-history` | Correlation analysis |
+
+### Screener — WebSocket (all routed via nginx to `go-fetcher:8090`)
+- `WS /api/screener/ws/funding` — funding diffs (clients have largely moved to 3s REST poll; WS endpoint still works)
+- `WS /api/screener/ws/long-short` — futures arb diffs (canonical)
+- `WS /api/screener/ws/arb` — legacy alias
+- `WS /api/screener/ws/book` — orderbook diffs, subscribe/unsubscribe protocol
+
+### Trade (`/api/trade`)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/trade/status` | Trading account status |
+| GET | `/trade/positions` | Open + closed |
+| GET | `/trade/balances` | Across trading wallets |
+| GET | `/trade/orders` | Order history |
+| GET | `/trade/pnl` | P&L summary |
+| GET | `/trade/spot-short-pairs` | Auto-detected spot↔short pairs |
+| POST | `/trade/pair/spot-short/sync` `/unsync` | Manual spot-short pairing |
+| GET | `/trade/pair/decisions` | Persisted decisions |
+| POST | `/trade/pair/sync` `/unsync` | Generic pair sync |
+| GET | `/trade/supported` | Trade-capable venues |
+| GET | `/trade/leverage-limits` | Per venue/symbol |
+| POST | `/trade/open-arb` `/open` `/close` | Order execution |
+| PATCH | `/trade/wallets/{id}` | Update trading wallet |
+
+### Alerts (`/api/alerts`)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/alerts` | List |
+| POST | `/alerts` | Create |
+| PATCH | `/alerts/{id}` `/toggle` | Update / enable-disable |
+| POST | `/alerts/token` | Token-based alert |
+| DELETE | `/alerts/{id}` | Delete |
+
+### Alpha (`/api/alpha`)
+Paper trading + analytics. Endpoints under `/alpha/paper/*`, `/alpha/executable-spread`, `/alpha/health`, `/alpha/replay`, `/alpha/leaderboard`, `/alpha/correlation`, `/alpha/anomalies`, `/alpha/backtest`, `/alpha/watchlist`.
+
+### Billing (`/api/billing`)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/billing/plans` | Public |
+| POST | `/billing/payments/checkout` | CryptoCloud invoice |
+| POST | `/billing/payments/cryptocloud/webhook` | Sig-verified, refuses if secret unset |
+| GET | `/billing/payments/me` | User's payment history |
+| POST | `/billing/promo/validate` | Pre-flight validation |
+| GET | `/billing/popups/pending` | Auth-optional popup loader |
+| POST | `/billing/popups/{id}/dismiss` | Record dismissal |
+
+### Referrals (`/api/referrals`)
+- `GET /referrals/me` — Stats: balance / earned / pending
+- `POST /referrals/me/payout` — Request payout
+- `GET /admin/referrals/...` — Admin management
+
+### Admin (`/api/admin`)
+36+ endpoints under `Depends(get_admin_user)`. Notable:
+- `GET /admin/stats`, `/admin/users`, `/admin/users/{id}` — overview
+- `PATCH /admin/users/{id}/block` `/plan` `/referral-pct` — user mgmt
+- `GET/PATCH /admin/screener-config` — disabled symbols/exchanges
+- `POST /admin/maintenance` — scope toggles + ETA
+- `GET/PATCH /admin/banner` — site banner
+- `GET/PATCH /admin/portfolio-config` — portfolio settings
+- `GET /admin/funding-ws-health` `/data-plane-health` `/logs` — operational
+- Full plan/promo/popup/period CRUD
+
+### Health (`/api/health`)
+Public endpoints: `/health`, `/streams`, `/banner`, `/maintenance/status`, `/metrics` (Prometheus), `/providers`, `/feeds`, `/fetcher`.
+
+### Tags (`/api/tags`)
+Standard CRUD for user-scoped tags (NULL `user_id` = system tag).
+
+### Meta (`/api/meta`)
+- `GET /meta/venues` — public venue manifest used by `frontend/exchanges.js`
 
 ---
 
 ## Frontend pages
 
-| Page | Auth | Notes |
-|---|---|---|
-| `/` index | — | legacy landing |
-| `/landing` | — | new full-bleed landing (pre-launch lock disables product/auth links) |
-| `/login`, `/register` | — | JWT issuance, HttpOnly cookie set |
-| `/tg-done` | — | bridge page for the TG bot's "Open Avalant" button |
-| `/pricing`, `/checkout` | — | Scout/Operator/Season/Desk plan cards |
-| `/app` | auth | portfolio main — wallets, balances, transactions |
-| `/archive` | auth | archived wallets with PORTFOLIO/SCREENER/BOTH purpose badge |
-| `/profile` | auth | plan card, balance history chart, **Renew/Cancel renewal** controls, TG-link, AvaShare button |
-| `/avashare` | auth | UI-only referral page (localStorage, backend pending) |
-| `/screener` | auth | 5 modes: All / Long-Short / Spot-Short / DEX-Short / Funding / Alpha. Mobile cards rendered for every mode |
-| `/arb` | auth | per-pair terminal (charts + dual orderbooks + alerts modal) |
-| `/watchlist` | auth | WS feed with delta + alpha overlay |
-| `/admin`, `/admin-user` | admin | KPI, users, plans, promos, popups, billing periods, **Communications** (broadcast + expiry schedule), **Maintenance** (3-scope ETA) |
-| `/maintenance` | — | full-site lockout page (also rendered inline by middleware) |
-| `/404` | — | terminal-themed |
+| Page | Route | Auth | Maintenance scope |
+|---|---|---|---|
+| `index.html` | `/` | public | — |
+| `landing.html` | `/landing` | public | — |
+| `login.html` | `/login` | public | — |
+| `register.html` | `/register` | public | — |
+| `tg-done.html` | `/tg-done` | public | — |
+| `verify-email.html` | `/verify-email` | public | — |
+| `password-reset.html` `password-reset-confirm.html` | `/password-reset[-confirm]` | public | — |
+| `pricing.html` | `/pricing` | public | — (stays open during portfolio maint so users can renew) |
+| `checkout.html` | `/checkout` | auth | — |
+| `screener.html` | `/screener` | public 2-min preview, then signup | screener |
+| `arb.html` | `/arb` | public data + authed panels | screener |
+| `watchlist.html` | `/watchlist` | auth | screener |
+| `app.html` | `/app` | auth | portfolio |
+| `archive.html` | `/archive` | auth | portfolio |
+| `profile.html` | `/profile` | auth | portfolio |
+| `avashare.html` | `/avashare` | auth | portfolio |
+| `admin.html` | `/admin` | admin | — |
+| `admin-user.html` | `/admin-user` | admin | — |
+| `404.html` | (fallback) | public | — |
+| `maintenance.html` | (served on flag) | public | — |
 
-### Shared modules
-- `auth.js` — `Auth.{getToken, setSession, requireAuth, requireAdmin, isAdmin, logout, apiFetch}`. `apiFetch` prepends `/api/`.
-- `toast.js` — `toast(msg)`, `toast(msg, 'success'|'error'|'warn'|'info')`, `toast(msg, type, sub)`, `toast({title, type, sub, duration})`
-- `theme.js` — light/dark scaffold (toggle button auto-injection disabled)
-- `navbar.js` + `navbar.css` — `<app-navbar page="...">` custom element
-- `popup.js` — promotional popup loader, anon-aware
-- `confirm.js` — universal confirm modal (replaces native confirm)
-- `expiry-banner.js` — top banner when plan_expires_at is near
-- `formatters.js` — number/price/volume helpers
-- `exchanges.js` — single source of truth for `EX.labels`, `EX.colors`, `EX.dot()`, `EX.chip()`
+`serve_page()` in `app.py` enforces redirects: `_AUTH_PAGES = {"app", "profile", "archive", "watchlist", "avashare"}` redirects to `/login?next=` on missing session; `_ADMIN_PAGES = {"admin", "admin-user"}` additionally check `is_admin` and trip the honeypot on non-admins.
 
-### Design language
-```
---bg:       #0E0E11   --green:   #1AFFAB
---surface:  #131217   --red:     #F87171
---surface2: #17171C   --yellow:  #E5C07B
---surface3: #202028   --teal:    #06B6D4
---border:   #22222A   --purple:  #925BD6
---text:     #E6E8E3
---text2:    #9B9FAB
---text3:    #676B7E
-```
+### Shared JS modules
+- **auth.js** — `Auth.{getToken, getUser, setSession, clearSession, isLoggedIn, isAdmin, requireAuth, requireAdmin, redirectIfAuthed, logout, apiFetch}`. `apiFetch` adds Bearer header + auto-redirects 401 → `/login`.
+- **toast.js** — `toast(title, type?, sub?)` or `toast({title, sub, type, duration})`. Top-right, 3-4s.
+- **theme.js** — applies saved theme ASAP before DOMContentLoaded; toggle button intentionally disabled.
+- **navbar.js + navbar.css** — `<app-navbar page="…">` Web Component. Variants per page.
+- **popup.js** — `AvalantPopup.reload()`. Polls `/api/popups/pending`, anon-aware (`localStorage.avalant_popup_anon_dismissed`).
+- **confirm.js** — `Confirm.ask({…})` / `Confirm.tell({…})`. Modal replacement for `confirm()/alert()`.
+- **expiry-banner.js** — sticky banner on auth pages; pings `/api/auth/me`; dismissible 24h via `localStorage.expiry_banner_dismissed_until`.
+- **formatters.js** — `FMT.{price, volume, apr, rate, pct, countdown, sign, esc}`. Incrementally adopted.
+- **exchanges.js** — `EX.{labels, colors, dot(ex), chip(ex, opts), lists, counts, ready, loadVenues}`. Backfills from `/api/meta/venues`. Single source of truth for exchange palette.
+- **anon-gate.js** — screener-only 2-min free preview gate. Timer in `localStorage.anon_first_seen_at`; hard lock after 120s.
+- **banner.js** — site-wide announcement bar, polls `/api/banner` every 60s. Static or marquee modes.
 
-Light theme exists in `body.light` with `#006B3C` green + `#8B0000` red (deeper for white-bg readability). Toggle button intentionally disabled.
+### Screener modes
+| Tab | Backend | WS | Notes |
+|---|---|---|---|
+| Long/Short (`arb`) | `/screener/long-short` | `/ws/long-short` | Perp/perp arb |
+| Spot/Short (`spot`) | `/screener/spot-short` | (via `/ws/long-short` mux today, may split) | Spot-perp basis |
+| DEX/Short (`dex`) | `/screener/dex-short` | (via `/ws/long-short` mux) | DEX-perp basis |
+| Funding | `/screener/funding` | none — REST poll every ~3s | Pure funding scan; perf decision after `a4ce086` |
+| Alpha | `/screener/watchlist` | `/ws/watchlist` | User's saved pairs |
+| All | combined | all of above | Union view |
 
-Fonts: Inter (UI), JetBrains Mono (numbers/prices/addresses).
+In/Out columns are now baked into the arb output (commit `5d21070`); per-tick re-render dropped (commit `88f1450`).
 
----
+### Arb pair page panels
+1. Navbar (`<app-navbar page="arb">`)
+2. Infobar (hero symbol + exchanges + swap button + pair search popover)
+3. Two exchange cards (LONG green, SHORT red): funding rate, interval, next settlement, volume, OI
+4. Dual orderbooks (collapsible on mobile)
+5. Account block (Positions / Balances / Orders tabs; auth-locked overlay for anon)
+6. Trade card (size slider, leverage, P&L calc, executor)
+7. Info panel (Greeks, delta input)
+8. Share card (snapshot canvas)
+9. Alerts modal
+10. Sync pairs button + Keys popover
 
-## Trade adapters
+Spot positions auto-render in the per-pair panel for spot/perp arbs (commit `ac655b5`).
 
-Currently shipping `place_order` + `close_position` + `set_leverage` for: **binance, bybit, okx, gate, kucoin, mexc, bitget, bingx, hyperliquid, aster, ethereal, backpack, lighter, kraken, htx, whitebit**.
+### Mobile breakpoints
+- Screener: `≤700px` (mobile toolbar), `≤768px` (filter panel), `≤560px` (card width + 7-char ex names)
+- Arb: `≤900px` (orderbooks stack), `≤768px` (infobar wraps, status strip hidden, orderbooks collapse default), `≤560px` (chart max-width 480px)
 
-**Read-only** (in `_READONLY` set): `paradex` (Stark signing blocked by Python 3.13 + paradex-py SDK constraints).
+### Exchange palette (`frontend/exchanges.js`)
+Full venue → hex map (extract):
+- Binance `#F0B90B` · Bybit `#F0842D` · OKX `#C8C8C8` · Gate `#17C684` · KuCoin `#09BA86` · MEXC `#17D854` · Bitget `#00D2C8`
+- Hyperliquid `#64B4FF` · Aster `#8A63D2` · Ethereal `#C864C8` · Lighter `#A78BFA` · Paradex `#FF6A6A` · Extended `#E879F9`
+- WhiteBIT `#2DCCCD` · BingX `#1DB8F2` · Backpack `#4ADE80` · HTX `#2E7DF6` · Kraken `#7C5CFF`
+- Chains: Eth `#627EEA` · BSC `#F3BA2F` · Polygon `#8247E5` · Arbitrum `#28A0F0` · Optimism `#FF0420` · Base `#0052FF` · Avalanche `#E84142` · Tron `#C2A633` · Solana `#9945FF` · zkSync `#1C9BEF` · Linea `#7B61FF` · Scroll `#FFEEDA` · Mantle `#27E5C7` · Blast `#FCFC03` · Fantom `#13B5EC`
 
-**Spot/short pair detection**: `list_user_spot_short_pairs()` cross-references open SHORT futures positions with non-stable spot holdings from `BalanceSnapshot.totals`. Auto-pairs when notional matches within ±5% AND (if the spot snapshot is fresh) the spot was last refreshed within ±10 min of the short open. Manual paired/unpaired decisions persist in the same `TradePairDecision` table with `leg_a_key` prefix `spot|`. Endpoint: `GET /api/trade/spot-short-pairs`.
-
-**Funding-paid tracking**: `funding_pnl_usd` is populated on live positions for binance, bybit, okx, aster, gate, kucoin, mexc, bitget, bingx, hyperliquid, kraken, lighter, htx. `reconcile_service` mirrors the field into `leg_a_funding_pnl_usd` so closed-pair P&L correctly nets out funding cost.
-
-**Trade delay** (`plan.trade_delay_ms`) is enforced in BOTH `place_open_order` AND `close_position` in `trade_service.py`. Free plan: 500ms throttle.
-
-**Trade gate per exchange**: `admin_settings.get_trade_disabled_exchanges()` blocks new positions on selected venues without disabling screener/funding/portfolio for them.
-
-**Order types**: market only. Limit / stop / TP listed in `TODO.md`.
-
----
-
-## Admin services
-
-### Audit log (`audit_log.py`)
-Append-only `audit_log` table. Two entry points:
-- `record(db, request, actor, action, target_type, target_id, delta)` — primary, with Request object for IP/UA
-- `record_low_level(db, actor_user_id, actor_ip, action, ...)` — for callers without a Request (background services, middleware, honeypot)
-
-Every destructive admin endpoint records here. Admin reads via `GET /api/admin/audit-log` filtered by action / actor / target.
-
-Tags include: `users.block`, `users.plan`, `plans.create/update/delete`, `promos.create/update/delete`, `popups.create/update/delete`, `billing_period.create/update/delete`, `admin.broadcast`, `security.admin_probe_block`.
-
-### Admin alerts (`admin_alert_service.py`)
-`notify_admins(text, parse_mode='HTML')` — fire-and-forget broadcast to every `is_admin=True` user with `tg_chat_id` set, via auth bot. 60s in-process dedup.
-
-Convenience wrappers: `alert_payment(user, plan_slug, amount)`, `alert_admin_security(user, event, ip)`, `alert_user_blocked(user, reason)`.
-
-Wired up from:
-- `payment_service._activate_user` → payment-received notification
-- `auth.login_totp` (failed code path) → admin security event
-- `admin.toggle_block` (when blocking) → user-blocked notification
-- `honeypot_service.trip` → admin probe blocked
-
-### Settings (`admin_settings.py`)
-Read-through cache (15s TTL) over the `app_settings` table. Keys:
-- `hidden_symbols`, `disabled_exchanges`, `disabled_wallet_exchanges`, `disabled_chains`, `disabled_perpdexes`
-- `maintenance_mode`, `screener_disabled`, `portfolio_disabled`
-- `trade_disabled_exchanges`
-- `arb_min_volume_usd`, `arb_exclude_exchanges`
-- `expiry_notice_days`, `expiry_notice_interval_hours`
-- `maintenance_ends_at`, `screener_disabled_ends_at`, `portfolio_disabled_ends_at`, `maintenance_tz`
+### CDN scripts
+- `https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js` on `/arb`. CSP `script-src` whitelists `unpkg.com` for this.
 
 ---
 
-## Provider system
+## Provider system (Python)
 
-Each provider is a class with metadata-driving attributes:
+`backend/providers/`:
 
+### CEX exchanges (`exchanges/`)
+12 venues, all `enabled=True`: binance, bybit, okx, gate, mexc, kucoin, bitget (passphrase), bingx, whitebit, backpack, kraken, htx.
+
+### Perpetual DEXes (`perp_dexes/`)
+6 venues, all `enabled=True`: hyperliquid, aster, ethereal, lighter, paradex, extended.
+
+### Chains (`chains/`)
+15 chains: 13 EVM (ethereum, bsc, polygon, arbitrum, optimism, base, avalanche, fantom, zksync, linea, scroll, mantle, blast) + tron + solana. Each has native + ERC20-equivalent token support. Disable via `CHAIN_META` `"enabled": False`.
+
+### CEX Screener fetchers (`cex_screeners/`)
+Used by `arbitrage_service.FETCHERS` to populate cross-venue funding feed.
+
+### Transaction history (`history/`)
+Per-chain + per-CEX transaction adapters. Dispatched by `transaction_service.py`.
+
+### Provider class metadata pattern
 ```python
 class BinanceProvider(BaseWalletProvider):
     name = "BinanceProvider"
     label = "Binance"
-    enabled = True              # False → hidden from UI
+    enabled = True
     needs_passphrase = False
     needs_api_key = False
-    soon = False                # for perpdex — shows "soon" badge
+    soon = False
 ```
+`WALLET_OPTIONS` is auto-generated from these. Disable via `enabled = False` on the class. Bitget, OKX, KuCoin set `needs_passphrase=True`.
 
-`WALLET_OPTIONS` is auto-generated from these. Disable a provider by setting `enabled = False` on the class (or `"enabled": False` in `CHAIN_META` for chains).
+---
+
+## Background daemons (Python)
+
+| Service | Cadence | Owner replica | Responsibility |
+|---|---|---|---|
+| `plan_expiry_service` | 10 min | both web | Downgrade expired plans to Free |
+| `expiry_notifier_service` | 30 min | both web | TG reminder 30d/7d/1d before expiry |
+| `alert_service` | 30s | both web | Spread alerts → TG (per `arb_alerts`) |
+| `tg_bot_service` | long-poll | leader (Redis SETNX) | Bot updates handler |
+| `reconcile_service` | hourly | both web | Sync `trade_positions` with venue API |
+
+Note: arb compute, orderbook + funding WS, file dumpers — all moved to **go-fetcher**. Python `arbitrage_service.py` / `spot_arbitrage_service.py` / `dex_arbitrage_service.py` only own legacy fallback paths and the `FETCHERS` map for ad-hoc REST queries.
+
+---
+
+## Settings / env vars (Python `backend/settings.py`)
+
+### Required (prod)
+| Name | Used for |
+|---|---|
+| `SECRET_KEY` | JWT signing, TG widget HMAC, Go-fetcher auth |
+| `ENCRYPTION_KEY` | Fernet for `wallets.credentials` + `users.totp_secret_enc` |
+| `POSTGRES_PASSWORD` | Compose-level secret for DB |
+
+### Optional (with defaults)
+
+**Core**
+- `DATABASE_URL` (default `sqlite:///./wallet_monitor.db`)
+- `REDIS_URL` (default `redis://redis:6379/0`)
+- `ACCESS_TOKEN_EXPIRE_DAYS` (30)
+- `ALLOWED_ORIGINS` (CORS, CSV)
+- `LOG_LEVEL` (INFO)
+- `AVALANT_LOG_FORMAT` (`text` | `json`)
+- `AVALANT_LOG_DIR` (default `/var/log/avalant`)
+- `AVALANT_COOKIE_SECURE` (1 in prod, 0 for localhost)
+- `PUBLIC_BASE_URL` (default `https://avalant.xyz`)
+
+**Tuning (Python — mostly legacy fallback)**
+- `AVALANT_REFRESH_INTERVAL` (0.3s — arb compute, legacy)
+- `AVALANT_BROADCAST_INTERVAL` (0.2s — broadcast, legacy)
+- `AVALANT_ARB_CACHE_TTL` (0.4s)
+- `AVALANT_FETCHER_MODE` (legacy `multiprocess` mode)
+- `AVALANT_WORKER_EXCHANGES` / `AVALANT_FUNDING_WORKER_EXCHANGES` (CSV filter for orderbook/funding workers)
+- `AVALANT_ROLE` (`web`/`fetcher`/`monolith`)
+- `AVALANT_RUN_MIGRATIONS` (`true` on app, `false` on app2)
+
+**Go-fetcher cutover**
+- `AVALANT_TRADE_PROXY_URL` (default `http://go-fetcher:8090`)
+- `AVALANT_INTERNAL_SECRET` (shared secret with go-fetcher)
+- `GO_TRADE_VENUES` (CSV list of venues routed to Go; rest stay on Python)
+
+**Telegram bots**
+- `TG_BOT_TOKEN` / `TG_BOT_USERNAME` (alerts)
+- `TG_AUTH_BOT_TOKEN` / `TG_AUTH_BOT_USERNAME` (login + admin alerts; falls back to TG_BOT_TOKEN)
+
+**Payments**
+- `CRYPTOCLOUD_API_KEY`, `CRYPTOCLOUD_SHOP_ID`, `CRYPTOCLOUD_WEBHOOK_SECRET` (refuses with 503 if unset)
+- `CRYPTOCLOUD_SUCCESS_URL`, `CRYPTOCLOUD_FAIL_URL`
+
+**Market data**
+- `CMC_API_KEY` (CoinMarketCap top-100)
+- `ANKR_KEY`, `TATUM_KEY` (RPC providers)
+- `TRON_RPC` `TRON_KEY`
+- `SOLANA_RPC`
+- Per-EVM: `ETHEREUM_RPC`, `BSC_RPC`, `POLYGON_RPC`, `ARBITRUM_RPC`, `OPTIMISM_RPC`, `BASE_RPC`, `AVALANCHE_RPC`, `FANTOM_RPC`, `ZKSYNC_RPC`, `LINEA_RPC`, `SCROLL_RPC`, `MANTLE_RPC`, `BLAST_RPC`
+
+**Per-exchange API base** (override only)
+- `BINANCE_BASE_URL`, `OKX_BASE_URL`, `GATE_BASE_URL`, `MEXC_BASE_URL`, `KUCOIN_BASE_URL`, `BYBIT_BASE_URL`, `BITGET_BASE_URL`, `KRAKEN_BASE_URL`, `WHITEBIT_BASE_URL`, `BINGX_BASE_URL`, `HTX_SPOT_BASE_URL`, `HTX_FUTURES_BASE_URL`
+
+**Dev only — never set in prod**
+- `AVALANT_AUTH_DEV_EXPOSE_TOKEN=1` — leak password-reset / verify-email tokens in JSON
+
+## Settings / env vars (Go-fetcher)
+
+| Name | Default | Purpose |
+|---|---|---|
+| `REDIS_URL` | (required) | Pub/sub + key writes |
+| `AVALANT_FETCHER_CACHE_DIR` | `/tmp/avalant_cache_go` | Where Go writes cache files (override to `/tmp/avalant_cache` for cutover) |
+| `AVALANT_PREWARM_TOP_N` | 20 | Bootstrap symbol count |
+| `AVALANT_FILE_DUMP_INTERVAL` | 250ms | books.json / funding.json write cadence |
+| `LOG_LEVEL` | WARN | zerolog level |
+| `AVALANT_WS_BROADCAST_PORT` | (set in compose, e.g. 8090) | Public WS broadcaster port |
+| `SECRET_KEY` | (required if WS port set) | JWT validation |
+| `AVALANT_INTERNAL_SECRET` | (optional) | `/internal/trade/*` auth header |
+| `AVALANT_BOOTSTRAP_FROM_DIR` | unset | Optional: bootstrap symbols from Python's `funding.json` |
+| `AVALANT_WORKER_EXCHANGES` | (empty = all) | Filter orderbook adapters |
 
 ---
 
 ## Logging
 
-Centralized `setup_logging(role)` in `backend/logging_config.py`:
-- Console + rotating files (10MB × 5 per channel) under `<LOG_DIR>/<role>/`
+`backend/logging_config.py`:
+- Console + rotating files (10MB × 5 per channel = 50MB cap) under `<LOG_DIR>/<role>/{full.log, errors.log}`
 - Separate `errors.log` (WARNING+)
-- `AVALANT_LOG_FORMAT=json` switches to structured JSON output (`JsonFormatter`)
+- `AVALANT_LOG_FORMAT=json` → JSON output (`JsonFormatter`)
 - Uncaught-exception hooks: `sys.excepthook`, `threading.excepthook`, asyncio loop exception handler
 
-Roles: `web` (uvicorn), `fetcher` (data-plane sidecar), `monolith` (local dev).
+Roles: `web` (uvicorn, both replicas), `monolith` (local dev). Go-fetcher logs via zerolog directly to the same `avalant_logs` volume.
 
----
-
-## Environment variables
-
-```env
-# Required
-DATABASE_URL=postgresql://wallet:PASS@pgbouncer:5432/avalant
-SECRET_KEY=<long-random>
-ENCRYPTION_KEY=<long-random>
-POSTGRES_PASSWORD=<for-docker>
-
-# Optional but production-critical
-REDIS_URL=redis://redis:6379/0
-PUBLIC_BASE_URL=https://avalant.xyz
-ALLOWED_ORIGINS=https://avalant.xyz
-ACCESS_TOKEN_EXPIRE_DAYS=30
-LOG_LEVEL=INFO
-AVALANT_LOG_FORMAT=text|json
-AVALANT_COOKIE_SECURE=1
-
-# Telegram bots
-TG_BOT_TOKEN=<alerts-bot-token>
-TG_BOT_USERNAME=avalant_bot
-TG_AUTH_BOT_TOKEN=<login-bot-token>      # optional; falls back to TG_BOT_TOKEN
-TG_AUTH_BOT_USERNAME=avalant_login_bot
-
-# Payments (CryptoCloud)
-CRYPTOCLOUD_API_KEY=...
-CRYPTOCLOUD_SHOP_ID=...
-CRYPTOCLOUD_WEBHOOK_SECRET=...           # WEBHOOK REFUSES if unset (503)
-CRYPTOCLOUD_SUCCESS_URL=https://avalant.xyz/checkout?status=success
-CRYPTOCLOUD_FAIL_URL=https://avalant.xyz/checkout?status=fail
-
-# Market data
-ANKR_KEY=<recommended for EVM tokens>
-TRON_KEY=<optional pro tier>
-SOLANA_RPC=...
-CMC_API_KEY=<for top-100 USD prices>
-
-# Per-EVM RPC (optional if ANKR_KEY set)
-ETHEREUM_RPC=, BSC_RPC=, POLYGON_RPC=, ARBITRUM_RPC=, OPTIMISM_RPC=, BASE_RPC=,
-AVALANCHE_RPC=, FANTOM_RPC=, ZKSYNC_RPC=, LINEA_RPC=, SCROLL_RPC=, MANTLE_RPC=,
-BLAST_RPC=
-
-# Tuning
-AVALANT_REFRESH_INTERVAL=0.3
-AVALANT_BROADCAST_INTERVAL=0.2
-AVALANT_ARB_CACHE_TTL=0.4
-AVALANT_FETCHER_MODE=multiprocess
-AVALANT_WORKER_EXCHANGES=binance,bybit,okx,...
-
-# Dev only — NEVER set in production
-AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email tokens in JSON
-```
+Third-party loggers suppressed to WARNING: httpx, httpcore, urllib3, websockets, sqlalchemy.engine, uvicorn.access.
 
 ---
 
@@ -596,58 +985,70 @@ AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email to
 16. **`request_count`** incremented only on `/balance` and `/transactions` endpoints.
 17. **Lighter HTTP 400 = unregistered address** (normal), not an error.
 18. **`/promo/validate` must pass `user_id`** for per-user / target_user_id enforcement.
-19. **Plan-id, not plan-string** is the source of truth. The legacy `users.plan` is a mirror — admin `set_plan` writes both.
+19. **Plan-id, not plan-string** is the source of truth. The legacy `users.plan` is a mirror.
 20. **Webhook signature must validate** — if `CRYPTOCLOUD_WEBHOOK_SECRET` is empty, the route returns 503. Never fail-open.
-21. **fcntl.flock auto-releases** on process death — spot-refresh lock-orphan recovery is automatic.
+21. **fcntl.flock auto-releases** on process death — cache lock orphan-recovery is automatic.
 22. **WS auth is first-frame**, never URL `?token=`.
 23. **TG bot polling uses Redis lock** — only one replica polls at a time. Without Redis, falls back to no-coordination polling.
 24. **Honeypot trips on `/api/admin/*`, `/admin`, `/admin-user`** for non-admins — the user is auto-blocked.
 25. **Frontend bind-mounted as `/app/frontend:ro`** — host edits propagate without container restart.
-26. **Cache-Control on JS/CSS is 60s** (set by `serve_page`). Static images get 86400s.
-27. **CSP `unsafe-inline` is required** for now — every HTML ships inline `<script>`/`<style>`. Drop only when we move to a hash-based bundle.
+26. **Cache-Control on JS/CSS is 60s**, static images get 86400s (set by `serve_page`).
+27. **CSP `unsafe-inline` is required** for now — every HTML ships inline `<script>`/`<style>`. `unpkg.com` whitelisted in script-src for lightweight-charts.
 28. **`/api/maintenance/status` is public** so lockout pages can poll-and-reload.
-29. **Binance delisted symbols** (e.g. NTRN) keep returning in `/ticker/24hr` and `/premiumIndex` — filter via `/exchangeInfo` `status='TRADING'`. Cached 10 min.
-30. **WS funding REST backstop is a pure thread**, not `asyncio.to_thread` — `loop.run_in_executor` was blocking 5-6s under load.
-31. **Spot httpx pool is dedicated** — never share with `arbitrage_service._http`.
-32. **`auto_renew=False` ≠ plan ended** — plan is active until `plan_expires_at`, just no expiry pings.
-33. **Promo bonus_days** add to `activated_until` AFTER the regular billing-period window.
-34. **Maintenance ETAs auto-clear when in the past** — `_ends_at()` returns None for stale ISO strings so the lockout page doesn't show "ended 2h ago".
-35. **`/avashare` and `/api/popups`** are blocked by portfolio maintenance scope. `/pricing` and `/checkout` stay open intentionally so users can renew.
-36. **Encryption key rotation**: `python scripts/rotate_encryption_key.py` with `AVALANT_OLD_ENCRYPTION_KEY` + `AVALANT_NEW_ENCRYPTION_KEY` env. Idempotent — re-run after a partial failure tries OLD then NEW per row.
-37. **register strips secrets**: `AVALANT_AUTH_DEV_EXPOSE_TOKEN=1` is the only way to get raw password-reset / email-verify tokens back from the API. Default never exposes.
-38. **Admin promotion path**: SQL on the host. Only path. Legacy env vars removed.
-39. **2FA TOTP gates admin login only**. Regular users have no 2FA option yet.
-40. **Compose env-block must list each var** — a host `.env` entry isn't auto-forwarded; `x-app-env: &app-env` in `docker-compose.yml` enumerates every `${VAR:-default}` it passes into containers.
+29. **Binance delisted symbols** (e.g. NTRN) keep returning in `/ticker/24hr` and `/premiumIndex` — filter via `/exchangeInfo` `status='TRADING'`. Cached 10 min. Same in Go.
+30. **Spot httpx pool is dedicated** in any remaining Python paths — never share with `arbitrage_service._http`.
+31. **`auto_renew=False` ≠ plan ended** — plan is active until `plan_expires_at`, just no expiry pings.
+32. **Promo bonus_days** add to `activated_until` AFTER the regular billing-period window.
+33. **Maintenance ETAs auto-clear when in the past** — `_ends_at()` returns None for stale ISO strings.
+34. **`/avashare` and `/api/popups`** are blocked by portfolio maintenance scope. `/pricing` and `/checkout` stay open intentionally so users can renew.
+35. **Encryption key rotation**: `python scripts/rotate_encryption_key.py` with `AVALANT_OLD_ENCRYPTION_KEY` + `AVALANT_NEW_ENCRYPTION_KEY` env. Idempotent — re-run after a partial failure tries OLD then NEW per row.
+36. **register strips secrets**: `AVALANT_AUTH_DEV_EXPOSE_TOKEN=1` is the only way to get raw password-reset / email-verify tokens back from the API. Default never exposes.
+37. **2FA TOTP gates admin login only**. Regular users have no 2FA option yet.
+38. **Compose env-block must list each var** — a host `.env` entry isn't auto-forwarded; `x-app-env: &app-env` in `docker-compose.yml` enumerates every `${VAR:-default}` it passes into containers.
+39. **Per-account login lockout** — 5 failed attempts = lock. Counter on `users.failed_login_attempts`, cleared on successful login.
+40. **`payment.amount_usd` does NOT exist** — use `final_amount_usd`. There was a bug where referral commission silently failed because of this.
+41. **HL Python+Go signing is byte-parity'd** — don't reorder fields in `orderAction` struct (Go) or insertion order in `place_order` action dict (Python). msgpack output must match.
+42. **Paradex untested live** — port is internally consistent but no real testnet order has confirmed it. Keep out of `GO_TRADE_VENUES` until verified.
+43. **Lighter trade actions return errZK in Go** — keep `lighter` out of `GO_TRADE_VENUES` so the dispatcher falls through to Python.
+44. **Mirror-pair tolerance is 12%** (not 5%) — bumped in `_pnl_can_pair` after UX feedback that 5% missed legitimate pairs.
+45. **Anon screener gate** — 2-min preview from first visit (`localStorage.anon_first_seen_at`); user can wipe localStorage to reset.
 
 ---
 
 ## Common workflows for Claude
 
-### "Add a new exchange"
+### "Add a new exchange" (CEX)
 1. Create provider in `backend/providers/exchanges/<name>_provider.py` (inherit `BaseWalletProvider`)
-2. Set class attrs: `name`, `label`, `enabled = True`, `needs_passphrase`
+2. Set class attrs: `name`, `label`, `enabled=True`, `needs_passphrase`
 3. Implement `fetch_balance(wallet) → BalanceResult`
 4. Register in `EXCHANGE_PROVIDERS` dict (`backend/providers/exchanges/__init__.py`)
 5. Add to `ExchangeType` enum
 6. Add `_<name>_txs(creds)` in `transaction_service.py` + wire into dispatcher
 7. Optional: add screener fetcher to `arbitrage_service.FETCHERS`
-8. Optional: add trade adapter to `trade_adapters/` and remove from `_READONLY`
+8. Optional: add Python trade adapter under `backend/services/trade_adapters/<name>.py` and remove from `_READONLY`
+9. Optional: port to Go under `go-fetcher/internal/trade/<name>/<name>.go`, add tests, blank-import in `cmd/fetcher/main.go`, update `TRADE_PORT.md`
+10. Add hex color to `frontend/exchanges.js` if not auto-backfilled
 
 ### "Make a runtime change without deploy"
 - Plans, promos, popups, billing periods → `/admin → Monetisation`
 - Hidden symbols, disabled exchanges, trade-disabled venues → `/admin → Screener`
 - Maintenance scope + ETA → `/admin → Maintenance`
+- Banner → `/admin → Communications → Banner`
 - Expiry-reminder schedule, broadcast → `/admin → Communications`
-- User block, plan grant → `/admin → Users`
+- User block, plan grant, referral pct override → `/admin → Users`
 
 ### "Frontend-only change"
 1. Edit `frontend/*.html|js|css`, commit, push
-2. On prod: `./scripts/deploy.sh frontend` (just `git pull` — files are bind-mounted)
+2. On prod: `./scripts/deploy.sh frontend` (just `git pull` — files bind-mounted)
 3. Done. Cached browsers refresh JS within 60s
 
 ### "Backend-only change"
 1. Commit, push
 2. On prod: `./scripts/deploy.sh backend` — rolling rebuild app→app2
+
+### "Go-fetcher change"
+1. Commit, push
+2. On prod: `./scripts/deploy.sh fetcher` — restarts just go-fetcher (10–20s feed re-warm)
 
 ### "Migration"
 1. `alembic revision -m "..."` locally, write upgrade/downgrade
@@ -659,6 +1060,13 @@ AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email to
 2. Add to `docker-compose.yml` `x-app-env:` block (`VAR_NAME: ${VAR_NAME:-default}`)
 3. Add to `.env.sample`
 4. On prod: append to `.env`, then `docker compose up -d app app2 fetcher` (no rebuild needed — env recreate)
+
+### "Cut over a venue to Go trade"
+1. Verify Go adapter's tests pass: `cd go-fetcher && go test ./internal/trade/<venue>/`
+2. On prod: `vi /root/wallet-monitor/.env`, append venue to `GO_TRADE_VENUES=binance,bybit,...,<venue>`
+3. `docker compose up -d app app2` (no rebuild — env recreate; go-fetcher already has the adapter)
+4. Watch Order History for that venue. Any error returned by Go falls back to Python automatically.
+5. After 24h clean, remove the venue from Python's `ADAPTERS` and delete the file.
 
 ---
 
@@ -703,7 +1111,7 @@ AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email to
 - **TG-login bot replies with a button**, not just a confirmation message — mobile tabs freeze when TG opens.
 - **Both bots can run independently** (auth + alerts). Single-bot deployments fall back gracefully.
 - **CSRF tokens are intentionally absent** — Bearer auth, not cookie form-post.
-- **Spot httpx client is dedicated**, never share with arb's `_http`.
+- **Spot httpx client is dedicated** in remaining Python paths, never share with arb's `_http`.
 - **Price-outlier filter for futures arb is OFF** per user request.
 - **Light theme uses `#006B3C` green + `#8B0000` red**. Don't brighten.
 - **Theme toggle button is disabled** (`theme.js` early-return). Don't re-enable without asking.
@@ -714,17 +1122,25 @@ AVALANT_AUTH_DEV_EXPOSE_TOKEN=1          # leak password-reset / verify-email to
 - **`/admin → Maintenance` toggles are runtime**. No deploy needed.
 - **Frontend is bind-mounted** — never copy frontend INTO image at build time only; compose mount must persist.
 - **No CSRF**, no email comms (Telegram-only), no Stripe (CryptoCloud-only).
-- **Admin is SQL-only**. Env-var auto-grant paths (`INITIAL_ADMIN_USERNAME`, `AVALANT_ALLOW_FIRST_USER_ADMIN`) are no longer honoured. TG-widget login also never grants admin.
+- **HL signing is phantom-agent EIP-712** — don't revert to `personal_sign(sha256(...))`. The Python+Go parity tests are load-bearing.
+- **Paradex stays out of `GO_TRADE_VENUES` until a live testnet order confirms** — internal-consistency tests aren't enough.
+- **Lighter writes route to Python**, not Go (errZK). Don't add `lighter` to `GO_TRADE_VENUES`.
+- **In/Out columns are baked into arb WS output**, not separate poll. Don't re-introduce `/in-out` polling.
+- **`/ws/funding` REST poll** (3s) replaced WS subscription. Don't re-add the WS path on the client.
+- **No frontend build step**. No npm. No bundler. Vanilla HTML/CSS/JS.
+- **Risky perf changes go to a feature branch**, not main. Even after revert, isolate the next iteration in `perf/...`.
+- **No transient-ban workarounds** (no TTL bumps, no fallback chains for venue rate-limits). Plan for happy path; address bans separately when they hit.
 
 ---
 
 ## TODO highlights (see TODO.md)
 
-- **Trade**: Limit/stop/TP orders, order history UI, partial fills, 5 missing adapters (Kraken, HTX-futures, Paradex, Lighter, Extended), position-size calculator, risk warnings
+- **Trade**: Limit/stop/TP orders, order history UI polish, partial fills, Lighter ZK signing in Go (CGO bridge or Go-native), Paradex live testnet order verification, position-size calculator
 - **Storage HA**: DB+Redis on same host (SPOF), no PG read replica, logs not off-host, no off-site backups, no monthly restore-test
 - **Portfolio**: cost-basis FIFO/LIFO, multi-currency, transaction CSV, hardware wallets, fallback price source for low-cap alts
 - **Notifications**: only TG; no email, no in-app notification center, only spread alerts (no price-extremum)
 - **Performance**: no frontend bundling/minification, no CDN for static, no PostgreSQL read replica
 - **Compliance**: no GDPR data-export endpoint, no cookie-consent banner, no ToS/Privacy pages
+- **Screener polish** (deferred plan `buzzing-orbiting-meadow.md`): Long/Short rename across URLs + backend routes, dot+label everywhere, palette unify, orderbook canonical-limit sweep (Binance/Bitget/MEXC), all-tab redesign, cold-start blocking wait
 
 ToS / Privacy / GDPR are required for EU-public release.
