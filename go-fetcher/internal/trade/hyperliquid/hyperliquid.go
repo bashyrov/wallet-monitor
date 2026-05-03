@@ -1,52 +1,64 @@
-// Hyperliquid trade adapter — agent-wallet personal_sign auth.
+// Hyperliquid trade adapter — agent-wallet phantom-agent EIP-712.
 //
-// Port of `backend/services/trade_adapters/hyperliquid.py`.
+// Port of `backend/services/trade_adapters/hyperliquid.py` using the
+// same signing scheme the official `hyperliquid-py` SDK ships with.
+// (The earlier `personal_sign(sha256(...))` form in this file was
+// wrong — HL's exchange endpoint rejects it on real orders.)
 //
 // Auth: an "Agent Wallet" — a separate ETH keypair the user creates on
-// hyperliquid.xyz and links to their main wallet. The agent can place
-// trades but cannot withdraw. We sign the action JSON's SHA-256 with
-// `personal_sign` (eth_sign-style; matches Python adapter).
+// hyperliquid.xyz/agentWallet and links to their main wallet. The
+// agent can place trades but cannot withdraw.
 //
-// Endpoints
+// Signing
 //
-//	POST /info     — public reads (clearinghouseState, meta, userFunding)
-//	POST /exchange — signed actions (order, updateLeverage, …)
+//	packed       = msgpack(action) || nonce_be8 || vault_marker
+//	vault_marker = 0x00                         if no vault
+//	             | 0x01 || bytes20(vaultAddr)   otherwise
+//	connectionId = keccak256(packed)            (32 bytes)
+//	domain       = { name: "Exchange", version: "1",
+//	                 chainId: 1337, verifyingContract: 0x0…0 }
+//	type         = Agent(string source, bytes32 connectionId)
+//	message      = { source: "a" (mainnet) | "b" (testnet),
+//	                 connectionId }
+//	sig          = EIP-712 sign(domain, Agent, message) by agent key
 //
-// Wire shape
+// Wire payload
 //
-//	{
-//	  "action": { … original action with "nonce" injected … },
-//	  "nonce":  <ms>,
-//	  "signature": { "r": "0x…", "s": "0x…", "v": 27|28 },
-//	  "vaultAddress": null
-//	}
+//	{ "action":..., "nonce":<ms>, "signature":{r,s,v},
+//	  "vaultAddress": null }
 //
 // Quirks
 //
 //   - Asset index lookup hits /info?type=meta and is cached 1h. Index
 //     changes only when a new perp is listed.
-//   - `s` (size) MUST be a string. Floats stringify mid-place_order.
-//   - Reduce-only flag is `r: true` on the order leg.
-//   - Market orders are encoded as IoC limits with `p:"0"` — Python
-//     does the same. Hyperliquid handles the slippage internally.
+//   - `s` (size) and `p` (price) MUST be strings.
+//   - Reduce-only flag is `r:true` on the order leg.
+//   - Market orders are encoded as IoC limits with `p:"0"` — HL handles
+//     the slippage internally.
+//   - msgpack of the action must agree byte-for-byte with what HL
+//     re-packs server-side. We use struct field-declaration order
+//     (matching the SDK's dict-insertion order), so vmihailenco/msgpack
+//     produces the same bytes as msgpack-python given the same fields.
 package hyperliquid
 
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	gethmath "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
+	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade"
 )
@@ -80,29 +92,109 @@ func init() { trade.Register("hyperliquid", New()) }
 
 func (a *Adapter) Name() string { return "hyperliquid" }
 
+// ── Action types ─────────────────────────────────────────────────────────
+//
+// Field declaration order is the wire / msgpack order. Do NOT reorder
+// without re-running cross-language signing tests against the Python
+// SDK, or HL will reject every order with a signature mismatch.
+
+type orderLimit struct {
+	Tif string `msgpack:"tif" json:"tif"`
+}
+
+type orderTypeBox struct {
+	Limit orderLimit `msgpack:"limit" json:"limit"`
+}
+
+type orderLeg struct {
+	A int          `msgpack:"a" json:"a"`
+	B bool         `msgpack:"b" json:"b"`
+	P string       `msgpack:"p" json:"p"`
+	S string       `msgpack:"s" json:"s"`
+	R bool         `msgpack:"r" json:"r"`
+	T orderTypeBox `msgpack:"t" json:"t"`
+}
+
+type orderAction struct {
+	Type     string     `msgpack:"type" json:"type"`
+	Orders   []orderLeg `msgpack:"orders" json:"orders"`
+	Grouping string     `msgpack:"grouping" json:"grouping"`
+}
+
+type updateLeverageAction struct {
+	Type     string `msgpack:"type" json:"type"`
+	Asset    int    `msgpack:"asset" json:"asset"`
+	IsCross  bool   `msgpack:"isCross" json:"isCross"`
+	Leverage int    `msgpack:"leverage" json:"leverage"`
+}
+
 // ── Signing ──────────────────────────────────────────────────────────────
 
-// signAction returns r/s/v split out for HL's `signature` envelope.
-// Matches Python's:
-//
-//	action_hash = sha256(json(action))         # 32 bytes hex
-//	digest      = personal_sign(action_hash)
-//	sig         = sign(digest, agent_priv_key)
-//
-// Note: this is the form used by the Python adapter today. Hyperliquid's
-// production signing scheme actually involves a "phantom agent"
-// EIP-712 wrap, but the Python adapter (already in production) uses
-// the simpler personal_sign and that's what we mirror.
-func signAction(action map[string]any, privKeyHex string) (r, s string, v int, err error) {
-	canon, err := json.Marshal(action)
-	if err != nil {
-		return "", "", 0, fmt.Errorf("marshal action: %w", err)
+// signPhantomAgent signs the msgpack-packed action using the HL
+// phantom-agent EIP-712 wrap. Returns the {r,s,v} triple in the form
+// HL expects (`v` ∈ {27,28}, `r`/`s` 0x-prefixed lower-hex).
+func signPhantomAgent(packed []byte, nonce int64, vaultAddress string, isMainnet bool, privKeyHex string) (string, string, int, error) {
+	var buf bytes.Buffer
+	buf.Write(packed)
+	var nonceBuf [8]byte
+	binary.BigEndian.PutUint64(nonceBuf[:], uint64(nonce))
+	buf.Write(nonceBuf[:])
+	if vaultAddress == "" {
+		buf.WriteByte(0x00)
+	} else {
+		buf.WriteByte(0x01)
+		addrBytes, err := hex.DecodeString(strings.TrimPrefix(vaultAddress, "0x"))
+		if err != nil {
+			return "", "", 0, fmt.Errorf("decode vault: %w", err)
+		}
+		if len(addrBytes) != 20 {
+			return "", "", 0, fmt.Errorf("vault address must be 20 bytes, got %d", len(addrBytes))
+		}
+		buf.Write(addrBytes)
 	}
-	hashHex := sha256.Sum256(canon)
-	hexBytes := hex.EncodeToString(hashHex[:])
+	connectionID := crypto.Keccak256(buf.Bytes())
 
-	prefix := []byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(hexBytes)))
-	digest := crypto.Keccak256(append(prefix, []byte(hexBytes)...))
+	source := "a"
+	if !isMainnet {
+		source = "b"
+	}
+
+	td := apitypes.TypedData{
+		Types: apitypes.Types{
+			"EIP712Domain": []apitypes.Type{
+				{Name: "name", Type: "string"},
+				{Name: "version", Type: "string"},
+				{Name: "chainId", Type: "uint256"},
+				{Name: "verifyingContract", Type: "address"},
+			},
+			"Agent": []apitypes.Type{
+				{Name: "source", Type: "string"},
+				{Name: "connectionId", Type: "bytes32"},
+			},
+		},
+		PrimaryType: "Agent",
+		Domain: apitypes.TypedDataDomain{
+			Name:              "Exchange",
+			Version:           "1",
+			ChainId:           gethmath.NewHexOrDecimal256(1337),
+			VerifyingContract: "0x0000000000000000000000000000000000000000",
+		},
+		Message: apitypes.TypedDataMessage{
+			"source":       source,
+			"connectionId": connectionID,
+		},
+	}
+	domainSep, err := td.HashStruct("EIP712Domain", td.Domain.Map())
+	if err != nil {
+		return "", "", 0, fmt.Errorf("eip712 domain: %w", err)
+	}
+	msgHash, err := td.HashStruct("Agent", td.Message)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("eip712 agent: %w", err)
+	}
+	raw := append([]byte{0x19, 0x01}, domainSep...)
+	raw = append(raw, msgHash...)
+	digest := crypto.Keccak256(raw)
 
 	priv, err := crypto.HexToECDSA(strings.TrimPrefix(privKeyHex, "0x"))
 	if err != nil {
@@ -117,31 +209,48 @@ func signAction(action map[string]any, privKeyHex string) (r, s string, v int, e
 	}
 	rBig := new(big.Int).SetBytes(sig[:32])
 	sBig := new(big.Int).SetBytes(sig[32:64])
-	vByte := int(sig[64]) + 27
-	return "0x" + rBig.Text(16), "0x" + sBig.Text(16), vByte, nil
+	return "0x" + rBig.Text(16), "0x" + sBig.Text(16), int(sig[64]) + 27, nil
 }
 
-func (a *Adapter) postAction(ctx context.Context, creds trade.Creds, action map[string]any) (json.RawMessage, error) {
-	if creds.PrivateKey == "" && creds.APISecret == "" {
-		return nil, errUser("hyperliquid requires an agent-wallet private key")
+// packAction msgpack-encodes the action with HL's expected field order.
+// Wraps msgpack.Marshal so the call site doesn't need to import it.
+func packAction(action any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := msgpack.NewEncoder(&buf)
+	enc.SetCustomStructTag("msgpack")
+	if err := enc.Encode(action); err != nil {
+		return nil, err
 	}
+	return buf.Bytes(), nil
+}
+
+func (a *Adapter) postAction(ctx context.Context, creds trade.Creds, action any) (json.RawMessage, error) {
 	priv := creds.PrivateKey
 	if priv == "" {
 		priv = creds.APISecret
 	}
+	if priv == "" {
+		return nil, errUser("hyperliquid requires an agent-wallet private key")
+	}
+	packed, err := packAction(action)
+	if err != nil {
+		return nil, errInternal("msgpack action", err)
+	}
 	nonce := time.Now().UnixMilli()
-	action["nonce"] = nonce
-
-	r, s, v, err := signAction(action, priv)
+	r, s, v, err := signPhantomAgent(packed, nonce, "", true, priv)
 	if err != nil {
 		return nil, errInternal("sign action", err)
 	}
-
-	payload := map[string]any{
-		"action":       action,
-		"nonce":        nonce,
-		"signature":    map[string]any{"r": r, "s": s, "v": v},
-		"vaultAddress": nil,
+	payload := struct {
+		Action       any            `json:"action"`
+		Nonce        int64          `json:"nonce"`
+		Signature    map[string]any `json:"signature"`
+		VaultAddress *string        `json:"vaultAddress"`
+	}{
+		Action:       action,
+		Nonce:        nonce,
+		Signature:    map[string]any{"r": r, "s": s, "v": v},
+		VaultAddress: nil,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -272,11 +381,11 @@ func (a *Adapter) SetLeverage(ctx context.Context, creds trade.Creds, req trade.
 	if err != nil {
 		return err
 	}
-	action := map[string]any{
-		"type":     "updateLeverage",
-		"asset":    idx,
-		"isCross":  req.MarginMode == trade.MarginCross,
-		"leverage": req.Leverage,
+	action := updateLeverageAction{
+		Type:     "updateLeverage",
+		Asset:    idx,
+		IsCross:  req.MarginMode == trade.MarginCross,
+		Leverage: req.Leverage,
 	}
 	_, err = a.postAction(ctx, creds, action)
 	return err
@@ -290,17 +399,17 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if err != nil {
 		return nil, err
 	}
-	action := map[string]any{
-		"type": "order",
-		"orders": []map[string]any{{
-			"a": idx,
-			"b": req.Side == trade.SideBuy,
-			"p": "0",
-			"s": qtyString(req.Quantity),
-			"r": false,
-			"t": map[string]any{"limit": map[string]any{"tif": "Ioc"}},
+	action := orderAction{
+		Type: "order",
+		Orders: []orderLeg{{
+			A: idx,
+			B: req.Side == trade.SideBuy,
+			P: "0",
+			S: qtyString(req.Quantity),
+			R: false,
+			T: orderTypeBox{Limit: orderLimit{Tif: "Ioc"}},
 		}},
-		"grouping": "na",
+		Grouping: "na",
 	}
 	body, err := a.postAction(ctx, creds, action)
 	if err != nil {
@@ -335,17 +444,17 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 		return nil, err
 	}
 	closeIsBuy := p.Side == trade.SideSell
-	action := map[string]any{
-		"type": "order",
-		"orders": []map[string]any{{
-			"a": idx,
-			"b": closeIsBuy,
-			"p": "0",
-			"s": qtyString(p.Quantity),
-			"r": true,
-			"t": map[string]any{"limit": map[string]any{"tif": "Ioc"}},
+	action := orderAction{
+		Type: "order",
+		Orders: []orderLeg{{
+			A: idx,
+			B: closeIsBuy,
+			P: "0",
+			S: qtyString(p.Quantity),
+			R: true,
+			T: orderTypeBox{Limit: orderLimit{Tif: "Ioc"}},
 		}},
-		"grouping": "na",
+		Grouping: "na",
 	}
 	body, err := a.postAction(ctx, creds, action)
 	if err != nil {
@@ -414,12 +523,12 @@ func (a *Adapter) ListPositions(ctx context.Context, creds trade.Creds, symbol s
 	var resp struct {
 		AssetPositions []struct {
 			Position struct {
-				Coin           string      `json:"coin"`
-				Szi            json.Number `json:"szi"`
-				EntryPx        json.Number `json:"entryPx"`
-				PositionValue  json.Number `json:"positionValue"`
-				UnrealizedPnl  json.Number `json:"unrealizedPnl"`
-				Leverage       struct {
+				Coin          string      `json:"coin"`
+				Szi           json.Number `json:"szi"`
+				EntryPx       json.Number `json:"entryPx"`
+				PositionValue json.Number `json:"positionValue"`
+				UnrealizedPnl json.Number `json:"unrealizedPnl"`
+				Leverage      struct {
 					Value json.Number `json:"value"`
 				} `json:"leverage"`
 			} `json:"position"`
@@ -467,15 +576,17 @@ func (a *Adapter) ListPositions(ctx context.Context, creds trade.Creds, symbol s
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 func qtyString(q float64) string {
-	s := strconv.FormatFloat(q, 'f', 8, 64)
-	if strings.Contains(s, ".") {
-		s = strings.TrimRight(s, "0")
-		s = strings.TrimRight(s, ".")
-		if s == "" {
-			s = "0"
-		}
+	s := strings.TrimRight(strings.TrimRight(
+		fmtFloat(q), "0"), ".")
+	if s == "" {
+		s = "0"
 	}
 	return s
+}
+
+func fmtFloat(q float64) string {
+	// Up to 8 decimals, no exponent.
+	return new(big.Float).SetFloat64(q).Text('f', 8)
 }
 
 func abs(f float64) float64 {

@@ -22,11 +22,17 @@ and gives the recipe for porting the rest.
 | **backpack** |   ✓    |      ✓       |   4   |
 | **aster**    |   ✓    |      ✓       |   4   |
 | **ethereal** |   ✓    |      ✓       |   3   |
-| **hyperliquid** | ✓   |      ✓       |   4   |
+| **hyperliquid** | ✓   |      ✓       |   7   |
+| **paradex**  | (RO)   |      ✓       |   9   |
 | lighter      |   ✓    |   (RO Go)    |   3   |
-| paradex      | (RO)   |    (defer)   |   ·   |
 
-**15 of 16 venues green** (lighter is read-only in Go).
+**16 of 16 venues registered in Go** (lighter is read-only).
+**Paradex** is now Go-native: we sign auth + orders with the L2 Stark
+key directly via `starknet.go/curve` + `starknet.go/typeddata`, so we
+no longer depend on `paradex-py` (which is broken on Python 3.13).
+Read-only in the Python column = the existing Python `ParadexProvider`
+only fetches balance via a user-pasted JWT; trade actions go through
+the Go path now.
 
 - `aster`, `ethereal` — EIP-712 typed-data signing via
   `go-ethereum/crypto`. Direct port of Python's `eth_account` flow.
@@ -203,14 +209,53 @@ query string has a `signature=0x…` parameter exactly where Binance
 puts the HMAC. Header is `X-AB-APIKEY` (not `X-MBX-APIKEY`).
 Timestamp is **microseconds**, not ms — Aster rejects ms.
 
-### Hyperliquid — agent-wallet `personal_sign`
-Despite the public docs describing a "phantom-agent EIP-712" scheme,
-the Python adapter today uses the simpler form: `sha256(action_json)`
-hex string → `personal_sign` with the agent-wallet private key. We
-mirror that 1:1 so behaviour is identical to Python — anything else
-is a divergence we'd need to test against a live account. Asset index
-lookup hits `/info?type=meta` and is cached 1 h. `ClosePosition`
-sends the same order envelope with `r:true`.
+### Hyperliquid — phantom-agent EIP-712 (real scheme)
+Both adapters (Python AND Go) now sign actions per HL's official SDK:
+
+```
+packed       = msgpack(action) || nonce_be8 || vault_marker
+vault_marker = 0x00                            if no vault
+             | 0x01 || bytes20(vaultAddress)   otherwise
+connectionId = keccak256(packed)
+domain       = { name:"Exchange", version:"1",
+                 chainId:1337, verifyingContract:0x0…0 }
+type         = Agent(string source, bytes32 connectionId)
+message      = { source:"a"(mainnet)|"b"(testnet), connectionId }
+sig          = EIP-712 sign(domain, Agent, message) by agent key
+```
+
+The earlier `personal_sign(sha256(json(action)))` form was wrong and
+would have been rejected by `/exchange` on the first real order. Go's
+`packAction` uses struct field-declaration order so vmihailenco/msgpack
+produces byte-identical output to msgpack-python for the same action;
+this is pinned by `TestPackAction_PythonParity` (and the cross-language
+`(r,s,v)` parity check `TestSignPhantomAgent_PythonParity`).
+
+### Paradex — Stark signing in Go
+We replaced the read-only Python provider's trade path with a full Go
+adapter using `github.com/NethermindEth/starknet.go`:
+
+```
+chainId = int.from_bytes(b"PRIVATE_SN_PARACLEAR_MAINNET", "big")  # hex felt
+domain  = { name:"Paradex", chainId:hex(chainId), version:"1" }
+auth    = SNIP-12 typed data — Request{ method, path, body,
+          timestamp, expiration } over StarkNetDomain
+order   = SNIP-12 typed data — Order{ timestamp, market, side,
+          orderType, size, price } where size/price scaled to felt
+          via 8-decimal Paradex quantum
+sig     = curve.SignFelts(messageHash, l2_priv_key) → (r,s)
+hdr/body = `["<r-decimal>","<s-decimal>"]`
+```
+
+JWT cache: 24h TTL with 5-min refresh leeway, keyed by L2 address.
+On 401 we drop the cache so the next call re-auths.
+
+Caveat: **internal-consistency tested only**. We don't have a live
+test vector against `paradex-py` (it can't load on Python 3.13, which
+is the whole reason for the port). The SNIP-12 hash algorithm is
+canonical so this should match — but the first real order on Paradex
+testnet is the truth check. Keep `paradex` out of `GO_TRADE_VENUES`
+until that has been done.
 
 ### Ethereal — linked-signer `personal_sign`
 Same approach as Hyperliquid in spirit but the payload is just

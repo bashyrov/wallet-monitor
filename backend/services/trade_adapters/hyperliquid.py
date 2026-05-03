@@ -39,64 +39,92 @@ class HyperliquidAdapter:
     def _symbol(s: str) -> str:
         return s.upper()
 
+    # Real HL signing scheme (matches the official `hyperliquid-py` SDK).
+    # The earlier `personal_sign(sha256(json(action)))` form in this file
+    # was wrong — HL's exchange endpoint rejects it on real orders.
+    #
+    # action_hash    = keccak256( msgpack(action) ‖ nonce_be8 ‖ vault_marker )
+    # vault_marker   = b"\\x00"                       if vault_address is None
+    #                = b"\\x01" ‖ bytes20(vault_addr) otherwise
+    # connection_id  = action_hash (32 bytes)
+    # typed_data     = EIP-712 over Agent(string source, bytes32 connectionId)
+    #                  with source="a" on mainnet, "b" on testnet, and
+    #                  domain {name:"Exchange", version:"1",
+    #                          chainId:1337, verifyingContract:0x0…0}
+    # signature      = sign_typed_data(typed_data) by the agent wallet.
+    @staticmethod
+    def _sign_action(action: dict, nonce: int, private_key: str,
+                     vault_address: str | None = None,
+                     is_mainnet: bool = True) -> dict:
+        try:
+            import msgpack  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "msgpack required for Hyperliquid trading (pip install msgpack)"
+            ) from exc
+        from eth_account import Account
+        from eth_account.messages import encode_typed_data
+        from eth_utils import keccak  # type: ignore
+
+        packed = msgpack.packb(action, use_bin_type=True)
+        packed += nonce.to_bytes(8, "big")
+        if vault_address is None:
+            packed += b"\x00"
+        else:
+            packed += b"\x01" + bytes.fromhex(vault_address.removeprefix("0x"))
+        connection_id = keccak(packed)  # 32 bytes
+
+        typed_data = {
+            "domain": {
+                "name": "Exchange",
+                "version": "1",
+                "chainId": 1337,
+                "verifyingContract": "0x0000000000000000000000000000000000000000",
+            },
+            "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"},
+                ],
+                "Agent": [
+                    {"name": "source", "type": "string"},
+                    {"name": "connectionId", "type": "bytes32"},
+                ],
+            },
+            "primaryType": "Agent",
+            "message": {
+                "source": "a" if is_mainnet else "b",
+                "connectionId": connection_id,
+            },
+        }
+        signed = Account.from_key(private_key).sign_message(
+            encode_typed_data(full_message=typed_data)
+        )
+        return {"r": hex(signed.r), "s": hex(signed.s), "v": signed.v}
+
     @classmethod
     async def _post_action(cls, creds: dict, action: dict, nonce: int | None = None) -> Any:
-        """Sign and POST an exchange action."""
-        try:
-            from eth_account import Account
-        except ImportError:
-            raise RuntimeError("eth_account package required for Hyperliquid trading. Install: pip install eth-account")
-
         private_key = creds.get("private_key") or creds.get("api_secret") or ""
         if not private_key:
             raise RuntimeError("Hyperliquid requires a private key (agent wallet)")
-
         if nonce is None:
             nonce = int(time.time() * 1000)
 
-        # EIP-712 signing
-        from eth_account.messages import encode_typed_data
-
-        domain = {
-            "name": "Exchange",
-            "version": "1",
-            "chainId": 1337,
-            "verifyingContract": "0x0000000000000000000000000000000000000000",
-        }
-        types = {
-            "HyperliquidTransaction:Approve": [
-                {"name": "hyperliquidChain", "type": "string"},
-                {"name": "destination", "type": "string"},
-                {"name": "isMainnet", "type": "bool"},
-            ],
-        }
-
-        # For order placement, Hyperliquid uses a different approach:
-        # The action is sent as-is, signed with a phantom agent
-        # Simplified: use the info endpoint with wallet signature
-
-        action["nonce"] = nonce
-
-        # Construct the signature
-        import hashlib
-        action_hash = hashlib.sha256(_json.dumps(action, separators=(",", ":")).encode()).hexdigest()
-
-        # Sign using eth_account
-        acct = Account.from_key(private_key)
-        msg_hash = bytes.fromhex(action_hash)
-
-        from eth_account.messages import encode_defunct
-        signed = acct.sign_message(encode_defunct(msg_hash))
+        signature = cls._sign_action(action, nonce, private_key,
+                                      vault_address=None, is_mainnet=True)
 
         payload = {
             "action": action,
             "nonce": nonce,
-            "signature": {"r": hex(signed.r), "s": hex(signed.s), "v": signed.v},
+            "signature": signature,
             "vaultAddress": None,
         }
 
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(f"{BASE}/exchange", json=payload, headers={"Content-Type": "application/json"})
+            r = await c.post(f"{BASE}/exchange", json=payload,
+                             headers={"Content-Type": "application/json"})
             if r.status_code >= 400:
                 raise RuntimeError(f"Hyperliquid {r.status_code}: {r.text[:200]}")
             j = r.json()
