@@ -20,22 +20,31 @@ and gives the recipe for porting the rest.
 | **whitebit** |   ✓    |      ✓       |   2   |
 | **kraken**   |   ✓    |      ✓       |   3   |
 | **backpack** |   ✓    |      ✓       |   4   |
-| aster        |   ✓    |    (defer)   |   ·   |
-| hyperliquid  |   ✓    |    (defer)   |   ·   |
-| ethereal     |   ✓    |    (defer)   |   ·   |
-| lighter      |   ✓    |    (defer)   |   ·   |
+| **aster**    |   ✓    |      ✓       |   4   |
+| **ethereal** |   ✓    |      ✓       |   3   |
+| **hyperliquid** | ✓   |      ✓       |   4   |
+| lighter      |   ✓    |   (RO Go)    |   3   |
 | paradex      | (RO)   |    (defer)   |   ·   |
 
-**12 of 16 venues green.** Remaining 4 all need libraries we don't
-already pull in:
+**15 of 16 venues green** (lighter is read-only in Go).
 
-- `aster` — EIP-712 (Aster chain). Needs `go-ethereum/crypto`.
-- `hyperliquid` — Stark + EIP-712. Needs a Stark library.
-- `ethereal` — EIP-712 over EVM. Same library as Aster.
-- `lighter` — ZK signing via CGO (`lighter-sdk` ships per-platform
-  shared libs). Would need a Go ZK proof library.
-- `paradex` — read-only on Python today (paradex-py incompatible
-  with Python 3.13). Skip until upstream restores support.
+- `aster`, `ethereal` — EIP-712 typed-data signing via
+  `go-ethereum/crypto`. Direct port of Python's `eth_account` flow.
+- `hyperliquid` — agent-wallet `personal_sign` over `sha256(action_json)`
+  (matches what Python already does). The "phantom-agent EIP-712"
+  scheme HL documents publicly is NOT what Python sends today; we
+  mirror Python verbatim so behaviour is identical.
+- `lighter` — partial. `GetBalance` / `ListPositions` run in Go
+  (REST, no signing). `PlaceOrder` / `ClosePosition` / `SetLeverage`
+  return `KindUser` errors because ZK signing requires the
+  CGO-bundled `lighter-sdk` native lib (no Go-native equivalent).
+  Operationally: keep `lighter` OUT of `GO_TRADE_VENUES` until a
+  Go ZK signer ships. The adapter is registered so the
+  proxy can serve reads, and the explicit error makes a misconfig
+  obvious without crashing the trade flow.
+- `paradex` — read-only on Python today (`paradex-py` incompatible
+  with Python 3.13) AND would also need a Stark library in Go.
+  Defer until upstream restores Python support.
 
 (RO = read-only on Python today — `paradex-py` won't load on Python 3.13.)
 
@@ -185,26 +194,41 @@ converts via `_contract_size(symbol)`. Mirror that lookup table.
 Signature goes in `X-BX-APIKEY` + `signature` query param. Read the
 Python source carefully — BingX is fussy about parameter order.
 
-### Aster — Binance fork
+### Aster — Binance fork + EIP-712
 Wire shape ≈ Binance with minor differences in symbol set and in
-some error codes. You can copy-paste binance.go and rebrand, then
-adjust the diffs.
+some error codes. We copy the Binance file and replace the HMAC
+helper with an EIP-712 signer — typed data is
+`AsterSignTransaction(string params)` on `chainId=1666`. The signed
+query string has a `signature=0x…` parameter exactly where Binance
+puts the HMAC. Header is `X-AB-APIKEY` (not `X-MBX-APIKEY`).
+Timestamp is **microseconds**, not ms — Aster rejects ms.
 
-### Hyperliquid — Stark signature
-Uses `private_key` from `Creds.PrivateKey` plus `Creds.Wallet` (the
-Stark address). Signature is over a typed-data hash — the Python
-adapter calls into `hyperliquid-py`. Best path in Go is to either
-(a) pull a Stark library or (b) keep this adapter on Python until
-last and dispatch via the proxy fall-through.
+### Hyperliquid — agent-wallet `personal_sign`
+Despite the public docs describing a "phantom-agent EIP-712" scheme,
+the Python adapter today uses the simpler form: `sha256(action_json)`
+hex string → `personal_sign` with the agent-wallet private key. We
+mirror that 1:1 so behaviour is identical to Python — anything else
+is a divergence we'd need to test against a live account. Asset index
+lookup hits `/info?type=meta` and is cached 1 h. `ClosePosition`
+sends the same order envelope with `r:true`.
 
-### Ethereal — EIP-712
-Same story as Hyperliquid but Ethereum-style. Use `go-ethereum/crypto`
-for the signature. Public WS isn't usable anyway, so trade is the
-priority for this venue.
+### Ethereal — linked-signer `personal_sign`
+Same approach as Hyperliquid in spirit but the payload is just
+`METHOD || PATH || TIMESTAMP_NS || JSON(body)`, signed with the
+linked-signer key. Headers carry the subaccount address +
+nanosecond timestamp + signature. Public reads (subaccount/positions)
+are unsigned. We use the linked-signer path; full EIP-712 isn't
+needed for the actions Python ships.
 
-### Lighter — JWT-signed
-Auth uses a long-lived JWT not HMAC. `Creds.APISecret` carries the
-JWT directly; just attach it as `Authorization: Bearer <secret>`.
+### Lighter — partial port (read-only)
+Lighter signs orders with a per-account ZK key. The Python SDK
+wraps a CGO-bundled native signer that has no Go-native equivalent.
+Reads run fine in Go (unsigned `/api/v1/account`); trade actions
+return `KindUser` so we don't silently send half-signed orders.
+Keep this venue OUT of `GO_TRADE_VENUES` until a Go ZK signer is
+available. Credentials map: `APIKey` = numeric account_index,
+`APISecret` = hex private key, `Passphrase` = api_key_index (default
+"255").
 
 ### Kraken — futures vs spot
 Kraken-spot is at `api.kraken.com`, Kraken-futures at
