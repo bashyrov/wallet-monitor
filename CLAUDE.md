@@ -189,23 +189,23 @@ The trade engine has been ported from Python (`backend/services/trade_adapters/`
 
 | Venue | Sign | Notes |
 |---|---|---|
-| binance | HMAC SHA256 hex | `X-MBX-APIKEY`, hedgeMode + exchangeInfo caches (5m / 10m) |
-| aster | HMAC SHA256 hex | Binance fork, `X-AB-APIKEY`. *Earlier note about EIP-712 was wrong; aster is plain HMAC.* |
-| bybit | HMAC SHA256 hex (v5) | `ts\|\|key\|\|recv\|\|q/body` payload |
-| okx | HMAC SHA256 base64 | passphrase required, contracts not coins (`÷ctVal`) |
-| kucoin | HMAC SHA256 base64 | passphrase required, UUID v4 client-order-id, coin↔contract conversion |
-| bitget | HMAC SHA256 hex | passphrase, base64-decoded secret first, multiplier rounding |
-| gate | HMAC SHA512 base64 | coin↔contract, short side encoded as negative qty |
-| kraken | HMAC SHA512 base64 | base64-decoded secret first |
-| mexc | HMAC SHA256 hex | sorted query, coin qty encoding |
-| bingx | HMAC SHA256 hex | sorted query string |
-| htx | HMAC SHA256 hex | canonical query string, GET only |
-| whitebit | HMAC SHA256 hex | sorted query string |
-| backpack | Ed25519 | base64 public key + base64 seed; canonical sign string `instruction=…&sortedParams&timestamp=…&window=60000` |
-| ethereal | Personal_sign (eth_sign) | linked-signer key, payload `METHOD\|\|PATH\|\|TS_NS\|\|JSON(body)` |
+| binance | HMAC-SHA256 hex (`HMACHexSHA256`) | `X-MBX-APIKEY`, hedgeMode + exchangeInfo caches (5m / 10m) |
+| bybit | HMAC-SHA256 hex (v5) | `ts\|\|key\|\|recv\|\|q/body` payload |
+| mexc | HMAC-SHA256 hex | sorted query, coin qty encoding |
+| bingx | HMAC-SHA256 hex | sorted query string |
+| okx | HMAC-SHA256 base64 (`HMACBase64SHA256`) | passphrase required, contracts not coins (`÷ctVal`) |
+| kucoin | HMAC-SHA256 base64 | passphrase required, UUID v4 client-order-id, coin↔contract conversion |
+| bitget | HMAC-SHA256 base64 | passphrase, sign over `ts+method+path+body`, multiplier rounding |
+| htx | HMAC-SHA256 base64 | multi-line canonical-string-to-sign, GET only |
+| gate | HMAC-SHA512 hex (`HMACWith`) | preimage `method\|\|path\|\|sortedQuery\|\|sha512(body)\|\|ts`, coin↔contract, short side encoded as negative qty |
+| whitebit | HMAC-SHA512 hex | preimage = base64(json_body) |
+| kraken | HMAC-SHA512 raw → base64 | preimage = sha256(post + nonce + path); secret base64-decoded first; flavor unique to kraken-futures |
+| **aster** | **EIP-712 typed data** | `signEIP712()` — domain `AsterSignTransaction`, chainId 1666, signature passed in `signature=0x…` query param; `X-AB-APIKEY` header. Both Python and Go use eth_account / go-ethereum |
+| backpack | Ed25519 | seed-derived key over canonical sign string `instruction=…&sortedParams&timestamp=…&window=60000`; api_key is base64 public key |
+| ethereal | personal_sign (eth_sign) | linked-signer key, payload `METHOD\|\|PATH\|\|TS_NS\|\|JSON(body)` |
 | **hyperliquid** | **Phantom-agent EIP-712** | see below |
 | **paradex** | **Stark SNIP-12** | see below |
-| lighter | (not ported) | reads work; writes return `errZK` |
+| lighter | (writes not ported in Go) | reads work; writes return `errZK` |
 
 ### Hyperliquid — phantom-agent EIP-712 (real scheme)
 
@@ -297,13 +297,13 @@ Auth header: `X-Internal-Auth: <AVALANT_INTERNAL_SECRET>` (read once at register
 ### Trade signing helpers (Go)
 
 `go-fetcher/internal/trade/signing.go` exports:
-- `HMACHexSHA256(secret, payload)` — Binance/Bybit/MEXC/BingX/Aster/HTX/WhiteBIT
-- `HMACBase64SHA256(secret, payload)` — OKX/KuCoin
-- `HMACBase64SHA512(secret, payload)` — Kraken/Gate/Bitget
-- `HMACWith(hashFunc, secret, payload)` — escape hatch
+- `HMACHexSHA256(secret, payload)` — Binance/Bybit/MEXC/BingX
+- `HMACBase64SHA256(secret, payload)` — OKX/KuCoin/Bitget/HTX
+- `HMACBase64SHA512(secret, payload)` — Kraken (older path; current Kraken adapter uses `HMACWith` for the sha256-prehash + base64-encodes itself)
+- `HMACWith(hashFunc, secret, payload)` — escape hatch (Gate uses `sha512.New` here for hex output; WhiteBIT same; Kraken with sha512 + post-encoding)
 - `SortedFormQuery(map[string]string)` — deterministic urlencode
 
-For exotic flavours, wrap in venue-local `_sign` helpers — don't reach into the shared package.
+For exotic flavours, wrap in venue-local helpers — don't reach into the shared package. Aster (`signEIP712`), Backpack (`signEd25519`), Ethereal (`signPersonal`), Hyperliquid (`signPhantomAgent`), Paradex (`signTypedData`) all do this.
 
 ### Test counts (Go)
 
@@ -561,20 +561,30 @@ Production: PostgreSQL 16 via PgBouncer (session mode, pool 60). Local: SQLite. 
 - **referral_payout_requests** — user_id, amount_usd, address, status (pending|paid|rejected), note, created_at, resolved_at
 - **paper_positions, opportunity_snapshots, exchange_health, anomaly_events, watchlist_items** — Alpha / paper-trading / analytics
 
-### Recent migrations (newest → oldest)
+### Migrations (newest → oldest, by alembic dependency chain)
+Head is `g0a1b2c3d4e5_payment_refund.py`. Linear chain (no merges).
+
 | Revision | Topic |
 |---|---|
+| `g0a1b2c3d4e5` | **HEAD** — payments.refunded_* + referral_earnings.reversed_*/reversal_of_id |
+| `f9a0b1c2d3e4` | referral_payout_requests v2 (status: pending/paid/rejected) |
+| `e8f9a0b1c2d3` | users referral fields + referral_earnings + referral_payout_requests |
+| `d7e8f9a0b1c2` | trade_orders + trade_positions + trade_pair_decisions |
+| `c6d7e8f9a0b1` | users.failed_login_attempts |
+| `b5c6d7e8f9a0` | promo_codes.per_user_max_uses + target_user_id |
+| `a4b5c6d7e8f9` | users.auto_renew + expiry_notice_last_sent_at |
 | `z3a4b5c6d7e8` | promo_codes.bonus_days |
 | `y2z3a4b5c6d7` | popup target_type expansion (`all` → `authenticated`/`anonymous`/`everyone`) |
 | `x1y2z3a4b5c6` | admin TOTP 2FA columns (`totp_secret_enc`, `totp_verified_at`) |
-| `w9x0y1z2a3b4` | audit_log table |
 | `w0x1y2z3a4b5` | Unlim plan + delete test users (cascade) |
+| `w9x0y1z2a3b4` | audit_log table |
 | `v8w9x0y1z2a3` | pricing rebase: Screener $45, Full $55 |
 | `u7v8w9x0y1z2` | billing_periods discount tuning |
 | `t6u7v8w9x0y1` | full plan must have has_portfolio=True |
 | `s5t6u7v8w9x0` | billing_periods table |
 | `r4s5t6u7v8w9` | rename max → platinum + pricing |
 | `q3r4s5t6u7v8` | plans + payments + promo_codes + popups + Wallet.is_main |
+| `ev1a2b3c4d5f` | email_verify_tokens |
 | `pr1a2b3c4d5e` | password_reset_tokens |
 | `p2q3r4s5t6u7` | balance_history.totals (per-asset JSON) |
 | `o1p2q3r4s5t6` | app_settings table |
@@ -583,24 +593,17 @@ Production: PostgreSQL 16 via PgBouncer (session mode, pool 60). Local: SQLite. 
 | `l8m9n0o1p2q3` | users.tg_id + tg_link_tokens |
 | `k7l8m9n0o1p2` | wallet.can_trade |
 | `j6k7l8m9n0o1` | users.tg_chat_id |
-| `i5j6k7l8m9n0` | screener Alpha tables |
+| `i5j6k7l8m9n0` | screener Alpha tables (paper_positions, opportunity_snapshots, exchange_health, anomaly_events) |
 | `h4i5j6k7l8m9` | users.tg_username + arb_alerts |
 | `g3h4i5j6k7l8` | users.plan_id + plan_expires_at |
-| `g0a1b2c3d4e5` | payments.refunded_*, referral_earnings.reversed_* |
-| `f9a0b1c2d3e4` | referral_payout_requests v2 |
-| `f2a3b4c5d6e7` | balance_history table |
-| `e8f9a0b1c2d3` | users referral fields + referral_earnings + referral_payout_requests |
-| `ev1a2b3c4d5f` | email_verify_tokens |
-| `e5f6a7b8c9d0` | balance_snapshots |
-| `e1f2a3b4c5d6` | provider_error_logs |
-| `d7e8f9a0b1c2` | trade_orders + trade_positions + trade_pair_decisions |
-| `d0e1f2a3b4c5` | users.last_active_at |
-| `c6d7e8f9a0b1` | users.failed_login_attempts |
-| `c3d4e5f6a7b8` | users.is_blocked + request_count |
-| `b5c6d7e8f9a0` | promo_codes.per_user_max_uses + target_user_id |
-| `a4b5c6d7e8f9` | users.auto_renew + expiry_notice_last_sent_at |
 | `a2b3c4d5e6f7` | tags.user_id |
+| `f2a3b4c5d6e7` | balance_history table |
+| `e1f2a3b4c5d6` | provider_error_logs |
+| `d0e1f2a3b4c5` | users.last_active_at |
+| `e5f6a7b8c9d0` | balance_snapshots |
+| `c3d4e5f6a7b8` | users.is_blocked + request_count |
 | `a1b2c3d4e5f6` | wallets.is_archived |
+| `fb0ca8a11562` | users.is_admin |
 | `014613d42a04` | initial schema |
 
 ---
@@ -767,13 +770,13 @@ Standard CRUD for user-scoped tags (NULL `user_id` = system tag).
 | `app.html` | `/app` | auth | portfolio |
 | `archive.html` | `/archive` | auth | portfolio |
 | `profile.html` | `/profile` | auth | portfolio |
-| `avashare.html` | `/avashare` | auth | portfolio |
+| (no dedicated file) | `/avashare` | auth | portfolio — Avashare/referral UI lives in `profile.html` + `admin.html → Avashare tab`; `/avashare` path is reserved for the maintenance scope but routes to `profile`/`admin`. Standalone `avashare.html` was planned but never shipped |
 | `admin.html` | `/admin` | admin | — |
 | `admin-user.html` | `/admin-user` | admin | — |
 | `404.html` | (fallback) | public | — |
 | `maintenance.html` | (served on flag) | public | — |
 
-`serve_page()` in `app.py` enforces redirects: `_AUTH_PAGES = {"app", "profile", "archive", "watchlist", "avashare"}` redirects to `/login?next=` on missing session; `_ADMIN_PAGES = {"admin", "admin-user"}` additionally check `is_admin` and trip the honeypot on non-admins.
+`serve_page()` in `app.py` enforces redirects: `_AUTH_PAGES = {"app", "profile", "archive", "watchlist"}` redirects to `/login?next=` on missing session; `_ADMIN_PAGES = {"admin", "admin-user"}` additionally check `is_admin` and trip the honeypot on non-admins. (`/avashare` lives under the auth-protected hierarchy via different gating; not in `_AUTH_PAGES`.)
 
 ### Shared JS modules
 - **auth.js** — `Auth.{getToken, getUser, setSession, clearSession, isLoggedIn, isAdmin, requireAuth, requireAdmin, redirectIfAuthed, logout, apiFetch}`. `apiFetch` adds Bearer header + auto-redirects 401 → `/login`.
