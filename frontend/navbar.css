@@ -64,7 +64,25 @@ button.nav-lnk { background: none; cursor: pointer; }
 .avatar-btn:hover { box-shadow: 0 0 10px rgba(26,255,171,0.35); }
 @media (max-width: 700px) {
   app-navbar { grid-template-columns: auto 1fr; padding: 0 14px; }
+  /* By default hide the desktop nav strip on mobile to free up the brand row,
+     UNLESS the navbar opted-in to keep it (arb / screener / watchlist need
+     Portfolio + Screener + Pricing reachable on mobile too — labels collapse
+     to icons via .nav-lnk-label below). */
   .topbar-nav { display: none; }
+  app-navbar[page="arb"] .topbar-nav,
+  app-navbar[page="screener"] .topbar-nav,
+  app-navbar[page="watchlist"] .topbar-nav {
+    display: flex;
+    gap: 2px;
+    justify-self: end;
+    margin-right: 8px;
+  }
+  app-navbar[page="arb"] { grid-template-columns: auto 1fr auto; }
+  app-navbar[page="screener"] { grid-template-columns: auto 1fr auto; }
+  app-navbar[page="watchlist"] { grid-template-columns: auto 1fr auto; }
+  /* Icon-only nav on mobile — hide text labels but keep the SVG icons. */
+  .nav-lnk-label { display: none; }
+  .nav-lnk { padding: 6px 9px; gap: 0; }
   .topbar-right { gap: 6px; }
 }
 .btn-primary {

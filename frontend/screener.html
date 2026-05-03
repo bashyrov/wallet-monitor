@@ -267,7 +267,7 @@
               <th onclick="sortArb('short_exchange')" data-acol="short_exchange" data-tip="Exchange to go short (receive positive funding) + 24h volume. Rate normalised to per-8h for comparison">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('in_pct')"  data-acol="in_pct"  class="sorted" data-tip="Live entry basis from top-of-book — (bestBidShort − bestAskLong) / bestAskLong · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
               <th onclick="sortArb('out_pct')" data-acol="out_pct" data-tip="Live exit basis from top-of-book — (bestBidLong − bestAskShort) / bestAskShort · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
-              <th onclick="sortArb('price_spread')"   data-acol="price_spread"   data-tip="Mark-price basis between the two venues = (shortPx − longPx) / longPx. Top-N tracked set is ranked by this.">Basis <span class="sort-arrow">↕</span></th>
+              <th onclick="sortArb('gross_funding')"  data-acol="gross_funding"  data-tip="Net funding paid per 4h window = (short_rate − long_rate) ÷ 2">Funding /4h <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('gross_funding')"  data-acol="gross_funding"  data-tip="short_rate − long_rate normalised to per-8h. Regardless of each exchange's actual interval">Gross /8h <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('total_fees')"     data-acol="total_fees"     data-tip="Estimated taker fees for opening both legs (0.06% per side)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortArb('net_profit')"     data-acol="net_profit"     data-tip="Net profit per 8h = gross funding − fees − price spread cost">Net profit <span class="sort-arrow">↕</span></th>
@@ -293,14 +293,13 @@
               <th onclick="sortSpot('short_exchange')"  data-scol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('in_pct')"  data-scol="in_pct"  class="sorted" data-tip="Live entry basis from top-of-book — (bestBidShort_perp − bestAskLong_spot) / bestAskLong_spot · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
               <th onclick="sortSpot('out_pct')" data-scol="out_pct" data-tip="Live exit basis from top-of-book — (bestBidLong_spot − bestAskShort_perp) / bestAskShort_perp · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('basis_pct')"       data-scol="basis_pct"       data-tip="Mark-price basis = (perpPx − spotPx) / spotPx">Basis <span class="sort-arrow">↕</span></th>
-              <th onclick="sortSpot('short_funding_8h')" data-scol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
+              <th onclick="sortSpot('short_funding_8h')" data-scol="short_funding_8h" data-tip="Funding the short leg receives every 4 hours (= short_funding_8h ÷ 2)">Funding /4h <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('total_fees')"      data-scol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortSpot('net_profit')"      data-scol="net_profit"      data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-spot"><tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+          <tbody id="tbody-spot"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
@@ -318,14 +317,13 @@
               <th onclick="sortDex('short_exchange')"  data-dcol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('in_pct')"  data-dcol="in_pct"  class="sorted" data-tip="Live entry basis from short-perp top-of-book vs DEX price — (bestBidShort − dexPrice) / dexPrice · refreshed every 3s">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
               <th onclick="sortDex('out_pct')" data-dcol="out_pct" data-tip="Live exit basis — (dexPrice − bestAskShort) / bestAskShort · refreshed every 3s">Out <span class="sort-arrow">↕</span></th>
-              <th onclick="sortDex('basis_pct')"       data-dcol="basis_pct"       data-tip="Basis = (perp − dex) / dex. Positive = perp trades above DEX, you capture the gap at entry">Basis <span class="sort-arrow">↕</span></th>
-              <th onclick="sortDex('short_funding_8h')" data-dcol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDex('short_funding_8h')" data-dcol="short_funding_8h" data-tip="Funding the short leg receives every 4 hours (= short_funding_8h ÷ 2)">Funding /4h <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('total_fees')"      data-dcol="total_fees"      data-tip="DEX round-trip (~0.8%) + perp round-trip. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('net_profit')"      data-dcol="net_profit"      data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↕</span></th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-dex"><tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
+          <tbody id="tbody-dex"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-dex"></div>
@@ -957,7 +955,7 @@ async function loadDex() {
   _inOutFirstSorted.dex = false;
   if (!_dexRows.length) {
     document.getElementById('tbody-dex').innerHTML =
-      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
+      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/dex-short');
@@ -977,7 +975,7 @@ async function loadDex() {
     // Network / 5xx — leave the previous table intact, don't stomp on
     // user's view. Only show "Failed" if we have nothing at all.
     if (!_dexRows.length) {
-      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="10" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_dexTimer);
@@ -1028,7 +1026,7 @@ function renderDex() {
   const page = _dexFiltered.slice(start, start + PAGE_SIZE);
   if (!_dexFiltered.length) {
     const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
     renderDexCards();
     return;
@@ -1068,8 +1066,7 @@ function renderDex() {
       </td>
       <td class="td-inout">${_fmtIO(r.in_pct)}</td>
       <td class="td-inout">${_fmtIO(r.out_pct)}</td>
-      <td class="td-spread"><span class="${(r.basis_pct || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.basis_pct || 0) >= 0 ? '+' : '')}${(r.basis_pct || 0).toFixed(4)}%</span></td>
-      <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
+      <td class="td-gross"><span class="${fundCls}">${fundSign}${(r.short_funding_8h * 0.5).toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 4h</span></td>
       <td class="td-fees">
         <span title="dex rt: ${r.fee_dex.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
@@ -1141,12 +1138,8 @@ function renderDexCards() {
           </div>
         </div>
         <div class="card-row">
-          <span class="card-lbl">Funding / 8h</span>
-          <span class="card-val ${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span>
-        </div>
-        <div class="card-row">
-          <span class="card-lbl">Basis</span>
-          <span class="card-val ${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>
+          <span class="card-lbl">Funding / 4h</span>
+          <span class="card-val ${fundCls}">${fundSign}${(r.short_funding_8h * 0.5).toFixed(4)}%</span>
         </div>
         <div class="card-row">
           <span class="card-lbl">Fees</span>
@@ -1177,7 +1170,7 @@ async function loadSpot() {
   _inOutFirstSorted.spot = false;
   if (!_spotRows.length) {
     document.getElementById('tbody-spot').innerHTML =
-      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
+      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/spot-short');
@@ -1194,7 +1187,7 @@ async function loadSpot() {
     applySpot();
   } catch (e) {
     if (!_spotRows.length) {
-      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="10" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
     }
   }
   clearInterval(_spotTimer);
@@ -1256,7 +1249,7 @@ function renderSpot() {
   const page = _spotFiltered.slice(start, start + PAGE_SIZE);
   if (!_spotFiltered.length) {
     const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
     renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
     renderSpotCards();
     return;
@@ -1296,8 +1289,7 @@ function renderSpot() {
       </td>
       <td class="td-inout">${_fmtIO(r.in_pct)}</td>
       <td class="td-inout">${_fmtIO(r.out_pct)}</td>
-      <td class="td-spread"><span class="${(r.basis_pct || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.basis_pct || 0) >= 0 ? '+' : '')}${(r.basis_pct || 0).toFixed(4)}%</span></td>
-      <td class="td-gross"><span class="${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
+      <td class="td-gross"><span class="${fundCls}">${fundSign}${(r.short_funding_8h * 0.5).toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 4h</span></td>
       <td class="td-fees">
         <span title="spot rt: ${r.fee_spot.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
@@ -1365,12 +1357,8 @@ function renderSpotCards() {
           </div>
         </div>
         <div class="card-row">
-          <span class="card-lbl">Funding / 8h</span>
-          <span class="card-val ${fundCls}">${fundSign}${r.short_funding_8h.toFixed(4)}%</span>
-        </div>
-        <div class="card-row">
-          <span class="card-lbl">Basis</span>
-          <span class="card-val ${basisCls}">${basisSign}${r.basis_pct.toFixed(4)}%</span>
+          <span class="card-lbl">Funding / 4h</span>
+          <span class="card-val ${fundCls}">${fundSign}${(r.short_funding_8h * 0.5).toFixed(4)}%</span>
         </div>
         <div class="card-row">
           <span class="card-lbl">Fees</span>
@@ -2202,7 +2190,7 @@ function renderArb() {
       </td>
       <td class="td-inout">${_fmtIO(r.in_pct)}</td>
       <td class="td-inout">${_fmtIO(r.out_pct)}</td>
-      <td class="td-spread"><span class="${(r.price_spread || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.price_spread || 0) >= 0 ? '+' : '')}${(r.price_spread || 0).toFixed(4)}%</span></td>
+      <td class="td-gross">${grossSign}${((r.gross_funding||0) * 0.5).toFixed(4)}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 4h</span></td>
       <td class="td-gross">${grossSign}${r.gross_funding.toFixed(4)}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
       <td class="td-fees">
         <span title="long: ${r.fee_long}% + short: ${r.fee_short}%">−${r.total_fees.toFixed(4)}%</span>
@@ -2433,12 +2421,12 @@ function renderArbCards() {
           </div>
         </div>
         <div class="card-row">
-          <span class="card-lbl">Gross / 8h</span>
-          <span class="card-val td-gross">${grossSign}${r.gross_funding.toFixed(4)}%</span>
+          <span class="card-lbl">Funding / 4h</span>
+          <span class="card-val td-gross">${grossSign}${((r.gross_funding||0) * 0.5).toFixed(4)}%</span>
         </div>
         <div class="card-row">
-          <span class="card-lbl">Basis</span>
-          <span class="card-val ${(r.price_spread || 0) >= 0 ? 'rate-pos' : 'rate-neg'}">${((r.price_spread || 0) >= 0 ? '+' : '')}${(r.price_spread || 0).toFixed(4)}%</span>
+          <span class="card-lbl">Gross / 8h</span>
+          <span class="card-val td-gross">${grossSign}${r.gross_funding.toFixed(4)}%</span>
         </div>
         <div class="card-row">
           <span class="card-lbl">Fees</span>

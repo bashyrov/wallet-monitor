@@ -163,6 +163,14 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
     <span class="ib-label">Live Spread</span>
     <span class="metric-val" id="tb-live-spread">—</span>
   </div>
+  <div class="metric-block">
+    <span class="ib-label" title="Net funding paid every 4 hours (short_rate − long_rate, normalised to 4h window)">Funding / 4h</span>
+    <span class="metric-val" id="tb-funding-4h">—</span>
+  </div>
+  <div class="metric-block">
+    <span class="ib-label" title="Live entry basis from top-of-book — (bestBidShort − bestAskLong) / bestAskLong">In</span>
+    <span class="metric-val" id="tb-in-pct">—</span>
+  </div>
 
   <!-- Alerts block -->
   <div class="metric-block alert-block" onclick="openAlertModal()" title="Manage spread alerts for this pair">
@@ -175,12 +183,6 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
       <span class="alert-add" title="Add alert">+ Add</span>
     </span>
   </div>
-
-  <!-- Back to Screener (fills remaining right space) -->
-  <a href="/screener?mode=arb" class="ib-back-link">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H4"/><path d="M10 6l-6 6 6 6"/></svg>
-    <span>Screener</span>
-  </a>
 </div>
 
 <!-- Main -->
@@ -899,13 +901,17 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         </div>
       </div>
 
-      <div class="metric-block" id="pt-basis-block" style="display:none">
-        <span class="ib-label">Basis</span>
-        <span class="metric-val" id="pt-basis">—</span>
-      </div>
       <div class="metric-block accent">
         <span class="ib-label">Live Spread</span>
         <span class="metric-val" id="pt-live-spread">—</span>
+      </div>
+      <div class="metric-block">
+        <span class="ib-label" title="Net funding paid every 4 hours">Funding / 4h</span>
+        <span class="metric-val" id="pt-funding-4h">—</span>
+      </div>
+      <div class="metric-block">
+        <span class="ib-label" title="Live entry basis from top-of-book">In</span>
+        <span class="metric-val" id="pt-in-pct">—</span>
       </div>
       <div class="metric-block">
         <span class="ib-label">Net / 8h</span>
@@ -915,11 +921,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         <span class="ib-label">APR</span>
         <span class="metric-val" id="pt-apr">—</span>
       </div>
-
-      <a href="${BACK}" class="ib-back-link">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H4"/><path d="M10 6l-6 6 6 6"/></svg>
-        <span>Screener</span>
-      </a>
     </div>
 
     <div class="workspace">
@@ -1218,13 +1219,18 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     setCls('pt-fund', 'val ' + (fundNative >= 0 ? 'rate-pos' : 'rate-neg'));
     setT('pt-ivl', `/ ${ivl}h /`);
 
-    setT('pt-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`);
-    $('pt-basis').style.color = basis >= 0 ? 'var(--green)' : 'var(--red)';
-    // Basis is only meaningful as a separate metric for DEX/Short — for
-    // long/short and spot/short the user-facing "Live Spread" already
-    // captures the entry divergence.
-    const _basisBlock = document.getElementById('pt-basis-block');
-    if (_basisBlock) _basisBlock.style.display = IS_DEX ? '' : 'none';
+    // Funding / 4h — short_funding_8h × 0.5 (or fundNative × 4/interval if 8h
+    // normalisation isn't available). Spot/dex: only the short leg pays
+    // funding so this is just half of short_funding_8h.
+    const f4h = (r.short_funding_8h != null) ? (r.short_funding_8h * 0.5)
+              : (r.gross_funding != null ? r.gross_funding * 0.5 : 0);
+    setT('pt-funding-4h', `${f4h >= 0 ? '+' : ''}${f4h.toFixed(4)}%`);
+    $('pt-funding-4h').style.color = f4h >= 0 ? 'var(--green)' : 'var(--red)';
+    // In = live entry basis from orderbook. Fall back to mark-based basis when
+    // orderbook tick hasn't landed.
+    const inPct = (typeof r.in_pct === 'number' && r.in_pct !== null) ? r.in_pct : basis;
+    setT('pt-in-pct', `${inPct >= 0 ? '+' : ''}${inPct.toFixed(4)}%`);
+    $('pt-in-pct').style.color = inPct >= 0 ? 'var(--green)' : 'var(--red)';
     setT('pt-net',  `${net >= 0 ? '+' : ''}${net.toFixed(4)}%`);
     $('pt-net').style.color = net >= 0 ? 'var(--green)' : 'var(--red)';
     setT('pt-apr',  apr > 0 ? apr.toFixed(0) + '%' : '—');
@@ -2212,6 +2218,16 @@ function renderTopBar(){
   const netFund=(r.gross_funding||0)-(r.total_fees||0);
   const nc=netFund>=0?'pos':'neg';
   setH('tb-net-val',`<span class="${nc}">${sign(netFund)}${netFund.toFixed(4)}%</span>`);
+  // Funding / 4h — net rate the user pays every 4h window. gross_funding is
+  // 8h-normalised (short_rate − long_rate); halve to project to 4h.
+  const f4h = (r.gross_funding||0) * 0.5;
+  const f4cls = f4h>=0?'pos':'neg';
+  setH('tb-funding-4h', `<span class="${f4cls}">${sign(f4h)}${f4h.toFixed(4)}%</span>`);
+  // In = entry basis. Prefer live in_pct from screener; fall back to mark-based
+  // price_spread when orderbook tick hasn't landed yet.
+  const inPct = (typeof r.in_pct === 'number' && r.in_pct !== null) ? r.in_pct : (r.price_spread || 0);
+  const inCls = inPct>=0?'pos':'neg';
+  setH('tb-in-pct', `<span class="${inCls}">${sign(inPct)}${inPct.toFixed(4)}%</span>`);
   renderOverview();
 }
 setInterval(()=>{if(!_opp)return;setT('fund-long-cd',fmtCD(_opp.next_ts_long));setT('fund-short-cd',fmtCD(_opp.next_ts_short));},1000);

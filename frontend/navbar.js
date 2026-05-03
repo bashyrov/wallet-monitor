@@ -38,10 +38,12 @@ const _NAV_SET = {
   profile:  ['app', 'archive', 'screener', 'pricing'],
   index:    ['app', 'archive', 'screener', 'pricing'],
   pricing:  ['app', 'archive', 'screener', 'pricing'],
-  // Screener service (screener + arb + watchlist) — its own trimmed nav
+  // Screener service (screener + arb + watchlist) — trimmed nav.
+  // Arb pages (long-short, spot-short, dex-short) include a Screener link
+  // to replace the deprecated ib-back-link arrow on the infobar.
   screener: ['app', 'pricing'],
-  arb:      ['app', 'pricing'],
-  watchlist:['app', 'pricing'],
+  arb:      ['app', 'screener', 'pricing'],
+  watchlist:['app', 'screener', 'pricing'],
   login:    [],
   register: [],
   checkout: ['app', 'pricing'],
@@ -64,7 +66,9 @@ const _ACTIVE = {
 
 function _navLink(link, active) {
   const cls = 'nav-lnk' + (link.id === active ? ' active' : '');
-  return `<a href="${link.href}" class="${cls}">${link.icon}${link.label}</a>`;
+  // Wrap the text label in a span so CSS can hide it on narrow viewports
+  // (mobile arb pages show icon-only nav).
+  return `<a href="${link.href}" class="${cls}">${link.icon}<span class="nav-lnk-label">${link.label}</span></a>`;
 }
 
 function _avatarBtn() {
