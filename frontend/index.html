@@ -113,12 +113,20 @@ img, svg { display: block; max-width: 100%; }
 .brand .cursor { color: var(--green); animation: blink 1s steps(2) infinite; margin-left: 1px; }
 @keyframes blink { 50% { opacity: 0; } }
 
-.nav-menu { display: flex; gap: 28px; align-items: center; }
+.nav-menu { display: flex; gap: 4px; align-items: center; }
 .nav-menu a {
   color: var(--text2); font-size: 14px; font-weight: 500;
-  transition: color .15s ease; position: relative;
+  padding: 8px 14px; border-radius: 10px;
+  border: 1px solid transparent;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+  position: relative;
 }
-.nav-menu a:hover { color: var(--text); }
+.nav-menu a:hover { color: var(--text); background: var(--surface2); }
+.nav-menu a.active {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: var(--green-edge);
+}
 .nav-cta { margin-left: auto; display: flex; gap: 10px; align-items: center; }
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -1659,6 +1667,37 @@ const onScroll = () => {
 };
 window.addEventListener('scroll', onScroll, { passive: true });
 onScroll();
+
+// ─── scroll-spy: highlight nav link for the section in view ───
+(() => {
+  const links = Array.from(document.querySelectorAll('.nav-menu a[href^="#"]'));
+  if (!links.length) return;
+  const sectionByLink = new Map();
+  const linkBySection = new Map();
+  links.forEach(a => {
+    const id = a.getAttribute('href').slice(1);
+    const sec = document.getElementById(id);
+    if (sec) { sectionByLink.set(a, sec); linkBySection.set(sec, a); }
+  });
+  if (!sectionByLink.size) return;
+  let active = null;
+  const setActive = (link) => {
+    if (active === link) return;
+    if (active) active.classList.remove('active');
+    active = link;
+    if (active) active.classList.add('active');
+  };
+  const spy = new IntersectionObserver((entries) => {
+    // Pick the entry with the largest visible ratio that's intersecting.
+    const visible = entries.filter(e => e.isIntersecting);
+    if (visible.length) {
+      visible.sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+      const link = linkBySection.get(visible[0].target);
+      if (link) setActive(link);
+    }
+  }, { rootMargin: '-40% 0px -55% 0px', threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] });
+  sectionByLink.forEach((sec) => spy.observe(sec));
+})();
 
 // ─── mobile drawer ───
 const burger = document.getElementById('burger');
