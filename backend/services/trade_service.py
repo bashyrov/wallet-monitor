@@ -1207,6 +1207,88 @@ _SPOT_STABLE = {"USDT", "USDC", "USD", "DAI", "FDUSD", "TUSD", "BUSD"}
 _SPOT_NOTIONAL_TOLERANCE_PCT = 5.0
 _SPOT_TIME_WINDOW_S = 10 * 60
 
+# How stale a BalanceSnapshot can be before /spot-short-pairs forces a
+# refresh. Most venues take 1-3s for a balance fetch; 5 min keeps the
+# endpoint cheap on warm caches but fresh enough for new spot purchases
+# to land in the spot/short pair card without a manual /app refresh.
+_SPOT_REFRESH_STALE_S = 5 * 60
+# Hard timeout for the on-demand refresh — any single venue that takes
+# longer than this is dropped (we keep whatever ran in time and proceed).
+_SPOT_REFRESH_TIMEOUT_S = 12.0
+
+
+async def _refresh_stale_spot_snapshots(db: Session, user_id: int, shorts: list[dict]) -> None:
+    """Trigger a fresh balance fetch for spot-capable wallets whose snapshot
+    is older than _SPOT_REFRESH_STALE_S, when the user has open SHORT
+    positions that could plausibly pair with spot.
+
+    Why only when shorts exist: refreshing all spot venues on every page
+    load would be wasteful. Spot/short pair detection only fires when
+    there are open shorts; if there are none, stale snapshots don't
+    matter for THIS endpoint.
+
+    We refresh ALL spot-capable wallets (not just the ones holding the
+    short's asset) because the user might have moved spot to a different
+    venue since the last snapshot and we'd never see the new venue's
+    holding otherwise.
+    """
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    from backend.db.models import BalanceSnapshot
+    from backend.services import balance_service
+
+    if not shorts:
+        return
+
+    cutoff = _dt.now(_tz.utc) - _td(seconds=_SPOT_REFRESH_STALE_S)
+    wallets = (
+        db.query(Wallet)
+        .filter(
+            Wallet.user_id == user_id,
+            Wallet.is_archived == False,  # noqa: E712
+            Wallet.wallet_type.in_(("exchange", "perpdex")),
+        )
+        .all()
+    )
+    if not wallets:
+        return
+
+    snap_age: dict[int, _dt | None] = {}
+    rows = (
+        db.query(BalanceSnapshot.wallet_id, BalanceSnapshot.snapshot_at)
+        .filter(BalanceSnapshot.user_id == user_id)
+        .all()
+    )
+    for wid, ts in rows:
+        snap_age[int(wid)] = ts
+
+    stale: list[Wallet] = []
+    for w in wallets:
+        ts = snap_age.get(int(w.id))
+        if ts is None:
+            stale.append(w)
+            continue
+        # Naive datetimes from SQLite — assume UTC for comparison.
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=_tz.utc)
+        if ts < cutoff:
+            stale.append(w)
+
+    if not stale:
+        return
+
+    try:
+        await asyncio.wait_for(
+            balance_service.fetch_balances(stale, db),
+            timeout=_SPOT_REFRESH_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        logger.info(
+            "spot-short refresh timed out after %.0fs (user=%s, wallets=%d) — using whatever landed",
+            _SPOT_REFRESH_TIMEOUT_S, user_id, len(stale),
+        )
+    except Exception as exc:
+        logger.warning("spot-short refresh failed user=%s: %s", user_id, exc)
+
 
 def _list_user_spot_holdings(db: Session, user_id: int) -> list[dict]:
     """Per-(wallet, asset) spot holdings from BalanceSnapshot.totals.
@@ -1354,12 +1436,21 @@ async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
     Live SHORT data (qty, entry_price) comes from list_user_positions; the
     open-time stamp is enriched from TradePosition rows so the time-window
     match in _spot_short_can_pair has something to compare against.
+
+    Spot freshness: if any spot-capable wallet's BalanceSnapshot is older
+    than _SPOT_REFRESH_STALE_S we kick off a fresh balance fetch for those
+    wallets in parallel before computing pairs. Without this the user has
+    to manually click 'Refresh' on /app every time they want spot/short
+    pairs to reflect a fresh spot purchase. We bound the refresh to a
+    short timeout so the endpoint stays responsive even if some venue
+    is slow.
     """
     from backend.db.models import TradePosition
     positions = await list_user_positions(db, user_id)
     shorts = [p for p in positions if (p.get("side") or "").lower() == "sell"]
     if not shorts:
         return []
+    await _refresh_stale_spot_snapshots(db, user_id, shorts)
     spots = _list_user_spot_holdings(db, user_id)
     if not spots:
         return []
