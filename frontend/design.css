@@ -35,6 +35,9 @@
   --red:        #F87171;
   --red-soft:   rgba(248,113,113,0.10);
   --red-edge:   rgba(248,113,113,0.30);
+  /* Legacy aliases — keep page CSS working without rewrites */
+  --green-dim:  rgba(26,255,171,0.08);
+  --red-dim:    rgba(248,113,113,0.08);
   --yellow:     #E5C07B;
   --blue:       #7CB9F7;
   --purple:     #A78BFA;
