@@ -1540,15 +1540,21 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         _lastBidShort = bestBid;
       }
 
-      // Live spread = basis_pct from row data. Same metric as the screener
-      // basis column so the two pages don't drift. Mark-based, no orderbook
-      // dependency — works even when the WS is reconnecting on illiquid pairs.
-      if (side === 'short' && _row && typeof _row.basis_pct === 'number') {
-        const live = _row.basis_pct;
-        setT('pt-live-spread', `${live >= 0 ? '+' : ''}${live.toFixed(4)}%`);
-        const el = $('pt-live-spread');
-        if (el) el.style.color = live >= 0 ? 'var(--green)' : 'var(--red)';
-        if (!IS_DEX) _eePush(live);
+      // Live spread = In (orderbook entry basis). For spot/short and
+      // dex/short detail we prefer the row's in_pct (computed by Go from
+      // both venues' top-of-book) and fall back to basis_pct only when
+      // in_pct is missing. Same rule as futures L/S — keeps Live Spread
+      // and the In column consistent.
+      if (side === 'short' && _row) {
+        const inPctRaw = _row.in_pct;
+        const live = (typeof inPctRaw === 'number') ? inPctRaw
+                   : (typeof _row.basis_pct === 'number' ? _row.basis_pct : null);
+        if (live !== null) {
+          setT('pt-live-spread', `${live >= 0 ? '+' : ''}${live.toFixed(4)}%`);
+          const el = $('pt-live-spread');
+          if (el) el.style.color = live >= 0 ? 'var(--green)' : 'var(--red)';
+          if (!IS_DEX) _eePush(live);
+        }
       }
     }
     _obTicks[side]++;
@@ -3043,29 +3049,30 @@ function connectWs(){
   setInterval(()=>{if(_ws?.readyState===WebSocket.OPEN)_ws.send('ping');},20000);
 }
 
-// ── Live spread = basis (mark-price spread) ───────────────────────────────────
-// Switched from orderbook-derived in_pct to mark-based basis_pct. Reasons:
-// (1) basis is computed from already-streamed mark prices — sub-second updates
-//     for free, no orderbook fetch needed.
-// (2) orderbook on illiquid alts can be 10+ s stale or missing entirely on
-//     KuCoin/HTX from our infra, which made the live spread display unreliable.
-// (3) screener and detail now use the same metric — no drift.
-//
-// _opp.price_spread is updated by the /ws/long-short broadcast every 200 ms.
+// ── Live spread = In (orderbook entry basis) ──────────────────────────────────
+// Per-user spec: Live Spread MUST equal In. Mark-based basis (price_spread)
+// gets bizarre values when one venue's funding mark is stale (e.g. +8.99%
+// when both books actually quote within 0.02%). in_pct comes from
+// top-of-book bestBidShort − bestAskLong, refreshed every WS book tick on
+// go-fetcher and broadcast on /ws/long-short. When in_pct is briefly null
+// (book gap), keep the previous value rather than flipping to mark — the
+// sticky cache on go-fetcher already smooths most drops.
 let _liveMidLong=0, _liveMidShort=0;
-let _liveAskLong=0, _liveBidShort=0;  // kept for orderbook display, not for spread
+let _liveAskLong=0, _liveBidShort=0;  // kept for orderbook display
+let _lastLiveSpread = null;           // sticky local value
 function _liveBasisPct(){
-  return (_opp && typeof _opp.price_spread === 'number') ? _opp.price_spread : null;
+  if (_opp && typeof _opp.in_pct === 'number') return _opp.in_pct;
+  return _lastLiveSpread;             // fall through to last good
 }
 function updateLiveSpread(){
   const sp=_liveBasisPct();
   if(sp===null) return;
+  _lastLiveSpread = sp;
   const cls=sp>=0?'pos':'neg';
   setH('tb-live-spread',`<span class="${cls}">${sign(sp)}${sp.toFixed(4)}%</span>`);
 }
 
-// Mirror basis into b-spread + recompute calc — same 3s cadence as before
-// but from already-broadcast _opp.price_spread, no orderbook reads.
+// Mirror live-spread into b-spread + recompute calc.
 setInterval(()=>{
   const sp=_liveBasisPct();
   if(sp===null) return;

@@ -149,7 +149,8 @@ class AppNavbar extends HTMLElement {
     const navHtml = links.map(l => {
       const hidden = authGated.includes(l.id) ? ' style="display:none"' : '';
       const cls = 'nav-lnk' + (l.id === active ? ' active' : '');
-      return `<a href="${l.href}" class="${cls}" data-nb-id="${l.id}"${hidden}>${l.icon}${l.label}</a>`;
+      // Wrap the text label so CSS can collapse it to icon-only on mobile.
+      return `<a href="${l.href}" class="${cls}" data-nb-id="${l.id}"${hidden}>${l.icon}<span class="nav-lnk-label">${l.label}</span></a>`;
     }).join('');
 
     this.innerHTML = `
