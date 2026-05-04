@@ -5452,21 +5452,60 @@ body{padding-bottom:44px;}
 </div>
 
 <script>
-let _syncRows = [], _syncSelected = new Set();
+// _syncRows: futures positions (live, from /trade/positions).
+// _syncSpotItems: spot holdings (one row per (wallet, asset)) derived
+//   from /trade/spot-short-pairs — we de-dup by spot wallet_id+symbol
+//   so a holding that matches multiple shorts only shows once.
+// _syncSelected: keys of currently picked items. Keys are prefixed:
+//   'f|sym|exchange|side|wallet_id' for futures
+//   's|sym|exchange|wallet_id'       for spot
+let _syncRows = [], _syncSpotItems = [], _syncSelected = new Set();
 
 async function openSyncPairs(){
   const bd = document.getElementById('sync-backdrop');
   if (!bd) return;
   bd.classList.add('open');
   _syncSelected.clear();
-  // Load current positions
   document.getElementById('sync-list').innerHTML = '<div style="padding:20px;color:var(--text3);font-size:12px;text-align:center">Loading positions…</div>';
   try {
-    const r = await Auth.apiFetch('/trade/positions');
-    if (!r.ok) throw new Error();
-    _syncRows = await r.json();
-  } catch {
-    document.getElementById('sync-list').innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px;text-align:center">Failed to load positions.</div>';
+    // Load futures positions and spot-short candidates in parallel.
+    // /spot-short-pairs returns rows where the asset matches an open
+    // short ticker — exactly the candidates we want to surface in
+    // Sync UI as pickable LONG legs.
+    const [posR, sspR] = await Promise.all([
+      Auth.apiFetch('/trade/positions'),
+      Auth.apiFetch('/trade/spot-short-pairs'),
+    ]);
+    if (!posR.ok) throw new Error('positions ' + posR.status);
+    _syncRows = await posR.json() || [];
+    if (sspR.ok) {
+      const ssp = (await sspR.json()) || [];
+      // De-dup by (wallet_id|asset) — one spot holding can match
+      // several shorts simultaneously (one per short venue), but we
+      // want exactly one Sync row per spot leg.
+      const seen = new Set();
+      _syncSpotItems = [];
+      for (const r of ssp) {
+        const sp = r.spot || {};
+        const k = `${sp.wallet_id}|${(r.symbol || '').toUpperCase()}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        _syncSpotItems.push({
+          symbol: r.symbol,
+          exchange: sp.exchange,
+          wallet_id: sp.wallet_id,
+          wallet_name: sp.wallet_name,
+          qty: Number(sp.qty || 0),
+          // Pre-compute one default short pair-target (the first short
+          // we saw for this asset) so confirmSyncPair can resolve the
+          // wallet_id of the chosen short leg.
+        });
+      }
+    } else {
+      _syncSpotItems = [];
+    }
+  } catch (e) {
+    document.getElementById('sync-list').innerHTML = `<div style="padding:20px;color:var(--red);font-size:12px;text-align:center">Failed to load positions: ${e.message || e}</div>`;
     return;
   }
   _renderSyncList();
@@ -5494,13 +5533,16 @@ function _renderSyncList(){
     <div style="height:6px"></div>
   ` : '';
 
-  // Section 2: pickable single positions
+  // Section 2: pickable single positions (futures + spot)
   const isInManualPair = (p) => manual.some(m => m.symbol === p.symbol &&
     ((m.long_exchange === p.exchange && p.side === 'buy') ||
      (m.short_exchange === p.exchange && p.side === 'sell')));
-  const pickable = _syncRows.filter(p => !isInManualPair(p) && Math.abs(Number(p.quantity || 0)) > 0);
-  const rowsHTML = pickable.length ? pickable.map(p => {
-    const k = `${p.symbol}|${p.exchange}|${p.side}`;
+
+  // Futures rows (open positions on perp venues)
+  const futurePickable = _syncRows.filter(p =>
+    !isInManualPair(p) && Math.abs(Number(p.quantity || 0)) > 0);
+  const futureHTML = futurePickable.map(p => {
+    const k = `f|${p.symbol}|${p.exchange}|${p.side}|${p.wallet_id || 0}`;
     const isSel = _syncSelected.has(k);
     const sideTxt = p.side === 'buy' ? 'LONG' : 'SHORT';
     const sideCol = p.side === 'buy' ? 'var(--green)' : 'var(--red)';
@@ -5513,18 +5555,54 @@ function _renderSyncList(){
         <span style="color:var(--text3);font-size:10px">${exLbl(p.exchange)}</span>
         <span class="mono" style="color:var(--text3);margin-left:auto;font-size:10.5px">${qty}</span>
       </div>`;
-  }).join('') : '<div style="padding:14px;color:var(--text3);font-size:12px;text-align:center">No unpaired positions.</div>';
+  }).join('');
+
+  // Spot rows — same shape but tagged as SPOT, key carries wallet_id so
+  // confirmSyncPair can dispatch to /pair/spot-short/sync. Surfaced
+  // for any spot holding whose ticker matches an open short, regardless
+  // of notional/time match (per user request).
+  const spotHTML = _syncSpotItems.map(s => {
+    const k = `s|${s.symbol}|${s.exchange}|${s.wallet_id || 0}`;
+    const isSel = _syncSelected.has(k);
+    const qty = Number(s.qty || 0).toFixed(4);
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:${isSel?'rgba(26,255,171,0.10)':'var(--surface2)'};border:1px solid ${isSel?'var(--green)':'var(--border)'};border-radius:6px;cursor:pointer;font-size:12px;transition:background .12s,border-color .12s" onclick="_syncToggle('${k}')">
+        <input type="checkbox" ${isSel?'checked':''} style="cursor:pointer" onclick="event.stopPropagation();_syncToggle('${k}')">
+        <span style="color:var(--green);font-weight:700;font-size:10px">SPOT</span>
+        <span style="color:var(--text)">${s.symbol}</span>
+        <span style="color:var(--text3);font-size:10px">${exLbl(s.exchange)}</span>
+        <span class="mono" style="color:var(--text3);margin-left:auto;font-size:10.5px">${qty}</span>
+      </div>`;
+  }).join('');
+
+  const allItems = futureHTML + spotHTML;
+  const rowsHTML = allItems || '<div style="padding:14px;color:var(--text3);font-size:12px;text-align:center">No unpaired positions or spot holdings.</div>';
 
   wrap.innerHTML = pairedHTML + rowsHTML;
 
-  // Enable button only when 2 selected (one long + one short, different exchanges)
-  const sels = [..._syncSelected].map(k => {
-    const [sym, ex, side] = k.split('|');
-    return { sym, ex, side };
-  });
-  const valid = sels.length === 2 && sels[0].sym === sels[1].sym &&
-                sels[0].side !== sels[1].side && sels[0].ex !== sels[1].ex;
+  // Enable button only when 2 selected covering one LONG side
+  // (futures buy OR spot) + one SHORT (futures sell), same symbol,
+  // different venues.
+  const sels = [..._syncSelected].map(k => _syncDecodeKey(k)).filter(Boolean);
+  const longLeg  = sels.find(s => s.kind === 'spot' || (s.kind === 'futures' && s.side === 'buy'));
+  const shortLeg = sels.find(s => s.kind === 'futures' && s.side === 'sell');
+  const valid = sels.length === 2 && longLeg && shortLeg &&
+                longLeg.sym === shortLeg.sym &&
+                longLeg.ex !== shortLeg.ex;
   document.getElementById('sync-pair-btn').disabled = !valid;
+}
+
+// Decode the sync key into a tagged record. Returns null on garbage.
+function _syncDecodeKey(k) {
+  if (!k) return null;
+  const parts = k.split('|');
+  if (parts[0] === 'f' && parts.length === 5) {
+    return { kind: 'futures', sym: parts[1], ex: parts[2], side: parts[3], wallet_id: parseInt(parts[4]||'0', 10) };
+  }
+  if (parts[0] === 's' && parts.length === 4) {
+    return { kind: 'spot', sym: parts[1], ex: parts[2], side: 'buy', wallet_id: parseInt(parts[3]||'0', 10) };
+  }
+  return null;
 }
 
 function _syncToggle(k){
@@ -5541,17 +5619,41 @@ function _syncToggle(k){
 }
 
 async function confirmSyncPair(){
-  const sels = [..._syncSelected].map(k => {
-    const [sym, ex, side] = k.split('|');
-    return { sym, ex, side };
-  });
+  const sels = [..._syncSelected].map(k => _syncDecodeKey(k)).filter(Boolean);
   if (sels.length !== 2) return;
-  const longSel = sels.find(s => s.side === 'buy');
-  const shortSel = sels.find(s => s.side === 'sell');
-  if (!longSel || !shortSel || longSel.sym !== shortSel.sym) return;
-  await _addManualPair(longSel.sym, longSel.ex, shortSel.ex);
+  const longLeg  = sels.find(s => s.kind === 'spot' || (s.kind === 'futures' && s.side === 'buy'));
+  const shortLeg = sels.find(s => s.kind === 'futures' && s.side === 'sell');
+  if (!longLeg || !shortLeg || longLeg.sym !== shortLeg.sym) return;
+
+  if (longLeg.kind === 'spot') {
+    // Spot/short pair: needs both wallet IDs. Hits the dedicated
+    // endpoint that stores leg_a_key prefix "spot|<wallet_id>".
+    try {
+      const r = await Auth.apiFetch('/trade/pair/spot-short/sync', {
+        method: 'POST',
+        body: JSON.stringify({
+          symbol: longLeg.sym,
+          spot_wallet_id: longLeg.wallet_id,
+          short_exchange: shortLeg.ex,
+          short_wallet_id: shortLeg.wallet_id,
+        }),
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        if (typeof toast === 'function') toast('Spot/Short pair failed: ' + (txt || r.status), 'error');
+        return;
+      }
+      if (typeof toast === 'function') toast(`Paired ${longLeg.sym} SPOT ${longLeg.ex.toUpperCase()} ⇄ ${shortLeg.ex.toUpperCase()}`, 'success');
+    } catch (e) {
+      if (typeof toast === 'function') toast('Spot/Short pair failed: ' + e.message, 'error');
+      return;
+    }
+  } else {
+    // Futures L/S pair via the existing /trade/pair/sync helper.
+    await _addManualPair(longLeg.sym, longLeg.ex, shortLeg.ex);
+    if (typeof toast === 'function') toast(`Paired ${longLeg.sym} ${longLeg.ex.toUpperCase()} ⇄ ${shortLeg.ex.toUpperCase()}`, 'success');
+  }
   _syncSelected.clear();
-  if (typeof toast === 'function') toast(`Paired ${longSel.sym} ${longSel.ex.toUpperCase()} ⇄ ${shortSel.ex.toUpperCase()}`, 'success');
   if (typeof accLoadPositions === 'function') accLoadPositions();
   _renderSyncList();
 }
