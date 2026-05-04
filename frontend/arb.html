@@ -2679,8 +2679,10 @@ function renderBook(d,side){
   const rawMid=(rawBestBid&&rawBestAsk)?(rawBestBid+rawBestAsk)/2:(rawBestBid||rawBestAsk||0);
   if(side==='long') { _liveMidLong=rawMid; _liveAskLong=rawBestAsk; }
   if(side==='short') { _liveMidShort=rawMid; _liveBidShort=rawBestBid; }
-  updateLiveSpread();
+  // Sample first so updateLiveSpread can read the freshest local in_pct
+  // when _opp.in_pct isn't available (pair outside top-1000 arb feed).
   sampleEntryExit();
+  updateLiveSpread();
 }
 
 // ── Entry/Exit live divergence chart ──────────────────────────────────────────
@@ -3062,6 +3064,14 @@ let _liveAskLong=0, _liveBidShort=0;  // kept for orderbook display
 let _lastLiveSpread = null;           // sticky local value
 function _liveBasisPct(){
   if (_opp && typeof _opp.in_pct === 'number') return _opp.in_pct;
+  // Pair not in top-1000 arb feed (low volume / niche listing) →
+  // _opp.in_pct is undefined. Use the locally-computed in_pct from
+  // sampleEntryExit instead — it walks our own orderbook fetches and
+  // produces an in_pct identical in meaning to the WS broadcast's.
+  if (typeof _eeHist !== 'undefined' && _eeHist.length) {
+    const last = _eeHist[_eeHist.length - 1];
+    if (last && typeof last.inPct === 'number') return last.inPct;
+  }
   return _lastLiveSpread;             // fall through to last good
 }
 function updateLiveSpread(){
