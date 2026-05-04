@@ -523,12 +523,53 @@ _POSITIONS_LASTGOOD_TTL_S = 30.0
 
 
 async def list_user_positions(db: Session, user_id: int, symbol: str | None = None) -> list[dict]:
-    """Aggregate open positions across all the user's trade-enabled wallets."""
+    """Aggregate open positions across all the user's trade-enabled wallets.
+
+    Two latency optimisations:
+      - Stale-while-revalidate: if we have ANY cache (even past TTL),
+        return it immediately and kick off a background refresh. Cold
+        page load still has to wait, but refreshes never block the UI.
+      - Per-wallet timeout: each exchange's list_positions is capped at
+        _POSITIONS_PER_WALLET_TIMEOUT_S. A misbehaving venue (MEXC with
+        an IP-whitelist 60s hang, etc.) doesn't drag the whole call out
+        — that wallet's last-good (if any) covers the gap.
+    """
     import time as _time
     cache_key = (user_id, (symbol or "").upper())
     cached = _POSITIONS_CACHE.get(cache_key)
-    if cached and (_time.time() - cached[0]) < _POSITIONS_CACHE_TTL_S:
-        return cached[1]
+    now = _time.time()
+    if cached:
+        age = now - cached[0]
+        if age < _POSITIONS_CACHE_TTL_S:
+            return cached[1]
+        # Stale cache: serve immediately, refresh in background. Per-user
+        # dedup so a fast-polling /arb doesn't queue overlapping bg
+        # refreshes against the same wallets.
+        if age < _POSITIONS_STALE_MAX_S and not _POSITIONS_REFRESH_INFLIGHT.get(cache_key):
+            _POSITIONS_REFRESH_INFLIGHT[cache_key] = True
+            async def _bg():
+                try:
+                    from backend.db.base import SessionLocal
+                    bg_db = SessionLocal()
+                    try:
+                        await _list_user_positions_inner(bg_db, user_id, symbol)
+                    finally:
+                        bg_db.close()
+                finally:
+                    _POSITIONS_REFRESH_INFLIGHT.pop(cache_key, None)
+            asyncio.create_task(_bg())
+            return cached[1]
+    return await _list_user_positions_inner(db, user_id, symbol)
+
+
+_POSITIONS_STALE_MAX_S = 5 * 60.0
+_POSITIONS_REFRESH_INFLIGHT: dict[tuple[int, str], bool] = {}
+_POSITIONS_PER_WALLET_TIMEOUT_S = 2.0
+
+
+async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | None) -> list[dict]:
+    import time as _time
+    cache_key = (user_id, (symbol or "").upper())
     wallets = (
         db.query(Wallet)
         .filter(
@@ -599,7 +640,26 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
                 return lg[1]
             return []
 
-    results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)
+    async def _one_capped(w: Wallet) -> list[dict]:
+        # Per-wallet hard timeout. A slow exchange (MEXC w/ IP-whitelist
+        # hang, etc.) gets dropped from this snapshot; the user's last-
+        # good for that wallet (if any) covers the gap.
+        try:
+            return await asyncio.wait_for(
+                _one(w), timeout=_POSITIONS_PER_WALLET_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            lg_key = (user_id, w.id, (symbol or "").upper())
+            lg = _POSITIONS_LASTGOOD.get(lg_key)
+            if lg and (_time.time() - lg[0]) < _POSITIONS_LASTGOOD_TTL_S:
+                return lg[1]
+            logger.info("list_positions wallet=%s ex=%s timed out (%.1fs)",
+                        w.id, w.type_value, _POSITIONS_PER_WALLET_TIMEOUT_S)
+            return []
+
+    results = await asyncio.gather(
+        *(_one_capped(w) for w in wallets), return_exceptions=True
+    )
     flat: list[dict] = []
     for r in results:
         if isinstance(r, list):
