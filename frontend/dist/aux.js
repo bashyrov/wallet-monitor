@@ -1,5 +1,5 @@
-(function(){"use strict";const o="avalant-site-banner",p="avalant-banner-style";let n=null,s=null;function g(){if(document.getElementById(p))return;const r=`
-      #${o} {
+(function(){"use strict";const e="avalant-site-banner",r="avalant-banner-style";let o=null,p=null;function c(){if(document.getElementById(r))return;const i=`
+      #${e} {
         position: fixed; top: 0; left: 0; right: 0; z-index: 1100;
         background: linear-gradient(90deg, #1AFFAB 0%, #00E89A 100%);
         color: #08090C;
@@ -17,20 +17,20 @@
         from { transform: translateY(-100%); opacity: 0; }
         to   { transform: translateY(0);     opacity: 1; }
       }
-      #${o} .b-text {
+      #${e} .b-text {
         display: inline-block; max-width: 100%;
         text-overflow: ellipsis; overflow: hidden;
       }
-      #${o}.marquee {
+      #${e}.marquee {
         justify-content: flex-start;
       }
-      #${o}.marquee .b-track {
+      #${e}.marquee .b-track {
         display: inline-flex; gap: 64px; align-items: center;
         white-space: nowrap;
         animation: avalant-banner-scroll 28s linear infinite;
         will-change: transform;
       }
-      #${o}.marquee .b-track .b-text {
+      #${e}.marquee .b-track .b-text {
         display: inline-block; max-width: none;
       }
       @keyframes avalant-banner-scroll {
@@ -42,11 +42,11 @@
          \u2014 push that down by the banner height so the card doesn't crowd up. */
       body.has-site-banner .wrap { min-height: calc(100vh - 36px) !important; }
       @media (max-width: 560px) {
-        #${o} { font-size: 12.5px; height: 32px; padding: 0 12px; }
+        #${e} { font-size: 12.5px; height: 32px; padding: 0 12px; }
         body.has-site-banner { padding-top: 32px !important; }
         body.has-site-banner .wrap { min-height: calc(100vh - 32px) !important; }
       }
-    `,e=document.createElement("style");e.id=p,e.textContent=r,(document.head||document.documentElement).appendChild(e)}function l(r){return(r==null?"":String(r)).replace(/[&<>"']/g,function(e){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[e]})}function i(){const r=document.getElementById(o);r&&r.remove(),document.body.classList.remove("has-site-banner"),n=null}function h(r){if(!r||!r.enabled||!r.text){i();return}if(n&&n.enabled===r.enabled&&n.text===r.text&&n.marquee===r.marquee)return;g();let e=document.getElementById(o);e||(e=document.createElement("div"),e.id=o,document.body.firstChild?document.body.insertBefore(e,document.body.firstChild):document.body.appendChild(e),document.body.classList.add("has-site-banner"));const t=l(r.text);r.marquee?(e.classList.add("marquee"),e.innerHTML='<div class="b-track"><span class="b-text">'+t+'</span><span class="b-text" aria-hidden="true">'+t+"</span></div>"):(e.classList.remove("marquee"),e.innerHTML='<span class="b-text">'+t+"</span>"),n=r}async function d(){try{const r=await fetch("/api/banner",{cache:"no-store"});if(!r.ok)return;const e=await r.json();h(e)}catch{}}function a(){d(),s=setInterval(d,6e4)}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",a,{once:!0}):a(),window.AvalantBanner={reload:d}})(),(function(){function u(){if(document.getElementById("avalant-popup-style"))return;const e=`
+    `,t=document.createElement("style");t.id=r,t.textContent=i,(document.head||document.documentElement).appendChild(t)}function n(i){return(i==null?"":String(i)).replace(/[&<>"']/g,function(t){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[t]})}function a(){const i=document.getElementById(e);i&&i.remove(),document.body.classList.remove("has-site-banner"),o=null}function u(i){if(!i||!i.enabled||!i.text){a();return}if(o&&o.enabled===i.enabled&&o.text===i.text&&o.marquee===i.marquee)return;c();let t=document.getElementById(e);t||(t=document.createElement("div"),t.id=e,document.body.firstChild?document.body.insertBefore(t,document.body.firstChild):document.body.appendChild(t),document.body.classList.add("has-site-banner"));const l=n(i.text);i.marquee?(t.classList.add("marquee"),t.innerHTML='<div class="b-track"><span class="b-text">'+l+'</span><span class="b-text" aria-hidden="true">'+l+"</span></div>"):(t.classList.remove("marquee"),t.innerHTML='<span class="b-text">'+l+"</span>"),o=i}async function g(){try{const i=await fetch("/api/banner",{cache:"no-store"});if(!i.ok)return;const t=await i.json();u(t)}catch{}}function b(){g(),p=setInterval(g,6e4)}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",b,{once:!0}):b(),window.AvalantBanner={reload:g}})(),(function(){function s(){if(document.getElementById("avalant-popup-style"))return;const t=`
       .avalant-popup-backdrop{
         position:fixed;inset:0;z-index:600;
         background:
@@ -200,115 +200,84 @@
         .avalant-popup-cta{justify-content:center;padding:13px 18px}
         .avalant-popup-skip{padding:8px}
       }
-    `,t=document.createElement("style");t.id="avalant-popup-style",t.textContent=e,(document.head||document.documentElement).appendChild(t)}function o(e){return(e??"").toString().replace(/[&<>"']/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[t])}function p(){try{return!!localStorage.getItem("wm_token")}catch{return!1}}let n=null,s=[];function g(e){if(n)return;u(),n=e;const t=e.button_url||"/pricing",b=e.button_text||"View pricing",c=document.createElement("div");c.className="avalant-popup-backdrop",c.innerHTML=`
-      <div class="avalant-popup-card" role="dialog" aria-modal="true" aria-labelledby="avalant-popup-title-${e.id}">
+    `,l=document.createElement("style");l.id="avalant-popup-style",l.textContent=t,(document.head||document.documentElement).appendChild(l)}function e(t){return(t??"").toString().replace(/[&<>"']/g,l=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[l])}function r(){try{return!!localStorage.getItem("wm_token")}catch{return!1}}let o=null,p=[];function c(t){if(o)return;s(),o=t;const l=t.button_url||"/pricing",v=t.button_text||"View pricing",d=document.createElement("div");d.className="avalant-popup-backdrop",d.innerHTML=`
+      <div class="avalant-popup-card" role="dialog" aria-modal="true" aria-labelledby="avalant-popup-title-${t.id}">
         <button class="avalant-popup-close" aria-label="Close">
           <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg>
         </button>
         <div class="avalant-popup-inner">
           <div class="avalant-popup-head">
-            <span class="avalant-popup-id">#${e.id}</span>
+            <span class="avalant-popup-id">#${t.id}</span>
             <span class="avalant-popup-tag">Announcement</span>
           </div>
-          <h3 class="avalant-popup-title" id="avalant-popup-title-${e.id}">${o(e.title)}</h3>
-          <p class="avalant-popup-body">${o(e.body)}</p>
+          <h3 class="avalant-popup-title" id="avalant-popup-title-${t.id}">${e(t.title)}</h3>
+          <p class="avalant-popup-body">${e(t.body)}</p>
           <div class="avalant-popup-foot">
             <button class="avalant-popup-skip" type="button">Maybe later</button>
-            <a class="avalant-popup-cta" href="${o(t)}">
-              ${o(b)}
+            <a class="avalant-popup-cta" href="${e(l)}">
+              ${e(v)}
               <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5"/></svg>
             </a>
           </div>
         </div>
       </div>
-    `,document.body.appendChild(c);const f=()=>{d(e.id).finally(()=>{if(c.remove(),n=null,s.length){const x=s.shift();g(x)}})};c.querySelector(".avalant-popup-close").addEventListener("click",f),c.querySelector(".avalant-popup-skip").addEventListener("click",f),c.addEventListener("click",x=>{x.target===c&&f()})}const l="avalant_popup_anon_dismissed";function i(){try{const e=localStorage.getItem(l),t=e?JSON.parse(e):[];return Array.isArray(t)?new Set(t.map(Number)):new Set}catch{return new Set}}function h(e){try{localStorage.setItem(l,JSON.stringify([...e]))}catch{}}async function d(e){if(p())try{await Auth.apiFetch(`/popups/${e}/dismiss`,{method:"POST"})}catch{}else{const t=i();t.add(Number(e)),h(t)}}async function a(){try{const e=p()?{headers:{Authorization:"Bearer "+localStorage.getItem("wm_token")}}:{},t=await fetch("/api/popups/pending",e);if(!t.ok)return;let c=(await t.json()).popups||[];if(!p()&&c.length){const f=i();c=c.filter(x=>!f.has(Number(x.id)))}if(!c.length)return;s=c.slice(1),g(c[0])}catch{}}function r(){document.readyState==="loading"?document.addEventListener("DOMContentLoaded",a,{once:!0}):a()}r(),window.AvalantPopup={reload:a}})(),(function(){function u(){try{return!!localStorage.getItem("wm_token")}catch{return!1}}if(!u())return;const o="expiry_banner_dismissed_until",p=1440*60*1e3;function n(){try{const l=parseInt(localStorage.getItem(o)||"0",10);return Number.isFinite(l)&&Date.now()<l}catch{return!1}}async function s(){if(n())return;let l=null;try{const d=await fetch("/api/auth/me",{headers:{Authorization:"Bearer "+localStorage.getItem("wm_token")}});if(!d.ok)return;l=await d.json()}catch{return}if(!l||!l.plan_expires_at)return;const i=new Date(l.plan_expires_at);if(Number.isNaN(i.getTime()))return;const h=Math.round((i.getTime()-Date.now())/864e5);h>7||g(l,h)}function g(l,i){if(document.getElementById("expiry-banner"))return;let h,d;i<=0?(h="#F87171",d=`Your <b>${l.plan_slug||l.plan||"plan"}</b> plan expired \u2014 portfolio scan downgraded. <a href="/pricing" style="color:#fff;text-decoration:underline">Renew</a>`):i<=3?(h="#E5C07B",d=`Your <b>${l.plan_slug||l.plan||"plan"}</b> plan ends in <b>${i} day${i===1?"":"s"}</b>. <a href="/pricing" style="color:#000;text-decoration:underline">Renew now</a>`):(h="#06B6D4",d=`Your <b>${l.plan_slug||l.plan||"plan"}</b> plan renews in <b>${i} days</b>. <a href="/pricing" style="color:#fff;text-decoration:underline">Manage</a>`);const a=document.createElement("div");a.id="expiry-banner",a.style.cssText=`
+    `,document.body.appendChild(d);const h=()=>{g(t.id).finally(()=>{if(d.remove(),o=null,p.length){const f=p.shift();c(f)}})};d.querySelector(".avalant-popup-close").addEventListener("click",h),d.querySelector(".avalant-popup-skip").addEventListener("click",h),d.addEventListener("click",f=>{f.target===d&&h()})}const n="avalant_popup_anon_dismissed";function a(){try{const t=localStorage.getItem(n),l=t?JSON.parse(t):[];return Array.isArray(l)?new Set(l.map(Number)):new Set}catch{return new Set}}function u(t){try{localStorage.setItem(n,JSON.stringify([...t]))}catch{}}async function g(t){if(r())try{await Auth.apiFetch(`/popups/${t}/dismiss`,{method:"POST"})}catch{}else{const l=a();l.add(Number(t)),u(l)}}async function b(){try{const t=r()?{headers:{Authorization:"Bearer "+localStorage.getItem("wm_token")}}:{},l=await fetch("/api/popups/pending",t);if(!l.ok)return;let d=(await l.json()).popups||[];if(!r()&&d.length){const h=a();d=d.filter(f=>!h.has(Number(f.id)))}if(!d.length)return;p=d.slice(1),c(d[0])}catch{}}function i(){document.readyState==="loading"?document.addEventListener("DOMContentLoaded",b,{once:!0}):b()}i(),window.AvalantPopup={reload:b}})(),(function(){function s(){try{return!!localStorage.getItem("wm_token")}catch{return!1}}if(!s())return;const e="expiry_banner_dismissed_until",r=1440*60*1e3;function o(){try{const n=parseInt(localStorage.getItem(e)||"0",10);return Number.isFinite(n)&&Date.now()<n}catch{return!1}}async function p(){if(o())return;let n=null;try{const g=await fetch("/api/auth/me",{headers:{Authorization:"Bearer "+localStorage.getItem("wm_token")}});if(!g.ok)return;n=await g.json()}catch{return}if(!n||!n.plan_expires_at)return;const a=new Date(n.plan_expires_at);if(Number.isNaN(a.getTime()))return;const u=Math.round((a.getTime()-Date.now())/864e5);u>7||c(n,u)}function c(n,a){if(document.getElementById("expiry-banner"))return;let u,g;a<=0?(u="#F87171",g=`Your <b>${n.plan_slug||n.plan||"plan"}</b> plan expired \u2014 portfolio scan downgraded. <a href="/pricing" style="color:#fff;text-decoration:underline">Renew</a>`):a<=3?(u="#E5C07B",g=`Your <b>${n.plan_slug||n.plan||"plan"}</b> plan ends in <b>${a} day${a===1?"":"s"}</b>. <a href="/pricing" style="color:#000;text-decoration:underline">Renew now</a>`):(u="#06B6D4",g=`Your <b>${n.plan_slug||n.plan||"plan"}</b> plan renews in <b>${a} days</b>. <a href="/pricing" style="color:#fff;text-decoration:underline">Manage</a>`);const b=document.createElement("div");b.id="expiry-banner",b.style.cssText=`
       position:sticky; top:0; z-index:200;
-      background:${h}; color:${i<=3&&i>0?"#000":"#fff"};
+      background:${u}; color:${a<=3&&a>0?"#000":"#fff"};
       padding:9px 16px; text-align:center; font-size:13px; font-weight:500;
       font-family:'Inter',sans-serif;
       box-shadow:0 2px 12px rgba(0,0,0,0.12);
       display:flex; justify-content:center; align-items:center; gap:14px;
-    `,a.innerHTML=`
-      <span>${d}</span>
+    `,b.innerHTML=`
+      <span>${g}</span>
       <button id="expiry-banner-close" aria-label="Dismiss"
         style="background:transparent;border:0;color:inherit;font-size:18px;cursor:pointer;line-height:1;padding:0 6px;opacity:0.75">\xD7</button>
-    `,document.body.insertBefore(a,document.body.firstChild),document.getElementById("expiry-banner-close").addEventListener("click",()=>{try{localStorage.setItem(o,String(Date.now()+p))}catch{}a.remove()})}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",s,{once:!0}):s()})();const _ICONS={portfolio:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="6" width="3" height="5" rx="0.7" fill="currentColor" opacity=".5"/><rect x="4.5" y="3.5" width="3" height="7.5" rx="0.7" fill="currentColor" opacity=".75"/><rect x="8" y="1" width="3" height="10" rx="0.7" fill="currentColor"/></svg>',archive:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="4" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.35"/><path d="M1 4l1.5-2.5h7L11 4" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M4.5 6.5h3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',screener:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 6h9M1.5 3h9M1.5 9h5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',pricing:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5h3.8l5 5-3.8 3.8-5-5V1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><circle cx="4" cy="4" r="0.9" fill="currentColor"/></svg>',watchlist:`<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><defs><linearGradient id="wl-g-${Math.random().toString(36).slice(2,7)}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="currentColor"/><stop offset="1" stop-color="currentColor" stop-opacity="0.55"/></linearGradient></defs><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/></svg>`,login:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2H10a1 1 0 011 1v6a1 1 0 01-1 1H8M5 9l3-3-3-3M1 6h7" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>'},_ALL_LINKS=[{id:"app",href:"/app",label:"Portfolio",icon:_ICONS.portfolio,authOnly:!1},{id:"archive",href:"/archive",label:"Archive",icon:_ICONS.archive,authOnly:!1},{id:"screener",href:"/screener",label:"Screener",icon:_ICONS.screener,authOnly:!1},{id:"watchlist",href:"/watchlist",label:"Watchlist",icon:_ICONS.watchlist,authOnly:!1},{id:"pricing",href:"/pricing",label:"Pricing",icon:_ICONS.pricing,authOnly:!1}],_NAV_SET={app:["app","archive","screener","pricing"],archive:["app","archive","screener","pricing"],profile:["app","archive","screener","pricing"],index:["app","archive","screener","pricing"],pricing:["app","archive","screener","pricing"],screener:["app","pricing"],arb:["app","screener","pricing"],watchlist:["app","screener","pricing"],login:[],register:[],checkout:["app","pricing"]},_ACTIVE={app:"app",screener:"screener",archive:"archive",pricing:"pricing",watchlist:"watchlist",profile:null,index:null,login:null,register:null,checkout:null,arb:"screener"};function _navLink(u,o){const p="nav-lnk"+(u.id===o?" active":"");return`<a href="${u.href}" class="${p}">${u.icon}<span class="nav-lnk-label">${u.label}</span></a>`}function _avatarBtn(){return'<a href="/profile" class="avatar-btn" id="nav-avatar" title="Profile">U</a>'}function _rightHtml(u){switch(u){case"app":return`<button class="btn btn-primary btn-sm" onclick="openAddWalletModal()">+ Add Wallet</button>${_avatarBtn()}`;case"archive":case"profile":case"checkout":return _avatarBtn();case"screener":case"arb":case"watchlist":{const o=u==="watchlist"?" active":"";return`
-        <div id="_nb-guest" style="display:flex;align-items:center;gap:8px">
-          <a href="/login" class="nav-lnk">${_ICONS.login}Sign In</a>
-          <a href="/register" class="btn btn-primary btn-sm">Get Started</a>
+    `,document.body.insertBefore(b,document.body.firstChild),document.getElementById("expiry-banner-close").addEventListener("click",()=>{try{localStorage.setItem(e,String(Date.now()+r))}catch{}b.remove()})}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",p,{once:!0}):p()})();const _ICONS={portfolio:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2 11V7M5 11V4M8 11V8M11 11V2"/></svg>',screener:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2 7h10M2 4h10M2 10h6"/></svg>',archive:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 4.5h11v7a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-7zM.5 1.5h13v3H.5zM5.5 7.5h3"/></svg>',pricing:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 1.5h5l6 6-5 5-6-6v-5z"/><circle cx="4.5" cy="4.5" r="1" fill="currentColor"/></svg>',login:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5L13 9 9 13M13 9H4M4 1H2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h2"/></svg>'},_ALL_LINKS=[{id:"app",href:"/app",label:"Portfolio",icon:_ICONS.portfolio,authOnly:!1},{id:"archive",href:"/archive",label:"Archive",icon:_ICONS.archive,authOnly:!1},{id:"screener",href:"/screener",label:"Screener",icon:_ICONS.screener,authOnly:!1},{id:"pricing",href:"/pricing",label:"Pricing",icon:_ICONS.pricing,authOnly:!1}],_NAV_SET={app:["app","archive","screener","pricing"],archive:["app","archive","screener","pricing"],profile:["app","archive","screener","pricing"],index:["app","archive","screener","pricing"],pricing:["app","archive","screener","pricing"],screener:["app","screener","pricing"],arb:["app","screener","pricing"],watchlist:["app","screener","pricing"],login:[],register:[],checkout:["app","pricing"]},_ACTIVE={app:"app",screener:"screener",archive:"archive",pricing:"pricing",watchlist:"watchlist",profile:null,index:null,login:null,register:null,checkout:null,arb:"screener"};function _navLink(s,e){const r="nav-lnk"+(s.id===e?" active":"");return`<a href="${s.href}" class="${r}" data-nb-id="${s.id}">${s.icon}<span class="nav-lnk-label">${s.label}</span></a>`}function _drawerLink(s,e,r){const o=s.id===e?' class="active"':"",p=String(r+1).padStart(2,"0");return`<a href="${s.href}"${o} data-nb-drawer="${s.id}">${s.label}<span class="num">${p}</span></a>`}function _avatarBtn(){return'<a href="/profile" class="avatar-btn" id="nav-avatar" title="Profile">U</a>'}function _rightHtml(s){switch(s){case"app":return`<button class="btn btn-primary btn-sm" onclick="openAddWalletModal()">+ Add Wallet</button>${_avatarBtn()}`;case"archive":case"profile":case"checkout":return _avatarBtn();case"screener":case"arb":case"watchlist":return`
+        <div id="_nb-guest" style="display:flex;align-items:center;gap:10px">
+          <a href="/login" class="btn btn-ghost btn-sm">Sign in</a>
+          <a href="/register" class="btn btn-primary btn-sm">Get started</a>
         </div>
         <div id="_nb-user" style="display:none;align-items:center;gap:8px">
-          <a href="/watchlist" class="nav-lnk nav-lnk-icon${o}" title="Watchlist" aria-label="Watchlist">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M7 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L7 10.77 3.29 12.7 4 8.57l-3-2.92 4.15-.6z"/></svg>
+          <a href="/watchlist" class="nav-lnk-icon${s==="watchlist"?" active":""}" title="Watchlist" aria-label="Watchlist">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.3l1.85 3.75 4.15.6-3 2.93.71 4.13L8 10.77 4.29 12.7 5 8.57l-3-2.92 4.15-.6z"/></svg>
           </a>
-          <button class="nav-lnk nav-lnk-bell" onclick="openAlertsPopover(event)" title="Alerts" aria-label="Alerts">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+          <button class="nav-lnk-bell" onclick="openAlertsPopover(event)" title="Alerts" aria-label="Alerts">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
             <span class="nav-dot" id="nb-alerts-dot" style="display:none"></span>
           </button>
           ${_avatarBtn()}
-        </div>`}case"index":return`
-        <div id="_nb-guest" style="display:flex;align-items:center;gap:8px">
-          <a href="/login" class="nav-lnk">${_ICONS.login}Sign In</a>
-          <a href="/register" class="btn btn-primary btn-sm">Get Started</a>
+        </div>`;case"index":return`
+        <div id="_nb-guest" style="display:flex;align-items:center;gap:10px">
+          <a href="/login" class="btn btn-ghost btn-sm">Sign in</a>
+          <a href="/register" class="btn btn-primary btn-sm">Get started</a>
         </div>
-        <div id="_nb-user" style="display:none;align-items:center;gap:8px">
-          <a href="/app" class="btn btn-primary btn-sm">Open App</a>
+        <div id="_nb-user" style="display:none;align-items:center;gap:10px">
+          <a href="/app" class="btn btn-primary btn-sm">Open app</a>
           ${_avatarBtn()}
         </div>`;case"pricing":return`
-        <div id="_nb-guest" style="display:flex;align-items:center;gap:8px">
-          <a href="/login" class="btn btn-primary btn-sm" id="topbar-cta">Sign In</a>
+        <div id="_nb-guest" style="display:flex;align-items:center;gap:10px">
+          <a href="/login" class="btn btn-ghost btn-sm">Sign in</a>
+          <a href="/register" class="btn btn-primary btn-sm">Get started</a>
         </div>
-        <div id="_nb-user" style="display:none;align-items:center;gap:8px">
-          ${_avatarBtn()}
-        </div>`;case"login":return`<a href="/register" class="nav-lnk">${_ICONS.login}Register</a>
-              <a href="/app" class="btn btn-primary btn-sm">Open App</a>`;case"register":return`<a href="/login" class="nav-lnk">${_ICONS.login}Sign in</a>
-              <a href="/app" class="btn btn-primary btn-sm">Open App</a>`;default:return""}}class AppNavbar extends HTMLElement{connectedCallback(){const o=this.getAttribute("page")||"index",p=_ACTIVE[o]??null,n=_NAV_SET[o]??[],s=_ALL_LINKS.filter(i=>n.includes(i.id)),g=o==="pricing"?["app","archive"]:[],l=s.map(i=>{const h=g.includes(i.id)?' style="display:none"':"",d="nav-lnk"+(i.id===p?" active":"");return`<a href="${i.href}" class="${d}" data-nb-id="${i.id}"${h}>${i.icon}<span class="nav-lnk-label">${i.label}</span></a>`}).join("");this.innerHTML=`
+        <div id="_nb-user" style="display:none;align-items:center;gap:10px">${_avatarBtn()}</div>`;case"login":return`<a href="/register" class="btn btn-ghost btn-sm">Register</a>
+              <a href="/app" class="btn btn-primary btn-sm">Open app</a>`;case"register":return`<a href="/login" class="btn btn-ghost btn-sm">Sign in</a>
+              <a href="/app" class="btn btn-primary btn-sm">Open app</a>`;default:return""}}class AppNavbar extends HTMLElement{connectedCallback(){const e=this.getAttribute("page")||"index",r=_ACTIVE[e]??null,o=_NAV_SET[e]??[],p=_ALL_LINKS.filter(a=>o.includes(a.id)),c=p.map(a=>_navLink(a,r)).join(""),n=p.map((a,u)=>_drawerLink(a,r,u)).join("");if(this.innerHTML=`
       <a href="/" class="brand">avalant<span class="brand-cursor">_</span></a>
-      <nav class="topbar-nav">${l}</nav>
-      <div class="topbar-right">${_rightHtml(o)}</div>
-    `,this._initAuth(o)}_initAuth(o){if(typeof Auth>"u"){document.addEventListener("DOMContentLoaded",()=>this._applyAuth(o));return}this._applyAuth(o)}_applyAuth(o){if(typeof Auth>"u")return;const p=Auth.isLoggedIn(),n=Auth.getUser();if(p&&n){const s=this.querySelector("#nav-avatar");s&&(s.textContent=(n.username||n.email||"U")[0].toUpperCase())}if(["index","pricing","screener","arb","watchlist"].includes(o)){const s=this.querySelector("#_nb-guest"),g=this.querySelector("#_nb-user");p?(s&&(s.style.display="none"),g&&(g.style.display="flex")):(s&&(s.style.display="flex"),g&&(g.style.display="none"))}p&&this.querySelectorAll("[data-nb-id]").forEach(s=>{s.style.display==="none"&&(s.style.display="")})}}customElements.define("app-navbar",AppNavbar),(function(){if(window.openAlertsPopover)return;const u={binance:"Binance",bybit:"Bybit",okx:"OKX",gate:"Gate",kucoin:"KuCoin",mexc:"MEXC",bitget:"Bitget",hyperliquid:"Hyperliquid",aster:"Aster",ethereal:"Ethereal",whitebit:"WhiteBIT",bingx:"BingX",lighter:"Lighter",paradex:"Paradex"},o=`
-.nb-alerts-pop{position:fixed;background:var(--surface,#131217);border:1px solid var(--border,#22222A);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.5);min-width:320px;max-width:380px;max-height:70vh;display:flex;flex-direction:column;z-index:500;overflow:hidden;font-family:Inter,sans-serif;opacity:0;transform:translateY(-4px);transition:opacity .16s,transform .16s;}
-.nb-alerts-pop.open{opacity:1;transform:translateY(0);}
-.nb-alerts-hdr{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border,#22222A);}
-.nb-alerts-hdr-title{font-size:13px;font-weight:700;flex:1;letter-spacing:-0.01em;color:var(--text,#E6E8E3);}
-.nb-alerts-hdr-count{padding:2px 7px;border-radius:999px;background:var(--surface3,#202028);color:var(--text3,#676B7E);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;}
-.nb-alerts-body{flex:1;overflow-y:auto;padding:6px;}
-.nb-alert-row{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:background .12s;text-decoration:none;color:inherit;}
-.nb-alert-row:hover{background:var(--surface2,#17171C);}
-.nb-alert-sym{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12.5px;min-width:50px;color:var(--text,#E6E8E3);}
-.nb-alert-pair{font-size:11px;color:var(--text3,#676B7E);flex:1;letter-spacing:0.01em;}
-.nb-alert-thr{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--yellow,#E5C07B);font-weight:600;background:rgba(229,192,123,0.08);padding:2px 7px;border-radius:6px;}
-.nb-alert-toggle{width:30px;height:16px;border-radius:8px;background:var(--surface3,#202028);position:relative;flex-shrink:0;transition:background .15s;cursor:pointer;}
-.nb-alert-toggle::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--text3,#676B7E);transition:transform .16s,background .15s;}
-.nb-alert-toggle.on{background:rgba(26,255,171,0.2);}
-.nb-alert-toggle.on::after{transform:translateX(14px);background:var(--green,#1AFFAB);}
-.nb-alert-del{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:none;background:transparent;color:var(--text3,#676B7E);border-radius:5px;cursor:pointer;flex-shrink:0;transition:color .12s,background .12s;opacity:0;font-family:inherit;}
-.nb-alert-row:hover .nb-alert-del{opacity:1;}
-.nb-alert-del:hover{color:var(--red,#F87171);background:rgba(248,113,113,0.08);}
-.nb-alerts-empty{padding:28px 16px;text-align:center;color:var(--text3,#676B7E);font-size:12.5px;}
-.nb-alerts-empty-icon{margin:0 auto 10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:var(--surface2,#17171C);color:var(--text3,#676B7E);}
-.nb-alerts-empty .nb-hint{color:var(--text2,#9B9FAB);font-size:11.5px;margin-top:4px;}
-`,p=document.createElement("style");p.id="nb-alerts-pop-css",p.textContent=o,document.head.appendChild(p);let n=null;async function s(a){if(a&&a.stopPropagation(),n){l();return}const r=a?.currentTarget||document.querySelector(".nav-lnk-bell"),e=r?r.getBoundingClientRect():{right:window.innerWidth-20,bottom:56};n=document.createElement("div"),n.className="nb-alerts-pop",n.innerHTML=`
-      <div class="nb-alerts-hdr">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
-        <span class="nb-alerts-hdr-title">Alerts</span>
-        <span class="nb-alerts-hdr-count" id="nb-alerts-count">\u2014</span>
-      </div>
-      <div class="nb-alerts-body" id="nb-alerts-body"><div class="nb-alerts-empty">Loading\u2026</div></div>
-    `,document.body.appendChild(n);const t=n.offsetWidth,b=Math.max(12,Math.min(e.right-t,window.innerWidth-t-12)),c=e.bottom+6;n.style.left=b+"px",n.style.top=c+"px",requestAnimationFrame(()=>n.classList.add("open")),setTimeout(()=>document.addEventListener("click",g,{once:!1}),0);try{const f=await Auth.apiFetch("/alerts"),x=f.ok?await f.json():[];i(x)}catch{i([])}}function g(a){n&&!n.contains(a.target)&&!a.target.closest(".nav-lnk-bell")&&l()}function l(){if(!n)return;document.removeEventListener("click",g),n.classList.remove("open");const a=n;n=null,setTimeout(()=>a.remove(),160)}function i(a){if(!n)return;const r=n.querySelector("#nb-alerts-body"),e=n.querySelector("#nb-alerts-count");if(e.textContent=a.length,!a.length){r.innerHTML=`
-        <div class="nb-alerts-empty">
-          <div class="nb-alerts-empty-icon">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
-          </div>
-          No alerts yet
-          <div class="nb-hint">Open a pair on the Screener and tap the alert button to add one.</div>
-        </div>`;return}r.innerHTML=a.map(t=>{const b=t.direction==="above"?"\u2265":t.direction==="below"?"\u2264":"\xB1";return`
-      <a class="nb-alert-row" href="/arb?symbol=${t.symbol}&long=${t.long_exchange}&short=${t.short_exchange}" target="_blank" data-alert-id="${t.id}">
-        <span class="nb-alert-sym">${t.symbol}</span>
-        <span class="nb-alert-pair">${u[t.long_exchange]||t.long_exchange} \u2192 ${u[t.short_exchange]||t.short_exchange}</span>
-        <span class="nb-alert-thr">${b}${t.threshold.toFixed(3)}%</span>
-        <span class="nb-alert-toggle ${t.enabled?"on":""}" title="Enable/disable" onclick="event.preventDefault();event.stopPropagation();_nbToggleAlert(${t.id},this)"></span>
-        <button class="nb-alert-del" title="Delete alert" onclick="event.preventDefault();event.stopPropagation();_nbDeleteAlert(${t.id},this)">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 5h10M6 5V3.5a1 1 0 011-1h2a1 1 0 011 1V5m-4 0v8a1 1 0 001 1h2a1 1 0 001-1V5"/></svg>
-        </button>
-      </a>`}).join("")}async function h(a,r){try{(await Auth.apiFetch(`/alerts/${a}/toggle`,{method:"PATCH"})).ok&&r.classList.toggle("on")}catch{}}async function d(a,r){if(!(window.Confirm&&!await window.Confirm.ask({title:"Delete alert?",message:"This alert will stop triggering Telegram notifications.",okText:"Delete",danger:!0})))try{if(!(await Auth.apiFetch(`/alerts/${a}`,{method:"DELETE"})).ok)throw new Error;const t=r.closest(".nb-alert-row");t&&t.remove();const b=n?.querySelector("#nb-alerts-count");b&&(b.textContent=Math.max(0,parseInt(b.textContent||"0")-1)),window.refreshAlertsDot?.();const c=n?.querySelector("#nb-alerts-body");c&&!c.querySelector(".nb-alert-row")&&i([])}catch{window.toast&&toast("Failed to delete","error")}}window.openAlertsPopover=s,window._nbToggleAlert=h,window._nbDeleteAlert=d,window.refreshAlertsDot=async function(){try{const a=await Auth.apiFetch("/alerts");if(!a.ok)return;const r=await a.json(),e=document.getElementById("nb-alerts-dot");if(!e)return;const t=r.filter(b=>b.enabled).length;e.style.display=t>0?"inline-block":"none"}catch{}},document.addEventListener("DOMContentLoaded",()=>{const a=window.location.pathname;a==="/login"||a==="/register"||a==="/"||setTimeout(()=>window.refreshAlertsDot?.(),800)})})();
+      <nav class="topbar-nav">${c}</nav>
+      <div class="topbar-right">${_rightHtml(e)}</div>
+      <button class="nav-burger" id="nb-burger" aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
+      </button>
+    `,!document.getElementById("nav-drawer-root")){const a=document.createElement("div");a.id="nav-drawer-root",a.className="nav-drawer",a.innerHTML=`
+        <div class="drawer-top">
+          <a href="/" class="brand">avalant<span class="brand-cursor">_</span></a>
+          <button class="nav-burger" id="nb-close" aria-label="Close menu">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
+          </button>
+        </div>
+        <nav class="drawer-menu">${n}</nav>
+        <div class="drawer-cta">
+          <a href="/login" class="btn btn-outline btn-lg" id="nb-drawer-signin">Sign in</a>
+          <a href="/register" class="btn btn-primary btn-lg" id="nb-drawer-register">Get started</a>
+        </div>
+      `,document.body.appendChild(a)}this._wireBurger(),this._wireScrollState(),this._initAuth(e)}_wireBurger(){const e=document.getElementById("nav-drawer-root"),r=this.querySelector("#nb-burger");if(!e||!r)return;const o=e.querySelector("#nb-close"),p=()=>{e.classList.add("open"),r.classList.add("open"),document.body.style.overflow="hidden"},c=()=>{e.classList.remove("open"),r.classList.remove("open"),document.body.style.overflow=""};r.addEventListener("click",p),o&&o.addEventListener("click",c),e.querySelectorAll("a[data-nb-drawer]").forEach(n=>n.addEventListener("click",c)),document.addEventListener("keydown",n=>{n.key==="Escape"&&c()})}_wireScrollState(){const e=this.closest(".topbar");if(!e)return;const r=()=>{window.scrollY>4?e.classList.add("scrolled"):e.classList.remove("scrolled")};r(),window.addEventListener("scroll",r,{passive:!0})}_initAuth(e){if(typeof Auth>"u"){document.addEventListener("DOMContentLoaded",()=>this._applyAuth(e));return}this._applyAuth(e)}_applyAuth(e){if(typeof Auth>"u")return;const r=Auth.isLoggedIn(),o=Auth.getUser();if(r&&o){const n=this.querySelector("#nav-avatar");n&&(n.textContent=(o.username||o.email||"U")[0].toUpperCase())}if(["index","pricing","screener","arb","watchlist"].includes(e)){const n=this.querySelector("#_nb-guest"),a=this.querySelector("#_nb-user");r?(n&&(n.style.display="none"),a&&(a.style.display="flex")):(n&&(n.style.display="flex"),a&&(a.style.display="none"))}const p=document.getElementById("nb-drawer-signin"),c=document.getElementById("nb-drawer-register");r&&p&&c&&(p.style.display="none",c.textContent="Open app",c.href="/app")}}customElements.define("app-navbar",AppNavbar),window.openAlertsPopover=window.openAlertsPopover||function(s){if(typeof window._openAlertsModal=="function")return window._openAlertsModal(s);typeof window.toast=="function"&&window.toast({title:"Alerts",sub:"Coming soon \u2014 use /arb on a pair to set per-symbol alerts"})};
