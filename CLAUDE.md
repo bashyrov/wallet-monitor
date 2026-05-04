@@ -22,7 +22,7 @@ ssh root@217.216.108.111 "cd /root/wallet-monitor && git checkout pre-redesign-v
 **Prod load (current baseline)**: 12-core EPYC, 48 GB RAM. go-fetcher fixed ~9.5 cores (24 ob-WS + 12 funding-WS + 3 arb engines). app+app2 ~1.5 cores under near-zero traffic. Headroom for ~2 000 concurrent users before WS broadcaster (single Go process) and Redis pub/sub become the ceiling. RAM is not a bottleneck at this scale (44 GB free).
 
 **Things to know when continuing redesign work**:
-- `dist/aux.js` is the bundled `navbar.js + auth.js + ...` consumed by screener and arb. After editing `navbar.js` always run `cd frontend && node build.mjs` before deploy or those pages keep the stale navbar.
+- No frontend bundling — every page now loads `auth.js`, `navbar.js`, etc. directly. Edits propagate immediately, no rebuild step. The previous `dist/core.js`/`dist/aux.js` minified bundles + `build.mjs` were removed because the rebuild ergonomics weren't worth ~14 KB of minification gain (nginx already gzips).
 - `landing.html` is intentionally NOT touched by the redesign — it's the visual reference and was self-contained before. The homepage `/index.html` is the propagated copy.
 - Screener.html and arb.html are the heaviest pages (3 k / 6.6 k lines) and JS-coupled; the redesign treated them as polish-only (background gradient, design.css cascade), no markup edits.
 

@@ -9,7 +9,6 @@
      minified file. ~20 KB vs ~32 KB across 6 separate fetches. Preloaded
      so it's ready by the time inline <script> blocks below need
      Auth.apiFetch / EX / toast. -->
-<link rel="preload" as="script" href="/dist/core.js">
 <link rel="preload" as="style" href="/arb.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,8 +28,16 @@
 <link rel="dns-prefetch" href="//whitebit.com">
 <link rel="dns-prefetch" href="//api.prod.paradex.trade">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="/dist/core.js"></script>
-<script src="/dist/aux.js" defer></script>
+<script src="/auth.js"></script>
+<script src="/toast.js"></script>
+<script src="/confirm.js"></script>
+<script src="/theme.js"></script>
+<script src="/exchanges.js"></script>
+<script src="/formatters.js"></script>
+<script src="/banner.js" defer></script>
+<script src="/popup.js" defer></script>
+<script src="/expiry-banner.js" defer></script>
+<script src="/navbar.js" defer></script>
 <link rel="stylesheet" href="/design.css">
 <link rel="stylesheet" href="/navbar.css">
 <link rel="preconnect" href="https://unpkg.com" crossorigin>

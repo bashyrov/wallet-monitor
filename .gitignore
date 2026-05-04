@@ -8,9 +8,7 @@ dist/
 build/
 
 # ── Frontend ──────────────────────────────────────────
-# node_modules excluded; frontend/dist/ is committed (built bundles).
-frontend/node_modules/
-!frontend/dist/
+# No build step — every script tag points at the source file directly.
 
 # ── Virtual envs ──────────────────────────────────────
 .venv/
