@@ -51,7 +51,58 @@
     }
 
     /* ── PAGE ── */
-    .page { position: relative; z-index: 1; max-width: 840px; margin: 0 auto; padding: 40px 24px 80px; }
+    .page { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; display: grid; grid-template-columns: 240px 1fr; gap: 32px; align-items: start; }
+    .page > .profile-content { min-width: 0; max-width: 840px; }
+
+    /* ── Floating sticky sidebar ── */
+    .profile-side {
+      position: sticky; top: 88px;
+      align-self: start;
+      margin-left: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 14px 10px;
+      box-shadow: 0 8px 32px -16px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.02) inset;
+      animation: fadeUp 0.4s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .profile-side .ps-kicker {
+      font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--text3); font-weight: 600;
+      padding: 4px 12px 10px;
+    }
+    .profile-side ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
+    .profile-side a {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px;
+      border: 1px solid transparent;
+      border-radius: var(--r);
+      color: var(--text2);
+      font-size: 13px; font-weight: 500;
+      transition: color .15s ease, background .15s ease, border-color .15s ease;
+    }
+    .profile-side a svg { opacity: 0.65; flex-shrink: 0; transition: opacity .15s ease; }
+    .profile-side a:hover { color: var(--text); background: var(--surface2); }
+    .profile-side a:hover svg { opacity: 1; }
+    .profile-side a.active {
+      color: var(--green);
+      background: var(--green-soft);
+      border-color: var(--green-edge);
+    }
+    .profile-side a.active svg { opacity: 1; }
+
+    @media (max-width: 900px) {
+      .page { grid-template-columns: 1fr; gap: 16px; }
+      .profile-side {
+        position: static; margin-left: 0;
+        padding: 8px;
+        display: flex; flex-direction: column;
+      }
+      .profile-side .ps-kicker { display: none; }
+      .profile-side ul { flex-direction: row; overflow-x: auto; gap: 4px; scrollbar-width: none; }
+      .profile-side ul::-webkit-scrollbar { display: none; }
+      .profile-side a { white-space: nowrap; padding: 7px 12px; flex-shrink: 0; }
+    }
 
     /* ── PROFILE HERO ── */
     .profile-hero {
@@ -493,8 +544,41 @@
 <!-- ══ PAGE ═══════════════════════════════════════════════════════ -->
 <div class="page">
 
+  <!-- ── Floating sticky group menu ── -->
+  <aside class="profile-side" aria-label="Profile sections">
+    <div class="ps-kicker">Profile</div>
+    <ul>
+      <li><a href="#sec-account" data-spy="sec-account">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>
+        Account
+      </a></li>
+      <li><a href="#sec-activity" data-spy="sec-activity">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l4-4 3 3 5-6"/><path d="M2 14h12"/></svg>
+        Activity
+      </a></li>
+      <li><a href="#sec-plan" data-spy="sec-plan">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 8h12M5 11h2"/></svg>
+        Plan &amp; billing
+      </a></li>
+      <li><a href="#sec-notifications" data-spy="sec-notifications">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+        Notifications
+      </a></li>
+      <li><a href="#sec-security" data-spy="sec-security">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2v4.5c0 3.5-2.5 6-5.5 7-3-1-5.5-3.5-5.5-7V3.5z"/></svg>
+        Security
+      </a></li>
+      <li><a href="#sec-danger" data-spy="sec-danger">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1.5 13.5h13z"/><path d="M8 7v3M8 12h.01"/></svg>
+        Danger zone
+      </a></li>
+    </ul>
+  </aside>
+
+  <div class="profile-content">
+
   <!-- Profile Hero -->
-  <div class="profile-hero">
+  <div class="profile-hero" id="sec-account">
     <div class="profile-avatar" id="hero-avatar"></div>
     <div class="profile-info">
       <div class="profile-name" id="profile-name"></div>
@@ -511,7 +595,7 @@
 
 
   <!-- Balance History Chart -->
-  <div class="section-card" style="margin-bottom:20px;animation-delay:0.28s" id="history-card">
+  <div class="section-card" id="sec-activity" style="margin-bottom:20px;animation-delay:0.28s">
     <div class="section-head">
       <span class="section-title">Balance History</span>
       <div style="display:flex;gap:4px">
@@ -528,7 +612,7 @@
   </div>
 
   <!-- Two-column: Plan + Wallets breakdown -->
-  <div class="two-col" style="margin-bottom:20px">
+  <div class="two-col" id="sec-plan" style="margin-bottom:20px">
 
     <!-- Plan -->
     <div class="section-card">
@@ -576,7 +660,7 @@
     </div>
 
     <!-- Telegram -->
-    <div class="section-card" id="tg-card">
+    <div class="section-card" id="sec-notifications">
       <div class="section-head">
         <span class="section-title">Notifications</span>
         <span id="tg-status" class="tg-status tg-status-off">Not linked</span>
@@ -618,7 +702,7 @@
   </div>
 
   <!-- Two-Factor Authentication -->
-  <div class="section-card" id="tfa-card" style="margin-bottom:20px">
+  <div class="section-card" id="sec-security" style="margin-bottom:20px">
     <div class="section-head">
       <span class="section-title">Two-Factor Authentication</span>
       <span id="tfa-status" class="tg-status tg-status-off">Off</span>
@@ -931,7 +1015,7 @@
   </style>
 
   <!-- Danger Zone -->
-  <div class="section-card" style="animation-delay:0.3s">
+  <div class="section-card" id="sec-danger" style="animation-delay:0.3s">
     <div class="section-head">
       <span class="section-title" style="color:var(--red)">Danger Zone</span>
     </div>
@@ -958,6 +1042,8 @@
     </div>
   </div>
 
+  </div><!-- /.profile-content -->
+
 </div>
 
 <script src="/navbar.js"></script>
@@ -969,6 +1055,45 @@
 <script src="/confirm.js"></script>
 <script src="/theme.js"></script>
 <script>
+// ─── Profile sidebar: smooth-scroll + scroll-spy ───
+(() => {
+  const links = Array.from(document.querySelectorAll('.profile-side a[data-spy]'));
+  if (!links.length) return;
+  const sectionByLink = new Map();
+  const linkBySection = new Map();
+  links.forEach(a => {
+    const id = a.getAttribute('data-spy');
+    const sec = document.getElementById(id);
+    if (sec) { sectionByLink.set(a, sec); linkBySection.set(sec, a); }
+  });
+  const NAV_OFFSET = 88;
+  links.forEach(a => {
+    a.addEventListener('click', (e) => {
+      const sec = sectionByLink.get(a);
+      if (!sec) return;
+      e.preventDefault();
+      const y = sec.getBoundingClientRect().top + window.scrollY - NAV_OFFSET;
+      window.scrollTo({ top: y, behavior: 'smooth' });
+      history.replaceState(null, '', '#' + a.getAttribute('data-spy'));
+    });
+  });
+  let active = null;
+  const setActive = (link) => {
+    if (active === link) return;
+    if (active) active.classList.remove('active');
+    active = link; if (active) active.classList.add('active');
+  };
+  const spy = new IntersectionObserver((entries) => {
+    const visible = entries.filter(e => e.isIntersecting);
+    if (visible.length) {
+      visible.sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+      const link = linkBySection.get(visible[0].target);
+      if (link) setActive(link);
+    }
+  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] });
+  sectionByLink.forEach(sec => spy.observe(sec));
+})();
+
 (function() {
   if (localStorage.getItem('promo_dismissed')) {
     var b = document.getElementById('promo-banner');
