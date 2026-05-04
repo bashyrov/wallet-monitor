@@ -2591,6 +2591,12 @@ async function fetchBook(exchange,side){
     const res=await Auth.apiFetch(`/screener/orderbook?symbol=${SYM}&exchange=${exchange}&limit=200`);
     if(!res.ok) return;
     const d=await res.json();
+    // Don't overwrite the last good snapshot with an empty REST response
+    // (cache hiccup, WS resync). If the new payload has no levels but we
+    // had a previous one, keep showing the previous and just skip render.
+    // Otherwise the chart sampler bails out → entry/exit chart stutters.
+    const empty = !d || (!(d.bids||[]).length && !(d.asks||[]).length);
+    if (empty && _lastBookData[side]) return;
     _lastBookData[side]=d;
     renderBook(d,side);
   }catch{}

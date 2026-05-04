@@ -360,42 +360,82 @@ func (c *Compute) computeInOut(longEx, shortEx, sym string) (*float64, *float64)
 	return computeInOutPair(c.books, longEx, shortEx, sym)
 }
 
-// computeInOutPair returns top-of-book entry/exit basis as percentages,
-// or (nil, nil) if either venue's book isn't subscribed yet. Returning
-// pointers lets us serialise as JSON null when the data isn't ready —
-// the frontend filters on null to hide rows.
+// computeInOutPair returns top-of-book entry/exit basis as percentages.
+// On a clean read it caches (in, out) keyed by the pair so a transient
+// book hiccup (WS resub, REST gap, prune→resub) returns the LAST GOOD
+// value for up to inOutStickyTTL instead of nil. Without this the
+// screener row was disappearing for a frame whenever a book briefly
+// emptied, which read as the metric "blinking to 0" on the user's side.
 //
 //	in_pct  = (bestBidShort - bestAskLong)  / bestAskLong  * 100
 //	out_pct = (bestBidLong  - bestAskShort) / bestAskShort * 100
 //
-// Used by all three arb compute paths (futures / spot / dex) to bake
-// the values into each opp so the screener doesn't have to call a
-// separate /api/screener/in-out endpoint.
+// Used by all three arb compute paths (futures / spot / dex).
 func computeInOutPair(books *cache.Store, longEx, shortEx, sym string) (*float64, *float64) {
 	if books == nil {
 		return nil, nil
 	}
 	longE, lok := books.Get(longEx, sym)
 	shortE, sok := books.Get(shortEx, sym)
-	if !lok || !sok {
-		return nil, nil
+	bothPresent := lok && sok &&
+		len(longE.Asks) > 0 && len(longE.Bids) > 0 &&
+		len(shortE.Asks) > 0 && len(shortE.Bids) > 0
+	if bothPresent {
+		bestAskLong := longE.Asks[0][0]
+		bestBidLong := longE.Bids[0][0]
+		bestAskShort := shortE.Asks[0][0]
+		bestBidShort := shortE.Bids[0][0]
+		if bestAskLong > 0 && bestBidLong > 0 && bestAskShort > 0 && bestBidShort > 0 {
+			in := round4((bestBidShort - bestAskLong) / bestAskLong * 100)
+			out := round4((bestBidLong - bestAskShort) / bestAskShort * 100)
+			inOutCache.put(longEx, shortEx, sym, in, out)
+			return &in, &out
+		}
 	}
-	if len(longE.Asks) == 0 || len(longE.Bids) == 0 ||
-		len(shortE.Asks) == 0 || len(shortE.Bids) == 0 {
-		return nil, nil
+	// Stale fall-through — keep showing last good value within TTL so
+	// the row doesn't blink during a brief book gap. After TTL we
+	// finally return nil and the row drops out.
+	if in, out, ok := inOutCache.get(longEx, shortEx, sym); ok {
+		return &in, &out
 	}
-	// ws.Level is [2]float64 = [price, size]
-	bestAskLong := longE.Asks[0][0]
-	bestBidLong := longE.Bids[0][0]
-	bestAskShort := shortE.Asks[0][0]
-	bestBidShort := shortE.Bids[0][0]
-	if bestAskLong <= 0 || bestBidLong <= 0 || bestAskShort <= 0 || bestBidShort <= 0 {
-		return nil, nil
-	}
-	in := round4((bestBidShort - bestAskLong) / bestAskLong * 100)
-	out := round4((bestBidLong - bestAskShort) / bestAskShort * 100)
-	return &in, &out
+	return nil, nil
 }
+
+const inOutStickyTTL = 8 * time.Second
+
+type inOutEntry struct {
+	in, out float64
+	at      time.Time
+}
+
+type inOutCacheT struct {
+	mu sync.Mutex
+	m  map[string]inOutEntry
+}
+
+func (c *inOutCacheT) put(le, se, sym string, in, out float64) {
+	c.mu.Lock()
+	if c.m == nil {
+		c.m = map[string]inOutEntry{}
+	}
+	c.m[le+"|"+se+"|"+sym] = inOutEntry{in: in, out: out, at: time.Now()}
+	c.mu.Unlock()
+}
+
+func (c *inOutCacheT) get(le, se, sym string) (float64, float64, bool) {
+	c.mu.Lock()
+	e, ok := c.m[le+"|"+se+"|"+sym]
+	c.mu.Unlock()
+	if !ok {
+		return 0, 0, false
+	}
+	if time.Since(e.at) > inOutStickyTTL {
+		return 0, 0, false
+	}
+	return e.in, e.out, true
+}
+
+var inOutCache inOutCacheT
 
 // computeInOutDex — DEX/short variant. The "long" side has no orderbook
 // (it's a DEX with a single mid price baked into the opp at compute
@@ -408,20 +448,23 @@ func computeInOutDex(books *cache.Store, shortEx, sym string, dexPrice float64) 
 		return nil, nil
 	}
 	shortE, ok := books.Get(shortEx, sym)
-	if !ok {
-		return nil, nil
+	bookOK := ok && len(shortE.Asks) > 0 && len(shortE.Bids) > 0
+	if bookOK {
+		bestAskShort := shortE.Asks[0][0]
+		bestBidShort := shortE.Bids[0][0]
+		if bestAskShort > 0 && bestBidShort > 0 {
+			in := round4((bestBidShort - dexPrice) / dexPrice * 100)
+			out := round4((dexPrice - bestAskShort) / bestAskShort * 100)
+			// Sticky-cache the same way as the futures/spot path so a
+			// brief WS gap on the perp leg doesn't flap the row.
+			inOutCache.put("dex", shortEx, sym, in, out)
+			return &in, &out
+		}
 	}
-	if len(shortE.Asks) == 0 || len(shortE.Bids) == 0 {
-		return nil, nil
+	if in, out, ok := inOutCache.get("dex", shortEx, sym); ok {
+		return &in, &out
 	}
-	bestAskShort := shortE.Asks[0][0]
-	bestBidShort := shortE.Bids[0][0]
-	if bestAskShort <= 0 || bestBidShort <= 0 {
-		return nil, nil
-	}
-	in := round4((bestBidShort - dexPrice) / dexPrice * 100)
-	out := round4((dexPrice - bestAskShort) / bestAskShort * 100)
-	return &in, &out
+	return nil, nil
 }
 
 func nextTsOf(t time.Time) int64 {
