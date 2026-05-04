@@ -292,18 +292,37 @@ class BitgetAdapter:
 
     @classmethod
     async def _funding_pnl(cls, creds: dict, api_symbol: str, since_ms: int) -> float | None:
-        """Bitget: /api/v2/mix/account/account-bill with businessType=contract_fund
-        Returns bills where `change` is the USDT delta from funding settlements."""
+        """Bitget v2: /api/v2/mix/account/bill with businessType=contract_settle_fee.
+
+        Earlier code hit /account/account-bill (404) with businessType
+        contract_fund (40020 'parameter error') — both wrong. The correct
+        path returns rows like:
+          {amount:"1.34", businessType:"contract_settle_fee",
+           coin:"USDT", symbol:"LABUSDT", cTime:...}
+        Sum of `amount` over all settle_fee rows since `since_ms` is the
+        net funding the position has earned/paid in USDT.
+        """
         try:
-            data = await cls._signed(creds, "GET", "/api/v2/mix/account/account-bill", {
+            data = await cls._signed(creds, "GET", "/api/v2/mix/account/bill", {
                 "productType": "USDT-FUTURES",
                 "symbol": api_symbol,
-                "businessType": "contract_fund",
+                "businessType": "contract_settle_fee",
                 "startTime": since_ms,
                 "limit": 100,
             })
             items = (data or {}).get("bills") if isinstance(data, dict) else data
-            return sum(float(x.get("amount") or x.get("change") or 0) for x in (items or []))
+            total = 0.0
+            for x in (items or []):
+                # Belt-and-braces filter — server should already only
+                # return contract_settle_fee rows, but if a future API
+                # change loosens the filter, we still get the right sum.
+                if str(x.get("businessType") or "") != "contract_settle_fee":
+                    continue
+                try:
+                    total += float(x.get("amount") or 0)
+                except (TypeError, ValueError):
+                    continue
+            return total
         except Exception:
             return None
 
