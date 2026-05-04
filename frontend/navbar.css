@@ -45,7 +45,7 @@ app-navbar {
   transform: translate(-50%, -50%);
 }
 .nav-lnk {
-  display: inline-flex; align-items: center;
+  display: inline-flex; align-items: center; gap: 8px;
   padding: 8px 14px;
   font-size: 14px; font-weight: 500;
   color: var(--text2);
@@ -56,13 +56,16 @@ app-navbar {
   white-space: nowrap;
 }
 button.nav-lnk { background: none; cursor: pointer; }
+.nav-lnk svg { opacity: 0.65; transition: opacity var(--dur-fast) ease; flex-shrink: 0; }
 .nav-lnk:hover { color: var(--text); background: var(--surface2); }
+.nav-lnk:hover svg { opacity: 1; }
 .nav-lnk:active { transform: translateY(1px); }
 .nav-lnk.active {
   color: var(--green);
   background: var(--green-soft);
   border-color: var(--green-edge);
 }
+.nav-lnk.active svg { opacity: 1; }
 
 /* ─── Right cluster (desktop) ─────────────────────────────────────────── */
 .topbar-right {
