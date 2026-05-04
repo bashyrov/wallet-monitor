@@ -21,13 +21,11 @@
 }
 
 app-navbar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
   height: 64px;
   padding: 0 var(--gutter);
   max-width: var(--max-w); margin: 0 auto;
-  gap: 24px;
   position: relative;
 }
 
@@ -37,14 +35,14 @@ app-navbar {
   color: var(--text);
   flex-shrink: 0;
   user-select: none;
-  justify-self: start;
 }
 .brand:hover { opacity: 0.85; }
 
-/* ─── Center menu (desktop) ───────────────────────────────────────────── */
+/* ─── Center menu (desktop) — absolutely positioned so it ignores side widths */
 .topbar-nav {
   display: flex; align-items: center; gap: 4px;
-  justify-self: center;
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
 }
 .nav-lnk {
   display: inline-flex; align-items: center;
@@ -69,7 +67,7 @@ button.nav-lnk { background: none; cursor: pointer; }
 /* ─── Right cluster (desktop) ─────────────────────────────────────────── */
 .topbar-right {
   display: flex; align-items: center; gap: 10px;
-  justify-self: end;
+  margin-left: auto;
   flex-shrink: 0;
 }
 
@@ -115,8 +113,7 @@ button.nav-lnk { background: none; cursor: pointer; }
   width: 40px; height: 40px;
   border-radius: var(--r);
   align-items: center; justify-content: center;
-  justify-self: end;
-  grid-column: 3;
+  margin-left: auto;
   color: var(--text); background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
@@ -168,7 +165,7 @@ button.nav-lnk { background: none; cursor: pointer; }
 
 /* Mobile breakpoint */
 @media (max-width: 900px) {
-  app-navbar { grid-template-columns: auto 1fr auto; gap: 12px; padding: 0 16px; height: 56px; }
+  app-navbar { padding: 0 16px; height: 56px; }
   .topbar-nav { display: none; }
   .topbar-right { display: none; }
   .nav-burger { display: inline-flex; }
