@@ -1408,22 +1408,36 @@ def _spot_short_can_pair(spot: dict, short, spot_price: float | None) -> tuple[b
 
 
 async def _spot_price_lookup(symbols: list[str]) -> dict[str, float]:
-    """Pull last-trade price for each base from the screener's funding cache —
-    avoids per-symbol REST calls. Falls back to 0 (caller treats as unknown)."""
+    """Pull last-trade price for each base from go-fetcher's funding.json.
+
+    After the Go-fetcher cutover, arbitrage_service._cache (Python) is no
+    longer populated — prices live in /tmp/avalant_cache/funding.json
+    written by go-fetcher's funding dumper. We pick the first non-zero
+    price per symbol. Spot ≈ perp price for the basis math we do here.
+    Falls back to {} (caller treats missing keys as unknown and uses
+    short.entry_price as a last resort).
+    """
     out: dict[str, float] = {}
+    if not symbols:
+        return out
+    want = {s.upper() for s in symbols if s}
     try:
-        from backend.services.arbitrage_service import _cache as _arb_cache
+        import json as _json
+        import os as _os
+        cache_dir = _os.environ.get("AVALANT_CACHE_DIR", "/tmp/avalant_cache")
+        path = _os.path.join(cache_dir, "funding.json")
+        with open(path, "r") as f:
+            doc = _json.load(f)
     except Exception:
         return out
-    for ex_name, (rows, _ts) in _arb_cache.items():
-        for r in rows or []:
-            sym = (r.get("symbol") or "").upper()
-            px = r.get("price")
-            if not sym or not isinstance(px, (int, float)) or sym in out:
-                continue
-            if sym in symbols:
-                out[sym] = float(px)
-        if len(out) == len(symbols):
+    for r in doc.get("rows") or []:
+        sym = (r.get("symbol") or "").upper()
+        if sym not in want or sym in out:
+            continue
+        px = r.get("price")
+        if isinstance(px, (int, float)) and px > 0:
+            out[sym] = float(px)
+        if len(out) == len(want):
             break
     return out
 

@@ -4244,6 +4244,19 @@ const _EMPTY_STREAK_LIMIT = 3;
 // then falls back to inferring from the legs (e.g. when accLoadPositions
 // runs on /app where TYPE isn't a meaningful page constant).
 function _pairModeLabel(pair) {
+  // Prefer per-pair flags over the page-wide TYPE — a /arb?type=futures
+  // page can still show a spot/short pair (auto-detected or manually
+  // synced) and that pair's header should read "Spot", not "Futures".
+  if (pair) {
+    if (pair._spot_short || pair.long?.is_spot ||
+        (pair.long?.exchange || '').endsWith('_spot') ||
+        (pair.short?.exchange || '').endsWith('_spot')) {
+      return 'Spot';
+    }
+    if (pair._dex_short || pair.long?.is_dex || pair.short?.is_dex) {
+      return 'DEX';
+    }
+  }
   try {
     if (typeof TYPE !== 'undefined') {
       if (TYPE === 'spot') return 'Spot';
@@ -4251,12 +4264,6 @@ function _pairModeLabel(pair) {
       if (TYPE === 'futures') return 'Futures';
     }
   } catch (_) {}
-  // Fallback inference: any leg flagged spot → "Spot".
-  if (pair && (pair.long?.is_spot || pair.short?.is_spot ||
-               (pair.long?.exchange || '').endsWith('_spot') ||
-               (pair.short?.exchange || '').endsWith('_spot'))) {
-    return 'Spot';
-  }
   return 'Futures';
 }
 
@@ -4303,16 +4310,27 @@ async function _accFetchSpotShortPairs() {
 function _spotShortToPair(ssp) {
   const sp = ssp.spot || {};
   const sh = ssp.short || {};
-  const px = Number(ssp.spot_price_estimate || sh.entry_price || 0);
+  // mark = current spot price from backend (now reads go-fetcher's
+  // funding.json — accurate). entry = best-guess that the pair was
+  // opened simultaneously, so spot's implicit cost basis ≈ short's
+  // entry. With this, spot uPnL = (mark - entry) × qty correctly
+  // tracks delta-neutral basis change. Without it, spot uPnL was
+  // hardcoded to 0 and the "pair Δ" only reflected the short, which
+  // double-counted directional moves.
+  const mark  = Number(ssp.spot_price_estimate || sh.mark_price || 0);
+  const entry = Number(sh.entry_price || ssp.spot_price_estimate || 0);
+  const spotQty = Number(sp.qty || 0);
+  const spotUpnl = (entry > 0 && spotQty > 0) ? (mark - entry) * spotQty : 0;
   return {
     symbol: ssp.symbol,
     long: {
+      symbol:             ssp.symbol,         // was missing → "undefinedUSDT"
       exchange:           sp.exchange,
       side:               'buy',
-      quantity:           Number(sp.qty || 0),
-      entry_price:        px,
-      mark_price:         px,
-      unrealized_pnl_usd: 0,            // spot has no upnl until close (cost basis unknown)
+      quantity:           spotQty,
+      entry_price:        entry,
+      mark_price:         mark,
+      unrealized_pnl_usd: spotUpnl,
       funding_pnl_usd:    null,
       leverage:           1,
       wallet_id:          sp.wallet_id,
@@ -4321,6 +4339,7 @@ function _spotShortToPair(ssp) {
     },
     short: {
       ...sh,
+      symbol:      sh.symbol || ssp.symbol,
       exchange:    sh.exchange,
       side:        'sell',
       quantity:    Number(sh.quantity || 0),
