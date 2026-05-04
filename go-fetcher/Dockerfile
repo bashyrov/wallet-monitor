@@ -2,7 +2,7 @@
 # for the Python container. No shell, no package manager — minimal attack
 # surface for a process that talks to 16 exchange WS endpoints.
 
-FROM golang:1.22-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 
 # Cache layer for deps. CI rebuilds the binary in <30s when deps unchanged.
