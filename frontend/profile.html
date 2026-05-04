@@ -104,6 +104,11 @@
       .profile-side a { white-space: nowrap; padding: 7px 12px; flex-shrink: 0; }
     }
 
+    /* ── Tab panes: show only the active section ── */
+    .profile-content > [id^="sec-"] { display: none; }
+    .profile-content > [id^="sec-"].is-active { display: block; animation: fadeUp 0.25s var(--ease) both; }
+    .profile-hero#sec-account.is-active { display: flex; }
+
     /* ── PROFILE HERO ── */
     .profile-hero {
       display: flex; align-items: center; gap: 20px;
@@ -697,7 +702,7 @@
   </style>
 
   <!-- ─── Security group: 2FA + API Keys ─── -->
-  <section id="sec-security" style="display:contents">
+  <section id="sec-security">
 
   <!-- Two-Factor Authentication -->
   <div class="section-card" style="margin-bottom:20px">
@@ -1055,43 +1060,31 @@
 <script src="/confirm.js"></script>
 <script src="/theme.js"></script>
 <script>
-// ─── Profile sidebar: smooth-scroll + scroll-spy ───
+// ─── Profile sidebar: tab switcher (one pane visible at a time) ───
 (() => {
   const links = Array.from(document.querySelectorAll('.profile-side a[data-spy]'));
   if (!links.length) return;
-  const sectionByLink = new Map();
-  const linkBySection = new Map();
-  links.forEach(a => {
-    const id = a.getAttribute('data-spy');
-    const sec = document.getElementById(id);
-    if (sec) { sectionByLink.set(a, sec); linkBySection.set(sec, a); }
-  });
-  const NAV_OFFSET = 88;
+  const panes = Array.from(document.querySelectorAll('.profile-content > [id^="sec-"]'));
+  if (!panes.length) return;
+
+  const activate = (id, opts = {}) => {
+    let target = panes.find(p => p.id === id);
+    if (!target) target = panes[0];
+    panes.forEach(p => p.classList.toggle('is-active', p === target));
+    links.forEach(a => a.classList.toggle('active', a.getAttribute('data-spy') === target.id));
+    if (opts.updateHash !== false) history.replaceState(null, '', '#' + target.id);
+    if (opts.scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   links.forEach(a => {
     a.addEventListener('click', (e) => {
-      const sec = sectionByLink.get(a);
-      if (!sec) return;
       e.preventDefault();
-      const y = sec.getBoundingClientRect().top + window.scrollY - NAV_OFFSET;
-      window.scrollTo({ top: y, behavior: 'smooth' });
-      history.replaceState(null, '', '#' + a.getAttribute('data-spy'));
+      activate(a.getAttribute('data-spy'), { scroll: true });
     });
   });
-  let active = null;
-  const setActive = (link) => {
-    if (active === link) return;
-    if (active) active.classList.remove('active');
-    active = link; if (active) active.classList.add('active');
-  };
-  const spy = new IntersectionObserver((entries) => {
-    const visible = entries.filter(e => e.isIntersecting);
-    if (visible.length) {
-      visible.sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-      const link = linkBySection.get(visible[0].target);
-      if (link) setActive(link);
-    }
-  }, { rootMargin: '-30% 0px -55% 0px', threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] });
-  sectionByLink.forEach(sec => spy.observe(sec));
+
+  const initial = (location.hash || '#sec-account').slice(1);
+  activate(initial, { updateHash: false });
 })();
 
 (function() {
