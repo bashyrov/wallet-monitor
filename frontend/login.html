@@ -2,405 +2,249 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — Avalant</title>
 
   <link rel="icon" type="image/png" sizes="48x48" href="/avalant_favicon-48.png">
-  <link rel="icon" type="image/png" sizes="96x96" href="/avalant_favicon-96.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="/avalant_favicon-192.png">
   <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
-  <link rel="shortcut icon" href="/favicon.ico">
   <link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign In — Avalant</title>
-<link rel="stylesheet" href="/design.css">
-  <link rel="stylesheet" href="/navbar.css">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/navbar.css">
   <style>
-    /* :root vars now come from /design.css */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    ::selection { background: var(--green-dim); color: var(--green); }
-
-    html, body { overflow-x: hidden; max-width: 100%; }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--font);
-      font-size: 14px;
-      line-height: 1.5;
-      min-height: 100vh;
-      display: flex; flex-direction: column;
-      -webkit-font-smoothing: antialiased;
+    /* ─── Auth-page layout ─────────────────────────────────────────── */
+    body { min-height: 100vh; display: flex; flex-direction: column; }
+    .auth-bg {
+      position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      background:
+        radial-gradient(ellipse at 50% -10%, rgba(26,255,171,0.10), transparent 50%),
+        radial-gradient(ellipse at 100% 100%, rgba(124,185,247,0.05), transparent 50%);
     }
-    .page-center {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      padding: 40px 24px;
-    }
-
-    /* BG grid */
-    body::before {
-      content: '';
-      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    .auth-grid {
+      position: fixed; inset: 0; z-index: -1; pointer-events: none;
       background-image:
         linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-      background-size: 48px 48px;
-      mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 30%, transparent 100%);
+      background-size: 56px 56px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 30%, transparent 100%);
     }
-    /* glow */
-    body::after {
-      content: '';
-      position: fixed; top: -150px; left: 50%; transform: translateX(-50%);
-      width: 700px; height: 400px; z-index: 0; pointer-events: none;
-      background: radial-gradient(ellipse, rgba(26,255,171,0.06) 0%, transparent 70%);
-    }
-
-    
-    .topbar-right .btn-primary {
-      border-radius: 8px;
-      height: 30px;
-      padding: 0 12px;
-      font-size: 13px;
-      transition: box-shadow 0.2s, background 0.15s;
-    }
-    .topbar-right .btn-primary:hover { color: #09090B;
-      background: #00E89A;
-      box-shadow: 0 0 14px rgba(26,255,171,0.35);
-      transform: none;
-    }
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 0 14px; height: 34px; border-radius: 99px;
-      border: 1px solid var(--border); background: transparent;
-      color: var(--text2); cursor: pointer;
-      font-family: var(--font); font-size: 13px; font-weight: 500;
-      transition: all 0.15s ease; white-space: nowrap; user-select: none;
-      text-decoration: none;
-    }
-    .btn-primary {
-      background: var(--green); border-color: var(--green); color: #09090B; font-weight: 500;
-    }
-    .btn-primary:hover {
-      background: #00E89A; border-color: #00E89A;
-      box-shadow: 0 0 20px rgba(26,255,171,0.25); transform: translateY(-1px);
-    }
-    .btn-sm { padding: 0 10px; height: 28px; font-size: 12px; }
-
-    /* ── CARD ── */
-    .card {
-      position: relative; z-index: 1;
+    .auth-page { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+    .auth-card {
+      width: 100%; max-width: 420px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 36px 40px;
-      width: 100%; max-width: 420px;
-      box-shadow: 0 32px 80px rgba(0,0,0,0.5);
-      animation: cardIn 0.4s cubic-bezier(0.16,1,0.3,1) both;
+      border-radius: var(--r-xl);
+      padding: 40px 36px;
+      box-shadow: var(--shadow-lg);
+      animation: fade-in var(--dur-med) var(--ease) both;
     }
-    @keyframes cardIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
+    .auth-head { text-align: center; margin-bottom: 28px; }
+    .auth-mark {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 56px; height: 56px; border-radius: var(--r-lg);
+      background: var(--green-soft);
+      border: 1px solid var(--green-edge);
+      margin-bottom: 18px;
     }
-    .card::before {
-      content: '';
-      position: absolute; top: 0; left: 0; right: 0; height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(26,255,171,0.15), transparent);
-      border-radius: 16px 16px 0 0;
+    .auth-mark img { width: 28px; height: 28px; }
+    .auth-title {
+      font-family: 'Fraunces', serif; font-weight: 400;
+      font-size: 32px; line-height: 1.1; letter-spacing: -0.02em;
+      color: var(--text);
     }
+    .auth-sub { color: var(--text2); font-size: 14px; margin-top: 8px; }
 
-    .card-logo {
-      display: flex; justify-content: center; margin-bottom: 28px;
-    }
-    .logo-mark {
-      width: 64px; height: 64px; border-radius: 16px; overflow: hidden;
-    }
-    .logo-mark img { width: 100%; height: 100%; display: block; }
-
-    .card-title {
-      text-align: center;
-      font-size: 22px; font-weight: 700; letter-spacing: -0.5px;
-      margin-bottom: 6px;
-    }
-    .card-sub {
-      text-align: center;
-      font-size: 13px; color: var(--text3);
-      margin-bottom: 28px;
-    }
-
-    /* ── FORM ── */
-    .form-group { margin-bottom: 14px; }
-    .form-label {
-      display: block; font-size: 11px; font-weight: 600;
-      letter-spacing: 0.8px; text-transform: uppercase;
-      color: var(--text3); margin-bottom: 6px;
-    }
-    .form-input {
-      width: 100%; padding: 10px 13px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface2);
-      color: var(--text); font-family: var(--font); font-size: 14px;
-      outline: none; transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .form-input:focus {
-      border-color: var(--green);
-      box-shadow: 0 0 0 3px rgba(26,255,171,0.1);
-    }
-    .form-input::placeholder { color: var(--text4); }
-
+    /* ─── Form ─────────────────────────────────────────────────────── */
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 7px; letter-spacing: 0.01em; }
     .pw-wrap { position: relative; }
-    .pw-wrap .form-input { padding-right: 40px; }
     .pw-toggle {
-      position: absolute; right: 11px; top: 50%; transform: translateY(-50%);
-      background: none; border: none; cursor: pointer; padding: 2px;
-      color: var(--text3); display: flex; align-items: center;
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      width: 32px; height: 32px; border-radius: var(--r);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text3);
+      transition: color var(--dur-fast), background var(--dur-fast);
     }
-    .pw-toggle:hover { color: var(--text); }
+    .pw-toggle:hover { color: var(--text); background: var(--surface2); }
 
-    .form-row {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 6px;
+    .form-err {
+      display: none; padding: 10px 12px; border-radius: var(--r);
+      background: var(--red-soft); border: 1px solid var(--red-edge);
+      color: var(--red); font-size: 12px; line-height: 1.4;
+      margin-bottom: 12px;
     }
-    .form-link {
-      font-size: 12px; color: var(--text3);
-      text-decoration: none; transition: color 0.12s;
-    }
-    .form-link:hover { color: var(--green); }
+    .form-err.show { display: block; }
 
-    .tg-divider { display:flex; align-items:center; gap:10px; margin:16px 0 10px; color:var(--text3); font-size:10.5px; text-transform:uppercase; letter-spacing:0.1em; font-weight:600; }
-    .tg-divider::before, .tg-divider::after { content:''; flex:1; height:1px; background:var(--border); }
-    .tg-login-wrap { margin-bottom: 14px; }
-    .btn-submit {
-      width: 100%; height: 44px;
-      background: var(--green); color: #09090B;
-      border: none; border-radius: 8px;
-      font-family: var(--font); font-size: 14px; font-weight: 500;
-      cursor: pointer; transition: all 0.15s;
-      margin-top: 6px;
-    }
-    .btn-submit:hover {
-      background: #00E89A;
-      box-shadow: 0 0 28px var(--green-glow);
-      transform: translateY(-1px);
-    }
-    .btn-submit:active { transform: translateY(0); box-shadow: none; }
+    .submit-btn { width: 100%; padding: 13px; font-size: 14px; font-weight: 700; }
 
-    .divider {
+    .auth-foot {
+      text-align: center; margin-top: 12px; font-size: 13px; color: var(--text3);
+    }
+    .auth-foot a { color: var(--text); }
+    .auth-foot a:hover { color: var(--green); }
+
+    /* ─── TG divider + button ──────────────────────────────────────── */
+    .tg-divider {
       display: flex; align-items: center; gap: 12px;
-      margin: 20px 0; color: var(--text4); font-size: 11px;
+      margin: 22px 0;
+      color: var(--text3); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
     }
-    .divider::before, .divider::after {
+    .tg-divider::before, .tg-divider::after {
       content: ''; flex: 1; height: 1px; background: var(--border);
     }
-
-    .demo-note {
-      background: var(--green-dim);
-      border: 1px solid rgba(26,255,171,0.15);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 12px; color: var(--text2);
-      margin-top: 16px;
-      text-align: center;
+    .tg-btn {
+      width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+      padding: 12px 16px; border-radius: var(--r-pill);
+      background: linear-gradient(135deg, #229ED9, #1A8BC3);
+      color: #fff; font-size: 14px; font-weight: 600;
+      transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-med) ease;
     }
-    .demo-note strong { color: var(--green); }
+    .tg-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px -2px rgba(34,158,217,0.45);
+    }
+    .tg-btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
+    .tg-status { display: none; text-align: center; margin-top: 12px; font-size: 12px; color: var(--text2); }
+    .tg-err { display: none; margin-top: 10px; padding: 8px 12px; border-radius: var(--r); background: var(--red-soft); border: 1px solid var(--red-edge); color: var(--red); font-size: 12px; text-align: center; }
+
+    /* ─── Sign-up row ──────────────────────────────────────────────── */
     .signup-row {
-      text-align: center; margin-top: 20px;
-      font-size: 13px; color: var(--text3);
+      text-align: center; margin-top: 22px; font-size: 13px; color: var(--text3);
     }
-    .signup-row a {
-      color: var(--green); text-decoration: none; font-weight: 500;
-    }
+    .signup-row a { color: var(--green); font-weight: 600; }
     .signup-row a:hover { text-decoration: underline; }
 
-    /* ── BOTTOM NAV ── */
+    /* ─── Mobile bottom nav (preserved from old login) ─────────────── */
     .bottom-nav {
       display: none;
-      position: fixed; bottom: 12px; left: 12px; right: 12px; height: 64px;
-      background: rgba(13,13,16,0.82);
-      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-      border: 1px solid rgba(255,255,255,0.07); border-radius: 20px;
-      z-index: 300; align-items: center; justify-content: space-around; padding: 0 4px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
-    }
-    .bnav-item {
-      display: flex; flex-direction: column; align-items: center; gap: 3px;
-      padding: 8px 14px; border-radius: 12px; text-decoration: none; color: var(--text3);
-      font-size: 10px; font-weight: 500; transition: color 0.15s; flex: 1; max-width: 80px;
-    }
-    .bnav-item svg { flex-shrink: 0; opacity: 0.45; transition: opacity 0.15s; }
-    .bnav-item:hover { color: var(--text2); }
-    .bnav-item:hover svg { opacity: 0.7; }
-    .bnav-item.active { color: var(--green); }
-    .bnav-item.active svg { opacity: 1; }
-
-    @media (max-width: 768px) {
-      .bottom-nav { display: flex; }
-      body { padding-bottom: 88px; }
-      .page-center { padding: 24px 16px; }
-    }
-  
-    /* ── Free Banner ── */
-    .free-banner {
-      position: fixed;
-      top: 60px;
-      left: 12px;
-      right: 12px;
-      z-index: 98;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: 9px 20px;
-      background: rgba(14,14,17,0.92);
-      border: 1px solid rgba(26,255,171,0.18);
-      border-radius: 12px;
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(10,10,13,0.92);
       backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      font-size: 13px;
-      color: var(--text2);
-      letter-spacing: 0.01em;
-      animation: bannerIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
-      animation-delay: 0.7s;
-      opacity: 0;
+      border-top: 1px solid var(--border);
+      padding: 8px 4px calc(env(safe-area-inset-bottom, 0) + 8px);
+      gap: 4px; z-index: 50;
     }
-    .free-banner-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 7px rgba(26,255,171,0.65);
-      flex-shrink: 0;
+    .bottom-nav a {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 4px; color: var(--text3); font-size: 10px; font-weight: 500;
+      border-radius: var(--r);
+      transition: color var(--dur-fast), background var(--dur-fast);
     }
-    .free-banner em { font-style: normal; color: var(--text); font-weight: 500; }
-    .free-banner-close {
-      position: absolute;
-      right: 12px;
-      background: none; border: none;
-      color: var(--text3); font-size: 15px; line-height: 1;
-      cursor: pointer; padding: 4px 5px; border-radius: 6px;
-      transition: color 0.15s, background 0.15s;
-    }
-    .free-banner-close:hover { color: var(--text); background: var(--surface3); }
-    @keyframes bannerIn {
-      from { transform: translateY(-14px); opacity: 0; }
-      to   { transform: translateY(0);     opacity: 1; }
-    }
+    .bottom-nav a:hover, .bottom-nav a.active { color: var(--green); background: var(--green-soft); }
 
-    </style>
+    @media (max-width: 900px) {
+      .auth-card { padding: 28px 22px; max-width: none; }
+      .auth-title { font-size: 26px; }
+      .auth-page { padding: 24px 16px 84px; }
+      .bottom-nav { display: flex; }
+    }
+  </style>
 </head>
 <body>
 
+<div class="auth-bg"></div>
+<div class="auth-grid"></div>
+
 <header class="topbar"><app-navbar page="login"></app-navbar></header>
 
+<main class="auth-page">
+  <div class="auth-card">
 
-
-<div class="page-center">
-<div class="card">
-  <div class="card-logo">
-    <div class="logo-mark"><img src="/avalant-logo.svg" alt="Avalant"></div>
-  </div>
-
-  <div class="card-title">Welcome back</div>
-  <div class="card-sub">Sign in to your avalant</div>
-
-  <form id="login-form" onsubmit="handleLogin(event)">
-    <div class="form-group">
-      <label class="form-label">Email or username</label>
-      <input id="f-login" class="form-input" type="text" placeholder="you@example.com" autocomplete="username" required>
+    <div class="auth-head">
+      <div class="auth-mark"><img src="/avalant-logo.svg" alt="Avalant"></div>
+      <h1 class="auth-title">Welcome back</h1>
+      <p class="auth-sub">Sign in to continue</p>
     </div>
 
-    <div class="form-group">
-      <div class="form-row">
-        <label class="form-label" style="margin:0">Password</label>
+    <form id="login-form" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label class="form-label" for="f-login">Email or username</label>
+        <input id="f-login" class="input" type="text" placeholder="you@example.com" autocomplete="username" required>
       </div>
-      <div class="pw-wrap">
-        <input id="f-password" class="form-input" type="password" placeholder="••••••••" autocomplete="current-password" required>
-        <button type="button" class="pw-toggle" onclick="togglePw('f-password',this)" tabindex="-1" aria-label="Show password">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
+
+      <div class="form-group">
+        <label class="form-label" for="f-password">Password</label>
+        <div class="pw-wrap">
+          <input id="f-password" class="input" type="password" placeholder="••••••••" autocomplete="current-password" required style="padding-right:46px">
+          <button type="button" class="pw-toggle" onclick="togglePw('f-password',this)" tabindex="-1" aria-label="Show password">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
       </div>
+
+      <div id="login-error" class="form-err"></div>
+      <button type="submit" class="btn btn-primary submit-btn" id="btn-submit">Sign in</button>
+      <div class="auth-foot">
+        <a href="/password-reset">Forgot password?</a>
+      </div>
+    </form>
+
+    <!-- TOTP challenge form -->
+    <form id="totp-form" onsubmit="handleTotp(event)" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Two-factor code</label>
+        <input id="f-totp" class="input mono" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code" required style="letter-spacing:0.18em;text-align:center;font-size:18px">
+      </div>
+      <div id="totp-error" class="form-err"></div>
+      <button type="submit" class="btn btn-primary submit-btn" id="btn-totp">Verify code</button>
+      <div class="auth-foot">
+        <a href="#" onclick="cancelTotp(event)">← Use a different account</a>
+      </div>
+    </form>
+
+    <div class="tg-divider"><span>or</span></div>
+
+    <div class="tg-login-wrap">
+      <button type="button" id="tg-bot-btn" class="tg-btn" onclick="startTgBotLogin()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg>
+        Sign in with Telegram
+      </button>
+      <div id="tg-login-status" class="tg-status"></div>
+      <div id="tg-login-err" class="tg-err"></div>
     </div>
 
-    <div id="login-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--red-dim);border-radius:7px;"></div>
-
-    <button type="submit" class="btn-submit" id="btn-submit">Sign in</button>
-    <div style="text-align:center;margin-top:10px;font-size:12px;">
-      <a href="/password-reset" style="color:var(--text2);text-decoration:none">Forgot password?</a>
+    <div class="signup-row">
+      Don't have an account? <a href="/register">Create one</a>
     </div>
-  </form>
 
-  <!-- 2FA challenge form — shown only when /auth/login returns
-       token_type="totp_challenge". Hidden by default. -->
-  <form id="totp-form" onsubmit="handleTotp(event)" style="display:none">
-    <div style="font-size:13px;color:var(--text);margin-bottom:6px;font-weight:600">Two-factor code</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">Enter the 6-digit code from your authenticator app to finish signing in.</div>
-    <div class="form-group">
-      <input id="f-totp" class="form-input mono" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123 456" autocomplete="one-time-code" required style="letter-spacing:0.18em;text-align:center;font-size:16px">
-    </div>
-    <div id="totp-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--red-dim);border-radius:7px;"></div>
-    <button type="submit" class="btn-submit" id="btn-totp">Verify code</button>
-    <div style="text-align:center;margin-top:10px;font-size:12px;">
-      <a href="#" onclick="cancelTotp(event)" style="color:var(--text2);text-decoration:none">← Use a different account</a>
-    </div>
-  </form>
-
-  <div class="tg-divider"><span>or</span></div>
-
-  <div class="tg-login-wrap">
-    <button type="button" id="tg-bot-btn" onclick="startTgBotLogin()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:9px;background:linear-gradient(135deg,#229ED9,#1A8BC3);border:none;color:white;font-size:13.5px;font-weight:700;cursor:pointer;letter-spacing:-0.01em;transition:box-shadow .15s,transform .1s;font-family:inherit">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg>
-      Sign in with Telegram
-    </button>
-    <div id="tg-login-status" style="display:none;text-align:center;margin-top:10px;font-size:12px;color:var(--text2)"></div>
-    <div id="tg-login-err" style="display:none;color:var(--red);font-size:12px;margin-top:8px;text-align:center"></div>
   </div>
-
-  <div class="signup-row">
-    Don't have an account? <a href="/register">Create one</a>
-  </div>
-</div>
-</div>
+</main>
 
 <nav class="bottom-nav">
-  <a href="/" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 9.5L10 3l7 6.5V17a1 1 0 01-1 1h-4v-4H8v4H4a1 1 0 01-1-1V9.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+  <a href="/" >
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 9.5L10 3l7 6.5V17a1 1 0 01-1 1h-4v-4H8v4H4a1 1 0 01-1-1V9.5z"/></svg>
     Home
   </a>
-  <a href="/pricing" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
+  <a href="/pricing">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
     Pricing
   </a>
-  <a href="/login" class="bnav-item active">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M13 3h4a1 1 0 011 1v12a1 1 0 01-1 1h-4M8 14l4-4-4-4M2 10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    Sign In
+  <a href="/login" class="active">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3h4a1 1 0 011 1v12a1 1 0 01-1 1h-4M8 14l4-4-4-4M2 10h10"/></svg>
+    Sign in
   </a>
-  <a href="/register" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="7" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 18c0-3.3 2.9-5.8 6.5-5.8M14 13v6M11 16h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  <a href="/register">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="7" r="3.2"/><path d="M2.5 18c0-3.3 2.9-5.8 6.5-5.8M14 13v6M11 16h6"/></svg>
     Register
   </a>
 </nav>
 
-<script src="/navbar.js"></script>
+<script src="/dist/core.js"></script>
+<script src="/navbar.js" defer></script>
 <script src="/banner.js" defer></script>
-<script src="/auth.js"></script>
-<script src="/toast.js"></script>
-<script src="/theme.js"></script>
 <script>
 Auth.redirectIfAuthed('/app');
 
-// Telegram login goes through the bot deep-link flow only — no OAuth
-// widget. See startTgBotLogin() below: it issues a one-time token via
-// /api/auth/tg-bot-login, opens the bot in a popup, and polls until the
-// bot's /start handler has completed the login.
-
 function togglePw(id, btn) {
-  const inp = document.getElementById(id);
-  const show = inp.type === 'password';
-  inp.type = show ? 'text' : 'password';
-  btn.innerHTML = show
-    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
-    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.type = el.type === 'password' ? 'text' : 'password';
+  btn.style.color = el.type === 'text' ? 'var(--green)' : '';
 }
 
 let _totpChallenge = null;
@@ -412,7 +256,7 @@ function cancelTotp(e) {
   document.getElementById('login-form').style.display = '';
   document.querySelector('.tg-divider').style.display = '';
   document.querySelector('.tg-login-wrap').style.display = '';
-  document.getElementById('totp-error').style.display = 'none';
+  document.getElementById('totp-error').classList.remove('show');
   document.getElementById('f-totp').value = '';
 }
 
@@ -421,10 +265,10 @@ async function handleTotp(e) {
   const btn = document.getElementById('btn-totp');
   const errEl = document.getElementById('totp-error');
   const code = (document.getElementById('f-totp').value || '').trim();
-  errEl.style.display = 'none';
+  errEl.classList.remove('show');
   if (!_totpChallenge) {
-    errEl.textContent = 'Sign in expired. Refresh and try again.';
-    errEl.style.display = 'block';
+    errEl.textContent = 'Sign-in expired. Refresh and try again.';
+    errEl.classList.add('show');
     return;
   }
   btn.disabled = true; btn.textContent = 'Verifying…';
@@ -442,23 +286,19 @@ async function handleTotp(e) {
         if (ra > 0) {
           cooldown = true;
           errEl.textContent = j.detail || 'Too many attempts.';
-          errEl.style.display = 'block';
+          errEl.classList.add('show');
           let left = ra;
           btn.disabled = true; btn.textContent = `Retry in ${left}s`;
           const tick = setInterval(() => {
-            left -= 1;
-            if (left <= 0) {
-              clearInterval(tick);
-              btn.disabled = false; btn.textContent = 'Verify code';
-              return;
-            }
+            left--;
+            if (left <= 0) { clearInterval(tick); btn.disabled = false; btn.textContent = 'Verify code'; return; }
             btn.textContent = `Retry in ${left}s`;
           }, 1000);
           return;
         }
       }
       errEl.textContent = j.detail || 'Invalid code';
-      errEl.style.display = 'block';
+      errEl.classList.add('show');
       return;
     }
     const meR = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + j.access_token } });
@@ -468,12 +308,9 @@ async function handleTotp(e) {
     window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
   } catch (err) {
     errEl.textContent = err.message || 'Network error';
-    errEl.style.display = 'block';
+    errEl.classList.add('show');
   } finally {
-    if (!cooldown) {
-      btn.disabled = false;
-      btn.textContent = 'Verify code';
-    }
+    if (!cooldown) { btn.disabled = false; btn.textContent = 'Verify code'; }
   }
 }
 
@@ -481,9 +318,8 @@ async function handleLogin(e) {
   e.preventDefault();
   const btn = document.getElementById('btn-submit');
   const errEl = document.getElementById('login-error');
-  errEl.style.display = 'none';
-  btn.disabled = true;
-  btn.textContent = 'Signing in…';
+  errEl.classList.remove('show');
+  btn.disabled = true; btn.textContent = 'Signing in…';
   let cooldownActive = false;
 
   const login = document.getElementById('f-login').value.trim();
@@ -497,52 +333,39 @@ async function handleLogin(e) {
     });
     const data = await resp.json();
     if (resp.ok && data.token_type === 'totp_challenge') {
-      // Stash the short-lived challenge token, hide login form, show TOTP form.
       _totpChallenge = data.access_token;
       document.getElementById('login-form').style.display = 'none';
       document.querySelector('.tg-divider').style.display = 'none';
       document.querySelector('.tg-login-wrap').style.display = 'none';
-      const totpForm = document.getElementById('totp-form');
-      totpForm.style.display = '';
+      document.getElementById('totp-form').style.display = '';
       document.getElementById('f-totp').focus();
       return;
     }
     if (!resp.ok) {
-      // 429 with Retry-After → cooldown active; lock the button for the
-      // duration and show a live countdown so the user knows what to wait for.
       if (resp.status === 429) {
         const ra = parseInt(resp.headers.get('Retry-After') || '0', 10);
         if (ra > 0) {
           errEl.textContent = data.detail || 'Too many attempts.';
-          errEl.style.display = 'block';
+          errEl.classList.add('show');
           cooldownActive = true;
           let left = ra;
-          btn.disabled = true;
-          btn.textContent = `Retry in ${left}s`;
+          btn.disabled = true; btn.textContent = `Retry in ${left}s`;
           const tick = setInterval(() => {
-            left -= 1;
-            if (left <= 0) {
-              clearInterval(tick);
-              btn.disabled = false;
-              btn.textContent = 'Sign in';
-              return;
-            }
+            left--;
+            if (left <= 0) { clearInterval(tick); btn.disabled = false; btn.textContent = 'Sign in'; return; }
             btn.textContent = `Retry in ${left}s`;
           }, 1000);
           return;
         }
       }
       errEl.textContent = data.detail || 'Login failed';
-      errEl.style.display = 'block';
+      errEl.classList.add('show');
       return;
     }
-    // Fetch user profile
-    const meResp = await fetch('/api/auth/me', {
-      headers: { 'Authorization': 'Bearer ' + data.access_token }
-    });
+    const meResp = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + data.access_token } });
     if (!meResp.ok) {
       errEl.textContent = 'Auth error: ' + meResp.status;
-      errEl.style.display = 'block';
+      errEl.classList.add('show');
       return;
     }
     const user = await meResp.json();
@@ -551,33 +374,23 @@ async function handleLogin(e) {
     window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
   } catch (err) {
     errEl.textContent = err.message || 'Network error';
-    errEl.style.display = 'block';
+    errEl.classList.add('show');
   } finally {
-    if (!cooldownActive) {
-      btn.disabled = false;
-      btn.textContent = 'Sign in';
-    }
+    if (!cooldownActive) { btn.disabled = false; btn.textContent = 'Sign in'; }
   }
 }
 
-// ── Telegram Bot Login ────────────────────────────────────────────────────
+/* ─── Telegram bot login ──────────────────────────────────────────── */
 let _tgLoginPoll = null;
-
 async function startTgBotLogin(){
   const btn = document.getElementById('tg-bot-btn');
   const status = document.getElementById('tg-login-status');
   const err = document.getElementById('tg-login-err');
   err.style.display = 'none';
   btn.disabled = true;
-  btn.textContent = 'Generating link…';
+  btn.innerHTML = '<span class="spinner"></span> Generating link…';
 
-  // ── iOS / mobile-Safari fix ────────────────────────────────────────
-  // window.open() after `await` loses the user-gesture token and gets
-  // blocked by mobile pop-up policies. Reserve the popup synchronously
-  // here, then redirect it once we have the deep_link. If the browser
-  // still refuses to open one (or the user denied popups system-wide),
-  // we fall back to a same-tab navigation — the bot will deep-link
-  // straight into the Telegram app.
+  // Reserve popup synchronously to survive iOS pop-up policies
   const _popup = window.open('about:blank', '_blank');
 
   try {
@@ -588,29 +401,21 @@ async function startTgBotLogin(){
     if (_popup && !_popup.closed) {
       _popup.location.href = j.deep_link;
     } else {
-      // Last resort — same-tab navigation. Polling dies, but the
-      // bot's /start webhook will mark the token as paid; on the
-      // user's next return to /login the poll picks it up via the
-      // pending-token cookie set by the redirect.
       window.location.href = j.deep_link;
       return;
     }
 
-    // Show status
     btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg> Waiting for Telegram…';
-    status.innerHTML = 'Press <b>START</b> in the bot — it&rsquo;ll send you a button to finish login.';
+    status.innerHTML = 'Press <b>START</b> in the bot — it will send a button to finish login.';
     status.style.display = 'block';
 
-    // Poll every 2s for up to 5 min
     const token = j.token;
     const started = Date.now();
     if (_tgLoginPoll) clearInterval(_tgLoginPoll);
     _tgLoginPoll = setInterval(async () => {
       if (Date.now() - started > 300000) {
         clearInterval(_tgLoginPoll); _tgLoginPoll = null;
-        btn.disabled = false;
-        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg> Sign in with Telegram';
-        status.style.display = 'none';
+        _resetTgBtn();
         err.textContent = 'Login expired. Try again.';
         err.style.display = 'block';
         return;
@@ -620,7 +425,6 @@ async function startTgBotLogin(){
         const cj = await cr.json();
         if (cj.status === 'ok' && cj.access_token) {
           clearInterval(_tgLoginPoll); _tgLoginPoll = null;
-          // Fetch profile
           const meResp = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + cj.access_token } });
           const me = meResp.ok ? await meResp.json() : { id: cj.user_id, username: cj.username || 'user', email: '' };
           Auth.setSession(cj.access_token, me);
@@ -628,18 +432,23 @@ async function startTgBotLogin(){
           window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
         } else if (cj.status === 'expired') {
           clearInterval(_tgLoginPoll); _tgLoginPoll = null;
-          btn.disabled = false;
-          btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg> Sign in with Telegram';
-          status.style.display = 'none';
+          _resetTgBtn();
         }
       } catch {}
     }, 2000);
   } catch (e) {
     err.textContent = e.message || 'Error';
     err.style.display = 'block';
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg> Sign in with Telegram';
+    _resetTgBtn();
   }
+}
+
+function _resetTgBtn() {
+  const btn = document.getElementById('tg-bot-btn');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 3.5L2.9 10.7c-1.3.5-1.3 1.4-.2 1.7l4.7 1.5 1.8 5.6c.2.7.1.9.8.9.6 0 .8-.3 1.1-.5l2.7-2.6 5.7 4.2c1 .6 1.8.3 2-.9l3.6-17c.3-1.4-.5-2-1.6-1.6z"/></svg> Sign in with Telegram';
+  document.getElementById('tg-login-status').style.display = 'none';
 }
 </script>
 </body>
