@@ -249,6 +249,10 @@ async def pair_opp(
         p_s = r_short.get("price", 0)
         spread = (p_s - p_l) / p_l if p_l > 0 else 0.0
         net = gross + spread - total_fees
+        # APR is funding-only — no one-shot entry-basis pickup, just the
+        # sustainable annual rate. Net/8h still includes spread (or in_pct
+        # when the frontend has a fresh orderbook tick) for the entry view.
+        net_funding_only = gross - total_fees
         return {"source": "rates", "opp": {
             "symbol": sym, "long_exchange": long_ex, "short_exchange": short_ex,
             "long_rate": round(rate_l * 100, 6), "short_rate": round(rate_s * 100, 6),
@@ -262,7 +266,7 @@ async def pair_opp(
             "total_fees": round(total_fees * 100, 4),
             "net_profit": round(net * 100, 6),
             "gross_apr": round(gross * (8760/8) * 100, 4),
-            "net_apr": round(net * (8760/8) * 100, 4),
+            "net_apr": round(net_funding_only * (8760/8) * 100, 4),
             "valid_price": p_l <= p_s,
         }}
 

@@ -171,19 +171,28 @@ func (c *SpotCompute) tick(ctx context.Context) {
 				if basisPct > 100.0 || basisPct < -100.0 {
 					continue
 				}
-				gross := shortFunding + basisPct
 				feeSpotRT := spotFeeOf(spotEx) * 100.0 * 2.0
 				feePerpRT := feeOf(perpEx) * 100.0 * 2.0
 				totalFees := feeSpotRT + feePerpRT
-				net := gross - totalFees
-				netAPR := 0.0
-				if net > 0 {
-					netAPR = net * (365.0 * 3.0)
-				}
 				// Bake top-of-book in/out — spot leg via <ex>_spot, perp
 				// short via the bare exchange name. nil/null when either
 				// side's book isn't subscribed (frontend hides those rows).
 				inPct, outPct := computeInOutPair(c.books, spotEx+"_spot", perpEx, sym)
+				// Net/8h uses live entry basis (in_pct) when available —
+				// what an entry-now would actually capture — and falls back
+				// to mark-based basisPct when orderbook tick missing. APR is
+				// funding-only (no entry pickup) for sustainable annual view.
+				entryBasis := basisPct
+				if inPct != nil {
+					entryBasis = *inPct
+				}
+				gross := shortFunding + entryBasis
+				net := gross - totalFees
+				fundingOnly := shortFunding - totalFees
+				netAPR := 0.0
+				if fundingOnly > 0 {
+					netAPR = fundingOnly * (365.0 * 3.0)
+				}
 				opps = append(opps, map[string]any{
 					"type":              "spot_short",
 					"symbol":            sym,

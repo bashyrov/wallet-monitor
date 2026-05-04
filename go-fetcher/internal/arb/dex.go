@@ -356,8 +356,6 @@ func (c *DEXCompute) tick(ctx context.Context) {
 			if basisPct > maxBasisPct || basisPct < -maxBasisPct {
 				continue
 			}
-			gross := shortFunding + basisPct
-
 			key := dexKey{symbol: sym, perpEx: perpEx}
 			first, seen := c.firstSeen[key]
 			if !seen {
@@ -373,15 +371,24 @@ func (c *DEXCompute) tick(ctx context.Context) {
 			feeDexRT := dexFeeRoundtripPct
 			feePerpRT := feeOf(perpEx) * 100 * 2
 			totalFees := feeDexRT + feePerpRT
-			net := gross - totalFees
-			netAPR := 0.0
-			if net > 0 {
-				netAPR = net * (365.0 * 3.0)
-			}
 			// Bake top-of-book in/out — DEX side has no orderbook adapter
 			// (single mid-price from DexScreener), so the perp short leg
 			// alone drives the live values.
 			inPct, outPct := computeInOutDex(c.books, perpEx, sym, dex.Price)
+			// Net/8h uses live in_pct when available; falls back to mark-
+			// based basisPct otherwise. APR is funding-only — sustainable
+			// annual return without one-shot entry pickup.
+			entryBasis := basisPct
+			if inPct != nil {
+				entryBasis = *inPct
+			}
+			gross := shortFunding + entryBasis
+			net := gross - totalFees
+			fundingOnly := shortFunding - totalFees
+			netAPR := 0.0
+			if fundingOnly > 0 {
+				netAPR = fundingOnly * (365.0 * 3.0)
+			}
 			opps = append(opps, map[string]any{
 				"type":              "dex_short",
 				"symbol":            sym,

@@ -164,12 +164,8 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
     <span class="metric-val" id="tb-live-spread">—</span>
   </div>
   <div class="metric-block">
-    <span class="ib-label" title="Net funding paid every 4 hours (short_rate − long_rate, normalised to 4h window)">Funding / 4h</span>
-    <span class="metric-val" id="tb-funding-4h">—</span>
-  </div>
-  <div class="metric-block">
-    <span class="ib-label" title="Live entry basis from top-of-book — (bestBidShort − bestAskLong) / bestAskLong">In</span>
-    <span class="metric-val" id="tb-in-pct">—</span>
+    <span class="ib-label" title="Net funding paid per 8h window — short_rate − long_rate">Funding / 8h</span>
+    <span class="metric-val" id="tb-funding-8h">—</span>
   </div>
 
   <!-- Alerts block -->
@@ -906,12 +902,8 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         <span class="metric-val" id="pt-live-spread">—</span>
       </div>
       <div class="metric-block">
-        <span class="ib-label" title="Net funding paid every 4 hours">Funding / 4h</span>
-        <span class="metric-val" id="pt-funding-4h">—</span>
-      </div>
-      <div class="metric-block">
-        <span class="ib-label" title="Live entry basis from top-of-book">In</span>
-        <span class="metric-val" id="pt-in-pct">—</span>
+        <span class="ib-label" title="Funding the short leg receives per 8h window">Funding / 8h</span>
+        <span class="metric-val" id="pt-funding-8h">—</span>
       </div>
       <div class="metric-block">
         <span class="ib-label">Net / 8h</span>
@@ -1219,18 +1211,13 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     setCls('pt-fund', 'val ' + (fundNative >= 0 ? 'rate-pos' : 'rate-neg'));
     setT('pt-ivl', `/ ${ivl}h /`);
 
-    // Funding / 4h — short_funding_8h × 0.5 (or fundNative × 4/interval if 8h
-    // normalisation isn't available). Spot/dex: only the short leg pays
-    // funding so this is just half of short_funding_8h.
-    const f4h = (r.short_funding_8h != null) ? (r.short_funding_8h * 0.5)
-              : (r.gross_funding != null ? r.gross_funding * 0.5 : 0);
-    setT('pt-funding-4h', `${f4h >= 0 ? '+' : ''}${f4h.toFixed(4)}%`);
-    $('pt-funding-4h').style.color = f4h >= 0 ? 'var(--green)' : 'var(--red)';
-    // In = live entry basis from orderbook. Fall back to mark-based basis when
-    // orderbook tick hasn't landed.
-    const inPct = (typeof r.in_pct === 'number' && r.in_pct !== null) ? r.in_pct : basis;
-    setT('pt-in-pct', `${inPct >= 0 ? '+' : ''}${inPct.toFixed(4)}%`);
-    $('pt-in-pct').style.color = inPct >= 0 ? 'var(--green)' : 'var(--red)';
+    // Funding / 8h — short_funding_8h is already 8h-normalised (the short
+    // leg's rate over a full 8h window). Spot/dex: only the short leg
+    // pays funding so we surface that directly.
+    const f8h = (r.short_funding_8h != null) ? r.short_funding_8h
+              : (r.gross_funding != null ? r.gross_funding : 0);
+    setT('pt-funding-8h', `${f8h >= 0 ? '+' : ''}${f8h.toFixed(4)}%`);
+    $('pt-funding-8h').style.color = f8h >= 0 ? 'var(--green)' : 'var(--red)';
     setT('pt-net',  `${net >= 0 ? '+' : ''}${net.toFixed(4)}%`);
     $('pt-net').style.color = net >= 0 ? 'var(--green)' : 'var(--red)';
     setT('pt-apr',  apr > 0 ? apr.toFixed(0) + '%' : '—');
@@ -2214,20 +2201,18 @@ function renderTopBar(){
   setT('fund-long-ivl',`/ ${lIvl}h /`); setT('fund-short-ivl',`/ ${sIvl}h /`);
   setT('fund-long-cd',fmtCD(r.next_ts_long)); setT('fund-short-cd',fmtCD(r.next_ts_short));
   setT('vol-long-val',fmtV(r.long_volume)+' USDT'); setT('vol-short-val',fmtV(r.short_volume)+' USDT');
-  // Net / 8h = funding only (gross_funding − fees), without price spread
-  const netFund=(r.gross_funding||0)-(r.total_fees||0);
-  const nc=netFund>=0?'pos':'neg';
+  // Net / 8h = funding + entry-basis − fees. We use live in_pct (from
+  // top-of-book) when available so Net mirrors what an actual entry now
+  // would capture. Falls back to mark-based price_spread when the
+  // orderbook tick hasn't landed yet.
+  const inOrSpread = (typeof r.in_pct === 'number' && r.in_pct !== null) ? r.in_pct : (r.price_spread || 0);
+  const netFund = (r.gross_funding||0) + inOrSpread - (r.total_fees||0);
+  const nc = netFund>=0?'pos':'neg';
   setH('tb-net-val',`<span class="${nc}">${sign(netFund)}${netFund.toFixed(4)}%</span>`);
-  // Funding / 4h — net rate the user pays every 4h window. gross_funding is
-  // 8h-normalised (short_rate − long_rate); halve to project to 4h.
-  const f4h = (r.gross_funding||0) * 0.5;
-  const f4cls = f4h>=0?'pos':'neg';
-  setH('tb-funding-4h', `<span class="${f4cls}">${sign(f4h)}${f4h.toFixed(4)}%</span>`);
-  // In = entry basis. Prefer live in_pct from screener; fall back to mark-based
-  // price_spread when orderbook tick hasn't landed yet.
-  const inPct = (typeof r.in_pct === 'number' && r.in_pct !== null) ? r.in_pct : (r.price_spread || 0);
-  const inCls = inPct>=0?'pos':'neg';
-  setH('tb-in-pct', `<span class="${inCls}">${sign(inPct)}${inPct.toFixed(4)}%</span>`);
+  // Funding / 8h — gross_funding is already 8h-normalised (short_rate − long_rate).
+  const f8h = (r.gross_funding||0);
+  const f8cls = f8h>=0?'pos':'neg';
+  setH('tb-funding-8h', `<span class="${f8cls}">${sign(f8h)}${f8h.toFixed(4)}%</span>`);
   renderOverview();
 }
 setInterval(()=>{if(!_opp)return;setT('fund-long-cd',fmtCD(_opp.next_ts_long));setT('fund-short-cd',fmtCD(_opp.next_ts_short));},1000);

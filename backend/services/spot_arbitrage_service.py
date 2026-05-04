@@ -449,8 +449,11 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
                 fee_perp_rt = _arb._fee(perp_ex) * 100 * 2
                 total_fees = fee_spot_rt + fee_perp_rt
                 net = gross - total_fees
-                # Annualized: 8h window repeats 3 × 365 = 1095 times/year
-                net_apr = net * (365.0 * 3) if net > 0 else 0.0
+                # APR is funding-only — sustainable annual return that
+                # doesn't include the one-off entry-basis pickup. 8h
+                # window repeats 3 × 365 = 1095 times/year.
+                funding_only = short_funding - total_fees
+                net_apr = funding_only * (365.0 * 3) if funding_only > 0 else 0.0
                 # No gross<=0 filter — show every spread, frontend styles
                 # negatives differently.
 

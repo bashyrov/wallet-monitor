@@ -229,7 +229,19 @@ func (c *Compute) tick() {
 					continue
 				}
 				priceSpread := (shortPE.mark - longPE.mark) / longPE.mark
-				net := gross + priceSpread - totalFees
+				// Net/8h uses live entry basis (in_pct from top-of-book) when
+				// available — that's what an actual entry-now would capture.
+				// Falls back to mark-based price_spread until the orderbook
+				// tick lands. APR is funding-only (no spread/in component) so
+				// it represents sustainable annual return, not a one-shot
+				// entry pickup.
+				inPctPtr, _ := computeInOutPair(c.books, longPE.ex, shortPE.ex, sym)
+				entryBasis := priceSpread
+				if inPctPtr != nil {
+					entryBasis = *inPctPtr / 100.0 // computeInOutPair returns %
+				}
+				net := gross + entryBasis - totalFees
+				netFundingOnly := gross - totalFees
 
 				// |price_spread|>100% — extra belt for any case the ratio
 				// test let through (shouldn't happen if ratio < 1.5).
@@ -254,7 +266,8 @@ func (c *Compute) tick() {
 				// payload — no separate /api/screener/in-out call. Avoids
 				// the round-trip + URL-length + disk-thrash issues we
 				// saw when /in-out polled every 3 s with 256-key batches.
-				inPct, outPct := c.computeInOut(longPE.ex, shortPE.ex, sym)
+				inPct := inPctPtr
+				_, outPct := c.computeInOut(longPE.ex, shortPE.ex, sym)
 				opps = append(opps, map[string]any{
 					"symbol":            sym,
 					"long_exchange":     longPE.ex,
@@ -272,7 +285,7 @@ func (c *Compute) tick() {
 					"total_fees":        round4(totalFees * 100),
 					"net_profit":        round6(net * 100),
 					"gross_apr":         round4(gross * (8760.0 / 8.0) * 100),
-					"net_apr":           round4(net * (8760.0 / 8.0) * 100),
+					"net_apr":           round4(netFundingOnly * (8760.0 / 8.0) * 100),
 					"valid_price":       longPE.mark <= shortPE.mark,
 					"next_ts_long":      longPE.nextTs,
 					"next_ts_short":     shortPE.nextTs,

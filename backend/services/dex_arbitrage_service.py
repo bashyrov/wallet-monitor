@@ -412,7 +412,10 @@ def _build_opps_sync(dex_by_sym: dict[str, dict], perp_map: dict[str, dict[str, 
             fee_perp_rt = _arb._fee(perp_ex) * 100 * 2
             total_fees = fee_dex_rt + fee_perp_rt
             net = gross - total_fees
-            net_apr = net * (365.0 * 3) if net > 0 else 0.0
+            # APR is funding-only (no entry-basis pickup) — sustainable
+            # annual return. 8h window × 3 × 365 = 1095 ticks/year.
+            funding_only = short_funding - total_fees
+            net_apr = funding_only * (365.0 * 3) if funding_only > 0 else 0.0
             opps.append({
                 "type": "dex_short",
                 "symbol": sym,
