@@ -598,31 +598,81 @@ const _arbRowsByKey = new Map();      // key → opp, source of truth for diffs
 let _arbMeta = { fees: {}, exchanges: [] };
 const _arbKey = (o) => `${o.symbol}|${o.long_exchange}|${o.short_exchange}`;
 
+// Sticky-remove window for row drops. The /ws/arb feed says "removed"
+// for any key not in the latest top-1000 — that includes pairs that
+// briefly lost a mark price (one venue's funding tick missing) and
+// will be back next cycle. Without stickiness the row vanishes for
+// 1-3s then reappears, which the user sees as "metric тупит / падает".
+// We delay actual deletion by ARB_REMOVAL_GRACE so a flapping pair
+// stays on screen with its last good values.
+const ARB_REMOVAL_GRACE_MS = 12000;
+const _arbRemovalTimers = new Map(); // key → setTimeout handle
+
 function _applyArbPayload(data) {
   // Handles both snapshot messages and incremental diffs from /ws/arb.
   // Server sends {type: 'snapshot', opportunities: [...]} on connect,
   // then {type: 'diff', added?:[], updated?:[], removed?:[]} every tick.
   // Legacy untyped payloads (full snapshot) are treated as snapshot too.
   if (!data) return;
+  const cancelPendingRemoval = (k) => {
+    const t = _arbRemovalTimers.get(k);
+    if (t) { clearTimeout(t); _arbRemovalTimers.delete(k); }
+  };
   if (data.type === 'diff') {
     if (Array.isArray(data.added)) {
-      for (const o of data.added) _arbRowsByKey.set(_arbKey(o), o);
+      for (const o of data.added) {
+        const key = _arbKey(o);
+        cancelPendingRemoval(key);
+        _arbRowsByKey.set(key, o);
+      }
     }
     if (Array.isArray(data.updated)) {
-      for (const o of data.updated) _arbRowsByKey.set(_arbKey(o), o);
+      for (const o of data.updated) {
+        const key = _arbKey(o);
+        cancelPendingRemoval(key);
+        _arbRowsByKey.set(key, o);
+      }
     }
     if (Array.isArray(data.removed)) {
       for (const k of data.removed) {
         const key = Array.isArray(k) ? k.join('|') : k;
-        _arbRowsByKey.delete(key);
+        // Don't delete immediately. Schedule a delayed removal; if the
+        // pair re-appears (added/updated) before then, the schedule is
+        // cancelled by cancelPendingRemoval above.
+        if (_arbRemovalTimers.has(key)) continue;
+        const handle = setTimeout(() => {
+          _arbRemovalTimers.delete(key);
+          _arbRowsByKey.delete(key);
+          _arbRows = Array.from(_arbRowsByKey.values());
+          // Re-render the relevant table after the deferred drop.
+          if (typeof applyArb === 'function') applyArb();
+        }, ARB_REMOVAL_GRACE_MS);
+        _arbRemovalTimers.set(key, handle);
       }
     }
     if (data.fees)      _arbMeta.fees = data.fees;
     if (data.exchanges) _arbMeta.exchanges = data.exchanges;
   } else {
-    _arbRowsByKey.clear();
+    // Snapshot: trust the server's authoritative set, but still treat
+    // any drop relative to current state as soft-removal so a stale-
+    // snapshot reconnect doesn't wipe the table.
+    const incoming = new Set();
     for (const o of (data.opportunities || [])) {
-      _arbRowsByKey.set(_arbKey(o), o);
+      const key = _arbKey(o);
+      incoming.add(key);
+      cancelPendingRemoval(key);
+      _arbRowsByKey.set(key, o);
+    }
+    for (const key of [..._arbRowsByKey.keys()]) {
+      if (incoming.has(key)) continue;
+      if (_arbRemovalTimers.has(key)) continue;
+      const handle = setTimeout(() => {
+        _arbRemovalTimers.delete(key);
+        _arbRowsByKey.delete(key);
+        _arbRows = Array.from(_arbRowsByKey.values());
+        if (typeof applyArb === 'function') applyArb();
+      }, ARB_REMOVAL_GRACE_MS);
+      _arbRemovalTimers.set(key, handle);
     }
     if (data.fees)      _arbMeta.fees = data.fees;
     if (data.exchanges) _arbMeta.exchanges = data.exchanges;
@@ -944,6 +994,32 @@ function switchMode(mode) {
 }
 
 // ── DEX-short arbitrage ──────────────────────────────────────────────────────
+// Sticky row-set for REST-polled tables (spot, dex). Same purpose as
+// the diff-stickiness on /ws/arb: a specific pair can briefly fall
+// out of one poll cycle (mark price hiccup, basis ranking shuffle)
+// and come back next cycle. Without stickiness the row blinks. We
+// keep the row visible for STICKY_GRACE_MS after it stops appearing.
+const STICKY_GRACE_MS = 12000;
+function _mergeSticky(prevRows, incoming, keyFn) {
+  if (!incoming.length) return prevRows;  // server returned empty — keep prev (existing behaviour)
+  const seenKeys = new Set(incoming.map(keyFn));
+  const now = Date.now();
+  // Update or insert from incoming
+  const byKey = new Map();
+  for (const r of incoming) byKey.set(keyFn(r), { r, lastSeen: now });
+  // Carry over rows from prev that weren't in incoming AND are within grace window
+  for (const r of prevRows) {
+    const k = keyFn(r);
+    if (seenKeys.has(k)) continue;
+    const ts = r._lastSeen || (now - 1);
+    if (now - ts < STICKY_GRACE_MS) {
+      byKey.set(k, { r: { ...r, _stale: true, _lastSeen: ts }, lastSeen: ts });
+    }
+  }
+  return Array.from(byKey.values()).map(({ r, lastSeen }) =>
+    Object.assign({}, r, { _lastSeen: r._lastSeen || lastSeen }));
+}
+
 let _dexRows = [];
 let _dexFiltered = [];
 let _dexTimer = null;
@@ -961,13 +1037,15 @@ async function loadDex() {
     if (!r.ok) throw new Error('dex ' + r.status);
     const j = await r.json();
     const incoming = j.opportunities || [];
-    // Anti-flicker: if the server briefly returns 0 opps but we already
-    // have a populated set, keep the old one instead of blanking the UI.
-    // Next cycle (30s max) will replace with the real list.
+    // Anti-flicker: per-row stickiness instead of full-table replace.
+    // Pairs that drop out of one cycle's top-N stay visible for the
+    // grace window so a basis-ranking shuffle doesn't make the row
+    // disappear for 30s.
     if (incoming.length === 0 && _dexRows.length > 0) {
       console.debug('[dex] kept last snapshot — server returned 0 opps');
     } else {
-      _dexRows = incoming;
+      _dexRows = _mergeSticky(_dexRows, incoming, r =>
+        `${r.symbol}|${r.dex_chain}|${r.dex_name}|${r.short_exchange}`);
     }
     applyDex();
   } catch (e) {
@@ -1176,12 +1254,12 @@ async function loadSpot() {
     if (!r.ok) throw new Error('spot ' + r.status);
     const j = await r.json();
     const incoming = j.opportunities || [];
-    // Anti-flicker: don't blank a populated table when the server
-    // momentarily returns 0. Next cycle (2s) replaces for real.
+    // Per-row stickiness. See _mergeSticky comment.
     if (incoming.length === 0 && _spotRows.length > 0) {
       console.debug('[spot] kept last snapshot — server returned 0 opps');
     } else {
-      _spotRows = incoming;
+      _spotRows = _mergeSticky(_spotRows, incoming, r =>
+        `${r.symbol}|${r.spot_exchange}|${r.short_exchange}`);
     }
     applySpot();
   } catch (e) {
