@@ -51,7 +51,7 @@ const _ACTIVE = {
 
 function _navLink(link, active) {
   const cls = 'nav-lnk' + (link.id === active ? ' active' : '');
-  return `<a href="${link.href}" class="${cls}" data-nb-id="${link.id}">${link.icon}<span class="nav-lnk-label">${link.label}</span></a>`;
+  return `<a href="${link.href}" class="${cls}" data-nb-id="${link.id}">${link.label}</a>`;
 }
 
 function _drawerLink(link, active, idx) {

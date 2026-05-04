@@ -22,7 +22,7 @@
 
 app-navbar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   height: 64px;
   padding: 0 var(--gutter);
@@ -37,6 +37,7 @@ app-navbar {
   color: var(--text);
   flex-shrink: 0;
   user-select: none;
+  justify-self: start;
 }
 .brand:hover { opacity: 0.85; }
 
@@ -46,27 +47,24 @@ app-navbar {
   justify-self: center;
 }
 .nav-lnk {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center;
   padding: 8px 14px;
   font-size: 14px; font-weight: 500;
   color: var(--text2);
+  border: 1px solid transparent;
   border-radius: var(--r);
-  transition: color var(--dur-fast) ease, background var(--dur-fast) ease;
+  transition: color var(--dur-fast) ease, background var(--dur-fast) ease, border-color var(--dur-fast) ease;
   position: relative;
   white-space: nowrap;
 }
 button.nav-lnk { background: none; cursor: pointer; }
-.nav-lnk svg { opacity: 0.65; transition: opacity var(--dur-fast) ease; flex-shrink: 0; }
 .nav-lnk:hover { color: var(--text); background: var(--surface2); }
-.nav-lnk:hover svg { opacity: 1; }
 .nav-lnk:active { transform: translateY(1px); }
 .nav-lnk.active {
   color: var(--green);
   background: var(--green-soft);
-  border: 1px solid var(--green-edge);
-  padding: 7px 13px;
+  border-color: var(--green-edge);
 }
-.nav-lnk.active svg { opacity: 1; }
 
 /* ─── Right cluster (desktop) ─────────────────────────────────────────── */
 .topbar-right {
