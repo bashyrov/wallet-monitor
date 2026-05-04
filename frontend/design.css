@@ -38,6 +38,11 @@
   /* Legacy aliases — keep page CSS working without rewrites */
   --green-dim:  rgba(26,255,171,0.08);
   --red-dim:    rgba(248,113,113,0.08);
+  --teal-dim:   rgba(6,182,212,0.10);
+  --purple-dim: rgba(167,139,250,0.10);
+  --yellow-dim: rgba(229,192,123,0.10);
+  --blue-dim:   rgba(124,185,247,0.10);
+  --surface4:   #2A2A33;
   --yellow:     #E5C07B;
   --blue:       #7CB9F7;
   --purple:     #A78BFA;
