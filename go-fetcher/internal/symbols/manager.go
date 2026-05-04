@@ -188,6 +188,36 @@ func (m *Manager) PrewarmFromArbFiles(cacheDir string, fallback []string) {
 			add(o.ShortExchange, o.Symbol)
 		}
 	}
+	// Watchlist subscription bridge — Python web role dumps
+	// /tmp/avalant_cache/watchlist_subscribe.json every 30s with the
+	// union of (sym, long_ex, short_ex) across all users' watchlists.
+	// Subscribing those symbols here keeps the orderbook flowing for
+	// pairs that have fallen out of the top-N but someone is still
+	// watching. Spot watchlist rows put the long_ex on its _spot
+	// channel since that's what spot top selection does too.
+	{
+		type wlPair struct {
+			Symbol        string `json:"symbol"`
+			LongExchange  string `json:"long_exchange"`
+			ShortExchange string `json:"short_exchange"`
+		}
+		var doc struct{ Pairs []wlPair `json:"pairs"` }
+		tryRead(filepath.Join(cacheDir, "watchlist_subscribe.json"), &doc)
+		for _, p := range doc.Pairs {
+			le := p.LongExchange
+			// Match the spot tracker convention: if the long leg is a
+			// spot venue (suffix added by callers) leave as-is; if it's
+			// a known spot ex name, append `_spot`. Heuristic: the
+			// frontend stores `binance` for both spot and perp legs
+			// depending on context — when the user is on the spot
+			// screener they see e.g. "Binance" too. We can't disambiguate
+			// without more state, so we add to BOTH the perp and spot
+			// channels (cheap; one extra symbol on the spot WS sub).
+			add(le, p.Symbol)
+			add(le+"_spot", p.Symbol)
+			add(p.ShortExchange, p.Symbol)
+		}
+	}
 
 	// Apply per venue + add fallback majors.
 	m.mu.Lock()

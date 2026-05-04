@@ -220,11 +220,23 @@ func (c *SpotCompute) tick(ctx context.Context) {
 		}
 	}
 
+	// Sort by |basis_pct| desc — same rule as futures L/S so a wide
+	// basis lands in the tracked set regardless of net_profit (the
+	// orderbook-subscribed set is what matters for entry; net_profit
+	// is a lagging downstream metric). Cap at 1000 to match L/S.
 	sort.Slice(opps, func(i, j int) bool {
-		return opps[i]["net_profit"].(float64) > opps[j]["net_profit"].(float64)
+		ai, _ := opps[i]["basis_pct"].(float64)
+		aj, _ := opps[j]["basis_pct"].(float64)
+		if ai < 0 {
+			ai = -ai
+		}
+		if aj < 0 {
+			aj = -aj
+		}
+		return ai > aj
 	})
-	if len(opps) > 200 {
-		opps = opps[:200]
+	if len(opps) > 1000 {
+		opps = opps[:1000]
 	}
 
 	out := map[string]any{

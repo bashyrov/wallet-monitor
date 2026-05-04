@@ -145,6 +145,16 @@ async def lifespan(app: FastAPI):
         start_alert_service()
         _stop_fns.append(stop_alert_service)
 
+        # Watchlist → orderbook-subscribe bridge. Dumps distinct
+        # (sym, long_ex, short_ex) across all users every 30s so the
+        # Go symbol-manager keeps watched pairs subscribed even when
+        # they fall out of the top-N tracked set.
+        from backend.services.watchlist_subscribe_dump import (
+            start_watchlist_dump, stop_watchlist_dump,
+        )
+        start_watchlist_dump()
+        _stop_fns.append(stop_watchlist_dump)
+
         from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
         start_tg_bot()
         _stop_fns.append(stop_tg_bot)

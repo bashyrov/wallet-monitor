@@ -606,19 +606,23 @@ function connectWs(){
 // ─────────────────────────────────────────────────────────────
 // Per-card live update (no full re-render)
 // ─────────────────────────────────────────────────────────────
+// Current live spread for the watched pair. Per user spec: drop the
+// "vs add-time baseline" delta and show the actual spread NOW. Source
+// is in_pct (live entry basis from top-of-book) — same metric as the
+// In column on the screener and Live Spread on /arb. Falls back to
+// price_spread (mark-based) when in_pct hasn't landed yet.
 function spreadDelta(w, o){
-  const initial = w.initial_spread_pct;
-  const current = o?.price_spread;
-  if (initial == null || current == null) {
-    return { text: '—', cls: 'neu', title: 'Baseline not yet captured' };
+  const inPct = (o && typeof o.in_pct === 'number') ? o.in_pct : null;
+  const live  = inPct != null ? inPct : (o && typeof o.price_spread === 'number' ? o.price_spread : null);
+  if (live == null) {
+    return { text: '—', cls: 'neu', title: 'Spread unavailable' };
   }
-  const delta = current - initial;
-  const text = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`;
-  const cls = Math.abs(delta) < 0.01 ? 'neu' : (delta > 0 ? 'pos' : 'neg');
+  const text = `${live >= 0 ? '+' : ''}${live.toFixed(3)}%`;
+  const cls = Math.abs(live) < 0.005 ? 'neu' : (live > 0 ? 'pos' : 'neg');
   return {
     text,
     cls,
-    title: `Spread now ${current.toFixed(3)}%  ·  at add ${initial.toFixed(3)}%  ·  Δ ${text}`,
+    title: `Live spread (in) ${text}`,
   };
 }
 
@@ -732,7 +736,7 @@ function cardHtml(w){
           </div>
         </div>
         <div class="sp-delta ${sp.cls}" title="${sp.title}">
-          <span class="sp-lbl">ΔSpread</span>
+          <span class="sp-lbl">Spread</span>
           <span class="sp-val">${sp.text}</span>
         </div>
       </div>
@@ -826,27 +830,24 @@ function updateKpis(){
   // chip counts always update (even when zero)
   document.getElementById('wl-chip-count-all').textContent = count;
   let pos = 0, neg = 0, bestNet = -Infinity, bestPair = null;
-  let wides = 0, narrows = 0, sumDelta = 0, dN = 0;
+  let sumSpread = 0, dN = 0;
   for (const w of _wl) {
     const o = _live.get(_key(w.symbol,w.long_exchange,w.short_exchange));
     if (!o) continue;
     if ((o.net_profit||0) > 0) pos++; else neg++;
     if ((o.net_profit||0) > bestNet) { bestNet = o.net_profit||0; bestPair = w; }
-    if (w.initial_spread_pct != null && o.price_spread != null) {
-      const d = o.price_spread - w.initial_spread_pct;
-      sumDelta += d; dN++;
-      if (d > 0.01) wides++;
-      else if (d < -0.01) narrows++;
-    }
+    const live = (typeof o.in_pct === 'number') ? o.in_pct
+               : (typeof o.price_spread === 'number' ? o.price_spread : null);
+    if (live != null) { sumSpread += live; dN++; }
   }
   document.getElementById('wl-chip-count-pos').textContent = pos;
   document.getElementById('wl-chip-count-neg').textContent = neg;
   if (!count) { kpis.innerHTML = ''; return; }
-  const avgDelta = dN ? (sumDelta / dN) : 0;
-  const avgSign = avgDelta >= 0 ? '+' : '';
+  const avgSpread = dN ? (sumSpread / dN) : 0;
+  const avgSign = avgSpread >= 0 ? '+' : '';
   kpis.innerHTML = `
     <div class="kpi accent"><div class="kpi-lbl">Watching</div><div class="kpi-val">${count}</div></div>
-    <div class="kpi ${avgDelta>=0?'accent':'warn'}"><div class="kpi-lbl">Avg ΔSpread</div><div class="kpi-val">${dN?`${avgSign}${avgDelta.toFixed(2)}%`:'—'}</div></div>
+    <div class="kpi ${avgSpread>=0?'accent':'warn'}"><div class="kpi-lbl">Avg Spread</div><div class="kpi-val">${dN?`${avgSign}${avgSpread.toFixed(2)}%`:'—'}</div></div>
     <div class="kpi ${pos>=neg?'accent':'warn'}"><div class="kpi-lbl">Profitable</div><div class="kpi-val">${pos}<span style="color:var(--text3);font-size:13px;font-weight:500"> / ${count}</span></div></div>
     <div class="kpi ${bestNet>0?'accent':'danger'}"><div class="kpi-lbl">Best Net /8h</div><div class="kpi-val">${bestPair?`${sign(bestNet)}${bestNet.toFixed(3)}%`:'—'}</div></div>`;
 }

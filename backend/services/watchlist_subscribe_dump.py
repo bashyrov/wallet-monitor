@@ -1,0 +1,117 @@
+"""Dump active watchlist pairs to a shared JSON file so the Go
+symbol-manager can subscribe orderbooks for them — even when the pair
+isn't in the top-N arb feed.
+
+Without this, a user-watched pair that drops out of the top loses its
+live in_pct (the only Source of truth for Live Spread on /arb /
+/watchlist after the mark→in_pct switch). With it, the symbol manager
+unions watchlist symbols with the top-N tracked set.
+
+Output shape: see Go's symbols.Manager loader for the matching reader.
+We keep it deliberately tiny — one row per (sym, long_ex, short_ex),
+no per-user attribution since the manager just unions across users.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import tempfile
+from typing import Any
+
+from backend.db.base import SessionLocal
+from backend.db.models import WatchlistItem
+
+logger = logging.getLogger("avalant.watchlist_dump")
+
+_CACHE_DIR = os.environ.get("AVALANT_CACHE_DIR", "/tmp/avalant_cache")
+_OUT_FILE = os.path.join(_CACHE_DIR, "watchlist_subscribe.json")
+_INTERVAL_S = 30.0
+
+_task: asyncio.Task | None = None
+_running = False
+
+
+def _collect() -> list[dict[str, Any]]:
+    """Distinct (symbol, long_ex, short_ex) across all users' active watchlists.
+
+    No need to filter by activity — every row in the table is by design
+    "currently watched". Soft-deleted rows would be removed via DELETE.
+    """
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(
+                WatchlistItem.symbol,
+                WatchlistItem.long_exchange,
+                WatchlistItem.short_exchange,
+            )
+            .distinct()
+            .all()
+        )
+        out: list[dict[str, Any]] = []
+        for sym, le, se in rows:
+            if not sym or not le or not se:
+                continue
+            out.append({
+                "symbol": (sym or "").upper(),
+                "long_exchange": (le or "").lower(),
+                "short_exchange": (se or "").lower(),
+            })
+        return out
+    finally:
+        db.close()
+
+
+def _write_atomic(payload: list[dict[str, Any]]) -> None:
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    body = {
+        "pairs": payload,
+        "ts": __import__("time").time(),
+    }
+    fd, tmp_path = tempfile.mkstemp(prefix=".watchlist_subscribe.", dir=_CACHE_DIR)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(body, f)
+        os.rename(tmp_path, _OUT_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+async def _loop() -> None:
+    global _running
+    _running = True
+    while _running:
+        try:
+            pairs = await asyncio.to_thread(_collect)
+            await asyncio.to_thread(_write_atomic, pairs)
+        except Exception as exc:
+            logger.warning("watchlist dump failed: %s", exc)
+        try:
+            await asyncio.sleep(_INTERVAL_S)
+        except asyncio.CancelledError:
+            break
+    _running = False
+
+
+def start_watchlist_dump() -> None:
+    """Kick off the periodic dump. Idempotent — safe to call from each
+    web replica's lifespan; an extra writer is harmless because
+    _write_atomic is, well, atomic."""
+    global _task
+    if _task and not _task.done():
+        return
+    _task = asyncio.create_task(_loop())
+
+
+def stop_watchlist_dump() -> None:
+    global _running, _task
+    _running = False
+    if _task:
+        _task.cancel()
+        _task = None
