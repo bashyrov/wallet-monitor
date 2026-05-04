@@ -63,6 +63,14 @@
   --dur-med:  .25s;
   --dur-slow: .4s;
 
+  /* Type stacks (CSS-var form so legacy --mono / --serif refs work) */
+  --font:  'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono:  'JetBrains Mono', ui-monospace, monospace;
+  --serif: 'Fraunces', Georgia, serif;
+
+  /* Secondary accent */
+  --teal:  #06B6D4;
+
   /* Shadows */
   --shadow-sm: 0 2px 8px -1px rgba(0,0,0,0.4);
   --shadow:    0 12px 32px -8px rgba(0,0,0,0.6);

@@ -6,7 +6,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="/avalant_favicon.svg">
 <link rel="apple-touch-icon" sizes="192x192" href="/avalant_favicon-192.png">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/design.css">
+<link rel="stylesheet" href="/navbar.css">
 <script src="/banner.js" defer></script>
 <script src="/auth.js"></script>
 <script src="/theme.js"></script>
@@ -14,89 +18,119 @@
 <script src="/popup.js" defer></script>
 <script src="/navbar.js" defer></script>
 <style>
-  /* :root vars now come from /design.css */
-    *{box-sizing:border-box}
-  body{margin:0;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-  .wrap{max-width:780px;margin:0 auto;padding:32px 22px 80px}
-  h1{font-size:32px;font-weight:800;letter-spacing:-0.02em;margin:0 0 24px}
-  .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:26px;margin-bottom:18px}
-  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
-  .row:last-child{border-bottom:0}
-  .row .lbl{color:var(--text2);font-size:13px}
-  .row .val{font-family:var(--mono);font-weight:600}
-  .total{font-size:24px}
-  .promo-row{display:flex;gap:8px;margin-top:6px}
-  .promo-row input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:11px 13px;border-radius:8px;font:inherit;font-family:var(--mono)}
-  .promo-row input:focus{outline:0;border-color:var(--border2)}
-  .promo-row button{background:var(--surface3);border:1px solid var(--border2);color:var(--text);padding:11px 18px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
-  .promo-feedback{font-size:12px;color:var(--text3);margin-top:8px;min-height:16px}
-  .promo-feedback.ok{color:var(--green)}
-  .promo-feedback.err{color:var(--red)}
-  .pay-btn{width:100%;background:var(--green);color:#000;border:0;padding:15px;border-radius:10px;font:inherit;font-weight:700;font-size:15px;cursor:pointer;margin-top:6px;transition:.18s}
-  .pay-btn:hover{filter:brightness(1.05)}
-  .pay-btn[disabled]{background:var(--surface3);color:var(--text3);cursor:not-allowed}
-  .footer{color:var(--text3);font-size:12px;line-height:1.55;margin-top:14px}
-  body.light{background:#FFFFFF;color:#000}
-  body.light .panel{background:#FFFFFF;border-color:#BABABA}
-  body.light .row{border-color:#E8E8E8}
-  body.light .row .lbl{color:#595959}
-  body.light .pay-btn{background:#006B3C;color:#FFF}
-  body.light .promo-row input,body.light .promo-row button{background:#F4F4F4;border-color:#BABABA;color:#000}
+  body { min-height: 100dvh; position: relative; overflow-x: hidden; }
+  body::before {
+    content:''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 70% 30% at 50% 0%, rgba(26,255,171,0.04), transparent 70%);
+  }
+  .wrap { position: relative; z-index: 1; max-width: 780px; margin: 0 auto; padding: 48px 22px 80px; }
+  .checkout-kicker { font-size: 11px; letter-spacing: 0.18em; color: var(--text3); text-transform: uppercase; font-weight: 600; }
+  .checkout-title { font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: clamp(36px, 5vw, 56px); letter-spacing: -0.02em; margin: 8px 0 32px; line-height: 1.05; }
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-xl); padding: 28px;
+    margin-bottom: 16px;
+    animation: fade-up var(--dur-med) var(--ease) both;
+  }
+  @keyframes fade-up { from { opacity:0; transform: translateY(8px) } to { opacity:1; transform:none } }
+  .plan-name { font-family: 'Fraunces', Georgia, serif; font-size: 28px; font-weight: 400; letter-spacing: -0.02em; margin-top: 4px; }
+  .plan-desc { color: var(--text2); font-size: 14px; margin-top: 6px; line-height: 1.55; }
+  .period-summary { margin-top: 14px; color: var(--text2); font-size: 13px; line-height: 1.6; }
+  .period-summary b { color: var(--text); font-family: var(--mono); }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); gap: 12px; }
+  .row:last-child { border-bottom: 0; }
+  .row .lbl { color: var(--text2); font-size: 13px; }
+  .row .val { font-family: var(--mono); font-weight: 600; font-size: 14px; }
+  .totals { margin-top: 18px; }
+  .row.total { padding-top: 16px; }
+  .row.total .lbl { color: var(--text); font-size: 14px; font-weight: 600; }
+  .row.total .val { font-size: 22px; font-family: 'Fraunces', Georgia, serif; font-weight: 400; }
+  .promo-section { margin-top: 22px; }
+  .promo-section .label { display: block; font-size: 11px; color: var(--text3); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; }
+  .promo-row { display: flex; gap: 8px; }
+  .promo-row .input { flex: 1; font-family: var(--mono); }
+  .promo-row .btn { flex-shrink: 0; }
+  .promo-feedback { font-size: 12px; color: var(--text3); margin-top: 10px; min-height: 16px; }
+  .promo-feedback.ok { color: var(--green); }
+  .promo-feedback.err { color: var(--red); }
+  .pay-btn { width: 100%; margin-top: 18px; }
+  .footer { color: var(--text3); font-size: 12px; line-height: 1.6; margin-top: 16px; }
+  .success-icon, .fail-icon { width: 56px; height: 56px; margin: 0 auto 16px; border-radius: var(--r-lg); display: grid; place-items: center; }
+  .success-icon { background: var(--green-soft); border: 1px solid var(--green-edge); color: var(--green); }
+  .fail-icon { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--red); }
+  .state-headline { font-family: 'Fraunces', Georgia, serif; font-size: 28px; font-weight: 400; letter-spacing: -0.02em; margin: 0 0 8px; text-align: center; }
+  .state-sub { color: var(--text2); font-size: 14px; margin: 0 0 20px; text-align: center; line-height: 1.55; }
+  @media (max-width: 600px) {
+    .wrap { padding: 32px 16px 80px; }
+    .panel { padding: 22px 18px; border-radius: var(--r-lg); }
+  }
 </style>
 </head>
 <body>
 <app-navbar page="checkout"></app-navbar>
 <main class="wrap">
-  <h1>Checkout</h1>
-  <div id="state-loading" class="panel">Loading plan…</div>
+  <div class="checkout-kicker">Checkout</div>
+  <h1 class="checkout-title">Confirm your subscription</h1>
+
+  <div id="state-loading" class="panel" style="display:flex;align-items:center;gap:12px;color:var(--text2)">
+    <span class="spinner"></span> Loading plan…
+  </div>
   <div id="state-error" class="panel" style="display:none;color:var(--red)"></div>
 
   <div id="state-success" class="panel" style="display:none">
-    <h2 style="margin:0 0 8px">Payment successful</h2>
-    <p style="color:var(--text2);font-size:14px;margin:0 0 14px">Your plan is active. Open the app to start scanning.</p>
-    <a href="/app" class="pay-btn" style="display:inline-block;text-align:center;text-decoration:none;width:auto;padding:11px 22px">Go to app →</a>
+    <div class="success-icon">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+    </div>
+    <h2 class="state-headline">Payment successful</h2>
+    <p class="state-sub">Your plan is active. Open the app to start scanning.</p>
+    <a href="/app" class="btn btn-primary btn-lg" style="width:100%">Go to app →</a>
   </div>
 
   <div id="state-fail" class="panel" style="display:none">
-    <h2 style="margin:0 0 8px">Payment did not complete</h2>
-    <p style="color:var(--text2);font-size:14px;margin:0 0 14px">No charge was made. You can retry anytime.</p>
-    <a href="/pricing" class="pay-btn" style="display:inline-block;text-align:center;text-decoration:none;width:auto;padding:11px 22px">Back to pricing →</a>
+    <div class="fail-icon">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+    </div>
+    <h2 class="state-headline">Payment did not complete</h2>
+    <p class="state-sub">No charge was made. You can retry anytime.</p>
+    <a href="/pricing" class="btn btn-outline btn-lg" style="width:100%">Back to pricing →</a>
   </div>
 
   <div id="state-checkout" class="panel" style="display:none">
-    <div>
-      <div style="font-size:11px;letter-spacing:0.06em;color:var(--text3);text-transform:uppercase">Plan</div>
-      <div id="plan-name" style="font-size:22px;font-weight:700;margin-top:2px"></div>
-      <div id="plan-desc" style="color:var(--text2);font-size:13px;margin-top:4px"></div>
-      <div id="period-summary" style="margin-top:12px;color:var(--text2);font-size:13px"></div>
-    </div>
-    <div class="row" style="margin-top:18px">
-      <span class="lbl">Subtotal (with period discount)</span>
-      <span class="val" id="row-base">—</span>
-    </div>
-    <div class="row" id="row-discount-wrap" style="display:none">
-      <span class="lbl">Promo (<span id="row-discount-pct"></span>%)</span>
-      <span class="val" style="color:var(--green)" id="row-discount">—</span>
-    </div>
-    <div class="row" id="row-bonus-wrap" style="display:none">
-      <span class="lbl">Bonus days</span>
-      <span class="val" style="color:#925BD6" id="row-bonus">—</span>
-    </div>
-    <div class="row total">
-      <span class="lbl" style="color:var(--text);font-size:14px">Total</span>
-      <span class="val" id="row-total">—</span>
+    <div class="checkout-kicker">Plan</div>
+    <div id="plan-name" class="plan-name"></div>
+    <div id="plan-desc" class="plan-desc"></div>
+    <div id="period-summary" class="period-summary"></div>
+
+    <div class="totals">
+      <div class="row">
+        <span class="lbl">Subtotal (with period discount)</span>
+        <span class="val" id="row-base">—</span>
+      </div>
+      <div class="row" id="row-discount-wrap" style="display:none">
+        <span class="lbl">Promo (<span id="row-discount-pct"></span>%)</span>
+        <span class="val" style="color:var(--green)" id="row-discount">—</span>
+      </div>
+      <div class="row" id="row-bonus-wrap" style="display:none">
+        <span class="lbl">Bonus days</span>
+        <span class="val" style="color:var(--purple)" id="row-bonus">—</span>
+      </div>
+      <div class="row total">
+        <span class="lbl">Total</span>
+        <span class="val" id="row-total">—</span>
+      </div>
     </div>
 
-    <div style="margin-top:18px">
-      <label style="font-size:12px;color:var(--text2);font-weight:600;letter-spacing:0.04em;text-transform:uppercase">Promo code</label>
+    <div class="promo-section">
+      <label class="label">Promo code</label>
       <div class="promo-row">
-        <input id="promo-input" type="text" placeholder="e.g. EARLY20" autocomplete="off">
-        <button id="promo-apply" onclick="applyPromo()">Apply</button>
+        <input id="promo-input" class="input" type="text" placeholder="e.g. EARLY20" autocomplete="off">
+        <button id="promo-apply" class="btn btn-outline" onclick="applyPromo()">Apply</button>
       </div>
       <div id="promo-feedback" class="promo-feedback"></div>
     </div>
 
-    <button id="pay-btn" class="pay-btn" onclick="pay()">Pay with crypto →</button>
+    <button id="pay-btn" class="btn btn-primary btn-lg pay-btn" onclick="pay()">Pay with crypto →</button>
     <div class="footer">
       Powered by CryptoCloud — accepts USDT, BTC, ETH, and other coins. After clicking Pay, you'll land on a hosted invoice page; once the network confirms your payment your plan activates automatically.
     </div>
