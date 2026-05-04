@@ -107,7 +107,6 @@
     /* ── Tab panes: show only the active section ── */
     .profile-content > [id^="sec-"] { display: none; }
     .profile-content > [id^="sec-"].is-active { display: block; animation: fadeUp 0.25s var(--ease) both; }
-    .profile-hero#sec-account.is-active { display: flex; }
 
     /* ── PROFILE HERO ── */
     .profile-hero {
@@ -135,7 +134,7 @@
       box-shadow: 0 0 32px rgba(26,255,171,0.25);
     }
     .profile-info { flex: 1; }
-    .profile-name { font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: 26px; letter-spacing: -0.02em; margin-bottom: 4px; line-height: 1.1; }
+    .profile-name { font-weight: 700; font-size: 22px; letter-spacing: -0.01em; margin-bottom: 4px; line-height: 1.15; }
     .profile-email { font-size: 13px; color: var(--text3); margin-bottom: 8px; }
     .profile-joined { font-size: 11px; color: var(--text4); }
     .profile-actions { display: flex; gap: 8px; }
@@ -557,33 +556,20 @@
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>
         Account
       </a></li>
-      <li><a href="#sec-activity" data-spy="sec-activity">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l4-4 3 3 5-6"/><path d="M2 14h12"/></svg>
-        Activity
-      </a></li>
-      <li><a href="#sec-plan" data-spy="sec-plan">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 8h12M5 11h2"/></svg>
-        Plan &amp; billing
-      </a></li>
-      <li><a href="#sec-notifications" data-spy="sec-notifications">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
-        Notifications
-      </a></li>
       <li><a href="#sec-security" data-spy="sec-security">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2v4.5c0 3.5-2.5 6-5.5 7-3-1-5.5-3.5-5.5-7V3.5z"/></svg>
         Security
-      </a></li>
-      <li><a href="#sec-danger" data-spy="sec-danger">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1.5 13.5h13z"/><path d="M8 7v3M8 12h.01"/></svg>
-        Danger zone
       </a></li>
     </ul>
   </aside>
 
   <div class="profile-content">
 
+  <!-- ═══ Account pane — bundles hero + activity + plan + notifications + danger ═══ -->
+  <div id="sec-account">
+
   <!-- Profile Hero -->
-  <div class="profile-hero" id="sec-account">
+  <div class="profile-hero">
     <div class="profile-avatar" id="hero-avatar"></div>
     <div class="profile-info">
       <div class="profile-name" id="profile-name"></div>
@@ -600,7 +586,7 @@
 
 
   <!-- Balance History Chart -->
-  <div class="section-card" id="sec-activity" style="margin-bottom:20px;animation-delay:0.28s">
+  <div class="section-card" style="margin-bottom:20px;animation-delay:0.28s">
     <div class="section-head">
       <span class="section-title">Balance History</span>
       <div style="display:flex;gap:4px">
@@ -617,7 +603,7 @@
   </div>
 
   <!-- Plan -->
-  <div class="section-card" id="sec-plan" style="margin-bottom:20px">
+  <div class="section-card" style="margin-bottom:20px">
       <div class="section-head">
         <span class="section-title">Subscription Plan</span>
       </div>
@@ -662,7 +648,7 @@
   </div>
 
   <!-- Telegram -->
-  <div class="section-card" id="sec-notifications" style="margin-bottom:20px">
+  <div class="section-card" style="margin-bottom:20px">
       <div class="section-head">
         <span class="section-title">Notifications</span>
         <span id="tg-status" class="tg-status tg-status-off">Not linked</span>
@@ -700,6 +686,36 @@
     .tg-status-off { background: rgba(155,159,171,0.1); color: var(--text3); border: 1px solid var(--border); }
     body.light .tg-status-on { background: #F0F7F3; color: var(--green); border-color: var(--green); }
   </style>
+
+  <!-- Danger Zone (lives in Account pane) -->
+  <div class="section-card" style="animation-delay:0.3s">
+    <div class="section-head">
+      <span class="section-title" style="color:var(--red)">Danger Zone</span>
+    </div>
+    <div class="danger-row" style="border-bottom:1px solid var(--border)" id="admin-row">
+      <div>
+        <div class="danger-label" style="color:var(--text)">Admin Panel</div>
+        <div class="danger-desc">System statistics and user management</div>
+      </div>
+      <a href="/admin" style="padding:0 14px;height:30px;border-radius:99px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:12px;font-weight:500;text-decoration:none;display:flex;align-items:center;transition:all .12s;" onmouseover="this.style.background='var(--surface3)';this.style.color='var(--text)'" onmouseout="this.style.background='transparent';this.style.color='var(--text2)'">Open →</a>
+    </div>
+    <div class="danger-row">
+      <div>
+        <div class="danger-label">Sign out</div>
+        <div class="danger-desc">Sign out of your account on this device</div>
+      </div>
+      <button class="btn-danger" onclick="Auth.logout('/login')">Sign out</button>
+    </div>
+    <div class="danger-row">
+      <div>
+        <div class="danger-label">Delete account</div>
+        <div class="danger-desc">Permanently delete your account and all wallets</div>
+      </div>
+      <button class="btn-danger" onclick="toast('Account deletion coming soon', 'info')">Delete account</button>
+    </div>
+  </div>
+
+  </div><!-- /sec-account -->
 
   <!-- ─── Security group: 2FA + API Keys ─── -->
   <section id="sec-security">
@@ -1018,34 +1034,6 @@
   </style>
 
   </section><!-- /sec-security -->
-
-  <!-- Danger Zone -->
-  <div class="section-card" id="sec-danger" style="animation-delay:0.3s">
-    <div class="section-head">
-      <span class="section-title" style="color:var(--red)">Danger Zone</span>
-    </div>
-    <div class="danger-row" style="border-bottom:1px solid var(--border)" id="admin-row">
-      <div>
-        <div class="danger-label" style="color:var(--text)">Admin Panel</div>
-        <div class="danger-desc">System statistics and user management</div>
-      </div>
-      <a href="/admin" style="padding:0 14px;height:30px;border-radius:99px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:12px;font-weight:500;text-decoration:none;display:flex;align-items:center;transition:all .12s;" onmouseover="this.style.background='var(--surface3)';this.style.color='var(--text)'" onmouseout="this.style.background='transparent';this.style.color='var(--text2)'">Open →</a>
-    </div>
-    <div class="danger-row">
-      <div>
-        <div class="danger-label">Sign out</div>
-        <div class="danger-desc">Sign out of your account on this device</div>
-      </div>
-      <button class="btn-danger" onclick="Auth.logout('/login')">Sign out</button>
-    </div>
-    <div class="danger-row">
-      <div>
-        <div class="danger-label">Delete account</div>
-        <div class="danger-desc">Permanently delete your account and all wallets</div>
-      </div>
-      <button class="btn-danger" onclick="toast('Account deletion coming soon', 'info')">Delete account</button>
-    </div>
-  </div>
 
   </div><!-- /.profile-content -->
 
