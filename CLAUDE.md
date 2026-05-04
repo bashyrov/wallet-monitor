@@ -1,5 +1,31 @@
 # Avalant — Development Guide for Claude
 
+## Recent work — TL;DR for new sessions
+
+**Landing-style frontend redesign** (active, shipped to prod 2026-05-04). HEAD: `bb6c145` on `main`.
+
+What changed:
+- **Design tokens**: `frontend/design.css` is single source of truth for colours, radii, motion, fonts. Loaded by every page. Legacy aliases (`--green-dim`, `--teal-dim`, `--surface4`, `--font`, `--mono`, `--serif`, `--teal`) kept so 8 000+ lines of inherited page CSS keep cascading without rewrites.
+- **Navbar**: `<app-navbar>` Web Component (`frontend/navbar.js` + `frontend/navbar.css`). Layout = flex with brand left, absolute-centered `.topbar-nav` (left:50% translateX(-50%)), right cluster `margin-left:auto`. Width 100%, padding 0 24px (no max-width — items used to drift right of the brand on wide screens because the side-1fr columns were unequal). Every item has an SVG icon. Active = filled `--green-soft` chip with `--green-edge` border. Mobile drawer ≤900px.
+- **Homepage `/index.html`**: replaced with a copy of `/landing` minus the Pricing + FAQ sections (links go to `/pricing` page). Imports `auth.js`; on load toggles between `#nav-cta-guest` (Sign in / Get started) and `#nav-cta-user` (Open app + avatar). Removed an old pre-launch IIFE that stripped `href` from every product/auth link — that's why the CTAs used to look dead.
+- **Buttons**: every `.btn*` pinned to `--r` (10px) corners via `!important` in design.css; no more pill. `:active` press feedback (translateY + brightness) added globally. Mockup "Trade" buttons on homepage wired to `/screener`, "Open paired position" to `/register`.
+- **Profile (`/profile`)**: floating sticky sidebar (`top:88px`, `margin-left:8px`, soft shadow). Two tabs only — **Account** (hero + Balance History + Subscription + Telegram + Danger Zone, in that DOM order) and **Security** (2FA + API Keys wrapped in `<section id="sec-security">`). Pane switching via `.profile-content > [id^="sec-"].is-active`; URL hash drives initial state. Fraunces serif purged — `.section-title` had been inheriting it from design.css, fixed with explicit `font-family:'Inter'` in profile's local rule.
+- **Auth pages** (login, register, password-reset, password-reset-confirm, verify-email, tg-done): rewritten with auth-card pattern, design.css buttons/inputs, Fraunces titles, glow-gradient background.
+- **Other pages** (app, archive, watchlist, screener, arb, admin, admin-user): minimal-touch polish — radial glow `body::before`, design.css imported, page-local `:root` overrides stripped where present.
+
+Quick deploy & rollback:
+```bash
+ssh root@217.216.108.111 "cd /root/wallet-monitor && ./scripts/deploy.sh frontend"     # frontend bind-mounted, no rebuild
+ssh root@217.216.108.111 "cd /root/wallet-monitor && git checkout pre-redesign-v1 -- frontend/ && ./scripts/deploy.sh frontend"   # rollback tag
+```
+
+**Prod load (current baseline)**: 12-core EPYC, 48 GB RAM. go-fetcher fixed ~9.5 cores (24 ob-WS + 12 funding-WS + 3 arb engines). app+app2 ~1.5 cores under near-zero traffic. Headroom for ~2 000 concurrent users before WS broadcaster (single Go process) and Redis pub/sub become the ceiling. RAM is not a bottleneck at this scale (44 GB free).
+
+**Things to know when continuing redesign work**:
+- `dist/aux.js` is the bundled `navbar.js + auth.js + ...` consumed by screener and arb. After editing `navbar.js` always run `cd frontend && node build.mjs` before deploy or those pages keep the stale navbar.
+- `landing.html` is intentionally NOT touched by the redesign — it's the visual reference and was self-contained before. The homepage `/index.html` is the propagated copy.
+- Screener.html and arb.html are the heaviest pages (3 k / 6.6 k lines) and JS-coupled; the redesign treated them as polish-only (background gradient, design.css cascade), no markup edits.
+
 ## What is this project
 
 **Avalant** — a web platform for crypto-arbitrage and portfolio management.
