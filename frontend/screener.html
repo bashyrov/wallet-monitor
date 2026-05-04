@@ -1512,6 +1512,13 @@ function renderAll() {
     const shortEx = r.short_exchange;
     if (longEx && _exDisabled.has(longEx)) return false;
     if (_exDisabled.has(shortEx)) return false;
+    // Drop rows without a live orderbook on at least the short leg —
+    // an arb you can't enter isn't an opportunity. Same rule the
+    // spot/dex tabs apply, just not previously enforced on the
+    // combined All view. Without it LIT-style cross-listings with
+    // 28% mark spread (Binance spot 0.74 vs perp 0.95, no spot book
+    // subscribed) sat at the top of the list as fake top opps.
+    if (r.in_pct === null || r.in_pct === undefined) return false;
     return true;
   });
   const tb = document.getElementById('tbody-all');

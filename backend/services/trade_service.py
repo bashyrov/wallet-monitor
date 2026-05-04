@@ -1518,8 +1518,17 @@ async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
             continue
         spot_price = px_map.get(sym) or float(short.get("entry_price") or 0)
         for spot in spot_by_asset[sym]:
-            ok, reason = _spot_short_can_pair(spot, short, spot_price)
-            if not ok:
+            # _spot_short_can_pair now returns (ok, reason) where ok=False
+            # means notional/time mismatch but the ticker still matches.
+            # Per user spec: surface ALL ticker matches in the API
+            # response — the Sync UI uses this for manual decisions.
+            # auto_paired flips to True only when the strict check passes
+            # (or the user has explicitly paired this combo before).
+            strict_ok, reason = _spot_short_can_pair(spot, short, spot_price)
+            # Hard-skip only on missing data (zero qty, no spot price) —
+            # those rows have nothing to display.
+            hard_skip = reason in ("no spot price", "zero qty", "zero notional")
+            if hard_skip:
                 continue
             leg_a, leg_b = _spot_short_pair_decision_keys(
                 sym, spot["wallet_id"],
@@ -1540,8 +1549,11 @@ async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
                     "snapshot_at": spot["snapshot_at"],
                 },
                 "short": short,
-                "auto_paired": (decision == "paired") or (decision is None),
-                "decision": decision or "auto",
+                # auto_paired = strict-match passed OR user explicitly
+                # confirmed. False values still surface (frontend Sync UI
+                # offers them as candidates for manual decision).
+                "auto_paired": (decision == "paired") or (decision is None and strict_ok),
+                "decision": decision or ("auto" if strict_ok else "candidate"),
                 "match_reason": reason,
                 "spot_price_estimate": spot_price,
             })
