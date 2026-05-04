@@ -1213,8 +1213,12 @@ _SPOT_TIME_WINDOW_S = 10 * 60
 # to land in the spot/short pair card without a manual /app refresh.
 _SPOT_REFRESH_STALE_S = 5 * 60
 # Hard timeout for the on-demand refresh — any single venue that takes
-# longer than this is dropped (we keep whatever ran in time and proceed).
-_SPOT_REFRESH_TIMEOUT_S = 12.0
+# longer than this is dropped. Refresh runs in the background, the
+# request itself never waits on it.
+_SPOT_REFRESH_TIMEOUT_S = 30.0
+# Per-user dedup so multiple /arb tabs / fast polls don't queue
+# overlapping background refreshes against the same exchange APIs.
+_SPOT_REFRESH_INFLIGHT: dict[int, bool] = {}
 
 
 async def _refresh_stale_spot_snapshots(db: Session, user_id: int, shorts: list[dict]) -> None:
@@ -1276,18 +1280,120 @@ async def _refresh_stale_spot_snapshots(db: Session, user_id: int, shorts: list[
     if not stale:
         return
 
-    try:
-        await asyncio.wait_for(
-            balance_service.fetch_balances(stale, db),
-            timeout=_SPOT_REFRESH_TIMEOUT_S,
-        )
-    except asyncio.TimeoutError:
-        logger.info(
-            "spot-short refresh timed out after %.0fs (user=%s, wallets=%d) — using whatever landed",
-            _SPOT_REFRESH_TIMEOUT_S, user_id, len(stale),
-        )
-    except Exception as exc:
-        logger.warning("spot-short refresh failed user=%s: %s", user_id, exc)
+    # Fire-and-forget: kick off the refresh in the background and
+    # return immediately. Blocking the request for up to 12s while
+    # balances stream in slowed down /arb's first paint by a lot —
+    # the user reported "open pair page very slow when I have a
+    # position there". Next /spot-short-pairs poll (frontend hits
+    # it every ~10s) will see the fresh data once it lands.
+    #
+    # Per-user dedup so simultaneous /arb tabs don't queue overlapping
+    # refreshes for the same wallets.
+    if _SPOT_REFRESH_INFLIGHT.get(user_id):
+        return
+    _SPOT_REFRESH_INFLIGHT[user_id] = True
+
+    async def _bg():
+        # Build a fresh DB session — the request's session may close
+        # before this finishes.
+        from backend.db.base import SessionLocal
+        bg_db = SessionLocal()
+        try:
+            await asyncio.wait_for(
+                balance_service.fetch_balances(stale, bg_db),
+                timeout=_SPOT_REFRESH_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.info(
+                "spot-short refresh timed out after %.0fs (user=%s, wallets=%d)",
+                _SPOT_REFRESH_TIMEOUT_S, user_id, len(stale),
+            )
+        except Exception as exc:
+            logger.warning("spot-short refresh failed user=%s: %s", user_id, exc)
+        finally:
+            bg_db.close()
+            _SPOT_REFRESH_INFLIGHT.pop(user_id, None)
+
+    asyncio.create_task(_bg())
+
+
+async def _spot_avg_entries(
+    db: Session,
+    user_id: int,
+    spot_by_asset: dict[str, list[dict]],
+    shorts: list[dict],
+) -> dict[tuple[int, str], float | None]:
+    """For every (wallet, asset) pair where the asset matches an open
+    short, fetch the spot cost basis from the venue's trade history.
+    Returns {(wallet_id, asset): avg_entry_price | None}.
+
+    Per-venue: each provider exposes a `spot_avg_entry(creds, sym, qty)`
+    method. We skip exchanges that don't implement it (their pairs fall
+    back to the paired-open assumption on the frontend).
+
+    Cached 5 min in-process so repeated /arb polls don't re-walk trade
+    history every 10s — these calls cost real rate-limit budget.
+    """
+    if not shorts:
+        return {}
+    short_assets = {(p.get("symbol") or "").upper() for p in shorts}
+    if not short_assets:
+        return {}
+
+    from backend.domain import ExchangeWallet
+    import time as _time
+    out: dict[tuple[int, str], float | None] = {}
+    tasks: list[tuple[tuple[int, str], Any]] = []
+
+    for asset, holdings in spot_by_asset.items():
+        if asset not in short_assets:
+            continue
+        for h in holdings:
+            wid = int(h["wallet_id"])
+            cache_key = (wid, asset)
+            cached = _SPOT_ENTRY_CACHE.get(cache_key)
+            if cached and (_time.time() - cached[0]) < _SPOT_ENTRY_TTL_S:
+                out[cache_key] = cached[1]
+                continue
+            wallet = db.query(Wallet).get(wid)
+            if not wallet:
+                continue
+            provider_cls = wallet.provider
+            if not provider_cls:
+                continue
+            provider = provider_cls()
+            fn = getattr(provider, "spot_avg_entry", None)
+            if not fn:
+                continue
+            try:
+                creds_dict = decrypt_credentials(wallet.credentials or {})
+                # Build the lightweight ExchangeWallet shape providers expect.
+                ew = ExchangeWallet(
+                    name=wallet.name,
+                    api_key=creds_dict.get("api_key"),
+                    api_secret=creds_dict.get("api_secret"),
+                    api_passphrase=creds_dict.get("api_passphrase"),
+                )
+                creds = {
+                    "api_key": ew.api_key,
+                    "api_secret": ew.api_secret,
+                }
+                tasks.append((cache_key, fn(creds, asset, float(h["qty"]))))
+            except Exception:
+                continue
+
+    if tasks:
+        results = await asyncio.gather(*(t[1] for t in tasks), return_exceptions=True)
+        now = _time.time()
+        for (cache_key, _coro), r in zip(tasks, results):
+            val = r if isinstance(r, (int, float)) and r > 0 else None
+            _SPOT_ENTRY_CACHE[cache_key] = (now, val)
+            out[cache_key] = val
+    return out
+
+
+_SPOT_ENTRY_CACHE: dict[tuple[int, str], tuple[float, float | None]] = {}
+_SPOT_ENTRY_TTL_S = 5 * 60.0
 
 
 def _list_user_spot_holdings(db: Session, user_id: int) -> list[dict]:
@@ -1511,6 +1617,10 @@ async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
     sym_set = sorted({(p.get("symbol") or "").upper() for p in shorts})
     px_map = await _spot_price_lookup(sym_set)
 
+    # Real spot cost-basis per (wallet, asset) — falls back to None when
+    # the exchange has no avg-entry helper or the API is unauthorized.
+    avg_entries = await _spot_avg_entries(db, user_id, spot_by_asset, shorts)
+
     out: list[dict] = []
     for short in shorts:
         sym = (short.get("symbol") or "").upper()
@@ -1537,6 +1647,7 @@ async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
             decision = decisions.get((leg_a, leg_b))
             if decision == "unpaired":
                 continue  # user explicitly rejected this pair
+            avg_entry = avg_entries.get((spot["wallet_id"], sym))
             out.append({
                 "kind": "spot_short_pair",
                 "symbol": sym,
@@ -1547,6 +1658,10 @@ async def list_user_spot_short_pairs(db: Session, user_id: int) -> list[dict]:
                     "qty": spot["qty"],
                     "qty_usd": spot["qty"] * spot_price,
                     "snapshot_at": spot["snapshot_at"],
+                    # Real cost basis from venue trade history when
+                    # available — otherwise the frontend falls back to
+                    # short.entry as a paired-open approximation.
+                    "avg_entry_price": avg_entry,
                 },
                 "short": short,
                 # auto_paired = strict-match passed OR user explicitly

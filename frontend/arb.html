@@ -4311,14 +4311,18 @@ function _spotShortToPair(ssp) {
   const sp = ssp.spot || {};
   const sh = ssp.short || {};
   // mark = current spot price from backend (now reads go-fetcher's
-  // funding.json — accurate). entry = best-guess that the pair was
-  // opened simultaneously, so spot's implicit cost basis ≈ short's
-  // entry. With this, spot uPnL = (mark - entry) × qty correctly
-  // tracks delta-neutral basis change. Without it, spot uPnL was
-  // hardcoded to 0 and the "pair Δ" only reflected the short, which
-  // double-counted directional moves.
+  // funding.json — accurate).
+  // entry: prefer REAL cost basis from venue trade history (backend
+  // walks /myTrades and computes VWAP for the held qty). Falls back
+  // to short.entry as a paired-open approximation when the venue
+  // either has no spot_avg_entry helper or rejected the call (auth /
+  // permission). With real entry, spot uPnL = (mark − entry) × qty
+  // tracks the actual P&L on the spot leg, not just basis change.
   const mark  = Number(ssp.spot_price_estimate || sh.mark_price || 0);
-  const entry = Number(sh.entry_price || ssp.spot_price_estimate || 0);
+  const realEntry = Number(sp.avg_entry_price || 0);
+  const entry = realEntry > 0
+    ? realEntry
+    : Number(sh.entry_price || ssp.spot_price_estimate || 0);
   const spotQty = Number(sp.qty || 0);
   const spotUpnl = (entry > 0 && spotQty > 0) ? (mark - entry) * spotQty : 0;
   return {

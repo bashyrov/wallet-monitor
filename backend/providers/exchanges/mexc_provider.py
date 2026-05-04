@@ -102,6 +102,67 @@ class MexcProvider(BaseWalletProvider):
 
         return dict(out)
 
+    async def spot_avg_entry(
+        self,
+        creds: dict[str, str],
+        symbol: str,
+        target_qty: float,
+    ) -> Optional[float]:
+        """Compute the cost basis for the user's current spot holding of
+        `symbol` against USDT.
+
+        Walks /api/v3/myTrades from newest to oldest, accumulating BUY
+        fills (and netting against SELL fills along the way) until we've
+        covered `target_qty`. Returns the weighted-average buy price.
+
+        Returns None on auth/permission failure or if buys don't cover
+        the target qty (caller falls back to short.entry).
+        """
+        if target_qty <= 0:
+            return None
+        sym = symbol.upper().rstrip("USDT") + "USDT"
+        try:
+            data = await self._spot_get(creds, "/api/v3/myTrades", {
+                "symbol": sym,
+                "limit": "500",
+            })
+        except Exception:
+            return None
+        trades = data if isinstance(data, list) else (data or {}).get("trades") or []
+        if not trades:
+            return None
+        # MEXC returns oldest→newest; reverse for FIFO-from-newest accumulation.
+        # Newest BUYs are most likely to match the current holding qty.
+        trades = sorted(trades, key=lambda t: int(t.get("time") or 0), reverse=True)
+        remaining = float(target_qty)
+        cost = 0.0
+        filled = 0.0
+        # Track running net qty so SELL trades reduce buy obligation.
+        for t in trades:
+            try:
+                q = float(t.get("qty") or 0)
+                p = float(t.get("price") or 0)
+            except (TypeError, ValueError):
+                continue
+            if q <= 0 or p <= 0:
+                continue
+            is_buyer = bool(t.get("isBuyer"))
+            if is_buyer:
+                take = min(q, remaining)
+                cost += take * p
+                filled += take
+                remaining -= take
+                if remaining <= 1e-9:
+                    break
+            else:
+                # SELL — releases earlier buy obligation. We're walking
+                # newest→oldest so a recent sell offsets that-much qty
+                # of the older buys we'd otherwise count.
+                remaining += q
+        if filled <= 0:
+            return None
+        return cost / filled
+
     @staticmethod
     def _futures_param_string(params: dict[str, Any]) -> str:
         if not params:
