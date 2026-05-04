@@ -5387,7 +5387,11 @@ body{padding-bottom:44px;}
   const FRESH_S = 8, STALE_S = 30;
   const wrap = document.getElementById('ex-status-items');
   function rebuild(){
-    wrap.innerHTML = EXES.map(e => `<span class="as-ex" id="exs-${e}"><span class="d"></span><span class="nm">${LABELS[e]||e}</span><span class="age" style="font-family:var(--mono);color:var(--text3)">—</span></span>`).join('');
+    // Status strip: dot + venue name only. Age is hidden in the visual
+    // strip (kept as title attribute for hover) — clutters the bar
+    // without adding actionable info; the dot already encodes
+    // fresh/slow/stale.
+    wrap.innerHTML = EXES.map(e => `<span class="as-ex" id="exs-${e}"><span class="d"></span><span class="nm">${LABELS[e]||e}</span></span>`).join('');
   }
   rebuild();
   if (window.EX && window.EX.ready) {
@@ -5410,12 +5414,10 @@ body{padding-bottom:44px;}
         const el = document.getElementById('exs-'+ex);
         if (!el) continue;
         const d = el.querySelector('.d');
-        const a = el.querySelector('.age');
         const age = (typeof h.age_s === 'number') ? h.age_s : null;
-        const healthy = (h.healthy !== false) && age != null && age <= STALE_S;
         const kls = (age == null) ? 'stale' : age <= FRESH_S ? 'live' : age <= STALE_S ? 'slow' : 'stale';
         d.className = 'd ' + kls;
-        a.textContent = age == null ? '—' : (age < 60 ? age.toFixed(1)+'s' : Math.round(age/60)+'m');
+        // Age moved to hover title only — bar stays clean.
         el.title = `${LABELS[ex]||ex} — ${h.via || '?'}${age != null ? ' · '+age.toFixed(1)+'s' : ''}`;
       }
     } catch(_) {}
