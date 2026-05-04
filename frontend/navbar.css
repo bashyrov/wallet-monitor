@@ -50,25 +50,23 @@ app-navbar {
   padding: 8px 14px;
   font-size: 14px; font-weight: 500;
   color: var(--text2);
-  border-radius: var(--r-pill);
+  border-radius: var(--r);
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease;
   position: relative;
   white-space: nowrap;
 }
 button.nav-lnk { background: none; cursor: pointer; }
 .nav-lnk svg { opacity: 0.65; transition: opacity var(--dur-fast) ease; flex-shrink: 0; }
-.nav-lnk:hover { color: var(--text); }
+.nav-lnk:hover { color: var(--text); background: var(--surface2); }
 .nav-lnk:hover svg { opacity: 1; }
-.nav-lnk.active { color: var(--green); }
-.nav-lnk.active svg { opacity: 1; }
-.nav-lnk.active::after {
-  content: '';
-  position: absolute; left: 14px; right: 14px; bottom: -2px;
-  height: 2px;
-  background: var(--green);
-  border-radius: 1px;
-  box-shadow: 0 0 8px var(--green-glow);
+.nav-lnk:active { transform: translateY(1px); }
+.nav-lnk.active {
+  color: var(--green);
+  background: var(--green-soft);
+  border: 1px solid var(--green-edge);
+  padding: 7px 13px;
 }
+.nav-lnk.active svg { opacity: 1; }
 
 /* ─── Right cluster (desktop) ─────────────────────────────────────────── */
 .topbar-right {

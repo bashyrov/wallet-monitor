@@ -353,14 +353,22 @@ input, select, textarea { font-family: inherit; }
 .brand-cursor { color: var(--green); animation: blink 1s steps(2) infinite; margin-left: 1px; }
 
 /* ─── Global button corner pin ────────────────────────────────────────────
- * Brand-consistency rule: every .btn uses the pill radius. Wins over
- * any page-local .btn override that hardcodes 8/10/12px corners. Icon-
- * shaped buttons (.btn-icon) keep their soft-square shape because a
- * pill on a square aspect ratio looks wrong.
+ * Brand-consistency rule: every .btn uses the same square-rounded radius
+ * (--r = 10px), winning over any page-local .btn override that hardcodes
+ * 8/12/999px corners. Icon-shaped buttons share the same radius.
  * ───────────────────────────────────────────────────────────────────── */
 .btn,
 a.btn, button.btn,
 .btn-primary, .btn-outline, .btn-ghost, .btn-danger,
-.btn-sm, .btn-lg, .btn-xl { border-radius: var(--r-pill) !important; }
-
+.btn-sm, .btn-lg, .btn-xl,
 .btn-icon, .btn-icon-sm { border-radius: var(--r) !important; }
+
+/* ─── Pressed state — visible feedback on every click ──────────────────── */
+.btn:active:not(:disabled),
+a.btn:active, button.btn:active {
+  transform: translateY(1px) !important;
+  filter: brightness(0.95);
+}
+.btn-primary:active:not(:disabled) {
+  box-shadow: 0 2px 8px -2px rgba(26,255,171,0.30) !important;
+}
