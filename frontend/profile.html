@@ -611,11 +611,8 @@
     </div>
   </div>
 
-  <!-- Two-column: Plan + Wallets breakdown -->
-  <div class="two-col" id="sec-plan" style="margin-bottom:20px">
-
-    <!-- Plan -->
-    <div class="section-card">
+  <!-- Plan -->
+  <div class="section-card" id="sec-plan" style="margin-bottom:20px">
       <div class="section-head">
         <span class="section-title">Subscription Plan</span>
       </div>
@@ -657,10 +654,10 @@
           </div>
         </div>
       </div>
-    </div>
+  </div>
 
-    <!-- Telegram -->
-    <div class="section-card" id="sec-notifications">
+  <!-- Telegram -->
+  <div class="section-card" id="sec-notifications" style="margin-bottom:20px">
       <div class="section-head">
         <span class="section-title">Notifications</span>
         <span id="tg-status" class="tg-status tg-status-off">Not linked</span>
@@ -691,18 +688,19 @@
           <div id="tg-link-err" style="display:none;font-size:11px;color:var(--red);margin-top:8px"></div>
         </div>
       </div>
-    </div>
-    <style>
-      .tg-status { padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; }
-      .tg-status-on { background: rgba(26,255,171,0.1); color: var(--green); border: 1px solid rgba(26,255,171,0.35); }
-      .tg-status-off { background: rgba(155,159,171,0.1); color: var(--text3); border: 1px solid var(--border); }
-      body.light .tg-status-on { background: #F0F7F3; color: var(--green); border-color: var(--green); }
-    </style>
-
   </div>
+  <style>
+    .tg-status { padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; }
+    .tg-status-on { background: rgba(26,255,171,0.1); color: var(--green); border: 1px solid rgba(26,255,171,0.35); }
+    .tg-status-off { background: rgba(155,159,171,0.1); color: var(--text3); border: 1px solid var(--border); }
+    body.light .tg-status-on { background: #F0F7F3; color: var(--green); border-color: var(--green); }
+  </style>
+
+  <!-- ─── Security group: 2FA + API Keys ─── -->
+  <section id="sec-security" style="display:contents">
 
   <!-- Two-Factor Authentication -->
-  <div class="section-card" id="sec-security" style="margin-bottom:20px">
+  <div class="section-card" style="margin-bottom:20px">
     <div class="section-head">
       <span class="section-title">Two-Factor Authentication</span>
       <span id="tfa-status" class="tg-status tg-status-off">Off</span>
@@ -1013,6 +1011,8 @@
     .k-purp-tab.is-active .k-purp-title { color:var(--green); }
     .k-purp-tab:disabled { opacity:0.45; cursor:not-allowed; }
   </style>
+
+  </section><!-- /sec-security -->
 
   <!-- Danger Zone -->
   <div class="section-card" id="sec-danger" style="animation-delay:0.3s">
