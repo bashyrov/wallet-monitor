@@ -15,7 +15,9 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;overflow:hidden;max-width:100%;}
-body{background:var(--bg);color:var(--text);font-family:Inter,sans-serif;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+body{background:var(--bg);color:var(--text);font-family:Inter,sans-serif;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;position:relative;}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 70% 30% at 50% 0%, rgba(26,255,171,0.04), transparent 70%);}
+.topbar,.acc-bar,.arb-shell,main{position:relative;z-index:1;}
 
 /* ── Navbar ── */
 /* shared topbar styles come from /navbar.css */
