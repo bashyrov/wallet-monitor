@@ -35,6 +35,11 @@
       line-height: 1.5;
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
+      position: relative;
+    }
+    body::before {
+      content:''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: radial-gradient(ellipse 70% 30% at 50% 0%, rgba(26,255,171,0.04), transparent 70%);
     }
 
     .topbar-right .btn-primary {
