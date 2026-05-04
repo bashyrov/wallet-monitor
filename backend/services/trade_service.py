@@ -1340,7 +1340,7 @@ async def _spot_avg_entries(
     if not short_assets:
         return {}
 
-    from backend.domain import ExchangeWallet
+    from backend.providers.exchanges import EXCHANGE_PROVIDERS
     import time as _time
     out: dict[tuple[int, str], float | None] = {}
     tasks: list[tuple[tuple[int, str], Any]] = []
@@ -1358,7 +1358,7 @@ async def _spot_avg_entries(
             wallet = db.query(Wallet).get(wid)
             if not wallet:
                 continue
-            provider_cls = wallet.provider
+            provider_cls = EXCHANGE_PROVIDERS.get(wallet.type_value)
             if not provider_cls:
                 continue
             provider = provider_cls()
@@ -1367,16 +1367,10 @@ async def _spot_avg_entries(
                 continue
             try:
                 creds_dict = decrypt_credentials(wallet.credentials or {})
-                # Build the lightweight ExchangeWallet shape providers expect.
-                ew = ExchangeWallet(
-                    name=wallet.name,
-                    api_key=creds_dict.get("api_key"),
-                    api_secret=creds_dict.get("api_secret"),
-                    api_passphrase=creds_dict.get("api_passphrase"),
-                )
                 creds = {
-                    "api_key": ew.api_key,
-                    "api_secret": ew.api_secret,
+                    "api_key": creds_dict.get("api_key", ""),
+                    "api_secret": creds_dict.get("api_secret", ""),
+                    "api_passphrase": creds_dict.get("api_passphrase", ""),
                 }
                 tasks.append((cache_key, fn(creds, asset, float(h["qty"]))))
             except Exception:
