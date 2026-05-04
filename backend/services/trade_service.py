@@ -1204,7 +1204,7 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
 # Pair decisions live in the same TradePairDecision table — leg_a_key
 # becomes "<symbol>|spot|<wallet_id>" and leg_b_key "<symbol>|<short_ex>|<wallet_id>".
 _SPOT_STABLE = {"USDT", "USDC", "USD", "DAI", "FDUSD", "TUSD", "BUSD"}
-_SPOT_NOTIONAL_TOLERANCE_PCT = 5.0
+_SPOT_NOTIONAL_TOLERANCE_PCT = 12.0
 _SPOT_TIME_WINDOW_S = 10 * 60
 
 # How stale a BalanceSnapshot can be before /spot-short-pairs forces a
@@ -1349,33 +1349,36 @@ def _spot_short_pair_decision_keys(symbol: str, spot_wallet_id: int,
 def _spot_short_can_pair(spot: dict, short, spot_price: float | None) -> tuple[bool, str | None]:
     """Notional + best-effort time match. Returns (ok, reason).
 
+    Notional match uses CURRENT marks for both legs — short_qty × short_mark
+    vs spot_qty × spot_price — so a price drift since open doesn't make
+    the function reject a real pair. The earlier code compared
+    short_qty × short_ENTRY against spot_qty × spot_MARK, which on any
+    pair held through a meaningful price move blew past the 5% tolerance
+    even though the dollar exposure on both legs was still balanced.
+
     Time match: if both `spot.snapshot_at` and `short.opened_at` are
     available, require them within ±10 min. The spot snapshot_at is the
-    last balance refresh, NOT the actual purchase time — but the
-    portfolio fetcher runs every 60s, so a fresh `BalanceSnapshot` row
-    after the spot was bought lands within minutes. If snapshot_at is
-    older than the short open by hours, the spot existed BEFORE the
-    short — a real time-paired open would have a snapshot_at near or
-    after the short open. Older snapshots mean either the spot was a
-    pre-existing long-term holding (not a hedge for THIS short) or
-    the portfolio fetcher hasn't run since.
-
-    Result of the time check goes into the reason string so the UI can
-    show "notional + time match" vs "notional only — spot held since…".
+    last balance refresh, NOT the actual purchase time. Older snapshots
+    just mean the spot pre-existed the short — we still surface the
+    pair as a candidate, just flagged in the reason string.
     """
     if not spot_price or spot_price <= 0:
         return False, "no spot price"
-    short_qty = float(short.get("quantity") or 0) if isinstance(short, dict) else float(getattr(short, "quantity", 0) or 0)
-    short_entry = float(short.get("entry_price") or 0) if isinstance(short, dict) else float(getattr(short, "entry_price", 0) or 0)
+    is_dict = isinstance(short, dict)
+    short_qty = float((short.get("quantity") if is_dict else getattr(short, "quantity", 0)) or 0)
+    short_entry = float((short.get("entry_price") if is_dict else getattr(short, "entry_price", 0)) or 0)
+    short_mark = float((short.get("mark_price") if is_dict else getattr(short, "mark_price", 0)) or 0)
     spot_qty = float(spot.get("qty") or 0)
-    if short_qty <= 0 or short_entry <= 0 or spot_qty <= 0:
-        return False, "zero qty/price"
-    short_notional = short_qty * short_entry
-    spot_notional = spot_qty * spot_price
-    base = max(short_notional, spot_notional)
+    if short_qty <= 0 or spot_qty <= 0:
+        return False, "zero qty"
+    # Use the current mark when available — matches how spot is valued
+    # (live price). Falls back to entry if mark is missing.
+    short_notional_now = short_qty * (short_mark if short_mark > 0 else short_entry)
+    spot_notional_now = spot_qty * spot_price
+    base = max(short_notional_now, spot_notional_now)
     if base <= 0:
         return False, "zero notional"
-    diff_pct = abs(short_notional - spot_notional) / base * 100.0
+    diff_pct = abs(short_notional_now - spot_notional_now) / base * 100.0
     if diff_pct > _SPOT_NOTIONAL_TOLERANCE_PCT:
         return False, f"notional diff {diff_pct:.1f}% > {_SPOT_NOTIONAL_TOLERANCE_PCT:.0f}%"
 
