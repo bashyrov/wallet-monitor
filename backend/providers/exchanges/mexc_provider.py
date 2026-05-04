@@ -170,11 +170,45 @@ class MexcProvider(BaseWalletProvider):
             return_exceptions=True,
         )
 
-        if isinstance(spot, Exception): raise spot
-        if isinstance(futures, Exception):
-            futures_dict, upnl = {}, None
+        # Both legs are tolerated — MEXC frequently has asymmetric
+        # permissions (IP whitelist applied per key, futures-only keys,
+        # spot-disabled accounts). Failing the whole balance because one
+        # leg 406'd hides a working leg from the user. We log the
+        # specific error so support can see what to fix (typically
+        # whitelist the prod IP), but the result still has the partial
+        # data.
+        spot_dict: dict[str, Decimal] = {}
+        futures_dict: dict[str, Decimal] = {}
+        upnl = None
+        spot_err = futures_err = None
+        if isinstance(spot, Exception):
+            spot_err = spot
         else:
-            futures_dict, upnl = futures
-            upnl = str(upnl) if upnl != 0 else None
+            spot_dict = spot
+        if isinstance(futures, Exception):
+            futures_err = futures
+        else:
+            futures_dict, raw_upnl = futures
+            upnl = str(raw_upnl) if raw_upnl != 0 else None
 
-        return self._build_result(wallet, self.name, spot, futures_dict, {}, upnl_usd=upnl)
+        # If both failed, surface ONE of them so the caller registers a
+        # provider error (otherwise the wallet looks empty silently).
+        if spot_err and futures_err:
+            raise spot_err
+
+        # Partial-success case — log the failed leg with enough context
+        # for the user to act on it (usually IP whitelist).
+        if spot_err:
+            import logging
+            logging.getLogger("avalant.providers.mexc").warning(
+                "MEXC spot balance failed (continuing with futures only) wallet=%s: %s",
+                wallet.id, spot_err,
+            )
+        if futures_err:
+            import logging
+            logging.getLogger("avalant.providers.mexc").warning(
+                "MEXC futures balance failed (continuing with spot only) wallet=%s: %s",
+                wallet.id, futures_err,
+            )
+
+        return self._build_result(wallet, self.name, spot_dict, futures_dict, {}, upnl_usd=upnl)
