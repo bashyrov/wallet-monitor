@@ -5,32 +5,64 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Signing you in… · Avalant</title>
 <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/design.css">
 <style>
-  :root { color-scheme: dark; --bg:#0E0E11; --surface:#131217; --border:#22222A; --text:#E6E8E3; --text2:#9B9FAB; --green:#1AFFAB; --red:#F87171; }
-  * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:Inter,system-ui,sans-serif; }
-  .wrap { min-height:100dvh; display:grid; place-items:center; padding:24px; }
-  .card { width:100%; max-width:380px; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:32px 24px; text-align:center; }
-  .brand { font-family:Inter,sans-serif; font-weight:800; font-size:18px; letter-spacing:-0.02em; margin-bottom:24px; }
-  .brand .underscore { color:var(--green); animation: blink 1s infinite step-end; }
-  @keyframes blink { 50% { opacity:0; } }
-  .spinner { width:40px; height:40px; margin:0 auto 16px; border:3px solid var(--border); border-top-color:var(--green); border-radius:50%; animation: spin .9s linear infinite; }
+  body { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; overflow-x: hidden; }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 50% 0%, rgba(26,255,171,0.06), transparent 70%),
+      linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px) 0 0/100% 64px,
+      linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px) 0 0/64px 100%;
+  }
+  .auth-shell { position: relative; z-index: 1; width: 100%; max-width: 420px; }
+  .auth-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-xl); padding: 40px 32px;
+    box-shadow: var(--shadow-lg); text-align: center;
+    animation: fade-up var(--dur-med) var(--ease) both;
+  }
+  @keyframes fade-up { from { opacity:0; transform: translateY(8px) } to { opacity:1; transform:none } }
+  .auth-mark {
+    width: 56px; height: 56px; margin: 0 auto 24px;
+    background: var(--green-soft); border: 1px solid var(--green-edge);
+    border-radius: var(--r-lg); display: grid; place-items: center;
+    color: var(--green);
+    transition: background var(--dur-med) ease, border-color var(--dur-med) ease, color var(--dur-med) ease;
+  }
+  .auth-mark.err { background: rgba(248,113,113,0.08); border-color: rgba(248,113,113,0.3); color: var(--red); }
+  .spinner-lg {
+    width: 28px; height: 28px;
+    border: 3px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin .9s linear infinite;
+  }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .title { font-size:15px; font-weight:600; margin:0 0 6px; }
-  .sub { font-size:12.5px; color:var(--text2); margin:0; }
-  .err { color:var(--red); font-size:13px; margin-top:12px; }
-  a.retry { display:inline-block; margin-top:16px; padding:10px 18px; background:var(--green); color:#001a0d; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px; }
+  .auth-title {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 28px; font-weight: 400; letter-spacing: -0.02em;
+    margin: 0 0 8px;
+  }
+  .auth-sub { color: var(--text2); font-size: 14px; line-height: 1.55; margin: 0; }
+  .err { color: var(--red); font-size: 13px; margin-top: 16px; line-height: 1.55; }
+  @media (max-width: 600px) {
+    .auth-card { padding: 32px 22px; border-radius: var(--r-lg); }
+    .auth-title { font-size: 26px; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <div class="brand">avalant<span class="underscore">_</span></div>
-    <div class="spinner" id="sp"></div>
-    <p class="title" id="title">Signing you in…</p>
-    <p class="sub" id="sub">One moment.</p>
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-mark" id="mark"><div class="spinner-lg" id="sp"></div></div>
+    <h1 class="auth-title" id="title">Signing you in…</h1>
+    <p class="auth-sub" id="sub">One moment.</p>
     <div id="err" class="err" style="display:none"></div>
-    <a id="retry" class="retry" href="/login" style="display:none">Back to login</a>
+    <a id="retry" class="btn btn-primary btn-lg" href="/login" style="display:none; margin-top:20px; width:100%">Back to login</a>
   </div>
 </div>
 <script src="/banner.js" defer></script>
@@ -39,12 +71,14 @@
 (async () => {
   const params = new URLSearchParams(location.search);
   const t = params.get('t');
+  const ICON_ERR = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>';
   const fail = (msg) => {
-    document.getElementById('sp').style.display = 'none';
+    document.getElementById('mark').className = 'auth-mark err';
+    document.getElementById('mark').innerHTML = ICON_ERR;
     document.getElementById('title').textContent = 'Login failed';
     document.getElementById('sub').style.display = 'none';
     const e = document.getElementById('err'); e.textContent = msg; e.style.display = 'block';
-    document.getElementById('retry').style.display = 'inline-block';
+    document.getElementById('retry').style.display = 'inline-flex';
   };
   if (!t) return fail('Missing login token.');
   try {
@@ -69,7 +103,6 @@
     if (j.status !== 'ok' || !j.access_token) {
       return fail(`Login failed (status: ${j.status || 'unknown'}). Generate a fresh link.`);
     }
-    // Pull profile so /app can show the right avatar/plan immediately.
     let me;
     try {
       const meR = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + j.access_token } });
