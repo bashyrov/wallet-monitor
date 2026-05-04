@@ -711,13 +711,22 @@ def set_spot_short_pair_decision(db: Session, user_id: int, symbol: str,
     )
 
 
-def list_pair_decisions(db: Session, user_id: int) -> list[dict]:
+def list_pair_decisions(db: Session, user_id: int, live_positions: list[dict] | None = None) -> list[dict]:
     """Return active (decision != 'unpaired') pair decisions for the user.
 
     The frontend uses this to pre-populate the manual-pair list, replacing
     the legacy localStorage cache. Unpaired decisions stay in the DB so we
     can avoid re-suggesting the same auto-pair the user has already
-    rejected, but we don't surface them to the UI."""
+    rejected, but we don't surface them to the UI.
+
+    A 'paired' row stays in the DB after the underlying positions close —
+    that's intentional (the same decision applies if the pair re-opens
+    later). But the Sync ⇆ UI should only list pairs that are actually
+    LIVE; otherwise the user has to "unpair" something that's already
+    closed just to clear the dialog. We cross-reference each decision
+    against `live_positions` and only return pairs where at least one
+    leg is still open.
+    """
     from backend.db.models import TradePairDecision
     rows = (
         db.query(TradePairDecision)
@@ -725,15 +734,36 @@ def list_pair_decisions(db: Session, user_id: int) -> list[dict]:
                 TradePairDecision.decision == "paired")
         .all()
     )
+    open_keys: set[tuple[str, str, str]] = set()
+    if live_positions is not None:
+        for p in live_positions:
+            sym = (p.get("symbol") or "").upper()
+            ex = (p.get("exchange") or "").lower()
+            side = (p.get("side") or "").lower()
+            if not sym or not ex or not side:
+                continue
+            if abs(float(p.get("quantity") or 0)) <= 0:
+                continue
+            open_keys.add((sym, ex, side))
     out: list[dict] = []
     for r in rows:
         # leg_a_key = "SYM|long_ex|buy", leg_b_key = "SYM|short_ex|sell"
+        # Skip spot/short pair decisions — those use leg_a "spot|<wallet_id>"
+        # and are surfaced by list_user_spot_short_pairs, not here.
+        if r.leg_a_key.startswith("spot|") or "|spot|" in r.leg_a_key:
+            continue
         try:
             sym, long_ex, _ = r.leg_a_key.split("|")
             _, short_ex, _ = r.leg_b_key.split("|")
-            out.append({"symbol": sym, "long_exchange": long_ex, "short_exchange": short_ex})
         except ValueError:
             continue
+        if live_positions is not None:
+            sym_u = sym.upper()
+            long_open = (sym_u, long_ex.lower(), "buy") in open_keys
+            short_open = (sym_u, short_ex.lower(), "sell") in open_keys
+            if not long_open and not short_open:
+                continue  # pair is fully closed → don't surface in Sync UI
+        out.append({"symbol": sym, "long_exchange": long_ex, "short_exchange": short_ex})
     return out
 
 

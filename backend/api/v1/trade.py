@@ -153,13 +153,19 @@ class PairIn(BaseModel):
 
 
 @router.get("/pair/decisions")
-def pair_decisions(
+async def pair_decisions(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Active 'paired' decisions for the user — drives the manual-pair list
-    in the Sync ⇆ modal, replacing the legacy localStorage cache."""
-    return trade_service.list_pair_decisions(db, user.id)
+    in the Sync ⇆ modal, replacing the legacy localStorage cache.
+
+    Pairs whose underlying legs are both closed are filtered out so the
+    Sync dialog doesn't make the user click 'Unpair' on a position that
+    no longer exists. We pull live positions (cached) and pass them down
+    for the cross-reference."""
+    live = await trade_service.list_user_positions(db, user.id)
+    return trade_service.list_pair_decisions(db, user.id, live_positions=live)
 
 
 @router.post("/pair/sync")
