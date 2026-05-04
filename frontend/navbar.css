@@ -21,11 +21,13 @@
 }
 
 app-navbar {
-  display: flex; align-items: center;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
   height: 64px;
   padding: 0 var(--gutter);
   max-width: var(--max-w); margin: 0 auto;
-  gap: 32px;
+  gap: 24px;
   position: relative;
 }
 
@@ -41,7 +43,7 @@ app-navbar {
 /* ─── Center menu (desktop) ───────────────────────────────────────────── */
 .topbar-nav {
   display: flex; align-items: center; gap: 4px;
-  margin: 0 auto;  /* pushes itself to center, right block to far right */
+  justify-self: center;
 }
 .nav-lnk {
   display: inline-flex; align-items: center; gap: 8px;
@@ -71,7 +73,7 @@ button.nav-lnk { background: none; cursor: pointer; }
 /* ─── Right cluster (desktop) ─────────────────────────────────────────── */
 .topbar-right {
   display: flex; align-items: center; gap: 10px;
-  margin-left: auto;
+  justify-self: end;
   flex-shrink: 0;
 }
 
@@ -117,7 +119,8 @@ button.nav-lnk { background: none; cursor: pointer; }
   width: 40px; height: 40px;
   border-radius: var(--r);
   align-items: center; justify-content: center;
-  margin-left: auto;
+  justify-self: end;
+  grid-column: 3;
   color: var(--text); background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
@@ -169,7 +172,7 @@ button.nav-lnk { background: none; cursor: pointer; }
 
 /* Mobile breakpoint */
 @media (max-width: 900px) {
-  app-navbar { gap: 12px; padding: 0 16px; height: 56px; }
+  app-navbar { grid-template-columns: auto 1fr auto; gap: 12px; padding: 0 16px; height: 56px; }
   .topbar-nav { display: none; }
   .topbar-right { display: none; }
   .nav-burger { display: inline-flex; }

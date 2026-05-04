@@ -351,3 +351,16 @@ input, select, textarea { font-family: inherit; }
 
 /* ─── Brand cursor (used in navbar + landing) ─────────────────────────── */
 .brand-cursor { color: var(--green); animation: blink 1s steps(2) infinite; margin-left: 1px; }
+
+/* ─── Global button corner pin ────────────────────────────────────────────
+ * Brand-consistency rule: every .btn uses the pill radius. Wins over
+ * any page-local .btn override that hardcodes 8/10/12px corners. Icon-
+ * shaped buttons (.btn-icon) keep their soft-square shape because a
+ * pill on a square aspect ratio looks wrong.
+ * ───────────────────────────────────────────────────────────────────── */
+.btn,
+a.btn, button.btn,
+.btn-primary, .btn-outline, .btn-ghost, .btn-danger,
+.btn-sm, .btn-lg, .btn-xl { border-radius: var(--r-pill) !important; }
+
+.btn-icon, .btn-icon-sm { border-radius: var(--r) !important; }
