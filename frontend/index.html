@@ -335,11 +335,13 @@ img, svg { display: block; max-width: 100%; }
   display: inline-flex; gap: 4px;
 }
 .dash-act-btn {
+  display: inline-block;
   padding: 4px 10px; font-size: 11px; font-weight: 600;
   border-radius: var(--r-sm);
   background: var(--green); color: #071612;
   border: none; cursor: pointer;
-  transition: background .15s ease, transform .1s ease;
+  text-decoration: none;
+  transition: background .15s ease, transform .1s ease, filter .12s ease;
 }
 .dash-act-btn:hover { background: #0EE59A; }
 .dash-act-btn:active { transform: translateY(1px); filter: brightness(0.92); }
@@ -927,7 +929,7 @@ img, svg { display: block; max-width: 100%; }
                   <td class="num hide-m">
                     <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 14 L10 10 L20 12 L30 6 L40 8 L50 4 L60 2"/></svg>
                   </td>
-                  <td><button class="dash-act-btn">Trade</button></td>
+                  <td><a href="/screener" class="dash-act-btn">Trade</a></td>
                 </tr>
                 <tr>
                   <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#627EEA22;color:#7CB9F7;">E</div><div class="dash-sym-name">ETH</div></div></td>
@@ -937,7 +939,7 @@ img, svg { display: block; max-width: 100%; }
                   <td class="num hide-m">
                     <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 10 L10 12 L20 8 L30 9 L40 5 L50 7 L60 3"/></svg>
                   </td>
-                  <td><button class="dash-act-btn">Trade</button></td>
+                  <td><a href="/screener" class="dash-act-btn">Trade</a></td>
                 </tr>
                 <tr>
                   <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#97FCE422;color:#97FCE4;">H</div><div class="dash-sym-name">HYPE</div></div></td>
@@ -947,7 +949,7 @@ img, svg { display: block; max-width: 100%; }
                   <td class="num hide-m">
                     <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 15 L10 11 L20 13 L30 7 L40 9 L50 3 L60 1"/></svg>
                   </td>
-                  <td><button class="dash-act-btn">Trade</button></td>
+                  <td><a href="/screener" class="dash-act-btn">Trade</a></td>
                 </tr>
                 <tr>
                   <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#9945FF22;color:#A78BFA;">S</div><div class="dash-sym-name">SOL</div></div></td>
@@ -957,7 +959,7 @@ img, svg { display: block; max-width: 100%; }
                   <td class="num hide-m">
                     <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 12 L10 9 L20 11 L30 8 L40 10 L50 6 L60 5"/></svg>
                   </td>
-                  <td><button class="dash-act-btn">Trade</button></td>
+                  <td><a href="/screener" class="dash-act-btn">Trade</a></td>
                 </tr>
                 <tr>
                   <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#E5C07B22;color:#E5C07B;">R</div><div class="dash-sym-name">RAVE</div></div></td>
@@ -967,7 +969,7 @@ img, svg { display: block; max-width: 100%; }
                   <td class="num hide-m">
                     <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#1AFFAB" stroke-width="1.5"><path d="M0 14 L10 13 L20 8 L30 10 L40 4 L50 5 L60 2"/></svg>
                   </td>
-                  <td><button class="dash-act-btn">Trade</button></td>
+                  <td><a href="/screener" class="dash-act-btn">Trade</a></td>
                 </tr>
                 <tr>
                   <td><div class="dash-sym"><div class="dash-sym-icon" style="background:#F8717122;color:#F87171;">A</div><div class="dash-sym-name">ARB</div></div></td>
@@ -977,7 +979,7 @@ img, svg { display: block; max-width: 100%; }
                   <td class="num hide-m">
                     <svg class="dash-spark" viewBox="0 0 60 18" fill="none" stroke="#F87171" stroke-width="1.5"><path d="M0 4 L10 7 L20 5 L30 9 L40 8 L50 12 L60 10"/></svg>
                   </td>
-                  <td><button class="dash-act-btn">Trade</button></td>
+                  <td><a href="/screener" class="dash-act-btn">Trade</a></td>
                 </tr>
               </tbody>
             </table>
@@ -1311,7 +1313,7 @@ img, svg { display: block; max-width: 100%; }
               <span style="color:var(--text3);font-size:11px;">≈ 0.1483 BTC</span>
             </div>
           </div>
-          <button class="trade-submit" style="grid-column: 1 / -1;">Open paired position · est. +0.083% / 8h</button>
+          <a href="/register" class="trade-submit" style="grid-column: 1 / -1;text-decoration:none;">Open paired position · est. +0.083% / 8h</a>
         </div>
       </div>
     </div>
