@@ -793,8 +793,11 @@ async def _fetch_open_interest(exchange: str, symbol: str) -> dict | None:
                     ctxs = data[1]
                     for i, asset in enumerate(universe):
                         if asset.get("name") == symbol and i < len(ctxs):
-                            oi = float(ctxs[i].get("openInterest", 0))
-                            return {"exchange": exchange, "oi": oi, "unit": "contracts"}
+                            ctx = ctxs[i]
+                            oi = float(ctx.get("openInterest", 0))
+                            mark = float(ctx.get("markPx", 0))
+                            oi_usd = oi * mark if mark else 0
+                            return {"exchange": exchange, "oi": oi, "oi_usd": oi_usd, "unit": "contracts"}
             elif exchange == "aster":
                 r = await c.get(f"https://fapi.asterdex.com/fapi/v1/openInterest?symbol={symbol}USDT")
                 d = r.json()

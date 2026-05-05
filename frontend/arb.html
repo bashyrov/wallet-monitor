@@ -3109,9 +3109,20 @@ async function loadOI(){
     const d=await res.json();
     const fmtOI=v=>v!=null?fmtV(v):'—';
     const lo=d.open_interest?.[LONG], so=d.open_interest?.[SHORT];
-    const loVal=lo?fmtOI(lo.oi):'—', soVal=so?fmtOI(so.oi):'—';
-    setT('oi-long-val',loVal+' contracts'); setT('oi-short-val',soVal+' contracts');
-    setT('oi-card-long',loVal); setT('oi-card-short',soVal);
+    // For HL: show USD value (oi × mark). For others: show contracts.
+    const fmtEntry=(ex,e)=>{
+      if(!e) return {val:'—',label:' contracts'};
+      if(ex==='hyperliquid' && e.oi_usd){
+        return {val:fmtOI(e.oi_usd), label:' USD'};
+      }
+      return {val:fmtOI(e.oi), label:' contracts'};
+    };
+    const loFmt=fmtEntry(LONG,lo), soFmt=fmtEntry(SHORT,so);
+    setT('oi-long-val',loFmt.val+loFmt.label); setT('oi-short-val',soFmt.val+soFmt.label);
+    setT('oi-card-long',loFmt.val); setT('oi-card-short',soFmt.val);
+    // Store OI USD for HL trade-card warning
+    window._hlOiUsd = (LONG==='hyperliquid' && lo?.oi_usd) ? lo.oi_usd
+                    : (SHORT==='hyperliquid' && so?.oi_usd) ? so.oi_usd : 0;
   }catch{}
 }
 
@@ -4998,7 +5009,18 @@ function _showLegErr(leg, msg){
   const el = document.getElementById('trade-err-' + leg);
   if (!el) return;
   if (!msg) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  el.innerHTML = `<span class="tx">${String(msg).replace(/</g,'&lt;')}</span><button class="tc" onclick="_showLegErr('${leg}', null)">×</button>`;
+  const s = String(msg);
+  // HL max OI exceeded — surface a specific, actionable message.
+  const isMaxOI = /max.*open.interest|open.interest.*max|oi.*cap|cap.*oi/i.test(s);
+  const ex = leg === 'long' ? LONG : SHORT;
+  let body;
+  if (isMaxOI && ex === 'hyperliquid') {
+    const oiStr = window._hlOiUsd ? ' Current OI: ' + fmtV(window._hlOiUsd) + ' USD.' : '';
+    body = `<span class="tx">HL max open interest reached for ${SYM}.${oiStr} New long positions are blocked — wait for OI to decrease or use a different exchange.</span><button class="tc" onclick="_showLegErr('${leg}', null)">×</button>`;
+  } else {
+    body = `<span class="tx">${s.replace(/</g,'&lt;')}</span><button class="tc" onclick="_showLegErr('${leg}', null)">×</button>`;
+  }
+  el.innerHTML = body;
   el.style.display = 'flex';
 }
 
