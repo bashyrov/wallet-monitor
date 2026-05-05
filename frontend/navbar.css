@@ -174,6 +174,89 @@ button.nav-lnk { background: none; cursor: pointer; }
   .nav-burger { display: inline-flex; }
 }
 
+/* ─── Alerts popover (anchored to .nav-lnk-bell) ─────────────────────── */
+.nb-alerts-pop {
+  width: 360px; max-width: calc(100vw - 16px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 12px 40px -8px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02) inset;
+  overflow: hidden;
+  animation: fade-in var(--dur-med) var(--ease) both;
+}
+.nbap-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.nbap-title { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+.nbap-add {
+  font-size: 12px; font-weight: 600;
+  padding: 4px 10px; border-radius: var(--r);
+  color: var(--green); background: var(--green-soft); border: 1px solid var(--green-edge);
+  text-decoration: none; transition: background var(--dur-fast) ease;
+}
+.nbap-add:hover { background: rgba(26,255,171,0.18); }
+.nbap-body { max-height: 480px; overflow-y: auto; padding: 6px; }
+.nbap-empty {
+  padding: 32px 24px; text-align: center; color: var(--text3);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.nbap-empty-ic { color: var(--text4); }
+.nbap-empty-title { font-size: 13px; font-weight: 600; color: var(--text2); }
+.nbap-empty-sub { font-size: 12px; line-height: 1.5; max-width: 280px; }
+.nbap-spinner {
+  display: inline-block; width: 18px; height: 18px;
+  border: 2px solid var(--border2); border-top-color: var(--green);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.nbap-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border-radius: var(--r);
+  transition: background var(--dur-fast) ease;
+}
+.nbap-row:hover { background: var(--surface2); }
+.nbap-row-main { flex: 1; min-width: 0; display: block; color: inherit; text-decoration: none; }
+.nbap-row-top { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.nbap-sym { font-weight: 700; font-size: 13px; color: var(--text); letter-spacing: -0.01em; }
+.nbap-mode {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 1px 6px; border-radius: var(--r-sm);
+  background: var(--surface3); color: var(--text2);
+}
+.nbap-trig { font-size: 11px; opacity: 0.85; }
+.nbap-row-sub { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text3); }
+.nbap-thr { font-family: var(--mono); color: var(--text2); font-weight: 600; }
+.nbap-pair { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.nbap-toggle {
+  flex-shrink: 0;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 4px 9px; border-radius: var(--r-sm);
+  background: var(--surface3); color: var(--text3);
+  border: 1px solid var(--border);
+  cursor: pointer; transition: all var(--dur-fast) ease;
+}
+.nbap-toggle.on { background: var(--green-soft); color: var(--green); border-color: var(--green-edge); }
+.nbap-toggle:hover:not(:disabled) { filter: brightness(1.1); }
+.nbap-toggle:disabled { opacity: 0.5; cursor: wait; }
+.nbap-del {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  font-size: 14px; font-weight: 700; line-height: 1;
+  background: transparent; color: var(--text4);
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  cursor: pointer; transition: all var(--dur-fast) ease;
+}
+.nbap-del:hover:not(:disabled) { color: var(--red); background: var(--red-soft); border-color: var(--red-edge); }
+.nbap-del:disabled { opacity: 0.5; cursor: wait; }
+
+@media (max-width: 600px) {
+  .nb-alerts-pop { width: calc(100vw - 16px); }
+}
+
 /* ─── Light theme overrides (kept for future toggle) ──────────────────── */
 body.light .topbar { background: rgba(255,255,255,0.85); }
 body.light .topbar.scrolled { background: rgba(255,255,255,0.95); border-bottom-color: #E0E0E0; }
