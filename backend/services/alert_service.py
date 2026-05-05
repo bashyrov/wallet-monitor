@@ -127,15 +127,29 @@ _MODE_URL_TYPE = {
 }
 
 
+_arb_cache_by_mode: dict[str, tuple[float, list[dict]]] = {}
+_ARB_CACHE_TTL = 0.25  # seconds — fresh enough for 0.5s tick, halves disk I/O
+
+
 def _load_arb_cache(mode: str) -> list[dict]:
+    """Read arbitrage.json / spot_arbitrage.json / dex_arbitrage.json with a
+    short in-process cache so a tick that touches every alert doesn't re-read
+    + re-parse the file N times."""
     fname, _ = _MODE_META.get(mode, _MODE_META["futures"])
+    import time as _t
+    now = _t.monotonic()
+    cached = _arb_cache_by_mode.get(mode)
+    if cached and (now - cached[0]) < _ARB_CACHE_TTL:
+        return cached[1]
     try:
         import json
         with open(f"{_CACHE_DIR}/{fname}", "rb") as f:
             d = json.loads(f.read())
-        return d.get("opportunities") or []
+        opps = d.get("opportunities") or []
     except Exception:
-        return []
+        opps = []
+    _arb_cache_by_mode[mode] = (now, opps)
+    return opps
 
 
 def _opp_spread(opp: dict) -> float:
@@ -217,18 +231,29 @@ def _load_alerts_from_db() -> list:
         db.close()
 
 
-def _save_alert_triggered(alert_id: int, ts: datetime) -> None:
-    """One-shot semantics: after a successful TG send the alert is auto-disabled.
-    User re-enables from the navbar popover (PATCH /alerts/{id}/toggle) when they
-    want the next ping. last_triggered_at still updated for audit + UI display."""
+def _claim_alert_for_fire(alert_id: int, ts: datetime) -> bool:
+    """Atomic claim across workers / replicas. Sets enabled=False AND
+    last_triggered_at=ts iff the alert is still enabled. Returns True if
+    THIS worker won the row, False if someone else already claimed it
+    (or the user disabled it). Postgres serialises the UPDATE WHERE so
+    only one writer can flip the row.
+
+    Fail-closed: if TG send later fails, the alert stays off. User
+    re-enables from the navbar popover. Better one missed ping than
+    seven duplicate pings."""
     from backend.db.base import SessionLocal
     from backend.db.models import ArbAlert
     db = SessionLocal()
     try:
-        db.query(ArbAlert).filter(ArbAlert.id == alert_id).update(
-            {"last_triggered_at": ts, "enabled": False}, synchronize_session=False
+        rows = db.query(ArbAlert).filter(
+            ArbAlert.id == alert_id,
+            ArbAlert.enabled == True,  # noqa: E712
+        ).update(
+            {"last_triggered_at": ts, "enabled": False},
+            synchronize_session=False,
         )
         db.commit()
+        return rows > 0
     finally:
         db.close()
 
@@ -351,23 +376,26 @@ async def _check_alerts() -> None:
                 f"<a href=\"{link}\">Open arbitrage details →</a>\n"
                 f"<i>Alert auto-disabled — re-enable from the bell to get the next ping.</i>"
             )
+            # Atomically claim the alert BEFORE sending. If another worker
+            # already claimed (or user disabled it) — skip silently.
+            won = _claim_alert_for_fire(alert.id, now)
+            alert.enabled = False
+            alert.last_triggered_at = now
+            _alerts_cache_ts = 0.0  # force DB refresh next tick
+            if not won:
+                continue
+
             ok = await _send_tg(str(chat_id), msg)
             if ok:
-                # One-shot: disable in-memory immediately so the next 0.5s
-                # tick won't re-fire before the DB cache refresh.
-                alert.enabled = False
-                alert.last_triggered_at = now
-                _save_alert_triggered(alert.id, now)
-                # Force DB refresh next tick so the in-memory cache picks up
-                # the disabled state quickly.
-                _alerts_cache_ts = 0.0
                 logger.info(
                     "Alert fired (one-shot, auto-disabled) id=%d user=%d sym=%s mode=%s trigger=%s pair=%s→%s spread=%.4f%%",
                     alert.id, alert.user_id, alert.symbol, mode, trigger_mode, long_ex, short_ex, spread_pct,
                 )
             else:
+                # Fail-closed: alert is already off in DB. User re-enables
+                # from the popover when they want the next attempt.
                 logger.error(
-                    "Alert %d delivery FAILED — will retry next cycle (user=%d sym=%s)",
+                    "Alert %d delivery FAILED after claim (user=%d sym=%s) — alert stays disabled, user must re-enable",
                     alert.id, alert.user_id, alert.symbol,
                 )
     except Exception as exc:
