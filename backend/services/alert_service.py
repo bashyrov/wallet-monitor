@@ -10,7 +10,7 @@ from settings import settings
 logger = logging.getLogger("avalant.alerts")
 
 _task: asyncio.Task | None = None
-_CHECK_INTERVAL = 60.0   # seconds between checks
+_CHECK_INTERVAL = 15.0   # seconds between checks
 _COOLDOWN = timedelta(hours=1)  # don't re-trigger the same alert within 1h
 
 # Observability — simple running counters, readable from the admin panel or logs.
@@ -192,7 +192,7 @@ async def _best_pair_for_symbol(symbol: str, mode: str) -> tuple[str, str, float
 
 
 _ALERT_LOCK_KEY = "avalant:alert_check_lock"
-_ALERT_LOCK_TTL = 55  # seconds — shorter than _CHECK_INTERVAL so it always expires
+_ALERT_LOCK_TTL = 12  # seconds — shorter than _CHECK_INTERVAL so it always expires
 
 
 async def _check_alerts() -> None:
