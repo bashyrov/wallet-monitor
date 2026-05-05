@@ -71,8 +71,9 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			Volume24h:  r.TurnoverOf24h,
 			IntervalH:  ivl,
 		}
+		// nextFundingRateTime is a COUNTDOWN in ms (not an absolute timestamp).
 		if r.NextFundingRateTime > 0 {
-			t.NextFunding = time.UnixMilli(r.NextFundingRateTime)
+			t.NextFunding = time.Now().Add(time.Duration(r.NextFundingRateTime) * time.Millisecond)
 		}
 		out = append(out, t)
 	}
