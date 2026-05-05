@@ -10,8 +10,13 @@ from settings import settings
 logger = logging.getLogger("avalant.alerts")
 
 _task: asyncio.Task | None = None
-_CHECK_INTERVAL = 2.0    # seconds between checks
+_CHECK_INTERVAL = 0.5    # seconds between spread checks (matches go-fetcher arb cycle)
+_DB_REFRESH_INTERVAL = 10.0  # seconds between alert list re-reads from DB
 _COOLDOWN = timedelta(hours=1)  # don't re-trigger the same alert within 1h
+
+# In-memory alert cache — avoids a DB query on every 500ms tick.
+_alerts_cache: list = []
+_alerts_cache_ts: float = 0.0
 
 # Observability — simple running counters, readable from the admin panel or logs.
 _counters = {
@@ -192,30 +197,75 @@ async def _best_pair_for_symbol(symbol: str, mode: str) -> tuple[str, str, float
 
 
 _ALERT_LOCK_KEY = "avalant:alert_check_lock"
-_ALERT_LOCK_TTL = 1   # seconds — shorter than _CHECK_INTERVAL so it always expires
+_ALERT_LOCK_TTL = 0   # unused — see leader election below
 
 
-async def _check_alerts() -> None:
-    if not settings.TG_BOT_TOKEN:
-        return
-
-    # Leader election: only one uvicorn worker runs the check per cycle.
-    try:
-        import redis as _redis
-        _r = _redis.from_url(settings.REDIS_URL, socket_connect_timeout=2)
-        if not _r.set(_ALERT_LOCK_KEY, "1", nx=True, ex=_ALERT_LOCK_TTL):
-            return  # another worker already has the lock
-    except Exception:
-        pass  # no Redis → all workers run (rare double-send risk, acceptable)
-
+def _load_alerts_from_db() -> list:
+    """Read enabled alerts + their users from DB. Called every _DB_REFRESH_INTERVAL seconds."""
     from backend.db.base import SessionLocal
     from backend.db.models import ArbAlert, User
-
     db = SessionLocal()
     try:
         alerts = db.query(ArbAlert).filter(ArbAlert.enabled == True).all()  # noqa: E712
-        now = datetime.utcnow()
-        base = settings.APP_BASE_URL.rstrip("/") if hasattr(settings, "APP_BASE_URL") else "https://avalant.xyz"
+        # Eagerly load tg_chat_id so we don't need DB again during the hot loop
+        user_ids = {a.user_id for a in alerts}
+        users = {u.id: u.tg_chat_id for u in db.query(User).filter(User.id.in_(user_ids)).all()}
+        for a in alerts:
+            a._tg_chat_id = users.get(a.user_id)
+        return alerts
+    finally:
+        db.close()
+
+
+def _save_alert_triggered(alert_id: int, ts: datetime) -> None:
+    """Persist last_triggered_at — called after a successful TG send."""
+    from backend.db.base import SessionLocal
+    from backend.db.models import ArbAlert
+    db = SessionLocal()
+    try:
+        db.query(ArbAlert).filter(ArbAlert.id == alert_id).update(
+            {"last_triggered_at": ts}, synchronize_session=False
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _check_alerts() -> None:
+    global _alerts_cache, _alerts_cache_ts
+
+    if not settings.TG_BOT_TOKEN:
+        return
+
+    # Leader election: only one uvicorn worker runs the hot loop.
+    try:
+        import redis as _redis
+        _r = _redis.from_url(settings.REDIS_URL, socket_connect_timeout=1)
+        if not _r.set("avalant:alert_leader", "1", nx=True, ex=1):
+            return
+    except Exception:
+        pass  # no Redis → all workers run (acceptable rare double-send)
+
+    import time
+    now_ts = time.monotonic()
+
+    # Refresh alert list from DB every _DB_REFRESH_INTERVAL seconds
+    if now_ts - _alerts_cache_ts >= _DB_REFRESH_INTERVAL:
+        try:
+            _alerts_cache = _load_alerts_from_db()
+            _alerts_cache_ts = now_ts
+        except Exception as exc:
+            logger.error("Alert DB refresh failed: %s", exc)
+            return
+
+    alerts = _alerts_cache
+    if not alerts:
+        return
+
+    now = datetime.utcnow()
+    base = settings.APP_BASE_URL.rstrip("/") if hasattr(settings, "APP_BASE_URL") else "https://avalant.xyz"
+
+    try:
         for alert in alerts:
             if alert.last_triggered_at and (now - alert.last_triggered_at) < _COOLDOWN:
                 continue
@@ -274,10 +324,9 @@ async def _check_alerts() -> None:
                                  alert.id, spread_pct)
                     continue
 
-            user = db.query(User).filter(User.id == alert.user_id).first()
-            chat_id = user.tg_chat_id if user else None
+            chat_id = getattr(alert, "_tg_chat_id", None)
             if not chat_id:
-                logger.debug("Alert %d skip: user %s has not linked TG chat yet", alert.id, alert.user_id)
+                logger.debug("Alert %d skip: user has not linked TG chat yet", alert.id)
                 continue
 
             direction_arrow = "▲" if spread_pct >= 0 else "▼"
@@ -296,7 +345,9 @@ async def _check_alerts() -> None:
             ok = await _send_tg(str(chat_id), msg)
             if ok:
                 alert.last_triggered_at = now
-                db.commit()
+                _save_alert_triggered(alert.id, now)
+                # Force DB refresh next tick so cooldown is respected immediately
+                _alerts_cache_ts = 0.0
                 logger.info(
                     "Alert triggered id=%d user=%d sym=%s mode=%s trigger=%s pair=%s→%s spread=%.4f%%",
                     alert.id, alert.user_id, alert.symbol, mode, trigger_mode, long_ex, short_ex, spread_pct,
@@ -308,14 +359,12 @@ async def _check_alerts() -> None:
                 )
     except Exception as exc:
         logger.error("Alert check error: %s", exc)
-    finally:
-        db.close()
 
 
 async def _alert_loop() -> None:
     while True:
         await _check_alerts()
-        await asyncio.sleep(_CHECK_INTERVAL)
+        await asyncio.sleep(_CHECK_INTERVAL)  # 500ms — yield to event loop, match go-fetcher cycle
 
 
 def start_alert_service() -> None:
@@ -324,7 +373,7 @@ def start_alert_service() -> None:
         return
     loop = asyncio.get_event_loop()
     _task = loop.create_task(_alert_loop())
-    logger.info("Alert service started (interval=%ds)", int(_CHECK_INTERVAL))
+    logger.info("Alert service started (check=%.1fs, db_refresh=%.0fs)", _CHECK_INTERVAL, _DB_REFRESH_INTERVAL)
 
 
 def stop_alert_service() -> None:
