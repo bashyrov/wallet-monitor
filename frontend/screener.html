@@ -2267,7 +2267,7 @@ function renderArb() {
       <td class="td-status">${validBadge}</td>
       <td style="display:flex;gap:4px;align-items:center">
         ${_starBtn(r.symbol, r.long_exchange, r.short_exchange)}
-        <a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page" onmouseenter="_arbPrefetch(this.href)">↗</a>
+        <a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page" onmouseenter="_arbPrefetch(this.href)" onclick="event.stopPropagation()">↗</a>
       </td>
     </tr>`;
   }).join('');
