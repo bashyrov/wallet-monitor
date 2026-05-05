@@ -2969,14 +2969,41 @@ function _openBookWs(){
       ws.send(JSON.stringify({action:'subscribe', pairs:[_bookPairFor('long'),_bookPairFor('short')]}));
     }catch(_){}
   };
+  // rAF ids — ensures renderBook() fires at most once per animation frame
+  // even when the exchange pushes faster (Bybit 20ms, Binance 100ms).
+  const _bookRafId={long:null,short:null};
   ws.onmessage=(e)=>{
     _bookWsLastMsgTs=Date.now();
     let msg; try{ msg=JSON.parse(e.data); }catch(_){ return; }
     const books=msg && msg.books;
     if(!books) return;
     const longPair=_bookPairFor('long'), shortPair=_bookPairFor('short');
-    if(books[longPair]){ _lastBookData.long=books[longPair]; renderBook(books[longPair],'long'); }
-    if(books[shortPair]){ _lastBookData.short=books[shortPair]; renderBook(books[shortPair],'short'); }
+    if(books[longPair]){
+      const d=books[longPair];
+      _lastBookData.long=d;
+      // Instant fast path: update top-of-book vars + in/out on every frame.
+      const la=d.asks||[], lb=d.bids||[];
+      _liveAskLong=la[0]?.[0]||0;
+      _liveMidLong=(lb[0]?.[0]&&la[0]?.[0])?(lb[0][0]+la[0][0])/2:(lb[0]?.[0]||la[0]?.[0]||0);
+      sampleEntryExit(); updateLiveSpread();
+      // Heavy DOM render throttled to animation-frame rate (≤60fps).
+      if(!_bookRafId.long){
+        _bookRafId.long=requestAnimationFrame(()=>{ _bookRafId.long=null; if(_lastBookData.long) renderBook(_lastBookData.long,'long'); });
+      }
+    }
+    if(books[shortPair]){
+      const d=books[shortPair];
+      _lastBookData.short=d;
+      // Instant fast path: update top-of-book vars + in/out on every frame.
+      const sb=d.bids||[], sa=d.asks||[];
+      _liveBidShort=sb[0]?.[0]||0;
+      _liveMidShort=(sb[0]?.[0]&&sa[0]?.[0])?(sb[0][0]+sa[0][0])/2:(sb[0]?.[0]||sa[0]?.[0]||0);
+      sampleEntryExit(); updateLiveSpread();
+      // Heavy DOM render throttled to animation-frame rate (≤60fps).
+      if(!_bookRafId.short){
+        _bookRafId.short=requestAnimationFrame(()=>{ _bookRafId.short=null; if(_lastBookData.short) renderBook(_lastBookData.short,'short'); });
+      }
+    }
   };
   ws.onclose=()=>{
     _bookWs=null;
