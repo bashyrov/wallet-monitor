@@ -12,7 +12,7 @@ logger = logging.getLogger("avalant.alerts")
 _task: asyncio.Task | None = None
 _CHECK_INTERVAL = 0.5    # seconds between spread checks (matches go-fetcher arb cycle)
 _DB_REFRESH_INTERVAL = 10.0  # seconds between alert list re-reads from DB
-_COOLDOWN = timedelta(hours=1)  # don't re-trigger the same alert within 1h
+_COOLDOWN = timedelta(hours=1)  # defence-in-depth: even if auto-disable race-loses, no re-trigger within 1h
 
 # In-memory alert cache — avoids a DB query on every 500ms tick.
 _alerts_cache: list = []
@@ -218,13 +218,15 @@ def _load_alerts_from_db() -> list:
 
 
 def _save_alert_triggered(alert_id: int, ts: datetime) -> None:
-    """Persist last_triggered_at — called after a successful TG send."""
+    """One-shot semantics: after a successful TG send the alert is auto-disabled.
+    User re-enables from the navbar popover (PATCH /alerts/{id}/toggle) when they
+    want the next ping. last_triggered_at still updated for audit + UI display."""
     from backend.db.base import SessionLocal
     from backend.db.models import ArbAlert
     db = SessionLocal()
     try:
         db.query(ArbAlert).filter(ArbAlert.id == alert_id).update(
-            {"last_triggered_at": ts}, synchronize_session=False
+            {"last_triggered_at": ts, "enabled": False}, synchronize_session=False
         )
         db.commit()
     finally:
@@ -267,6 +269,12 @@ async def _check_alerts() -> None:
 
     try:
         for alert in alerts:
+            # One-shot semantics: a fired alert is disabled in DB right after
+            # a successful TG send. Skip locally-disabled alerts in case the
+            # 10s DB cache is stale; the cooldown check is a defence-in-depth
+            # for the same window.
+            if not getattr(alert, "enabled", True):
+                continue
             if alert.last_triggered_at and (now - alert.last_triggered_at) < _COOLDOWN:
                 continue
 
@@ -340,16 +348,21 @@ async def _check_alerts() -> None:
                 f"Pair: <b>{long_ex}</b> → <b>{short_ex}</b>\n"
                 f"In-spread: <b>{direction_arrow} {spread_pct:+.4f}%</b>"
                 f" (threshold ±{alert.threshold}%, {scope})\n"
-                f"<a href=\"{link}\">Open arbitrage details →</a>"
+                f"<a href=\"{link}\">Open arbitrage details →</a>\n"
+                f"<i>Alert auto-disabled — re-enable from the bell to get the next ping.</i>"
             )
             ok = await _send_tg(str(chat_id), msg)
             if ok:
+                # One-shot: disable in-memory immediately so the next 0.5s
+                # tick won't re-fire before the DB cache refresh.
+                alert.enabled = False
                 alert.last_triggered_at = now
                 _save_alert_triggered(alert.id, now)
-                # Force DB refresh next tick so cooldown is respected immediately
+                # Force DB refresh next tick so the in-memory cache picks up
+                # the disabled state quickly.
                 _alerts_cache_ts = 0.0
                 logger.info(
-                    "Alert triggered id=%d user=%d sym=%s mode=%s trigger=%s pair=%s→%s spread=%.4f%%",
+                    "Alert fired (one-shot, auto-disabled) id=%d user=%d sym=%s mode=%s trigger=%s pair=%s→%s spread=%.4f%%",
                     alert.id, alert.user_id, alert.symbol, mode, trigger_mode, long_ex, short_ex, spread_pct,
                 )
             else:
