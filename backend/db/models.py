@@ -244,6 +244,7 @@ class ArbAlert(Base):
     short_exchange = Column(String, nullable=False)
     threshold = Column(Float, nullable=False)          # min spread % to trigger
     direction = Column(String, nullable=False, default="any")  # any | above | below
+    mode = Column(String, nullable=True)               # futures | spot | dex (null = futures)
     enabled = Column(Boolean, nullable=False, default=True)
     last_triggered_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

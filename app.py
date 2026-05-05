@@ -123,6 +123,33 @@ async def lifespan(app: FastAPI):
     _stop_fns.append(stop_price_loop)
     logger.info("Price refresh loop started (role=%s)", role)
 
+    # ── Always on web + monolith (not fetcher sidecar) ────────────────
+    # These services need DB + TG — they're safe to run on both replicas
+    # (TG bot uses Redis leader election; alert cooldown is DB-persisted).
+    from backend.services.alert_service import start_alert_service, stop_alert_service
+    start_alert_service()
+    _stop_fns.append(stop_alert_service)
+
+    from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
+    start_tg_bot()
+    _stop_fns.append(stop_tg_bot)
+
+    from backend.services.expiry_notifier_service import (
+        start_expiry_notifier, stop_expiry_notifier,
+    )
+    start_expiry_notifier()
+    _stop_fns.append(stop_expiry_notifier)
+
+    # Watchlist → orderbook-subscribe bridge. Dumps distinct
+    # (sym, long_ex, short_ex) across all users every 30s so the
+    # Go symbol-manager keeps watched pairs subscribed even when
+    # they fall out of the top-N tracked set.
+    from backend.services.watchlist_subscribe_dump import (
+        start_watchlist_dump, stop_watchlist_dump,
+    )
+    start_watchlist_dump()
+    _stop_fns.append(stop_watchlist_dump)
+
     # ── Monolith-only (web process handles everything when no sidecar) ─
     if not is_web:
         from backend.api.v1.screener import start_refresh_loop, stop_refresh_loop
@@ -140,32 +167,6 @@ async def lifespan(app: FastAPI):
         )
         start_dex_refresh_loop()
         _stop_fns.append(stop_dex_refresh_loop)
-
-        from backend.services.alert_service import start_alert_service, stop_alert_service
-        start_alert_service()
-        _stop_fns.append(stop_alert_service)
-
-        # Watchlist → orderbook-subscribe bridge. Dumps distinct
-        # (sym, long_ex, short_ex) across all users every 30s so the
-        # Go symbol-manager keeps watched pairs subscribed even when
-        # they fall out of the top-N tracked set.
-        from backend.services.watchlist_subscribe_dump import (
-            start_watchlist_dump, stop_watchlist_dump,
-        )
-        start_watchlist_dump()
-        _stop_fns.append(stop_watchlist_dump)
-
-        from backend.services.tg_bot_service import start_tg_bot, stop_tg_bot
-        start_tg_bot()
-        _stop_fns.append(stop_tg_bot)
-
-        # Subscription-expiry reminders (auth bot). Loop sleeps 30 min
-        # between scans and respects users.auto_renew + per-user throttle.
-        from backend.services.expiry_notifier_service import (
-            start_expiry_notifier, stop_expiry_notifier,
-        )
-        start_expiry_notifier()
-        _stop_fns.append(stop_expiry_notifier)
 
         from backend.services.orderbook_cache import start_prewarm, stop_prewarm
         start_prewarm()

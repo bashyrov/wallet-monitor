@@ -98,51 +98,95 @@ async def _send_tg(chat_id: str, text: str, *, max_retries: int = 3) -> bool:
 
 _ANY = "*"  # stored value meaning "match any exchange"
 
+_CACHE_DIR = "/tmp/avalant_cache"
 
-async def _get_spread(symbol: str, long_ex: str, short_ex: str) -> float | None:
-    """Spread % = (short_fr - long_fr) for a specific pair. 8h-normalised."""
+# Map mode → (cache filename, long-exchange field name in that cache)
+_MODE_META = {
+    "futures": ("arbitrage.json",     "long_exchange"),
+    "spot":    ("spot_arbitrage.json", "spot_exchange"),
+    "dex":     ("dex_arbitrage.json",  "dex_name"),
+}
+
+# Label for TG messages
+_MODE_LABEL = {
+    "futures": "Futures L/S",
+    "spot":    "Spot/Short",
+    "dex":     "DEX/Short",
+}
+
+# URL type param for the /arb page
+_MODE_URL_TYPE = {
+    "futures": "long-short",
+    "spot":    "spot-short",
+    "dex":     "dex-short",
+}
+
+
+def _load_arb_cache(mode: str) -> list[dict]:
+    fname, _ = _MODE_META.get(mode, _MODE_META["futures"])
     try:
-        from backend.services.arbitrage_service import get_cached_rates
-        rates = get_cached_rates()
-        r_long = rates.get(f"{long_ex}:{symbol}")
-        r_short = rates.get(f"{short_ex}:{symbol}")
-        if r_long is None or r_short is None:
-            return None
-        fr_long = r_long["rate"] / r_long.get("interval_h", 8) * 8
-        fr_short = r_short["rate"] / r_short.get("interval_h", 8) * 8
-        return fr_short - fr_long
+        import json
+        with open(f"{_CACHE_DIR}/{fname}", "rb") as f:
+            d = json.loads(f.read())
+        return d.get("opportunities") or []
+    except Exception:
+        return []
+
+
+def _opp_spread(opp: dict) -> float:
+    """Return in_pct (preferred, orderbook-based) or net_profit as fallback."""
+    v = opp.get("in_pct")
+    if v is not None:
+        return float(v)
+    np = opp.get("net_profit")
+    if np is not None:
+        return float(np)
+    return 0.0
+
+
+def _get_spread_from_opps(opps: list[dict], symbol: str, long_ex: str,
+                           short_ex: str, long_field: str) -> float | None:
+    """Find the matching opp and return its in/out spread."""
+    for opp in opps:
+        if opp.get("symbol") != symbol:
+            continue
+        if opp.get(long_field, "").lower() != long_ex.lower():
+            continue
+        if opp.get("short_exchange", "").lower() != short_ex.lower():
+            continue
+        return _opp_spread(opp)
+    return None
+
+
+def _best_pair_from_opps(opps: list[dict], symbol: str,
+                          long_field: str) -> tuple[str, str, float] | None:
+    """Scan all opps for `symbol` and return the one with the largest |spread|."""
+    best: tuple[str, str, float] | None = None
+    for opp in opps:
+        if opp.get("symbol") != symbol:
+            continue
+        spread = _opp_spread(opp)
+        if best is None or abs(spread) > abs(best[2]):
+            long_ex = opp.get(long_field, "")
+            short_ex = opp.get("short_exchange", "")
+            best = (long_ex, short_ex, spread)
+    return best
+
+
+async def _get_spread(symbol: str, long_ex: str, short_ex: str, mode: str) -> float | None:
+    try:
+        _, long_field = _MODE_META.get(mode, _MODE_META["futures"])
+        opps = _load_arb_cache(mode)
+        return _get_spread_from_opps(opps, symbol, long_ex, short_ex, long_field)
     except Exception:
         return None
 
 
-async def _best_pair_for_symbol(symbol: str) -> tuple[str, str, float] | None:
-    """Scan every cross-exchange pair for `symbol` and return the one with the
-    largest absolute 8h-normalised spread. Returns (long_ex, short_ex, spread)
-    or None if fewer than 2 exchanges quote the symbol.
-    """
+async def _best_pair_for_symbol(symbol: str, mode: str) -> tuple[str, str, float] | None:
     try:
-        from backend.services.arbitrage_service import get_cached_rates
-        rates = get_cached_rates()
-        # Collect all {exchange -> rate/interval} entries for this symbol
-        by_ex: dict[str, float] = {}
-        for key, v in rates.items():
-            ex, sym = key.split(":", 1)
-            if sym != symbol:
-                continue
-            by_ex[ex] = v["rate"] / v.get("interval_h", 8) * 8
-
-        if len(by_ex) < 2:
-            return None
-
-        best = None   # (long_ex, short_ex, spread)
-        for long_ex, fr_long in by_ex.items():
-            for short_ex, fr_short in by_ex.items():
-                if long_ex == short_ex:
-                    continue
-                spread = fr_short - fr_long
-                if best is None or abs(spread) > abs(best[2]):
-                    best = (long_ex, short_ex, spread)
-        return best
+        _, long_field = _MODE_META.get(mode, _MODE_META["futures"])
+        opps = _load_arb_cache(mode)
+        return _best_pair_from_opps(opps, symbol, long_field)
     except Exception:
         return None
 
@@ -162,22 +206,20 @@ async def _check_alerts() -> None:
             if alert.last_triggered_at and (now - alert.last_triggered_at) < _COOLDOWN:
                 continue
 
-            # Resolve which pair to alert on
+            mode = alert.mode or "futures"
             long_ex = alert.long_exchange
             short_ex = alert.short_exchange
             is_any = (long_ex in ("", _ANY) or short_ex in ("", _ANY))
 
             if is_any:
-                best = await _best_pair_for_symbol(alert.symbol)
+                best = await _best_pair_for_symbol(alert.symbol, mode)
                 if not best:
                     continue
-                long_ex, short_ex, spread = best
+                long_ex, short_ex, spread_pct = best
             else:
-                spread = await _get_spread(alert.symbol, long_ex, short_ex)
-                if spread is None:
+                spread_pct = await _get_spread(alert.symbol, long_ex, short_ex, mode)
+                if spread_pct is None:
                     continue
-
-            spread_pct = spread * 100
 
             triggered = False
             if alert.direction == "any" and abs(spread_pct) >= alert.threshold:
@@ -193,14 +235,17 @@ async def _check_alerts() -> None:
                 if not chat_id:
                     logger.debug("Alert %d skip: user %s has not linked TG chat yet", alert.id, alert.user_id)
                     continue
+
                 direction_arrow = "▲" if spread_pct >= 0 else "▼"
-                link = f"{base}/arb?symbol={alert.symbol}&long={long_ex}&short={short_ex}"
-                title = f"🚨 Arb Alert: {alert.symbol}"
-                scope = "any exchange" if is_any else "tracked pair"
+                mode_label = _MODE_LABEL.get(mode, "Futures L/S")
+                url_type = _MODE_URL_TYPE.get(mode, "long-short")
+                scope = "any pair" if is_any else "tracked pair"
+                link = f"{base}/arb?symbol={alert.symbol}&long={long_ex}&short={short_ex}&type={url_type}"
                 msg = (
-                    f"<b>{title}</b>\n"
-                    f"Best pair now: <b>{long_ex}</b> → <b>{short_ex}</b>\n"
-                    f"Spread: <b>{direction_arrow} {spread_pct:+.4f}%</b> (threshold ±{alert.threshold}%, {scope})\n"
+                    f"🚨 <b>Arb Alert: {alert.symbol}</b> · {mode_label}\n"
+                    f"Pair: <b>{long_ex}</b> → <b>{short_ex}</b>\n"
+                    f"In-spread: <b>{direction_arrow} {spread_pct:+.4f}%</b>"
+                    f" (threshold ±{alert.threshold}%, {scope})\n"
                     f"<a href=\"{link}\">Open arbitrage details →</a>"
                 )
                 ok = await _send_tg(str(chat_id), msg)
@@ -208,11 +253,10 @@ async def _check_alerts() -> None:
                     alert.last_triggered_at = now
                     db.commit()
                     logger.info(
-                        "Alert triggered id=%d user=%d sym=%s pair=%s→%s spread=%.4f%%",
-                        alert.id, alert.user_id, alert.symbol, long_ex, short_ex, spread_pct,
+                        "Alert triggered id=%d user=%d sym=%s mode=%s pair=%s→%s spread=%.4f%%",
+                        alert.id, alert.user_id, alert.symbol, mode, long_ex, short_ex, spread_pct,
                     )
                 else:
-                    # Don't consume the cooldown — try again next cycle
                     logger.error(
                         "Alert %d delivery FAILED — will retry next cycle (user=%d sym=%s)",
                         alert.id, alert.user_id, alert.symbol,

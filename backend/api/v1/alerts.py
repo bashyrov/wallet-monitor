@@ -28,6 +28,7 @@ class AlertCreate(BaseModel):
     short_exchange: str
     threshold: float = Field(..., gt=0, le=50)  # spread % to trigger; 0 < x <= 50
     direction: str = Field("any", pattern="^(any|above|below)$")
+    mode: str = Field("futures", pattern="^(futures|spot|dex)$")
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -55,6 +56,7 @@ class AlertOut(BaseModel):
     short_exchange: str
     threshold: float
     direction: str
+    mode: Optional[str] = "futures"
     enabled: bool
     last_triggered_at: Optional[datetime]
     created_at: datetime
@@ -79,6 +81,7 @@ def create_alert(body: AlertCreate, current_user: User = Depends(get_current_use
         short_exchange=body.short_exchange,
         threshold=body.threshold,
         direction=body.direction,
+        mode=body.mode,
     )
     db.add(alert)
     db.commit()
@@ -99,6 +102,7 @@ def update_alert(alert_id: int, body: AlertCreate, current_user: User = Depends(
     alert.short_exchange = body.short_exchange
     alert.threshold = body.threshold
     alert.direction = body.direction
+    alert.mode = body.mode
     db.commit()
     db.refresh(alert)
     return alert
@@ -120,6 +124,7 @@ class TokenAlertCreate(BaseModel):
     symbol: str
     threshold: float = Field(..., gt=0, le=50)
     direction: str = Field("any", pattern="^(any|above|below)$")
+    mode: str = Field("futures", pattern="^(futures|spot|dex)$")
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -145,6 +150,7 @@ def create_token_alert(
         ArbAlert.symbol == body.symbol,
         ArbAlert.long_exchange == "*",
         ArbAlert.short_exchange == "*",
+        (ArbAlert.mode == body.mode) | (ArbAlert.mode == None),  # noqa: E711
     ).delete(synchronize_session=False)
     alert = ArbAlert(
         user_id=current_user.id,
@@ -153,6 +159,7 @@ def create_token_alert(
         short_exchange="*",
         threshold=body.threshold,
         direction=body.direction,
+        mode=body.mode,
     )
     db.add(alert)
     db.commit()

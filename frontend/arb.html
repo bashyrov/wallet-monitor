@@ -3388,7 +3388,9 @@ async function openAlertModal(){
 function closeAlertModal(){document.getElementById('alert-modal').classList.remove('open');}
 document.getElementById('alert-modal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeAlertModal();});
 function _refreshAlertCount(){
-  const mine=(_alerts||[]).filter(a=>a.symbol===SYM&&a.long_exchange===LONG&&a.short_exchange===SHORT);
+  const mine=(_alerts||[]).filter(a=>a.symbol===SYM&&_alertMode(a)===TYPE&&(
+    (a.long_exchange===LONG&&a.short_exchange===SHORT)||(a.long_exchange==='*'&&a.short_exchange==='*')
+  ));
   const active=mine.filter(a=>a.enabled).length;
   const el=document.getElementById('tb-alert-count');
   if(el){el.textContent=active; el.className='metric-val'+(active>0?' pos':' neu'); el.style.fontSize='20px';}
@@ -3406,11 +3408,12 @@ async function loadAlerts(){
     if(list) list.innerHTML='<div class="alert-empty"><div>Failed to load alerts. Check your connection.</div></div>';
   }
 }
+function _alertMode(a){ return a.mode || 'futures'; }
 function renderAlertList(){
   const list=document.getElementById('alert-list');
-  // Show alerts for THIS exact pair + any-exchange alerts on THIS symbol
+  // Show alerts for THIS exact pair (matching mode) + any-exchange alerts on THIS symbol+mode
   const mine=_alerts.filter(a =>
-    a.symbol===SYM && (
+    a.symbol===SYM && _alertMode(a)===TYPE && (
       (a.long_exchange===LONG && a.short_exchange===SHORT) ||
       (a.long_exchange==='*'   && a.short_exchange==='*')
     )
@@ -3418,19 +3421,17 @@ function renderAlertList(){
   if(!mine.length){
     list.innerHTML=`<div class="alert-empty">
       <div class="alert-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg></div>
-      <div>No alerts yet. Set a threshold above to get pinged on Telegram when the spread crosses it.</div>
+      <div>No alerts yet. Set a threshold above to get pinged on Telegram when the in-spread crosses it.</div>
     </div>`;
     return;
   }
-  const dirLabel={any:'Any side',above:'Above +',below:'Below −'};
+  const dirLabel={any:'Any side',above:'In-spread ≥ +',below:'In-spread ≤ −'};
   list.innerHTML=mine.map(a=>{
     const isAny = a.long_exchange==='*' && a.short_exchange==='*';
-    const scopeBadge = isAny
-      ? '<span class="alert-item-scope">🔭 Any pair</span>'
-      : '';
+    const scopeBadge = isAny ? '<span class="alert-item-scope">🔭 Any pair</span>' : '';
     return `<div class="alert-item" data-id="${a.id}">
       <div class="alert-item-info">
-        <span class="alert-item-pair">±${a.threshold}% threshold ${scopeBadge}</span>
+        <span class="alert-item-pair">±${a.threshold}% in-spread ${scopeBadge}</span>
         <span class="alert-item-meta">${dirLabel[a.direction]||a.direction}<span class="sep"></span>${a.enabled?'active':'paused'}</span>
       </div>
       <button class="alert-item-toggle ${a.enabled?'enabled':''}" onclick="toggleAlert(${a.id})">${a.enabled?'ON':'OFF'}</button>
@@ -3483,8 +3484,8 @@ async function createAlert(){
   try{
     const url = anyEx ? '/alerts/token' : '/alerts';
     const body = anyEx
-      ? {symbol:SYM, threshold, direction}
-      : {symbol:SYM, long_exchange:LONG, short_exchange:SHORT, threshold, direction};
+      ? {symbol:SYM, threshold, direction, mode:TYPE}
+      : {symbol:SYM, long_exchange:LONG, short_exchange:SHORT, threshold, direction, mode:TYPE};
     const res=await Auth.apiFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok){
       let msg='Failed to create alert';
