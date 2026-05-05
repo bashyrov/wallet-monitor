@@ -1560,15 +1560,18 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         _lastBidShort = bestBid;
       }
 
-      // Live spread = In (orderbook entry basis). For spot/short and
-      // dex/short detail we prefer the row's in_pct (computed by Go from
-      // both venues' top-of-book) and fall back to basis_pct only when
-      // in_pct is missing. Same rule as futures L/S — keeps Live Spread
-      // and the In column consistent.
-      if (side === 'short' && _row) {
-        const inPctRaw = _row.in_pct;
-        const live = (typeof inPctRaw === 'number') ? inPctRaw
-                   : (typeof _row.basis_pct === 'number' ? _row.basis_pct : null);
+      // Live spread = In (entry basis). Prefer locally-computed value from
+      // fresh top-of-book prices — updates instantly on every WS frame.
+      // Falls back to _row.in_pct (REST-polled, up to 1s stale) when the
+      // long book hasn't been received yet (DEX mode or cold start).
+      if (side === 'short') {
+        let live = null;
+        if (_lastAskLong > 0 && bestBid > 0) {
+          live = (bestBid - _lastAskLong) / _lastAskLong * 100;
+        } else if (_row) {
+          live = (typeof _row.in_pct === 'number') ? _row.in_pct
+               : (typeof _row.basis_pct === 'number' ? _row.basis_pct : null);
+        }
         if (live !== null) {
           setT('pt-live-spread', `${live >= 0 ? '+' : ''}${live.toFixed(4)}%`);
           const el = $('pt-live-spread');
@@ -3083,15 +3086,15 @@ let _liveMidLong=0, _liveMidShort=0;
 let _liveAskLong=0, _liveBidShort=0;  // kept for orderbook display
 let _lastLiveSpread = null;           // sticky local value
 function _liveBasisPct(){
-  if (_opp && typeof _opp.in_pct === 'number') return _opp.in_pct;
-  // Pair not in top-1000 arb feed (low volume / niche listing) →
-  // _opp.in_pct is undefined. Use the locally-computed in_pct from
-  // sampleEntryExit instead — it walks our own orderbook fetches and
-  // produces an in_pct identical in meaning to the WS broadcast's.
+  // Prefer locally-computed value from fresh book data — sampleEntryExit()
+  // runs on every book WS frame and uses the same top-of-book formula as
+  // go-fetcher, so it's identical in meaning but updates instantly.
   if (typeof _eeHist !== 'undefined' && _eeHist.length) {
     const last = _eeHist[_eeHist.length - 1];
     if (last && typeof last.inPct === 'number') return last.inPct;
   }
+  // Books not yet loaded — fall back to WS-broadcast value.
+  if (_opp && typeof _opp.in_pct === 'number') return _opp.in_pct;
   return _lastLiveSpread;             // fall through to last good
 }
 function updateLiveSpread(){

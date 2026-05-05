@@ -32,6 +32,7 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
 const (
@@ -65,6 +66,62 @@ func NewBook(reader *redisbus.Reader, store *cache.Store, mgr *symbols.Manager) 
 }
 
 func (b *Book) Hub() *Hub { return b.hub }
+
+// OnBookUpdate is called from cache.Store's onUpdate hook on every OB snapshot.
+// It bypasses the 25ms Redis-poll cycle and pushes directly to clients
+// subscribed to this pair — eliminating the polling lag entirely.
+// The tick() safety-net still runs; it skips pairs whose TS has already
+// been sent by this path (lastTS updated here before releasing the lock).
+func (b *Book) OnBookUpdate(exchange, symbol string, bids, asks []ws.Level) {
+	pairKey := exchange + ":" + symbol
+
+	b.mu.Lock()
+	if len(b.subs) == 0 {
+		b.mu.Unlock()
+		return
+	}
+	now := float64(time.Now().UnixMilli()) / 1000.0
+	var targets []*client
+	for c, subs := range b.subs {
+		if _, ok := subs[pairKey]; ok {
+			subs[pairKey] = now // mark sent so tick() skips the duplicate
+			targets = append(targets, c)
+		}
+	}
+	b.mu.Unlock()
+
+	if len(targets) == 0 {
+		return
+	}
+
+	bidSlice := make([][]float64, len(bids))
+	for i, lv := range bids {
+		bidSlice[i] = []float64{lv[0], lv[1]}
+	}
+	askSlice := make([][]float64, len(asks))
+	for i, lv := range asks {
+		askSlice[i] = []float64{lv[0], lv[1]}
+	}
+	body, err := json.Marshal(map[string]any{
+		"books": map[string]any{
+			pairKey: map[string]any{
+				"ts":   now,
+				"bids": bidSlice,
+				"asks": askSlice,
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+	for _, c := range targets {
+		select {
+		case c.outbox <- body:
+		default:
+		}
+	}
+	log.L().Trace().Str("pair", pairKey).Int("clients", len(targets)).Msg("book realtime push")
+}
 
 // Run drives the periodic broadcast tick. One MGET per tick across the
 // union of all subscribed pairs (fixed cost regardless of client count).

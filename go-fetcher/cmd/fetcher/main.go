@@ -214,34 +214,37 @@ func main() {
 			}
 		}()
 		longShort := wsbroadcast.NewLongShort(cfg.CacheDir)
+		bookCh := wsbroadcast.NewBook(bookReader, store, mgr)
 		wsSvc := wsbroadcast.NewService(
 			wsbroadcast.NewJWTValidator(secret),
 			longShort,
 			wsbroadcast.NewFunding(cfg.CacheDir),
-			wsbroadcast.NewBook(bookReader, store, mgr),
+			bookCh,
 		)
 
-		// Real-time in/out patcher: on every OB update, immediately push
-		// in_pct/out_pct diffs to WS clients without waiting for the 500ms
-		// arb-compute cycle. Disable with AVALANT_INOUT_REALTIME=0.
+		// Unified onUpdate hook: Redis mirror + event-driven book push +
+		// optional in/out patcher. All fire synchronously in the OB adapter
+		// goroutine — each is fast (non-blocking channel send or in-memory
+		// compute). Replaces the bare Redis-only hook set above.
+		var patcher *wsbroadcast.InOutPatcher
 		if os.Getenv("AVALANT_INOUT_REALTIME") != "0" {
-			patcher := wsbroadcast.NewInOutPatcher(store, longShort.Hub(), cfg.CacheDir)
-			// Replace the existing onUpdate hook with one that does both
-			// Redis mirror + in/out patch. OB adapter goroutines haven't
-			// started yet so there's no race on the hook pointer.
-			prevHook := writer // may be nil
-			store.SetOnUpdate(func(ex, sym string, bids, asks []ws.Level) {
-				if prevHook != nil {
-					prevHook.WriteBook(ex, sym, bids, asks)
-				}
-				patcher.OnBookUpdate(ex, sym)
-			})
+			patcher = wsbroadcast.NewInOutPatcher(store, longShort.Hub(), cfg.CacheDir)
 			g.Go(func() error {
 				patcher.Run(gctx)
 				return nil
 			})
 			l.Info().Msg("inout realtime patcher enabled")
 		}
+		prevHook := writer // may be nil
+		store.SetOnUpdate(func(ex, sym string, bids, asks []ws.Level) {
+			if prevHook != nil {
+				prevHook.WriteBook(ex, sym, bids, asks)
+			}
+			bookCh.OnBookUpdate(ex, sym, bids, asks)
+			if patcher != nil {
+				patcher.OnBookUpdate(ex, sym)
+			}
+		})
 
 		mux := http.NewServeMux()
 		wsSvc.Routes(mux)
