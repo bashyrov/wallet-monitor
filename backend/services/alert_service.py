@@ -191,9 +191,23 @@ async def _best_pair_for_symbol(symbol: str, mode: str) -> tuple[str, str, float
         return None
 
 
+_ALERT_LOCK_KEY = "avalant:alert_check_lock"
+_ALERT_LOCK_TTL = 55  # seconds — shorter than _CHECK_INTERVAL so it always expires
+
+
 async def _check_alerts() -> None:
     if not settings.TG_BOT_TOKEN:
         return
+
+    # Leader election: only one uvicorn worker runs the check per cycle.
+    try:
+        import redis as _redis
+        _r = _redis.from_url(settings.REDIS_URL, socket_connect_timeout=2)
+        if not _r.set(_ALERT_LOCK_KEY, "1", nx=True, ex=_ALERT_LOCK_TTL):
+            return  # another worker already has the lock
+    except Exception:
+        pass  # no Redis → all workers run (rare double-send risk, acceptable)
+
     from backend.db.base import SessionLocal
     from backend.db.models import ArbAlert, User
 
