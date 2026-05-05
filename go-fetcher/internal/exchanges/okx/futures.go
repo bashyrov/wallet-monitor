@@ -1,8 +1,12 @@
 // Package okx implements the OKX V5 perp orderbook WS.
 //
-// Channel: books — full snapshot every 100ms equivalent (OKX pushes a
-// snapshot frame on subscribe, then 100ms-rate updates). Symbol form:
-// {BASE}-USDT-SWAP.
+// Channel: books50-l2-tbt — tick-by-tick L2 orderbook, 50 levels.
+// First push is a full snapshot (action="snapshot"), subsequent frames
+// are incremental deltas (action="update"). Wire format is identical to
+// the older "books" channel; only update frequency differs:
+//   books         → 400ms cap (too slow for the arb page)
+//   books50-l2-tbt → every book change (real-time, ~10-50ms on BTC)
+// Symbol form: {BASE}-USDT-SWAP.
 //
 // URL: wss://ws.okx.com:8443/ws/v5/public
 //
@@ -73,7 +77,7 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	args := make([]map[string]string, len(symbols))
 	for i, s := range symbols {
 		args[i] = map[string]string{
-			"channel": "books",
+			"channel": "books50-l2-tbt",
 			"instId":  strings.ToUpper(s) + a.instSuffix,
 		}
 	}
@@ -106,7 +110,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if msg.Event != "" {
 		return nil, nil
 	}
-	if msg.Arg.Channel != "books" {
+	switch msg.Arg.Channel {
+	case "books", "books50-l2-tbt":
+		// handled below
+	default:
 		return nil, nil
 	}
 	if !strings.HasSuffix(msg.Arg.InstID, a.instSuffix) {

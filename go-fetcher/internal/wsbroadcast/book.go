@@ -42,6 +42,10 @@ const (
 	// screener live-In/Out feature needs ~80 for the top-40 rows. 100 is
 	// what Python uses (BOOK_MAX_PAIRS_PER_CLIENT).
 	bookMaxPairsPerClient = 100
+	// Levels sent per side in the event-driven push. UI shows 8; 20 gives
+	// visible depth without ballooning the JSON payload (200 → 20 = 10×
+	// less serialization work and network bytes per frame).
+	bookBroadcastLevels = 20
 )
 
 // Book is the /ws/book channel state.
@@ -94,12 +98,20 @@ func (b *Book) OnBookUpdate(exchange, symbol string, bids, asks []ws.Level) {
 		return
 	}
 
-	bidSlice := make([][]float64, len(bids))
-	for i, lv := range bids {
+	nb := bids
+	if len(nb) > bookBroadcastLevels {
+		nb = nb[:bookBroadcastLevels]
+	}
+	na := asks
+	if len(na) > bookBroadcastLevels {
+		na = na[:bookBroadcastLevels]
+	}
+	bidSlice := make([][]float64, len(nb))
+	for i, lv := range nb {
 		bidSlice[i] = []float64{lv[0], lv[1]}
 	}
-	askSlice := make([][]float64, len(asks))
-	for i, lv := range asks {
+	askSlice := make([][]float64, len(na))
+	for i, lv := range na {
 		askSlice[i] = []float64{lv[0], lv[1]}
 	}
 	body, err := json.Marshal(map[string]any{

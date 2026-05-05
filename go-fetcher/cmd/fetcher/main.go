@@ -237,8 +237,12 @@ func main() {
 		}
 		prevHook := writer // may be nil
 		store.SetOnUpdate(func(ex, sym string, bids, asks []ws.Level) {
+			// Redis mirror runs in its own goroutine — the SETEX round-trip
+			// (~1ms) must not block the recv loop and delay the book push.
+			// Slices are safe to capture: each adapter allocates new slices
+			// per snapshot; the hook closure outlives the call stack.
 			if prevHook != nil {
-				prevHook.WriteBook(ex, sym, bids, asks)
+				go prevHook.WriteBook(ex, sym, bids, asks)
 			}
 			bookCh.OnBookUpdate(ex, sym, bids, asks)
 			if patcher != nil {
