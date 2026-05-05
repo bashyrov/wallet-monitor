@@ -245,6 +245,7 @@ class ArbAlert(Base):
     threshold = Column(Float, nullable=False)          # min spread % to trigger
     direction = Column(String, nullable=False, default="any")  # any | above | below
     mode = Column(String, nullable=True)               # futures | spot | dex (null = futures)
+    trigger_mode = Column(String, nullable=True)       # speed | protected (null = speed)
     enabled = Column(Boolean, nullable=False, default=True)
     last_triggered_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

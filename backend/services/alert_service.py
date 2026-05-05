@@ -243,38 +243,69 @@ async def _check_alerts() -> None:
             elif alert.direction == "below" and spread_pct <= -alert.threshold:
                 triggered = True
 
-            if triggered:
-                user = db.query(User).filter(User.id == alert.user_id).first()
-                chat_id = user.tg_chat_id if user else None
-                if not chat_id:
-                    logger.debug("Alert %d skip: user %s has not linked TG chat yet", alert.id, alert.user_id)
+            if not triggered:
+                continue
+
+            # Protected mode: wait 3s and re-verify the condition still holds.
+            trigger_mode = alert.trigger_mode or "speed"
+            if trigger_mode == "protected":
+                await asyncio.sleep(3)
+                if is_any:
+                    best2 = await _best_pair_for_symbol(alert.symbol, mode)
+                    if not best2:
+                        logger.debug("Alert %d protected: condition gone after re-check", alert.id)
+                        continue
+                    long_ex, short_ex, spread_pct = best2
+                else:
+                    spread2 = await _get_spread(alert.symbol, long_ex, short_ex, mode)
+                    if spread2 is None:
+                        continue
+                    spread_pct = spread2
+
+                still_on = False
+                if alert.direction == "any" and abs(spread_pct) >= alert.threshold:
+                    still_on = True
+                elif alert.direction == "above" and spread_pct >= alert.threshold:
+                    still_on = True
+                elif alert.direction == "below" and spread_pct <= -alert.threshold:
+                    still_on = True
+                if not still_on:
+                    logger.debug("Alert %d protected: spread %.4f%% no longer meets threshold — skip",
+                                 alert.id, spread_pct)
                     continue
 
-                direction_arrow = "▲" if spread_pct >= 0 else "▼"
-                mode_label = _MODE_LABEL.get(mode, "Futures L/S")
-                url_type = _MODE_URL_TYPE.get(mode, "long-short")
-                scope = "any pair" if is_any else "tracked pair"
-                link = f"{base}/arb?symbol={alert.symbol}&long={long_ex}&short={short_ex}&type={url_type}"
-                msg = (
-                    f"🚨 <b>Arb Alert: {alert.symbol}</b> · {mode_label}\n"
-                    f"Pair: <b>{long_ex}</b> → <b>{short_ex}</b>\n"
-                    f"In-spread: <b>{direction_arrow} {spread_pct:+.4f}%</b>"
-                    f" (threshold ±{alert.threshold}%, {scope})\n"
-                    f"<a href=\"{link}\">Open arbitrage details →</a>"
+            user = db.query(User).filter(User.id == alert.user_id).first()
+            chat_id = user.tg_chat_id if user else None
+            if not chat_id:
+                logger.debug("Alert %d skip: user %s has not linked TG chat yet", alert.id, alert.user_id)
+                continue
+
+            direction_arrow = "▲" if spread_pct >= 0 else "▼"
+            mode_label = _MODE_LABEL.get(mode, "Futures L/S")
+            url_type = _MODE_URL_TYPE.get(mode, "long-short")
+            scope = "any pair" if is_any else "tracked pair"
+            tmode_label = "⚡" if trigger_mode == "speed" else "🛡"
+            link = f"{base}/arb?symbol={alert.symbol}&long={long_ex}&short={short_ex}&type={url_type}"
+            msg = (
+                f"🚨 <b>Arb Alert: {alert.symbol}</b> · {mode_label} {tmode_label}\n"
+                f"Pair: <b>{long_ex}</b> → <b>{short_ex}</b>\n"
+                f"In-spread: <b>{direction_arrow} {spread_pct:+.4f}%</b>"
+                f" (threshold ±{alert.threshold}%, {scope})\n"
+                f"<a href=\"{link}\">Open arbitrage details →</a>"
+            )
+            ok = await _send_tg(str(chat_id), msg)
+            if ok:
+                alert.last_triggered_at = now
+                db.commit()
+                logger.info(
+                    "Alert triggered id=%d user=%d sym=%s mode=%s trigger=%s pair=%s→%s spread=%.4f%%",
+                    alert.id, alert.user_id, alert.symbol, mode, trigger_mode, long_ex, short_ex, spread_pct,
                 )
-                ok = await _send_tg(str(chat_id), msg)
-                if ok:
-                    alert.last_triggered_at = now
-                    db.commit()
-                    logger.info(
-                        "Alert triggered id=%d user=%d sym=%s mode=%s pair=%s→%s spread=%.4f%%",
-                        alert.id, alert.user_id, alert.symbol, mode, long_ex, short_ex, spread_pct,
-                    )
-                else:
-                    logger.error(
-                        "Alert %d delivery FAILED — will retry next cycle (user=%d sym=%s)",
-                        alert.id, alert.user_id, alert.symbol,
-                    )
+            else:
+                logger.error(
+                    "Alert %d delivery FAILED — will retry next cycle (user=%d sym=%s)",
+                    alert.id, alert.user_id, alert.symbol,
+                )
     except Exception as exc:
         logger.error("Alert check error: %s", exc)
     finally:

@@ -15,7 +15,6 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 logger = logging.getLogger("avalant.alerts")
 
 _SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,16}$")
-# Limited to exchanges the screener tracks (same set used by arb service).
 _KNOWN_EX = {
     "binance", "bybit", "okx", "gate", "kucoin", "mexc", "bitget",
     "hyperliquid", "aster", "ethereal", "whitebit", "bingx", "lighter", "paradex",
@@ -26,9 +25,10 @@ class AlertCreate(BaseModel):
     symbol: str
     long_exchange: str
     short_exchange: str
-    threshold: float = Field(..., gt=0, le=50)  # spread % to trigger; 0 < x <= 50
+    threshold: float = Field(..., gt=0, le=50)
     direction: str = Field("any", pattern="^(any|above|below)$")
     mode: str = Field("futures", pattern="^(futures|spot|dex)$")
+    trigger_mode: str = Field("speed", pattern="^(speed|protected)$")
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -43,7 +43,7 @@ class AlertCreate(BaseModel):
     def _ex(cls, v):
         s = str(v or "").strip().lower()
         if s in ("*", "any", ""):
-            return "*"   # "any exchange" marker — alert fires on any pair of this symbol
+            return "*"
         if s not in _KNOWN_EX:
             raise ValueError(f"unknown exchange: {v!r}")
         return s
@@ -57,6 +57,7 @@ class AlertOut(BaseModel):
     threshold: float
     direction: str
     mode: Optional[str] = "futures"
+    trigger_mode: Optional[str] = "speed"
     enabled: bool
     last_triggered_at: Optional[datetime]
     created_at: datetime
@@ -71,7 +72,6 @@ def list_alerts(current_user: User = Depends(get_current_user), db: Session = De
 
 @router.post("", response_model=AlertOut, status_code=201)
 def create_alert(body: AlertCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Allow both to be "*" (any-exchange); otherwise they must differ
     if body.long_exchange != "*" and body.short_exchange != "*" and body.long_exchange == body.short_exchange:
         raise HTTPException(400, "long_exchange and short_exchange must differ")
     alert = ArbAlert(
@@ -82,11 +82,12 @@ def create_alert(body: AlertCreate, current_user: User = Depends(get_current_use
         threshold=body.threshold,
         direction=body.direction,
         mode=body.mode,
+        trigger_mode=body.trigger_mode,
     )
     db.add(alert)
     db.commit()
     db.refresh(alert)
-    logger.info("Alert created id=%d by user %d", alert.id, current_user.id)
+    logger.info("Alert created id=%d by user %d (trigger=%s)", alert.id, current_user.id, body.trigger_mode)
     return alert
 
 
@@ -103,6 +104,7 @@ def update_alert(alert_id: int, body: AlertCreate, current_user: User = Depends(
     alert.threshold = body.threshold
     alert.direction = body.direction
     alert.mode = body.mode
+    alert.trigger_mode = body.trigger_mode
     db.commit()
     db.refresh(alert)
     return alert
@@ -125,6 +127,7 @@ class TokenAlertCreate(BaseModel):
     threshold: float = Field(..., gt=0, le=50)
     direction: str = Field("any", pattern="^(any|above|below)$")
     mode: str = Field("futures", pattern="^(futures|spot|dex)$")
+    trigger_mode: str = Field("speed", pattern="^(speed|protected)$")
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -141,10 +144,6 @@ def create_token_alert(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """One-shot: alert fires whenever ANY exchange pair for this symbol
-    crosses the threshold spread. Replaces any existing any-exchange alert
-    on the same symbol for this user."""
-    # Remove previous any-exchange alert for same symbol
     db.query(ArbAlert).filter(
         ArbAlert.user_id == current_user.id,
         ArbAlert.symbol == body.symbol,
@@ -160,11 +159,13 @@ def create_token_alert(
         threshold=body.threshold,
         direction=body.direction,
         mode=body.mode,
+        trigger_mode=body.trigger_mode,
     )
     db.add(alert)
     db.commit()
     db.refresh(alert)
-    logger.info("Token alert created id=%d by user %d for %s", alert.id, current_user.id, body.symbol)
+    logger.info("Token alert created id=%d by user %d for %s (trigger=%s)",
+                alert.id, current_user.id, body.symbol, body.trigger_mode)
     return alert
 
 
