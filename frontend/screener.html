@@ -415,7 +415,7 @@
       <div id="alpha-status-items" style="display:contents"></div>
       <button class="as-toggle" type="button" onclick="toggleExStatus()" title="Hide status strip" aria-label="Hide status strip">×</button>
       <button class="as-show" type="button" onclick="toggleExStatus()" title="Show exchange status">
-        <span class="d live" style="display:inline-block;width:6px;height:6px;border-radius:50%"></span>
+        <span class="lbl-dot stale" id="status-lbl-dot-mini"></span>
         Status
       </button>
     </div>
@@ -845,12 +845,12 @@ function renderAlphaStatus(){
   }).join('');
 
   // Update overall indicator dot
+  const klasses = EXCHANGES.map(ex => (_exHealth[ex]||{}).klass || 'stale');
+  const overall = klasses.includes('stale') ? 'stale' : klasses.includes('slow') ? 'slow' : 'live';
   const dot = document.getElementById('status-lbl-dot');
-  if (dot) {
-    const klasses = EXCHANGES.map(ex => (_exHealth[ex]||{}).klass || 'stale');
-    const overall = klasses.includes('stale') ? 'stale' : klasses.includes('slow') ? 'slow' : 'live';
-    dot.className = 'lbl-dot ' + overall;
-  }
+  if (dot) dot.className = 'lbl-dot ' + overall;
+  const dotMini = document.getElementById('status-lbl-dot-mini');
+  if (dotMini) dotMini.className = 'lbl-dot ' + overall;
 }
 
 function _reapplyCurrentMode() {

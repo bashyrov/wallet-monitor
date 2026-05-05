@@ -5386,7 +5386,7 @@ body{padding-bottom:44px;}
   <div id="ex-status-items" style="display:contents"></div>
   <button class="as-toggle" type="button" onclick="toggleExStatusBar()" title="Hide status strip" aria-label="Hide status strip">×</button>
   <button class="as-show" type="button" onclick="toggleExStatusBar()" title="Show exchange status">
-    <span class="d live" style="display:inline-block;width:6px;height:6px;border-radius:50%"></span>
+    <span class="lbl-dot stale" id="ex-status-lbl-dot-mini"></span>
     Status
   </button>
 </div>
@@ -5451,6 +5451,8 @@ body{padding-bottom:44px;}
       const overall = klasses.includes('stale') ? 'stale' : klasses.includes('slow') ? 'slow' : 'live';
       const ldot = document.getElementById('ex-status-lbl-dot');
       if (ldot) ldot.className = 'lbl-dot ' + overall;
+      const ldotMini = document.getElementById('ex-status-lbl-dot-mini');
+      if (ldotMini) ldotMini.className = 'lbl-dot ' + overall;
     } catch(_) {}
   }
   tick();
