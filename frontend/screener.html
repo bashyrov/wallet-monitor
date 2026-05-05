@@ -868,7 +868,7 @@ function renderAlphaStatus(){
     const age = h.age_s;
     const ageStr = age == null ? '—' : `${age.toFixed(1)}s`;
     return `<span class="as-ex" title="${ex} — ${h.via||'?'} · ${ageStr}">
-      <span class="d ${klass}"></span>${EX_LABEL[ex]||ex}<span style="color:var(--text3);font-family:var(--mono);font-size:10px;">${ageStr}</span>
+      <span class="d ${klass}"></span>${EX_LABEL[ex]||ex}
     </span>`;
   }).join('');
 }
