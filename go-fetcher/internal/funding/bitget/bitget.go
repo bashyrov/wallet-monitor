@@ -15,6 +15,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
@@ -22,8 +23,9 @@ import (
 )
 
 const (
-	wsURL   = "wss://ws.bitget.com/v2/ws/public"
-	restURL = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
+	wsURL          = "wss://ws.bitget.com/v2/ws/public"
+	restURL        = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
+	restFundRateURL = "https://api.bitget.com/api/v2/mix/market/current-fund-rate?productType=USDT-FUTURES&symbol="
 )
 
 type Adapter struct{}
@@ -61,7 +63,7 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			IndexPrice      string `json:"indexPrice"`
 			MarkPrice       string `json:"markPrice"`
 			FundingRate     string `json:"fundingRate"`
-			NextFundingTime int64  `json:"nextFundingTime"` // integer ms in WS frames
+			NextFundingTime string `json:"nextFundingTime"` // string ms; absent from update frames
 			QuoteVolume     string `json:"quoteVolume"`
 			BaseVolume      string `json:"baseVolume"`
 		} `json:"data"`
@@ -85,6 +87,7 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 		}
 		idx, _ := strconv.ParseFloat(d.IndexPrice, 64)
 		vol, _ := strconv.ParseFloat(d.QuoteVolume, 64)
+		nextMs, _ := strconv.ParseInt(d.NextFundingTime, 10, 64)
 		t := funding.Tick{
 			Symbol:     token,
 			Rate:       rate,
@@ -97,8 +100,8 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			// value, so once the REST backstop sets it the WS stops
 			// stomping it back to default.
 		}
-		if d.NextFundingTime > 0 {
-			t.NextFunding = time.UnixMilli(d.NextFundingTime)
+		if nextMs > 0 {
+			t.NextFunding = time.UnixMilli(nextMs)
 		}
 		out = append(out, t)
 	}
@@ -112,22 +115,22 @@ func (a *Adapter) PongFor(_ []byte) []byte          { return nil }
 func (a *Adapter) UseLibPings() bool                { return false }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
-func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
+func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]funding.Tick, error) {
+	// Bulk tickers — rate, mark, vol. nextFundingTime is NOT in this response.
 	var doc struct {
 		Data []struct {
-			Symbol          string `json:"symbol"`
-			LastPr          string `json:"lastPr"`
-			IndexPrice      string `json:"indexPrice"`
-			MarkPrice       string `json:"markPrice"`
-			FundingRate     string `json:"fundingRate"`
-			NextFundingTime int64  `json:"nextFundingTime"` // integer ms in REST response
-			QuoteVolume     string `json:"quoteVolume"`
+			Symbol      string `json:"symbol"`
+			LastPr      string `json:"lastPr"`
+			IndexPrice  string `json:"indexPrice"`
+			MarkPrice   string `json:"markPrice"`
+			FundingRate string `json:"fundingRate"`
+			QuoteVolume string `json:"quoteVolume"`
 		} `json:"data"`
 	}
 	if err := funding.HTTPGet(ctx, restURL, &doc); err != nil {
 		return nil, err
 	}
-	out := make([]funding.Tick, 0, len(doc.Data))
+	byToken := make(map[string]*funding.Tick, len(doc.Data))
 	for _, r := range doc.Data {
 		if !strings.HasSuffix(r.Symbol, "USDT") {
 			continue
@@ -140,7 +143,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		}
 		idx, _ := strconv.ParseFloat(r.IndexPrice, 64)
 		vol, _ := strconv.ParseFloat(r.QuoteVolume, 64)
-		t := funding.Tick{
+		byToken[token] = &funding.Tick{
 			Symbol:     token,
 			Rate:       rate,
 			MarkPrice:  mark,
@@ -148,10 +151,61 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			Volume24h:  vol,
 			IntervalH:  8,
 		}
-		if r.NextFundingTime > 0 {
-			t.NextFunding = time.UnixMilli(r.NextFundingTime)
+	}
+
+	// Per-symbol current-fund-rate — nextFunding + real intervalH.
+	// Bulk tickers omit nextFundingTime; current-fund-rate provides "nextUpdate".
+	if len(symbols) > 0 {
+		type rateEntry struct {
+			token       string
+			nextFunding time.Time
+			intervalH   float64
 		}
-		out = append(out, t)
+		entries := make(chan rateEntry, len(symbols))
+		sem := make(chan struct{}, 8)
+		var wg sync.WaitGroup
+		for _, sym := range symbols {
+			sym := sym
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				symUp := strings.ToUpper(sym) + "USDT"
+				var doc struct {
+					Data []struct {
+						FundingRateInterval string `json:"fundingRateInterval"` // hours as string
+						NextUpdate          string `json:"nextUpdate"`          // ms as string
+					} `json:"data"`
+				}
+				if err := funding.HTTPGet(ctx, restFundRateURL+symUp, &doc); err != nil || len(doc.Data) == 0 {
+					return
+				}
+				d := doc.Data[0]
+				nextMs, _ := strconv.ParseInt(d.NextUpdate, 10, 64)
+				var nf time.Time
+				if nextMs > 0 {
+					nf = time.UnixMilli(nextMs)
+				}
+				ivl, _ := strconv.ParseFloat(d.FundingRateInterval, 64)
+				if ivl <= 0 {
+					ivl = 8
+				}
+				entries <- rateEntry{token: strings.ToUpper(sym), nextFunding: nf, intervalH: ivl}
+			}()
+		}
+		go func() { wg.Wait(); close(entries) }()
+		for e := range entries {
+			if t := byToken[e.token]; t != nil {
+				t.NextFunding = e.nextFunding
+				t.IntervalH = e.intervalH
+			}
+		}
+	}
+
+	out := make([]funding.Tick, 0, len(byToken))
+	for _, t := range byToken {
+		out = append(out, *t)
 	}
 	return out, nil
 }
