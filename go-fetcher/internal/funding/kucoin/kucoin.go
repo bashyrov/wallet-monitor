@@ -59,13 +59,17 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		if token == "XBT" {
 			token = "BTC"
 		}
+		ivl := float64(r.FundingRateInterval) // hours per KuCoin API docs
+		if ivl <= 0 {
+			ivl = 8
+		}
 		t := funding.Tick{
-			Symbol:    token,
-			Rate:      r.FundingFeeRate,
-			MarkPrice: r.MarkPrice,
+			Symbol:     token,
+			Rate:       r.FundingFeeRate,
+			MarkPrice:  r.MarkPrice,
 			IndexPrice: r.IndexPrice,
-			Volume24h: r.TurnoverOf24h,
-			IntervalH: 8,
+			Volume24h:  r.TurnoverOf24h,
+			IntervalH:  ivl,
 		}
 		if r.NextFundingRateTime > 0 {
 			t.NextFunding = time.UnixMilli(r.NextFundingRateTime)

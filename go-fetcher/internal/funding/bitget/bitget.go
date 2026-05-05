@@ -61,7 +61,7 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			IndexPrice      string `json:"indexPrice"`
 			MarkPrice       string `json:"markPrice"`
 			FundingRate     string `json:"fundingRate"`
-			NextFundingTime string `json:"nextFundingTime"`
+			NextFundingTime int64  `json:"nextFundingTime"` // integer ms in WS frames
 			QuoteVolume     string `json:"quoteVolume"`
 			BaseVolume      string `json:"baseVolume"`
 		} `json:"data"`
@@ -85,7 +85,6 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 		}
 		idx, _ := strconv.ParseFloat(d.IndexPrice, 64)
 		vol, _ := strconv.ParseFloat(d.QuoteVolume, 64)
-		nextMs, _ := strconv.ParseInt(d.NextFundingTime, 10, 64)
 		t := funding.Tick{
 			Symbol:     token,
 			Rate:       rate,
@@ -98,8 +97,8 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			// value, so once the REST backstop sets it the WS stops
 			// stomping it back to default.
 		}
-		if nextMs > 0 {
-			t.NextFunding = time.UnixMilli(nextMs)
+		if d.NextFundingTime > 0 {
+			t.NextFunding = time.UnixMilli(d.NextFundingTime)
 		}
 		out = append(out, t)
 	}
@@ -121,7 +120,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			IndexPrice      string `json:"indexPrice"`
 			MarkPrice       string `json:"markPrice"`
 			FundingRate     string `json:"fundingRate"`
-			NextFundingTime string `json:"nextFundingTime"`
+			NextFundingTime int64  `json:"nextFundingTime"` // integer ms in REST response
 			QuoteVolume     string `json:"quoteVolume"`
 		} `json:"data"`
 	}
@@ -141,17 +140,16 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		}
 		idx, _ := strconv.ParseFloat(r.IndexPrice, 64)
 		vol, _ := strconv.ParseFloat(r.QuoteVolume, 64)
-		nextMs, _ := strconv.ParseInt(r.NextFundingTime, 10, 64)
 		t := funding.Tick{
-			Symbol:    token,
-			Rate:      rate,
-			MarkPrice: mark,
+			Symbol:     token,
+			Rate:       rate,
+			MarkPrice:  mark,
 			IndexPrice: idx,
-			Volume24h: vol,
-			IntervalH: 8,
+			Volume24h:  vol,
+			IntervalH:  8,
 		}
-		if nextMs > 0 {
-			t.NextFunding = time.UnixMilli(nextMs)
+		if r.NextFundingTime > 0 {
+			t.NextFunding = time.UnixMilli(r.NextFundingTime)
 		}
 		out = append(out, t)
 	}

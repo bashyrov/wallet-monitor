@@ -18,6 +18,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
@@ -25,8 +26,9 @@ import (
 )
 
 const (
-	wsURL          = "wss://ws.okx.com:8443/ws/v5/public"
-	restTickersURL = "https://www.okx.com/api/v5/market/tickers?instType=SWAP"
+	wsURL              = "wss://ws.okx.com:8443/ws/v5/public"
+	restTickersURL     = "https://www.okx.com/api/v5/market/tickers?instType=SWAP"
+	restFundingRateURL = "https://www.okx.com/api/v5/public/funding-rate?instId="
 )
 
 type Adapter struct{}
@@ -108,8 +110,9 @@ func (a *Adapter) PongFor(_ []byte) []byte          { return nil }
 func (a *Adapter) UseLibPings() bool                { return false }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
-func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
-	var doc struct {
+func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]funding.Tick, error) {
+	// Bulk tickers — mark price, index, 24h volume (one call, all symbols).
+	var tickerDoc struct {
 		Data []struct {
 			InstID    string `json:"instId"`
 			Last      string `json:"last"`
@@ -117,11 +120,11 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			VolCcy24h string `json:"volCcy24h"`
 		} `json:"data"`
 	}
-	if err := funding.HTTPGet(ctx, restTickersURL, &doc); err != nil {
+	if err := funding.HTTPGet(ctx, restTickersURL, &tickerDoc); err != nil {
 		return nil, err
 	}
-	out := make([]funding.Tick, 0, len(doc.Data))
-	for _, r := range doc.Data {
+	byToken := make(map[string]*funding.Tick, len(tickerDoc.Data))
+	for _, r := range tickerDoc.Data {
 		if !strings.HasSuffix(r.InstID, "-USDT-SWAP") {
 			continue
 		}
@@ -129,15 +132,83 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		mark, _ := strconv.ParseFloat(r.Last, 64)
 		idx, _ := strconv.ParseFloat(r.IdxPx, 64)
 		vol, _ := strconv.ParseFloat(r.VolCcy24h, 64)
-		out = append(out, funding.Tick{
+		byToken[token] = &funding.Tick{
 			Symbol:     token,
 			MarkPrice:  mark,
 			IndexPrice: idx,
 			Volume24h:  vol,
 			IntervalH:  8,
-		})
+		}
+	}
+
+	// Per-symbol funding-rate fetch for subscribed symbols.
+	// OKX's WS funding-rate channel is event-driven — it only pushes when
+	// the rate changes (near settlement), so it cannot populate the initial
+	// rate on startup. REST fill is the only reliable source.
+	if len(symbols) > 0 {
+		type rateEntry struct {
+			token       string
+			rate        float64
+			nextFunding time.Time
+			intervalH   float64
+		}
+		entries := make(chan rateEntry, len(symbols))
+		sem := make(chan struct{}, 8) // max 8 parallel HTTP calls
+		var wg sync.WaitGroup
+		for _, sym := range symbols {
+			sym := sym
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				inst := strings.ToUpper(sym) + "-USDT-SWAP"
+				var doc struct {
+					Data []struct {
+						FundingRate     string `json:"fundingRate"`
+						NextFundingTime string `json:"nextFundingTime"`
+						FundingTime     string `json:"fundingTime"`
+					} `json:"data"`
+				}
+				if err := funding.HTTPGet(ctx, restFundingRateURL+inst, &doc); err != nil || len(doc.Data) == 0 {
+					return
+				}
+				d := doc.Data[0]
+				rate, _ := strconv.ParseFloat(d.FundingRate, 64)
+				nextMs, _ := strconv.ParseInt(d.NextFundingTime, 10, 64)
+				var nf time.Time
+				if nextMs > 0 {
+					nf = time.UnixMilli(nextMs)
+				}
+				// Derive interval from fundingTime → nextFundingTime.
+				ivl := 8.0
+				fundMs, _ := strconv.ParseInt(d.FundingTime, 10, 64)
+				if fundMs > 0 && nextMs > fundMs {
+					if h := float64(nextMs-fundMs) / 3_600_000; h >= 1 {
+						ivl = h
+					}
+				}
+				entries <- rateEntry{token: strings.ToUpper(sym), rate: rate, nextFunding: nf, intervalH: ivl}
+			}()
+		}
+		go func() { wg.Wait(); close(entries) }()
+		for e := range entries {
+			if t := byToken[e.token]; t != nil {
+				t.Rate = e.rate
+				t.NextFunding = e.nextFunding
+				t.IntervalH = e.intervalH
+			}
+		}
+	}
+
+	out := make([]funding.Tick, 0, len(byToken))
+	for _, t := range byToken {
+		out = append(out, *t)
 	}
 	return out, nil
 }
 
-func (a *Adapter) BackstopInterval() time.Duration { return 2 * time.Second }
+// 60s backstop: WS tickers channel streams mark/vol in real-time;
+// WS funding-rate only fires at settlement. REST fills rate on startup
+// and catches any WS gaps. Rate changes at most 3x/day so 60s is plenty.
+func (a *Adapter) BackstopInterval() time.Duration { return 60 * time.Second }
