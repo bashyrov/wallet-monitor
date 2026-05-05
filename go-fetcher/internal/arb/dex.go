@@ -374,7 +374,7 @@ func (c *DEXCompute) tick(ctx context.Context) {
 			// Bake top-of-book in/out — DEX side has no orderbook adapter
 			// (single mid-price from DexScreener), so the perp short leg
 			// alone drives the live values.
-			inPct, outPct := computeInOutDex(c.books, perpEx, sym, dex.Price)
+			inPct, outPct := ComputeInOutDex(c.books, perpEx, sym, dex.Price)
 			// Net/8h uses live in_pct when available; falls back to mark-
 			// based basisPct otherwise. APR is funding-only — sustainable
 			// annual return without one-shot entry pickup.

@@ -235,7 +235,7 @@ func (c *Compute) tick() {
 				// tick lands. APR is funding-only (no spread/in component) so
 				// it represents sustainable annual return, not a one-shot
 				// entry pickup.
-				inPctPtr, _ := computeInOutPair(c.books, longPE.ex, shortPE.ex, sym)
+				inPctPtr, _ := ComputeInOutPair(c.books, longPE.ex, shortPE.ex, sym)
 				entryBasis := priceSpread
 				if inPctPtr != nil {
 					entryBasis = *inPctPtr / 100.0 // computeInOutPair returns %
@@ -354,13 +354,13 @@ func (c *Compute) tick() {
 	}
 }
 
-// computeInOut is a method shim over computeInOutPair for the futures
+// computeInOut is a method shim over ComputeInOutPair for the futures
 // Compute struct (legacy receiver shape).
 func (c *Compute) computeInOut(longEx, shortEx, sym string) (*float64, *float64) {
-	return computeInOutPair(c.books, longEx, shortEx, sym)
+	return ComputeInOutPair(c.books, longEx, shortEx, sym)
 }
 
-// computeInOutPair returns top-of-book entry/exit basis as percentages.
+// ComputeInOutPair returns top-of-book entry/exit basis as percentages.
 // On a clean read it caches (in, out) keyed by the pair so a transient
 // book hiccup (WS resub, REST gap, prune→resub) returns the LAST GOOD
 // value for up to inOutStickyTTL instead of nil. Without this the
@@ -371,7 +371,7 @@ func (c *Compute) computeInOut(longEx, shortEx, sym string) (*float64, *float64)
 //	out_pct = (bestBidLong  - bestAskShort) / bestAskShort * 100
 //
 // Used by all three arb compute paths (futures / spot / dex).
-func computeInOutPair(books *cache.Store, longEx, shortEx, sym string) (*float64, *float64) {
+func ComputeInOutPair(books *cache.Store, longEx, shortEx, sym string) (*float64, *float64) {
 	if books == nil {
 		return nil, nil
 	}
@@ -437,13 +437,13 @@ func (c *inOutCacheT) get(le, se, sym string) (float64, float64, bool) {
 
 var inOutCache inOutCacheT
 
-// computeInOutDex — DEX/short variant. The "long" side has no orderbook
+// ComputeInOutDex — DEX/short variant. The "long" side has no orderbook
 // (it's a DEX with a single mid price baked into the opp at compute
 // time); only the perp short side has a book to walk. Computes:
 //
 //	in_pct  = (bestBidShort - dexPrice)   / dexPrice    * 100
 //	out_pct = (dexPrice - bestAskShort)   / bestAskShort * 100
-func computeInOutDex(books *cache.Store, shortEx, sym string, dexPrice float64) (*float64, *float64) {
+func ComputeInOutDex(books *cache.Store, shortEx, sym string, dexPrice float64) (*float64, *float64) {
 	if books == nil || dexPrice <= 0 {
 		return nil, nil
 	}

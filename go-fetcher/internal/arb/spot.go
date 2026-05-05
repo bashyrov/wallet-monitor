@@ -177,7 +177,7 @@ func (c *SpotCompute) tick(ctx context.Context) {
 				// Bake top-of-book in/out — spot leg via <ex>_spot, perp
 				// short via the bare exchange name. nil/null when either
 				// side's book isn't subscribed (frontend hides those rows).
-				inPct, outPct := computeInOutPair(c.books, spotEx+"_spot", perpEx, sym)
+				inPct, outPct := ComputeInOutPair(c.books, spotEx+"_spot", perpEx, sym)
 				// Net/8h uses live entry basis (in_pct) when available —
 				// what an entry-now would actually capture — and falls back
 				// to mark-based basisPct when orderbook tick missing. APR is
