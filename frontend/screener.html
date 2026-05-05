@@ -411,7 +411,7 @@
     <!-- Exchange status strip — sticky bottom, visible across all modes.
          Hide-state persisted in localStorage("ex-status-hidden"). -->
     <div class="alpha-status-strip" id="alpha-status-strip">
-      <span class="lbl">Exchange status</span>
+      <span class="lbl"><span class="lbl-dot" id="status-lbl-dot"></span>Exchange status</span>
       <div id="alpha-status-items" style="display:contents"></div>
       <button class="as-toggle" type="button" onclick="toggleExStatus()" title="Hide status strip" aria-label="Hide status strip">×</button>
       <button class="as-show" type="button" onclick="toggleExStatus()" title="Show exchange status">
@@ -870,6 +870,14 @@ function renderAlphaStatus(){
       <span class="d ${klass}"></span>${EX_LABEL[ex]||ex}
     </span>`;
   }).join('');
+
+  // Update overall indicator dot
+  const dot = document.getElementById('status-lbl-dot');
+  if (dot) {
+    const klasses = EXCHANGES.map(ex => (_exHealth[ex]||{}).klass || 'stale');
+    const overall = klasses.includes('stale') ? 'stale' : klasses.includes('slow') ? 'slow' : 'live';
+    dot.className = 'lbl-dot ' + overall;
+  }
 }
 
 function _reapplyCurrentMode() {
