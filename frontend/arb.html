@@ -1633,13 +1633,16 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   function _openPtBookWs() {
     if (_ptBookWs && (_ptBookWs.readyState === 0 || _ptBookWs.readyState === 1)) return;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/api/screener/ws/book?token=${Auth.getToken()}`;
+    const token = Auth.getToken();
+    if (!token) return;
+    const url = `${proto}://${location.host}/api/screener/ws/book`;
     let ws;
     try { ws = new WebSocket(url); } catch (_) { return; }
     _ptBookWs = ws;
     ws.onopen = () => {
       _ptWsBackoff = 1000;
       try {
+        ws.send(JSON.stringify({ auth: token }));
         const pairs = IS_DEX ? [_ptBookPair('short')] : [_ptBookPair('long'), _ptBookPair('short')];
         ws.send(JSON.stringify({ action: 'subscribe', pairs }));
       } catch (_) {}
@@ -2959,13 +2962,17 @@ function _bookPairFor(side){
 function _openBookWs(){
   if(_bookWs && (_bookWs.readyState===0 || _bookWs.readyState===1)) return;
   const proto=location.protocol==='https:'?'wss':'ws';
-  const url=`${proto}://${location.host}/api/screener/ws/book?token=${Auth.getToken()}`;
+  const url=`${proto}://${location.host}/api/screener/ws/book`;
+  const token=Auth.getToken();
+  if(!token) return;
   let ws;
   try{ ws=new WebSocket(url); }catch(_){ return; }
   _bookWs=ws;
   ws.onopen=()=>{
     _bookWsBackoff=1000;
     try{
+      // Auth must be the first frame; server closes 4401 otherwise.
+      ws.send(JSON.stringify({auth:token}));
       ws.send(JSON.stringify({action:'subscribe', pairs:[_bookPairFor('long'),_bookPairFor('short')]}));
     }catch(_){}
   };
