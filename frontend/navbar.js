@@ -241,8 +241,122 @@ customElements.define('app-navbar', AppNavbar);
 
 /* ─── Shared alerts popover (used by screener / arb / watchlist) ─────── */
 window.openAlertsPopover = window.openAlertsPopover || function(ev) {
+  // Pair-page custom modal wins (richer UI lives on /arb)
   if (typeof window._openAlertsModal === 'function') return window._openAlertsModal(ev);
-  if (typeof window.toast === 'function') {
-    window.toast({title: 'Alerts', sub: 'Coming soon — use /arb on a pair to set per-symbol alerts'});
-  }
+  ev && ev.stopPropagation();
+
+  // Toggle off if already open
+  let pop = document.getElementById('nb-alerts-pop');
+  if (pop && pop.classList.contains('open')) { pop.remove(); return; }
+  if (pop) pop.remove();
+
+  const anchor = (ev && ev.currentTarget) || document.querySelector('.nav-lnk-bell');
+  if (!anchor) return;
+  const r = anchor.getBoundingClientRect();
+
+  pop = document.createElement('div');
+  pop.id = 'nb-alerts-pop';
+  pop.className = 'nb-alerts-pop open';
+  pop.innerHTML = `
+    <div class="nbap-head">
+      <span class="nbap-title">Alerts</span>
+      <a href="/arb" class="nbap-add" title="Create alert (open arb page)">+ New</a>
+    </div>
+    <div class="nbap-body" id="nbap-body">
+      <div class="nbap-empty"><span class="nbap-spinner"></span></div>
+    </div>
+  `;
+  Object.assign(pop.style, {
+    position: 'fixed',
+    top: (r.bottom + 8) + 'px',
+    right: Math.max(8, window.innerWidth - r.right - 4) + 'px',
+    zIndex: '300',
+  });
+  document.body.appendChild(pop);
+
+  // Click outside to close
+  const close = () => { pop.remove(); document.removeEventListener('click', onOutside, true); };
+  const onOutside = (e) => {
+    if (pop.contains(e.target)) return;
+    if (anchor.contains(e.target)) return;
+    close();
+  };
+  setTimeout(() => document.addEventListener('click', onOutside, true), 0);
+
+  // Load alerts
+  const body = pop.querySelector('#nbap-body');
+  const dirLabel = { any: 'Any side', above: '≥ +', below: '≤ −' };
+  const modeLbl = { futures: 'L/S', spot: 'Spot', dex: 'DEX' };
+
+  const render = (alerts) => {
+    if (!Array.isArray(alerts) || !alerts.length) {
+      body.innerHTML = `
+        <div class="nbap-empty">
+          <div class="nbap-empty-ic">
+            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2a5 5 0 0 1 5 5v3l1 2H2l1-2V7a5 5 0 0 1 5-5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+          </div>
+          <div class="nbap-empty-title">No alerts yet</div>
+          <div class="nbap-empty-sub">Open any pair on /arb and set a spread threshold to get a Telegram ping.</div>
+        </div>`;
+      return;
+    }
+    body.innerHTML = alerts.map(a => {
+      const isAny = a.long_exchange === '*' && a.short_exchange === '*';
+      const pair = isAny ? 'Any pair' : `${a.long_exchange} → ${a.short_exchange}`;
+      const tIcon = (a.trigger_mode || 'speed') === 'protected' ? '🛡' : '⚡';
+      const m = modeLbl[a.mode] || 'L/S';
+      const link = `/arb?symbol=${encodeURIComponent(a.symbol)}&type=${a.mode === 'futures' ? 'long-short' : a.mode || 'long-short'}` + (isAny ? '' : `&long=${encodeURIComponent(a.long_exchange)}&short=${encodeURIComponent(a.short_exchange)}`);
+      return `
+        <div class="nbap-row" data-id="${a.id}">
+          <a href="${link}" class="nbap-row-main">
+            <div class="nbap-row-top">
+              <span class="nbap-sym">${a.symbol}</span>
+              <span class="nbap-mode">${m}</span>
+              <span class="nbap-trig">${tIcon}</span>
+            </div>
+            <div class="nbap-row-sub">
+              <span class="nbap-thr">${dirLabel[a.direction] || ''}${a.threshold}%</span>
+              <span class="nbap-pair">${pair}</span>
+            </div>
+          </a>
+          <button class="nbap-toggle ${a.enabled ? 'on' : ''}" data-id="${a.id}" data-on="${a.enabled ? '1' : '0'}" title="${a.enabled ? 'Disable' : 'Enable'}">${a.enabled ? 'ON' : 'OFF'}</button>
+          <button class="nbap-del" data-id="${a.id}" title="Delete">×</button>
+        </div>`;
+    }).join('');
+  };
+
+  const reload = async () => {
+    try {
+      const res = await Auth.apiFetch('/alerts');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const alerts = await res.json();
+      render(alerts);
+    } catch (err) {
+      body.innerHTML = `<div class="nbap-empty"><div class="nbap-empty-title">Failed to load</div><div class="nbap-empty-sub">${err.message || 'Network error'}</div></div>`;
+    }
+  };
+
+  pop.addEventListener('click', async (e) => {
+    const tog = e.target.closest('.nbap-toggle');
+    const del = e.target.closest('.nbap-del');
+    if (tog) {
+      e.preventDefault(); e.stopPropagation();
+      const id = tog.dataset.id;
+      tog.disabled = true;
+      try {
+        const r = await Auth.apiFetch(`/alerts/${id}/toggle`, { method: 'PATCH' });
+        if (r.ok) await reload();
+      } finally { tog.disabled = false; }
+    } else if (del) {
+      e.preventDefault(); e.stopPropagation();
+      const id = del.dataset.id;
+      del.disabled = true;
+      try {
+        const r = await Auth.apiFetch(`/alerts/${id}`, { method: 'DELETE' });
+        if (r.ok) await reload();
+      } finally { del.disabled = false; }
+    }
+  });
+
+  reload();
 };

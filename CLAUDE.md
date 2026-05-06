@@ -1041,6 +1041,8 @@ Third-party loggers suppressed to WARNING: httpx, httpcore, urllib3, websockets,
 43. **Lighter trade actions return errZK in Go** — keep `lighter` out of `GO_TRADE_VENUES` so the dispatcher falls through to Python.
 44. **Mirror-pair tolerance is 12%** (not 5%) — bumped in `_pnl_can_pair` after UX feedback that 5% missed legitimate pairs.
 45. **Anon screener gate** — 2-min preview from first visit (`localStorage.anon_first_seen_at`); user can wipe localStorage to reset.
+46. **`app` and `app2` are separate compose services with `build: .` each** — they get separate image tags (`wallet-monitor-app` vs `wallet-monitor-app2`). `docker compose build app` rebuilds only the first; if you skip `app2`, half the traffic keeps running stale code. Always use `./scripts/deploy.sh backend` (it does both with health checks) or explicitly `docker compose build app app2`. We hit this with the alerts service: `app` had the new atomic-claim code, `app2` had the old code → ~5 duplicate TG messages per fire because half the workers raced freely.
+47. **Alerts are one-shot: auto-disable after first successful TG send** — see `_claim_alert_for_fire` (`backend/services/alert_service.py`). Atomic SQL UPDATE…WHERE enabled=TRUE serialises the claim across all 8 uvicorn workers (2 replicas × 4 workers). Telegram retries are intentionally OFF (no idempotency key on `sendMessage` → retry creates a duplicate). Fail-closed: if TG errors, the alert stays disabled. User re-enables from the navbar bell popover.
 
 ---
 
