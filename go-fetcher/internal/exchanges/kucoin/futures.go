@@ -46,6 +46,11 @@ func (a *Futures) URL(ctx context.Context) (string, error) {
 	return u, err
 }
 
+// kucoinBatch — symbols per subscribe frame. KuCoin supports comma-separated
+// topics; batching cuts frame count 10× (100 syms → 10 frames) and stays
+// well under any per-connection subscribe rate limit.
+const kucoinBatch = 10
+
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	topics := make([]string, len(symbols))
 	for i, s := range symbols {
@@ -55,14 +60,16 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 		}
 		topics[i] = token + "USDTM"
 	}
-	// One frame per topic — KuCoin allows comma-separated lists, but
-	// individual frames make the rate-limiter (SubscribeDelay) trivial.
-	frames := make([][]byte, 0, len(topics))
-	for i, t := range topics {
+	frames := make([][]byte, 0, (len(topics)+kucoinBatch-1)/kucoinBatch)
+	for i := 0; i < len(topics); i += kucoinBatch {
+		end := i + kucoinBatch
+		if end > len(topics) {
+			end = len(topics)
+		}
 		f := map[string]any{
 			"id":             time.Now().UnixNano() + int64(i),
 			"type":           "subscribe",
-			"topic":          "/contractMarket/level2Depth50:" + t,
+			"topic":          "/contractMarket/level2Depth50:" + strings.Join(topics[i:end], ","),
 			"privateChannel": false,
 			"response":       true,
 		}

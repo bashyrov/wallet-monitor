@@ -14,7 +14,6 @@ package kucoin
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -37,9 +36,9 @@ type spotAuthClient struct {
 func (c *spotAuthClient) FetchURL(ctx context.Context) (string, time.Duration, error) {
 	c.mu.Lock()
 	if c.cached != nil && time.Now().Before(c.cached.expires.Add(-30*time.Second)) {
-		u, p := c.cached.url, c.cached.pingInt
+		endpoint, token, pingInt := c.cached.endpoint, c.cached.token, c.cached.pingInt
 		c.mu.Unlock()
-		return u, p, nil
+		return buildKuCoinURL(endpoint, token, "avls"), pingInt, nil
 	}
 	c.mu.Unlock()
 
@@ -75,22 +74,19 @@ func (c *spotAuthClient) FetchURL(ctx context.Context) (string, time.Duration, e
 		return "", 0, errors.New("kucoin-spot bullet-public: bad response")
 	}
 	srv := doc.Data.Servers[0]
-	connectID := fmt.Sprintf("avls-%d", time.Now().UnixNano())
-	url := srv.Endpoint
-	if strings.Contains(url, "?") {
-		url += "&token=" + doc.Data.Token + "&connectId=" + connectID
-	} else {
-		url += "?token=" + doc.Data.Token + "&connectId=" + connectID
-	}
 	pingInt := time.Duration(srv.PingInterval) * time.Millisecond
 	if pingInt <= 0 {
 		pingInt = 18 * time.Second
 	}
-	expires := time.Now().Add(50 * time.Minute)
 	c.mu.Lock()
-	c.cached = &tokenInfo{url: url, pingInt: pingInt, expires: expires}
+	c.cached = &tokenInfo{
+		endpoint: srv.Endpoint,
+		token:    doc.Data.Token,
+		pingInt:  pingInt,
+		expires:  time.Now().Add(50 * time.Minute),
+	}
 	c.mu.Unlock()
-	return url, pingInt, nil
+	return buildKuCoinURL(srv.Endpoint, doc.Data.Token, "avls"), pingInt, nil
 }
 
 type Spot struct {
@@ -113,13 +109,20 @@ func (a *Spot) URL(ctx context.Context) (string, error) {
 }
 
 func (a *Spot) BuildSubscribe(symbols []string) [][]byte {
-	frames := make([][]byte, 0, len(symbols))
-	for i, s := range symbols {
-		topic := "/spotMarket/level2Depth50:" + strings.ToUpper(s) + "-USDT"
+	frames := make([][]byte, 0, (len(symbols)+kucoinBatch-1)/kucoinBatch)
+	for i := 0; i < len(symbols); i += kucoinBatch {
+		end := i + kucoinBatch
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		topics := make([]string, end-i)
+		for j, s := range symbols[i:end] {
+			topics[j] = strings.ToUpper(s) + "-USDT"
+		}
 		f := map[string]any{
 			"id":             time.Now().UnixNano() + int64(i),
 			"type":           "subscribe",
-			"topic":          topic,
+			"topic":          "/spotMarket/level2Depth50:" + strings.Join(topics, ","),
 			"privateChannel": false,
 			"response":       true,
 		}

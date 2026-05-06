@@ -26,22 +26,20 @@ import (
 	"context"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-// Combined-stream form lets one connection carry many symbols and
-// returns frames wrapped as {"stream":"btcusdt@depth20@100ms","data":{...}}
-// — the standard format the futures adapter's Parse already handles.
+// Combined-stream base — bare endpoint, no query params. All stream
+// subscriptions go through SUBSCRIBE frames only (no URL-based streams).
+// This avoids double-subscription (URL streams + SUBSCRIBE = 2× the
+// same streams), which was causing Binance to close with 1008.
 const spotCombinedBase = "wss://stream.binance.com:9443/stream"
 
 type Spot struct {
 	store *cache.Store
-	mu    sync.Mutex
-	syms  []string
 }
 
 func NewSpot(store *cache.Store) *ws.Runner {
@@ -53,42 +51,23 @@ func NewSpot(store *cache.Store) *ws.Runner {
 
 func (a *Spot) Name() string { return "binance_spot" }
 
-// URL — combined-stream URL is built from the symbol set we know about
-// (populated when the symbol manager calls BuildSubscribe). On first
-// connect (no symbols yet) we point at a no-op stream so the dial
-// succeeds; the symbol manager's reconnect-on-symbol-change logic will
-// re-dial with the actual list as soon as prewarm lands.
+// URL — always the bare combined-stream endpoint. Streams are attached
+// via SUBSCRIBE frames in BuildSubscribe, not baked into the URL.
+// Previously we embedded streams in the URL AND sent a SUBSCRIBE frame,
+// resulting in double-subscription (2× the same streams) which caused
+// Binance to close with 1008 policy violation.
 func (a *Spot) URL(_ context.Context) (string, error) {
-	a.mu.Lock()
-	syms := a.syms
-	a.mu.Unlock()
-	if len(syms) == 0 {
-		// Subscribe to BTC by default so the dial succeeds. Re-URL
-		// happens on next symbol-set change.
-		return spotCombinedBase + "?streams=btcusdt@depth20@100ms", nil
-	}
-	parts := make([]string, len(syms))
-	for i, s := range syms {
-		parts[i] = strings.ToLower(s) + "usdt@depth20@100ms"
-	}
-	return spotCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
+	return spotCombinedBase, nil
 }
 
-// BuildSubscribe — capture the symbol list (so URL() can rebuild on
-// reconnect) AND emit a SUBSCRIBE frame to bind the streams on the
-// already-open connection. The URL was built at dial-time with whatever
-// symbols we knew then (often just the default BTC fallback); the
-// runtime SUBSCRIBE attaches the rest. Binance combined-stream accepts
-// SUBSCRIBE frames the same way the bare /ws endpoint does.
+// BuildSubscribe sends SUBSCRIBE frames only — no URL-based stream
+// selection. Binance combined-stream accepts SUBSCRIBE on the bare
+// /stream endpoint.
 func (a *Spot) BuildSubscribe(symbols []string) [][]byte {
-	a.mu.Lock()
-	a.syms = append(a.syms[:0], symbols...)
-	a.mu.Unlock()
 	if len(symbols) == 0 {
 		return nil
 	}
-	// Same 200-stream chunk limit as the futures adapter — Binance's
-	// public WS rejects oversized SUBSCRIBE frames.
+	// Binance public WS rejects oversized SUBSCRIBE frames; 200 per chunk.
 	const chunkSize = 200
 	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()

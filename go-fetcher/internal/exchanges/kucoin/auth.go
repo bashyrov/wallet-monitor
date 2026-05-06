@@ -20,9 +20,22 @@ import (
 const bulletEndpoint = "https://api-futures.kucoin.com/api/v1/bullet-public"
 
 type tokenInfo struct {
-	url     string
-	pingInt time.Duration
-	expires time.Time
+	endpoint string        // WS server endpoint, without token/connectId
+	token    string
+	pingInt  time.Duration
+	expires  time.Time
+}
+
+// buildKuCoinURL assembles the final WS URL with a fresh connectId each call.
+// connectId must be unique per connection — reusing it across reconnects causes
+// the server to reject or reset the session mid-subscribe.
+func buildKuCoinURL(endpoint, token, prefix string) string {
+	connectID := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	sep := "?"
+	if strings.Contains(endpoint, "?") {
+		sep = "&"
+	}
+	return endpoint + sep + "token=" + token + "&connectId=" + connectID
 }
 
 type authClient struct {
@@ -33,9 +46,9 @@ type authClient struct {
 func (c *authClient) FetchURL(ctx context.Context) (string, time.Duration, error) {
 	c.mu.Lock()
 	if c.cached != nil && time.Now().Before(c.cached.expires.Add(-30*time.Second)) {
-		u, p := c.cached.url, c.cached.pingInt
+		endpoint, token, pingInt := c.cached.endpoint, c.cached.token, c.cached.pingInt
 		c.mu.Unlock()
-		return u, p, nil
+		return buildKuCoinURL(endpoint, token, "avlf"), pingInt, nil
 	}
 	c.mu.Unlock()
 
@@ -73,20 +86,17 @@ func (c *authClient) FetchURL(ctx context.Context) (string, time.Duration, error
 		return "", 0, errors.New("kucoin bullet-public: bad response")
 	}
 	srv := doc.Data.Servers[0]
-	connectID := fmt.Sprintf("avlf-%d", time.Now().UnixNano())
-	url := srv.Endpoint
-	if strings.Contains(url, "?") {
-		url += "&token=" + doc.Data.Token + "&connectId=" + connectID
-	} else {
-		url += "?token=" + doc.Data.Token + "&connectId=" + connectID
-	}
 	pingInt := time.Duration(srv.PingInterval) * time.Millisecond
 	if pingInt <= 0 {
 		pingInt = 18 * time.Second
 	}
-	expires := time.Now().Add(50 * time.Minute) // KuCoin tokens last ~1h
 	c.mu.Lock()
-	c.cached = &tokenInfo{url: url, pingInt: pingInt, expires: expires}
+	c.cached = &tokenInfo{
+		endpoint: srv.Endpoint,
+		token:    doc.Data.Token,
+		pingInt:  pingInt,
+		expires:  time.Now().Add(50 * time.Minute),
+	}
 	c.mu.Unlock()
-	return url, pingInt, nil
+	return buildKuCoinURL(srv.Endpoint, doc.Data.Token, "avlf"), pingInt, nil
 }

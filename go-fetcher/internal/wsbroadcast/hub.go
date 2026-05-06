@@ -79,7 +79,9 @@ func (h *Hub) deregister(c *client) {
 	delete(h.clients, c)
 	h.mu.Unlock()
 	close(c.done)
-	close(c.outbox)
+	// c.outbox is intentionally NOT closed here. Broadcast() and OnBookUpdate()
+	// hold stale client snapshots and would panic on send-to-closed-channel.
+	// runWriter exits cleanly via <-c.done instead.
 	_ = c.conn.Close()
 	log.L().Debug().Str("ch", h.name).Uint64("id", c.id).Int("uid", c.uid).
 		Int("total", len(h.clients)).Msg("ws disconnect")
