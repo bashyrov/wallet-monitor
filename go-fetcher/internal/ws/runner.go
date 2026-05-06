@@ -18,6 +18,13 @@ import (
 	wmlog "github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
 
+// gzipPool reuses gzip.Reader across frames for adapters that use
+// gzip-compressed streams (HTX, BingX). Saves one alloc + header parse
+// per frame on hot paths.
+var gzipPool = sync.Pool{
+	New: func() any { return (*gzip.Reader)(nil) },
+}
+
 // staleThreshold — max time without a single inbound frame before we
 // force-close and reconnect. Many edges keep TCP up but stop delivering
 // (bug #20).
@@ -388,13 +395,26 @@ func (r *Runner) staleWatchdog(ctx context.Context, conn *websocket.Conn) {
 }
 
 // gunzip — decompress one gzip-encoded message. HTX/BingX use this.
+// Pools the gzip.Reader to avoid per-frame allocation overhead.
 func gunzip(b []byte) ([]byte, error) {
-	r, err := gzip.NewReader(bytes.NewReader(b))
-	if err != nil {
-		return nil, err
+	r, _ := gzipPool.Get().(*gzip.Reader)
+	br := bytes.NewReader(b)
+	if r == nil {
+		var err error
+		r, err = gzip.NewReader(br)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if err := r.Reset(br); err != nil {
+			gzipPool.Put(r)
+			return nil, err
+		}
 	}
-	defer r.Close()
-	return io.ReadAll(r)
+	out, err := io.ReadAll(r)
+	_ = r.Close()
+	gzipPool.Put(r)
+	return out, err
 }
 
 // sleepCtx blocks for d or until ctx is cancelled. Returns false when the

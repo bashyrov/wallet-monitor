@@ -811,6 +811,12 @@ thead th .sort-arrow { margin-left: 4px; opacity: .4; }
 thead th.sorted .sort-arrow { opacity: 1; color: var(--green); }
 tbody tr { border-bottom: 1px solid rgba(34,34,42,.6); transition: background .12s; }
 tbody tr:hover { background: var(--surface); }
+@keyframes _arb-row-in { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:translateY(0); } }
+@keyframes _cell-up    { 0% { background:rgba(26,255,171,.18); } 100% { background:transparent; } }
+@keyframes _cell-down  { 0% { background:rgba(255,80,80,.15);  } 100% { background:transparent; } }
+.arb-row-enter { animation: _arb-row-in .22s ease forwards; }
+.cell-flash-up   { animation: _cell-up   .7s ease forwards; }
+.cell-flash-down { animation: _cell-down .7s ease forwards; }
 tbody td { padding: 11px 10px; font-size: 13px; }
 .td-symbol, .td-price, .td-rate, .td-apr, .td-next, .td-gross, .td-spread, .td-fees, .td-net, .td-vol { white-space: nowrap; }
 
