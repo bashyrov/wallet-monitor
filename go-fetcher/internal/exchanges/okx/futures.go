@@ -1,11 +1,10 @@
 // Package okx implements the OKX V5 perp orderbook WS.
 //
-// Channel: books50-l2-tbt — tick-by-tick L2 orderbook, 50 levels.
-// First push is a full snapshot (action="snapshot"), subsequent frames
-// are incremental deltas (action="update"). Wire format is identical to
-// the older "books" channel; only update frequency differs:
-//   books         → 400ms cap (too slow for the arb page)
-//   books50-l2-tbt → every book change (real-time, ~10-50ms on BTC)
+// Channel: books — full L2 orderbook, ~400ms update cadence.
+// books50-l2-tbt is tick-by-tick (10-50ms) but requires authentication
+// (error code 60011). books is the public equivalent: same snapshot+delta
+// wire format, same action field, just slower cadence. 400ms is plenty
+// for the screener UI; the arb delta computation runs at 500ms anyway.
 // Symbol form: {BASE}-USDT-SWAP.
 //
 // URL: wss://ws.okx.com:8443/ws/v5/public
@@ -86,7 +85,7 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 		args := make([]map[string]string, end-i)
 		for j, s := range symbols[i:end] {
 			args[j] = map[string]string{
-				"channel": "books50-l2-tbt",
+				"channel": "books",
 				"instId":  strings.ToUpper(s) + a.instSuffix,
 			}
 		}
@@ -117,10 +116,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if msg.Event != "" {
 		return nil, nil
 	}
-	switch msg.Arg.Channel {
-	case "books", "books50-l2-tbt":
-		// handled below
-	default:
+	if msg.Arg.Channel != "books" {
 		return nil, nil
 	}
 	if !strings.HasSuffix(msg.Arg.InstID, a.instSuffix) {
