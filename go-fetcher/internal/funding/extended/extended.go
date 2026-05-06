@@ -51,11 +51,11 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			Status string `json:"status"`
 			Active bool   `json:"active"`
 			Stats  struct {
-				LastPrice      float64 `json:"lastPrice"`
-				MarkPrice      float64 `json:"markPrice"`
-				FundingRate    float64 `json:"fundingRate"`
-				DailyVolume    float64 `json:"dailyVolume"`
-				NextFundingRate int64  `json:"nextFundingRate"` // unix ms
+				LastPrice       interface{} `json:"lastPrice"`       // API returns string
+				MarkPrice       interface{} `json:"markPrice"`       // API returns string
+				FundingRate     interface{} `json:"fundingRate"`     // API returns string
+				DailyVolume     interface{} `json:"dailyVolume"`     // API returns string
+				NextFundingRate int64       `json:"nextFundingRate"` // unix ms, numeric
 			} `json:"marketStats"`
 		} `json:"data"`
 	}
@@ -75,11 +75,12 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		if token == "" {
 			continue
 		}
-		price := m.Stats.MarkPrice
+		price := funding.ParseFloat(m.Stats.MarkPrice)
 		if price == 0 {
-			price = m.Stats.LastPrice
+			price = funding.ParseFloat(m.Stats.LastPrice)
 		}
-		if price <= 0 || m.Stats.FundingRate == 0 {
+		rate := funding.ParseFloat(m.Stats.FundingRate)
+		if price <= 0 || rate == 0 {
 			continue
 		}
 		var nextFunding time.Time
@@ -88,9 +89,9 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		}
 		out = append(out, funding.Tick{
 			Symbol:      token,
-			Rate:        m.Stats.FundingRate,
+			Rate:        rate,
 			MarkPrice:   price,
-			Volume24h:   m.Stats.DailyVolume,
+			Volume24h:   funding.ParseFloat(m.Stats.DailyVolume),
 			NextFunding: nextFunding,
 			IntervalH:   1.0,
 		})

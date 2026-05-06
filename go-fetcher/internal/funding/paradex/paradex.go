@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
@@ -49,11 +48,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 
 	var doc struct {
 		Results []struct {
-			Symbol    string  `json:"symbol"`
-			MarkPrice float64 `json:"mark_price"`
-			// Paradex also sends strings — handle via interface below
-			FundingRate interface{} `json:"funding_rate"`
-			Volume24h   float64     `json:"volume_24h"`
+			Symbol      string      `json:"symbol"`
+			MarkPrice   interface{} `json:"mark_price"`   // Paradex sends strings
+			FundingRate interface{} `json:"funding_rate"` // Paradex sends strings
+			Volume24h   interface{} `json:"volume_24h"`   // Paradex sends strings
 		} `json:"results"`
 	}
 	if err := sonic.Unmarshal(body, &doc); err != nil {
@@ -73,15 +71,17 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			continue
 		}
 		base := strings.TrimSuffix(r.Symbol, suffix)
-		if base == "" || r.MarkPrice <= 0 {
+		price := funding.ParseFloat(r.MarkPrice)
+		if base == "" || price <= 0 {
 			continue
 		}
-		rate := toFloat64(r.FundingRate)
+		rate := funding.ParseFloat(r.FundingRate)
+		vol := funding.ParseFloat(r.Volume24h) * price // volume_24h is in base units → USD
 		out = append(out, funding.Tick{
 			Symbol:      base,
 			Rate:        rate,
-			MarkPrice:   r.MarkPrice,
-			Volume24h:   r.Volume24h * r.MarkPrice,
+			MarkPrice:   price,
+			Volume24h:   vol,
 			NextFunding: nextFunding,
 			IntervalH:   intervalH,
 		})
@@ -93,18 +93,6 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 }
 
 func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Minute }
-
-func toFloat64(v interface{}) float64 {
-	switch x := v.(type) {
-	case float64:
-		return x
-	case string:
-		var f float64
-		_ = sonic.Unmarshal([]byte(x), &f)
-		return f
-	}
-	return 0
-}
 
 func getJSON(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

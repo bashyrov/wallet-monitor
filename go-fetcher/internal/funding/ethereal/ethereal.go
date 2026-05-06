@@ -47,11 +47,11 @@ func (a *Adapter) UseLibPings() bool                       { return false }
 func (a *Adapter) DecompressGzip() bool                    { return false }
 
 type productItem struct {
-	ID             string  `json:"id"`
-	BaseTokenName  string  `json:"baseTokenName"`
-	FundingRate1h  float64 `json:"fundingRate1h"`
-	Status         string  `json:"status"`
-	OpenInterest   float64 `json:"openInterest"`
+	ID            string      `json:"id"`
+	BaseTokenName string      `json:"baseTokenName"`
+	FundingRate1h interface{} `json:"fundingRate1h"` // API returns string
+	Status        string      `json:"status"`
+	OpenInterest  interface{} `json:"openInterest"` // API returns string
 }
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
@@ -83,8 +83,8 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	}
 	var priceResp struct {
 		Data []struct {
-			ProductID   string  `json:"productId"`
-			OraclePrice float64 `json:"oraclePrice"`
+			ProductID   string      `json:"productId"`
+			OraclePrice interface{} `json:"oraclePrice"` // API returns string
 		} `json:"data"`
 	}
 	if err := sonic.Unmarshal(body, &priceResp); err != nil {
@@ -92,8 +92,8 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	}
 	priceByID := make(map[string]float64, len(priceResp.Data))
 	for _, mp := range priceResp.Data {
-		if mp.OraclePrice > 0 {
-			priceByID[mp.ProductID] = mp.OraclePrice
+		if p := funding.ParseFloat(mp.OraclePrice); p > 0 {
+			priceByID[mp.ProductID] = p
 		}
 	}
 
@@ -102,18 +102,20 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 
 	out := make([]funding.Tick, 0, len(products))
 	for _, p := range products {
-		if p.Status != "ACTIVE" || p.FundingRate1h == 0 || p.BaseTokenName == "" {
+		rate := funding.ParseFloat(p.FundingRate1h)
+		if p.Status != "ACTIVE" || rate == 0 || p.BaseTokenName == "" {
 			continue
 		}
 		price := priceByID[p.ID]
 		if price <= 0 {
 			continue
 		}
+		oi := funding.ParseFloat(p.OpenInterest)
 		out = append(out, funding.Tick{
 			Symbol:      strings.ToUpper(p.BaseTokenName),
-			Rate:        p.FundingRate1h,
+			Rate:        rate,
 			MarkPrice:   price,
-			OpenIntUSD:  p.OpenInterest * price,
+			OpenIntUSD:  oi * price,
 			NextFunding: nextFunding,
 			IntervalH:   1.0,
 		})

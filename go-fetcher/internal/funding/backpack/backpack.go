@@ -101,10 +101,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		ivlH[m.Symbol] = h
 	}
 
-	// tickers → quoteVolume per _USDC_PERP symbol
+	// tickers → quoteVolume per _USDC_PERP symbol (returned as string by API)
 	var tickers []struct {
-		Symbol      string  `json:"symbol"`
-		QuoteVolume float64 `json:"quoteVolume"`
+		Symbol      string      `json:"symbol"`
+		QuoteVolume interface{} `json:"quoteVolume"`
 	}
 	if err := sonic.Unmarshal(tkRes.body, &tickers); err != nil {
 		return nil, err
@@ -112,16 +112,16 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	volBySymbol := make(map[string]float64, len(tickers))
 	for _, t := range tickers {
 		if strings.HasSuffix(t.Symbol, "_USDC_PERP") {
-			volBySymbol[t.Symbol] = t.QuoteVolume
+			volBySymbol[t.Symbol] = funding.ParseFloat(t.QuoteVolume)
 		}
 	}
 
-	// markPrices → rate, price, nextFundingTimestamp
+	// markPrices → rate, price, nextFundingTimestamp (rate/price returned as strings)
 	var markPrices []struct {
-		Symbol               string  `json:"symbol"`
-		MarkPrice            float64 `json:"markPrice"`
-		FundingRate          float64 `json:"fundingRate"`
-		NextFundingTimestamp int64   `json:"nextFundingTimestamp"` // ms
+		Symbol               string      `json:"symbol"`
+		MarkPrice            interface{} `json:"markPrice"`
+		FundingRate          interface{} `json:"fundingRate"`
+		NextFundingTimestamp int64       `json:"nextFundingTimestamp"` // ms, numeric
 	}
 	if err := sonic.Unmarshal(mpRes.body, &markPrices); err != nil {
 		return nil, err
@@ -140,7 +140,9 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		if _, ok := ivlH[mp.Symbol]; !ok {
 			continue // not a recognised PERP market
 		}
-		if mp.MarkPrice <= 0 || mp.FundingRate == 0 {
+		price := funding.ParseFloat(mp.MarkPrice)
+		rate := funding.ParseFloat(mp.FundingRate)
+		if price <= 0 || rate == 0 {
 			continue
 		}
 		var nextFunding time.Time
@@ -149,8 +151,8 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		}
 		out = append(out, funding.Tick{
 			Symbol:      base,
-			Rate:        mp.FundingRate,
-			MarkPrice:   mp.MarkPrice,
+			Rate:        rate,
+			MarkPrice:   price,
 			Volume24h:   volBySymbol[mp.Symbol],
 			NextFunding: nextFunding,
 			IntervalH:   ivlH[mp.Symbol],

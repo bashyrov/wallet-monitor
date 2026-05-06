@@ -16,8 +16,24 @@ package funding
 
 import (
 	"context"
+	"strconv"
 	"time"
 )
+
+// ParseFloat converts an API value that may be a JSON number or a JSON string
+// to float64. Returns 0 on any parse failure. Adapters whose APIs encode
+// numbers as strings (Paradex, Backpack, Ethereal, Extended) use this instead
+// of bare float64 struct fields, which would silently decode to 0.
+func ParseFloat(v interface{}) float64 {
+	switch x := v.(type) {
+	case float64:
+		return x
+	case string:
+		f, _ := strconv.ParseFloat(x, 64)
+		return f
+	}
+	return 0
+}
 
 // Tick is one funding-rate observation.
 //
