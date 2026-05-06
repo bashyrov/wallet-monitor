@@ -2212,6 +2212,106 @@ function renderFunding() {
 }
 
 // ── render arbitrage ───────────────────────────────────────────────────────────
+function _arbRowCells(r) {
+  const netCls   = r.net_profit > 0 ? 'net-pos' : 'net-neg';
+  const netSign  = r.net_profit >= 0 ? '+' : '';
+  const grossSign = r.gross_funding >= 0 ? '+' : '';
+  const validBadge = r.valid_price
+    ? '<span class="badge-valid">✓ valid</span>'
+    : '<span class="badge-invalid">⚠ spread</span>';
+  const lhealth = _exHealth[r.long_exchange] || {};
+  const shealth = _exHealth[r.short_exchange] || {};
+  const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.long_exchange} · ${lhealth.age_s != null ? lhealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
+  const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange} · ${shealth.age_s != null ? shealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
+  const lsDetailUrl = `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}`;
+  return `
+    <td class="td-symbol"><a href="${lsDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
+    <td data-cell="long" data-v="">
+      <div class="arb-pair"><div class="arb-ex-rate"><span class="arb-label">long</span>${fmtExRate(r.long_exchange, r.long_rate, r.symbol)}${ldot}</div>
+      <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.long_price)} · <span style="font-family:var(--mono)">${fmtVol(r.long_volume)}</span></div></div>
+    </td>
+    <td data-cell="short" data-v="">
+      <div class="arb-pair"><div class="arb-ex-rate"><span class="arb-label">short</span>${fmtExRate(r.short_exchange, r.short_rate, r.symbol)}${sdot}</div>
+      <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.short_price)} · <span style="font-family:var(--mono)">${fmtVol(r.short_volume)}</span></div></div>
+    </td>
+    <td class="td-inout" data-cell="in"  data-v="">${_fmtIO(r.in_pct)}</td>
+    <td class="td-inout" data-cell="out" data-v="">${_fmtIO(r.out_pct)}</td>
+    <td class="td-gross" data-cell="gross" data-v="">${grossSign}${r.gross_funding.toFixed(4)}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
+    <td class="td-fees"><span title="long: ${r.fee_long}% + short: ${r.fee_short}%">−${r.total_fees.toFixed(4)}%</span></td>
+    <td data-cell="net"><span class="td-net ${netCls}" data-v="${r.net_profit}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
+    <td class="td-status">${validBadge}</td>
+    <td style="display:flex;gap:4px;align-items:center">
+      ${_starBtn(r.symbol, r.long_exchange, r.short_exchange)}
+      <a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page" onmouseenter="_arbPrefetch(this.href)" onclick="event.stopPropagation()">↗</a>
+    </td>`;
+}
+
+function _makeArbTr(r) {
+  const lsDetailUrl = `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}`;
+  const tr = document.createElement('tr');
+  tr.dataset.rowKey = _arbKey(r);
+  tr.dataset.longEx  = r.long_exchange;
+  tr.dataset.shortEx = r.short_exchange;
+  tr.dataset.symbol  = r.symbol;
+  tr.style.cursor = 'pointer';
+  tr.onclick = () => window.open(lsDetailUrl, '_blank');
+  tr.innerHTML = _arbRowCells(r);
+  return tr;
+}
+
+function _patchArbTr(tr, r) {
+  const lhealth = _exHealth[r.long_exchange] || {};
+  const shealth = _exHealth[r.short_exchange] || {};
+  const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.long_exchange} · ${lhealth.age_s != null ? lhealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
+  const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange} · ${shealth.age_s != null ? shealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
+
+  function setText(cell, html, key) {
+    if (!cell || cell.dataset.v === key) return;
+    cell.innerHTML = html;
+    cell.dataset.v = key;
+  }
+
+  const longKey = `${r.long_rate}|${r.long_price}|${r.long_volume}|${lhealth.klass || ''}`;
+  setText(tr.querySelector('[data-cell="long"]'),
+    `<div class="arb-pair"><div class="arb-ex-rate"><span class="arb-label">long</span>${fmtExRate(r.long_exchange, r.long_rate, r.symbol)}${ldot}</div><div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.long_price)} · <span style="font-family:var(--mono)">${fmtVol(r.long_volume)}</span></div></div>`,
+    longKey);
+
+  const shortKey = `${r.short_rate}|${r.short_price}|${r.short_volume}|${shealth.klass || ''}`;
+  setText(tr.querySelector('[data-cell="short"]'),
+    `<div class="arb-pair"><div class="arb-ex-rate"><span class="arb-label">short</span>${fmtExRate(r.short_exchange, r.short_rate, r.symbol)}${sdot}</div><div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.short_price)} · <span style="font-family:var(--mono)">${fmtVol(r.short_volume)}</span></div></div>`,
+    shortKey);
+
+  const inHtml = _fmtIO(r.in_pct);
+  setText(tr.querySelector('[data-cell="in"]'), inHtml, inHtml);
+
+  const outHtml = _fmtIO(r.out_pct);
+  setText(tr.querySelector('[data-cell="out"]'), outHtml, outHtml);
+
+  const grossVal = r.gross_funding.toFixed(4);
+  setText(tr.querySelector('[data-cell="gross"]'),
+    `${r.gross_funding >= 0 ? '+' : ''}${grossVal}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span>`,
+    grossVal);
+
+  const netCell = tr.querySelector('[data-cell="net"]');
+  if (netCell) {
+    const span = netCell.querySelector('.td-net');
+    if (span) {
+      const netVal = r.net_profit.toFixed(4);
+      if (span.dataset.v !== netVal) {
+        const prev = parseFloat(span.dataset.v);
+        span.dataset.v = netVal;
+        span.textContent = (r.net_profit >= 0 ? '+' : '') + netVal + '%';
+        span.className = `td-net ${r.net_profit > 0 ? 'net-pos' : 'net-neg'}`;
+        if (!isNaN(prev)) {
+          span.classList.remove('cell-flash-up', 'cell-flash-down');
+          void span.offsetWidth;
+          span.classList.add(r.net_profit > prev ? 'cell-flash-up' : 'cell-flash-down');
+        }
+      }
+    }
+  }
+}
+
 function renderArb() {
   const tbody = document.getElementById('tbody-arb');
   const start = _pageA * PAGE_SIZE;
@@ -2223,54 +2323,25 @@ function renderArb() {
     renderArbCards();
     return;
   }
-  tbody.innerHTML = page.map(r => {
-    const netCls = r.net_profit > 0 ? 'net-pos' : 'net-neg';
-    const netSign = r.net_profit >= 0 ? '+' : '';
-    const grossSign = r.gross_funding >= 0 ? '+' : '';
-    const validBadge = r.valid_price
-      ? '<span class="badge-valid">✓ valid</span>'
-      : '<span class="badge-invalid">⚠ spread</span>';
-
-    const lhealth = _exHealth[r.long_exchange] || {};
-    const shealth = _exHealth[r.short_exchange] || {};
-    const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.long_exchange} · ${lhealth.age_s != null ? lhealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
-    const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange} · ${shealth.age_s != null ? shealth.age_s.toFixed(1)+'s' : 'no data'}"></span>`;
-
-    const lsDetailUrl = `/arb?type=long-short&symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}`;
-    return `<tr data-long-ex="${r.long_exchange}" data-short-ex="${r.short_exchange}" data-symbol="${r.symbol}" style="cursor:pointer" onclick="window.open('${lsDetailUrl}','_blank')">
-      <td class="td-symbol"><a href="${lsDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
-      <td>
-        <div class="arb-pair">
-          <div class="arb-ex-rate">
-            <span class="arb-label">long</span>
-            ${fmtExRate(r.long_exchange, r.long_rate, r.symbol)}${ldot}
-          </div>
-          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.long_price)} · <span style="font-family:var(--mono)">${fmtVol(r.long_volume)}</span></div>
-        </div>
-      </td>
-      <td>
-        <div class="arb-pair">
-          <div class="arb-ex-rate">
-            <span class="arb-label">short</span>
-            ${fmtExRate(r.short_exchange, r.short_rate, r.symbol)}${sdot}
-          </div>
-          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.short_price)} · <span style="font-family:var(--mono)">${fmtVol(r.short_volume)}</span></div>
-        </div>
-      </td>
-      <td class="td-inout">${_fmtIO(r.in_pct)}</td>
-      <td class="td-inout">${_fmtIO(r.out_pct)}</td>
-      <td class="td-gross">${grossSign}${r.gross_funding.toFixed(4)}%<br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
-      <td class="td-fees">
-        <span title="long: ${r.fee_long}% + short: ${r.fee_short}%">−${r.total_fees.toFixed(4)}%</span>
-      </td>
-      <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
-      <td class="td-status">${validBadge}</td>
-      <td style="display:flex;gap:4px;align-items:center">
-        ${_starBtn(r.symbol, r.long_exchange, r.short_exchange)}
-        <a href="/arb?symbol=${esc(r.symbol)}&long=${esc(r.long_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail page" onmouseenter="_arbPrefetch(this.href)" onclick="event.stopPropagation()">↗</a>
-      </td>
-    </tr>`;
-  }).join('');
+  // Keyed reconciliation — only add/remove/move rows that actually changed position,
+  // patch cells in-place for everything else. Eliminates full-tbody innerHTML thrash.
+  const byKey = new Map();
+  for (const tr of tbody.querySelectorAll('tr[data-row-key]')) byKey.set(tr.dataset.rowKey, tr);
+  const wanted = new Set(page.map(r => _arbKey(r)));
+  for (const [k, tr] of byKey) { if (!wanted.has(k)) tr.remove(); }
+  for (let i = 0; i < page.length; i++) {
+    const r   = page[i];
+    const key = _arbKey(r);
+    let tr = byKey.get(key);
+    if (!tr) {
+      tr = _makeArbTr(r);
+      tr.classList.add('arb-row-enter');
+    } else {
+      _patchArbTr(tr, r);
+    }
+    const ref = tbody.children[i];
+    if (ref !== tr) tbody.insertBefore(tr, ref || null);
+  }
   renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');
   renderArbCards();
   // in/out comes baked into row data — no fetch needed.
