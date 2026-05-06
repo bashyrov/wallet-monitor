@@ -4,7 +4,7 @@
 // returns {"results":[{symbol, mark_price, funding_rate, volume_24h, ...}]}.
 //
 // Only -USD-PERP markets are kept; spot options (-P/-C suffix) are ignored.
-// volume_24h is in base-asset units — multiplied by mark_price for USD.
+// volume_24h is already in USD (confirmed: BTC = $11M at DEX scale).
 // Funding interval is 8h (confirmed via /v1/funding/data timestamps).
 // Next-funding boundary = next 00/08/16 UTC.
 //
@@ -76,12 +76,11 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			continue
 		}
 		rate := funding.ParseFloat(r.FundingRate)
-		vol := funding.ParseFloat(r.Volume24h) * price // volume_24h is in base units → USD
 		out = append(out, funding.Tick{
 			Symbol:      base,
 			Rate:        rate,
 			MarkPrice:   price,
-			Volume24h:   vol,
+			Volume24h:   funding.ParseFloat(r.Volume24h), // already in USD
 			NextFunding: nextFunding,
 			IntervalH:   intervalH,
 		})
