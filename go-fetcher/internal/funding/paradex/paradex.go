@@ -100,7 +100,7 @@ func toFloat64(v interface{}) float64 {
 		return x
 	case string:
 		var f float64
-		_, _ = sonic.Unmarshal([]byte(x), &f)
+		_ = sonic.Unmarshal([]byte(x), &f)
 		return f
 	}
 	return 0
