@@ -5451,12 +5451,14 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeKeysP
 .ex-status-strip .lbl-dot.live{background:var(--green);box-shadow:0 0 8px rgba(26,255,171,.6);animation:dot-pulse 1.8s ease-in-out infinite;}
 .ex-status-strip .lbl-dot.slow{background:var(--yellow);}
 .ex-status-strip .lbl-dot.stale{background:var(--red);}
+.ex-status-strip .lbl-dot.unknown{background:var(--text4);}
 @keyframes dot-pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .ex-status-strip .as-ex{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);}
 .ex-status-strip .as-ex .d{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--text3);}
 .ex-status-strip .as-ex .d.live{background:var(--green);box-shadow:0 0 6px rgba(26,255,171,.55);}
 .ex-status-strip .as-ex .d.slow{background:var(--yellow);}
 .ex-status-strip .as-ex .d.stale{background:var(--red);}
+.ex-status-strip .as-ex .d.unknown{background:var(--text4);}
 body.light .ex-status-strip{background:rgba(255,255,255,.96);}
 body{padding-bottom:44px;}
 @media (max-width:768px){body{padding-bottom:140px;} .ex-status-strip{bottom:88px;}}
@@ -5532,12 +5534,12 @@ body{padding-bottom:44px;}
         if (!el) continue;
         const d = el.querySelector('.d');
         const age = (typeof h.age_s === 'number') ? h.age_s : null;
-        const kls = (age == null) ? 'stale' : age <= FRESH_S ? 'live' : age <= STALE_S ? 'slow' : 'stale';
+        const kls = (h.via === 'none' || age == null) ? 'unknown' : age <= FRESH_S ? 'live' : age <= STALE_S ? 'slow' : 'stale';
         d.className = 'd ' + kls;
         klasses.push(kls);
         el.title = `${LABELS[ex]||ex} — ${h.via || '?'}${age != null ? ' · '+age.toFixed(1)+'s' : ''}`;
       }
-      const overall = klasses.includes('stale') ? 'stale' : klasses.includes('slow') ? 'slow' : 'live';
+      const overall = klasses.includes('stale') ? 'stale' : klasses.includes('slow') ? 'slow' : klasses.every(k => k === 'unknown') ? 'unknown' : 'live';
       const ldot = document.getElementById('ex-status-lbl-dot');
       if (ldot) ldot.className = 'lbl-dot ' + overall;
       const ldotMini = document.getElementById('ex-status-lbl-dot-mini');

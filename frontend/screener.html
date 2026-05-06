@@ -756,16 +756,17 @@ async function refreshExchangeHealth() {
       const h = ex[name] || {};
       const age = h.age_s;
       const healthy = !!h.healthy;
-      let klass = 'stale';
+      let klass = 'unknown';
       if (age != null) {
         if (healthy && age <= 2) klass = 'live';
         else if (healthy)        klass = 'slow';
+        else if (h.via === 'none' || h.via == null) klass = 'unknown';
         else                     klass = 'stale';
       }
       _exHealth[name] = { ...h, klass };
       const dot = document.getElementById(`ex-health-${name}`);
       if (dot) {
-        dot.classList.remove('live', 'slow', 'stale');
+        dot.classList.remove('live', 'slow', 'stale', 'unknown');
         dot.classList.add(klass);
         const ageStr = age == null ? 'no data' : `${age.toFixed(1)}s`;
         dot.title = `${name} — ${h.via || '?'} · ${ageStr}`;
@@ -845,8 +846,8 @@ function renderAlphaStatus(){
   }).join('');
 
   // Update overall indicator dot
-  const klasses = EXCHANGES.map(ex => (_exHealth[ex]||{}).klass || 'stale');
-  const overall = klasses.includes('stale') ? 'stale' : klasses.includes('slow') ? 'slow' : 'live';
+  const klasses = EXCHANGES.map(ex => (_exHealth[ex]||{}).klass || 'unknown');
+  const overall = klasses.includes('stale') ? 'stale' : klasses.includes('slow') ? 'slow' : klasses.every(k => k === 'unknown') ? 'unknown' : 'live';
   const dot = document.getElementById('status-lbl-dot');
   if (dot) dot.className = 'lbl-dot ' + overall;
   const dotMini = document.getElementById('status-lbl-dot-mini');
