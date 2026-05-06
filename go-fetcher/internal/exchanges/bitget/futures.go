@@ -74,10 +74,10 @@ func (a *Adapter) BuildSubscribe(symbols []string) [][]byte {
 	if len(symbols) == 0 {
 		return nil
 	}
-	// Bitget V2 has an undocumented per-frame `args` cap; with
-	// AVALANT_PREWARM_TOP_N=1000 a single subscribe frame got the
-	// connection closed silently. Chunk to ≤200 args/frame.
-	const chunkSize = 200
+	// Bitget V2: 200-symbol frames trigger error 30002 "Unrecognized request"
+	// with the actual prewarm symbol set (stock tokens, special names).
+	// Reducing to 50 per frame + 200ms SubscribeDelay avoids the burst.
+	const chunkSize = 50
 	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
 	for i := 0; i < len(symbols); i += chunkSize {
 		end := i + chunkSize
@@ -180,7 +180,7 @@ func (a *Adapter) HeartbeatInterval() time.Duration { return 25 * time.Second }
 // "ping"/"pong" path before reaching adapter Parse(). Nothing to do here.
 func (a *Adapter) PongFor(_ []byte) []byte       { return nil }
 func (a *Adapter) UseLibPings() bool              { return false } // bug #6
-func (a *Adapter) SubscribeDelay() time.Duration { return 0 }
+func (a *Adapter) SubscribeDelay() time.Duration { return 200 * time.Millisecond }
 func (a *Adapter) MaxSymbols() int                { return 0 }
 func (a *Adapter) DecompressGzip() bool           { return false }
 
