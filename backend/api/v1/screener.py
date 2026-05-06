@@ -1002,6 +1002,46 @@ async def _refresh_loop() -> None:
             for r in shared.get("rows", []) or []:
                 shared_rows_by_ex.setdefault(r.get("exchange",""), []).append(r)
 
+            # For exchanges absent from the merged file (race: Python last wrote
+            # without them), fall back to Go's per-exchange files directly.
+            # These are written by go-fetcher independently and are always current.
+            for _ex in FETCHERS:
+                if _ex in shared_rows_by_ex:
+                    continue
+                if (_cache.get(_ex) or ([], 0.0))[0]:  # Python REST cache is warm
+                    continue
+                _go_file = _os.path.join(_CACHE_DIR, f"funding.{_ex}.json")
+                try:
+                    with open(_go_file, "rb") as _gf:
+                        _go_data = json.loads(_gf.read())
+                    if not isinstance(_go_data, dict):
+                        continue
+                    _go_rows: list[dict] = []
+                    for _sym, _tick in _go_data.items():
+                        if not isinstance(_tick, dict):
+                            continue
+                        _rate = _tick.get("rate") or 0
+                        _price = _tick.get("mark_price") or 0
+                        if not _rate or not _price:
+                            continue
+                        _ivl = float(_tick.get("interval_h") or 1.0)
+                        _nf_ms = int(_tick.get("next_funding") or 0)
+                        _apr = round(_rate * (8760.0 / _ivl) * 100, 4) if _ivl else None
+                        _go_rows.append({
+                            "symbol": _sym,
+                            "exchange": _ex,
+                            "rate": _rate,
+                            "price": _price,
+                            "volume_usd": _tick.get("volume_24h") or 0,
+                            "interval_h": _ivl,
+                            "next_ts": _nf_ms // 1000 if _nf_ms else 0,
+                            "apr": _apr,
+                        })
+                    if _go_rows:
+                        shared_rows_by_ex[_ex] = _go_rows
+                except Exception:
+                    pass
+
             # Pre-pull WS rows for every venue so _cache stays current with
             # the live push. Two sources, in priority order:
             #   1. funding_ws/manager.get_ws_rows() — works for adapters
