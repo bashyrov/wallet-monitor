@@ -54,6 +54,12 @@ import (
 	fmexc "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/mexc"
 	fokx "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/okx"
 	fwhitebit "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/whitebit"
+	fparadex "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/paradex"
+	fkraken "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/kraken"
+	fbackpack "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/backpack"
+	flighter "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/lighter"
+	fethereal "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/ethereal"
+	fextended "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/extended"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
@@ -315,8 +321,9 @@ func main() {
 		})
 	}
 
-	// Funding adapters — all 12 venues. Each registered with the
-	// SymbolManager so prewarm + user-touch flow applies uniformly.
+	// Funding adapters — 18 venues (12 WS-capable + 6 REST-only perp DEXes).
+	// REST-only adapters use 5-min BackstopInterval (funding rates change
+	// at most hourly/8-hourly; hammering at 2s buys nothing).
 	for _, fa := range []funding.Adapter{
 		fbinance.New(),
 		fbybit.New(),
@@ -330,6 +337,12 @@ func main() {
 		fhtx.New(),
 		fhyperliquid.New(),
 		fwhitebit.New(),
+		fparadex.New(),
+		fkraken.New(),
+		fbackpack.New(),
+		flighter.New(),
+		fethereal.New(),
+		fextended.New(),
 	} {
 		runner := funding.NewRunner(fa, fundingStore)
 		mgr.RegisterFunding(fa.Name(), runner)
