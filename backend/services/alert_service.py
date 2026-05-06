@@ -33,72 +33,66 @@ def alert_service_counters() -> dict:
     return dict(_counters)
 
 
-async def _send_tg(chat_id: str, text: str, *, max_retries: int = 3) -> bool:
-    """POST sendMessage with exponential backoff.
-    Returns True on success, False if we gave up after max_retries.
+async def _send_tg(chat_id: str, text: str) -> bool:
+    """POST sendMessage. NO retries — at-most-once delivery.
 
-    Backoff: 1s, 2s, 4s (plus 0-0.4s jitter) between attempts.
-    If Telegram returns 429 we honour its Retry-After header (up to 30s).
+    Why no retries: Telegram's sendMessage has no idempotency key. If our
+    POST reaches TG but our READ of the response times out, retrying
+    sends the message twice. We saw this in prod (5+ duplicates per
+    fire). Better to silently miss one alert than spam the user.
+    Alert stays disabled regardless of TG outcome (fail-closed) — user
+    re-enables from the bell when they want the next attempt.
+
+    Network connect errors (TG unreachable, TCP refused) are also not
+    retried for the same reason: while *connect* refusals are safe, a
+    half-open socket where bytes were written but ACK was lost is not
+    distinguishable at the httpx layer.
     """
     if not settings.TG_BOT_TOKEN:
         logger.error("TG_BOT_TOKEN not set — alert not sent to chat %s", chat_id)
         return False
 
-    import random
+    import time as _t
     url = f"https://api.telegram.org/bot{settings.TG_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": False}
-    wait = 1.0
+    t_start = _t.monotonic()
+    _counters["tg_attempt"] += 1
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        for attempt in range(max_retries + 1):
-            _counters["tg_attempt"] += 1
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(url, json=payload)
+        elapsed_ms = int((_t.monotonic() - t_start) * 1000)
+        if r.status_code == 200:
+            body = r.json()
+            if body.get("ok"):
+                _counters["tg_sent_ok"] += 1
+                logger.info("TG send OK chat=%s took=%dms", chat_id, elapsed_ms)
+                return True
+            logger.error("TG send rejected chat=%s desc=%s took=%dms", chat_id, body.get("description"), elapsed_ms)
+            _counters["tg_failed_final"] += 1
+            return False
+        if r.status_code == 429:
+            _counters["tg_rate_limited"] += 1
+            retry_after = 0
             try:
-                r = await client.post(url, json=payload)
-                if r.status_code == 200:
-                    body = r.json()
-                    if body.get("ok"):
-                        if attempt > 0:
-                            logger.info("TG sent OK for %s after %d retries", chat_id, attempt)
-                        _counters["tg_sent_ok"] += 1
-                        return True
-                    # ok:false — log description, don't retry (likely bad payload / chat)
-                    logger.error("TG sendMessage rejected for %s: %s", chat_id, body.get("description"))
-                    _counters["tg_failed_final"] += 1
-                    return False
-                if r.status_code == 429:
-                    _counters["tg_rate_limited"] += 1
-                    retry_after = 0
-                    try:
-                        retry_after = int(r.json().get("parameters", {}).get("retry_after", 0))
-                    except Exception:
-                        pass
-                    wait = min(max(retry_after, wait * 2), 30.0)
-                    logger.warning("TG 429 for %s — retry %d/%d in %.1fs", chat_id, attempt + 1, max_retries, wait)
-                elif 500 <= r.status_code < 600:
-                    logger.warning("TG %d for %s — retry %d/%d in %.1fs", r.status_code, chat_id, attempt + 1, max_retries, wait)
-                else:
-                    # 4xx non-recoverable (bad chat, blocked by user, bad token)
-                    logger.error("TG %d (non-retryable) for %s: %s", r.status_code, chat_id, r.text[:160])
-                    _counters["tg_failed_final"] += 1
-                    return False
-            except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
-                logger.warning("TG transport error for %s (%s): retry %d/%d in %.1fs",
-                               chat_id, type(exc).__name__, attempt + 1, max_retries, wait)
-            except Exception as exc:
-                # Unknown failure — log at ERROR so it doesn't hide in the noise
-                logger.error("TG unexpected error for %s: %s: %s", chat_id, type(exc).__name__, exc)
-                _counters["tg_failed_final"] += 1
-                return False
-
-            if attempt >= max_retries:
-                break
-            _counters["tg_retry"] += 1
-            await asyncio.sleep(wait + random.uniform(0, 0.4))
-            wait = min(wait * 2, 8.0)
-
-    logger.error("TG sendMessage gave up for %s after %d retries", chat_id, max_retries)
-    _counters["tg_failed_final"] += 1
-    return False
+                retry_after = int(r.json().get("parameters", {}).get("retry_after", 0))
+            except Exception:
+                pass
+            logger.error("TG 429 rate-limited chat=%s retry_after=%ds took=%dms — alert stays disabled",
+                         chat_id, retry_after, elapsed_ms)
+            _counters["tg_failed_final"] += 1
+            return False
+        # any other status → log & fail-closed
+        logger.error("TG send HTTP %d chat=%s body=%s took=%dms",
+                     r.status_code, chat_id, r.text[:160], elapsed_ms)
+        _counters["tg_failed_final"] += 1
+        return False
+    except Exception as exc:
+        elapsed_ms = int((_t.monotonic() - t_start) * 1000)
+        logger.error("TG send error chat=%s err=%s: %s took=%dms",
+                     chat_id, type(exc).__name__, exc, elapsed_ms)
+        _counters["tg_failed_final"] += 1
+        return False
 
 
 _ANY = "*"  # stored value meaning "match any exchange"
@@ -376,20 +370,36 @@ async def _check_alerts() -> None:
                 f"<a href=\"{link}\">Open arbitrage details →</a>\n"
                 f"<i>Alert auto-disabled — re-enable from the bell to get the next ping.</i>"
             )
+            # Latency: how stale was the arb data when this fire decision
+            # was made?
+            import os as _os, time as _t
+            cache_age_ms = -1
+            try:
+                cache_path = f"{_CACHE_DIR}/{_MODE_META.get(mode, _MODE_META['futures'])[0]}"
+                cache_age_ms = int((_t.time() - _os.path.getmtime(cache_path)) * 1000)
+            except Exception:
+                pass
+
             # Atomically claim the alert BEFORE sending. If another worker
             # already claimed (or user disabled it) — skip silently.
+            t_claim_start = _t.monotonic()
             won = _claim_alert_for_fire(alert.id, now)
+            claim_ms = int((_t.monotonic() - t_claim_start) * 1000)
             alert.enabled = False
             alert.last_triggered_at = now
             _alerts_cache_ts = 0.0  # force DB refresh next tick
             if not won:
+                logger.info("Alert id=%d claim LOST (another worker already fired it)", alert.id)
                 continue
 
+            t_send_start = _t.monotonic()
             ok = await _send_tg(str(chat_id), msg)
+            send_ms = int((_t.monotonic() - t_send_start) * 1000)
             if ok:
                 logger.info(
-                    "Alert fired (one-shot, auto-disabled) id=%d user=%d sym=%s mode=%s trigger=%s pair=%s→%s spread=%.4f%%",
-                    alert.id, alert.user_id, alert.symbol, mode, trigger_mode, long_ex, short_ex, spread_pct,
+                    "Alert FIRED id=%d user=%d sym=%s mode=%s pair=%s→%s spread=%.4f%% cache_age=%dms claim=%dms send=%dms",
+                    alert.id, alert.user_id, alert.symbol, mode, long_ex, short_ex, spread_pct,
+                    cache_age_ms, claim_ms, send_ms,
                 )
             else:
                 # Fail-closed: alert is already off in DB. User re-enables
