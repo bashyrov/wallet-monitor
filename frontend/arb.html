@@ -946,11 +946,14 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             </div>
             ${IS_DEX
               ? `<iframe id="pt-dex-frame" class="pt-iframe" src="about:blank" loading="lazy" allow="clipboard-write; fullscreen" allowfullscreen></iframe>`
-              : `<div id="pt-ee-chart" style="flex:1;min-height:0;background:var(--bg);position:relative">
+              : `<div id="pt-ee-chart" style="flex:1;min-height:0;background:transparent;position:relative">
                    <div style="position:absolute;top:8px;left:10px;z-index:5;display:flex;align-items:center;gap:10px;font-size:10px;font-family:var(--mono);color:var(--text3)">
-                     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:2px;background:#1AFFAB;border-radius:1px"></span>Spread %</span>
+                     <span style="display:flex;align-items:center;gap:4px">
+                       <span style="display:inline-flex;gap:1px"><span style="width:3px;height:8px;background:#1AFFAB;border-radius:1px"></span><span style="width:3px;height:8px;background:#F87171;border-radius:1px"></span></span>
+                       Basis %
+                     </span>
                      <span style="color:var(--text3)">·</span>
-                     <span id="pt-ee-count">0 pts</span>
+                     <span id="pt-ee-count">0 bars</span>
                    </div>
                    <div id="pt-ee-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;pointer-events:none">Collecting order-book ticks…</div>
                  </div>`}
@@ -1311,30 +1314,37 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     if (frame) frame.src = `https://dexscreener.com/${DEX_CHAIN}/${DEX_PAIR}?embed=1&theme=dark&trades=1&info=0`;
   }
 
-  // Live Entry/Exit chart for Spot / Short — lightweight-charts line series.
-  // Plots (mid_short − mid_long) / mid_long × 100 sampled on every orderbook
-  // tick. Data persisted to localStorage so a page reload keeps the last 20 min.
-  let _eeChart = null, _eeSeries = null, _eeData = [], _eeLastT = 0;
-  const _eeKey = `pt-ee:${TYPE}:${SYM}:${LONG}:${SHORT}`;
-  const _eeMax = 2000;
+  // Live Entry/Exit chart for Spot / Short — candlestick series (5s buckets).
+  // Each push aggregates (mid_short − mid_long) / mid_long × 100 into the
+  // current bucket's OHLC. Backgrounds are transparent so the chart blends
+  // into the surrounding panel — only the candles + axes are visible.
+  let _eeChart = null, _eeSeries = null;
+  const _eeBucketSec = 5;
+  const _eeKey = `pt-ee:v2:${TYPE}:${SYM}:${LONG}:${SHORT}`;
+  const _eeMax = 1200;  // ~100 minutes of 5s candles
+  let _eeCandles = [];      // Array<{time, open, high, low, close}>
+  let _eeCurBucket = null;  // current open candle (mutated on every push)
   function _eeInit() {
     if (IS_DEX) return;
     if (!window.LightweightCharts) { setTimeout(_eeInit, 300); return; }
     const el = $('pt-ee-chart');
     if (!el || _eeChart) return;
     const theme = document.body.classList.contains('light')
-      ? {bg:'#FFFFFF', grid:'#EDEDED', text:'#1A1A1A', border:'#D0D0D0'}
-      : {bg:'#0B0B0E', grid:'#1F1F28', text:'#9B9FAB', border:'#22222A'};
+      ? {grid:'#EDEDED', text:'#1A1A1A', border:'#D0D0D0', up:'#006B3C', down:'#8B0000'}
+      : {grid:'#1F1F28', text:'#9B9FAB', border:'#22222A', up:'#1AFFAB', down:'#F87171'};
     _eeChart = LightweightCharts.createChart(el, {
-      layout: { background: {type:'solid', color: theme.bg}, textColor: theme.text, fontSize: 10 },
+      layout: { background: {type:'solid', color:'rgba(0,0,0,0)'}, textColor: theme.text, fontSize: 10 },
       grid:   { vertLines: {color: theme.grid}, horzLines: {color: theme.grid} },
-      rightPriceScale: { borderColor: theme.border },
-      timeScale: { borderColor: theme.border, timeVisible: true, secondsVisible: true },
+      rightPriceScale: { borderColor: theme.border, scaleMargins:{top:0.1, bottom:0.1} },
+      timeScale: { borderColor: theme.border, timeVisible: true, secondsVisible: true, rightOffset: 4, barSpacing: 6 },
       crosshair: { mode: 1 },
+      localization: { priceFormatter: v => (v>=0?'+':'')+(+v).toFixed(4)+'%' },
     });
-    _eeSeries = _eeChart.addLineSeries({
-      color: '#1AFFAB', lineWidth: 2,
-      priceFormat: {type:'price', precision: 4, minMove: 0.0001},
+    _eeSeries = _eeChart.addCandlestickSeries({
+      upColor: theme.up, downColor: theme.down,
+      borderUpColor: theme.up, borderDownColor: theme.down,
+      wickUpColor: theme.up, wickDownColor: theme.down,
+      priceFormat: { type:'price', precision: 4, minMove: 0.0001 },
     });
     const ro = new ResizeObserver(() => {
       _eeChart.applyOptions({ width: el.clientWidth, height: el.clientHeight });
@@ -1345,35 +1355,41 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       const raw = localStorage.getItem(_eeKey);
       if (raw) {
         const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) {
-          const cutoff = Date.now() / 1000 - 1200;
-          _eeData = arr.filter(d => d.time >= cutoff).slice(-_eeMax);
-          if (_eeData.length) {
-            _eeSeries.setData(_eeData);
+        if (Array.isArray(arr) && arr.length && arr[0].open !== undefined) {
+          const cutoff = Math.floor(Date.now()/1000) - 1200;
+          _eeCandles = arr.filter(c => c.time >= cutoff).slice(-_eeMax);
+          if (_eeCandles.length) {
+            _eeSeries.setData(_eeCandles);
+            _eeCurBucket = _eeCandles[_eeCandles.length-1];
             const empty = $('pt-ee-empty'); if (empty) empty.style.display = 'none';
-            setT('pt-ee-count', _eeData.length + ' pts');
-            _eeLastT = _eeData[_eeData.length-1].time;
+            setT('pt-ee-count', _eeCandles.length + ' bars');
           }
         }
       }
     } catch {}
     setInterval(() => {
-      try { localStorage.setItem(_eeKey, JSON.stringify(_eeData.slice(-1500))); } catch {}
+      try { localStorage.setItem(_eeKey, JSON.stringify(_eeCandles.slice(-_eeMax))); } catch {}
     }, 3000);
   }
   _eeInit();
   function _eePush(spreadPct) {
     if (!_eeSeries) return;
-    const now = Math.floor(Date.now() / 1000);
-    const t = now <= _eeLastT ? _eeLastT + 1 : now;
-    _eeLastT = t;
-    const point = { time: t, value: +spreadPct };
-    _eeData.push(point);
-    if (_eeData.length > _eeMax) _eeData.splice(0, _eeData.length - _eeMax);
-    _eeSeries.update(point);
+    const v = +spreadPct;
+    if (!isFinite(v)) return;
+    const t = Math.floor(Date.now()/1000 / _eeBucketSec) * _eeBucketSec;
+    if (!_eeCurBucket || _eeCurBucket.time !== t) {
+      _eeCurBucket = { time: t, open: v, high: v, low: v, close: v };
+      _eeCandles.push(_eeCurBucket);
+      if (_eeCandles.length > _eeMax) _eeCandles.splice(0, _eeCandles.length - _eeMax);
+    } else {
+      if (v > _eeCurBucket.high) _eeCurBucket.high = v;
+      if (v < _eeCurBucket.low)  _eeCurBucket.low  = v;
+      _eeCurBucket.close = v;
+    }
+    _eeSeries.update(_eeCurBucket);
     const empty = $('pt-ee-empty');
     if (empty && empty.style.display !== 'none') empty.style.display = 'none';
-    setT('pt-ee-count', _eeData.length + ' pts');
+    setT('pt-ee-count', _eeCandles.length + ' bars');
   }
 
   // Build the pair row from independent sources — top-200 opps cache often
@@ -2874,7 +2890,7 @@ function _eeApplyTheme(){
   if(!_eeChart) return;
   const c=_eeThemeColors();
   _eeChart.applyOptions({
-    layout:{background:{type:'solid',color:c.bg},textColor:c.text},
+    layout:{background:{type:'solid',color:'rgba(0,0,0,0)'},textColor:c.text},
     grid:{vertLines:{color:c.grid},horzLines:{color:c.grid}},
     rightPriceScale:{borderColor:c.border},
     timeScale:{borderColor:c.border},
@@ -2897,7 +2913,7 @@ function _eeInit(){
   if(typeof LightweightCharts==='undefined') return;
   const c=_eeThemeColors();
   _eeChart=LightweightCharts.createChart(el,{
-    layout:{background:{type:'solid',color:c.bg},textColor:c.text,fontFamily:'JetBrains Mono, monospace',fontSize:10},
+    layout:{background:{type:'solid',color:'rgba(0,0,0,0)'},textColor:c.text,fontFamily:'JetBrains Mono, monospace',fontSize:10},
     grid:{vertLines:{color:c.grid},horzLines:{color:c.grid}},
     rightPriceScale:{borderColor:c.border,scaleMargins:{top:0.12,bottom:0.12},visible:true},
     timeScale:{borderColor:c.border,timeVisible:true,secondsVisible:_eeTfSec<=60,rightOffset:6,barSpacing:8},
