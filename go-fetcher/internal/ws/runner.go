@@ -79,11 +79,19 @@ type Runner struct {
 	subscribed map[string]struct{} // already-sent for current connection
 	conn       *websocket.Conn
 
-	writeMu sync.Mutex // serialises all writes to .conn
-	bo      Backoff
-	lastMsg atomic[time.Time]
-	log     *zerolog.Logger
+	writeMu     sync.Mutex // serialises all writes to .conn
+	bo          Backoff
+	lastMsg     atomic[time.Time] // any inbound frame (including pong)
+	lastData    atomic[time.Time] // data frames only (snap != nil)
+	subscribedAt atomic[time.Time] // when first subscribe was sent this session
+	log         *zerolog.Logger
 }
+
+// dataStaleThreshold — if subscribed symbols > 0 but no data frame in this
+// window, the connection is a zombie (TCP alive, heartbeats flowing, but
+// data subscription silently dead). Seen on OKX and Bitget in prod.
+// 5 minutes gives enough headroom for large prewarm sets and slow venues.
+const dataStaleThreshold = 5 * time.Minute
 
 // safeSend is the ONLY sanctioned write path. Holds writeMu so the three
 // concurrent writers don't interleave bytes on the wire.
@@ -210,6 +218,8 @@ func (r *Runner) session(ctx context.Context) error {
 	}()
 
 	r.lastMsg.Store(time.Now())
+	r.lastData.Store(time.Time{})    // reset per-session data tracker
+	r.subscribedAt.Store(time.Time{}) // reset per-session subscribe tracker
 	r.bo.ResetTransient()
 
 	// Disable lib pings if the adapter says so. gorilla doesn't expose a
@@ -309,6 +319,7 @@ func (r *Runner) session(ctx context.Context) error {
 			r.bo.ResetPolicy()
 		}
 		frameCount++
+		r.lastData.Store(time.Now())
 
 		// Cap each side to 200 levels — same bound as Python (more is
 		// pointless for the screener UI and inflates broadcast diffs).
@@ -337,6 +348,11 @@ func (r *Runner) subscribe(conn *websocket.Conn, syms []string) error {
 			return err
 		}
 		r.log.Info().Int("frame", i).Int("bytes", len(f)).Msg("subscribe frame sent")
+		// Record subscribe time on first frame so the data-stale watchdog
+		// knows when to start expecting data.
+		if i == 0 {
+			r.subscribedAt.Store(time.Now())
+		}
 		if delay > 0 && i < len(frames)-1 {
 			time.Sleep(delay)
 		}
@@ -370,6 +386,14 @@ func (r *Runner) heartbeatLoop(ctx context.Context, conn *websocket.Conn, frame 
 func (r *Runner) staleWatchdog(ctx context.Context, conn *websocket.Conn) {
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
+	forceClose := func(reason string) {
+		_ = conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason),
+			time.Now().Add(time.Second),
+		)
+		_ = conn.Close()
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -379,15 +403,33 @@ func (r *Runner) staleWatchdog(ctx context.Context, conn *websocket.Conn) {
 			if last.IsZero() {
 				continue
 			}
-			age := time.Since(last)
-			if age > staleThreshold {
+			// Check 1: no frames at all (connection truly dead).
+			if age := time.Since(last); age > staleThreshold {
 				r.log.Warn().Dur("age", age).Msg("WS stale — forcing reconnect")
-				_ = conn.WriteControl(
-					websocket.CloseMessage,
-					websocket.FormatCloseMessage(websocket.CloseNormalClosure, "stale-data-watchdog"),
-					time.Now().Add(time.Second),
-				)
-				_ = conn.Close()
+				forceClose("stale-data-watchdog")
+				return
+			}
+			// Check 2: zombie — connection alive (pings flowing) but no
+			// data frames since subscribe. OKX/Bitget exhibit this when
+			// the server silently drops the subscription.
+			subAt := r.subscribedAt.Load()
+			if subAt.IsZero() || time.Since(subAt) < dataStaleThreshold {
+				continue
+			}
+			r.symMu.Lock()
+			subCount := len(r.subscribed)
+			r.symMu.Unlock()
+			if subCount == 0 {
+				continue
+			}
+			ld := r.lastData.Load()
+			noDataFor := time.Since(subAt)
+			if !ld.IsZero() {
+				noDataFor = time.Since(ld)
+			}
+			if noDataFor > dataStaleThreshold {
+				r.log.Warn().Dur("no_data_for", noDataFor).Int("symbols", subCount).Msg("WS zombie — no data frames, forcing reconnect")
+				forceClose("zombie-data-watchdog")
 				return
 			}
 		}

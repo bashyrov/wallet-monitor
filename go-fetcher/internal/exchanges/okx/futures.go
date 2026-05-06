@@ -74,19 +74,26 @@ func (a *Futures) Name() string                          { return a.cacheKey }
 func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	args := make([]map[string]string, len(symbols))
-	for i, s := range symbols {
-		args[i] = map[string]string{
-			"channel": "books50-l2-tbt",
-			"instId":  strings.ToUpper(s) + a.instSuffix,
+	// OKX V5 public WS supports up to ~480 subscriptions per connection,
+	// but large single frames can be silently rejected. Chunk to 100.
+	const chunkSize = 100
+	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
 		}
+		args := make([]map[string]string, end-i)
+		for j, s := range symbols[i:end] {
+			args[j] = map[string]string{
+				"channel": "books50-l2-tbt",
+				"instId":  strings.ToUpper(s) + a.instSuffix,
+			}
+		}
+		b, _ := ws.MarshalJSON(map[string]any{"op": "subscribe", "args": args})
+		frames = append(frames, b)
 	}
-	frame := map[string]any{
-		"op":   "subscribe",
-		"args": args,
-	}
-	b, _ := ws.MarshalJSON(frame)
-	return [][]byte{b}
+	return frames
 }
 
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
