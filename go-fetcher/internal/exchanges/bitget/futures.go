@@ -1,8 +1,11 @@
 // Package bitget — Bitget V2 USDT-FUTURES + SPOT (one shared host).
 //
 // URL: wss://ws.bitget.com/v2/ws/public
-// Subscribe (futures): {"op":"subscribe","args":[{"instType":"USDT-FUTURES","channel":"books","instId":"BTCUSDT"}]}
-// Subscribe (spot):    {"op":"subscribe","args":[{"instType":"SPOT","channel":"books","instId":"BTCUSDT"}]}
+// Subscribe (futures): {"op":"subscribe","args":[{"instType":"USDT-FUTURES","channel":"books1","instId":"BTCUSDT"}]}
+// Subscribe (spot):    {"op":"subscribe","args":[{"instType":"SPOT","channel":"books1","instId":"BTCUSDT"}]}
+//
+// Channel "books1" fires on every book change (real-time tick-by-tick),
+// vs "books" which was capped at ~200ms. Same snapshot+delta wire format.
 //
 // QUIRKS — every fix from today's prod debug session:
 //   - Bug #1  (TEXT only): SendText enforced by runner
@@ -85,7 +88,7 @@ func (a *Adapter) BuildSubscribe(symbols []string) [][]byte {
 		for j, s := range symbols[i:end] {
 			args[j] = map[string]string{
 				"instType": a.instType,
-				"channel":  "books",
+				"channel":  "books1",
 				"instId":   strings.ToUpper(s) + "USDT",
 			}
 		}
@@ -119,7 +122,7 @@ func (a *Adapter) Parse(frame []byte) (*ws.Snapshot, error) {
 	if msg.Event != "" {
 		return nil, nil
 	}
-	if msg.Arg.Channel != "books" {
+	if msg.Arg.Channel != "books1" {
 		return nil, nil
 	}
 	if msg.Arg.InstType != a.instType {

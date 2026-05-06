@@ -3,11 +3,11 @@
 // URL: wss://ws.api.prod.paradex.trade/v1
 // Subscribe (JSON-RPC 2.0):
 //   {"jsonrpc":"2.0","id":N,"method":"subscribe",
-//    "params":{"channel":"order_book.BTC-USD-PERP.snapshot@15@100ms"}}
+//    "params":{"channel":"order_book.BTC-USD-PERP.snapshot@15@50ms"}}
 //
 // Inbound — DIFF protocol with three operations + snapshot/delta type:
 //   {"jsonrpc":"2.0","method":"subscription","params":{
-//      "channel":"order_book.BTC-USD-PERP.snapshot@15@100ms",
+//      "channel":"order_book.BTC-USD-PERP.snapshot@15@50ms",
 //      "data":{
 //        "seq_no": ..., "market": "BTC-USD-PERP", "last_updated_at": ...,
 //        "update_type": "s" | "d",   // "s" snapshot, "d" delta
@@ -18,7 +18,7 @@
 //   }}
 //
 // QUIRKS:
-//   - depth=15, frequency=100ms — strict (probe confirmed: only [50ms,
+//   - depth=15, frequency=50ms — strict (probe confirmed: only [50ms,
 //     100ms] accepted; bare numbers ['1','100'] rejected with code -32600)
 //   - SIDE encoded as "BUY"/"SELL" (uppercase strings) inside per-level
 //     objects, not as separate bids/asks arrays.
@@ -60,7 +60,7 @@ func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	frames := make([][]byte, 0, len(symbols))
 	for i, s := range symbols {
-		channel := "order_book." + strings.ToUpper(s) + "-USD-PERP.snapshot@15@100ms"
+		channel := "order_book." + strings.ToUpper(s) + "-USD-PERP.snapshot@15@50ms"
 		f := map[string]any{
 			"jsonrpc": "2.0",
 			"id":      i + 1,
