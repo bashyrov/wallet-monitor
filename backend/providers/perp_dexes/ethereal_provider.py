@@ -11,6 +11,9 @@ class EtherealProvider(BaseWalletProvider):
     label = "Ethereal"
     enabled = True
     needs_api_key = False
+    # EVM private key for personal_sign on /v1/place-order. Read-only flows
+    # work without it; trading does not.
+    needs_private_key = True
     base_url = "https://api.ethereal.trade"
 
     def __init__(self):

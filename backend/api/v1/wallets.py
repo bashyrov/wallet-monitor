@@ -34,6 +34,14 @@ def _build_wallet_options() -> dict:
             "label": p.label,
             "needs_api_key": getattr(p, "needs_api_key", False),
             "needs_api_token": getattr(p, "needs_api_token", False),
+            # Trade-only credential flags. Surface them so the frontend can
+            # render the right inputs; backend storage for these is on the
+            # AUDIT_WALLETS.md follow-up — Aster is the only perpdex that
+            # currently stores key+secret today.
+            "needs_private_key":     getattr(p, "needs_private_key",     False),
+            "needs_l2_private_key":  getattr(p, "needs_l2_private_key",  False),
+            "needs_account_index":   getattr(p, "needs_account_index",   False),
+            "needs_api_key_index":   getattr(p, "needs_api_key_index",   False),
             **( {"soon": True} if getattr(p, "soon", False) else {} ),
         }
         for value, p in PERPDEX_PROVIDERS.items()

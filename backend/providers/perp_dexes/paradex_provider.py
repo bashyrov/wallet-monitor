@@ -17,6 +17,10 @@ class ParadexProvider(BaseWalletProvider):
     # `api_token` credential (not a traditional api_key/secret pair).
     needs_api_key = False
     needs_api_token = True
+    # Stark L2 private key required for SNIP-12 order signing. Read-only
+    # flows can survive on JWT; trading needs the L2 key. Backend storage
+    # not yet wired — see AUDIT_WALLETS.md follow-up.
+    needs_l2_private_key = True
     base_url = "https://api.prod.paradex.trade"
 
     def __init__(self):

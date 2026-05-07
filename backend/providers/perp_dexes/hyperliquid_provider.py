@@ -12,6 +12,9 @@ class HyperliquidProvider(BaseWalletProvider):
     label = "Hyperliquid"
     enabled = True
     needs_api_key = False
+    # EVM private key for EIP-712 phantom-agent signing on /exchange.
+    # Read-only paths (positions, balance) work without it; trading does not.
+    needs_private_key = True
     base_url = "https://api.hyperliquid.xyz"
 
     def __init__(self):

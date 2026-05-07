@@ -13,6 +13,12 @@ class LighterProvider(BaseWalletProvider):
     label = "Lighter"
     enabled = True
     needs_api_key = False
+    # Lighter uses three creds for ZK-signing: account_index (numeric),
+    # api_private_key (hex), api_key_index (default "255"). Read-only flows
+    # don't need them; trading via the lighter-sdk CGO bridge does.
+    needs_account_index = True
+    needs_private_key = True
+    needs_api_key_index = True
     base_url = "https://mainnet.zklighter.elliot.ai"
 
     def __init__(self):
