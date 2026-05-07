@@ -588,18 +588,48 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
              spot-short | dex-short) in ltInit(); no manual toggle. -->
 
 
-        <!-- Per-leg balance cards. arbion logged-out screens hide these,
-             but we keep them inline because users explicitly asked. -->
+        <!-- Per-leg balance cards with account-picker gear. Each leg
+             shows the currently-selected wallet name + a Keys ⚙ button
+             that opens the picker so the user can switch between
+             multiple accounts on the same exchange. -->
         <div class="lt-balances">
           <div class="lt-bal-card" id="lt-bal-long">
-            <div class="lt-bal-label" id="lt-bal-long-label">LONG · —</div>
+            <div class="lt-bal-label-row">
+              <div class="lt-bal-label" id="lt-bal-long-label">LONG · —</div>
+              <button type="button" class="lt-keys-btn" onclick="ltOpenKeys('long')" title="Pick account / API key">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"/></svg>
+                Keys
+              </button>
+            </div>
+            <div class="lt-bal-row"><span class="lt-bal-k">Account</span><span class="lt-bal-v" id="lt-bal-long-name" style="font-size:10px;color:var(--text3)">—</span></div>
             <div class="lt-bal-row"><span class="lt-bal-k">Wallet</span><span class="lt-bal-v" id="lt-bal-long-total">—</span></div>
             <div class="lt-bal-row"><span class="lt-bal-k">Available</span><span class="lt-bal-v" id="lt-bal-long-avail">—</span></div>
           </div>
           <div class="lt-bal-card" id="lt-bal-short">
-            <div class="lt-bal-label" id="lt-bal-short-label">SHORT · —</div>
+            <div class="lt-bal-label-row">
+              <div class="lt-bal-label" id="lt-bal-short-label">SHORT · —</div>
+              <button type="button" class="lt-keys-btn" onclick="ltOpenKeys('short')" title="Pick account / API key">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"/></svg>
+                Keys
+              </button>
+            </div>
+            <div class="lt-bal-row"><span class="lt-bal-k">Account</span><span class="lt-bal-v" id="lt-bal-short-name" style="font-size:10px;color:var(--text3)">—</span></div>
             <div class="lt-bal-row"><span class="lt-bal-k">Wallet</span><span class="lt-bal-v" id="lt-bal-short-total">—</span></div>
             <div class="lt-bal-row"><span class="lt-bal-k">Available</span><span class="lt-bal-v" id="lt-bal-short-avail">—</span></div>
+          </div>
+        </div>
+
+        <!-- LT Keys popover — per-leg account picker -->
+        <div class="lt-keys-pop hidden" id="lt-keys-pop" onclick="if(event.target===this)ltCloseKeys()">
+          <div class="lt-keys-modal" id="lt-keys-modal">
+            <div class="lt-keys-head">
+              <span id="lt-keys-title">Select account</span>
+              <button type="button" class="lt-keys-x" onclick="ltCloseKeys()">×</button>
+            </div>
+            <div class="lt-keys-body" id="lt-keys-body"></div>
+            <div class="lt-keys-foot">
+              <a href="/portfolio#wallets" target="_blank" rel="noopener" class="lt-keys-add">+ Add a key</a>
+            </div>
           </div>
         </div>
 
@@ -5006,7 +5036,12 @@ async function initTradePanel(){
 function _applyTradeStatus(s){
   ['long','short'].forEach(side => {
     const info = s[side] || {};
-    _trade[side].walletId  = info.wallet_id || null;
+    // If user has explicitly picked a different wallet via the LT-panel
+    // Keys popover (saved in localStorage), keep their choice. Backend's
+    // /trade/status defaults to _find_wallet which is "the" main key on
+    // the exchange — but with multiple accounts we let user override.
+    const saved = (typeof _ltSavedWalletId === 'function') ? _ltSavedWalletId(side) : null;
+    _trade[side].walletId  = saved || info.wallet_id || null;
     _trade[side].keyStatus = info.status    || 'missing';   // ok | disabled | missing
     _trade[side].balance   = info.balance_usdt || 0;
     // Reservation-aware available — subtracts capital locked by other
@@ -5028,10 +5063,54 @@ function _applyTradeStatus(s){
     if (bal) bal.textContent = (info.balance_usdt != null) ? (Number(info.balance_usdt).toFixed(2) + ' USDT') : '— USDT';
   });
   _renderSubmit('long'); _renderSubmit('short');
+  // If the user picked a non-default wallet via the LT Keys popover
+  // for either leg, /trade/status returned the default's balance —
+  // override with the saved wallet's actual balance from /balances.
+  if (typeof _ltSavedWalletId === 'function') {
+    _ltApplySavedWalletBalances();
+  }
   // Mirror to the new unified Live Trading panel
   if (typeof ltRefreshBalances === 'function') ltRefreshBalances();
   if (typeof ltSyncFromTrade === 'function')   ltSyncFromTrade();
   if (typeof ltRecalc === 'function')          ltRecalc();
+}
+
+async function _ltApplySavedWalletBalances() {
+  // Apply per-leg saved overrides only if wallet-id differs from what
+  // /trade/status returned. /trade/balances is cached 30s server-side.
+  const longSaved  = _ltSavedWalletId('long');
+  const shortSaved = _ltSavedWalletId('short');
+  if (!longSaved && !shortSaved) return;
+  try {
+    const r = await Auth.apiFetch('/trade/balances');
+    if (!r.ok) return;
+    const rows = await r.json();
+    const byId = Object.fromEntries(rows.map(b => [b.wallet_id, b]));
+    if (longSaved && byId[longSaved]) {
+      _trade.long.walletId  = longSaved;
+      _trade.long.balance   = byId[longSaved].balance_usdt   || 0;
+      _trade.long.available = (byId[longSaved].available_usdt != null) ? byId[longSaved].available_usdt : (byId[longSaved].balance_usdt || 0);
+      _trade.long.reserved  = byId[longSaved].reserved_usdt  || 0;
+      const lbl = document.getElementById('lt-bal-long-name');
+      if (lbl) {
+        const w = byId[longSaved];
+        lbl.textContent = w.name || `wallet #${longSaved}`;
+      }
+    }
+    if (shortSaved && byId[shortSaved]) {
+      _trade.short.walletId  = shortSaved;
+      _trade.short.balance   = byId[shortSaved].balance_usdt   || 0;
+      _trade.short.available = (byId[shortSaved].available_usdt != null) ? byId[shortSaved].available_usdt : (byId[shortSaved].balance_usdt || 0);
+      _trade.short.reserved  = byId[shortSaved].reserved_usdt  || 0;
+      const lbl = document.getElementById('lt-bal-short-name');
+      if (lbl) {
+        const w = byId[shortSaved];
+        lbl.textContent = w.name || `wallet #${shortSaved}`;
+      }
+    }
+    if (typeof ltRefreshBalances === 'function') ltRefreshBalances();
+    if (typeof ltRecalc === 'function')          ltRecalc();
+  } catch {}
 }
 
 function tradeSwitchTab(btn){
@@ -6330,6 +6409,115 @@ function ltCheckImmediate() {
   }
 }
 
+// ── Keys / account picker ────────────────────────────────────────────
+// Per-leg account override stored in localStorage so the choice
+// survives page reloads. Key shape: lt_wallet_<long|short>_<symbol>
+// Override is only applied when the user has multiple wallets on the
+// leg's exchange — otherwise _trade.<side>.walletId stays as-is.
+function _ltSavedWalletId(side) {
+  const sym = (typeof SYM === 'string' ? SYM : '');
+  try {
+    const v = localStorage.getItem(`lt_wallet_${side}_${sym}`);
+    return v ? parseInt(v, 10) : null;
+  } catch { return null; }
+}
+function _ltSaveWalletId(side, wid) {
+  const sym = (typeof SYM === 'string' ? SYM : '');
+  try { localStorage.setItem(`lt_wallet_${side}_${sym}`, String(wid)); } catch {}
+}
+
+async function ltOpenKeys(side) {
+  const pop = document.getElementById('lt-keys-pop');
+  const title = document.getElementById('lt-keys-title');
+  const body = document.getElementById('lt-keys-body');
+  if (!pop || !body) return;
+  const ex = (side === 'long' ? LONG : SHORT) || '';
+  title.textContent = `Select ${side.toUpperCase()} account · ${(EX_LABEL && EX_LABEL[ex]) || ex.toUpperCase()}`;
+  body.innerHTML = '<div class="lt-keys-empty"><span class="spinner"></span> Loading…</div>';
+  pop.classList.remove('hidden');
+
+  // Fetch user wallets + their balances/reservations in parallel.
+  let wallets = [], balances = {};
+  try {
+    const [wRes, bRes] = await Promise.all([
+      Auth.apiFetch('/wallets'),
+      Auth.apiFetch('/trade/balances'),
+    ]);
+    if (wRes.ok) wallets = await wRes.json();
+    if (bRes.ok) {
+      const balRows = await bRes.json();
+      for (const b of balRows) balances[b.wallet_id] = b;
+    }
+  } catch {}
+
+  // Filter to wallets on this leg's exchange (exchange OR perpdex).
+  const candidates = wallets.filter(w =>
+    !w.is_archived &&
+    (w.type_value || '').toLowerCase() === ex.toLowerCase() &&
+    (w.purpose === 'screener' || w.purpose === 'both')
+  );
+  if (candidates.length === 0) {
+    body.innerHTML = `<div class="lt-keys-empty">No screener-eligible key on ${ex.toUpperCase()}.<br>Add one in <a href="/portfolio#wallets" target="_blank" style="color:var(--green)">Portfolio</a>.</div>`;
+    return;
+  }
+
+  const curWid = (_trade?.[side]?.walletId) || null;
+  body.innerHTML = candidates.map(w => {
+    const b = balances[w.id] || {};
+    const bal = (b.balance_usdt != null) ? b.balance_usdt.toFixed(2) + ' USDT' : '—';
+    const res = (b.reserved_usdt != null && b.reserved_usdt > 0) ? `${b.reserved_usdt.toFixed(0)} locked` : '';
+    const avail = (b.available_usdt != null) ? b.available_usdt.toFixed(2) + ' avail' : '';
+    const isActive = w.id === curWid;
+    return `
+      <div class="lt-keys-row${isActive ? ' is-active' : ''}" onclick="ltSelectKey('${side}', ${w.id}, ${JSON.stringify(w.name).replace(/"/g, '&quot;')})">
+        <div class="lt-keys-row-top">
+          <span class="lt-keys-row-name">${_htmlEsc(w.name)}</span>
+          <span class="lt-keys-row-bal">${bal}</span>
+        </div>
+        <div class="lt-keys-row-meta">
+          <span>${_htmlEsc(w.display_info || '')}</span>
+          ${avail ? `<span style="color:var(--text2)">${avail}</span>` : ''}
+          ${res ? `<span style="color:var(--yellow)">${res}</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function ltCloseKeys() {
+  document.getElementById('lt-keys-pop')?.classList.add('hidden');
+}
+
+async function ltSelectKey(side, wid, name) {
+  // Persist + apply. We update the local _trade state directly and
+  // refresh balances without re-fetching /trade/status (since that
+  // endpoint always picks via _find_wallet — backend doesn't yet
+  // accept a wallet-id override). Instead we read /trade/balances
+  // for the selected wallet's numbers and stamp them into _trade.
+  _ltSaveWalletId(side, wid);
+  if (typeof _trade === 'object' && _trade?.[side]) {
+    _trade[side].walletId = wid;
+    try {
+      const r = await Auth.apiFetch('/trade/balances');
+      if (r.ok) {
+        const rows = await r.json();
+        const bal = rows.find(b => b.wallet_id === wid);
+        if (bal) {
+          _trade[side].balance   = bal.balance_usdt   || 0;
+          _trade[side].available = (bal.available_usdt != null) ? bal.available_usdt : (bal.balance_usdt || 0);
+          _trade[side].reserved  = bal.reserved_usdt  || 0;
+        }
+      }
+    } catch {}
+  }
+  // Update the leg's account-name line + close
+  const lbl = document.getElementById(`lt-bal-${side}-name`);
+  if (lbl) lbl.textContent = name || `wallet #${wid}`;
+  ltRefreshBalances();
+  ltRecalc();
+  ltCloseKeys();
+  toast(`Selected ${side.toUpperCase()} account: ${name}`, 'success');
+}
+
 async function ltRefreshBalances() {
   // Pull from _trade (populated by /api/trade/status). Wallet = raw
   // exchange balance; Available = balance − reservations from active
@@ -6359,6 +6547,11 @@ async function ltRefreshBalances() {
     const ex = (typeof SHORT === 'string') ? (typeof EX_LABEL === 'object' && EX_LABEL[SHORT] ? EX_LABEL[SHORT] : SHORT.toUpperCase()) : '—';
     shortLbl.innerHTML = `SHORT · ${ex}` + (shortRes > 0 ? ` <span style="color:var(--yellow);font-size:9px">· ${shortRes.toFixed(0)} USDT locked</span>` : '');
   }
+  // Default account-name display when no override has stamped it yet
+  const longNameEl  = document.getElementById('lt-bal-long-name');
+  const shortNameEl = document.getElementById('lt-bal-short-name');
+  if (longNameEl  && longNameEl.textContent  === '—' && _trade.long?.walletId)  longNameEl.textContent  = `wallet #${_trade.long.walletId}`;
+  if (shortNameEl && shortNameEl.textContent === '—' && _trade.short?.walletId) shortNameEl.textContent = `wallet #${_trade.short.walletId}`;
 }
 
 async function ltSubmit(force = false) {
