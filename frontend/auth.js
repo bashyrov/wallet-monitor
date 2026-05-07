@@ -53,13 +53,20 @@ const Auth = (() => {
   /** If already logged in, redirect away from login/register pages.
    *  Clears stale tokens instead of redirecting — avoids the redirect loop
    *  caused by valid Bearer token + expired HttpOnly session cookie. */
-  function redirectIfAuthed(redirectTo = '/app') {
+  function redirectIfAuthed(redirectTo = '/screener') {
     if (!isLoggedIn()) return;
-    // Don't redirect — the user might have a valid JWT but expired cookie.
-    // Redirecting to /app with no cookie → serve_page 302 → /login → loop.
-    // Instead: silently validate and clear if stale. User can login fresh.
+    // Validate token before redirecting to avoid redirect loops on stale JWT.
+    // Target should be a non-cookie-gated page (e.g. /screener) — gated pages
+    // (/app, /portfolio, /profile) require the session cookie which may be
+    // missing even when the localStorage JWT is fresh.
     fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + getToken() } })
-      .then(r => { if (!r.ok) clearSession(); })
+      .then(r => {
+        if (r.ok) {
+          location.replace(redirectTo);
+        } else {
+          clearSession();
+        }
+      })
       .catch(() => {});
   }
 
