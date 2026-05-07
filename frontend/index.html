@@ -800,6 +800,79 @@ img, svg { display: block; max-width: 100%; }
   .reveal, .reveal-stagger > * { opacity: 1; transform: none; }
 }
 
+/* ─── Funding mini-widget on /#why (Task 4B) ─── */
+.why-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: clamp(32px, 5vw, 64px);
+  align-items: center;
+}
+@media (max-width: 960px) {
+  .why-grid { grid-template-columns: 1fr; }
+}
+.fund-mini {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 18px 18px 14px;
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+}
+.fund-mini-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 10px;
+}
+.fund-mini-title {
+  font-size: 11px; font-weight: 600; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.fund-mini-live {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--green);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.fund-mini-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+  box-shadow: 0 0 8px var(--green-glow); animation: pulse 2s infinite;
+}
+.fund-mini-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.fund-mini-tbl th {
+  text-align: left; padding: 6px 4px; font-weight: 500; font-size: 10px;
+  color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em;
+}
+.fund-mini-tbl th.num { text-align: right; }
+.fund-mini-tbl td {
+  padding: 8px 4px; border-top: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+}
+.fund-mini-tbl td.num { text-align: right; }
+.fund-mini-tbl td.ex {
+  font-family: 'Inter', sans-serif; font-size: 11px; color: var(--text2);
+}
+.fund-mini-tbl .spr { font-weight: 600; transition: color var(--dur-fast) ease; }
+.fund-mini-tbl .spr.up { color: var(--green); }
+.fund-mini-tbl .spr.dn { color: var(--red); }
+.fund-mini-tbl .spr.flash {
+  animation: spr-flash 0.6s ease;
+}
+@keyframes spr-flash {
+  0% { background: transparent; }
+  30% { background: rgba(26, 255, 171, 0.18); }
+  100% { background: transparent; }
+}
+.fund-mini-tbl .spr.dn.flash {
+  animation-name: spr-flash-dn;
+}
+@keyframes spr-flash-dn {
+  0% { background: transparent; }
+  30% { background: rgba(248, 113, 113, 0.18); }
+  100% { background: transparent; }
+}
+.fund-mini-foot {
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; font-size: 10px; color: var(--text3);
+  font-family: 'JetBrains Mono', monospace; letter-spacing: 0.04em;
+}
+
 /* ─── MOBILE: tighten mockup cards (Task 4A) ─── */
 @media (max-width: 700px) {
   /* Allow horizontal scroll on data tables instead of overflow */
@@ -1142,14 +1215,42 @@ img, svg { display: block; max-width: 100%; }
 <!-- ─── WHY / INTRO ─── -->
 <section class="section" id="why">
   <div class="wrap">
-    <div class="sec-head reveal">
-      <div class="sec-kicker">01 · The problem</div>
-      <h2 class="sec-title">Funding arb is <span class="it">a research job</span>,<br>not a dashboard.</h2>
-      <p class="sec-lede">
-        Most traders chase funding spreads across a tab forest — one window per exchange, spreadsheets glueing rates together,
-        manual math for fees and intervals. By the time the math is done, the opportunity is gone.
-        Avalant collapses all of that into a single interface with real-time data, pair detection, and execution in the same keystroke.
-      </p>
+    <div class="why-grid reveal">
+      <div class="sec-head" style="text-align:left;">
+        <div class="sec-kicker">01 · The problem</div>
+        <h2 class="sec-title">Funding arb is <span class="it">a research job</span>,<br>not a dashboard.</h2>
+        <p class="sec-lede">
+          Most traders chase funding spreads across a tab forest — one window per exchange, spreadsheets glueing rates together,
+          manual math for fees and intervals. By the time the math is done, the opportunity is gone.
+          Avalant collapses all of that into a single interface with real-time data, pair detection, and execution in the same keystroke.
+        </p>
+      </div>
+      <!-- Live-looking funding widget. Animation only; no real API. -->
+      <aside class="fund-mini" aria-hidden="true">
+        <div class="fund-mini-head">
+          <div class="fund-mini-title">Funding spreads</div>
+          <span class="fund-mini-live"><span class="fund-mini-dot"></span>LIVE · 8h</span>
+        </div>
+        <table class="fund-mini-tbl" id="fund-mini-tbl">
+          <thead>
+            <tr>
+              <th>Symbol</th><th>Long</th><th>Short</th><th class="num">Spread</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-base="0.215"><td class="mono">RAVE</td><td class="ex">Gate</td><td class="ex">BingX</td><td class="num spr">+0.215%</td></tr>
+            <tr data-base="0.142"><td class="mono">HYPE</td><td class="ex">HL</td><td class="ex">Bybit</td><td class="num spr">+0.142%</td></tr>
+            <tr data-base="0.083"><td class="mono">BTC</td><td class="ex">Bybit</td><td class="ex">Gate</td><td class="num spr">+0.083%</td></tr>
+            <tr data-base="0.061"><td class="mono">ETH</td><td class="ex">Binance</td><td class="ex">OKX</td><td class="num spr">+0.061%</td></tr>
+            <tr data-base="0.054"><td class="mono">SOL</td><td class="ex">OKX</td><td class="ex">MEXC</td><td class="num spr">+0.054%</td></tr>
+          </tbody>
+        </table>
+        <div class="fund-mini-foot">
+          <span>Updated <span id="fund-mini-age">0.4</span>s ago</span>
+          <span>·</span>
+          <span><span id="fund-mini-cnt">5</span> of 487 opps</span>
+        </div>
+      </aside>
     </div>
   </div>
 </section>
@@ -1841,6 +1942,47 @@ if ('IntersectionObserver' in window) {
   const track = document.getElementById('ticker-track');
   if (!track) return;
   track.innerHTML = track.innerHTML + track.innerHTML;
+})();
+
+// ─── Funding mini-widget animation (cosmetic; no real API) ───
+(() => {
+  const tbl = document.getElementById('fund-mini-tbl');
+  const ageEl = document.getElementById('fund-mini-age');
+  if (!tbl) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const rows = Array.from(tbl.querySelectorAll('tbody tr'));
+  // Tiny bounded random walk around each row's base spread so values feel
+  // alive without drifting. ±0.020% jitter clipped to [base*0.5, base*1.6].
+  const state = rows.map(r => ({
+    base: parseFloat(r.dataset.base),
+    cur:  parseFloat(r.dataset.base),
+    el:   r.querySelector('.spr'),
+  }));
+  let lastUpdate = performance.now();
+  setInterval(() => {
+    // Pick 1-2 rows to nudge each tick — staggered, not every row at once.
+    const k = 1 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < k; i++) {
+      const s = state[Math.floor(Math.random() * state.length)];
+      const delta = (Math.random() - 0.5) * 0.040;
+      const next = Math.max(s.base * 0.5, Math.min(s.base * 1.6, s.cur + delta));
+      const direction = next > s.cur ? 'up' : 'dn';
+      s.cur = next;
+      const sign = next >= 0 ? '+' : '';
+      s.el.textContent = `${sign}${next.toFixed(3)}%`;
+      s.el.classList.remove('up', 'dn', 'flash');
+      // Force reflow so the next animation re-fires
+      void s.el.offsetWidth;
+      s.el.classList.add(direction, 'flash');
+    }
+    lastUpdate = performance.now();
+  }, 1400);
+  // "Updated Xs ago" odometer
+  setInterval(() => {
+    if (!ageEl) return;
+    const secs = (performance.now() - lastUpdate) / 1000;
+    ageEl.textContent = secs.toFixed(1);
+  }, 100);
 })();
 
 </script>
