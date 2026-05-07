@@ -63,19 +63,33 @@ def _vwap_from_levels(levels: list[list[float]], qty: float) -> Optional[float]:
 
 
 def _read_book_for_leg(books: dict, exchange: str, symbol: str) -> Optional[dict]:
-    """Extract one leg's orderbook from the merged books.json structure.
-    Returns {"bids": [...], "asks": [...], "ts": float} or None if missing
-    or stale."""
+    """Extract one leg's orderbook from the merged books.json.
+
+    Go-fetcher writes a FLAT keying: top-level keys like "mexc:SPACEX"
+    map directly to {"asks": [...], "bids": [...], "ts": ..., ...}.
+    The previous implementation assumed nested {exchange: {symbol: …}}
+    and silently returned None for every lookup → triggers never fired
+    on books that were actually present.
+
+    Returns {"bids": [...], "asks": [...], "ts": float} or None if
+    missing or stale (>BOOKS_STALE_MAX_S seconds old).
+    """
+    if not books or not exchange or not symbol:
+        return None
+    ex = exchange.lower()
+    sym = symbol.upper()
     try:
-        # books.json structure: { "<exchange>": { "<symbol>": {"bids":..., "asks":..., "ts":...} } }
-        per_ex = books.get(exchange) or {}
-        sym_entry = per_ex.get(symbol) or per_ex.get(symbol.upper())
-        if not sym_entry:
+        sym_entry = books.get(f"{ex}:{sym}")
+        if sym_entry is None:
+            # Defensive: tolerate older/alternate nested shape too.
+            per_ex = books.get(ex)
+            if isinstance(per_ex, dict):
+                sym_entry = per_ex.get(sym) or per_ex.get(symbol)
+        if not isinstance(sym_entry, dict):
             return None
         ts = sym_entry.get("ts") or sym_entry.get("timestamp")
         if ts is None:
             return None
-        # ts may be ms or seconds — be lenient
         ts_s = ts / 1000.0 if ts > 10**12 else float(ts)
         if (_time.time() - ts_s) > BOOKS_STALE_MAX_S:
             return None

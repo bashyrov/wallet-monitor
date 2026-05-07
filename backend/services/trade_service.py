@@ -1305,12 +1305,43 @@ def _pending_open_trigger_reservations(db: Session, user_id: int) -> dict[int, f
     if not rows:
         return {}
 
-    # Resolve mark prices once. price_service caches symbols → USDT.
+    # Resolve mark prices once. price_service caches the CMC top-100,
+    # so it covers BTC/ETH/SOL but not most alts (SPACEX, VANRY, etc).
+    # For anything missing, fall back to the live orderbook mid-price
+    # from books.json — which the go-fetcher dumps every 100ms for any
+    # symbol on any subscribed venue.
     try:
         from backend.services import price_service
-        all_prices = price_service.price_cache_snapshot() or {}
+        all_prices = dict(price_service.price_cache_snapshot() or {})
     except Exception:
         all_prices = {}
+
+    # Lazy-load books.json for orderbook fallback — we only read once
+    # per call regardless of how many triggers we're processing.
+    _books = None
+    def _book_mid(ex: str, sym: str) -> float:
+        nonlocal _books
+        if _books is None:
+            try:
+                import json, os
+                cache_dir = os.environ.get("AVALANT_FETCHER_CACHE_DIR", "/tmp/avalant_cache")
+                with open(os.path.join(cache_dir, "books.json")) as f:
+                    _books = json.load(f)
+            except Exception:
+                _books = {}
+        entry = _books.get(f"{ex.lower()}:{sym.upper()}") if isinstance(_books, dict) else None
+        if not isinstance(entry, dict):
+            return 0.0
+        bids = entry.get("bids") or []
+        asks = entry.get("asks") or []
+        try:
+            top_bid = float(bids[0][0]) if bids else 0.0
+            top_ask = float(asks[0][0]) if asks else 0.0
+            if top_bid > 0 and top_ask > 0:
+                return (top_bid + top_ask) / 2.0
+            return top_bid or top_ask
+        except (TypeError, ValueError, IndexError):
+            return 0.0
 
     res: dict[int, float] = {}
     for r in rows:
@@ -1330,6 +1361,13 @@ def _pending_open_trigger_reservations(db: Session, user_id: int) -> dict[int, f
 
         sym = (r.long_symbol or "").upper()
         mark = float(all_prices.get(sym) or 0)
+        # Fallback for non-CMC alts: use live orderbook mid from
+        # books.json. Try long leg first (the side we always quote
+        # against), short as backup.
+        if mark <= 0 and r.long_exchange:
+            mark = _book_mid(r.long_exchange, sym)
+        if mark <= 0 and r.short_exchange:
+            mark = _book_mid(r.short_exchange, sym)
         if mark <= 0:
             continue
         notional_usd = qty_remaining * mark
