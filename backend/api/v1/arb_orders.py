@@ -154,6 +154,51 @@ def _verify_user_owns_wallets(db: Session, user_id: int, *wallet_ids: int) -> No
             raise HTTPException(404, f"wallet {wid} not found or not owned by user")
 
 
+async def _validate_min_qty_per_leg(db: Session, body: ArbOrderCreate, qty: float) -> None:
+    """Run each leg's adapter.preflight() against the requested qty so
+    min-qty / max-qty / step-size violations show up as 422s at trigger
+    create time instead of leaking into runtime "fire and fail" cycles.
+
+    Most adapters' preflight only consults PUBLIC contract specs (no
+    creds needed) — pass an empty dict so the call doesn't depend on
+    a fresh DB session. Avoids cross-thread SQLite issues that would
+    otherwise turn a no-op preflight stub into a 500.
+
+    Falls back silently when the adapter doesn't implement preflight
+    or raises — the runtime path is a second line of defense.
+    """
+    from backend.services.trade_adapters import ADAPTERS
+
+    legs = (
+        ("long",  body.long_exchange,  body.long_symbol),
+        ("short", body.short_exchange, body.short_symbol),
+    )
+    for side, ex, sym in legs:
+        if not ex or not sym:
+            continue
+        adapter = ADAPTERS.get(ex.lower())
+        if adapter is None or not hasattr(adapter, "preflight"):
+            continue
+        try:
+            res = await adapter.preflight({}, sym, qty, body.leverage or 1)
+        except Exception:
+            continue
+        if not isinstance(res, dict):
+            continue
+        if not res.get("ok"):
+            raise HTTPException(
+                422,
+                detail={
+                    "error": "qty_validation_failed",
+                    "leg": side,
+                    "exchange": ex.lower(),
+                    "symbol": sym,
+                    "qty_requested": qty,
+                    "reason": res.get("reason") or "Pre-flight check failed",
+                },
+            )
+
+
 def _validate_balance_with_reservations(db: Session, user_id: int, body: ArbOrderCreate) -> None:
     """Reject the create if the wallet's available capital (balance minus
     already-reserved-by-other-pending-triggers) can't back this order's
@@ -258,6 +303,14 @@ def create_arb_order(
     # fail fast if it exceeds the wallet's actual balance.
     if body.kind == "open":
         _validate_balance_with_reservations(db, user.id, body)
+        # Per-venue qty validation — call each adapter's preflight() so
+        # we reject min-qty / step-size / max-qty issues at create time
+        # rather than letting the trigger fail noisily at fire time.
+        # If portion_size is set we validate ONE chunk (each fire sends
+        # one portion); else the full total_qty.
+        _qty_to_check = body.portion_size_token or body.total_qty_token
+        import asyncio as _asyncio
+        _asyncio.run(_validate_min_qty_per_leg(db, body, _qty_to_check))
 
     # Immediate-execution guard — applies to all kinds with a non-null
     # trigger_spread_pct. If condition is already met by current effective

@@ -156,6 +156,11 @@ def _stub_exchange_validate_key(monkeypatch):
     for name, adapter in (trade_adapters.ADAPTERS or {}).items():
         if hasattr(adapter, "validate_key"):
             monkeypatch.setattr(adapter, "validate_key", AsyncMock(return_value=ok))
+        # Same network-isolation rationale: arb-order create now calls
+        # adapter.preflight() to validate min-qty / step-size / max-qty
+        # before persisting. Stub to {"ok": True} in tests.
+        if hasattr(adapter, "preflight"):
+            monkeypatch.setattr(adapter, "preflight", AsyncMock(return_value={"ok": True}))
     yield
 
 
