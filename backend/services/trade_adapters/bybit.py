@@ -220,6 +220,19 @@ class BybitAdapter:
         await asyncio.gather(_mode(), _lev())
 
     @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        info = await _instrument_info(cls._symbol(symbol))
+        if not info:
+            return None
+        return {
+            "min_qty": float(info.get("minOrderQty") or 0),
+            "step":    float(info.get("qtyStep") or 0) or None,
+            "max_qty": None,
+            "min_notional": float(info.get("minNotional") or 0) or None,
+            "unit": "coin",
+        }
+
+    @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
         sym = cls._symbol(symbol)
         info = await _instrument_info(sym)

@@ -168,6 +168,26 @@ class GateAdapter:
             except RuntimeError:
                 pass
 
+    # ── Public qty limits ──
+    @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        """Min / max / step qty for `symbol` (in coin units, not contracts).
+        Used by the trade panel to render an inline "min 0.01 SPACEX, step
+        0.001" hint and reject sub-min orders before they hit preflight.
+        Returns None when the symbol isn't on Gate."""
+        contract = _gate_symbol(symbol)
+        all_contracts = await _contracts()
+        info = all_contracts.get(contract)
+        if not info:
+            return None
+        quanto = float(info.get("quanto_multiplier") or 1)
+        return {
+            "min_qty": float(info.get("order_size_min") or 1) * quanto,
+            "max_qty": float(info.get("order_size_max") or 0) * quanto if info.get("order_size_max") else None,
+            "step":    quanto,    # 1 contract = quanto coins → smallest increment
+            "unit":    "coin",
+        }
+
     # ── Preflight ──
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:

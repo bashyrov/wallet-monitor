@@ -205,6 +205,22 @@ class BinanceAdapter:
 
         await asyncio.gather(_margin(), _lev())
 
+    # ── Public qty limits ──
+    @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        """Public min/step/max qty for `symbol`. Drives the LT panel hint
+        + client-side reject so users don't submit sub-min orders."""
+        info = (await _exchange_info()).get(cls._symbol(symbol))
+        if not info:
+            return None
+        return {
+            "min_qty": float(info.get("minQty") or 0),
+            "step":    float(info.get("stepSize") or 0) or None,
+            "max_qty": None,
+            "min_notional": float(info.get("minNotional") or 0) or None,
+            "unit": "coin",
+        }
+
     # ── Pre-flight sanity ──
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:

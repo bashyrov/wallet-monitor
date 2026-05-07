@@ -216,13 +216,16 @@ async def leverage_limits(
     short_ex: str = Query(...),
     _: User = Depends(get_current_user),
 ):
-    """Public-only max leverage per leg — no API key required. Used by the
-    trading panel to cap the leverage stepper so users can't pick a value
-    the exchange will reject."""
+    """Public-only max leverage + qty limits per leg — no API key required.
+    Trading panel uses this to:
+      • cap the leverage stepper at venue's real max
+      • render an inline "min: 0.01 SPACEX, step: 0.001" hint under qty
+      • client-side reject sub-min orders before they hit the API
+    """
     import asyncio
     from backend.services.trade_adapters import ADAPTERS, SUPPORTED_EXCHANGES
 
-    async def _probe(ex: str) -> int | None:
+    async def _probe_lev(ex: str) -> int | None:
         if ex not in SUPPORTED_EXCHANGES:
             return None
         adapter = ADAPTERS[ex]
@@ -233,13 +236,25 @@ async def leverage_limits(
         except Exception:
             return None
 
-    long_max, short_max = await asyncio.gather(
-        _probe(long_ex.lower()), _probe(short_ex.lower()),
+    async def _probe_qty(ex: str) -> dict | None:
+        if ex not in SUPPORTED_EXCHANGES:
+            return None
+        adapter = ADAPTERS[ex]
+        if not hasattr(adapter, "get_public_qty_limits"):
+            return None
+        try:
+            return await adapter.get_public_qty_limits(symbol)
+        except Exception:
+            return None
+
+    long_max, short_max, long_qty, short_qty = await asyncio.gather(
+        _probe_lev(long_ex.lower()),  _probe_lev(short_ex.lower()),
+        _probe_qty(long_ex.lower()),  _probe_qty(short_ex.lower()),
     )
     return {
         "symbol": symbol,
-        "long":  {"exchange": long_ex.lower(),  "max_leverage": long_max},
-        "short": {"exchange": short_ex.lower(), "max_leverage": short_max},
+        "long":  {"exchange": long_ex.lower(),  "max_leverage": long_max,  "qty_limits": long_qty},
+        "short": {"exchange": short_ex.lower(), "max_leverage": short_max, "qty_limits": short_qty},
     }
 
 

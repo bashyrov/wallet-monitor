@@ -660,17 +660,22 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
         <div class="lt-warn" id="lt-warn" style="display:none"></div>
 
         <!-- Quantity — toggle between USDT (notional) and TOKEN (base qty).
-             % Allocation slider drives whichever unit is active. -->
+             % Allocation slider drives whichever unit is active. Below
+             the input, an inline hint pulled from venue specs:
+             "Min: 0.01 SPACEX · Step: 0.001 (Gate ↑)" — clickable to
+             auto-round to step. -->
         <div class="lt-row">
           <label class="lt-lbl">Quantity</label>
           <div class="lt-input-wrap">
-            <input id="lt-qty" class="lt-input" type="number" step="0.001" placeholder="0.00" oninput="ltOnQtyInput()">
+            <input id="lt-qty" class="lt-input" type="number" step="0.001" placeholder="0.00"
+                   oninput="ltOnQtyInput()" onblur="ltOnQtyBlur()">
             <div class="lt-unit-toggle">
               <button type="button" class="lt-unit-btn is-active" data-unit="token" onclick="ltSetUnit('token')" id="lt-unit-token">—</button>
               <button type="button" class="lt-unit-btn"           data-unit="usdt"  onclick="ltSetUnit('usdt')"  id="lt-unit-usdt">USDT</button>
             </div>
           </div>
         </div>
+        <div class="lt-qty-hint" id="lt-qty-hint"></div>
         <div class="lt-alloc">
           <div class="lt-alloc-head">
             <span>% Allocation</span>
@@ -5111,6 +5116,11 @@ async function initTradePanel(){
       const d = await r.json();
       if (d.long  && d.long.max_leverage)  _trade.long.maxLeverage  = d.long.max_leverage;
       if (d.short && d.short.max_leverage) _trade.short.maxLeverage = d.short.max_leverage;
+      // Qty limits — min/step/max per leg from each venue's contract specs.
+      // Drives the inline hint under the qty input + client-side reject.
+      _trade.long.qtyLimits  = d.long  && d.long.qty_limits  ? d.long.qty_limits  : null;
+      _trade.short.qtyLimits = d.short && d.short.qty_limits ? d.short.qty_limits : null;
+      if (typeof ltRefreshQtyHint === 'function') ltRefreshQtyHint();
       // Clamp current choice
       if (_trade.long.leverage  > _trade.long.maxLeverage)  { _trade.long.leverage  = _trade.long.maxLeverage;  _renderLev('long');  tradeRecalc('long'); }
       if (_trade.short.leverage > _trade.short.maxLeverage) { _trade.short.leverage = _trade.short.maxLeverage; _renderLev('short'); tradeRecalc('short'); }
@@ -6443,6 +6453,100 @@ function ltOnQtyInput() {
     _ltSetSliderFill(pct);
   }
   ltRecalc();
+  if (typeof ltRefreshQtyHint === 'function') ltRefreshQtyHint();
+}
+
+// ── Qty limits hint + client-side validation ────────────────────────
+function _ltCurTokenQty() {
+  // Always returns a TOKEN-unit qty regardless of LT.unit setting,
+  // for feeding into venue-spec validators (min/step in coin units).
+  const v = parseFloat(document.getElementById('lt-qty')?.value) || 0;
+  if (LT.unit === 'token') return v;
+  const mark = _ltCurMarkPrice();
+  return mark > 0 ? v / mark : 0;
+}
+
+function _ltFmtQty(q) {
+  if (q == null || !isFinite(q) || q <= 0) return '—';
+  // Pick a sensible precision per magnitude
+  if (q >= 1)        return q.toFixed(3);
+  if (q >= 0.01)     return q.toFixed(4);
+  if (q >= 0.0001)   return q.toFixed(6);
+  return q.toExponential(2);
+}
+
+function ltRefreshQtyHint() {
+  const el = document.getElementById('lt-qty-hint');
+  if (!el) return;
+  const sym = (typeof SYM === 'string' ? SYM : '');
+  const legs = [
+    { side: 'long',  ex: (typeof LONG  === 'string' ? LONG  : ''), q: _trade?.long?.qtyLimits  },
+    { side: 'short', ex: (typeof SHORT === 'string' ? SHORT : ''), q: _trade?.short?.qtyLimits },
+  ];
+  // In spot_short long leg sometimes has different specs — for now we
+  // surface what the perp-side adapter reports; spot venue qty hint is
+  // a follow-up.
+  const cur = _ltCurTokenQty();
+  const parts = legs.map(({ side, ex, q }) => {
+    if (!q) return '';
+    const min = q.min_qty || 0;
+    const step = q.step;
+    const bad = (cur > 0 && min > 0 && cur < min);
+    const exLbl = (typeof EX_LABEL === 'object' && EX_LABEL[ex]) || ex.toUpperCase();
+    const minTxt = min > 0 ? `min ${_ltFmtQty(min)} ${sym}` : '';
+    const stepTxt = step ? ` · step ${_ltFmtQty(step)}` : '';
+    const minNotionalTxt = q.min_notional > 0 ? ` · min ${q.min_notional} USDT` : '';
+    return `<span class="h-leg${bad ? ' bad' : ''}" title="${side.toUpperCase()} · ${exLbl}">
+      <span class="ex">${side[0].toUpperCase()}·${exLbl}</span>${minTxt}${stepTxt}${minNotionalTxt}
+    </span>`;
+  });
+  // Round-up button if step is known and current qty is misaligned
+  let roundBtn = '';
+  if (cur > 0) {
+    const steps = legs.map(l => l.q?.step).filter(Boolean);
+    const minStep = steps.length ? Math.min(...steps) : 0;
+    const mins = legs.map(l => l.q?.min_qty || 0);
+    const maxMin = Math.max(...mins, 0);
+    if (minStep > 0) {
+      const aligned = Math.max(maxMin || minStep, Math.ceil(cur / minStep) * minStep);
+      // Only show if rounding actually changes something
+      if (Math.abs(aligned - cur) > 1e-9) {
+        roundBtn = `<button type="button" class="h-round-btn" onclick="ltRoundQtyToStep()">↑ ${_ltFmtQty(aligned)}</button>`;
+      }
+    }
+  }
+  el.innerHTML = parts.join('') + roundBtn;
+}
+
+function ltRoundQtyToStep() {
+  const limits = [_trade?.long?.qtyLimits, _trade?.short?.qtyLimits].filter(Boolean);
+  if (!limits.length) return;
+  const minStep = Math.min(...limits.map(l => l.step || Infinity));
+  const minQty  = Math.max(...limits.map(l => l.min_qty || 0));
+  if (!isFinite(minStep) || minStep <= 0) return;
+  const cur = _ltCurTokenQty();
+  if (cur <= 0) return;
+  const aligned = Math.max(minQty, Math.ceil(cur / minStep) * minStep);
+  // Write back in active unit
+  const input = document.getElementById('lt-qty');
+  if (LT.unit === 'usdt') {
+    const mark = _ltCurMarkPrice();
+    input.value = mark > 0 ? (aligned * mark).toFixed(2) : aligned.toFixed(6);
+  } else {
+    input.value = aligned.toFixed(6);
+  }
+  ltOnQtyInput();
+}
+
+function ltOnQtyBlur() {
+  // Subtle auto-snap on blur — only if user typed something obviously
+  // sub-min (would be rejected anyway). Avoid surprise rewrites.
+  const cur = _ltCurTokenQty();
+  if (cur <= 0) return;
+  const limits = [_trade?.long?.qtyLimits, _trade?.short?.qtyLimits].filter(Boolean);
+  if (!limits.length) return;
+  const maxMin = Math.max(...limits.map(l => l.min_qty || 0));
+  if (maxMin > 0 && cur < maxMin) ltRoundQtyToStep();
 }
 
 function ltOnPortionToggle(e) {

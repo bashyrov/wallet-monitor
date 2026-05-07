@@ -1120,6 +1120,29 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
   color: var(--yellow); font-size: 11px; line-height: 1.4;
 }
 
+/* Inline qty validation hint — pulled from venue specs */
+.lt-qty-hint {
+  font-size: 10.5px; color: var(--text3); margin-top: -4px;
+  display: flex; flex-wrap: wrap; gap: 6px; line-height: 1.5;
+}
+.lt-qty-hint:empty { display: none; }
+.lt-qty-hint .h-leg {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: var(--r-sm);
+  background: var(--bg); border: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+}
+.lt-qty-hint .h-leg.bad {
+  background: var(--red-soft); border-color: var(--red-edge); color: var(--red);
+}
+.lt-qty-hint .h-leg .ex { color: var(--text2); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; }
+.lt-qty-hint .h-round-btn {
+  font-size: 10px; padding: 0 6px; border-radius: var(--r-sm);
+  background: var(--green-soft); color: var(--green); border: 1px solid var(--green-edge);
+  cursor: pointer; font-family: inherit;
+}
+.lt-qty-hint .h-round-btn:hover { background: rgba(26,255,171,0.2); }
+
 .lt-alloc { display: flex; flex-direction: column; gap: 4px; }
 .lt-alloc-head {
   display: flex; justify-content: space-between;
