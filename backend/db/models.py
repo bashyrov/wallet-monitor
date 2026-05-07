@@ -672,6 +672,11 @@ class TradePosition(Base):
     opened_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     closed_at = Column(DateTime, nullable=True, index=True)
 
+    # Wraps execution legs into a user-intent ArbPosition. Set on auto-pair
+    # detection or when a trigger fires via Live Trading panel. Null for
+    # legacy single-leg trades that haven't been paired yet.
+    arb_position_id = Column(Integer, ForeignKey("arb_positions.id", ondelete="SET NULL"), nullable=True, index=True)
+
 
 class TradePairDecision(Base):
     """User's persisted choice about whether two single positions should be
@@ -716,3 +721,104 @@ class PopupDismissal(Base):
     __table_args__ = (
         UniqueConstraint("popup_id", "user_id", name="uq_popup_dismissals_user_popup"),
     )
+
+
+class ArbPosition(Base):
+    """User-intent arbitrage pair entity. Wraps 1..N execution legs
+    (TradePosition rows linked via arb_position_id) plus 0..N child
+    triggers (ArbTriggerOrder.parent_trigger_id chain).
+
+    Lifecycle: pending → opening → open → (closing → closed | partial).
+    Status is terminal at 'closed' / 'cancelled'. See DEV_PROMPT.md §7.6.
+    """
+    __tablename__ = "arb_positions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    kind = Column(String, nullable=False)              # long_short | spot_short
+    long_exchange = Column(String, nullable=False)
+    long_symbol = Column(String, nullable=False)
+    long_wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
+    short_exchange = Column(String, nullable=False)
+    short_symbol = Column(String, nullable=False)
+    short_wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
+
+    target_qty_token = Column(Float, nullable=True)
+    leverage = Column(Integer, nullable=True)
+    margin_mode = Column(String, nullable=False, default="isolated")
+
+    entry_spread_pct = Column(Float, nullable=True)
+    long_entry_price = Column(Float, nullable=True)
+    short_entry_price = Column(Float, nullable=True)
+    long_qty = Column(Float, nullable=False, default=0.0)
+    short_qty = Column(Float, nullable=False, default=0.0)
+    opened_at = Column(DateTime, nullable=True)
+
+    exit_spread_pct = Column(Float, nullable=True)
+    long_exit_price = Column(Float, nullable=True)
+    short_exit_price = Column(Float, nullable=True)
+    realized_pnl_usd = Column(Float, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+
+    status = Column(String, nullable=False, default="pending", index=True)
+    synced_externally = Column(Boolean, nullable=False, default=False)
+    closed_externally = Column(Boolean, nullable=False, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    triggers = relationship("ArbTriggerOrder", back_populates="arb_position",
+                            foreign_keys="ArbTriggerOrder.arb_position_id",
+                            cascade="all, delete-orphan")
+
+
+class ArbTriggerOrder(Base):
+    """Server-side conditional order for arb pairs. Supports portion-based
+    fills, infinite-fill loops, scheduled activation, and parent/child
+    cascading (parent open → linked TP/SL children).
+
+    State machine: scheduled → pending → firing → fired | failed | cancelled.
+    Atomic claim-on-fire SQL prevents cross-replica double-fires.
+    """
+    __tablename__ = "arb_trigger_orders"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    arb_position_id = Column(Integer, ForeignKey("arb_positions.id", ondelete="CASCADE"), nullable=True, index=True)
+    parent_trigger_id = Column(Integer, ForeignKey("arb_trigger_orders.id", ondelete="CASCADE"), nullable=True, index=True)
+
+    kind = Column(String, nullable=False)              # open | close | tp | sl
+    trigger_spread_pct = Column(Float, nullable=True)  # null = market
+
+    long_exchange = Column(String, nullable=True)
+    long_symbol = Column(String, nullable=True)
+    long_wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
+    short_exchange = Column(String, nullable=True)
+    short_symbol = Column(String, nullable=True)
+    short_wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
+
+    total_qty_token = Column(Float, nullable=True)
+    portion_size_token = Column(Float, nullable=True)
+    portions_filled = Column(Integer, nullable=False, default=0)
+    portions_target = Column(Integer, nullable=True)
+    infinite_fill = Column(Boolean, nullable=False, default=False)
+    activate_at = Column(DateTime, nullable=True)
+
+    leverage = Column(Integer, nullable=True)
+    margin_mode = Column(String, nullable=False, default="isolated")
+    reduce_only = Column(Boolean, nullable=False, default=False)
+
+    status = Column(String, nullable=False, default="pending", index=True)
+    last_fired_at = Column(DateTime, nullable=True)
+    error_kind = Column(String, nullable=True)
+    error_message = Column(String, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    arb_position = relationship("ArbPosition", back_populates="triggers", foreign_keys=[arb_position_id])
+    parent = relationship("ArbTriggerOrder", remote_side="ArbTriggerOrder.id",
+                          foreign_keys=[parent_trigger_id], back_populates="children")
+    children = relationship("ArbTriggerOrder", back_populates="parent",
+                            foreign_keys=[parent_trigger_id], cascade="all, delete-orphan")
