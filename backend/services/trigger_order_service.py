@@ -90,10 +90,13 @@ def _compute_effective_spread(
     short_ex: str, short_sym: str,
     qty_token: float,
 ) -> Optional[float]:
-    """Effective entry spread for opening at `qty_token` size.
+    """Effective ENTRY spread for opening at `qty_token` size (in_pct).
 
     Long-side asks (we BUY into asks); short-side bids (we SELL into bids).
     Spread = (short_bid_vwap - long_ask_vwap) / long_ask_vwap × 100.
+
+    Used by `kind='open'` triggers — they fire when the opening spread
+    widens past their threshold.
 
     Returns None if either leg's book is missing/stale or has insufficient
     depth.
@@ -109,6 +112,54 @@ def _compute_effective_spread(
         return None
 
     return (short_vwap - long_vwap) / long_vwap * 100.0
+
+
+def _compute_exit_spread(
+    books: dict,
+    long_ex: str, long_sym: str,
+    short_ex: str, short_sym: str,
+    qty_token: float,
+) -> Optional[float]:
+    """Effective EXIT spread for closing at `qty_token` size (out_pct).
+
+    Inverse of the entry path: when closing, we SELL the long leg (hit
+    bids) and BUY the short leg back (hit asks). Spread we receive on
+    close is therefore (short_ask_vwap - long_bid_vwap) / long_bid_vwap.
+
+    Used by `kind='tp' / 'sl' / 'close'` triggers — they fire on the
+    actual fillable close-spread, not the open-side spread (in_pct
+    drifts independently and would mis-fire TP/SL on size).
+
+    Returns None on missing/stale book or insufficient depth.
+    """
+    long_book  = _read_book_for_leg(books, long_ex, long_sym)
+    short_book = _read_book_for_leg(books, short_ex, short_sym)
+    if not long_book or not short_book:
+        return None
+
+    long_vwap  = _vwap_from_levels(long_book.get("bids") or [], qty_token)
+    short_vwap = _vwap_from_levels(short_book.get("asks") or [], qty_token)
+    if not long_vwap or not short_vwap or long_vwap <= 0:
+        return None
+
+    return (short_vwap - long_vwap) / long_vwap * 100.0
+
+
+def _spread_for_order(
+    books: dict, order: "ArbTriggerOrder", qty_token: float,
+) -> Optional[float]:
+    """Pick the right spread direction for this trigger kind.
+       open  → in_pct  (entry side: long asks, short bids)
+       tp/sl → out_pct (exit side: long bids, short asks)
+       close → out_pct (same as tp/sl)
+    """
+    long_ex  = order.long_exchange
+    long_sym = order.long_symbol
+    short_ex = order.short_exchange
+    short_sym = order.short_symbol
+    if order.kind == "open":
+        return _compute_effective_spread(books, long_ex, long_sym, short_ex, short_sym, qty_token)
+    return _compute_exit_spread(books, long_ex, long_sym, short_ex, short_sym, qty_token)
 
 
 def _load_books_json() -> Optional[dict]:
@@ -373,9 +424,17 @@ async def _tick(db: Session, books: Optional[dict]) -> None:
             qty = order.arb_position.long_qty or qty
         if not long_ex or not short_ex:
             continue
-        spread = _compute_effective_spread(
-            books, long_ex, long_sym, short_ex, short_sym, qty,
-        )
+        # Direction depends on kind: open uses in_pct, tp/sl/close use
+        # out_pct. Without this split, TP/SL would chase the open-spread
+        # which doesn't reflect what we'd actually receive on close.
+        if order.kind == "open":
+            spread = _compute_effective_spread(
+                books, long_ex, long_sym, short_ex, short_sym, qty,
+            )
+        else:
+            spread = _compute_exit_spread(
+                books, long_ex, long_sym, short_ex, short_sym, qty,
+            )
         if spread is None:
             continue
         if not condition_met(order, spread):

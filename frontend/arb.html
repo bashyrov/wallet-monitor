@@ -5009,6 +5009,14 @@ function _applyTradeStatus(s){
     _trade[side].walletId  = info.wallet_id || null;
     _trade[side].keyStatus = info.status    || 'missing';   // ok | disabled | missing
     _trade[side].balance   = info.balance_usdt || 0;
+    // Reservation-aware available — subtracts capital locked by other
+    // pending open-triggers so the slider sizes against what user can
+    // actually commit. Falls back to balance if backend didn't include
+    // available_usdt (e.g. older API version, defensive).
+    _trade[side].available = (info.available_usdt != null)
+      ? info.available_usdt
+      : (info.balance_usdt || 0);
+    _trade[side].reserved  = info.reserved_usdt || 0;
     const st = document.getElementById(`trade-leg-${side}-status`);
     if (st) {
       if (info.status === 'ok')           { st.textContent = 'Keys · OK';       st.className = 'trade-leg-status ok'; }
@@ -6323,19 +6331,34 @@ function ltCheckImmediate() {
 }
 
 async function ltRefreshBalances() {
-  // Reuse the existing balance fetch already wired in arb.html. Fall
-  // through silently if not available — the panel still works without
-  // balances (user can type qty manually).
+  // Pull from _trade (populated by /api/trade/status). Wallet = raw
+  // exchange balance; Available = balance − reservations from active
+  // open-triggers. Slider sizing uses Available (LT.*Bal.avail).
   if (typeof _trade !== 'object' || !_trade) return;
-  const longBal  = _trade.long?.balance  || 0;
-  const shortBal = _trade.short?.balance || 0;
-  LT.longBal  = { total: longBal,  avail: longBal };
-  LT.shortBal = { total: shortBal, avail: shortBal };
+  const longBal   = _trade.long?.balance   || 0;
+  const shortBal  = _trade.short?.balance  || 0;
+  const longAvail = (_trade.long?.available  != null) ? _trade.long.available  : longBal;
+  const shortAvail= (_trade.short?.available != null) ? _trade.short.available : shortBal;
+  LT.longBal  = { total: longBal,  avail: longAvail };
+  LT.shortBal = { total: shortBal, avail: shortAvail };
   const setT = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   setT('lt-bal-long-total',  `${longBal.toFixed(2)} USDT`);
-  setT('lt-bal-long-avail',  `${longBal.toFixed(2)} USDT`);
+  setT('lt-bal-long-avail',  `${longAvail.toFixed(2)} USDT`);
   setT('lt-bal-short-total', `${shortBal.toFixed(2)} USDT`);
-  setT('lt-bal-short-avail', `${shortBal.toFixed(2)} USDT`);
+  setT('lt-bal-short-avail', `${shortAvail.toFixed(2)} USDT`);
+  // Show reservation hint inline if any locked capital exists
+  const longRes  = _trade.long?.reserved  || 0;
+  const shortRes = _trade.short?.reserved || 0;
+  const longLbl  = document.getElementById('lt-bal-long-label');
+  const shortLbl = document.getElementById('lt-bal-short-label');
+  if (longLbl) {
+    const ex = (typeof LONG === 'string') ? (typeof EX_LABEL === 'object' && EX_LABEL[LONG] ? EX_LABEL[LONG] : LONG.toUpperCase()) : '—';
+    longLbl.innerHTML = `LONG · ${ex}` + (longRes > 0 ? ` <span style="color:var(--yellow);font-size:9px">· ${longRes.toFixed(0)} USDT locked</span>` : '');
+  }
+  if (shortLbl) {
+    const ex = (typeof SHORT === 'string') ? (typeof EX_LABEL === 'object' && EX_LABEL[SHORT] ? EX_LABEL[SHORT] : SHORT.toUpperCase()) : '—';
+    shortLbl.innerHTML = `SHORT · ${ex}` + (shortRes > 0 ? ` <span style="color:var(--yellow);font-size:9px">· ${shortRes.toFixed(0)} USDT locked</span>` : '');
+  }
 }
 
 async function ltSubmit(force = false) {

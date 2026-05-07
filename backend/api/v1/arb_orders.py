@@ -29,7 +29,8 @@ from backend.db.models import (
 )
 from backend.services import trade_service
 from backend.services.trigger_order_service import (
-    _compute_effective_spread, _load_books_json, condition_met,
+    _compute_effective_spread, _compute_exit_spread,
+    _load_books_json, condition_met,
 )
 
 
@@ -123,12 +124,17 @@ def _portions_target(total: float | None, portion: float | None) -> int | None:
 
 
 def _current_effective_spread(body: ArbOrderCreate) -> float | None:
-    """Read books.json and compute effective spread at the planned size."""
+    """Read books.json and compute the kind-appropriate spread:
+       open  → in_pct  (entry side)
+       close → out_pct (exit side)
+    Used for the immediate-execution warning. Always size-aware via VWAP.
+    """
     books = _load_books_json()
     if books is None:
         return None
     qty = body.portion_size_token or body.total_qty_token
-    return _compute_effective_spread(
+    fn = _compute_effective_spread if body.kind == "open" else _compute_exit_spread
+    return fn(
         books,
         body.long_exchange, body.long_symbol,
         body.short_exchange, body.short_symbol,
@@ -146,6 +152,67 @@ def _verify_user_owns_wallets(db: Session, user_id: int, *wallet_ids: int) -> No
     for wid in wallet_ids:
         if wid not in seen:
             raise HTTPException(404, f"wallet {wid} not found or not owned by user")
+
+
+def _validate_balance_with_reservations(db: Session, user_id: int, body: ArbOrderCreate) -> None:
+    """Reject the create if the wallet's available capital (balance minus
+    already-reserved-by-other-pending-triggers) can't back this order's
+    notional. Surfaces a 400 with which leg is short and by how much,
+    rather than letting the trigger fail silently at fire time.
+
+    Uses the cached balances from trade_service._BALANCES_CACHE — won't
+    trigger live venue fetches just for a validation check, so the
+    endpoint stays sub-100ms. If cache is empty (cold start, no prior
+    /balances fetch) we skip validation; venue would reject at fire
+    time and the user sees the structured error in trade_orders.
+    """
+    from backend.services.trade_service import (
+        _BALANCES_CACHE, _pending_open_trigger_reservations,
+    )
+    from backend.services import price_service
+
+    sym = (body.long_symbol or "").upper()
+    mark = float(price_service.price_cache_snapshot().get(sym) or 0)
+    if mark <= 0:
+        return    # no price → skip; venue catches at fire time
+
+    notional = body.total_qty_token * mark
+    leverage = max(1, int(body.leverage or 1))
+    long_lev  = 1 if body.pair_kind == "spot_short" else leverage
+    long_req  = notional / long_lev
+    short_req = notional / leverage
+
+    cached = _BALANCES_CACHE.get(user_id)
+    if not cached:
+        return    # no cache yet → skip
+    rows = cached[1]
+    by_wid = {r.get("wallet_id"): r for r in rows if isinstance(r, dict)}
+    res = _pending_open_trigger_reservations(db, user_id)
+
+    def _check(side: str, wid: int, req: float):
+        row = by_wid.get(wid) or {}
+        bal = row.get("balance_usdt")
+        if bal is None:
+            return
+        reserved = float(res.get(wid, 0.0))
+        avail = max(0.0, float(bal) - reserved)
+        if req > avail + 0.01:
+            raise HTTPException(
+                400,
+                detail={
+                    "error": "insufficient_balance",
+                    "leg": side,
+                    "wallet_id": wid,
+                    "exchange": row.get("exchange"),
+                    "balance_usdt": bal,
+                    "reserved_usdt": round(reserved, 2),
+                    "available_usdt": round(avail, 2),
+                    "required_usdt": round(req, 2),
+                },
+            )
+
+    _check("long",  body.long_wallet_id,  long_req)
+    _check("short", body.short_wallet_id, short_req)
 
 
 def _enforce_trigger_limit(db: Session, user_id: int) -> None:
@@ -185,10 +252,21 @@ def create_arb_order(
 ):
     _verify_user_owns_wallets(db, user.id, body.long_wallet_id, body.short_wallet_id)
     _enforce_trigger_limit(db, user.id)
+    # Reservation-aware balance check — only for kind='open' (close/tp/sl
+    # reduce existing positions, no new margin needed). Sum existing
+    # pending/firing/scheduled triggers' notional + this new request, and
+    # fail fast if it exceeds the wallet's actual balance.
+    if body.kind == "open":
+        _validate_balance_with_reservations(db, user.id, body)
 
     # Immediate-execution guard — applies to all kinds with a non-null
     # trigger_spread_pct. If condition is already met by current effective
     # spread, return 200 + warning unless force=True.
+    #
+    # Parent kind (open|close) is checked against its own spread direction
+    # via _current_effective_spread. TP/SL nested on a parent open are
+    # CLOSE-side conditions, so they're checked against out_pct
+    # (exit-side spread) rather than the open's in_pct.
     if not body.force and body.trigger_spread_pct is not None:
         spread = _current_effective_spread(body)
         if spread is not None:
@@ -201,17 +279,31 @@ def create_arb_order(
                     "current_spread": round(spread, 4),
                     "requested_trigger": body.trigger_spread_pct,
                 }
-            for which, spec in (("tp", body.tp), ("sl", body.sl)):
-                if spec is None:
-                    continue
-                tmp = ArbTriggerOrder(kind=which, trigger_spread_pct=spec.trigger_spread_pct)
-                if condition_met(tmp, spread):
-                    return {
-                        "warning": "immediate_execution",
-                        "kind": which,
-                        "current_spread": round(spread, 4),
-                        "requested_trigger": spec.trigger_spread_pct,
-                    }
+
+        # TP/SL evaluate against the EXIT spread (out_pct) — they fire
+        # on what we'd actually receive when closing the position.
+        if (body.tp is not None or body.sl is not None):
+            books = _load_books_json()
+            if books is not None:
+                qty = body.portion_size_token or body.total_qty_token
+                exit_sp = _compute_exit_spread(
+                    books,
+                    body.long_exchange, body.long_symbol,
+                    body.short_exchange, body.short_symbol,
+                    qty,
+                )
+                if exit_sp is not None:
+                    for which, spec in (("tp", body.tp), ("sl", body.sl)):
+                        if spec is None:
+                            continue
+                        tmp = ArbTriggerOrder(kind=which, trigger_spread_pct=spec.trigger_spread_pct)
+                        if condition_met(tmp, exit_sp):
+                            return {
+                                "warning": "immediate_execution",
+                                "kind": which,
+                                "current_spread": round(exit_sp, 4),
+                                "requested_trigger": spec.trigger_spread_pct,
+                            }
 
     initial_status = "scheduled" if body.activate_at and body.activate_at > datetime.utcnow() else "pending"
 
@@ -372,16 +464,18 @@ def patch_order(
     if order.status not in ("pending", "scheduled"):
         raise HTTPException(409, "trigger is firing or already finalized")
 
-    # Immediate-execution check on update
+    # Immediate-execution check on update — match the kind's spread
+    # direction (open=in_pct, tp/sl/close=out_pct).
     if not body.force and body.trigger_spread_pct is not None:
         from backend.services.trigger_order_service import (
-            _load_books_json, _compute_effective_spread,
+            _load_books_json, _compute_effective_spread, _compute_exit_spread,
         )
         books = _load_books_json()
         if books is not None:
             qty = body.portion_size_token or order.portion_size_token or order.total_qty_token
             if qty:
-                spread = _compute_effective_spread(
+                fn = _compute_effective_spread if order.kind == "open" else _compute_exit_spread
+                spread = fn(
                     books,
                     order.long_exchange or "", order.long_symbol or "",
                     order.short_exchange or "", order.short_symbol or "",

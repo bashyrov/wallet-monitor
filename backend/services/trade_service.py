@@ -220,6 +220,30 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
             "balance_usdt": balance,
             "exchange": ex,
         }
+
+    # Subtract pending-open-trigger reservations so the LT panel can
+    # show effective available capital (balance − reservations) and the
+    # % allocation slider sizes against capital the user can actually
+    # commit. Reservations are computed once for the user and applied to
+    # both legs by wallet_id.
+    try:
+        reservations = _pending_open_trigger_reservations(db, user_id)
+        for leg in ("long", "short"):
+            wid = out[leg].get("wallet_id")
+            bal = out[leg].get("balance_usdt")
+            reserved = float(reservations.get(wid, 0.0)) if wid else 0.0
+            out[leg]["reserved_usdt"] = round(reserved, 2)
+            if bal is not None:
+                out[leg]["available_usdt"] = round(max(0.0, float(bal) - reserved), 2)
+            else:
+                out[leg]["available_usdt"] = None
+    except Exception:
+        # Don't break the trade panel if reservation calc fails — fall
+        # back to showing balance as available.
+        for leg in ("long", "short"):
+            bal = out[leg].get("balance_usdt")
+            out[leg].setdefault("reserved_usdt", 0.0)
+            out[leg].setdefault("available_usdt", bal)
     return out
 
 
@@ -1235,8 +1259,105 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
 
     results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)
     out = [r for r in results if isinstance(r, dict)]
+    # Subtract reservations from active open-triggers so the user sees
+    # "available" = balance - already-committed-by-pending-orders.
+    # Only kind='open' triggers reserve fresh capital; close/tp/sl reduce
+    # an existing position so they don't lock new margin.
+    reservations = _pending_open_trigger_reservations(db, user_id)
+    for row in out:
+        wid = row.get("wallet_id")
+        bal = row.get("balance_usdt")
+        reserved = float(reservations.get(wid, 0.0))
+        row["reserved_usdt"]  = round(reserved, 2)
+        if bal is not None:
+            row["available_usdt"] = round(max(0.0, float(bal) - reserved), 2)
+        else:
+            row["available_usdt"] = None
     _BALANCES_CACHE[user_id] = (_time.time(), out)
     return out
+
+
+def _pending_open_trigger_reservations(db: Session, user_id: int) -> dict[int, float]:
+    """USD reserved per wallet by active 'open' triggers — pending,
+    firing, or scheduled. Subtracted from balance_usdt so the user sees
+    real available capital and can't oversize when chaining triggers
+    across symbols.
+
+    Reservation per leg:
+      long_short pair: notional / leverage on EACH wallet
+      spot_short pair: full notional on the spot leg (1x), notional /
+                      leverage on the short (perp) leg
+
+    Mark price comes from the prices cache (CMC/Gate-aggregated, ≤30s
+    fresh) — exact-cent accuracy isn't critical, ballpark is enough to
+    prevent reckless oversizing.
+    """
+    from backend.db.models import ArbTriggerOrder
+    rows = (
+        db.query(ArbTriggerOrder)
+        .filter(
+            ArbTriggerOrder.user_id == user_id,
+            ArbTriggerOrder.kind == "open",
+            ArbTriggerOrder.status.in_(("pending", "firing", "scheduled")),
+        )
+        .all()
+    )
+    if not rows:
+        return {}
+
+    # Resolve mark prices once. price_service caches symbols → USDT.
+    try:
+        from backend.services import price_service
+        all_prices = price_service.price_cache_snapshot() or {}
+    except Exception:
+        all_prices = {}
+
+    res: dict[int, float] = {}
+    for r in rows:
+        target = r.portions_target or 1
+        filled = r.portions_filled or 0
+        if r.infinite_fill:
+            # Infinite-fill triggers refill one chunk at a time. Reserve
+            # exactly one chunk's worth — anything more would lock all
+            # the user's capital indefinitely.
+            qty_remaining = r.portion_size_token or r.total_qty_token or 0
+        elif r.portion_size_token:
+            qty_remaining = r.portion_size_token * max(0, target - filled)
+        else:
+            qty_remaining = (r.total_qty_token or 0) if filled < target else 0
+        if qty_remaining <= 0:
+            continue
+
+        sym = (r.long_symbol or "").upper()
+        mark = float(all_prices.get(sym) or 0)
+        if mark <= 0:
+            continue
+        notional_usd = qty_remaining * mark
+        leverage = max(1, int(r.leverage or 1))
+
+        # Long leg
+        if r.long_wallet_id:
+            # In long_short, both legs use leverage. In spot_short, the
+            # long is spot — full notional, no leverage discount.
+            long_lev = 1 if _is_spot_short(r) else leverage
+            res[r.long_wallet_id] = res.get(r.long_wallet_id, 0.0) + notional_usd / long_lev
+        # Short leg always perp → leveraged
+        if r.short_wallet_id:
+            res[r.short_wallet_id] = res.get(r.short_wallet_id, 0.0) + notional_usd / leverage
+
+    return res
+
+
+def _is_spot_short(r) -> bool:
+    """Best-effort: a trigger row's pair_kind isn't directly stored, but
+    arb_position (if linked) carries it. Conservative default = long_short
+    (uses leverage on both legs)."""
+    try:
+        if r.arb_position is not None and (r.arb_position.kind or "") == "spot_short":
+            return True
+    except Exception:
+        pass
+    return False
 
 
 # ── Spot / short pair detection ──────────────────────────────────────────────
