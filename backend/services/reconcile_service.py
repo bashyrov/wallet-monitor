@@ -298,6 +298,19 @@ async def _reconcile_arb_positions(db: Session, user_id: int,
         long_closed  = (long_qty_live  == 0) and (ap.long_qty  or 0) > 0
         short_closed = (short_qty_live == 0) and (ap.short_qty or 0) > 0
 
+        # If the position was already 'partial' and the remaining leg has now
+        # also dropped to 0, treat that as full external close. Without this,
+        # `long_closed and short_closed` only fires on the first transition
+        # from open → partial, so a partial position whose active leg later
+        # closes would stay 'partial' forever.
+        if ap.status == "partial":
+            if (ap.long_qty  or 0) > 0 and long_qty_live  == 0:
+                long_closed = True
+                short_closed = True
+            elif (ap.short_qty or 0) > 0 and short_qty_live == 0:
+                long_closed = True
+                short_closed = True
+
         if long_closed and short_closed:
             # Externally closed on both sides — finalize.
             ap.status = "closed"
