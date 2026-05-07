@@ -329,6 +329,17 @@ async def place_open_order(
             # either succeed (exchange agrees) or fail with a specific error
             # we surface to the user below.
 
+    # Log the pending row BEFORE preflight + signing — gives us a
+    # permanent audit trail even if preflight rejects (min-qty too
+    # small, balance insufficient, etc). Without this the user only
+    # sees the leg that made it past preflight in Order History; the
+    # other leg's failure is silently invisible.
+    order_row = _log_order(
+        db, user_id=user_id, wallet_id=wallet_id, exchange=ex, symbol=symbol,
+        side=side, intent="open", requested_qty=quantity, leverage=leverage,
+        margin_mode=margin_mode, status="pending",
+    )
+
     preflight_task = None
     if hasattr(adapter, "preflight"):
         preflight_task = asyncio.create_task(adapter.preflight(creds, symbol, quantity, leverage))
@@ -343,23 +354,22 @@ async def place_open_order(
                 # Cancel the leverage task so we don't leave it pending if we
                 # bail early on a bad preflight.
                 leverage_task.cancel()
-                raise TradeError(pre.get("reason") or "Pre-flight check failed", kind="user")
+                reason = pre.get("reason") or "Pre-flight check failed"
+                _finalize_order(db, order_row, status="failed",
+                                error_kind="user", error_message=reason)
+                raise TradeError(reason, kind="user")
             if pre.get("qty_rounded"):
                 quantity = float(pre["qty_rounded"])
+                # Update the row with the rounded qty so Order History
+                # reflects what we actually attempted.
+                order_row.requested_qty = quantity
+                db.commit()
         except TradeError:
             raise
         except Exception as exc:
             logger.info("preflight unexpected error %s/%s: %s", ex, symbol, exc)
 
     await leverage_task
-
-    # Log the pending row before signing — gives us a permanent record even
-    # if our process crashes mid-flight.
-    order_row = _log_order(
-        db, user_id=user_id, wallet_id=wallet_id, exchange=ex, symbol=symbol,
-        side=side, intent="open", requested_qty=quantity, leverage=leverage,
-        margin_mode=margin_mode, status="pending",
-    )
 
     try:
         # Go-engine fast path: when the venue is on the cutover list and

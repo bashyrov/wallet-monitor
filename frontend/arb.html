@@ -6837,7 +6837,7 @@ async function accLoadTriggers() {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
     tbody.innerHTML = rows.map(r => `
-      <tr>
+      <tr ${r.error_message ? `title="${_htmlEsc(r.error_message)}"` : ''}>
         <td><span style="text-transform:capitalize">${r.kind}</span></td>
         <td class="mono">${(r.long_symbol || '—').toUpperCase()}</td>
         <td><span class="acc-mini-ex">${r.long_exchange || '—'} → ${r.short_exchange || '—'}</span></td>
@@ -6852,6 +6852,12 @@ async function accLoadTriggers() {
             `<button type="button" class="btn-x" onclick="trigCancel(${r.id})" title="Cancel trigger">✕</button>` : ''}
         </td>
       </tr>
+      ${r.error_message ? `
+      <tr class="trig-err-row">
+        <td colspan="10" style="padding:6px 14px;background:var(--red-soft);border-top:1px solid var(--red-edge);font-size:11px;color:var(--red);line-height:1.4">
+          <strong>${(r.error_kind || 'error').toUpperCase()}:</strong> ${_htmlEsc(r.error_message)}
+        </td>
+      </tr>` : ''}
     `).join('');
   } catch (e) {
     console.warn('triggers load failed', e);
