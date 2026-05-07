@@ -968,35 +968,22 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
   padding: 14px 16px 16px;
 }
 .lt-panel.is-hidden { display: none; }
-.lt-head {
-  display: flex; align-items: center; gap: 10px;
-  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+.lt-tabs {
+  display: flex; width: 100%;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  overflow: hidden;
 }
-.lt-tabs { display: flex; gap: 4px; }
 .lt-tab {
-  padding: 6px 14px; border-radius: var(--r-sm); font-size: 12px; font-weight: 600;
+  flex: 1 1 50%;
+  padding: 10px 0; text-align: center;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
   color: var(--text2); background: transparent; cursor: pointer;
+  border: 0; border-right: 1px solid var(--border);
   transition: background var(--dur-fast), color var(--dur-fast);
 }
+.lt-tab:last-child { border-right: 0; }
 .lt-tab:hover { background: var(--surface2); color: var(--text); }
 .lt-tab.is-active { background: var(--surface3); color: var(--text); }
-.lt-classic-link {
-  font-size: 11px; color: var(--text3); background: none; cursor: pointer;
-  font-family: inherit; padding: 4px 8px; border-radius: var(--r-sm);
-}
-.lt-classic-link:hover { color: var(--text); background: var(--surface2); }
-
-.lt-pairkind { display: flex; gap: 6px; }
-.lt-pk-chip {
-  padding: 5px 11px; font-size: 11px; font-weight: 500; cursor: pointer;
-  border-radius: var(--r-pill); border: 1px solid var(--border);
-  background: transparent; color: var(--text2);
-  transition: background var(--dur-fast), color var(--dur-fast);
-}
-.lt-pk-chip:hover { background: var(--surface2); color: var(--text); }
-.lt-pk-chip.is-active {
-  background: var(--green-soft); color: var(--green); border-color: var(--green-edge);
-}
 
 .lt-balances { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .lt-bal-card {

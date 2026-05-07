@@ -562,25 +562,14 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
           <a href="/login?next=/arb" class="auth-lock-cta">Sign in</a>
         </div>
 
-        <div class="lt-head">
-          <div class="lt-tabs" role="tablist">
-            <button class="lt-tab is-active" data-mode="open"  onclick="ltSwitchMode('open')"  role="tab">Open</button>
-            <button class="lt-tab"            data-mode="close" onclick="ltSwitchMode('close')" role="tab">Close</button>
-          </div>
-          <span style="flex:1"></span>
-<!-- Classic-view toggle removed; legacy per-leg panel kept in markup
-               but never shown. To re-enable: add the button back and flip
-               the localStorage default in ltInit(). -->
-          <!-- <button type="button" class="lt-classic-link" onclick="ltToggleClassic()" title="Switch to legacy per-leg layout">Classic ↻</button> -->
+        <div class="lt-tabs" role="tablist">
+          <button class="lt-tab is-active" data-mode="open"  onclick="ltSwitchMode('open')"  role="tab">Open</button>
+          <button class="lt-tab"            data-mode="close" onclick="ltSwitchMode('close')" role="tab">Close</button>
         </div>
 
-        <!-- Pair-kind selector: long-short by default; spot-short hides
-             leverage / margin on the long leg. Lives in the header so
-             the form re-renders cleanly on switch. -->
-        <div class="lt-pairkind">
-          <label class="lt-pk-chip is-active" data-pk="long_short" onclick="ltSetPairKind('long_short')">Long / Short</label>
-          <label class="lt-pk-chip"            data-pk="spot_short" onclick="ltSetPairKind('spot_short')">Spot / Short</label>
-        </div>
+        <!-- pair_kind is auto-derived from URL ?type= (long-short |
+             spot-short | dex-short) in ltInit(); no manual toggle. -->
+
 
         <!-- Per-leg balance cards. arbion logged-out screens hide these,
              but we keep them inline because users explicitly asked. -->
@@ -6122,6 +6111,16 @@ function ltInit() {
   const tc = document.getElementById('trade-card');
   if (lt) lt.style.display = '';
   if (tc) tc.style.display = 'none';
+
+  // Auto-derive pair_kind from URL ?type= (long-short | spot-short |
+  // dex-short). Spot-short hides leverage on the long leg in sizing
+  // math; everything else treats both legs as perp.
+  if (typeof TYPE === 'string') {
+    LT.pairKind = (TYPE === 'spot') ? 'spot_short' : 'long_short';
+  }
+  const panel = document.getElementById('lt-panel');
+  if (panel) panel.classList.toggle('is-spot-short', LT.pairKind === 'spot_short');
+
   // Suffix labels
   const sym = (typeof SYM === 'string' ? SYM : 'TOKEN');
   ['lt-qty-suffix','lt-portion-suffix','lt-tp-portion-suffix','lt-sl-portion-suffix']
