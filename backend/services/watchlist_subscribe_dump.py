@@ -34,31 +34,79 @@ _running = False
 
 
 def _collect() -> list[dict[str, Any]]:
-    """Distinct (symbol, long_ex, short_ex) across all users' active watchlists.
+    """Distinct (symbol, long_ex, short_ex) across:
+       - all users' active /watchlist rows
+       - all active arb trigger orders (pending|firing|scheduled)
 
-    No need to filter by activity — every row in the table is by design
-    "currently watched". Soft-deleted rows would be removed via DELETE.
+    Both sources are unioned and de-duped so the Go symbol manager
+    keeps an orderbook flowing for any pair where work is pending —
+    a stale book means trigger_order_service can't evaluate, so a TP
+    sitting idle for hours still needs live data the moment spread
+    crosses target.
     """
+    from backend.db.models import ArbTriggerOrder
     db = SessionLocal()
+    seen: set[tuple[str, str, str]] = set()
+    out: list[dict[str, Any]] = []
+
+    def _add(sym: str | None, le: str | None, se: str | None) -> None:
+        if not sym or not le or not se:
+            return
+        key = (sym.upper(), le.lower(), se.lower())
+        if key in seen:
+            return
+        seen.add(key)
+        out.append({"symbol": key[0], "long_exchange": key[1], "short_exchange": key[2]})
+
     try:
-        rows = (
+        # 1) Watchlist
+        for sym, le, se in (
             db.query(
                 WatchlistItem.symbol,
                 WatchlistItem.long_exchange,
                 WatchlistItem.short_exchange,
+            ).distinct().all()
+        ):
+            _add(sym, le, se)
+
+        # 2) Active triggers — every kind that needs the orderbook to
+        #    evaluate. open + close eval against the pair they target;
+        #    tp/sl inherit pair from arb_position so we walk those too.
+        for sym, le, se in (
+            db.query(
+                ArbTriggerOrder.long_symbol,
+                ArbTriggerOrder.long_exchange,
+                ArbTriggerOrder.short_exchange,
             )
-            .distinct()
-            .all()
-        )
-        out: list[dict[str, Any]] = []
-        for sym, le, se in rows:
-            if not sym or not le or not se:
-                continue
-            out.append({
-                "symbol": (sym or "").upper(),
-                "long_exchange": (le or "").lower(),
-                "short_exchange": (se or "").lower(),
-            })
+            .filter(
+                ArbTriggerOrder.status.in_(("pending", "firing", "scheduled")),
+                ArbTriggerOrder.long_exchange.isnot(None),
+                ArbTriggerOrder.short_exchange.isnot(None),
+            )
+            .distinct().all()
+        ):
+            _add(sym, le, se)
+
+        # tp/sl rows often leave long_exchange null (inherited from
+        # arb_position). Pull them via the join.
+        from backend.db.models import ArbPosition
+        for sym, le, se in (
+            db.query(
+                ArbPosition.long_symbol,
+                ArbPosition.long_exchange,
+                ArbPosition.short_exchange,
+            )
+            .join(
+                ArbTriggerOrder,
+                ArbTriggerOrder.arb_position_id == ArbPosition.id,
+            )
+            .filter(
+                ArbTriggerOrder.status.in_(("pending", "firing", "scheduled")),
+            )
+            .distinct().all()
+        ):
+            _add(sym, le, se)
+
         return out
     finally:
         db.close()
