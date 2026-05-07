@@ -568,7 +568,10 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
             <button class="lt-tab"            data-mode="close" onclick="ltSwitchMode('close')" role="tab">Close</button>
           </div>
           <span style="flex:1"></span>
-          <button type="button" class="lt-classic-link" onclick="ltToggleClassic()" title="Switch to legacy per-leg layout">Classic ↻</button>
+<!-- Classic-view toggle removed; legacy per-leg panel kept in markup
+               but never shown. To re-enable: add the button back and flip
+               the localStorage default in ltInit(). -->
+          <!-- <button type="button" class="lt-classic-link" onclick="ltToggleClassic()" title="Switch to legacy per-leg layout">Classic ↻</button> -->
         </div>
 
         <!-- Pair-kind selector: long-short by default; spot-short hides
@@ -6106,14 +6109,13 @@ function _ltCurMarkPrice() {
 }
 
 function ltInit() {
-  // Decide which panel to show based on user pref (default = unified)
-  const useClassic = localStorage.getItem('lt_classic') === '1';
+  // Unified panel only — legacy trade-card stays hidden in DOM as
+  // fallback. To re-enable user toggle, restore the .lt-classic-link
+  // button + the original localStorage-aware branch.
   const lt = document.getElementById('lt-panel');
   const tc = document.getElementById('trade-card');
-  if (lt && tc) {
-    lt.style.display = useClassic ? 'none' : '';
-    tc.style.display = useClassic ? '' : 'none';
-  }
+  if (lt) lt.style.display = '';
+  if (tc) tc.style.display = 'none';
   // Suffix labels
   const sym = (typeof SYM === 'string' ? SYM : 'TOKEN');
   ['lt-qty-suffix','lt-portion-suffix','lt-tp-portion-suffix','lt-sl-portion-suffix']
