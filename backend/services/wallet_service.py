@@ -151,7 +151,16 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, user: User | No
         user = locked_user
     limits = plan_service.effective_limits(db, user)
 
-    purpose = body.purpose if body.wallet_type == "exchange" else "portfolio"
+    # Perp-DEX wallets are a single private-key/credential identity that serves
+    # BOTH viewing and trading by design — there's no separate "read-only key"
+    # like on CEX. Default them to 'both' so they participate in trade lookups
+    # immediately. User can downgrade via PATCH.
+    if body.wallet_type == "exchange":
+        purpose = body.purpose
+    elif body.wallet_type == "perpdex":
+        purpose = body.purpose if body.purpose != "portfolio" else "both"
+    else:
+        purpose = "portfolio"
 
     # Portfolio limit only applies when the new wallet would count as portfolio.
     if purpose in ("portfolio", "both"):
@@ -244,10 +253,10 @@ def update_wallet(db: Session, wallet_id: int, body: WalletUpdate, user_id: int)
         if body.address:
             creds["address"] = body.address.strip()
 
-    # Purpose switch — only for credentialed wallet types (exchange + aster),
-    # screener-eligibility is a per-exchange unique constraint so flipping to
+    # Purpose switch — for credentialed wallet types (exchange + perpdex).
+    # Screener-eligibility is a per-exchange unique constraint so flipping to
     # screener/both here enforces the same rule as toggle_can_trade.
-    if body.purpose is not None and wallet.wallet_type == "exchange":
+    if body.purpose is not None and wallet.wallet_type in ("exchange", "perpdex"):
         from backend.services.trade_adapters import TRADE_SUPPORTED
         needs_trade = body.purpose in ("screener", "both")
         if needs_trade and wallet.type_value not in TRADE_SUPPORTED:

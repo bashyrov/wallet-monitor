@@ -482,7 +482,7 @@ async def _scan_and_sync() -> None:
         q = (
             db.query(Wallet)
             .filter(
-                Wallet.wallet_type == "exchange",
+                Wallet.wallet_type.in_(("exchange", "perpdex")),
                 Wallet.purpose.in_(("screener", "both")),
                 Wallet.is_archived == False,  # noqa: E712
             )

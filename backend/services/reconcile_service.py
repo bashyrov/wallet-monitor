@@ -58,11 +58,11 @@ _CLOSE_LINK_WINDOW_S = 600
 
 def _users_with_trade_wallets(db: Session) -> list[int]:
     """Return user_ids that have at least one screener / both purpose
-    exchange wallet — only those need reconciliation."""
+    exchange or perpdex wallet — only those need reconciliation."""
     rows = (
         db.query(Wallet.user_id)
         .filter(
-            Wallet.wallet_type == "exchange",
+            Wallet.wallet_type.in_(("exchange", "perpdex")),
             Wallet.purpose.in_(("screener", "both")),
             Wallet.is_archived == False,  # noqa: E712
         )

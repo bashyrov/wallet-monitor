@@ -117,7 +117,7 @@ def _find_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
         db.query(Wallet)
         .filter(
             Wallet.user_id == user_id,
-            Wallet.wallet_type == "exchange",
+            Wallet.wallet_type.in_(("exchange", "perpdex")),
             Wallet.type_value == exchange.lower(),
             Wallet.purpose.in_(("screener", "both")),
             Wallet.is_archived == False,  # noqa: E712
@@ -143,7 +143,7 @@ def _find_any_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
         db.query(Wallet)
         .filter(
             Wallet.user_id == user_id,
-            Wallet.wallet_type == "exchange",
+            Wallet.wallet_type.in_(("exchange", "perpdex")),
             Wallet.type_value == exchange.lower(),
             Wallet.is_archived == False,  # noqa: E712
         )
@@ -574,7 +574,7 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
         db.query(Wallet)
         .filter(
             Wallet.user_id == user_id,
-            Wallet.wallet_type == "exchange",
+            Wallet.wallet_type.in_(("exchange", "perpdex")),
             Wallet.purpose.in_(("screener", "both")),
             Wallet.is_archived == False,  # noqa: E712
             Wallet.type_value.in_(list(SUPPORTED_EXCHANGES)),
@@ -1170,7 +1170,7 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
         db.query(Wallet)
         .filter(
             Wallet.user_id == user_id,
-            Wallet.wallet_type == "exchange",
+            Wallet.wallet_type.in_(("exchange", "perpdex")),
             Wallet.purpose.in_(("screener", "both")),
             Wallet.is_archived == False,  # noqa: E712
             Wallet.type_value.in_(list(SUPPORTED_EXCHANGES)),
