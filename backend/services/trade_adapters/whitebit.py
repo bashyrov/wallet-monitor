@@ -23,7 +23,11 @@ _INSTR_LOCK = asyncio.Lock()
 
 
 async def _instruments() -> dict[str, dict]:
-    """Return {symbol: {min_amount, tick_size, ...}} from public futures endpoint."""
+    """Return {symbol: {min_amount, min_total, stock_prec, money_prec}} for futures.
+
+    Source: /api/v4/public/markets — the only WB endpoint that exposes spec
+    fields (minAmount, minTotal, stockPrec, moneyPrec). The /public/futures
+    endpoint is ticker-only and has no min/precision data."""
     now = time.time()
     if _INSTR_CACHE["data"] and now - _INSTR_CACHE["ts"] < _INSTR_TTL:
         return _INSTR_CACHE["data"]
@@ -32,21 +36,28 @@ async def _instruments() -> dict[str, dict]:
             return _INSTR_CACHE["data"]
         try:
             async with httpx.AsyncClient(timeout=10) as c:
-                r = await c.get(f"{BASE}/api/v4/public/futures")
+                r = await c.get(f"{BASE}/api/v4/public/markets")
                 body = r.json()
         except Exception as e:
-            logger.warning("WhiteBIT futures instruments failed: %s", e)
+            logger.warning("WhiteBIT markets failed: %s", e)
             return _INSTR_CACHE["data"] or {}
         out: dict[str, dict] = {}
         items = body if isinstance(body, list) else body.get("result", [])
         for s in items:
-            name = s.get("ticker_id") or s.get("name") or ""
+            if s.get("type") != "futures":
+                continue
+            name = s.get("name") or ""
             if not name:
                 continue
+            try:
+                stock_prec = int(s.get("stockPrec") or 0)
+            except (TypeError, ValueError):
+                stock_prec = 0
             out[name] = {
-                "min_amount": float(s.get("min_amount") or s.get("minAmount") or 0),
-                "tick_size": float(s.get("tick_size") or s.get("tickSize") or 0),
-                "stock_prec": int(s.get("stock_prec") or s.get("stockPrec") or 4),
+                "min_amount": float(s.get("minAmount") or 0),
+                "min_total":  float(s.get("minTotal")  or 0),
+                "stock_prec": stock_prec,
+                "money_prec": int(s.get("moneyPrec") or 0) if (s.get("moneyPrec") not in (None, "")) else 0,
             }
         _INSTR_CACHE["data"] = out
         _INSTR_CACHE["ts"] = time.time()
@@ -141,10 +152,16 @@ class WhitebitAdapter:
         info = (await _instruments()).get(cls._symbol(symbol))
         if not info:
             return None
-        prec = int(info.get("stock_prec") or 4)
+        prec = int(info.get("stock_prec") or 0)
+        # stockPrec=0 means integer-only trading (step 1), not "unknown".
+        step = (10 ** (-prec)) if prec > 0 else 1.0
+        # WB sometimes ships minAmount=0 — fall back to step so the chip
+        # never reads as "no minimum" when one really exists.
+        min_qty = float(info.get("min_amount") or 0) or step
         return {
-            "min_qty": float(info.get("min_amount") or 0),
-            "step":    10 ** (-prec) if prec > 0 else None,
+            "min_qty": min_qty,
+            "step":    step,
+            "min_notional": float(info.get("min_total") or 0) or None,
             "max_qty": None,
             "unit": "coin",
         }
