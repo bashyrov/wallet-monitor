@@ -6810,6 +6810,44 @@ async function ltRefreshBalances() {
   if (shortNameEl && shortNameEl.textContent === '—' && _trade.short?.walletId) shortNameEl.textContent = `wallet #${_trade.short.walletId}`;
 }
 
+// Show a structured submit error as a top-right toast. Maps backend
+// error codes (qty_validation_failed / insufficient_balance / trigger_
+// limit_exceeded / tp_already_exists) into human-readable title + sub.
+function _ltShowSubmitError(httpStatus, body) {
+  const d = (body && body.detail) || {};
+  const code = (typeof d === 'object' && d.error) || (typeof d === 'string' ? d : null);
+  const exLbl = ex => (typeof EX_LABEL === 'object' && EX_LABEL[ex]) || (ex || '').toUpperCase();
+
+  let title = 'Trigger rejected';
+  let sub = '';
+
+  if (code === 'qty_validation_failed') {
+    title = 'Quantity below minimum';
+    sub = `${(d.leg || '').toUpperCase()} · ${exLbl(d.exchange)} · ${d.reason || 'invalid qty'}`;
+  } else if (code === 'insufficient_balance') {
+    title = 'Insufficient balance';
+    sub = `${(d.leg || '').toUpperCase()} · ${exLbl(d.exchange)} · need ${d.required_usdt} USDT, have ${d.available_usdt} USDT (${d.balance_usdt} − ${d.reserved_usdt} locked)`;
+  } else if (code === 'trigger_limit_exceeded') {
+    title = 'Trigger limit reached';
+    sub = `Plan caps at ${d.limit} active triggers — cancel one or upgrade.`;
+  } else if (code === 'tp_already_exists' || code === 'sl_already_exists') {
+    title = code === 'tp_already_exists' ? 'TP already exists' : 'SL already exists';
+    sub = 'PATCH or DELETE the existing one first.';
+  } else if (httpStatus === 422 && typeof d === 'object' && d.message) {
+    title = 'Validation error';
+    sub = d.message;
+  } else if (typeof d === 'string') {
+    title = 'Trigger rejected';
+    sub = d;
+  } else if (d && d.message) {
+    title = 'Trigger rejected';
+    sub = d.message;
+  } else {
+    sub = `HTTP ${httpStatus}`;
+  }
+  toast(title, 'error', sub);
+}
+
 async function ltSubmit(force = false) {
   const errEl = document.getElementById('lt-err');
   const setErr = m => { if (!errEl) return; if (m) { errEl.textContent = m; errEl.style.display = ''; } else { errEl.style.display = 'none'; } };
@@ -6891,8 +6929,7 @@ async function ltSubmit(force = false) {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const msg = (j.detail && (j.detail.error || j.detail.message)) || j.detail || 'Request failed';
-      setErr(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      _ltShowSubmitError(r.status, j);
       return;
     }
     if (j.warning === 'immediate_execution' && !force) {
@@ -7133,8 +7170,7 @@ async function trigSubmit(force = false) {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const msg = (j.detail && (j.detail.error || j.detail.message)) || j.detail || 'Request failed';
-      setErr(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      _ltShowSubmitError(r.status, j);
       return;
     }
     if (j.warning === 'immediate_execution' && !force) {
