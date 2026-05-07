@@ -88,12 +88,10 @@ deploy_backend() {
 }
 
 deploy_fetcher() {
-  step "Pulling latest code"
-  git pull --ff-only
-  step "Rebuilding fetcher (data-plane sidecar)"
-  docker compose up -d --build fetcher
-  echo "  → fetcher restarted; data plane re-warming (10–20 s)"
-  smoke
+  # Legacy alias — the python "fetcher" service was retired when the data
+  # plane moved to Go. Forward to go-fetcher so anyone who still runs
+  # `./scripts/deploy.sh fetcher` from muscle memory hits the right thing.
+  deploy_go_fetcher
 }
 
 deploy_go_fetcher() {

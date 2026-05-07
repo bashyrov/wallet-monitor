@@ -652,13 +652,18 @@ async def _run_loop() -> None:
 
 
 def start() -> None:
-    """Start the daemon loop. Called once at app startup."""
+    """Start the daemon loop. Called once at app startup from inside the
+    FastAPI lifespan (which runs in the running event loop). Use the
+    modern get_running_loop API — get_event_loop() is deprecated when
+    called outside a coroutine in Python 3.12+ and silently fails the
+    way it was being used here previously."""
     global _loop_task
-    if _loop_task is not None:
+    if _loop_task is not None and not _loop_task.done():
         return
     try:
-        loop = asyncio.get_event_loop()
-        _loop_task = loop.create_task(_run_loop())
+        loop = asyncio.get_running_loop()
     except RuntimeError:
-        # No running loop yet — caller should start later
-        pass
+        logger.warning("trigger_order_service.start(): no running event loop")
+        return
+    _loop_task = loop.create_task(_run_loop(), name="trigger_order_loop")
+    logger.info("trigger_order_service started (tick=%ss)", TICK_INTERVAL_S)
