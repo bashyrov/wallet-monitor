@@ -49,6 +49,14 @@ def _build_perpdex_creds(body: WalletCreate) -> dict:
             # it directly. (Aster also uses api_secret as PK; Paradex needs the
             # explicit name because api_token already occupies that mental slot.)
             creds["private_key"] = body.l2_private_key.strip()
+        if body.api_passphrase:
+            # Subkey path: api_passphrase carries the subkey public key
+            # (the L2 stark pubkey of the trading-only key registered in
+            # Paradex's UI). When set, Go routes auth through
+            # /v1/auth/{pubkey} and signs with the subkey priv-key in
+            # private_key. The main account address still goes in
+            # PARADEX-STARKNET-ACCOUNT (i.e. our `address` field).
+            creds["api_passphrase"] = body.api_passphrase.strip()
     elif tv in ("hyperliquid", "ethereal"):
         # Both adapters accept either `private_key` or `api_secret` as the
         # EVM signing key. Store as api_secret to keep storage uniform with
@@ -318,6 +326,8 @@ def update_wallet(db: Session, wallet_id: int, body: WalletUpdate, user_id: int)
                 creds["api_token"] = body.api_token.strip()
             if body.l2_private_key:
                 creds["private_key"] = body.l2_private_key.strip()
+            if body.api_passphrase:
+                creds["api_passphrase"] = body.api_passphrase.strip()
         elif tv in ("hyperliquid", "ethereal"):
             if body.private_key:
                 creds["api_secret"] = body.private_key.strip()

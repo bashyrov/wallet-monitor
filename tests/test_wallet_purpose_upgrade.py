@@ -82,11 +82,12 @@ def test_upgrade_paradex_adds_l2_key(client, auth, monkeypatch):
         db.close()
 
 
-def test_paradex_upgrade_rejected_without_go_path(client, auth):
-    """Without GO_TRADE_VENUES=paradex, Python adapter is read-only
-    proxy → upgrade to trade-purpose is correctly rejected."""
+def test_paradex_upgrade_with_l2_key_succeeds(client, auth):
+    """Paradex now trades via go-fetcher SNIP-12 signing — upgrading a
+    portfolio wallet to trade purpose only requires the l2_private_key.
+    Subkey public key (api_passphrase) is optional but recommended."""
     r = client.post("/api/wallets", json={
-        "name": "Paradex no go",
+        "name": "Paradex portfolio",
         "wallet_type": "perpdex",
         "type_value": "paradex",
         "address": "0x1234567890abcdef1234567890abcdef12345678",
@@ -97,10 +98,22 @@ def test_paradex_upgrade_rejected_without_go_path(client, auth):
 
     r = client.patch(f"/api/wallets/{wid}", json={
         "l2_private_key": "0x" + "c" * 64,
+        "api_passphrase": "0x" + "d" * 64,  # subkey public key
         "purpose": "both",
     }, headers=auth)
-    assert r.status_code == 400
-    assert "not supported yet" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+
+    from backend.db.base import SessionLocal
+    from backend.db.models import Wallet
+    db = SessionLocal()
+    try:
+        w = db.query(Wallet).filter(Wallet.id == wid).first()
+        assert w.purpose == "both"
+        creds = decrypt_credentials(w.credentials)
+        assert creds.get("private_key") == "0x" + "c" * 64
+        assert creds.get("api_passphrase") == "0x" + "d" * 64
+    finally:
+        db.close()
 
 
 def test_upgrade_lighter_adds_three_creds(client, auth):

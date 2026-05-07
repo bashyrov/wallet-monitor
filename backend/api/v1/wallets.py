@@ -137,10 +137,20 @@ async def create_wallet(
             tv = (body.type_value or "").lower()
             if not (body.wallet_type == "perpdex" and tv == "lighter" and body.account_index):
                 raise HTTPException(status_code=422, detail="address is required for chain/perpdex wallets")
-        # Paradex uses Starknet signature auth — balance fetch needs a JWT
-        # (api_token) in addition to the Starknet address.
-        if body.wallet_type == "perpdex" and body.type_value == "paradex" and not body.api_token:
-            raise HTTPException(status_code=422, detail="paradex requires api_token (JWT from paradex.trade)")
+        # Paradex auth: either api_token (legacy read-only JWT from
+        # paradex.trade UI) OR l2_private_key (Stark key that we use to
+        # mint JWTs ourselves via SNIP-12 sign). One of the two is
+        # required so we have *something* to authenticate balance reads.
+        if (
+            body.wallet_type == "perpdex"
+            and body.type_value == "paradex"
+            and not body.api_token
+            and not body.l2_private_key
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="paradex requires either l2_private_key (recommended — subkey from paradex.trade UI) or api_token",
+            )
         # Trade-ready perpdex (purpose=screener|both) requires the private key
         # the adapter signs with. Read-only is fine without — DEX read APIs
         # are unsigned and keyed by address only.

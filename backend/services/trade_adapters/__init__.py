@@ -25,6 +25,7 @@ from .ethereal import EtherealAdapter
 from .htx import HtxAdapter
 from .lighter import LighterAdapter
 from .kraken import KrakenAdapter
+from .paradex import ParadexAdapter
 from .readonly import make_readonly_adapter
 
 # ── All exchanges/DEXes with full trade adapters ────────────────────────────
@@ -34,8 +35,8 @@ TRADE_SUPPORTED: set[str] = {
     "kraken",
     # BingX + WhiteBIT
     "bingx", "whitebit",
-    # Perp DEX (4) — require private key / API wallet / ZK key
-    "hyperliquid", "aster", "ethereal", "lighter",
+    # Perp DEX (5) — require private key / API wallet / ZK key / Stark key
+    "hyperliquid", "aster", "ethereal", "lighter", "paradex",
     # Spot-only — futures NOT implemented, leverage/close_position raise
     "htx",
 }
@@ -59,13 +60,11 @@ ADAPTERS: dict[str, type] = {
     "ethereal":     EtherealAdapter,
     "lighter":      LighterAdapter,
     "kraken":       KrakenAdapter,
+    "paradex":      ParadexAdapter,
 }
 
-# ── Read-only: Paradex still blocked (paradex-py SDK requires starknet-py
-# 0.28, which doesn't support Python 3.13). Wallet-only until upstream fix.
-_READONLY = {
-    "paradex":  "Paradex",
-}
+# Stays for venues we still proxy as wallet-only (none right now).
+_READONLY: dict[str, str] = {}
 for _key, _label in _READONLY.items():
     ADAPTERS[_key] = make_readonly_adapter(_key, _label)
 

@@ -102,7 +102,7 @@ async def place_order(
     trade_adapters/<ex>.py.place_order returns (order_id + avg_price)."""
     body = {
         "exchange": exchange.lower(),
-        "creds": _strip_creds(creds),
+        "creds": _strip_creds(exchange, creds),
         "request": {
             "symbol": symbol.upper(),
             "side": side,
@@ -123,7 +123,7 @@ async def place_order(
 async def close_position(exchange: str, creds: dict, symbol: str, side: str) -> dict:
     body = {
         "exchange": exchange.lower(),
-        "creds": _strip_creds(creds),
+        "creds": _strip_creds(exchange, creds),
         "request": {"symbol": symbol.upper(), "side": side},
     }
     out = await _post("/internal/trade/close", body)
@@ -140,7 +140,7 @@ async def set_leverage(
 ) -> None:
     body = {
         "exchange": exchange.lower(),
-        "creds": _strip_creds(creds),
+        "creds": _strip_creds(exchange, creds),
         "request": {
             "symbol": symbol.upper(),
             "leverage": int(leverage),
@@ -151,7 +151,7 @@ async def set_leverage(
 
 
 async def list_positions(exchange: str, creds: dict, symbol: str | None = None) -> list[dict]:
-    body = {"exchange": exchange.lower(), "creds": _strip_creds(creds)}
+    body = {"exchange": exchange.lower(), "creds": _strip_creds(exchange, creds)}
     if symbol:
         body["symbol"] = symbol.upper()
     out = await _post("/internal/trade/positions", body)
@@ -161,7 +161,7 @@ async def list_positions(exchange: str, creds: dict, symbol: str | None = None) 
 
 
 async def fetch_balance(exchange: str, creds: dict) -> dict:
-    body = {"exchange": exchange.lower(), "creds": _strip_creds(creds)}
+    body = {"exchange": exchange.lower(), "creds": _strip_creds(exchange, creds)}
     out = await _post("/internal/trade/balance", body)
     return {
         "usdt": float(out.get("available_usd") or 0),
@@ -170,12 +170,46 @@ async def fetch_balance(exchange: str, creds: dict) -> dict:
     }
 
 
-def _strip_creds(creds: dict) -> dict:
+# ── Per-venue cred translation ──
+# Wallet storage uses venue-friendly names (address, l2_private_key, etc).
+# Go's Creds struct uses canonical (api_key, api_secret, passphrase). We
+# translate at the proxy boundary so storage stays human-readable and the
+# wire stays simple.
+def _normalize_for_venue(exchange: str, creds: dict) -> dict:
+    ex = (exchange or "").lower()
+    if ex == "paradex":
+        # Paradex Wallet creds: address + private_key + (api_passphrase = subkey pubkey)
+        # Go expects:           api_key + api_secret + passphrase
+        out = dict(creds)
+        if not out.get("api_key") and out.get("address"):
+            out["api_key"] = out["address"]
+        if not out.get("api_secret") and out.get("private_key"):
+            out["api_secret"] = out["private_key"]
+        # api_passphrase already lines up with `passphrase` via _strip_creds.
+        return out
+    if ex == "hyperliquid":
+        # HL wallet stores address + api_secret (= EVM private key). Go
+        # already accepts those names, but mirror api_secret → private_key
+        # so older Go branches that read either keep working.
+        out = dict(creds)
+        if not out.get("api_key") and out.get("address"):
+            out["api_key"] = out["address"]
+        return out
+    return creds
+
+
+def _strip_creds(exchange: str, creds: dict) -> dict:
     """Pick only the fields Go's Creds struct knows about. Reduces the
     risk of leaking unrelated metadata across the wire."""
     if not isinstance(creds, dict):
         return {}
+    creds = _normalize_for_venue(exchange, creds)
     out = {}
+    # Note: api_passphrase is the wallet-side name; Go's struct field
+    # is `passphrase`. Map both into the same slot.
+    if creds.get("api_passphrase") and not creds.get("passphrase"):
+        creds = dict(creds)
+        creds["passphrase"] = creds["api_passphrase"]
     for k in ("api_key", "api_secret", "passphrase", "wallet", "private_key", "uid"):
         v = creds.get(k)
         if v:
@@ -184,7 +218,8 @@ def _strip_creds(creds: dict) -> dict:
     for k, v in creds.items():
         if k in out or k.startswith("_") or v is None:
             continue
-        if k in ("api_key", "api_secret", "passphrase", "wallet", "private_key", "uid"):
+        if k in ("api_key", "api_secret", "passphrase", "wallet", "private_key", "uid",
+                 "api_passphrase", "address"):
             continue
         extra[k] = str(v)
     if extra:

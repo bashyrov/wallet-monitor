@@ -7,8 +7,13 @@
 //
 // Credentials map (matches the existing wallet schema):
 //
-//	APIKey     → L2 account address (0x… felt)
-//	APISecret  → L2 Stark private key (felt252, hex with or without 0x)
+//	APIKey     → L2 account address (0x… felt) — main account
+//	APISecret  → Stark private key (felt252, hex with or without 0x)
+//	             — either main private key OR subkey private key
+//	Passphrase → (optional) subkey public key (0x…). If set, auth hits
+//	             /v1/auth/{pubkey}; the signature is from the subkey
+//	             but PARADEX-STARKNET-ACCOUNT stays as the main address.
+//	             Recommended — subkeys cannot withdraw/transfer funds.
 //
 // Signing
 //
@@ -20,9 +25,8 @@
 //	         orderType, size, price } where size/price are signed
 //	         felt-encoded with 8-decimal scaling (Paradex's quantum).
 //
-// JWT cache: we ask /v1/auth for a 24h JWT, store it in-memory keyed by
-// L2 address, and refresh ~5 min before expiry. No persistence —
-// restarts will re-auth, which costs one Stark signature.
+// JWT TTL: Paradex JWTs expire every 5 minutes (hard-coded server-side).
+// We refresh ~90s before expiry so callers always have a fresh token.
 //
 // Wire shape — orders post to /v1/orders with the usual JSON body plus
 // `signature` (decimal `["r","s"]`) and `signature_timestamp` (ms).
@@ -51,8 +55,11 @@ import (
 const (
 	baseURL          = "https://api.prod.paradex.trade"
 	starknetChainID  = "PRIVATE_SN_PARACLEAR_MAINNET"
-	jwtTTL           = 24 * time.Hour
-	jwtRefreshLeeway = 5 * time.Minute
+	// Paradex's auth endpoint hard-caps JWTs at 5 min. We ask for 4 min
+	// to stay comfortably under, and refresh 90 s early so a Stark sign
+	// + network round-trip never races a request to /v1/orders.
+	jwtTTL           = 4 * time.Minute
+	jwtRefreshLeeway = 90 * time.Second
 )
 
 // chainIDHex = hex(int.from_bytes(starknetChainID.encode(), "big")).
@@ -125,7 +132,10 @@ func flattenSignature(rDec, sDec string) string {
 
 // ── Typed-data builders ──────────────────────────────────────────────────
 
-func buildAuthMessage(timestamp, expiration int64) []byte {
+// buildAuthMessage returns the SNIP-12 typed data for /v1/auth. The
+// signed `path` field in the message MUST match the URL path used —
+// "/v1/auth" for main-key auth, "/v1/auth/{pubkey}" for subkeys.
+func buildAuthMessage(timestamp, expiration int64, path string) []byte {
 	td := map[string]any{
 		"domain": map[string]any{
 			"name":    "Paradex",
@@ -149,7 +159,7 @@ func buildAuthMessage(timestamp, expiration int64) []byte {
 		},
 		"message": map[string]any{
 			"method": "POST",
-			"path":   "/v1/auth",
+			"path":   path,
 			// Paradex sends `body: ""` here — starknet-py encodes empty
 			// string as felt 0. starknet.go's StrToHex chokes on "", so
 			// we pass "0" which lands on the exact same felt.
@@ -208,24 +218,36 @@ func (a *Adapter) ensureJWT(ctx context.Context, creds trade.Creds) (string, err
 	if creds.APIKey == "" || creds.APISecret == "" {
 		return "", errUser("paradex requires L2 address (api_key) and Stark private key (api_secret)")
 	}
-	addr := strings.ToLower(creds.APIKey)
+	// Subkey path: /v1/auth/{public_key}. The signed `path` field in
+	// the SNIP-12 message MUST match exactly. Header still names the
+	// main account address; verifier knows to load the subkey from the
+	// path and verify against that pubkey.
+	subkeyPub := strings.TrimSpace(creds.Passphrase)
+	authPath := "/v1/auth"
+	if subkeyPub != "" {
+		authPath = "/v1/auth/" + subkeyPub
+	}
+
+	// Cache key: address+subkey so a user with both main+subkey on the
+	// same wallet doesn't share a token across them.
+	cacheKey := strings.ToLower(creds.APIKey) + "|" + strings.ToLower(subkeyPub)
 	a.jwtMu.Lock()
 	defer a.jwtMu.Unlock()
 
-	if e, ok := a.jwts[addr]; ok && time.Until(e.expires) > jwtRefreshLeeway {
+	if e, ok := a.jwts[cacheKey]; ok && time.Until(e.expires) > jwtRefreshLeeway {
 		return e.token, nil
 	}
 
 	timestamp := time.Now().Unix()
 	expiry := timestamp + int64(jwtTTL.Seconds())
 
-	tdJSON := buildAuthMessage(timestamp, expiry)
+	tdJSON := buildAuthMessage(timestamp, expiry, authPath)
 	rDec, sDec, err := signTypedData(tdJSON, creds.APIKey, creds.APISecret)
 	if err != nil {
 		return "", errInternal("auth sign", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/v1/auth", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+authPath, nil)
 	if err != nil {
 		return "", err
 	}
@@ -250,7 +272,7 @@ func (a *Adapter) ensureJWT(ctx context.Context, creds trade.Creds) (string, err
 	if err := json.Unmarshal(body, &jwtResp); err != nil || jwtResp.JWT == "" {
 		return "", &trade.Error{Kind: trade.KindExchange, Message: "paradex: missing jwt_token in /v1/auth response"}
 	}
-	a.jwts[addr] = jwtEntry{token: jwtResp.JWT, expires: time.Unix(expiry, 0)}
+	a.jwts[cacheKey] = jwtEntry{token: jwtResp.JWT, expires: time.Unix(expiry, 0)}
 	return jwtResp.JWT, nil
 }
 
@@ -282,8 +304,10 @@ func (a *Adapter) authedRequest(ctx context.Context, creds trade.Creds, method, 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == 401 {
 		// JWT expired or invalidated — drop cache so caller can retry.
+		// Cache key matches ensureJWT: address|subkey-pubkey.
+		cacheKey := strings.ToLower(creds.APIKey) + "|" + strings.ToLower(strings.TrimSpace(creds.Passphrase))
 		a.jwtMu.Lock()
-		delete(a.jwts, strings.ToLower(creds.APIKey))
+		delete(a.jwts, cacheKey)
 		a.jwtMu.Unlock()
 		return nil, parseError(resp.StatusCode, raw)
 	}

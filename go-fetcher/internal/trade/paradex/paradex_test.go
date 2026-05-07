@@ -32,7 +32,7 @@ func TestChainIDFelt(t *testing.T) {
 // type) is acceptable per SNIP-12.
 func TestAuthTypedData_Roundtrip(t *testing.T) {
 	const address = "0x05c74db20fa8f151bfd3a7a462cf2e8d4578a88aa4bd7a1746955201c48d8e5e"
-	tdJSON := buildAuthMessage(1700000000, 1700086400)
+	tdJSON := buildAuthMessage(1700000000, 1700086400, "/v1/auth")
 	var td typeddata.TypedData
 	if err := json.Unmarshal(tdJSON, &td); err != nil {
 		t.Fatalf("typed data unmarshal: %v", err)
@@ -56,7 +56,7 @@ func TestSign_Recoverable(t *testing.T) {
 	privFelt := new(felt.Felt).SetBigInt(privBig)
 	pubX, _ := curve.PrivateKeyToPoint(privBig)
 
-	tdJSON := buildAuthMessage(1700000000, 1700086400)
+	tdJSON := buildAuthMessage(1700000000, 1700086400, "/v1/auth")
 	const address = "0x012345abcdef"
 	rDec, sDec, err := signTypedData(tdJSON, address, "0x"+privBig.Text(16))
 	if err != nil {
@@ -210,7 +210,7 @@ func TestSignOrder_Recoverable(t *testing.T) {
 // Vector locked at starknet.go v0.17.1 / juno v0.15.11.
 func TestAuthMessage_HashPinned(t *testing.T) {
 	const address = "0x05c74db20fa8f151bfd3a7a462cf2e8d4578a88aa4bd7a1746955201c48d8e5e"
-	tdJSON := buildAuthMessage(1700000000, 1700086400)
+	tdJSON := buildAuthMessage(1700000000, 1700086400, "/v1/auth")
 	var tdv typeddata.TypedData
 	if err := json.Unmarshal(tdJSON, &tdv); err != nil {
 		t.Fatal(err)
@@ -229,7 +229,7 @@ func TestAuthMessage_HashPinned(t *testing.T) {
 // signTypedData — make sure decimal output is not accidentally hex.
 func TestSignTypedData_DecimalOutput(t *testing.T) {
 	priv := "0x" + strings.Repeat("11", 32)
-	tdJSON := buildAuthMessage(1, 2)
+	tdJSON := buildAuthMessage(1, 2, "/v1/auth")
 	r, s, err := signTypedData(tdJSON, "0xab", priv)
 	if err != nil {
 		t.Fatal(err)
