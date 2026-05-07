@@ -6127,6 +6127,8 @@ function ltInit() {
     .forEach(id => { const e = document.getElementById(id); if (e) e.textContent = sym; });
   ltSyncFromTrade();
   ltRefreshBalances();
+  // Initialize slider visual fill at 0%
+  _ltSetSliderFill(0);
   ltRecalc();
 }
 
@@ -6248,10 +6250,18 @@ function _ltMaxNotionalUsd() {
   return Math.min(longAvail, shortAvail) * lev;
 }
 
-function ltOnAlloc(e) {
-  const pct = parseInt(e.target.value, 10) || 0;
+function _ltSetSliderFill(pct) {
+  // Set the CSS var that drives the green-fill track gradient. CSS reads
+  // --lt-alloc-pct in linear-gradient stops to draw filled-up-to-thumb.
+  const slider = document.getElementById('lt-alloc-slider');
+  if (slider) slider.style.setProperty('--lt-alloc-pct', `${pct}%`);
   const lbl = document.getElementById('lt-alloc-pct');
   if (lbl) lbl.textContent = `${pct}%`;
+}
+
+function ltOnAlloc(e) {
+  const pct = parseInt(e.target.value, 10) || 0;
+  _ltSetSliderFill(pct);
   const cap = _ltMaxNotionalUsd();
   const mark = _ltCurMarkPrice();
   if (mark > 0) {
@@ -6273,8 +6283,7 @@ function ltOnQtyInput() {
     const pct = Math.min(100, Math.max(0, Math.round((usd / cap) * 100)));
     const slider = document.getElementById('lt-alloc-slider');
     if (slider) slider.value = pct;
-    const lbl = document.getElementById('lt-alloc-pct');
-    if (lbl) lbl.textContent = `${pct}%`;
+    _ltSetSliderFill(pct);
   }
   ltRecalc();
 }
@@ -6442,7 +6451,7 @@ async function ltSubmit(force = false) {
     // Reset form
     document.getElementById('lt-qty').value = '';
     document.getElementById('lt-alloc-slider').value = 0;
-    document.getElementById('lt-alloc-pct').textContent = '0%';
+    _ltSetSliderFill(0);
     ltRecalc();
   } catch (e) {
     setErr(e.message || 'Network error');

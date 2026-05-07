@@ -1047,7 +1047,22 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 .lt-alloc-bar input[type="range"] {
   width: 100%;
   -webkit-appearance: none; appearance: none;
-  background: var(--surface3); height: 4px; border-radius: 2px;
+  /* Track is a CSS gradient driven by --lt-alloc-pct (set from JS).
+     Green up to the thumb, surface beyond it — gives a filled
+     progress-bar look so the user sees how much they've allocated. */
+  background: linear-gradient(
+    to right,
+    var(--green) 0%,
+    var(--green) var(--lt-alloc-pct, 0%),
+    var(--surface3) var(--lt-alloc-pct, 0%),
+    var(--surface3) 100%
+  );
+  height: 4px; border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.lt-alloc-bar input[type="range"]::-moz-range-track {
+  background: transparent; height: 4px;
 }
 .lt-alloc-bar input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
