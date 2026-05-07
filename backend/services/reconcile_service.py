@@ -243,9 +243,142 @@ async def _reconcile_user(user_id: int) -> tuple[int, int, int]:
                 "ours" if open_oid else "exchange",
             )
         db.commit()
+
+        # ── arb_positions reconcile pass ──────────────────────────────────
+        # After trade_positions are settled, walk the user's open/partial
+        # arb_positions and:
+        #   - finalize them when both legs are closed externally (pull entry/
+        #     exit prices and realized P&L from venue state if available)
+        #   - mark partial when only one leg closes externally
+        #   - downstream cascade-cancel any pending TP/SL children
+        # Then auto-pair any newly-orphaned trade_positions into arb_positions
+        # so the user sees them as paired entities in the Positions tab.
+        try:
+            await _reconcile_arb_positions(db, user_id, live_by_fp)
+        except Exception:
+            logger.exception("reconcile_arb_positions failed user=%s", user_id)
+
         return (opens_created, closes_marked, still_open)
     finally:
         db.close()
+
+
+async def _reconcile_arb_positions(db: Session, user_id: int,
+                                    live_by_fp: dict[tuple[int, str, str], dict]) -> None:
+    """Walk the user's open/partial arb_positions and reconcile their
+    state against current venue positions. See DEV_PROMPT.md §7.6.B.
+
+    `live_by_fp` is the per-leg fingerprint→live-position map already built
+    by the caller — reuse it for free instead of re-querying every venue.
+    """
+    from datetime import datetime as _dt
+    from sqlalchemy import text as _text
+    from backend.db.models import ArbPosition, ArbTriggerOrder, TradePosition
+    from backend.services.trigger_order_service import auto_pair_internal_legs
+
+    open_arbs: list[ArbPosition] = (
+        db.query(ArbPosition)
+        .filter(
+            ArbPosition.user_id == user_id,
+            ArbPosition.status.in_(("open", "partial", "closing")),
+        )
+        .all()
+    )
+
+    for ap in open_arbs:
+        # Look up each leg's live state by (wallet_id, symbol, side)
+        long_fp  = (ap.long_wallet_id  or 0, (ap.long_symbol  or "").upper(), "buy")
+        short_fp = (ap.short_wallet_id or 0, (ap.short_symbol or "").upper(), "sell")
+        live_long  = live_by_fp.get(long_fp)
+        live_short = live_by_fp.get(short_fp)
+
+        long_qty_live  = float((live_long  or {}).get("quantity") or 0)
+        short_qty_live = float((live_short or {}).get("quantity") or 0)
+
+        long_closed  = (long_qty_live  == 0) and (ap.long_qty  or 0) > 0
+        short_closed = (short_qty_live == 0) and (ap.short_qty or 0) > 0
+
+        if long_closed and short_closed:
+            # Externally closed on both sides — finalize.
+            ap.status = "closed"
+            ap.closed_externally = True
+            ap.closed_at = _dt.utcnow()
+            # Pull final exit prices + realized PnL from the wrapped
+            # trade_positions (reconcile-pass already populated those).
+            children: list[TradePosition] = (
+                db.query(TradePosition)
+                .filter(TradePosition.arb_position_id == ap.id)
+                .all()
+            )
+            realized_sum = 0.0
+            funding_sum = 0.0
+            long_exit = None
+            short_exit = None
+            for ch in children:
+                if ch.leg_a_side == "buy" and ch.leg_a_exit_price:
+                    long_exit = ch.leg_a_exit_price
+                elif ch.leg_a_side == "sell" and ch.leg_a_exit_price:
+                    short_exit = ch.leg_a_exit_price
+                realized_sum += float(ch.leg_a_realized_pnl_usd or 0) + float(ch.leg_b_realized_pnl_usd or 0)
+                funding_sum  += float(ch.leg_a_funding_pnl_usd  or 0) + float(ch.leg_b_funding_pnl_usd  or 0)
+            if long_exit  is not None: ap.long_exit_price  = long_exit
+            if short_exit is not None: ap.short_exit_price = short_exit
+            if ap.long_exit_price and ap.long_exit_price > 0 and ap.short_exit_price:
+                ap.exit_spread_pct = (
+                    (ap.short_exit_price - ap.long_exit_price)
+                    / ap.long_exit_price * 100.0
+                )
+            ap.realized_pnl_usd = realized_sum + funding_sum
+            ap.updated_at = _dt.utcnow()
+            # Cascade-cancel any pending TP/SL children that haven't fired.
+            db.execute(
+                _text(
+                    "UPDATE arb_trigger_orders "
+                    "SET status='cancelled', error_kind='position_closed_externally', "
+                    "    error_message='reconcile detected external close', "
+                    "    updated_at=:now "
+                    "WHERE arb_position_id=:pid AND status IN ('pending','firing','scheduled')"
+                ),
+                {"pid": ap.id, "now": _dt.utcnow()},
+            )
+            logger.info(
+                "reconcile: arb_position %d → closed externally (user=%s, %s ↔ %s, P&L=%.2f USDT)",
+                ap.id, user_id, ap.long_exchange, ap.short_exchange, ap.realized_pnl_usd or 0,
+            )
+        elif long_closed or short_closed:
+            # One leg gone, other still alive → partial.
+            if ap.status != "partial":
+                ap.status = "partial"
+                ap.updated_at = _dt.utcnow()
+                logger.info(
+                    "reconcile: arb_position %d → partial (long_qty=%s short_qty=%s, user=%s)",
+                    ap.id, long_qty_live, short_qty_live, user_id,
+                )
+            # Sync remaining qty so the UI reflects the partial state.
+            # The closed leg has live_qty=0 (or is missing from live_by_fp);
+            # zero out our copy explicitly so the UI doesn't show stale qty.
+            if long_closed:  ap.long_qty  = 0.0
+            elif live_long  is not None: ap.long_qty  = long_qty_live
+            if short_closed: ap.short_qty = 0.0
+            elif live_short is not None: ap.short_qty = short_qty_live
+        else:
+            # Both legs alive — sync qty in case venue is now larger
+            # (user added externally) or smaller (partial close not yet
+            # zero'd one leg).
+            if live_long  is not None and abs(long_qty_live  - (ap.long_qty  or 0)) > 1e-9:
+                ap.long_qty  = long_qty_live
+                ap.updated_at = _dt.utcnow()
+            if live_short is not None and abs(short_qty_live - (ap.short_qty or 0)) > 1e-9:
+                ap.short_qty = short_qty_live
+                ap.updated_at = _dt.utcnow()
+
+    # Auto-pair any unwrapped TradePosition rows. Runs after we update
+    # arb_positions so already-wrapped legs are skipped.
+    try:
+        auto_pair_internal_legs(db, user_id)
+    except Exception:
+        logger.exception("auto_pair_internal_legs failed user=%s", user_id)
+    db.commit()
 
 
 _RECONCILE_CONCURRENCY = 4
