@@ -8,6 +8,57 @@ from backend.services import plan_service
 from backend.schemas.common import WalletCreate, WalletUpdate, WalletOut, TagCreate, TagUpdate, TagOut, WalletAddressCreate, WalletAddressOut
 
 
+def _build_perpdex_creds(body: WalletCreate) -> dict:
+    """Per-DEX credential mapping. Each adapter has its own naming conventions
+    — we store under the names the adapters already consume (see
+    backend/services/trade_adapters/<venue>.py for the truth of which
+    creds dict key each adapter reads).
+
+    Storage layout per venue:
+      - hyperliquid / ethereal: address (read) + api_secret=private_key (trade)
+      - lighter:                api_key=account_index + api_secret=hex_private_key
+                                + api_passphrase=api_key_index (default "255")
+      - paradex:                address (read) + api_token=JWT (auth)
+                                + private_key=l2_private_key (trade signing)
+      - extended:               address only (read-only venue)
+    """
+    tv = (body.type_value or "").lower()
+    creds: dict = {}
+    if body.address:
+        creds["address"] = body.address.strip()
+
+    if tv == "lighter":
+        # Lighter uses api_key as numeric account_index and api_passphrase as
+        # api_key_index (default "255"). hex private key in api_secret.
+        if body.account_index:
+            creds["api_key"] = body.account_index.strip()
+        if body.private_key:
+            creds["api_secret"] = body.private_key.strip()
+        # api_key_index defaults to "255" if user leaves it blank but supplied
+        # a private key — every Lighter SDK example uses 255.
+        idx = (body.api_key_index or "").strip()
+        if not idx and body.private_key:
+            idx = "255"
+        if idx:
+            creds["api_passphrase"] = idx
+    elif tv == "paradex":
+        if body.api_token:
+            creds["api_token"] = body.api_token.strip()
+        if body.l2_private_key:
+            # Paradex Stark L2 priv-key. Stored as private_key — adapter reads
+            # it directly. (Aster also uses api_secret as PK; Paradex needs the
+            # explicit name because api_token already occupies that mental slot.)
+            creds["private_key"] = body.l2_private_key.strip()
+    elif tv in ("hyperliquid", "ethereal"):
+        # Both adapters accept either `private_key` or `api_secret` as the
+        # EVM signing key. Store as api_secret to keep storage uniform with
+        # CEX-style schemas.
+        if body.private_key:
+            creds["api_secret"] = body.private_key.strip()
+    # extended: read-only, address only.
+    return creds
+
+
 def _display_info(wallet: Wallet) -> str:
     creds = decrypt_credentials(wallet.credentials or {})
     if wallet.wallet_type == "exchange" or (wallet.wallet_type == "perpdex" and wallet.type_value == "aster"):
@@ -184,10 +235,10 @@ def create_wallet(db: Session, body: WalletCreate, user_id: int, user: User | No
         }
         if body.api_passphrase:
             raw_creds["api_passphrase"] = body.api_passphrase.strip()
+    elif body.wallet_type == "perpdex":
+        raw_creds = _build_perpdex_creds(body)
     else:
         raw_creds = {"address": body.address.strip()}
-        if body.wallet_type == "perpdex" and body.type_value == "paradex" and body.api_token:
-            raw_creds["api_token"] = body.api_token.strip()
 
     # First exchange key for a venue is automatically the main one — second
     # and third additions stay non-main until the user explicitly switches.
@@ -249,6 +300,27 @@ def update_wallet(db: Session, wallet_id: int, body: WalletUpdate, user_id: int)
                 creds["api_passphrase"] = body.api_passphrase.strip()
             else:
                 creds.pop("api_passphrase", None)
+    elif wallet.wallet_type == "perpdex":
+        # Trade-credential updates per perpdex venue. Keys are stored under
+        # the names the adapter consumes (see _build_perpdex_creds).
+        tv = (wallet.type_value or "").lower()
+        if body.address:
+            creds["address"] = body.address.strip()
+        if tv == "lighter":
+            if body.account_index:
+                creds["api_key"] = body.account_index.strip()
+            if body.private_key:
+                creds["api_secret"] = body.private_key.strip()
+            if body.api_key_index:
+                creds["api_passphrase"] = body.api_key_index.strip()
+        elif tv == "paradex":
+            if body.api_token:
+                creds["api_token"] = body.api_token.strip()
+            if body.l2_private_key:
+                creds["private_key"] = body.l2_private_key.strip()
+        elif tv in ("hyperliquid", "ethereal"):
+            if body.private_key:
+                creds["api_secret"] = body.private_key.strip()
     else:
         if body.address:
             creds["address"] = body.address.strip()
@@ -266,7 +338,7 @@ def update_wallet(db: Session, wallet_id: int, body: WalletUpdate, user_id: int)
                 db.query(Wallet)
                 .filter(
                     Wallet.user_id == user_id,
-                    Wallet.wallet_type == "exchange",
+                    Wallet.wallet_type == wallet.wallet_type,
                     Wallet.type_value == wallet.type_value,
                     Wallet.purpose.in_(("screener", "both")),
                     Wallet.id != wallet.id,

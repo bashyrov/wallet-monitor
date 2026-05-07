@@ -372,18 +372,40 @@ def toggle_can_trade(
     w = db.query(Wallet).filter(Wallet.id == wallet_id, Wallet.user_id == user.id).first()
     if not w:
         raise HTTPException(404, "Wallet not found")
-    if w.wallet_type != "exchange":
-        raise HTTPException(400, "Trading can only be enabled on exchange wallets")
+    if w.wallet_type not in ("exchange", "perpdex"):
+        raise HTTPException(400, "Trading can only be enabled on exchange or perpdex wallets")
     if body.can_trade:
         from backend.services.trade_adapters import TRADE_SUPPORTED
         if w.type_value not in TRADE_SUPPORTED:
             raise HTTPException(400, f"Trading on {w.type_value} is not yet supported.")
-        # Only one trading-eligible (screener|both) key per exchange per user
+        # If user is enabling trade on a perpdex wallet that lacks the
+        # private-key creds, we fail fast with a clear message rather than
+        # let the first trade silently fail at signing time.
+        if w.wallet_type == "perpdex":
+            from backend.crypto import decrypt_credentials
+            creds = decrypt_credentials(w.credentials or {})
+            tv = (w.type_value or "").lower()
+            missing = []
+            if tv in ("hyperliquid", "ethereal") and not (creds.get("api_secret") or creds.get("private_key")):
+                missing.append("private_key")
+            if tv == "paradex" and not creds.get("private_key"):
+                missing.append("l2_private_key")
+            if tv == "lighter":
+                if not creds.get("api_key"):
+                    missing.append("account_index")
+                if not creds.get("api_secret"):
+                    missing.append("private_key")
+            if missing:
+                raise HTTPException(
+                    400,
+                    f"{w.type_value} trade requires {', '.join(missing)} — edit the wallet to add them"
+                )
+        # Only one trading-eligible (screener|both) key per venue per user
         dup = (
             db.query(W)
             .filter(
                 W.user_id == user.id,
-                W.wallet_type == "exchange",
+                W.wallet_type == w.wallet_type,
                 W.type_value == w.type_value,
                 W.purpose.in_(("screener", "both")),
                 W.id != w.id,

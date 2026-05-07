@@ -2213,6 +2213,46 @@ async function evSendVerify() {
                     <div class="field-err" id="err-perpdex_api_secret"></div>
                   </div>
                 </div>
+                <!-- Trade-credential fields per perpdex venue. Live at the
+                     same nesting level as -address-group / -apitoken-group /
+                     -apikey-group so they show independently per venue,
+                     toggled by _onPerpdexSelect() from /api/wallets/options
+                     metadata. -->
+                <div class="form-group" id="perpdex-private-key-group" style="display:none">
+                  <label class="form-label">Private Key (signing)</label>
+                  <input class="form-input" name="perpdex_private_key" type="password"
+                         placeholder="0x… 64 hex chars" spellcheck="false" autocomplete="off">
+                  <div class="form-hint" style="margin-top:4px;font-size:12px;color:var(--text3)">
+                    Required to sign trade actions. Stored encrypted (Fernet/AES-128).
+                    Read-only flows work without it.
+                  </div>
+                  <div class="field-err" id="err-perpdex_private_key"></div>
+                </div>
+                <div class="form-group" id="perpdex-l2-key-group" style="display:none">
+                  <label class="form-label">L2 Stark Private Key</label>
+                  <input class="form-input" name="perpdex_l2_private_key" type="password"
+                         placeholder="0x… Stark L2 key" spellcheck="false" autocomplete="off">
+                  <div class="form-hint" style="margin-top:4px;font-size:12px;color:var(--text3)">
+                    Paradex needs the L2 Stark key for SNIP-12 order signing.
+                    The JWT (api_token) handles auth; this signs orders.
+                  </div>
+                  <div class="field-err" id="err-perpdex_l2_private_key"></div>
+                </div>
+                <div class="form-group" id="perpdex-account-index-group" style="display:none">
+                  <label class="form-label">Account Index</label>
+                  <input class="form-input" name="perpdex_account_index"
+                         placeholder="numeric e.g. 12345" spellcheck="false" autocomplete="off">
+                  <div class="field-err" id="err-perpdex_account_index"></div>
+                </div>
+                <div class="form-group" id="perpdex-api-key-index-group" style="display:none">
+                  <label class="form-label">API Key Index</label>
+                  <input class="form-input" name="perpdex_api_key_index"
+                         placeholder="default 255" spellcheck="false" autocomplete="off">
+                  <div class="form-hint" style="margin-top:4px;font-size:12px;color:var(--text3)">
+                    Defaults to 255 if blank.
+                  </div>
+                  <div class="field-err" id="err-perpdex_api_key_index"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -3861,6 +3901,15 @@ function _onPerpdexSelect(opt) {
   // Paradex-only: additional JWT token field alongside the Starknet address.
   const tokenGroup = document.getElementById('perpdex-apitoken-group');
   if (tokenGroup) tokenGroup.style.display = (!needsKey && needsToken) ? '' : 'none';
+  // Per-venue trade-credential fields (Task 1 follow-up — see /api/wallets/options).
+  const showIf = (id, on) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = on ? '' : 'none';
+  };
+  showIf('perpdex-private-key-group',     !!opt.needs_private_key);
+  showIf('perpdex-l2-key-group',          !!opt.needs_l2_private_key);
+  showIf('perpdex-account-index-group',   !!opt.needs_account_index);
+  showIf('perpdex-api-key-index-group',   !!opt.needs_api_key_index);
 }
 function _resetProtoChips() {
   [
@@ -3987,6 +4036,20 @@ async function submitAddWallet(e) {
         const tok = (form.perpdex_api_token?.value || '').trim();
         if (tok) body.api_token = tok;
       }
+      // Per-venue trade-credential fields. Send only what the form has,
+      // backend ignores empty values and validates required fields per
+      // venue + purpose.
+      const pk  = (form.perpdex_private_key?.value || '').trim();
+      const l2  = (form.perpdex_l2_private_key?.value || '').trim();
+      const acc = (form.perpdex_account_index?.value || '').trim();
+      const idx = (form.perpdex_api_key_index?.value || '').trim();
+      if (pk)  body.private_key       = pk;
+      if (l2)  body.l2_private_key    = l2;
+      if (acc) body.account_index     = acc;
+      if (idx) body.api_key_index     = idx;
+      // Purpose for perpdex (now allowed: screener/both/portfolio)
+      const pdPurpose = form.elements['perpdex_purpose']?.value;
+      if (pdPurpose) body.purpose = pdPurpose;
     }
   }
   const btn = document.getElementById('btn-submit-wallet');

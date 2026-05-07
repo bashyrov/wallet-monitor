@@ -31,7 +31,7 @@ class WalletCreate(BaseModel):
     wallet_type: Literal["exchange", "chain", "perpdex"]
     type_value: str
     # 'portfolio' = read-only balance/positions, 'screener' = trading,
-    # 'both' = the same key serves both purposes. (exchange wallets only)
+    # 'both' = the same key serves both purposes.
     purpose: Literal["portfolio", "screener", "both"] = "portfolio"
     # exchange fields
     api_key: str | None = None
@@ -41,6 +41,13 @@ class WalletCreate(BaseModel):
     address: str | None = None
     # perpdex-only (currently Paradex): signed-in JWT from paradex.trade.
     api_token: str | None = None
+    # perpdex trade-credential fields (Task 1 follow-up).
+    # Optional — backend stores them when present so existing kошельки
+    # without these fields keep working in read-only mode.
+    private_key: str | None = None             # HL / Ethereal EVM key, Lighter ZK pk
+    l2_private_key: str | None = None          # Paradex StarkNet L2 priv key
+    account_index: str | None = None           # Lighter numeric account index
+    api_key_index: str | None = None           # Lighter ZK key index (default "255")
 
 
 class WalletUpdate(BaseModel):
@@ -50,6 +57,10 @@ class WalletUpdate(BaseModel):
     api_passphrase: str | None = None
     address: str | None = None
     api_token: str | None = None
+    private_key: str | None = None
+    l2_private_key: str | None = None
+    account_index: str | None = None
+    api_key_index: str | None = None
     purpose: Literal["portfolio", "screener", "both"] | None = None
 
 

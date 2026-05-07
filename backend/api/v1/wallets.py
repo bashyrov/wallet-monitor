@@ -131,11 +131,42 @@ async def create_wallet(
                     raise HTTPException(status_code=400, detail=result.get("error") or "Key has no trading permission")
     elif body.wallet_type in ("chain", "perpdex"):
         if not body.address:
-            raise HTTPException(status_code=422, detail="address is required for chain/perpdex wallets")
+            # Lighter doesn't need an EVM address; it uses account_index +
+            # ZK pk. So skip the address requirement for that case if the
+            # user is creating a trading-ready Lighter wallet.
+            tv = (body.type_value or "").lower()
+            if not (body.wallet_type == "perpdex" and tv == "lighter" and body.account_index):
+                raise HTTPException(status_code=422, detail="address is required for chain/perpdex wallets")
         # Paradex uses Starknet signature auth — balance fetch needs a JWT
         # (api_token) in addition to the Starknet address.
         if body.wallet_type == "perpdex" and body.type_value == "paradex" and not body.api_token:
             raise HTTPException(status_code=422, detail="paradex requires api_token (JWT from paradex.trade)")
+        # Trade-ready perpdex (purpose=screener|both) requires the private key
+        # the adapter signs with. Read-only is fine without — DEX read APIs
+        # are unsigned and keyed by address only.
+        if body.wallet_type == "perpdex" and body.purpose in ("screener", "both"):
+            tv = (body.type_value or "").lower()
+            if tv in ("hyperliquid", "ethereal") and not body.private_key:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{tv} trading requires private_key (EVM key for order signing)"
+                )
+            if tv == "paradex" and not body.l2_private_key:
+                raise HTTPException(
+                    status_code=422,
+                    detail="paradex trading requires l2_private_key (StarkNet L2 key)"
+                )
+            if tv == "lighter":
+                if not body.account_index:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="lighter trading requires account_index (numeric)"
+                    )
+                if not body.private_key:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="lighter trading requires private_key (hex ZK private key)"
+                    )
     else:
         raise HTTPException(status_code=422, detail="Invalid wallet_type")
 
