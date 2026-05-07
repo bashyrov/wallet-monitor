@@ -5090,6 +5090,10 @@ function _applyTradeStatus(s){
     if (bal) bal.textContent = (info.balance_usdt != null) ? (Number(info.balance_usdt).toFixed(2) + ' USDT') : '— USDT';
   });
   _renderSubmit('long'); _renderSubmit('short');
+  // Mirror to the new unified Live Trading panel
+  if (typeof ltRefreshBalances === 'function') ltRefreshBalances();
+  if (typeof ltSyncFromTrade === 'function')   ltSyncFromTrade();
+  if (typeof ltRecalc === 'function')          ltRecalc();
 }
 
 function tradeSwitchTab(btn){
@@ -6120,15 +6124,22 @@ function ltInit() {
   const sym = (typeof SYM === 'string' ? SYM : 'TOKEN');
   ['lt-qty-suffix','lt-portion-suffix','lt-tp-portion-suffix','lt-sl-portion-suffix']
     .forEach(id => { const e = document.getElementById(id); if (e) e.textContent = sym; });
-  // Leg labels
-  const longEx  = (typeof LONG_EX  === 'string' ? LONG_EX  : '—').toUpperCase();
-  const shortEx = (typeof SHORT_EX === 'string' ? SHORT_EX : '—').toUpperCase();
-  const ll = document.getElementById('lt-bal-long-label');
-  const sl = document.getElementById('lt-bal-short-label');
-  if (ll) ll.textContent = `LONG · ${longEx}`;
-  if (sl) sl.textContent = `SHORT · ${shortEx}`;
+  ltSyncFromTrade();
   ltRefreshBalances();
   ltRecalc();
+}
+
+// Pull leg labels + wallet ids from the existing _trade state.
+// Called from ltInit and from _applyTradeStatus after /trade/status lands.
+function ltSyncFromTrade() {
+  const longEx  = (typeof LONG  === 'string' ? LONG  : '').toLowerCase();
+  const shortEx = (typeof SHORT === 'string' ? SHORT : '').toLowerCase();
+  const longLbl  = (typeof EX_LABEL === 'object' && EX_LABEL[longEx])  || longEx.toUpperCase()  || '—';
+  const shortLbl = (typeof EX_LABEL === 'object' && EX_LABEL[shortEx]) || shortEx.toUpperCase() || '—';
+  const ll = document.getElementById('lt-bal-long-label');
+  const sl = document.getElementById('lt-bal-short-label');
+  if (ll) ll.textContent = `LONG · ${longLbl}`;
+  if (sl) sl.textContent = `SHORT · ${shortLbl}`;
 }
 
 function ltToggleClassic() {
