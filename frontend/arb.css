@@ -1018,6 +1018,25 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
   font-size: 11px; color: var(--text3); font-family: 'JetBrains Mono', monospace;
   pointer-events: none;
 }
+.lt-unit-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; gap: 0;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  overflow: hidden; background: var(--bg);
+}
+.lt-unit-btn {
+  padding: 3px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  background: transparent; color: var(--text3);
+  border: 0; border-right: 1px solid var(--border);
+  cursor: pointer; font-family: 'JetBrains Mono', monospace;
+  transition: background var(--dur-fast), color var(--dur-fast);
+  min-width: 36px;
+}
+.lt-unit-btn:last-child { border-right: 0; }
+.lt-unit-btn:hover { color: var(--text); background: var(--surface2); }
+.lt-unit-btn.is-active { background: var(--green-soft); color: var(--green); }
+/* Pad input so the toggle doesn't overlap the typed value */
+.lt-input-wrap:has(.lt-unit-toggle) .lt-input { padding-right: 96px; }
 .lt-sel {
   padding: 6px 8px; background: var(--bg); border: 1px solid var(--border);
   border-radius: var(--r-sm); color: var(--text); font-family: inherit;

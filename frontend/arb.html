@@ -612,12 +612,16 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
         </div>
         <div class="lt-warn" id="lt-warn" style="display:none"></div>
 
-        <!-- Quantity — token units. % Allocation slider drives this in lock-step. -->
+        <!-- Quantity — toggle between USDT (notional) and TOKEN (base qty).
+             % Allocation slider drives whichever unit is active. -->
         <div class="lt-row">
           <label class="lt-lbl">Quantity</label>
           <div class="lt-input-wrap">
             <input id="lt-qty" class="lt-input" type="number" step="0.001" placeholder="0.00" oninput="ltOnQtyInput()">
-            <span class="lt-suffix" id="lt-qty-suffix">—</span>
+            <div class="lt-unit-toggle">
+              <button type="button" class="lt-unit-btn is-active" data-unit="token" onclick="ltSetUnit('token')" id="lt-unit-token">—</button>
+              <button type="button" class="lt-unit-btn"           data-unit="usdt"  onclick="ltSetUnit('usdt')"  id="lt-unit-usdt">USDT</button>
+            </div>
           </div>
         </div>
         <div class="lt-alloc">
@@ -6088,6 +6092,7 @@ const LT = {
   pairKind: 'long_short', // long_short | spot_short
   margin: 'isolated',
   leverage: 3,
+  unit: 'token',        // token (base asset) | usdt (notional)
   longBal:  { total: 0, avail: 0 },
   shortBal: { total: 0, avail: 0 },
   effSpread: null,      // last known effective spread (live)
@@ -6123,8 +6128,11 @@ function ltInit() {
 
   // Suffix labels
   const sym = (typeof SYM === 'string' ? SYM : 'TOKEN');
-  ['lt-qty-suffix','lt-portion-suffix','lt-tp-portion-suffix','lt-sl-portion-suffix']
+  ['lt-portion-suffix','lt-tp-portion-suffix','lt-sl-portion-suffix']
     .forEach(id => { const e = document.getElementById(id); if (e) e.textContent = sym; });
+  // Quantity unit toggle: TOKEN button shows the symbol
+  const tokBtn = document.getElementById('lt-unit-token');
+  if (tokBtn) tokBtn.textContent = sym;
   ltSyncFromTrade();
   ltRefreshBalances();
   // Initialize slider visual fill at 0%
@@ -6250,6 +6258,25 @@ function _ltMaxNotionalUsd() {
   return Math.min(longAvail, shortAvail) * lev;
 }
 
+function ltSetUnit(unit) {
+  // Re-interpret the current input value into the new unit so the typed
+  // qty stays equivalent. e.g. 100 TOKEN @ $1.50 → 150 USDT after switch.
+  const prevUnit = LT.unit;
+  if (prevUnit === unit) return;
+  const cur = parseFloat(document.getElementById('lt-qty')?.value) || 0;
+  const mark = _ltCurMarkPrice();
+  let next = cur;
+  if (mark > 0 && cur > 0) {
+    if (prevUnit === 'token' && unit === 'usdt')   next = cur * mark;
+    if (prevUnit === 'usdt'  && unit === 'token')  next = cur / mark;
+  }
+  LT.unit = unit;
+  document.querySelectorAll('.lt-unit-btn').forEach(b => b.classList.toggle('is-active', b.dataset.unit === unit));
+  const qtyInput = document.getElementById('lt-qty');
+  if (qtyInput) qtyInput.value = next ? next.toFixed(unit === 'usdt' ? 2 : 6) : '';
+  ltOnQtyInput();
+}
+
 function _ltSetSliderFill(pct) {
   // Set the CSS var that drives the green-fill track gradient. CSS reads
   // --lt-alloc-pct in linear-gradient stops to draw filled-up-to-thumb.
@@ -6259,27 +6286,42 @@ function _ltSetSliderFill(pct) {
   if (lbl) lbl.textContent = `${pct}%`;
 }
 
+// Read the qty input as a USD notional, regardless of which unit
+// (token / usdt) is currently selected. Backend always wants tokens
+// internally — this is the single conversion point.
+function _ltInputNotionalUsd() {
+  const v = parseFloat(document.getElementById('lt-qty')?.value) || 0;
+  if (LT.unit === 'usdt') return v;
+  const mark = _ltCurMarkPrice();
+  return mark > 0 ? v * mark : 0;
+}
+
+// Convert a target notional (USD) into the value to display in the qty
+// input given the active unit.
+function _ltUsdToInputValue(usd) {
+  if (LT.unit === 'usdt') return usd.toFixed(2);
+  const mark = _ltCurMarkPrice();
+  return mark > 0 ? (usd / mark).toFixed(6) : '0';
+}
+
 function ltOnAlloc(e) {
   const pct = parseInt(e.target.value, 10) || 0;
   _ltSetSliderFill(pct);
   const cap = _ltMaxNotionalUsd();
-  const mark = _ltCurMarkPrice();
-  if (mark > 0) {
+  if (cap > 0) {
     const usd = cap * (pct / 100);
-    const qty = usd / mark;
     const qtyInput = document.getElementById('lt-qty');
-    if (qtyInput) qtyInput.value = qty.toFixed(6);
+    if (qtyInput) qtyInput.value = _ltUsdToInputValue(usd);
   }
   ltRecalc();
 }
 
 function ltOnQtyInput() {
-  // User edited qty directly — sync slider back if we can compute pct
-  const qty = parseFloat(document.getElementById('lt-qty').value) || 0;
+  // User edited qty directly — sync slider back. Convert to USD for the
+  // % calculation regardless of active unit.
+  const usd = _ltInputNotionalUsd();
   const cap = _ltMaxNotionalUsd();
-  const mark = _ltCurMarkPrice();
-  if (mark > 0 && cap > 0) {
-    const usd = qty * mark;
+  if (cap > 0) {
     const pct = Math.min(100, Math.max(0, Math.round((usd / cap) * 100)));
     const slider = document.getElementById('lt-alloc-slider');
     if (slider) slider.value = pct;
@@ -6300,10 +6342,10 @@ function ltOnScheduleToggle(e) {
 }
 
 function ltRecalc() {
-  const qty = parseFloat(document.getElementById('lt-qty')?.value) || 0;
   const mark = _ltCurMarkPrice();
   const leverage = LT.pairKind === 'spot_short' ? 1 : (parseInt(document.getElementById('lt-leverage')?.value, 10) || 1);
-  const posValue = qty * mark;
+  // Position value = USD notional regardless of input unit
+  const posValue = _ltInputNotionalUsd();
   const margin = leverage > 0 ? posValue / leverage : posValue;
   const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   setText('lt-pos-value', `${posValue.toFixed(2)} USDT`);
@@ -6378,9 +6420,19 @@ async function ltSubmit(force = false) {
     return;
   }
 
-  const totalQty = parseFloat(document.getElementById('lt-qty').value);
-  if (!Number.isFinite(totalQty) || totalQty <= 0) {
+  // Convert input to token qty regardless of selected unit. Backend
+  // wants total_qty_token always in base-asset units.
+  const inputVal = parseFloat(document.getElementById('lt-qty').value);
+  if (!Number.isFinite(inputVal) || inputVal <= 0) {
     setErr('Enter total qty');
+    return;
+  }
+  const _mark = _ltCurMarkPrice();
+  const totalQty = (LT.unit === 'usdt')
+    ? (_mark > 0 ? inputVal / _mark : 0)
+    : inputVal;
+  if (!Number.isFinite(totalQty) || totalQty <= 0) {
+    setErr(LT.unit === 'usdt' ? 'Mark price unavailable, switch to TOKEN' : 'Enter total qty');
     return;
   }
   const trigVal = (document.getElementById('lt-trig').value || '').trim();
