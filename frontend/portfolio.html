@@ -1073,7 +1073,11 @@
       max-height: 0; overflow: hidden;
       transition: max-height 0.32s cubic-bezier(0.16,1,0.3,1);
     }
-    .acc-item.open .acc-content { max-height: 700px; }
+    /* Generous cap so tall forms (Paradex with subkey pubkey, Lighter
+       with 4 fields, etc.) don't clip the submit button. The transition
+       duration stays the same — interpolated velocity is faster but
+       still visually smooth on real content heights (≤ 1000 px). */
+    .acc-item.open .acc-content { max-height: 1800px; }
     .acc-content-inner { padding: 14px 14px 16px; border-top: 1px solid var(--border); }
 
     /* ── PROTOCOL CHIPS ── */
