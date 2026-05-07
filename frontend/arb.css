@@ -961,3 +961,175 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
   background: var(--red-soft); border: 1px solid var(--red-edge);
   color: var(--red); font-size: 11px;
 }
+
+/* ─── Live Trading unified panel (Task #1+#5) ──────────────────────── */
+.lt-panel {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px 16px;
+}
+.lt-panel.is-hidden { display: none; }
+.lt-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.lt-tabs { display: flex; gap: 4px; }
+.lt-tab {
+  padding: 6px 14px; border-radius: var(--r-sm); font-size: 12px; font-weight: 600;
+  color: var(--text2); background: transparent; cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.lt-tab:hover { background: var(--surface2); color: var(--text); }
+.lt-tab.is-active { background: var(--surface3); color: var(--text); }
+.lt-classic-link {
+  font-size: 11px; color: var(--text3); background: none; cursor: pointer;
+  font-family: inherit; padding: 4px 8px; border-radius: var(--r-sm);
+}
+.lt-classic-link:hover { color: var(--text); background: var(--surface2); }
+
+.lt-pairkind { display: flex; gap: 6px; }
+.lt-pk-chip {
+  padding: 5px 11px; font-size: 11px; font-weight: 500; cursor: pointer;
+  border-radius: var(--r-pill); border: 1px solid var(--border);
+  background: transparent; color: var(--text2);
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.lt-pk-chip:hover { background: var(--surface2); color: var(--text); }
+.lt-pk-chip.is-active {
+  background: var(--green-soft); color: var(--green); border-color: var(--green-edge);
+}
+
+.lt-balances { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lt-bal-card {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.lt-bal-label {
+  font-size: 10px; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;
+}
+.lt-bal-row {
+  display: flex; justify-content: space-between; font-size: 11px;
+  font-family: 'JetBrains Mono', monospace; color: var(--text2);
+  padding: 1px 0;
+}
+.lt-bal-v { color: var(--text); }
+
+.lt-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lt-lbl {
+  flex: 0 0 auto; font-size: 11px; color: var(--text2); font-weight: 500;
+  min-width: 100px;
+}
+.lt-input-wrap { position: relative; flex: 1; min-width: 100px; }
+.lt-input {
+  width: 100%; padding: 7px 30px 7px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px;
+}
+.lt-input:focus { outline: none; border-color: var(--green-edge); }
+.lt-suffix {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: var(--text3); font-family: 'JetBrains Mono', monospace;
+  pointer-events: none;
+}
+.lt-sel {
+  padding: 6px 8px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r-sm); color: var(--text); font-family: inherit;
+  font-size: 12px; cursor: pointer;
+}
+.lt-seg { display: inline-flex; gap: 0; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.lt-seg-btn {
+  padding: 6px 12px; background: transparent; color: var(--text2);
+  font-size: 11px; font-weight: 500; cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.lt-seg-btn:hover { background: var(--surface2); color: var(--text); }
+.lt-seg-btn.is-active { background: var(--surface3); color: var(--text); }
+
+.lt-warn {
+  padding: 6px 10px; border-radius: var(--r-sm);
+  background: rgba(229,192,123,0.12); border: 1px solid rgba(229,192,123,0.35);
+  color: var(--yellow); font-size: 11px; line-height: 1.4;
+}
+
+.lt-alloc { display: flex; flex-direction: column; gap: 4px; }
+.lt-alloc-head {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text2);
+}
+.lt-alloc-bar { position: relative; padding: 4px 0; }
+.lt-alloc-bar input[type="range"] {
+  width: 100%;
+  -webkit-appearance: none; appearance: none;
+  background: var(--surface3); height: 4px; border-radius: 2px;
+}
+.lt-alloc-bar input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--green); cursor: pointer;
+  box-shadow: 0 0 6px var(--green-glow);
+}
+.lt-alloc-bar input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--green); cursor: pointer; border: none;
+}
+.lt-alloc-marks {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: var(--text3); font-family: 'JetBrains Mono', monospace;
+  margin-top: 4px;
+}
+
+.lt-summary { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.lt-sum-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); }
+.lt-sum-row .mono { color: var(--text); }
+
+.lt-fold { background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.lt-fold > summary {
+  padding: 7px 10px; cursor: pointer; user-select: none;
+  font-size: 11px; color: var(--text2); list-style: none;
+  display: flex; align-items: center; gap: 8px;
+}
+.lt-fold > summary::-webkit-details-marker { display: none; }
+.lt-fold[open] > summary { border-bottom: 1px solid var(--border); color: var(--text); }
+.lt-fold-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+
+.lt-flags { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 4px 0; }
+.lt-flag { font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.lt-flag input[type="checkbox"] { vertical-align: -2px; }
+.lt-flag-hint { color: var(--text3); font-size: 10px; }
+
+.lt-submit {
+  width: 100%; padding: 10px; margin-top: 4px;
+  background: var(--green-soft); color: var(--green);
+  border: 1px solid var(--green-edge); border-radius: var(--r-sm);
+  font-weight: 700; font-size: 13px; cursor: pointer; letter-spacing: 0.02em;
+  transition: background var(--dur-fast), transform var(--dur-fast);
+}
+.lt-submit:hover:not(:disabled) { background: rgba(26,255,171,0.16); }
+.lt-submit:active:not(:disabled) { transform: translateY(1px); }
+.lt-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.lt-submit.is-close {
+  background: var(--red-soft); color: var(--red); border-color: var(--red-edge);
+}
+.lt-submit.is-close:hover:not(:disabled) { background: rgba(248,113,113,0.16); }
+
+.lt-err {
+  padding: 6px 10px; border-radius: var(--r-sm);
+  background: var(--red-soft); border: 1px solid var(--red-edge);
+  color: var(--red); font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .lt-balances { grid-template-columns: 1fr; }
+  .lt-row { flex-direction: column; align-items: stretch; }
+  .lt-lbl { min-width: auto; }
+}
+
+/* Spot-short mode toggles */
+.lt-panel.is-spot-short #lt-margin-row .lt-seg,
+.lt-panel.is-spot-short #lt-bal-long-label::after { /* annotated below */ }
+.lt-panel.is-spot-short #lt-margin-row .lt-lbl:first-child,
+.lt-panel.is-spot-short #lt-margin-row .lt-seg {
+  /* In spot-short mode, the long leg is spot — no margin mode applies.
+     Rather than hide the entire row, we tag the panel and the JS swaps
+     the label / disables the seg buttons. CSS just adds a hint. */
+}

@@ -548,8 +548,176 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
         </div>
       </div>
 
-      <!-- ── LIVE TRADING (two legs) ── -->
-      <div class="info-card trade-card" id="trade-card">
+      <!-- ── LIVE TRADING — UNIFIED PANEL (Task #1+#5) ─────────────── -->
+      <!-- New arbion-style panel: single combined form with portion-based
+           trigger orders, TP/SL inline, spot/short mode toggle. Coexists
+           with the legacy per-leg card below; user toggles via the
+           "Classic view" link in the header. localStorage remembers
+           preference across reloads. -->
+      <section class="info-card lt-panel" id="lt-panel">
+        <div class="auth-lock">
+          <div class="auth-lock-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
+          <h3>Sign in to trade</h3>
+          <p>Opening positions requires connected API keys. Create an account or log in to start trading this pair.</p>
+          <a href="/login?next=/arb" class="auth-lock-cta">Sign in</a>
+        </div>
+
+        <div class="lt-head">
+          <div class="lt-tabs" role="tablist">
+            <button class="lt-tab is-active" data-mode="open"  onclick="ltSwitchMode('open')"  role="tab">Open</button>
+            <button class="lt-tab"            data-mode="close" onclick="ltSwitchMode('close')" role="tab">Close</button>
+          </div>
+          <span style="flex:1"></span>
+          <button type="button" class="lt-classic-link" onclick="ltToggleClassic()" title="Switch to legacy per-leg layout">Classic ↻</button>
+        </div>
+
+        <!-- Pair-kind selector: long-short by default; spot-short hides
+             leverage / margin on the long leg. Lives in the header so
+             the form re-renders cleanly on switch. -->
+        <div class="lt-pairkind">
+          <label class="lt-pk-chip is-active" data-pk="long_short" onclick="ltSetPairKind('long_short')">Long / Short</label>
+          <label class="lt-pk-chip"            data-pk="spot_short" onclick="ltSetPairKind('spot_short')">Spot / Short</label>
+        </div>
+
+        <!-- Per-leg balance cards. arbion logged-out screens hide these,
+             but we keep them inline because users explicitly asked. -->
+        <div class="lt-balances">
+          <div class="lt-bal-card" id="lt-bal-long">
+            <div class="lt-bal-label" id="lt-bal-long-label">LONG · —</div>
+            <div class="lt-bal-row"><span class="lt-bal-k">Wallet</span><span class="lt-bal-v" id="lt-bal-long-total">—</span></div>
+            <div class="lt-bal-row"><span class="lt-bal-k">Available</span><span class="lt-bal-v" id="lt-bal-long-avail">—</span></div>
+          </div>
+          <div class="lt-bal-card" id="lt-bal-short">
+            <div class="lt-bal-label" id="lt-bal-short-label">SHORT · —</div>
+            <div class="lt-bal-row"><span class="lt-bal-k">Wallet</span><span class="lt-bal-v" id="lt-bal-short-total">—</span></div>
+            <div class="lt-bal-row"><span class="lt-bal-k">Available</span><span class="lt-bal-v" id="lt-bal-short-avail">—</span></div>
+          </div>
+        </div>
+
+        <!-- Margin + Leverage row. Spot-short mode hides margin on the
+             spot leg (spot has no margin) — controlled by ltSetPairKind. -->
+        <div class="lt-row" id="lt-margin-row">
+          <label class="lt-lbl">Margin</label>
+          <div class="lt-seg">
+            <button type="button" class="lt-seg-btn is-active" data-v="isolated" onclick="ltSetMargin('isolated')">Isolated</button>
+            <button type="button" class="lt-seg-btn" data-v="cross" onclick="ltSetMargin('cross')">Cross</button>
+          </div>
+          <span class="lt-lbl" id="lt-lev-lbl" style="margin-left:14px">Leverage</span>
+          <select class="lt-sel" id="lt-leverage" onchange="ltRecalc()">
+            <option value="1">1x</option><option value="2">2x</option><option value="3" selected>3x</option>
+            <option value="5">5x</option><option value="10">10x</option><option value="20">20x</option>
+            <option value="50">50x</option><option value="100">100x</option>
+          </select>
+        </div>
+
+        <!-- Trigger Spread — placeholder "Last" means market (fire next tick). -->
+        <div class="lt-row">
+          <label class="lt-lbl">Trigger Spread</label>
+          <div class="lt-input-wrap">
+            <input id="lt-trig" class="lt-input" type="number" step="0.001" placeholder="Last" oninput="ltCheckImmediate()">
+            <span class="lt-suffix">%</span>
+          </div>
+        </div>
+        <div class="lt-warn" id="lt-warn" style="display:none"></div>
+
+        <!-- Quantity — token units. % Allocation slider drives this in lock-step. -->
+        <div class="lt-row">
+          <label class="lt-lbl">Quantity</label>
+          <div class="lt-input-wrap">
+            <input id="lt-qty" class="lt-input" type="number" step="0.001" placeholder="0.00" oninput="ltOnQtyInput()">
+            <span class="lt-suffix" id="lt-qty-suffix">—</span>
+          </div>
+        </div>
+        <div class="lt-alloc">
+          <div class="lt-alloc-head">
+            <span>% Allocation</span>
+            <span class="mono" id="lt-alloc-pct">0%</span>
+          </div>
+          <div class="lt-alloc-bar">
+            <input type="range" id="lt-alloc-slider" min="0" max="100" value="0" oninput="ltOnAlloc(event)">
+            <div class="lt-alloc-marks">
+              <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live readout: Position Value / Margin Used / Effective spread -->
+        <div class="lt-summary">
+          <div class="lt-sum-row"><span>Position Value</span><span class="mono" id="lt-pos-value">0.00 USDT</span></div>
+          <div class="lt-sum-row"><span>Margin Used</span><span class="mono" id="lt-margin-used">0.00 USDT</span></div>
+          <div class="lt-sum-row"><span>Effective spread @ size</span><span class="mono" id="lt-eff-spread">—</span></div>
+        </div>
+
+        <!-- Portion Size — chunks the order; Infinite Fill keeps re-firing. -->
+        <details class="lt-fold">
+          <summary><input type="checkbox" id="lt-portion-on" onchange="ltOnPortionToggle(event)"> Portion Size</summary>
+          <div class="lt-fold-body">
+            <div class="lt-row">
+              <label class="lt-lbl">Portion</label>
+              <div class="lt-input-wrap">
+                <input id="lt-portion" class="lt-input" type="number" step="0.001" placeholder="0.00">
+                <span class="lt-suffix" id="lt-portion-suffix">—</span>
+              </div>
+            </div>
+            <div class="lt-sum-row"><span>One Portion Cost</span><span class="mono" id="lt-portion-cost">0.00 USDT</span></div>
+            <label class="lt-flag"><input type="checkbox" id="lt-infinite"> Infinite Fill <span class="lt-flag-hint">re-arm after every fill until cancelled</span></label>
+          </div>
+        </details>
+
+        <!-- Take Profit + Stop Loss — both auto-reduce-only on submit. -->
+        <details class="lt-fold">
+          <summary><input type="checkbox" id="lt-tp-on" onchange="ltOnTpToggle(event)"> Take Profit</summary>
+          <div class="lt-fold-body">
+            <div class="lt-row">
+              <label class="lt-lbl">Trigger Spread</label>
+              <div class="lt-input-wrap">
+                <input id="lt-tp" class="lt-input" type="number" step="0.001" placeholder="0.00">
+                <span class="lt-suffix">%</span>
+              </div>
+            </div>
+            <div class="lt-row">
+              <label class="lt-lbl">Portion (opt.)</label>
+              <div class="lt-input-wrap">
+                <input id="lt-tp-portion" class="lt-input" type="number" step="0.001" placeholder="full">
+                <span class="lt-suffix" id="lt-tp-portion-suffix">—</span>
+              </div>
+            </div>
+          </div>
+        </details>
+        <details class="lt-fold">
+          <summary><input type="checkbox" id="lt-sl-on" onchange="ltOnSlToggle(event)"> Stop Loss</summary>
+          <div class="lt-fold-body">
+            <div class="lt-row">
+              <label class="lt-lbl">Trigger Spread</label>
+              <div class="lt-input-wrap">
+                <input id="lt-sl" class="lt-input" type="number" step="0.001" placeholder="0.00">
+                <span class="lt-suffix">%</span>
+              </div>
+            </div>
+            <div class="lt-row">
+              <label class="lt-lbl">Portion (opt.)</label>
+              <div class="lt-input-wrap">
+                <input id="lt-sl-portion" class="lt-input" type="number" step="0.001" placeholder="full">
+                <span class="lt-suffix" id="lt-sl-portion-suffix">—</span>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="lt-flags">
+          <label class="lt-flag"><input type="checkbox" id="lt-reduce"> Reduce Only</label>
+          <label class="lt-flag">
+            <input type="checkbox" id="lt-schedule-on" onchange="ltOnScheduleToggle(event)"> Start Time
+          </label>
+          <input id="lt-schedule" class="lt-input" type="datetime-local" style="display:none;flex:1;min-width:180px">
+        </div>
+
+        <button type="button" class="lt-submit" id="lt-submit" onclick="ltSubmit()">Place Trigger</button>
+        <div class="lt-err" id="lt-err" style="display:none"></div>
+      </section>
+
+      <!-- ── LIVE TRADING (legacy two-leg layout, kept as fallback) ── -->
+      <div class="info-card trade-card" id="trade-card" style="display:none">
         <div class="auth-lock">
           <div class="auth-lock-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
           <h3>Sign in to trade</h3>
@@ -5912,6 +6080,319 @@ function _connectPositionsWS() {
     console.warn('positions WS failed', e);
   }
 }
+
+// ═══ Live Trading unified panel (Task #1+#5) ═══════════════════════════
+// State for the new panel. Coexists with the legacy `_trade` object until
+// the user opts to fully replace; classic-view toggle persists via
+// localStorage.lt_classic.
+const LT = {
+  mode: 'open',         // open | close
+  pairKind: 'long_short', // long_short | spot_short
+  margin: 'isolated',
+  leverage: 3,
+  longBal:  { total: 0, avail: 0 },
+  shortBal: { total: 0, avail: 0 },
+  effSpread: null,      // last known effective spread (live)
+};
+
+function _ltCurMarkPrice() {
+  // Long-leg ask is the price we'd pay; fall back to last known price.
+  if (typeof _eeHist !== 'undefined' && Array.isArray(_eeHist) && _eeHist.length) {
+    const last = _eeHist[_eeHist.length - 1];
+    if (last && last.longAsk) return last.longAsk;
+  }
+  if (typeof _trade === 'object' && _trade?.long?.last) return _trade.long.last;
+  return 0;
+}
+
+function ltInit() {
+  // Decide which panel to show based on user pref (default = unified)
+  const useClassic = localStorage.getItem('lt_classic') === '1';
+  const lt = document.getElementById('lt-panel');
+  const tc = document.getElementById('trade-card');
+  if (lt && tc) {
+    lt.style.display = useClassic ? 'none' : '';
+    tc.style.display = useClassic ? '' : 'none';
+  }
+  // Suffix labels
+  const sym = (typeof SYM === 'string' ? SYM : 'TOKEN');
+  ['lt-qty-suffix','lt-portion-suffix','lt-tp-portion-suffix','lt-sl-portion-suffix']
+    .forEach(id => { const e = document.getElementById(id); if (e) e.textContent = sym; });
+  // Leg labels
+  const longEx  = (typeof LONG_EX  === 'string' ? LONG_EX  : '—').toUpperCase();
+  const shortEx = (typeof SHORT_EX === 'string' ? SHORT_EX : '—').toUpperCase();
+  const ll = document.getElementById('lt-bal-long-label');
+  const sl = document.getElementById('lt-bal-short-label');
+  if (ll) ll.textContent = `LONG · ${longEx}`;
+  if (sl) sl.textContent = `SHORT · ${shortEx}`;
+  ltRefreshBalances();
+  ltRecalc();
+}
+
+function ltToggleClassic() {
+  const cur = localStorage.getItem('lt_classic') === '1';
+  localStorage.setItem('lt_classic', cur ? '0' : '1');
+  ltInit();
+}
+
+function ltSwitchMode(mode) {
+  LT.mode = mode;
+  document.querySelectorAll('.lt-tab').forEach(t => t.classList.toggle('is-active', t.dataset.mode === mode));
+  // Submit label tracks mode; keep .is-close styling on close
+  const btn = document.getElementById('lt-submit');
+  if (btn) {
+    btn.classList.toggle('is-close', mode === 'close');
+    ltUpdateSubmitLabel();
+  }
+  // Hide TP/SL on close — they're only created with parent open.
+  ['lt-tp-on','lt-sl-on'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      const fold = el.closest('.lt-fold');
+      if (fold) fold.style.display = mode === 'close' ? 'none' : '';
+    }
+  });
+}
+
+function ltSetPairKind(pk) {
+  LT.pairKind = pk;
+  document.querySelectorAll('.lt-pk-chip').forEach(c => c.classList.toggle('is-active', c.dataset.pk === pk));
+  const panel = document.getElementById('lt-panel');
+  if (panel) panel.classList.toggle('is-spot-short', pk === 'spot_short');
+  // In spot-short mode, the long leg is spot — no leverage / margin apply
+  // to it. We hide the leverage selector and disable margin segment.
+  const lev = document.getElementById('lt-leverage');
+  const levLbl = document.getElementById('lt-lev-lbl');
+  const seg = document.querySelector('#lt-margin-row .lt-seg');
+  if (pk === 'spot_short') {
+    if (lev) lev.disabled = true;
+    if (levLbl) levLbl.textContent = 'Leverage (short)';
+    if (lev) lev.title = 'Spot leg has no leverage; this applies to the short (perp) leg only';
+    if (lev) lev.disabled = false;     // still active for short leg
+  } else {
+    if (lev) lev.disabled = false;
+    if (levLbl) levLbl.textContent = 'Leverage';
+    if (lev) lev.title = '';
+  }
+  ltRecalc();
+}
+
+function ltSetMargin(v) {
+  LT.margin = v;
+  document.querySelectorAll('#lt-margin-row .lt-seg-btn').forEach(b => b.classList.toggle('is-active', b.dataset.v === v));
+  ltRecalc();
+}
+
+function ltOnAlloc(e) {
+  const pct = parseInt(e.target.value, 10) || 0;
+  const lbl = document.getElementById('lt-alloc-pct');
+  if (lbl) lbl.textContent = `${pct}%`;
+  // Available balance × leverage / mark price — token qty
+  const avail = LT.longBal.avail || 0;
+  const leverage = LT.pairKind === 'spot_short' ? 1 : (parseInt(document.getElementById('lt-leverage')?.value, 10) || 1);
+  const mark = _ltCurMarkPrice();
+  if (mark > 0) {
+    const usd = avail * (pct / 100) * leverage;
+    const qty = usd / mark;
+    const qtyInput = document.getElementById('lt-qty');
+    if (qtyInput) qtyInput.value = qty.toFixed(6);
+  }
+  ltRecalc();
+}
+
+function ltOnQtyInput() {
+  // User edited qty directly — sync slider back if we can compute pct
+  const qty = parseFloat(document.getElementById('lt-qty').value) || 0;
+  const avail = LT.longBal.avail || 0;
+  const leverage = LT.pairKind === 'spot_short' ? 1 : (parseInt(document.getElementById('lt-leverage')?.value, 10) || 1);
+  const mark = _ltCurMarkPrice();
+  if (mark > 0 && avail > 0) {
+    const usd = qty * mark;
+    const pct = Math.min(100, Math.max(0, Math.round((usd / (avail * leverage)) * 100)));
+    const slider = document.getElementById('lt-alloc-slider');
+    if (slider) slider.value = pct;
+    const lbl = document.getElementById('lt-alloc-pct');
+    if (lbl) lbl.textContent = `${pct}%`;
+  }
+  ltRecalc();
+}
+
+function ltOnPortionToggle(e) {
+  const open = e.target.checked;
+  const fold = e.target.closest('.lt-fold');
+  if (fold) fold.open = open;
+}
+function ltOnTpToggle(e) { e.target.closest('.lt-fold').open = e.target.checked; }
+function ltOnSlToggle(e) { e.target.closest('.lt-fold').open = e.target.checked; }
+function ltOnScheduleToggle(e) {
+  document.getElementById('lt-schedule').style.display = e.target.checked ? '' : 'none';
+}
+
+function ltRecalc() {
+  const qty = parseFloat(document.getElementById('lt-qty')?.value) || 0;
+  const mark = _ltCurMarkPrice();
+  const leverage = LT.pairKind === 'spot_short' ? 1 : (parseInt(document.getElementById('lt-leverage')?.value, 10) || 1);
+  const posValue = qty * mark;
+  const margin = leverage > 0 ? posValue / leverage : posValue;
+  const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  setText('lt-pos-value', `${posValue.toFixed(2)} USDT`);
+  setText('lt-margin-used', `${margin.toFixed(2)} USDT`);
+  // Effective spread @ size — reuse arb.html's _liveBasisPct as a baseline.
+  const eff = (typeof _liveBasisPct === 'function') ? _liveBasisPct() : null;
+  LT.effSpread = eff;
+  setText('lt-eff-spread', (eff == null) ? '—' : `${eff.toFixed(3)}%`);
+  // Portion cost (one chunk × mark)
+  const portion = parseFloat(document.getElementById('lt-portion')?.value) || 0;
+  setText('lt-portion-cost', `${(portion * mark).toFixed(2)} USDT`);
+  ltUpdateSubmitLabel();
+}
+
+function ltUpdateSubmitLabel() {
+  const btn = document.getElementById('lt-submit');
+  if (!btn) return;
+  const hasTrig = (document.getElementById('lt-trig')?.value || '').trim() !== '';
+  if (LT.mode === 'close') btn.textContent = hasTrig ? 'Place Close Trigger' : 'Close Now';
+  else                     btn.textContent = hasTrig ? 'Place Trigger'       : 'Open Now';
+}
+
+function ltCheckImmediate() {
+  ltUpdateSubmitLabel();
+  const trig = parseFloat(document.getElementById('lt-trig').value);
+  const eff = LT.effSpread;
+  const warn = document.getElementById('lt-warn');
+  if (!warn) return;
+  if (Number.isFinite(trig) && Number.isFinite(eff)) {
+    let met = false;
+    if (LT.mode === 'open') met = eff >= trig;
+    else                    met = eff <= trig;
+    warn.textContent = met
+      ? `current effective spread is ${eff.toFixed(3)}% — trigger would fire next tick`
+      : '';
+    warn.style.display = met ? '' : 'none';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+async function ltRefreshBalances() {
+  // Reuse the existing balance fetch already wired in arb.html. Fall
+  // through silently if not available — the panel still works without
+  // balances (user can type qty manually).
+  if (typeof _trade !== 'object' || !_trade) return;
+  const longBal  = _trade.long?.balance  || 0;
+  const shortBal = _trade.short?.balance || 0;
+  LT.longBal  = { total: longBal,  avail: longBal };
+  LT.shortBal = { total: shortBal, avail: shortBal };
+  const setT = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  setT('lt-bal-long-total',  `${longBal.toFixed(2)} USDT`);
+  setT('lt-bal-long-avail',  `${longBal.toFixed(2)} USDT`);
+  setT('lt-bal-short-total', `${shortBal.toFixed(2)} USDT`);
+  setT('lt-bal-short-avail', `${shortBal.toFixed(2)} USDT`);
+}
+
+async function ltSubmit(force = false) {
+  const errEl = document.getElementById('lt-err');
+  const setErr = m => { if (!errEl) return; if (m) { errEl.textContent = m; errEl.style.display = ''; } else { errEl.style.display = 'none'; } };
+  setErr(null);
+
+  if (LT.mode === 'close') {
+    setErr('Close mode: select an open arb position from the Positions tab and click "Close at market" — full close-trigger flow lands in v1.1.');
+    return;
+  }
+
+  const L = (typeof _trade === 'object' && _trade) ? _trade.long  : null;
+  const S = (typeof _trade === 'object' && _trade) ? _trade.short : null;
+  if (!L || !S || !L.walletId || !S.walletId) {
+    setErr('Add screener trade keys for both exchanges first.');
+    return;
+  }
+
+  const totalQty = parseFloat(document.getElementById('lt-qty').value);
+  if (!Number.isFinite(totalQty) || totalQty <= 0) {
+    setErr('Enter total qty');
+    return;
+  }
+  const trigVal = (document.getElementById('lt-trig').value || '').trim();
+  const portionOn = document.getElementById('lt-portion-on').checked;
+  const portion = portionOn ? parseFloat(document.getElementById('lt-portion').value) : null;
+  const tpOn = document.getElementById('lt-tp-on').checked;
+  const slOn = document.getElementById('lt-sl-on').checked;
+  const tpVal = tpOn ? parseFloat(document.getElementById('lt-tp').value) : null;
+  const slVal = slOn ? parseFloat(document.getElementById('lt-sl').value) : null;
+  const tpPortion = tpOn ? (parseFloat(document.getElementById('lt-tp-portion').value) || null) : null;
+  const slPortion = slOn ? (parseFloat(document.getElementById('lt-sl-portion').value) || null) : null;
+  const infinite = document.getElementById('lt-infinite').checked;
+  const reduceOnly = document.getElementById('lt-reduce').checked;
+  const scheduleOn = document.getElementById('lt-schedule-on').checked;
+  const scheduleVal = scheduleOn ? document.getElementById('lt-schedule').value : null;
+
+  if (portionOn && (!Number.isFinite(portion) || portion <= 0)) { setErr('Enter portion size'); return; }
+  if (tpOn && !Number.isFinite(tpVal)) { setErr('Enter TP spread'); return; }
+  if (slOn && !Number.isFinite(slVal)) { setErr('Enter SL spread'); return; }
+  if (infinite && !portionOn) { setErr('Infinite Fill requires Portion Size'); return; }
+
+  const body = {
+    kind: 'open',
+    pair_kind: LT.pairKind,
+    long_exchange:  L.ex || (typeof LONG_EX === 'string' ? LONG_EX : ''),
+    long_symbol:    SYM,
+    long_wallet_id: L.walletId,
+    short_exchange: S.ex || (typeof SHORT_EX === 'string' ? SHORT_EX : ''),
+    short_symbol:   SYM,
+    short_wallet_id: S.walletId,
+    trigger_spread_pct: trigVal === '' ? null : parseFloat(trigVal),
+    total_qty_token: totalQty,
+    portion_size_token: portionOn ? portion : null,
+    infinite_fill: infinite,
+    leverage: parseInt(document.getElementById('lt-leverage').value, 10) || 1,
+    margin_mode: LT.margin,
+    reduce_only: reduceOnly,
+    activate_at: scheduleVal ? new Date(scheduleVal).toISOString() : null,
+    force,
+  };
+  if (tpOn) body.tp = { trigger_spread_pct: tpVal, portion_size_token: tpPortion };
+  if (slOn) body.sl = { trigger_spread_pct: slVal, portion_size_token: slPortion };
+
+  const submitBtn = document.getElementById('lt-submit');
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    const r = await Auth.apiFetch('/trade/arb-orders', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = (j.detail && (j.detail.error || j.detail.message)) || j.detail || 'Request failed';
+      setErr(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      return;
+    }
+    if (j.warning === 'immediate_execution' && !force) {
+      const ok = await Confirm.ask({
+        title: 'Fire immediately?',
+        text: `Current effective spread is ${j.current_spread}% which already meets your ${j.kind} target of ${j.requested_trigger}%. The trigger will fire on the next tick.`,
+        okText: 'Place anyway',
+        okVariant: 'primary',
+      });
+      if (ok) await ltSubmit(true);
+      return;
+    }
+    toast('Trigger placed', 'success');
+    accLoadTriggers();
+    // Reset form
+    document.getElementById('lt-qty').value = '';
+    document.getElementById('lt-alloc-slider').value = 0;
+    document.getElementById('lt-alloc-pct').textContent = '0%';
+    ltRecalc();
+  } catch (e) {
+    setErr(e.message || 'Network error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+// Initialise on page load
+document.addEventListener('DOMContentLoaded', () => { try { ltInit(); } catch {} });
+// Re-recalculate when live spread updates
+setInterval(() => { try { ltRecalc(); } catch {} }, 1500);
 
 // ═══ Trigger orders + Sync arb-positions (Task 7) ═══════════════════════
 async function accLoadTriggers() {
