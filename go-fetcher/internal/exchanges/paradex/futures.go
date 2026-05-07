@@ -3,11 +3,19 @@
 // URL: wss://ws.api.prod.paradex.trade/v1
 // Subscribe (JSON-RPC 2.0):
 //   {"jsonrpc":"2.0","id":N,"method":"subscribe",
-//    "params":{"channel":"order_book.BTC-USD-PERP.snapshot@15@50ms"}}
+//    "params":{"channel":"order_book.BTC-USD-PERP.deltas"}}
+//
+// Why deltas, not snapshot@15: Paradex hard-caps the snapshot channel
+// at depth=15 (their server explicitly rejects 50/100/1000 with
+// `Expecting depth=15`). Their own API best-practices doc tells API
+// traders to use deltas instead — quote: "For fastest full orderbook
+// depth, subscribe to deltas websocket feed". Deltas push every change
+// (not every 50ms regardless), and there is no depth cap; the server
+// gives us the full state of the book it has.
 //
 // Inbound — DIFF protocol with three operations + snapshot/delta type:
 //   {"jsonrpc":"2.0","method":"subscription","params":{
-//      "channel":"order_book.BTC-USD-PERP.snapshot@15@50ms",
+//      "channel":"order_book.BTC-USD-PERP.deltas",
 //      "data":{
 //        "seq_no": ..., "market": "BTC-USD-PERP", "last_updated_at": ...,
 //        "update_type": "s" | "d",   // "s" snapshot, "d" delta
@@ -18,11 +26,11 @@
 //   }}
 //
 // QUIRKS:
-//   - depth=15, frequency=50ms — strict (probe confirmed: only [50ms,
-//     100ms] accepted; bare numbers ['1','100'] rejected with code -32600)
 //   - SIDE encoded as "BUY"/"SELL" (uppercase strings) inside per-level
 //     objects, not as separate bids/asks arrays.
 //   - On update_type="s" we replace the book; on "d" we apply diffs.
+//   - First frame after subscribe is always a snapshot ("s") with all
+//     resting orders; subsequent frames are deltas ("d").
 package paradex
 
 import (
@@ -60,7 +68,7 @@ func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	frames := make([][]byte, 0, len(symbols))
 	for i, s := range symbols {
-		channel := "order_book." + strings.ToUpper(s) + "-USD-PERP.snapshot@15@50ms"
+		channel := "order_book." + strings.ToUpper(s) + "-USD-PERP.deltas"
 		f := map[string]any{
 			"jsonrpc": "2.0",
 			"id":      i + 1,

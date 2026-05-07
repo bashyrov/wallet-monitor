@@ -136,13 +136,17 @@ def _compute_exit_spread(
 ) -> Optional[float]:
     """Effective EXIT spread for closing at `qty_token` size (out_pct).
 
-    Inverse of the entry path: when closing, we SELL the long leg (hit
-    bids) and BUY the short leg back (hit asks). Spread we receive on
-    close is therefore (short_ask_vwap - long_bid_vwap) / long_bid_vwap.
+    Mirror of arb.html's frontend chart formula so the value the user
+    sees on /arb matches what triggers compare against:
 
-    Used by `kind='tp' / 'sl' / 'close'` triggers — they fire on the
-    actual fillable close-spread, not the open-side spread (in_pct
-    drifts independently and would mis-fire TP/SL on size).
+        out_pct = (long_bid_vwap - short_ask_vwap) / short_ask_vwap × 100
+
+    Sign convention: POSITIVE → exit is profitable (sell-long for more
+    than you buy-back-short for); NEGATIVE → exit costs you money.
+
+    Used by `kind='tp' / 'sl' / 'close'` triggers — see `condition_met`
+    for the comparison direction (TP fires when out_pct ≥ threshold,
+    SL fires when out_pct ≤ threshold).
 
     Returns None on missing/stale book or insufficient depth.
     """
@@ -153,10 +157,10 @@ def _compute_exit_spread(
 
     long_vwap  = _vwap_from_levels(long_book.get("bids") or [], qty_token)
     short_vwap = _vwap_from_levels(short_book.get("asks") or [], qty_token)
-    if not long_vwap or not short_vwap or long_vwap <= 0:
+    if not long_vwap or not short_vwap or short_vwap <= 0:
         return None
 
-    return (short_vwap - long_vwap) / long_vwap * 100.0
+    return (long_vwap - short_vwap) / short_vwap * 100.0
 
 
 def _spread_for_order(
@@ -193,14 +197,25 @@ def _load_books_json() -> Optional[dict]:
 def condition_met(order: ArbTriggerOrder, current_spread: float) -> bool:
     """All thresholds are absolute spread % (no relative mode in v1).
 
-    'open' / 'sl' fire when spread WIDENS past the threshold (>=).
-    'close' / 'tp' fire when spread CONVERGES below the threshold (<=).
+    'open' / 'close' use the entry-side spread (in_pct):
+        'open'   fires when in_pct WIDENS past threshold (>=)
+        'close'  fires when in_pct CONVERGES below threshold (<=)
+
+    'tp' / 'sl' use the exit-side spread (out_pct), which is positive
+    when the exit is *profitable* (sell-long > buy-back-short):
+        'tp' fires when out_pct REACHES threshold from below (>=)
+             — i.e. exit became profitable enough to take.
+        'sl' fires when out_pct DROPS to threshold (<=)
+             — i.e. exit got lossy enough to bail.
+
+    Same convention as arb.html's chart: POSITIVE Out = good exit,
+    NEGATIVE Out = bad exit. Threshold is the user-typed value as-is.
     """
     if order.trigger_spread_pct is None:
         return True   # market trigger — fire next tick
-    if order.kind in ("open", "sl"):
+    if order.kind in ("open", "tp"):
         return current_spread >= order.trigger_spread_pct
-    if order.kind in ("close", "tp"):
+    if order.kind in ("close", "sl"):
         return current_spread <= order.trigger_spread_pct
     return False
 

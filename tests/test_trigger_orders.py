@@ -77,22 +77,26 @@ def test_condition_met_open_widens():
     assert condition_met(o, 1.49) is False
 
 
-def test_condition_met_tp_converges():
+def test_condition_met_tp_reaches_profit():
+    """TP uses out_pct (positive = profitable exit). Fires when current
+    exit profit reaches the user-set threshold from below."""
     from backend.services.trigger_order_service import condition_met
     from backend.db.models import ArbTriggerOrder
     o = ArbTriggerOrder(kind="tp", trigger_spread_pct=0.3)
-    assert condition_met(o, 0.30) is True
-    assert condition_met(o, 0.29) is True   # converged below
-    assert condition_met(o, 0.31) is False
+    assert condition_met(o, 0.30) is True   # equality
+    assert condition_met(o, 0.31) is True   # exit became more profitable
+    assert condition_met(o, 0.29) is False
 
 
-def test_condition_met_sl_widens():
+def test_condition_met_sl_loss_breach():
+    """SL uses out_pct. Fires when exit becomes lossy enough — out_pct
+    drops to (or below) the user-set threshold (typically negative)."""
     from backend.services.trigger_order_service import condition_met
     from backend.db.models import ArbTriggerOrder
-    o = ArbTriggerOrder(kind="sl", trigger_spread_pct=2.5)
-    assert condition_met(o, 2.50) is True
-    assert condition_met(o, 2.51) is True
-    assert condition_met(o, 2.49) is False
+    o = ArbTriggerOrder(kind="sl", trigger_spread_pct=-2.5)
+    assert condition_met(o, -2.50) is True   # equality
+    assert condition_met(o, -2.51) is True   # got worse
+    assert condition_met(o, -2.49) is False  # still survivable
 
 
 def test_condition_met_market_trigger():
