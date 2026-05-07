@@ -6230,16 +6230,32 @@ function ltSetMargin(v) {
   ltRecalc();
 }
 
+// Max notional we can put on each leg given balance + leverage. Both
+// legs must support the same notional, so the smaller leg-capacity is
+// the binding constraint. Returns USDT.
+//
+//   long_short (both perp)  → min(longBal, shortBal) × leverage
+//   spot_short (long=spot)  → min(longBal, shortBal × leverage)
+function _ltMaxNotionalUsd() {
+  const longAvail  = LT.longBal.avail  || 0;
+  const shortAvail = LT.shortBal.avail || 0;
+  const lev = parseInt(document.getElementById('lt-leverage')?.value, 10) || 1;
+  if (LT.pairKind === 'spot_short') {
+    // long leg is spot (no leverage), short leg is perp leveraged
+    return Math.min(longAvail, shortAvail * lev);
+  }
+  // both perp — leverage applies symmetrically
+  return Math.min(longAvail, shortAvail) * lev;
+}
+
 function ltOnAlloc(e) {
   const pct = parseInt(e.target.value, 10) || 0;
   const lbl = document.getElementById('lt-alloc-pct');
   if (lbl) lbl.textContent = `${pct}%`;
-  // Available balance × leverage / mark price — token qty
-  const avail = LT.longBal.avail || 0;
-  const leverage = LT.pairKind === 'spot_short' ? 1 : (parseInt(document.getElementById('lt-leverage')?.value, 10) || 1);
+  const cap = _ltMaxNotionalUsd();
   const mark = _ltCurMarkPrice();
   if (mark > 0) {
-    const usd = avail * (pct / 100) * leverage;
+    const usd = cap * (pct / 100);
     const qty = usd / mark;
     const qtyInput = document.getElementById('lt-qty');
     if (qtyInput) qtyInput.value = qty.toFixed(6);
@@ -6250,12 +6266,11 @@ function ltOnAlloc(e) {
 function ltOnQtyInput() {
   // User edited qty directly — sync slider back if we can compute pct
   const qty = parseFloat(document.getElementById('lt-qty').value) || 0;
-  const avail = LT.longBal.avail || 0;
-  const leverage = LT.pairKind === 'spot_short' ? 1 : (parseInt(document.getElementById('lt-leverage')?.value, 10) || 1);
+  const cap = _ltMaxNotionalUsd();
   const mark = _ltCurMarkPrice();
-  if (mark > 0 && avail > 0) {
+  if (mark > 0 && cap > 0) {
     const usd = qty * mark;
-    const pct = Math.min(100, Math.max(0, Math.round((usd / (avail * leverage)) * 100)));
+    const pct = Math.min(100, Math.max(0, Math.round((usd / cap) * 100)));
     const slider = document.getElementById('lt-alloc-slider');
     if (slider) slider.value = pct;
     const lbl = document.getElementById('lt-alloc-pct');
