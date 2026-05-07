@@ -255,11 +255,21 @@ def create_arb_order(
         db.add(c)
     db.commit()
     db.refresh(order)
+    _notify_user(user.id)
     return {
         "id": order.id,
         "status": order.status,
         "children": [c.id for c in children],
     }
+
+
+def _notify_user(user_id: int) -> None:
+    """Push a `refresh` event to the user's /ws/positions subscribers."""
+    try:
+        from backend.api.v1.screener import notify_position_update
+        notify_position_update(user_id)
+    except Exception:
+        pass
 
 
 def _existing_child(db: Session, arb_position_id: int | None, kind: str) -> bool:
@@ -422,6 +432,7 @@ def cancel_order(
     order.status = "cancelled"
     order.updated_at = datetime.utcnow()
     db.commit()
+    _notify_user(user.id)
     return {"id": order.id, "status": "cancelled"}
 
 

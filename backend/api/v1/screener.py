@@ -890,6 +890,50 @@ async def arb_history(
 _funding_clients: set[WebSocket] = set()
 _arb_clients: set[WebSocket] = set()
 _broadcaster_task: asyncio.Task | None = None
+
+# Per-user WS channel for position / trigger state changes. Trigger service
+# and reconcile push tiny "refresh" events here — the client refetches data
+# via REST so we don't have to serialize full state into the WS payload.
+# Keyed by user_id, value is a set of active WebSocket connections for that
+# user (multi-tab support).
+_position_clients: dict[int, set[WebSocket]] = {}
+
+
+def notify_position_update(user_id: int, kind: str = "refresh", payload: dict | None = None) -> None:
+    """Fire-and-forget push to all active /ws/positions clients for `user_id`.
+
+    Called from trigger_order_service, reconcile_service, and the arb-orders
+    API after any state change. The WS message is intentionally tiny — clients
+    refetch via REST. This keeps the wire format trivial and avoids embedding
+    serialization knowledge into half a dozen call sites.
+
+    Safe to call from sync code; we schedule the actual send on the running
+    event loop. If no loop is running (rare — happens during shutdown), the
+    notification is silently dropped.
+    """
+    clients = _position_clients.get(user_id)
+    if not clients:
+        return
+    msg = json.dumps({"type": kind, **(payload or {})})
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        return
+    snapshot = list(clients)
+
+    async def _send():
+        results = await asyncio.gather(
+            *(ws.send_text(msg) for ws in snapshot),
+            return_exceptions=True,
+        )
+        dead = {ws for ws, r in zip(snapshot, results) if isinstance(r, Exception)}
+        if dead:
+            for ws in dead:
+                clients.discard(ws)
+    try:
+        loop.create_task(_send())
+    except RuntimeError:
+        pass
 # Push to connected WS clients every 1s. We already use diff payloads on
 # /ws/arb so the wire cost of this is ~3-10KB per tick (only changed rows).
 # /ws/funding sends a full snapshot; each push is ~300KB but gzip-compressed
@@ -1701,6 +1745,41 @@ async def arb_ws(websocket: WebSocket) -> None:
         websocket, _arb_clients, get_arbitrage_opportunities, "arb",
         snapshot_builder=_build_arb_snapshot_payload,
     )
+
+
+@router.websocket("/ws/positions")
+async def positions_ws(websocket: WebSocket) -> None:
+    """Per-user WS channel for arb-position / trigger state changes.
+
+    Auth is required: anon clients have nothing to subscribe to. The wire
+    payload is tiny — `{"type": "refresh"}` events when something changes.
+    Client refetches /api/trade/arb-orders + /api/trade/arb-positions via
+    REST. This keeps server-side logic simple and avoids stale-state
+    serialization bugs.
+    """
+    await websocket.accept()
+    user_id = await _ws_authenticate(websocket, "positions", required=True)
+    if user_id is None or user_id == 0:
+        return
+    clients = _position_clients.setdefault(user_id, set())
+    clients.add(websocket)
+    logger.debug("positions WS connect uid=%s (per-user=%d, total=%d)",
+                 user_id, len(clients), sum(len(c) for c in _position_clients.values()))
+    try:
+        # Send a hello so the client knows the connection is live.
+        await websocket.send_json({"type": "hello"})
+        while True:
+            text = await websocket.receive_text()
+            if text == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.debug("positions WS error uid=%s: %s", user_id, exc)
+    finally:
+        clients.discard(websocket)
+        if not clients:
+            _position_clients.pop(user_id, None)
 
 
 # ── Orderbook WS push ─────────────────────────────────────────────────────────

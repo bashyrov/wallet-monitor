@@ -380,6 +380,15 @@ async def _reconcile_arb_positions(db: Session, user_id: int,
         logger.exception("auto_pair_internal_legs failed user=%s", user_id)
     db.commit()
 
+    # Push a refresh event if anything changed in arb_positions or
+    # auto-paired wrappers were created.
+    if open_arbs:
+        try:
+            from backend.api.v1.screener import notify_position_update
+            notify_position_update(user_id)
+        except Exception:
+            pass
+
 
 _RECONCILE_CONCURRENCY = 4
 

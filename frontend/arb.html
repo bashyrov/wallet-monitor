@@ -3994,7 +3994,14 @@ async function initAccBlock(){
   // trigger a re-render with current snapshot data).
   setInterval(() => { _refreshPairDecisions(); accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 30000);
   setInterval(() => { accLoadPnl(); }, 60000);
+  // 5s baseline poll for triggers — kept as a safety net even when the WS
+  // is connected, in case a push is dropped (Mobile Safari background tabs
+  // throttle WS connections to a degree that we've seen kills events).
   setInterval(() => { accLoadTriggers(); }, 5000);
+
+  // Per-user WS for instant position/trigger refresh on mutation.
+  // Falls back gracefully to the 5s poll if the WS can't open.
+  _connectPositionsWS();
 }
 
 async function accLoadOrders(){
@@ -5868,6 +5875,43 @@ async function _syncUnpair(idx){
 }
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSyncPairs(); });
+
+// ═══ /ws/positions per-user push channel (Task #4) ══════════════════════
+let _posWS = null;
+let _posWSReconnectMs = 1500;
+function _connectPositionsWS() {
+  if (!Auth.isLoggedIn()) return;
+  try {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/api/screener/ws/positions`;
+    _posWS = new WebSocket(url);
+    _posWS.onopen = () => {
+      _posWS.send(JSON.stringify({ auth: Auth.getToken() }));
+      _posWSReconnectMs = 1500;  // reset backoff on success
+    };
+    _posWS.onmessage = (ev) => {
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.type === 'hello') return;
+        // Any push event → refresh dependent panes. Lightweight: backend
+        // doesn't ship full state, just nudges us to re-fetch.
+        if (m.type === 'refresh' || m.type === 'position_update') {
+          accLoadTriggers();
+          accLoadPositions();
+        }
+      } catch {}
+    };
+    _posWS.onclose = () => {
+      _posWS = null;
+      // Exponential backoff up to 30s
+      setTimeout(_connectPositionsWS, _posWSReconnectMs);
+      _posWSReconnectMs = Math.min(_posWSReconnectMs * 2, 30000);
+    };
+    _posWS.onerror = () => { try { _posWS?.close(); } catch {} };
+  } catch (e) {
+    console.warn('positions WS failed', e);
+  }
+}
 
 // ═══ Trigger orders + Sync arb-positions (Task 7) ═══════════════════════
 async function accLoadTriggers() {

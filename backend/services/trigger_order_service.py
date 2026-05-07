@@ -464,6 +464,7 @@ async def _execute_open_portion(
         )
         order.portions_filled += 1
         order.last_fired_at = datetime.utcnow()
+        _notify(order.user_id)
 
         if order.infinite_fill:
             order.status = "pending"  # re-arm
@@ -498,6 +499,7 @@ async def _execute_open_portion(
     order.error_message = "; ".join(err_msgs)[:400]
     order.last_fired_at = datetime.utcnow()
     order.updated_at = datetime.utcnow()
+    _notify(order.user_id)
     if long_ok and not short_ok:
         # Long leg created — wrap in a partial arb_position so user can see it
         accumulate_position(
@@ -607,6 +609,7 @@ async def _execute_close(
             pos.status = "open"   # nothing changed; re-open
     order.updated_at = datetime.utcnow()
     db.commit()
+    _notify(order.user_id)
 
 
 def _short_err(res) -> str:
@@ -615,6 +618,17 @@ def _short_err(res) -> str:
     if isinstance(res, dict):
         return str(res.get("error") or res.get("message") or res)[:150]
     return str(res)[:150]
+
+
+def _notify(user_id: int) -> None:
+    """Schedule a WS push to /ws/positions clients of `user_id`. Lazy
+    import to avoid the screener module pulling in trigger service deps
+    at import time."""
+    try:
+        from backend.api.v1.screener import notify_position_update
+        notify_position_update(user_id)
+    except Exception:
+        pass
 
 
 # ── Daemon loop ─────────────────────────────────────────────────────────────
