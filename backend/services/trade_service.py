@@ -184,6 +184,7 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
         w = _find_wallet(db, user_id, ex)
         status = _leg_status(w)
         balance = None
+        balance_error = None
         if status == "ok" and w is not None:
             try:
                 creds = decrypt_credentials(w.credentials or {})
@@ -192,8 +193,20 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
                 logger.info("balance %s wallet=%s usdt=%.2f raw=%s",
                             ex, w.id, balance, bal)
             except Exception as exc:
+                emsg = str(exc)
                 logger.warning("Balance fetch FAILED for %s wallet=%s uid=%s: %s: %s",
-                               ex, w.id, user_id, type(exc).__name__, exc)
+                               ex, w.id, user_id, type(exc).__name__, emsg)
+                # Surface a short, actionable hint to the UI. Detect
+                # common venue-side rejection patterns so user sees what
+                # to do instead of generic "0 USDT".
+                if "10010" in emsg or "Unmatched IP" in emsg or "IP" in emsg and "whitelist" in emsg.lower():
+                    balance_error = "IP not whitelisted on the API key — add prod IP on the venue."
+                elif "10003" in emsg or "10004" in emsg or "Invalid" in emsg.lower() and "key" in emsg.lower():
+                    balance_error = "API key invalid or revoked — re-issue on the venue."
+                elif "permission" in emsg.lower() or "forbidden" in emsg.lower():
+                    balance_error = "API key lacks required permission (Read + Trade Futures)."
+                else:
+                    balance_error = emsg[:140]
                 status = "disabled"
 
         # Even when there's no screener-eligible key, try to show the balance
@@ -218,6 +231,7 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
             "wallet_id": w.id if w else None,
             "status": status,
             "balance_usdt": balance,
+            "balance_error": balance_error,
             "exchange": ex,
         }
 

@@ -5145,6 +5145,7 @@ function _applyTradeStatus(s){
     // the exchange — but with multiple accounts we let user override.
     const saved = (typeof _ltSavedWalletId === 'function') ? _ltSavedWalletId(side) : null;
     _trade[side].walletId  = saved || info.wallet_id || null;
+    _trade[side].balanceError = info.balance_error || null;
     _trade[side].keyStatus = info.status    || 'missing';   // ok | disabled | missing
     _trade[side].balance   = info.balance_usdt || 0;
     // Reservation-aware available — subtracts capital locked by other
@@ -6778,6 +6779,18 @@ async function ltRefreshBalances() {
     const ex = (typeof SHORT === 'string') ? (typeof EX_LABEL === 'object' && EX_LABEL[SHORT] ? EX_LABEL[SHORT] : SHORT.toUpperCase()) : '—';
     shortLbl.innerHTML = `SHORT · ${ex}` + (shortRes > 0 ? ` <span style="color:var(--yellow);font-size:9px">· ${shortRes.toFixed(0)} USDT locked</span>` : '');
   }
+  // Balance-fetch error indicator (e.g. "IP not whitelisted") inline
+  // above the wallet number, so the user understands why balance is 0.
+  ['long','short'].forEach(s => {
+    const totalEl = document.getElementById(`lt-bal-${s}-total`);
+    const err = _trade[s]?.balanceError;
+    if (!totalEl) return;
+    if (err) {
+      totalEl.innerHTML = `<span style="color:var(--red);font-size:10px" title="${_htmlEsc(err)}">⚠ ${_htmlEsc(err.slice(0, 60))}</span>`;
+      const availEl = document.getElementById(`lt-bal-${s}-avail`);
+      if (availEl) availEl.textContent = '—';
+    }
+  });
   // Default account-name display when no override has stamped it yet
   const longNameEl  = document.getElementById('lt-bal-long-name');
   const shortNameEl = document.getElementById('lt-bal-short-name');
