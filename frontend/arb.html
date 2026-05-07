@@ -5066,6 +5066,8 @@ async function initTradePanel(){
       // Visual hint next to leverage value
       _setLevHint('long',  _trade.long.maxLeverage);
       _setLevHint('short', _trade.short.maxLeverage);
+      // Mirror to the new unified Live Trading panel
+      if (typeof ltRefreshLeverageOptions === 'function') ltRefreshLeverageOptions();
     }
   } catch {}
 
@@ -6140,6 +6142,44 @@ function ltSyncFromTrade() {
   const sl = document.getElementById('lt-bal-short-label');
   if (ll) ll.textContent = `LONG · ${longLbl}`;
   if (sl) sl.textContent = `SHORT · ${shortLbl}`;
+  ltRefreshLeverageOptions();
+}
+
+// Re-render the leverage <select> options so it caps at min(long, short)
+// max leverage (long_short) or short.max only (spot_short — long leg is
+// spot, no leverage). Called from ltSyncFromTrade + ltSetPairKind so the
+// cap stays correct when the user toggles pair kind.
+function ltRefreshLeverageOptions() {
+  const sel = document.getElementById('lt-leverage');
+  if (!sel) return;
+  const longMax  = (typeof _trade === 'object' && _trade?.long?.maxLeverage)  || 125;
+  const shortMax = (typeof _trade === 'object' && _trade?.short?.maxLeverage) || 125;
+  const cap = (LT.pairKind === 'spot_short')
+    ? shortMax              // spot leg has no leverage; cap by perp leg only
+    : Math.min(longMax, shortMax);
+  // Standard tier ladder, snapped to cap (anything > cap is dropped).
+  const tiers = [1, 2, 3, 5, 10, 20, 50, 100, 125];
+  const allowed = tiers.filter(t => t <= cap);
+  if (!allowed.length || allowed[allowed.length - 1] !== cap) {
+    // Always include the exact cap as the last option, even if not in
+    // the standard ladder (e.g. cap=30 for OKX → ..., 20, 30).
+    if (!allowed.includes(cap)) allowed.push(cap);
+  }
+  const cur = parseInt(sel.value, 10) || 3;
+  const newCur = Math.min(cur, cap);
+  sel.innerHTML = allowed.map(v => `<option value="${v}"${v === newCur ? ' selected' : ''}>${v}x</option>`).join('');
+  sel.value = String(newCur);
+  // Hint next to the selector — show which venue is the limiting leg
+  const lbl = document.getElementById('lt-lev-lbl');
+  if (lbl) {
+    const baseLbl = (LT.pairKind === 'spot_short') ? 'Leverage (short)' : 'Leverage';
+    if (LT.pairKind !== 'spot_short' && longMax !== shortMax) {
+      const limiting = (longMax < shortMax) ? (LONG || 'long') : (SHORT || 'short');
+      lbl.textContent = `${baseLbl} · max ${cap}x (${limiting})`;
+    } else {
+      lbl.textContent = `${baseLbl} · max ${cap}x`;
+    }
+  }
 }
 
 function ltToggleClassic() {
@@ -6172,21 +6212,16 @@ function ltSetPairKind(pk) {
   document.querySelectorAll('.lt-pk-chip').forEach(c => c.classList.toggle('is-active', c.dataset.pk === pk));
   const panel = document.getElementById('lt-panel');
   if (panel) panel.classList.toggle('is-spot-short', pk === 'spot_short');
-  // In spot-short mode, the long leg is spot — no leverage / margin apply
-  // to it. We hide the leverage selector and disable margin segment.
+  // In spot-short mode, leverage applies only to the short (perp) leg.
   const lev = document.getElementById('lt-leverage');
-  const levLbl = document.getElementById('lt-lev-lbl');
-  const seg = document.querySelector('#lt-margin-row .lt-seg');
-  if (pk === 'spot_short') {
-    if (lev) lev.disabled = true;
-    if (levLbl) levLbl.textContent = 'Leverage (short)';
-    if (lev) lev.title = 'Spot leg has no leverage; this applies to the short (perp) leg only';
-    if (lev) lev.disabled = false;     // still active for short leg
-  } else {
-    if (lev) lev.disabled = false;
-    if (levLbl) levLbl.textContent = 'Leverage';
-    if (lev) lev.title = '';
+  if (lev) {
+    lev.disabled = false;
+    lev.title = (pk === 'spot_short')
+      ? 'Spot leg has no leverage; this applies to the short (perp) leg only'
+      : '';
   }
+  // Re-render leverage options now that pair_kind affects the cap
+  ltRefreshLeverageOptions();
   ltRecalc();
 }
 
