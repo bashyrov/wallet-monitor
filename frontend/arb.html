@@ -6519,50 +6519,46 @@ function _ltSaveWalletId(side, wid) {
   try { localStorage.setItem(`lt_wallet_${side}_${sym}`, String(wid)); } catch {}
 }
 
-async function ltOpenKeys(side) {
-  const pop = document.getElementById('lt-keys-pop');
-  const title = document.getElementById('lt-keys-title');
-  const body = document.getElementById('lt-keys-body');
-  if (!pop || !body) return;
-  const ex = (side === 'long' ? LONG : SHORT) || '';
-  title.textContent = `Select ${side.toUpperCase()} account · ${(EX_LABEL && EX_LABEL[ex]) || ex.toUpperCase()}`;
-  body.innerHTML = '<div class="lt-keys-empty"><span class="spinner"></span> Loading…</div>';
-  pop.classList.remove('hidden');
+// Session-level caches — /wallets is essentially static within a tab,
+// /balances has 30s TTL server-side, so cache here too. Cold open of
+// the Keys picker now shows the list within ~50ms (just /wallets); the
+// balances trickle in async and update rows when ready.
+let _ltWalletsCache = null;       // Promise | array
+let _ltBalancesCache = null;      // { ts, byId }
+const _LT_BAL_TTL_MS = 25_000;    // a hair under server's 30s cache
 
-  // Fetch user wallets + their balances/reservations in parallel.
-  let wallets = [], balances = {};
-  try {
-    const [wRes, bRes] = await Promise.all([
-      Auth.apiFetch('/wallets'),
-      Auth.apiFetch('/trade/balances'),
-    ]);
-    if (wRes.ok) wallets = await wRes.json();
-    if (bRes.ok) {
-      const balRows = await bRes.json();
-      for (const b of balRows) balances[b.wallet_id] = b;
-    }
-  } catch {}
+async function _ltGetWallets() {
+  if (_ltWalletsCache) return _ltWalletsCache;
+  _ltWalletsCache = Auth.apiFetch('/wallets').then(r => r.ok ? r.json() : []).catch(() => []);
+  return _ltWalletsCache;
+}
 
-  // Filter to wallets on this leg's exchange (exchange OR perpdex).
-  const candidates = wallets.filter(w =>
-    !w.is_archived &&
-    (w.type_value || '').toLowerCase() === ex.toLowerCase() &&
-    (w.purpose === 'screener' || w.purpose === 'both')
-  );
-  if (candidates.length === 0) {
-    body.innerHTML = `<div class="lt-keys-empty">No screener-eligible key on ${ex.toUpperCase()}.<br>Add one in <a href="/portfolio#wallets" target="_blank" style="color:var(--green)">Portfolio</a>.</div>`;
-    return;
+async function _ltGetBalances({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && _ltBalancesCache && (now - _ltBalancesCache.ts) < _LT_BAL_TTL_MS) {
+    return _ltBalancesCache.byId;
   }
+  try {
+    const r = await Auth.apiFetch('/trade/balances');
+    if (!r.ok) return {};
+    const rows = await r.json();
+    const byId = Object.fromEntries(rows.map(b => [b.wallet_id, b]));
+    _ltBalancesCache = { ts: now, byId };
+    return byId;
+  } catch { return {}; }
+}
 
+function _ltRenderKeysRows(side, candidates, balances) {
   const curWid = (_trade?.[side]?.walletId) || null;
-  body.innerHTML = candidates.map(w => {
+  return candidates.map(w => {
     const b = balances[w.id] || {};
-    const bal = (b.balance_usdt != null) ? b.balance_usdt.toFixed(2) + ' USDT' : '—';
+    const bal = (b.balance_usdt != null) ? b.balance_usdt.toFixed(2) + ' USDT' : '<span style="color:var(--text3)">—</span>';
     const res = (b.reserved_usdt != null && b.reserved_usdt > 0) ? `${b.reserved_usdt.toFixed(0)} locked` : '';
     const avail = (b.available_usdt != null) ? b.available_usdt.toFixed(2) + ' avail' : '';
     const isActive = w.id === curWid;
+    const nameJSON = JSON.stringify(w.name).replace(/"/g, '&quot;');
     return `
-      <div class="lt-keys-row${isActive ? ' is-active' : ''}" onclick="ltSelectKey('${side}', ${w.id}, ${JSON.stringify(w.name).replace(/"/g, '&quot;')})">
+      <div class="lt-keys-row${isActive ? ' is-active' : ''}" data-wid="${w.id}" onclick="ltSelectKey('${side}', ${w.id}, ${nameJSON})">
         <div class="lt-keys-row-top">
           <span class="lt-keys-row-name">${_htmlEsc(w.name)}</span>
           <span class="lt-keys-row-bal">${bal}</span>
@@ -6574,6 +6570,44 @@ async function ltOpenKeys(side) {
         </div>
       </div>`;
   }).join('');
+}
+
+async function ltOpenKeys(side) {
+  const pop = document.getElementById('lt-keys-pop');
+  const title = document.getElementById('lt-keys-title');
+  const body = document.getElementById('lt-keys-body');
+  if (!pop || !body) return;
+  const ex = (side === 'long' ? LONG : SHORT) || '';
+  title.textContent = `Select ${side.toUpperCase()} account · ${(EX_LABEL && EX_LABEL[ex]) || ex.toUpperCase()}`;
+  pop.classList.remove('hidden');
+  body.innerHTML = '<div class="lt-keys-empty"><span class="spinner"></span> Loading accounts…</div>';
+
+  // 1) Render the wallet list IMMEDIATELY from cached/fast /wallets.
+  //    Balances start as "—" so the user sees the list with names
+  //    instantly, then balances fill in asynchronously.
+  const wallets = await _ltGetWallets();
+  const candidates = wallets.filter(w =>
+    !w.is_archived &&
+    (w.type_value || '').toLowerCase() === ex.toLowerCase() &&
+    (w.purpose === 'screener' || w.purpose === 'both')
+  );
+  if (candidates.length === 0) {
+    body.innerHTML = `<div class="lt-keys-empty">No screener-eligible key on ${ex.toUpperCase()}.<br>Add one in <a href="/portfolio#wallets" target="_blank" style="color:var(--green)">Portfolio</a>.</div>`;
+    return;
+  }
+
+  // Fast paint with whatever balances we have cached (possibly empty).
+  const cached = (_ltBalancesCache && (Date.now() - _ltBalancesCache.ts) < _LT_BAL_TTL_MS)
+    ? _ltBalancesCache.byId : {};
+  body.innerHTML = _ltRenderKeysRows(side, candidates, cached);
+
+  // 2) Background-refresh balances and update the rows in place when
+  //    they arrive. If user already clicked a row by then the popup
+  //    is closed; harmless update.
+  _ltGetBalances({ force: !_ltBalancesCache }).then(balances => {
+    if (pop.classList.contains('hidden')) return;
+    body.innerHTML = _ltRenderKeysRows(side, candidates, balances);
+  });
 }
 
 function ltCloseKeys() {
