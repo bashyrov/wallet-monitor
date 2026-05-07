@@ -799,6 +799,63 @@ img, svg { display: block; max-width: 100%; }
   * { animation: none !important; transition: none !important; }
   .reveal, .reveal-stagger > * { opacity: 1; transform: none; }
 }
+
+/* ─── MOBILE: tighten mockup cards (Task 4A) ─── */
+@media (max-width: 700px) {
+  /* Allow horizontal scroll on data tables instead of overflow */
+  .dash-main { padding: 14px 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .dash-table { font-size: 12px; min-width: 480px; }
+  .dash-table th { padding: 8px 6px; font-size: 10px; }
+  .dash-table td { padding: 10px 6px; }
+
+  /* Compact pair chips so two exchanges fit in one cell */
+  .dash-pair { font-size: 11px; gap: 4px; }
+  .dash-ex-chip { padding: 2px 6px; font-size: 10px; }
+  .dash-sym-icon { width: 22px; height: 22px; font-size: 10px; }
+  .dash-sym-name { font-size: 12px; }
+
+  /* Screener mockup body */
+  .scr-mock-body { padding: 12px 10px; }
+  .scr-mock { font-size: 12px; }
+
+  /* Arb detail mockup */
+  .arb-mock { padding: 12px; gap: 10px; min-height: auto; }
+  .arb-chart-box { padding: 10px; min-height: 280px; }
+  .arb-chart-svg { min-height: 180px; }
+  .arb-book-box { padding: 10px; }
+
+  /* Trade mockup */
+  .trade-mock { padding: 14px; gap: 10px; }
+  .trade-col { padding: 12px; }
+}
+
+@media (max-width: 480px) {
+  /* Ensure cards never blow out the viewport */
+  .dash-main { padding: 10px 8px; }
+  .dash-table { font-size: 11px; min-width: 420px; }
+  .dash-pair { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .dash-pair > span:nth-child(2) { display: none; }   /* hide the slash divider */
+  .dash-act-btn { padding: 4px 8px; font-size: 10px; }
+  .dash-head-right { font-size: 10px; }
+
+  /* Screener filter chips wrap and shrink */
+  .scr-filters { gap: 4px; }
+  .scr-fchip { padding: 3px 7px; font-size: 10px; }
+  .scr-tab { padding: 5px 10px; font-size: 11px; }
+
+  /* Arb chart smaller */
+  .arb-chart-svg { min-height: 140px; }
+  .arb-chart-head .pair { font-size: 11px; }
+  .arb-chart-head .tf { font-size: 9px; padding: 2px 6px; }
+  .arb-book-rows { font-size: 10px; }
+  .arb-book-mid { font-size: 10px; }
+
+  /* Trade card legibility */
+  .trade-mock { padding: 10px; }
+  .trade-col { padding: 10px; }
+  .trade-col-hd { font-size: 10px; }
+  .trade-field { font-size: 11px; padding: 7px 0; }
+}
 </style>
 <script src="/exchanges.js"></script>
 <script src="/banner.js" defer></script>
