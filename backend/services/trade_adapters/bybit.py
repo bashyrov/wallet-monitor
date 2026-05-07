@@ -109,7 +109,13 @@ class BybitAdapter:
     async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None) -> Any:
         params = params or {}
         ts = str(int(time.time() * 1000))
-        recv = "5000"
+        # 20s recvWindow — Bybit's recommended production value. The
+        # default 5s tripped 10002 ("invalid request, please check your
+        # server times") on container clock drift / network jitter even
+        # though host NTP was synced. 20s gives plenty of headroom
+        # without hurting security (the request is HMAC-signed; recv
+        # window only bounds replay potential).
+        recv = "20000"
         if method == "GET":
             q = "&".join(f"{k}={params[k]}" for k in sorted(params)) if params else ""
             sig = cls._sign(creds["api_secret"], creds["api_key"], ts, recv, q)

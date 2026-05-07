@@ -6779,16 +6779,28 @@ async function ltRefreshBalances() {
     const ex = (typeof SHORT === 'string') ? (typeof EX_LABEL === 'object' && EX_LABEL[SHORT] ? EX_LABEL[SHORT] : SHORT.toUpperCase()) : '—';
     shortLbl.innerHTML = `SHORT · ${ex}` + (shortRes > 0 ? ` <span style="color:var(--yellow);font-size:9px">· ${shortRes.toFixed(0)} USDT locked</span>` : '');
   }
-  // Balance-fetch error indicator (e.g. "IP not whitelisted") inline
-  // above the wallet number, so the user understands why balance is 0.
+  // Balance-fetch error → show dash. Full error text in tooltip on
+  // hover for debugging, but the visible row stays clean (per UX
+  // request: clutter-free panel).
   ['long','short'].forEach(s => {
     const totalEl = document.getElementById(`lt-bal-${s}-total`);
+    const availEl = document.getElementById(`lt-bal-${s}-avail`);
     const err = _trade[s]?.balanceError;
-    if (!totalEl) return;
     if (err) {
-      totalEl.innerHTML = `<span style="color:var(--red);font-size:10px" title="${_htmlEsc(err)}">⚠ ${_htmlEsc(err.slice(0, 60))}</span>`;
-      const availEl = document.getElementById(`lt-bal-${s}-avail`);
-      if (availEl) availEl.textContent = '—';
+      if (totalEl) {
+        totalEl.textContent = '—';
+        totalEl.title = err;
+        totalEl.style.color = 'var(--text3)';
+      }
+      if (availEl) {
+        availEl.textContent = '—';
+        availEl.title = err;
+        availEl.style.color = 'var(--text3)';
+      }
+    } else if (totalEl) {
+      totalEl.title = '';
+      totalEl.style.color = '';
+      if (availEl) { availEl.title = ''; availEl.style.color = ''; }
     }
   });
   // Default account-name display when no override has stamped it yet
