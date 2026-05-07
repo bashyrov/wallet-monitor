@@ -437,6 +437,7 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
     </div>
     <div class="acc-tabs" role="tablist">
       <div class="acc-tab is-active" data-pane="positions" onclick="accSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
+      <div class="acc-tab" data-pane="triggers" onclick="accSwitch(this)" role="tab">Active Triggers <span class="acc-count" id="acc-cnt-triggers">0</span></div>
       <div class="acc-tab" data-pane="orders"   onclick="accSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
       <div class="acc-tab" data-pane="pnl"      onclick="accSwitch(this)" role="tab">P&amp;L</div>
       <div class="acc-tab" data-pane="balances" onclick="accSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
@@ -459,6 +460,22 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
           <h4>No open positions</h4>
           <p>Connect a read-only API key to see exchange positions here, or open a new position from the trading panel on the right.</p>
           <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
+        </div>
+      </div>
+      <div class="acc-pane" id="acc-pane-triggers">
+        <table class="acc-table">
+          <thead><tr>
+            <th>Type</th><th>Pair</th><th>Long → Short</th>
+            <th class="num">Trigger</th><th class="num">Filled</th>
+            <th class="num">Qty</th><th>Mode</th><th>Status</th>
+            <th>Created</th><th></th>
+          </tr></thead>
+          <tbody id="acc-triggers-body"></tbody>
+        </table>
+        <div class="acc-empty" id="acc-triggers-empty">
+          <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></svg></div>
+          <h4>No active triggers</h4>
+          <p>Place a trigger from the right-side Live Trading panel — it'll fire automatically when the spread crosses your target.</p>
         </div>
       </div>
       <div class="acc-pane" id="acc-pane-orders">
@@ -1217,88 +1234,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
         </div><!-- /.main.top-row -->
 
-        <!-- Account block: Positions / Orders / P&L / Balances (inside left-stack) -->
-        <section class="acc-block" id="acc-block">
-          <div class="acc-tabs" role="tablist">
-            <div class="acc-tab is-active" data-pane="positions" onclick="_ptAccSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
-            <div class="acc-tab" data-pane="triggers" onclick="_ptAccSwitch(this)" role="tab">Triggers <span class="acc-count" id="acc-cnt-triggers">0</span></div>
-            <div class="acc-tab" data-pane="orders" onclick="_ptAccSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
-            <div class="acc-tab" data-pane="pnl" onclick="_ptAccSwitch(this)" role="tab">P&amp;L</div>
-            <div class="acc-tab" data-pane="balances" onclick="_ptAccSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
-            <span class="acc-spacer"></span>
-            <button type="button" class="pill" id="acc-sync-btn" onclick="syncArbPositions()"
-                    title="Wrap externally-opened pairs into trackable arb positions"
-                    style="background:none;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px"><path d="M2.5 8a5.5 5.5 0 0 1 9.6-3.7M13.5 8a5.5 5.5 0 0 1-9.6 3.7"/><path d="M12 2v3h-3M4 14v-3h3"/></svg>
-              Sync position
-            </button>
-            <div class="acc-keyinfo">
-              <span class="pill ro"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
-              <span class="pill tr"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
-              <a href="/portfolio" class="pill" style="text-decoration:none;color:var(--text2)" title="Manage API keys">Keys ⚙</a>
-            </div>
-          </div>
-          <div class="acc-body">
-            <div class="acc-pane is-active" id="acc-pane-positions">
-              <table class="acc-table">
-                <thead><tr><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Funding P&amp;L</th><th class="num">uPnL</th><th class="num">uPnL %</th><th></th></tr></thead>
-                <tbody id="acc-positions-body"></tbody>
-              </table>
-              <div class="acc-empty" id="acc-positions-empty">
-                <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg></div>
-                <h4>No open positions</h4>
-                <p>Connect a read-only API key in Portfolio, or open a position from the right-hand panel.</p>
-                <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
-              </div>
-            </div>
-            <div class="acc-pane" id="acc-pane-triggers">
-              <table class="acc-table">
-                <thead><tr>
-                  <th>Type</th><th>Pair</th><th>Long → Short</th>
-                  <th class="num">Trigger</th><th class="num">Filled</th>
-                  <th class="num">Qty</th><th>Mode</th><th>Status</th>
-                  <th>Created</th><th></th>
-                </tr></thead>
-                <tbody id="acc-triggers-body"></tbody>
-              </table>
-              <div class="acc-empty" id="acc-triggers-empty">
-                <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></svg></div>
-                <h4>No active triggers</h4>
-                <p>Create a trigger order from the right-hand panel to fire on a target spread.</p>
-              </div>
-            </div>
-            <div class="acc-pane" id="acc-pane-orders">
-              <table class="acc-table">
-                <thead><tr><th style="width:24px"></th><th>Time</th><th>Action</th><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th>Status</th></tr></thead>
-                <tbody id="acc-orders-body"></tbody>
-              </table>
-              <div class="acc-empty" id="acc-orders-empty">
-                <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v10H3z"/><path d="M3 6h10M3 9h10M3 12h6"/></svg></div>
-                <h4>No orders yet</h4>
-                <p>Orders you place through Avalant — and any errors — will appear here.</p>
-              </div>
-            </div>
-            <div class="acc-pane" id="acc-pane-pnl">
-              <div class="acc-sum-grid">
-                <div class="acc-sum-card"><div class="acc-sum-lbl">Unrealized P&amp;L</div><div class="acc-sum-val" id="acc-upnl">$0.00</div></div>
-                <div class="acc-sum-card"><div class="acc-sum-lbl">Open positions</div><div class="acc-sum-val" id="acc-pos-count">0</div></div>
-                <div class="acc-sum-card"><div class="acc-sum-lbl">Read-only keys</div><div class="acc-sum-val" id="acc-ro-count-pnl">0</div></div>
-                <div class="acc-sum-card"><div class="acc-sum-lbl">Trade keys</div><div class="acc-sum-val" id="acc-tr-count-pnl">0</div></div>
-              </div>
-            </div>
-            <div class="acc-pane" id="acc-pane-balances">
-              <table class="acc-table">
-                <thead><tr><th>Exchange</th><th>Wallet</th><th>Key type</th><th class="num">Available USDT</th></tr></thead>
-                <tbody id="acc-balances-body"></tbody>
-              </table>
-              <div class="acc-empty" id="acc-balances-empty">
-                <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 6v4M6 8h4"/></svg></div>
-                <h4>No balance data</h4>
-                <p>Add a read-only or trading API key in <a href="/portfolio" style="color:var(--green)">Portfolio</a>.</p>
-              </div>
-            </div>
-          </div>
-        </section>
       </div><!-- /.left-stack -->
 
           <!-- RIGHT: Trade panel — sibling of .left-stack so it spans full height -->
@@ -6527,7 +6462,13 @@ async function accLoadTriggers() {
     const empty = document.getElementById('acc-triggers-empty');
     const cnt = document.getElementById('acc-cnt-triggers');
     if (!tbody) return;
-    if (cnt) cnt.textContent = rows.length;
+    if (cnt) {
+      cnt.textContent = rows.length;
+      // Highlight count badge when there are active triggers
+      cnt.style.color = rows.length > 0 ? 'var(--green)' : '';
+      cnt.style.background = rows.length > 0 ? 'var(--green-soft)' : '';
+      cnt.style.borderColor = rows.length > 0 ? 'var(--green-edge)' : '';
+    }
     if (rows.length === 0) {
       tbody.innerHTML = '';
       if (empty) empty.style.display = '';
