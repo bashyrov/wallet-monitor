@@ -883,3 +883,81 @@ body.light .trade-position-row { background:#F7F7F7; }
 .wl-star-btn.pop { animation:wl-star-pop .32s cubic-bezier(.34,1.56,.64,1); }
 body.light .wl-star-btn { background: rgba(229,192,123,0.08); border-color: rgba(107,80,17,0.35); color: var(--yellow); }
 body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
+
+/* ─── Trigger / TP / SL card (Task 7) ─────────────────────────────── */
+.trig-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  margin-top: 12px;
+  overflow: hidden;
+}
+.trig-card[open] { background: var(--surface2); }
+.trig-card-head {
+  padding: 10px 14px; cursor: pointer; user-select: none;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px;
+  list-style: none;
+}
+.trig-card-head::-webkit-details-marker { display: none; }
+.trig-card-title { font-weight: 600; color: var(--text); letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+.trig-card-hint { font-size: 10px; color: var(--text3); font-style: italic; }
+.trig-card[open] .trig-card-hint { display: none; }
+.trig-card-body {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.trig-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.trig-lbl {
+  flex: 0 0 auto; font-size: 11px; color: var(--text2); font-weight: 500;
+  min-width: 110px;
+}
+.trig-lbl input[type="checkbox"] { margin-right: 6px; vertical-align: -2px; }
+.trig-input-wrap {
+  position: relative; flex: 1; min-width: 100px;
+}
+.trig-input {
+  width: 100%; padding: 7px 32px 7px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px;
+}
+.trig-input:focus { outline: none; border-color: var(--green-edge); }
+.trig-suffix {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: var(--text3); font-family: 'JetBrains Mono', monospace;
+  pointer-events: none;
+}
+.trig-tp-wrap {
+  display: flex; align-items: center; gap: 6px; flex: 1;
+}
+.trig-tp-wrap .trig-input { padding-right: 26px; }
+.trig-tp-wrap .trig-suffix { position: static; transform: none; }
+.trig-portion-row .trig-input-wrap { flex: 1; }
+.trig-flags {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-size: 11px; color: var(--text2);
+}
+.trig-flag input[type="checkbox"] { margin-right: 5px; vertical-align: -2px; }
+.trig-warn {
+  flex: 1 0 100%; padding: 6px 8px; border-radius: var(--r-sm);
+  background: rgba(229,192,123,0.12); border: 1px solid rgba(229,192,123,0.35);
+  color: var(--yellow); font-size: 10px; line-height: 1.4;
+}
+.trig-submit {
+  margin-top: 4px; width: 100%; padding: 9px;
+  background: var(--green-soft); color: var(--green);
+  border: 1px solid var(--green-edge); border-radius: var(--r-sm);
+  font-weight: 600; font-size: 12px; cursor: pointer;
+  transition: background var(--dur-fast), transform var(--dur-fast);
+}
+.trig-submit:hover:not(:disabled) { background: rgba(26,255,171,0.14); }
+.trig-submit:active:not(:disabled) { transform: translateY(1px); }
+.trig-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.trig-err {
+  padding: 6px 8px; border-radius: var(--r-sm);
+  background: var(--red-soft); border: 1px solid var(--red-edge);
+  color: var(--red); font-size: 11px;
+}

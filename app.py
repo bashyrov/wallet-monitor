@@ -140,6 +140,12 @@ async def lifespan(app: FastAPI):
     start_expiry_notifier()
     _stop_fns.append(stop_expiry_notifier)
 
+    # Trigger-order daemon: 1s polling loop with atomic claim-on-fire SQL.
+    # Safe to run on both replicas — atomic UPDATE ensures exactly-once
+    # per trigger across the cluster.
+    from backend.services import trigger_order_service
+    trigger_order_service.start()
+
     # Watchlist → orderbook-subscribe bridge. Dumps distinct
     # (sym, long_ex, short_ex) across all users every 30s so the
     # Go symbol-manager keeps watched pairs subscribed even when
