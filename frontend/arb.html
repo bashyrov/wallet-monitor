@@ -6591,6 +6591,20 @@ function ltUpdateSubmitLabel() {
   const btn = document.getElementById('lt-submit');
   if (!btn) return;
   const hasTrig = (document.getElementById('lt-trig')?.value || '').trim() !== '';
+  // If either leg lacks a screener key, the submit can't succeed —
+  // disable the button and surface the reason as the label.
+  const longBad  = (_trade?.long?.keyStatus  || 'missing') !== 'ok';
+  const shortBad = (_trade?.short?.keyStatus || 'missing') !== 'ok';
+  if (longBad || shortBad) {
+    btn.disabled = true;
+    btn.title = 'Add a screener-purpose key on the missing leg before placing trades.';
+    if (longBad && shortBad) btn.textContent = 'Add keys to both legs';
+    else if (longBad)        btn.textContent = 'Add LONG key';
+    else                     btn.textContent = 'Add SHORT key';
+    return;
+  }
+  btn.disabled = false;
+  btn.title = '';
   if (LT.mode === 'close') btn.textContent = hasTrig ? 'Place Close Trigger' : 'Close Now';
   else                     btn.textContent = hasTrig ? 'Place Trigger'       : 'Open Now';
 }
@@ -6786,29 +6800,46 @@ async function ltRefreshBalances() {
     const ex = (typeof SHORT === 'string') ? (typeof EX_LABEL === 'object' && EX_LABEL[SHORT] ? EX_LABEL[SHORT] : SHORT.toUpperCase()) : '—';
     shortLbl.innerHTML = `SHORT · ${ex}` + (shortRes > 0 ? ` <span style="color:var(--yellow);font-size:9px">· ${shortRes.toFixed(0)} USDT locked</span>` : '');
   }
-  // Balance-fetch error → show dash. Full error text in tooltip on
-  // hover for debugging, but the visible row stays clean (per UX
-  // request: clutter-free panel).
+  // Per-leg status indicator: distinguishes 4 cases visually
+  //   ok           → real balance numbers (default render above)
+  //   missing      → "No trade key" + "Add key →" link in Available row
+  //   disabled     → "Trade disabled" (admin or user toggle)
+  //   admin_blocked→ "Trading paused by admin"
+  //   balance_error→ honest dash (already wired)
   ['long','short'].forEach(s => {
     const totalEl = document.getElementById(`lt-bal-${s}-total`);
     const availEl = document.getElementById(`lt-bal-${s}-avail`);
+    const nameEl  = document.getElementById(`lt-bal-${s}-name`);
+    const status = _trade[s]?.keyStatus || 'missing';
     const err = _trade[s]?.balanceError;
     if (err) {
-      if (totalEl) {
-        totalEl.textContent = '—';
-        totalEl.title = err;
-        totalEl.style.color = 'var(--text3)';
-      }
-      if (availEl) {
-        availEl.textContent = '—';
-        availEl.title = err;
-        availEl.style.color = 'var(--text3)';
-      }
-    } else if (totalEl) {
-      totalEl.title = '';
-      totalEl.style.color = '';
-      if (availEl) { availEl.title = ''; availEl.style.color = ''; }
+      if (totalEl) { totalEl.textContent = '—'; totalEl.title = err; totalEl.style.color = 'var(--text3)'; }
+      if (availEl) { availEl.textContent = '—'; availEl.title = err; availEl.style.color = 'var(--text3)'; }
+      return;
     }
+    if (status === 'missing') {
+      if (nameEl)  { nameEl.textContent = 'No trade key';  nameEl.style.color = 'var(--red)'; }
+      if (totalEl) { totalEl.innerHTML = '<span style="color:var(--text3)">no key</span>'; totalEl.title = 'Add a screener-purpose key for this exchange in /portfolio'; }
+      if (availEl) { availEl.innerHTML = '<a href="/portfolio#wallets" target="_blank" style="color:var(--green);font-size:11px">+ Add key</a>'; availEl.title = ''; }
+      return;
+    }
+    if (status === 'disabled') {
+      if (nameEl)  { nameEl.textContent = 'Trade disabled'; nameEl.style.color = 'var(--yellow)'; }
+      if (totalEl) { totalEl.innerHTML = '<span style="color:var(--yellow);font-size:11px">trade disabled</span>'; }
+      if (availEl) { availEl.innerHTML = '<a href="/portfolio#wallets" target="_blank" style="color:var(--green);font-size:11px">re-enable →</a>'; }
+      return;
+    }
+    if (status === 'admin_blocked') {
+      if (nameEl)  { nameEl.textContent = 'Paused by admin'; nameEl.style.color = 'var(--yellow)'; }
+      if (totalEl) { totalEl.innerHTML = '<span style="color:var(--yellow);font-size:11px">trading paused</span>'; }
+      if (availEl) { availEl.textContent = '—'; }
+      return;
+    }
+    // status === 'ok' → leave the numeric render from above; clear any
+    // stale styling that might be left from a previous status flip.
+    if (totalEl) { totalEl.title = ''; totalEl.style.color = ''; }
+    if (availEl) { availEl.title = ''; availEl.style.color = ''; }
+    if (nameEl)  { nameEl.style.color = 'var(--text3)'; }
   });
   // Default account-name display when no override has stamped it yet
   const longNameEl  = document.getElementById('lt-bal-long-name');
