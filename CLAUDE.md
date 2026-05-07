@@ -2,6 +2,18 @@
 
 ## Recent work — TL;DR for new sessions
 
+**Orderbook WS fixes** (shipped 2026-05-07). HEAD: `f5a459d` on `main`.
+
+Three fixes to go-fetcher orderbook WebSocket adapters that were silently dead:
+
+- **OKX** (`go-fetcher/internal/exchanges/okx/futures.go`): channel was `books50-l2-tbt` (private, requires auth → error 60011). Switched to public `books` channel (same snapshot+delta wire format, ~400ms cadence). Also chunked subscribe to 100 symbols/frame.
+- **Bitget** (`go-fetcher/internal/exchanges/bitget/futures.go`): 200-symbol frames triggered error 30002 "Unrecognized request". Reduced to 50 symbols/frame + 200ms `SubscribeDelay` between frames.
+- **Zombie WS watchdog** (`go-fetcher/internal/ws/runner.go`): added `lastData` + `subscribedAt` tracking. After 5 min post-subscribe with no data frames, forces reconnect (was undetectable before because pong heartbeats kept `lastMsg` alive).
+
+Root cause of zombie: `lastMsg` updated by pong responses so the 90s stale watchdog never fired even when subscriptions were silently rejected.
+
+---
+
 **Landing-style frontend redesign** (active, shipped to prod 2026-05-04). HEAD: `bb6c145` on `main`.
 
 What changed:
@@ -1042,6 +1054,10 @@ Third-party loggers suppressed to WARNING: httpx, httpcore, urllib3, websockets,
 44. **Mirror-pair tolerance is 12%** (not 5%) — bumped in `_pnl_can_pair` after UX feedback that 5% missed legitimate pairs.
 45. **Anon screener gate** — 2-min preview from first visit (`localStorage.anon_first_seen_at`); user can wipe localStorage to reset.
 46. **`app` and `app2` are separate compose services with `build: .` each** — they get separate image tags (`wallet-monitor-app` vs `wallet-monitor-app2`). `docker compose build app` rebuilds only the first; if you skip `app2`, half the traffic keeps running stale code. Always use `./scripts/deploy.sh backend` (it does both with health checks) or explicitly `docker compose build app app2`. We hit this with the alerts service: `app` had the new atomic-claim code, `app2` had the old code → ~5 duplicate TG messages per fire because half the workers raced freely.
+48. **OKX orderbook uses public `books` channel** — `books50-l2-tbt` is private (error 60011). Subscribe chunked to 100 symbols/frame. Parser matches only `"channel":"books"`.
+49. **Bitget orderbook subscribe: 50 symbols/frame + 200ms delay** — 200-symbol frames trigger error 30002 "Unrecognized request". `SubscribeDelay()` returns 200ms in `bitget/futures.go`.
+50. **WS zombie detection**: `lastData` + `subscribedAt` fields in `ws.Runner`. If 5 min pass after first subscribe with no data frames → force reconnect. `lastMsg` alone is insufficient (pong heartbeats keep it alive while subscriptions are silently dead).
+
 47. **Alerts are one-shot: auto-disable after first successful TG send** — see `_claim_alert_for_fire` (`backend/services/alert_service.py`). Atomic SQL UPDATE…WHERE enabled=TRUE serialises the claim across all 8 uvicorn workers (2 replicas × 4 workers). Telegram retries are intentionally OFF (no idempotency key on `sendMessage` → retry creates a duplicate). Fail-closed: if TG errors, the alert stays disabled. User re-enables from the navbar bell popover.
 
 ---
