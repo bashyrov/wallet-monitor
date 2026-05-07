@@ -805,7 +805,7 @@ Standard CRUD for user-scoped tags (NULL `user_id` = system tag).
 | `screener.html` | `/screener` | public 2-min preview, then signup | screener |
 | `arb.html` | `/arb` | public data + authed panels | screener |
 | `watchlist.html` | `/watchlist` | auth | screener |
-| `app.html` | `/app` | auth | portfolio |
+| `portfolio.html` | `/portfolio` | auth | portfolio | (legacy `/app` 301-redirects here) |
 | `archive.html` | `/archive` | auth | portfolio |
 | `profile.html` | `/profile` | auth | portfolio |
 | (no dedicated file) | `/avashare` | auth | portfolio — Avashare/referral UI lives in `profile.html` + `admin.html → Avashare tab`; `/avashare` path is reserved for the maintenance scope but routes to `profile`/`admin`. Standalone `avashare.html` was planned but never shipped |
@@ -814,7 +814,7 @@ Standard CRUD for user-scoped tags (NULL `user_id` = system tag).
 | `404.html` | (fallback) | public | — |
 | `maintenance.html` | (served on flag) | public | — |
 
-`serve_page()` in `app.py` enforces redirects: `_AUTH_PAGES = {"app", "profile", "archive", "watchlist"}` redirects to `/login?next=` on missing session; `_ADMIN_PAGES = {"admin", "admin-user"}` additionally check `is_admin` and trip the honeypot on non-admins. (`/avashare` lives under the auth-protected hierarchy via different gating; not in `_AUTH_PAGES`.)
+`serve_page()` in `app.py` enforces redirects: `_AUTH_PAGES = {"portfolio", "profile", "archive", "watchlist"}` redirects to `/login?next=` on missing session; `_ADMIN_PAGES = {"admin", "admin-user"}` additionally check `is_admin` and trip the honeypot on non-admins. `_LEGACY_REDIRECTS = {"app": "/portfolio"}` 301-rewrites old bookmarks. (`/avashare` lives under the auth-protected hierarchy via different gating; not in `_AUTH_PAGES`.)
 
 ### Shared JS modules
 - **auth.js** — `Auth.{getToken, getUser, setSession, clearSession, isLoggedIn, isAdmin, requireAuth, requireAdmin, redirectIfAuthed, logout, apiFetch}`. `apiFetch` adds Bearer header + auto-redirects 401 → `/login`.

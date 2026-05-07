@@ -272,7 +272,7 @@ async function handleRegister(e) {
     const meResp = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + data.access_token } });
     const user = await meResp.json();
     Auth.setSession(data.access_token, user);
-    window.location.replace('/app');
+    window.location.replace('/portfolio');
   } catch (err) {
     errEl.textContent = 'Network error — is the server running?';
     errEl.classList.add('show');
@@ -318,7 +318,7 @@ async function startTgBotLogin(){
           const meResp = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + cj.access_token } });
           const me = meResp.ok ? await meResp.json() : { id: cj.user_id, username: cj.username || 'user', email: '' };
           Auth.setSession(cj.access_token, me);
-          window.location.replace('/app');
+          window.location.replace('/portfolio');
         }
       } catch {}
     }, 2000);

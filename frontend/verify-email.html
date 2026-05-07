@@ -84,13 +84,13 @@ function setOk(text) {
   mark.className = 'auth-mark'; mark.innerHTML = ICON_OK;
   title.textContent = 'Email confirmed';
   msg.className = 'state-msg ok'; msg.textContent = text;
-  action.innerHTML = '<a class="btn btn-primary btn-lg" href="/app" style="width:100%">Continue to app</a>';
+  action.innerHTML = '<a class="btn btn-primary btn-lg" href="/portfolio" style="width:100%">Continue to app</a>';
 }
 function setErr(text) {
   mark.className = 'auth-mark err'; mark.innerHTML = ICON_ERR;
   title.textContent = 'Verification failed';
   msg.className = 'state-msg err'; msg.textContent = text;
-  action.innerHTML = '<a class="btn btn-outline btn-lg" href="/app" style="width:100%">Back to app</a>';
+  action.innerHTML = '<a class="btn btn-outline btn-lg" href="/portfolio" style="width:100%">Back to app</a>';
 }
 
 async function run() {

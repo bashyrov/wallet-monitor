@@ -114,7 +114,7 @@
       return fail('Auth library failed to load. Refresh the page.');
     }
     Auth.setSession(j.access_token, me);
-    location.replace('/app');
+    location.replace('/portfolio');
   } catch (e) {
     console.error('[tg-done] flow error:', e);
     fail('Network error: ' + (e && e.message || 'unknown'));

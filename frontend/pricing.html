@@ -582,7 +582,7 @@
   <div class="footer-brand"><b>avalant<span style="color:var(--green)">_</span></b> · screener &amp; portfolio for serious crypto traders</div>
   <div class="footer-links">
     <a href="/screener" class="footer-link">Screener</a>
-    <a href="/app" class="footer-link">Portfolio</a>
+    <a href="/portfolio" class="footer-link">Portfolio</a>
     <a href="/pricing" class="footer-link">Pricing</a>
   </div>
 </footer>
@@ -592,7 +592,7 @@
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M3 5h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Screener
   </a>
-  <a href="/app" class="bnav-item">
+  <a href="/portfolio" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
     Portfolio
   </a>
@@ -816,7 +816,7 @@ function _showPayResult(kind) {
     ? 'Your subscription is active. Welcome aboard.'
     : 'Nothing was charged — try again or pick a different plan.';
   const cta = ok ? 'Open the app' : 'Try again';
-  const ctaHref = ok ? '/app' : '/pricing';
+  const ctaHref = ok ? '/portfolio' : '/pricing';
   const icon = ok
     ? `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
     : `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5"/><circle cx="12" cy="16" r="0.6" fill="${accent}"/><circle cx="12" cy="12" r="9"/></svg>`;

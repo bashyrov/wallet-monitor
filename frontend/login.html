@@ -310,7 +310,7 @@ async function handleTotp(e) {
     const me = meR.ok ? await meR.json() : { username: 'user' };
     Auth.setSession(j.access_token, me);
     const params = new URLSearchParams(window.location.search);
-    window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
+    window.location.replace((params.get('next') || '/portfolio').replace(/\.html$/, ''));
   } catch (err) {
     errEl.textContent = err.message || 'Network error';
     errEl.classList.add('show');
@@ -376,7 +376,7 @@ async function handleLogin(e) {
     const user = await meResp.json();
     Auth.setSession(data.access_token, user);
     const params = new URLSearchParams(window.location.search);
-    window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
+    window.location.replace((params.get('next') || '/portfolio').replace(/\.html$/, ''));
   } catch (err) {
     errEl.textContent = err.message || 'Network error';
     errEl.classList.add('show');
@@ -434,7 +434,7 @@ async function startTgBotLogin(){
           const me = meResp.ok ? await meResp.json() : { id: cj.user_id, username: cj.username || 'user', email: '' };
           Auth.setSession(cj.access_token, me);
           const params = new URLSearchParams(window.location.search);
-          window.location.replace((params.get('next') || '/app').replace(/\.html$/, ''));
+          window.location.replace((params.get('next') || '/portfolio').replace(/\.html$/, ''));
         } else if (cj.status === 'expired') {
           clearInterval(_tgLoginPoll); _tgLoginPoll = null;
           _resetTgBtn();

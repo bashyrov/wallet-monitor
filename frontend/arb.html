@@ -458,7 +458,7 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
           <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg></div>
           <h4>No open positions</h4>
           <p>Connect a read-only API key to see exchange positions here, or open a new position from the trading panel on the right.</p>
-          <a href="/app" class="acc-empty-cta">Manage API keys</a>
+          <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
         </div>
       </div>
       <div class="acc-pane" id="acc-pane-orders">
@@ -497,7 +497,7 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
         <div class="acc-empty" id="acc-balances-empty">
           <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 6v4M6 8h4"/></svg></div>
           <h4>No balance data</h4>
-          <p>Add a read-only or trading API key in <a href="/app" style="color:var(--green)">Portfolio</a> and it'll show up here with live equity.</p>
+          <p>Add a read-only or trading API key in <a href="/portfolio" style="color:var(--green)">Portfolio</a> and it'll show up here with live equity.</p>
         </div>
       </div>
     </div>
@@ -1008,7 +1008,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             <div class="acc-keyinfo">
               <span class="pill ro"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
               <span class="pill tr"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
-              <a href="/app" class="pill" style="text-decoration:none;color:var(--text2)" title="Manage API keys">Keys ⚙</a>
+              <a href="/portfolio" class="pill" style="text-decoration:none;color:var(--text2)" title="Manage API keys">Keys ⚙</a>
             </div>
           </div>
           <div class="acc-body">
@@ -1021,7 +1021,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
                 <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg></div>
                 <h4>No open positions</h4>
                 <p>Connect a read-only API key in Portfolio, or open a position from the right-hand panel.</p>
-                <a href="/app" class="acc-empty-cta">Manage API keys</a>
+                <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
               </div>
             </div>
             <div class="acc-pane" id="acc-pane-orders">
@@ -1051,7 +1051,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
               <div class="acc-empty" id="acc-balances-empty">
                 <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 6v4M6 8h4"/></svg></div>
                 <h4>No balance data</h4>
-                <p>Add a read-only or trading API key in <a href="/app" style="color:var(--green)">Portfolio</a>.</p>
+                <p>Add a read-only or trading API key in <a href="/portfolio" style="color:var(--green)">Portfolio</a>.</p>
               </div>
             </div>
           </div>
@@ -5369,7 +5369,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeKeysP
 
 <!-- Mobile bottom navigation -->
 <nav class="bottom-nav" id="bottom-nav">
-  <a href="/app" class="bnav-item">
+  <a href="/portfolio" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="11" width="4" height="7" rx="1" fill="currentColor" opacity=".45"/><rect x="8" y="7" width="4" height="11" rx="1" fill="currentColor" opacity=".7"/><rect x="14" y="2" width="4" height="16" rx="1" fill="currentColor"/></svg>
     Portfolio
   </a>

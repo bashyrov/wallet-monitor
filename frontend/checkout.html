@@ -84,7 +84,7 @@
     </div>
     <h2 class="state-headline">Payment successful</h2>
     <p class="state-sub">Your plan is active. Open the app to start scanning.</p>
-    <a href="/app" class="btn btn-primary btn-lg" style="width:100%">Go to app →</a>
+    <a href="/portfolio" class="btn btn-primary btn-lg" style="width:100%">Go to app →</a>
   </div>
 
   <div id="state-fail" class="panel" style="display:none">
@@ -175,7 +175,7 @@ async function _load(){
       document.getElementById('state-error').textContent = 'Plan or billing period not found';
       show('state-error'); return;
     }
-    if (_plan.is_free){ location.href = '/app'; return; }
+    if (_plan.is_free){ location.href = '/portfolio'; return; }
     show('state-checkout');
     document.getElementById('plan-name').textContent = _plan.name;
     document.getElementById('plan-desc').textContent = _plan.description || '';

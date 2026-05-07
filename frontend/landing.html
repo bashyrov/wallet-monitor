@@ -1377,7 +1377,7 @@ img, svg { display: block; max-width: 100%; }
             <div><b>Read-only keys welcome</b> <span>— trade permission is opt-in, never required to track balances.</span></div>
           </div>
         </div>
-        <a href="/app" class="showcase-link">Open portfolio
+        <a href="/portfolio" class="showcase-link">Open portfolio
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
         </a>
       </div>
@@ -1690,7 +1690,7 @@ img, svg { display: block; max-width: 100%; }
         <h5>Product</h5>
         <ul>
           <li><a href="/screener">Screener</a></li>
-          <li><a href="/app">Portfolio</a></li>
+          <li><a href="/portfolio">Portfolio</a></li>
           <li><a href="/arb">Arb terminal</a></li>
           <li><a href="#pricing">Pricing</a></li>
         </ul>
@@ -1806,7 +1806,7 @@ if ('IntersectionObserver' in window) {
 
 // ─── pre-launch: disable all product + auth links ───
 (() => {
-  const LOCKED = ['/login', '/register', '/app', '/screener', '/arb', '/profile', '/admin', '/archive'];
+  const LOCKED = ['/login', '/register', '/portfolio', '/screener', '/arb', '/profile', '/admin', '/archive'];
   document.querySelectorAll('a[href]').forEach(a => {
     if (!LOCKED.includes(a.getAttribute('href'))) return;
     if (a.closest('.nav-cta') || a.closest('.drawer-cta') || a.closest('.drawer-menu')) {

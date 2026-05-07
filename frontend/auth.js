@@ -33,7 +33,7 @@ const Auth = (() => {
   }
 
   /** Redirect to app if authenticated but not admin. */
-  function requireAdmin(redirectTo = '/app') {
+  function requireAdmin(redirectTo = '/portfolio') {
     if (!isLoggedIn()) {
       window.location.replace('/login?next=' + encodeURIComponent(window.location.pathname));
       return;

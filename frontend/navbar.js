@@ -20,7 +20,7 @@ const _ICONS = {
 };
 
 const _ALL_LINKS = [
-  { id: 'app',       href: '/app',       label: 'Portfolio', icon: _ICONS.portfolio, authOnly: false },
+  { id: 'app',       href: '/portfolio',       label: 'Portfolio', icon: _ICONS.portfolio, authOnly: false },
   { id: 'archive',   href: '/archive',   label: 'Archive',   icon: _ICONS.archive,   authOnly: false },
   { id: 'screener',  href: '/screener',  label: 'Screener',  icon: _ICONS.screener,  authOnly: false },
   { id: 'pricing',   href: '/pricing',   label: 'Pricing',   icon: _ICONS.pricing,   authOnly: false },
@@ -103,7 +103,7 @@ function _rightHtml(page) {
           <a href="/register" class="btn btn-primary btn-sm">Get started</a>
         </div>
         <div id="_nb-user" style="display:none;align-items:center;gap:10px">
-          <a href="/app" class="btn btn-primary btn-sm">Open app</a>
+          <a href="/portfolio" class="btn btn-primary btn-sm">Open app</a>
           ${_avatarBtn()}
         </div>`;
 
@@ -117,10 +117,10 @@ function _rightHtml(page) {
 
     case 'login':
       return `<a href="/register" class="btn btn-ghost btn-sm">Register</a>
-              <a href="/app" class="btn btn-primary btn-sm">Open app</a>`;
+              <a href="/portfolio" class="btn btn-primary btn-sm">Open app</a>`;
     case 'register':
       return `<a href="/login" class="btn btn-ghost btn-sm">Sign in</a>
-              <a href="/app" class="btn btn-primary btn-sm">Open app</a>`;
+              <a href="/portfolio" class="btn btn-primary btn-sm">Open app</a>`;
 
     default:
       return '';
@@ -233,7 +233,7 @@ class AppNavbar extends HTMLElement {
     if (loggedIn && drSignin && drReg) {
       drSignin.style.display = 'none';
       drReg.textContent = 'Open app';
-      drReg.href = '/app';
+      drReg.href = '/portfolio';
     }
   }
 }

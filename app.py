@@ -275,7 +275,7 @@ _SCREENER_API_PREFIXES = ("/api/screener/",)
 # Portfolio scope covers everything that touches a user's wallet/account
 # data — but DOES NOT include /pricing or /checkout so a user with a near-
 # expired plan can still renew while we're working on the portfolio side.
-_PORTFOLIO_PATHS = ("/app", "/archive", "/profile", "/avashare")
+_PORTFOLIO_PATHS = ("/portfolio", "/app", "/archive", "/profile", "/avashare")
 _PORTFOLIO_API_PREFIXES = (
     "/api/wallets", "/api/portfolio", "/api/alerts", "/api/trade",
     "/api/popups",  # popups are tied to the logged-in experience
@@ -564,8 +564,15 @@ from backend.db.base import get_db
 from fastapi import Depends
 import os
 
-_AUTH_PAGES  = {"app", "profile", "archive", "watchlist"}
+_AUTH_PAGES  = {"portfolio", "profile", "archive", "watchlist"}
 _ADMIN_PAGES = {"admin", "admin-user"}
+
+# Legacy /app → /portfolio. Old bookmarks and existing TG-bot links keep
+# working forever via 301; once browsers cache the redirect, follow-up
+# requests skip the round-trip.
+_LEGACY_REDIRECTS = {
+    "app": "/portfolio",
+}
 
 _FRONTEND_ROOT = os.path.realpath("frontend")
 
@@ -611,6 +618,15 @@ async def serve_page(page: str, request: Request, db: Session = Depends(get_db))
         raise HTTPException(status_code=404)
 
     base = page.split("/")[0] if page else ""
+
+    # Legacy route 301s — old /app bookmarks and TG-bot deep links.
+    if base in _LEGACY_REDIRECTS and (not page.split("/")[1:] or page == base):
+        target = _LEGACY_REDIRECTS[base]
+        # Preserve ?query= if any (e.g. /app?ref=foo → /portfolio?ref=foo)
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        return RedirectResponse(target, status_code=301)
+
     if not page:
         filepath = _safe_frontend_path("index.html")
     else:
@@ -644,7 +660,7 @@ async def serve_page(page: str, request: Request, db: Session = Depends(get_db))
                         )
                 except Exception:
                     pass
-                return RedirectResponse("/app", status_code=302)
+                return RedirectResponse("/portfolio", status_code=302)
 
     if os.path.exists(filepath):
         return FileResponse(
