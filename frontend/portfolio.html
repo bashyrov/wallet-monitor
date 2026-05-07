@@ -2794,9 +2794,35 @@ function openEditWalletModal(walletId) {
   document.getElementById('ew-err').textContent = '';
 
   const creds = document.getElementById('ew-creds');
+  // Purpose selector — shown for all credentialed wallets (exchange + perpdex).
+  // Lets the user upgrade a portfolio-only wallet to screener/both during
+  // a key edit (e.g., they originally added the wallet read-only, now want
+  // to enable trading by also adding the private key).
+  const purposeBlock = (w.wallet_type === 'exchange' || w.wallet_type === 'perpdex') ? `
+    <div class="creds-section">
+      <div class="creds-section-title">Purpose</div>
+      <div class="purp-tabs" id="ew-purp-tabs">
+        <button type="button" class="purp-tab ${w.purpose === 'portfolio' ? 'active' : ''}" data-purpose="portfolio" onclick="_ewSetPurpose('portfolio',this)">
+          <span class="purp-tab-title">Portfolio</span>
+          <span class="purp-tab-desc">Read-only balances</span>
+        </button>
+        <button type="button" class="purp-tab ${w.purpose === 'screener' ? 'active' : ''}" data-purpose="screener" onclick="_ewSetPurpose('screener',this)">
+          <span class="purp-tab-title">Screener</span>
+          <span class="purp-tab-desc">Open / close positions</span>
+        </button>
+        <button type="button" class="purp-tab ${w.purpose === 'both' ? 'active' : ''}" data-purpose="both" onclick="_ewSetPurpose('both',this)">
+          <span class="purp-tab-title">Both</span>
+          <span class="purp-tab-desc">One key for everything</span>
+        </button>
+      </div>
+      <input type="hidden" id="ew-purpose" value="${w.purpose}">
+    </div>
+  ` : '';
+
   if (w.wallet_type === 'exchange' || (w.wallet_type === 'perpdex' && w.type_value === 'aster')) {
     const needsPass = (S.options.exchange_types || []).find(e => e.value === w.type_value)?.needs_passphrase;
     creds.innerHTML = `
+      ${purposeBlock}
       <div class="ip-hint">
         <span class="ip-hint-icon">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2a10 10 0 0 1 0 12M8 2a10 10 0 0 0 0 12"/></svg>
@@ -2825,18 +2851,66 @@ function openEditWalletModal(walletId) {
           <input class="form-input" id="ew-api_passphrase" type="password" placeholder="New passphrase (optional)" autocomplete="off">
         </div>` : ''}
       </div>`;
+  } else if (w.wallet_type === 'perpdex') {
+    // Per-DEX trade-credential fields — let user add a private_key /
+    // l2_private_key / account_index to an existing portfolio-only DEX
+    // wallet so they can flip purpose to screener.
+    const opt = (S.options.perpdex_types || []).find(o => o.value === w.type_value) || {};
+    const tv = w.type_value;
+    creds.innerHTML = `
+      ${purposeBlock}
+      <div class="creds-section">
+        <div class="creds-section-title">Address & Credentials <span style="font-size:11px;color:var(--text3);font-weight:400">(leave blank to keep current)</span></div>
+        <div class="form-group">
+          <label class="form-label">Wallet Address</label>
+          <input class="form-input" id="ew-address" placeholder="${w.display_info || '0x…'}" spellcheck="false">
+        </div>
+        ${tv === 'paradex' ? `
+        <div class="form-group">
+          <label class="form-label">JWT (api_token)</label>
+          <input class="form-input" id="ew-api_token" type="password" placeholder="New JWT (optional)" autocomplete="off">
+        </div>` : ''}
+        ${opt.needs_private_key ? `
+        <div class="form-group">
+          <label class="form-label">Private Key (signing)</label>
+          <input class="form-input" id="ew-private_key" type="password" placeholder="0x… (optional, required for trading)" autocomplete="off" spellcheck="false">
+          <div class="form-hint" style="margin-top:4px;font-size:12px;color:var(--text3)">
+            ${tv === 'lighter' ? 'Hex ZK private key. Stored encrypted.' : 'EVM private key for order signing. Stored encrypted.'}
+          </div>
+        </div>` : ''}
+        ${opt.needs_l2_private_key ? `
+        <div class="form-group">
+          <label class="form-label">L2 Stark Private Key</label>
+          <input class="form-input" id="ew-l2_private_key" type="password" placeholder="0x… (optional, required for trading)" autocomplete="off" spellcheck="false">
+        </div>` : ''}
+        ${opt.needs_account_index ? `
+        <div class="form-group">
+          <label class="form-label">Account Index</label>
+          <input class="form-input" id="ew-account_index" placeholder="numeric" autocomplete="off" spellcheck="false">
+        </div>` : ''}
+        ${opt.needs_api_key_index ? `
+        <div class="form-group">
+          <label class="form-label">API Key Index</label>
+          <input class="form-input" id="ew-api_key_index" placeholder="default 255" autocomplete="off" spellcheck="false">
+        </div>` : ''}
+      </div>`;
   } else {
-    // chain or perpdex (address-based)
-    const label = w.wallet_type === 'perpdex' ? 'EVM / Starknet Address' : 'Wallet Address';
+    // chain (address-based)
     creds.innerHTML = `
       <div class="form-group">
-        <label class="form-label">${label} <span style="font-size:11px;color:var(--text3);font-weight:400">(leave blank to keep current)</span></label>
+        <label class="form-label">Wallet Address <span style="font-size:11px;color:var(--text3);font-weight:400">(leave blank to keep current)</span></label>
         <input class="form-input" id="ew-address" placeholder="${w.display_info || 'New address (optional)'}" spellcheck="false">
       </div>`;
   }
 
   document.getElementById('modal-edit-wallet').classList.remove('hidden');
   document.getElementById('ew-name').focus();
+}
+
+function _ewSetPurpose(p, btn) {
+  document.getElementById('ew-purpose').value = p;
+  document.querySelectorAll('#ew-purp-tabs .purp-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
 }
 
 function closeEditWalletModal() {
@@ -2867,10 +2941,30 @@ async function submitEditWallet(e) {
     if (key) body.api_key = key;
     if (sec) body.api_secret = sec;
     if (pass !== undefined) body.api_passphrase = pass;
+  } else if (w.wallet_type === 'perpdex') {
+    const addr = document.getElementById('ew-address')?.value.trim();
+    const tok  = document.getElementById('ew-api_token')?.value.trim();
+    const pk   = document.getElementById('ew-private_key')?.value.trim();
+    const l2   = document.getElementById('ew-l2_private_key')?.value.trim();
+    const acc  = document.getElementById('ew-account_index')?.value.trim();
+    const idx  = document.getElementById('ew-api_key_index')?.value.trim();
+    if (addr) body.address = addr;
+    if (tok)  body.api_token = tok;
+    if (pk)   body.private_key = pk;
+    if (l2)   body.l2_private_key = l2;
+    if (acc)  body.account_index = acc;
+    if (idx)  body.api_key_index = idx;
   } else {
     const addr = document.getElementById('ew-address')?.value.trim();
     if (addr) body.address = addr;
   }
+
+  // Purpose change — only sent if user actually flipped to a different value.
+  // Backend rejects screener/both for perpdex without the right private-key
+  // creds, so user might need to provide both creds + purpose in the same
+  // PATCH for the upgrade to land.
+  const newPurpose = document.getElementById('ew-purpose')?.value;
+  if (newPurpose && newPurpose !== w.purpose) body.purpose = newPurpose;
 
   if (!Object.keys(body).length) {
     closeEditWalletModal();

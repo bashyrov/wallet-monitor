@@ -330,8 +330,16 @@ def update_wallet(db: Session, wallet_id: int, body: WalletUpdate, user_id: int)
     # screener/both here enforces the same rule as toggle_can_trade.
     if body.purpose is not None and wallet.wallet_type in ("exchange", "perpdex"):
         from backend.services.trade_adapters import TRADE_SUPPORTED
+        from backend.services import trade_proxy
         needs_trade = body.purpose in ("screener", "both")
-        if needs_trade and wallet.type_value not in TRADE_SUPPORTED:
+        # A venue counts as "trade-supported" if EITHER:
+        #   - the local Python adapter trades it (TRADE_SUPPORTED), OR
+        #   - it's on the Go-engine cutover list (trade_proxy.is_enabled)
+        # Paradex is a Python-readonly proxy but trades fine via Go when
+        # GO_TRADE_VENUES includes it; without this branch the upgrade
+        # path artificially refuses.
+        if needs_trade and wallet.type_value not in TRADE_SUPPORTED \
+                and not trade_proxy.is_enabled(wallet.type_value):
             raise ValueError(f"Trading on {wallet.type_value} is not supported yet.")
         if needs_trade:
             dup = (
