@@ -189,6 +189,20 @@ class BitgetAdapter:
         await asyncio.gather(_set_mode(), _set_lev("long"), _set_lev("short"))
 
     @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        info = await _instrument_info(cls._symbol(symbol))
+        if not info:
+            return None
+        size_mult = float(info.get("sizeMultiplier") or 0) or None
+        min_trade = float(info.get("minTradeNum") or 0)
+        return {
+            "min_qty": min_trade,
+            "step":    size_mult,
+            "max_qty": None,
+            "unit": "coin",
+        }
+
+    @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
         sym = cls._symbol(symbol)
         info = await _instrument_info(sym)

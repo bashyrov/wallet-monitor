@@ -136,6 +136,19 @@ class WhitebitAdapter:
         # WhiteBIT doesn't have per-symbol leverage via standard API — stub
         pass
 
+    @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        info = (await _instruments()).get(cls._symbol(symbol))
+        if not info:
+            return None
+        prec = int(info.get("stock_prec") or 4)
+        return {
+            "min_qty": float(info.get("min_amount") or 0),
+            "step":    10 ** (-prec) if prec > 0 else None,
+            "max_qty": None,
+            "unit": "coin",
+        }
+
     # ── Preflight ──
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:

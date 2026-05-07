@@ -337,6 +337,20 @@ class LighterAdapter:
             await ac.close()
 
     @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        try:
+            _mid, size_dec, _, _ = await _resolve_market(symbol)
+        except Exception:
+            return None
+        step = 10 ** (-int(size_dec)) if size_dec > 0 else None
+        return {
+            "min_qty": step or 0,   # one lot minimum
+            "step":    step,
+            "max_qty": None,
+            "unit": "coin",
+        }
+
+    @classmethod
     async def preflight(cls, creds, symbol, quantity, leverage):
         try:
             mid, size_dec, _, _ = await _resolve_market(symbol)

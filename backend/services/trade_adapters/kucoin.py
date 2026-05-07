@@ -216,6 +216,20 @@ class KuCoinAdapter:
             raise RuntimeError(f"Max leverage for {sym} is {info['maxLeverage']}x.")
 
     @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        info = await _instrument_info(cls._symbol(symbol))
+        if not info:
+            return None
+        mult = float(info.get("multiplier") or 1) or 1
+        lot  = float(info.get("lotSize") or 1) or 1
+        return {
+            "min_qty": lot * mult,
+            "step":    lot * mult,
+            "max_qty": None,
+            "unit": "coin",
+        }
+
+    @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
         sym = cls._symbol(symbol)
         info = await _instrument_info(sym)

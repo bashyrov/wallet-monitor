@@ -160,6 +160,18 @@ class BackpackAdapter:
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
         pass  # Backpack does not support per-symbol leverage setting
 
+    @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        info = (await _markets()).get(cls._symbol(symbol))
+        if not info:
+            return None
+        return {
+            "min_qty": float(info.get("minQty") or 0),
+            "step":    float(info.get("baseStep") or 0) or None,
+            "max_qty": None,
+            "unit": "coin",
+        }
+
     # ── Preflight ──
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:

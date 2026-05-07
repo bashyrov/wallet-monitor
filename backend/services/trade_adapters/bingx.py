@@ -172,6 +172,18 @@ class BingxAdapter:
 
         await asyncio.gather(_mode(), _lev())
 
+    @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        info = (await _exchange_info()).get(cls._symbol(symbol))
+        if not info:
+            return None
+        return {
+            "min_qty": float(info.get("minQty") or 0),
+            "step":    float(info.get("stepSize") or 0) or None,
+            "max_qty": None,
+            "unit": "coin",
+        }
+
     # ── Preflight ──
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:

@@ -6489,13 +6489,20 @@ function ltRefreshQtyHint() {
   // a follow-up.
   const cur = _ltCurTokenQty();
   const parts = legs.map(({ side, ex, q }) => {
-    if (!q) return '';
+    const exLbl = (typeof EX_LABEL === 'object' && EX_LABEL[ex]) || (ex || '').toUpperCase();
+    if (!q) {
+      // No public qty-limit data from this adapter — show honest dash
+      // rather than hiding (user explicitly asked: "ставь прочерк но
+      // точно не пиши вранье").
+      return `<span class="h-leg" title="${side.toUpperCase()} · ${exLbl} · venue specs not exposed by adapter — runtime preflight will catch sub-min orders">
+        <span class="ex">${side[0].toUpperCase()}·${exLbl}</span>min — · step —
+      </span>`;
+    }
     const min = q.min_qty || 0;
     const step = q.step;
     const bad = (cur > 0 && min > 0 && cur < min);
-    const exLbl = (typeof EX_LABEL === 'object' && EX_LABEL[ex]) || ex.toUpperCase();
-    const minTxt = min > 0 ? `min ${_ltFmtQty(min)} ${sym}` : '';
-    const stepTxt = step ? ` · step ${_ltFmtQty(step)}` : '';
+    const minTxt = min > 0 ? `min ${_ltFmtQty(min)} ${sym}` : 'min —';
+    const stepTxt = step ? ` · step ${_ltFmtQty(step)}` : ' · step —';
     const minNotionalTxt = q.min_notional > 0 ? ` · min ${q.min_notional} USDT` : '';
     return `<span class="h-leg${bad ? ' bad' : ''}" title="${side.toUpperCase()} · ${exLbl}">
       <span class="ex">${side[0].toUpperCase()}·${exLbl}</span>${minTxt}${stepTxt}${minNotionalTxt}

@@ -201,6 +201,21 @@ class OKXAdapter:
         except RuntimeError as e:
             raise RuntimeError(_friendly_okx(*_split_code(e)))
 
+    @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        info = (await _instruments()).get(_okx_symbol(symbol))
+        if not info:
+            return None
+        ct_val = float(info.get("ctVal") or 1) or 1
+        lot_sz_contracts = float(info.get("lotSz") or 1)
+        min_sz_contracts = float(info.get("minSz") or 1)
+        return {
+            "min_qty": min_sz_contracts * ct_val,
+            "step":    lot_sz_contracts * ct_val,
+            "max_qty": None,
+            "unit": "coin",
+        }
+
     # ── Preflight ──
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:

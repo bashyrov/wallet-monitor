@@ -160,6 +160,21 @@ class MexcAdapter:
             raise RuntimeError(_friendly_mexc(code, msg))
 
     @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        info = await _instrument_info(cls._symbol(symbol))
+        if not info:
+            return None
+        contract_size = float(info.get("contractSize") or 1) or 1
+        min_vol_contracts = float(info.get("minVol") or 1)
+        vol_unit_contracts = float(info.get("volUnit") or 1)
+        return {
+            "min_qty": min_vol_contracts * contract_size,
+            "step":    vol_unit_contracts * contract_size,
+            "max_qty": (float(info.get("maxVol")) * contract_size) if info.get("maxVol") else None,
+            "unit": "coin",
+        }
+
+    @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
         sym = cls._symbol(symbol)
         info = await _instrument_info(sym)
