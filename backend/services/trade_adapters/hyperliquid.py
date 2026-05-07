@@ -337,22 +337,12 @@ class HyperliquidAdapter:
     # universe array — it changes only when a new perp is listed, so a 1h TTL
     # is generous.
     _asset_map: dict[str, int] = {}
+    _asset_meta: dict[str, dict] = {}    # name → full universe entry (szDecimals, maxLeverage, …)
     _asset_map_at: float = 0.0
     _ASSET_MAP_TTL = 3600.0
 
     @classmethod
-    async def _get_asset_index(cls, symbol: str) -> int:
-        """Hyperliquid uses numeric asset indices — look up the symbol in the
-        current universe instead of relying on a hardcoded list. Raises if the
-        symbol isn't listed so we never silently trade the wrong asset."""
-        import time as _t
-        sym = symbol.upper()
-        now = _t.time()
-        if cls._asset_map and (now - cls._asset_map_at) < cls._ASSET_MAP_TTL:
-            idx = cls._asset_map.get(sym)
-            if idx is not None:
-                return idx
-        # Refresh — also serves cold start.
+    async def _refresh_universe(cls) -> None:
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.post("https://api.hyperliquid.xyz/info",
                              json={"type": "meta"},
@@ -360,15 +350,57 @@ class HyperliquidAdapter:
             r.raise_for_status()
             data = r.json() or {}
             universe = data.get("universe") or []
-            cls._asset_map = {
-                (a.get("name") or "").upper(): i
-                for i, a in enumerate(universe)
-                if a.get("name")
-            }
-            cls._asset_map_at = now
+        idx_map: dict[str, int] = {}
+        meta: dict[str, dict] = {}
+        for i, a in enumerate(universe):
+            n = (a.get("name") or "").upper()
+            if not n:
+                continue
+            idx_map[n] = i
+            meta[n] = a
+        import time as _t
+        cls._asset_map = idx_map
+        cls._asset_meta = meta
+        cls._asset_map_at = _t.time()
+
+    @classmethod
+    async def _ensure_universe(cls) -> None:
+        import time as _t
+        if cls._asset_map and (_t.time() - cls._asset_map_at) < cls._ASSET_MAP_TTL:
+            return
+        await cls._refresh_universe()
+
+    @classmethod
+    async def _get_asset_index(cls, symbol: str) -> int:
+        """Hyperliquid uses numeric asset indices — look up the symbol in the
+        current universe instead of relying on a hardcoded list. Raises if the
+        symbol isn't listed so we never silently trade the wrong asset."""
+        sym = symbol.upper()
+        await cls._ensure_universe()
         idx = cls._asset_map.get(sym)
         if idx is None:
             raise RuntimeError(
                 f"{sym} is not listed on Hyperliquid (universe has {len(cls._asset_map)} assets)."
             )
         return idx
+
+    @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        """HL exposes szDecimals per asset in /info?type=meta — min/step =
+        10^-szDecimals coins. No native min_notional; HL enforces value
+        check at order time via separate field."""
+        try:
+            await cls._ensure_universe()
+        except Exception:
+            return None
+        info = cls._asset_meta.get(symbol.upper())
+        if not info:
+            return None
+        sz_dec = int(info.get("szDecimals") or 0)
+        step = 10 ** (-sz_dec) if sz_dec >= 0 else 1
+        return {
+            "min_qty": step,
+            "step":    step,
+            "max_qty": None,
+            "unit": "coin",
+        }

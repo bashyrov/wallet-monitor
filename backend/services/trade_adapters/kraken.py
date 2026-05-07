@@ -290,6 +290,26 @@ class KrakenAdapter:
         return out
 
     @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        """Kraken Futures expresses qty in CONTRACTS where 1 contract =
+        `contract_size` coins. Min order = 1 contract. Position cap from
+        instrument metadata (max_position_size in coins, post-multiply)."""
+        try:
+            info = (await _instruments()).get(_norm_symbol(symbol))
+        except Exception:
+            return None
+        if not info:
+            return None
+        cs = float(info.get("contract_size") or 1)
+        max_pos = float(info.get("max_position_size") or 0) or None
+        return {
+            "min_qty": cs,
+            "step":    cs,
+            "max_qty": max_pos,
+            "unit": "coin",
+        }
+
+    @classmethod
     async def preflight(cls, creds, symbol, quantity, leverage):
         try:
             instr = await _instruments()
@@ -297,6 +317,9 @@ class KrakenAdapter:
             info = instr.get(sym)
             if not info:
                 return {"ok": False, "reason": f"Kraken: no perp market for {symbol}"}
+            cs = float(info.get("contract_size") or 1)
+            if quantity < cs:
+                return {"ok": False, "reason": f"Kraken min qty is {cs} {symbol.upper()} (1 contract)."}
             return {"ok": True}
         except Exception as exc:
             return {"ok": False, "reason": str(exc)[:180]}

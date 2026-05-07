@@ -244,6 +244,78 @@ class AsterAdapter:
     async def get_public_max_leverage(cls, symbol: str) -> int:
         return 100
 
+    # Lazy-cached exchangeInfo. Aster is Binance-clone — same payload
+    # shape with LOT_SIZE / MIN_NOTIONAL filters per symbol.
+    _ex_info: dict[str, dict] = {}
+    _ex_info_at: float = 0.0
+    _EX_INFO_TTL = 600.0
+
+    @classmethod
+    async def _fetch_ex_info(cls) -> dict[str, dict]:
+        import time as _t, httpx as _h
+        if cls._ex_info and (_t.time() - cls._ex_info_at) < cls._EX_INFO_TTL:
+            return cls._ex_info
+        async with _h.AsyncClient(timeout=8) as c:
+            r = await c.get(BASE + "/fapi/v1/exchangeInfo")
+            r.raise_for_status()
+            d = r.json() or {}
+        out = {}
+        for s in d.get("symbols", []):
+            sym = s.get("symbol")
+            if not sym:
+                continue
+            info = {
+                "stepSize": None, "minQty": None, "minNotional": None,
+                "tickSize": None,
+            }
+            for f in s.get("filters", []):
+                t = f.get("filterType")
+                if t == "LOT_SIZE":
+                    info["stepSize"] = float(f.get("stepSize") or 0)
+                    info["minQty"]   = float(f.get("minQty")   or 0)
+                elif t == "MIN_NOTIONAL":
+                    info["minNotional"] = float(f.get("notional") or f.get("minNotional") or 0)
+                elif t == "PRICE_FILTER":
+                    info["tickSize"] = float(f.get("tickSize") or 0)
+            out[sym] = info
+        cls._ex_info = out
+        cls._ex_info_at = _t.time()
+        return out
+
+    @classmethod
+    async def get_public_qty_limits(cls, symbol: str) -> dict | None:
+        try:
+            info = (await cls._fetch_ex_info()).get(symbol.upper() + "USDT")
+        except Exception:
+            return None
+        if not info:
+            return None
+        return {
+            "min_qty": float(info.get("minQty") or 0),
+            "step":    float(info.get("stepSize") or 0) or None,
+            "min_notional": float(info.get("minNotional") or 0) or None,
+            "max_qty": None,
+            "unit": "coin",
+        }
+
     @classmethod
     async def preflight(cls, creds: dict, symbol: str, quantity: float, leverage: int) -> dict:
-        return {"ok": True, "qty_rounded": quantity}
+        # Use the public exchangeInfo we cache for the qty hint to enforce
+        # min/step/min-notional at preflight time too — was no-op before,
+        # so sub-min orders would slip through and fail mid-flight.
+        try:
+            info = (await cls._fetch_ex_info()).get(symbol.upper() + "USDT")
+        except Exception:
+            info = None
+        if not info:
+            return {"ok": True, "qty_rounded": quantity}
+        step = float(info.get("stepSize") or 0)
+        min_qty = float(info.get("minQty") or 0)
+        min_not = float(info.get("minNotional") or 0)
+        qty_r = quantity
+        if step > 0:
+            import math as _m
+            qty_r = _m.floor(quantity / step) * step
+        if qty_r <= 0 or qty_r < min_qty:
+            return {"ok": False, "reason": f"Aster min qty is {min_qty} {symbol.upper()}."}
+        return {"ok": True, "qty_rounded": qty_r, "step_size": step, "min_qty": min_qty, "min_notional": min_not}
