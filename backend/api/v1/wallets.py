@@ -19,11 +19,13 @@ def _build_wallet_options() -> dict:
     disabled_ex = admin_settings.get_disabled_wallet_exchanges()
     disabled_ch = admin_settings.get_disabled_chains()
     disabled_pd = admin_settings.get_disabled_perpdexes()
+    from backend.services.trade_adapters import TRADE_SUPPORTED as _TS
     exchange_types = [
         {
             "value": value,
             "label": p.label,
             "needs_passphrase": getattr(p, "needs_passphrase", False),
+            "trade_supported":  value.lower() in _TS,
         }
         for value, p in EXCHANGE_PROVIDERS.items()
         if isinstance(p, type) and getattr(p, "enabled", True) and value.lower() not in disabled_ex
@@ -42,6 +44,7 @@ def _build_wallet_options() -> dict:
             "needs_l2_private_key":  getattr(p, "needs_l2_private_key",  False),
             "needs_account_index":   getattr(p, "needs_account_index",   False),
             "needs_api_key_index":   getattr(p, "needs_api_key_index",   False),
+            "trade_supported":       value.lower() in _TS,
             **( {"soon": True} if getattr(p, "soon", False) else {} ),
         }
         for value, p in PERPDEX_PROVIDERS.items()

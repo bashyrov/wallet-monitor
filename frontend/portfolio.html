@@ -2729,7 +2729,7 @@ function walletRow(w, idx = 0) {
       </div>
       <div class="wallet-addr" title="${esc(w.display_info)}">${esc(w.display_info)}</div>
       <div class="wallet-actions">
-        ${isExchange ? `<button class="icon-btn has-tip trade-toggle-btn ${w.can_trade?'is-on':''}" data-tip="${w.can_trade?'Trading ENABLED — click to disable':'Enable live trading'}" onclick="toggleCanTrade(${w.id},${w.can_trade?'true':'false'})" aria-label="Toggle trading">
+        ${(w.wallet_type === 'exchange' || w.wallet_type === 'perpdex') ? `<button class="icon-btn has-tip trade-toggle-btn ${w.can_trade?'is-on':''}" data-tip="${w.can_trade?'Trading ENABLED — click to disable':'Enable live trading (Screener)'}" onclick="toggleCanTrade(${w.id},${w.can_trade?'true':'false'})" aria-label="Toggle trading">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
         </button>` : ''}
         ${isExchange ? `<button class="icon-btn has-tip ${w.is_main?'is-main-on':''}" data-tip="${w.is_main?'Main trading key for this exchange':'Make this the main trading key'}" onclick="setMainWallet(${w.id})" aria-label="Set as main trading key">
@@ -3609,14 +3609,21 @@ async function _doDelWallet(id, name) {
 }
 
 async function toggleCanTrade(id, currentlyOn) {
-  const TRADABLE = ['binance', 'bybit'];
   const w = S.wallets.find(x => x.id === id);
   if (!w) return;
-  if (!currentlyOn && !TRADABLE.includes(w.type_value)) {
-    toast(`Live trading not yet supported on ${w.type_value}`, 'warn');
-    return;
-  }
+  // Trade-supported is decided by the backend (TRADE_SUPPORTED set in
+  // trade_adapters/__init__.py), exposed via /api/wallets/options. We
+  // mirror it here for an early "not supported" toast — backend will
+  // also reject with 400 if we somehow miss.
   if (!currentlyOn) {
+    const pool = w.wallet_type === 'exchange' ? (S.options.exchange_types || [])
+              : w.wallet_type === 'perpdex'  ? (S.options.perpdex_types  || [])
+              : [];
+    const meta = pool.find(o => o.value === w.type_value);
+    if (meta && meta.trade_supported === false) {
+      toast(`Live trading not yet supported on ${w.type_value}`, 'warn');
+      return;
+    }
     const ok = await Confirm.ask({
       title: `Enable LIVE TRADING on "${w.name}"?`,
       message: `This allows Avalant to place real orders using your API key.<br><br>• Make sure the key has <b>Futures trading</b> permission<br>• <b>Withdrawals</b> must be DISABLED on the key<br>• IP-whitelist the server if possible`,
