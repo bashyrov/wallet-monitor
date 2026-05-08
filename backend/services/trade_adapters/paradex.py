@@ -154,9 +154,17 @@ class ParadexAdapter:
         from backend.services import trade_proxy
         if trade_proxy.is_enabled("paradex") and not _need_trade_creds(creds):
             try:
-                return await trade_proxy.list_positions("paradex", creds, symbol)
+                rows = await trade_proxy.list_positions("paradex", creds, symbol)
             except trade_proxy.GoTradeError as e:
                 logger.info("paradex go list_positions failed: %s", e)
+                return []
+            # Other adapters tag every row with the venue name; trade_service
+            # filters by it downstream (and the frontend renders the exchange
+            # chip from this field). Without it our positions silently
+            # disappear from the per-user list.
+            for r in rows or []:
+                r.setdefault("exchange", "paradex")
+            return rows or []
         return []
 
     @classmethod
