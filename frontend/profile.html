@@ -809,6 +809,7 @@
             <div class="k-type-tabs">
               <button type="button" class="k-type-tab is-active" data-type="exchange" onclick="kPickType(this)">Exchange <span class="k-type-tab-sub">CEX · API key</span></button>
               <button type="button" class="k-type-tab" data-type="perpdex" onclick="kPickType(this)">Perp DEX <span class="k-type-tab-sub">on-chain · address</span></button>
+              <button type="button" class="k-type-tab" data-type="chain" onclick="kPickType(this)">Chain <span class="k-type-tab-sub">EVM / Tron / SOL</span></button>
             </div>
             <div class="k-grid">
               <label class="k-field">
@@ -950,8 +951,10 @@
     .k-dd-text.is-placeholder { color:var(--text3); }
     .k-dd-chev { color:var(--text3); transition:transform .18s; flex-shrink:0; }
     .k-dd.open .k-dd-chev { transform:rotate(180deg); color:var(--text); }
+    /* Fixed-positioned to escape the .section-card{overflow:hidden}
+       that would otherwise clip it. JS sets top/left/width on open. */
     .k-dd-menu {
-      position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:50;
+      position:fixed; z-index:600;
       background:var(--surface); border:1px solid var(--border); border-radius:9px;
       box-shadow:0 14px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02);
       padding:4px; max-height:320px; overflow-y:auto;
@@ -1047,6 +1050,7 @@
 <script src="/expiry-banner.js" defer></script>
 <script src="/confirm.js"></script>
 <script src="/theme.js"></script>
+<script src="/exchanges.js"></script>
 <script>
 // ─── Profile sidebar: tab switcher (one pane visible at a time) ───
 (() => {
@@ -1715,41 +1719,107 @@ loadProfile();
 // ═══════════════════════════════════════════════════════════════════════
 //  API KEYS CARD
 // ═══════════════════════════════════════════════════════════════════════
-const _K_EX_LABEL = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', backpack:'Backpack' };
-const _K_EX_COLOR = { binance:'#F0B90B', bybit:'#F0842D', okx:'#8BC6FF', gate:'#17C684', kucoin:'#09BA86', mexc:'#17D854', bitget:'#00D2C8', backpack:'#64B4FF' };
+// Lookup labels/colors via the shared exchanges.js manifest. Local
+// fallbacks here keep the form usable if the script hasn't loaded yet.
+const _K_LABEL_FALLBACK = { binance:'Binance', bybit:'Bybit', okx:'OKX', gate:'Gate', kucoin:'KuCoin', mexc:'MEXC', bitget:'Bitget', backpack:'Backpack' };
+const _K_COLOR_FALLBACK = { binance:'#F0B90B', bybit:'#F0842D', okx:'#C8C8C8', gate:'#17C684', kucoin:'#09BA86', mexc:'#17D854', bitget:'#00D2C8', backpack:'#4ADE80' };
+function _kLabel(v){ return (window.EX && window.EX.labels && window.EX.labels[v]) || _K_LABEL_FALLBACK[v] || v; }
+function _kColor(v){ return (window.EX && window.EX.colors && window.EX.colors[v]) || _K_COLOR_FALLBACK[v] || '#9B9FAB'; }
+
 const _K_PASSPHRASE_EX = new Set(['okx','kucoin','bitget']);
-// Matches backend TRADE_SUPPORTED: every CEX with a trade adapter plus the
-// three perp DEXes that we can place orders on (hyperliquid/aster/ethereal).
-// Keep in sync with backend/services/trade_adapters/__init__.py.
-const _K_TRADABLE = new Set([
+
+// Backend `trade_supported` set (mirrored from /api/wallets/options).
+// Updated by kLoadOptions() — this fallback covers the case where the
+// async load hasn't completed yet.
+let _K_TRADABLE = new Set([
   'binance','bybit','okx','gate','mexc','kucoin','bitget',
-  'bingx','whitebit','backpack',
-  'hyperliquid','aster','ethereal',
+  'bingx','whitebit','backpack','kraken','htx',
+  'hyperliquid','aster','ethereal','lighter','paradex',
 ]);
+
+// Address format checks per /portfolio
+const _K_RE = {
+  evm:      /^0x[a-fA-F0-9]{40}$/,
+  starknet: /^0x[a-fA-F0-9]{40,64}$/,
+  tron:     /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
+  solana:   /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+  passphrase: /^[\x21-\x7E]+$/,   // printable, no spaces
+};
+function _kValidateAddr(chain, addr){
+  if (chain === 'tron') return _K_RE.tron.test(addr);
+  if (chain === 'solana') return _K_RE.solana.test(addr);
+  // Everything else is EVM-style
+  return _K_RE.evm.test(addr);
+}
+
+// Loaded from /api/wallets/options — gives us the live venue lists +
+// trade_supported flag. Falls back to hardcoded order on failure.
+let _K_OPTS = null;
+async function kLoadOptions(){
+  if (_K_OPTS) return _K_OPTS;
+  try {
+    const r = await Auth.apiFetch('/wallets/options');
+    if (r.ok) {
+      _K_OPTS = await r.json();
+      // Refresh trade_supported set from the live response
+      const ts = new Set();
+      (_K_OPTS.exchange_types || []).forEach(o => { if (o.trade_supported) ts.add(o.value); });
+      (_K_OPTS.perpdex_types  || []).forEach(o => { if (o.trade_supported) ts.add(o.value); });
+      _K_TRADABLE = ts;
+    }
+  } catch {}
+  return _K_OPTS;
+}
+
 let _kWallets = [];
 
 function kSwitch(el){ kSwitchTo(el.dataset.tab); }
 function kSwitchTo(tab){
   document.querySelectorAll('.k-tab').forEach(t => t.classList.toggle('is-active', t.dataset.tab === tab));
   document.querySelectorAll('.k-pane').forEach(p => p.classList.toggle('is-active', p.id === 'k-pane-' + tab));
-  if (tab === 'add') kBuildExchangeDd();
+  if (tab === 'add') {
+    // Pull venue options + trade_supported set, then rebuild dropdown
+    // so the chain tab + new venues show up. Cached after first call.
+    kLoadOptions().finally(() => {
+      const menu = document.querySelector('#k-ex-dd .k-dd-menu');
+      if (menu) { menu.dataset.built = ''; menu.innerHTML = ''; }
+      kBuildExchangeDd();
+    });
+  }
 }
 
 // ── Wallet-type tabs + custom dropdown ──
-let _K_TYPE = 'exchange';  // 'exchange' | 'perpdex'
-const _K_EX_ORDER = ['binance','bybit','okx','gate','kucoin','mexc','bitget','backpack'];
-const _K_PERP_ORDER = ['hyperliquid','aster','lighter','ethereal','paradex'];
-const _K_PERP_LABEL = { hyperliquid:'Hyperliquid', aster:'Aster', lighter:'Lighter', ethereal:'Ethereal', paradex:'Paradex' };
-const _K_PERP_COLOR = { hyperliquid:'#64B4FF', aster:'#8A63D2', lighter:'#A8B3CF', ethereal:'#C864C8', paradex:'#F27BA5' };
+let _K_TYPE = 'exchange';  // 'exchange' | 'perpdex' | 'chain'
+// Default ordering — overridden by /wallets/options whenever it loads.
+const _K_EX_ORDER_DEFAULT   = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','whitebit','kraken','htx','backpack'];
+const _K_PERP_ORDER_DEFAULT = ['hyperliquid','aster','lighter','ethereal','paradex','extended'];
+const _K_CHAIN_ORDER_DEFAULT = ['ethereum','bsc','polygon','arbitrum','optimism','base','avalanche','tron','solana','zksync','linea','scroll','mantle','blast','fantom'];
 const _K_PERP_NEEDS_KEY = new Set(['aster']);  // Aster uses api_key+secret; others use address
+
+function _kVenueOrder(){
+  if (_K_TYPE === 'chain')   return (_K_OPTS?.chain_types    || []).map(o => o.value);
+  if (_K_TYPE === 'perpdex') return (_K_OPTS?.perpdex_types  || []).map(o => o.value);
+  return                          (_K_OPTS?.exchange_types || []).map(o => o.value);
+}
+function _kVenueOrderFallback(){
+  if (_K_TYPE === 'chain')   return _K_CHAIN_ORDER_DEFAULT;
+  if (_K_TYPE === 'perpdex') return _K_PERP_ORDER_DEFAULT;
+  return                          _K_EX_ORDER_DEFAULT;
+}
+function _kTypeLabel(){
+  return _K_TYPE === 'chain' ? 'Chain' : _K_TYPE === 'perpdex' ? 'Perp DEX' : 'Exchange';
+}
+function _kTypePlaceholder(){
+  return _K_TYPE === 'chain' ? 'Select chain…' : _K_TYPE === 'perpdex' ? 'Select Perp DEX…' : 'Select exchange…';
+}
 
 function kPickType(btn){
   _K_TYPE = btn.dataset.type;
   document.querySelectorAll('.k-type-tab').forEach(t => t.classList.toggle('is-active', t === btn));
   // Reset dropdown + fields
   document.getElementById('k-ex').value = '';
-  const lbl = document.getElementById('k-ex-lbl'); if (lbl) lbl.textContent = _K_TYPE === 'perpdex' ? 'Perp DEX' : 'Exchange';
-  const txt = document.getElementById('k-ex-text'); if (txt) { txt.textContent = _K_TYPE === 'perpdex' ? 'Select Perp DEX…' : 'Select exchange…'; txt.classList.add('is-placeholder'); }
+  const lbl = document.getElementById('k-ex-lbl'); if (lbl) lbl.textContent = _kTypeLabel();
+  const txt = document.getElementById('k-ex-text'); if (txt) { txt.textContent = _kTypePlaceholder(); txt.classList.add('is-placeholder'); }
   const dot = document.getElementById('k-ex-dot'); if (dot) dot.style.background = 'var(--border)';
   // Rebuild menu
   const menu = document.querySelector('#k-ex-dd .k-dd-menu');
@@ -1761,9 +1831,13 @@ function kBuildExchangeDd(){
   const menu = document.querySelector('#k-ex-dd .k-dd-menu');
   if (!menu || menu.dataset.built) return;
   menu.dataset.built = '1';
-  const items = _K_TYPE === 'perpdex'
-    ? _K_PERP_ORDER.map(ex => ({v:ex, label:_K_PERP_LABEL[ex], color:_K_PERP_COLOR[ex], tag:null}))
-    : _K_EX_ORDER.map(ex => ({v:ex, label:_K_EX_LABEL[ex], color:_K_EX_COLOR[ex], tag:_K_TRADABLE.has(ex) ? 'TRADING' : null}));
+  const order = _kVenueOrder().length ? _kVenueOrder() : _kVenueOrderFallback();
+  const items = order.map(ex => ({
+    v: ex,
+    label: _kLabel(ex),
+    color: _kColor(ex),
+    tag: (_K_TYPE !== 'chain' && _K_TRADABLE.has(ex)) ? 'TRADING' : null,
+  }));
   menu.innerHTML = items.map(it => `
     <button type="button" class="k-dd-item" data-v="${it.v}" onclick="kExPick(this)">
       <span class="k-dd-dot2" style="background:${it.color||'#9B9FAB'}"></span>
@@ -1781,16 +1855,34 @@ function _kUpdateFieldVisibility(){
   const addrWrap   = document.getElementById('k-address-wrap');
   const purposeRow = document.getElementById('k-purpose-err')?.parentElement;
 
-  if (_K_TYPE === 'perpdex') {
+  if (_K_TYPE === 'chain') {
+    if (apiKeyLbl) apiKeyLbl.style.display = 'none';
+    if (apiSecLbl) apiSecLbl.style.display = 'none';
+    if (passphrase) passphrase.style.display = 'none';
+    if (addrWrap) addrWrap.style.display = v ? 'flex' : 'none';
+    if (purposeRow) purposeRow.style.display = 'none';
+    document.getElementById('k-apikey').required = false;
+    document.getElementById('k-apisec').required = false;
+    document.getElementById('k-address').required = !!v;
+    // Address placeholder hint per chain family
+    const ph = document.getElementById('k-address');
+    if (ph) {
+      ph.placeholder = v === 'tron' ? 'T… (Tron base58)'
+                     : v === 'solana' ? '4… (Solana base58)'
+                     : '0x… (40-char EVM)';
+    }
+  } else if (_K_TYPE === 'perpdex') {
     const needsKey = v && _K_PERP_NEEDS_KEY.has(v);
     if (apiKeyLbl) apiKeyLbl.style.display = needsKey ? 'flex' : 'none';
     if (apiSecLbl) apiSecLbl.style.display = needsKey ? 'flex' : 'none';
     if (passphrase) passphrase.style.display = 'none';
     if (addrWrap) addrWrap.style.display = (v && !needsKey) ? 'flex' : 'none';
-    if (purposeRow) purposeRow.style.display = 'none';   // purpose doesn't apply to perpdex
+    if (purposeRow) purposeRow.style.display = 'none';   // purpose doesn't apply to perpdex (set on /portfolio)
     document.getElementById('k-apikey').required = !!needsKey;
     document.getElementById('k-apisec').required = !!needsKey;
     document.getElementById('k-address').required = !!v && !needsKey;
+    const ph = document.getElementById('k-address');
+    if (ph) ph.placeholder = v === 'paradex' ? '0x… (Starknet L2 address)' : '0x… (40-char EVM)';
   } else {
     if (apiKeyLbl) apiKeyLbl.style.display = 'flex';
     if (apiSecLbl) apiSecLbl.style.display = 'flex';
@@ -1807,16 +1899,41 @@ function kExToggle(ev){
   ev && ev.stopPropagation();
   kBuildExchangeDd();
   const dd = document.getElementById('k-ex-dd');
+  const menu = dd.querySelector('.k-dd-menu');
   const open = !dd.classList.contains('open');
   dd.classList.toggle('open', open);
   dd.querySelector('.k-dd-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (open) setTimeout(() => document.addEventListener('click', _kExOutside), 0);
+  if (open) {
+    _kExPositionMenu();
+    window.addEventListener('scroll', _kExPositionMenu, true);
+    window.addEventListener('resize', _kExPositionMenu);
+    setTimeout(() => document.addEventListener('click', _kExOutside), 0);
+  } else {
+    window.removeEventListener('scroll', _kExPositionMenu, true);
+    window.removeEventListener('resize', _kExPositionMenu);
+  }
+}
+function _kExPositionMenu(){
+  const dd = document.getElementById('k-ex-dd');
+  if (!dd || !dd.classList.contains('open')) return;
+  const btn = dd.querySelector('.k-dd-btn');
+  const menu = dd.querySelector('.k-dd-menu');
+  if (!btn || !menu) return;
+  const r = btn.getBoundingClientRect();
+  const menuH = Math.min(320, menu.scrollHeight || 240);
+  const spaceBelow = window.innerHeight - r.bottom - 12;
+  const flipUp = spaceBelow < menuH && r.top > menuH + 12;
+  menu.style.left = r.left + 'px';
+  menu.style.width = r.width + 'px';
+  menu.style.top = (flipUp ? (r.top - 6 - menuH) : (r.bottom + 6)) + 'px';
 }
 function _kExOutside(e){
   const dd = document.getElementById('k-ex-dd');
   if (!dd || dd.contains(e.target)) return;
   dd.classList.remove('open');
   document.removeEventListener('click', _kExOutside);
+  window.removeEventListener('scroll', _kExPositionMenu, true);
+  window.removeEventListener('resize', _kExPositionMenu);
 }
 function kExPick(btn){
   const v = btn.dataset.v;
@@ -1885,7 +2002,7 @@ async function kLoad(){
     const r = await Auth.apiFetch('/wallets');
     if (!r.ok) throw new Error();
     const rows = await r.json();
-    _kWallets = rows.filter(w => (w.wallet_type === 'exchange' || w.wallet_type === 'perpdex') && !w.is_archived);
+    _kWallets = rows.filter(w => !w.is_archived);
     document.getElementById('k-count').textContent = _kWallets.length;
     kRender();
   } catch {
@@ -1898,16 +2015,17 @@ function kRender(){
   if (!_kWallets.length) {
     list.innerHTML = `<div class="k-empty">
       <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:6px">No API keys yet</div>
-      <div>Add any supported CEX or perp-DEX key — Portfolio (read) or Screener (trading) or both.</div>
+      <div>Add any supported CEX, perp-DEX or on-chain wallet — Portfolio (read) or Screener (trading) or both.</div>
       <button class="k-btn k-btn-primary" style="margin-top:14px" onclick="kSwitchTo('add')">+ Add your first key</button>
     </div>`;
     return;
   }
   list.innerHTML = _kWallets.map(w => {
-    const isPerp = w.wallet_type === 'perpdex';
-    const color = (isPerp ? _K_PERP_COLOR[w.type_value] : _K_EX_COLOR[w.type_value]) || '#9B9FAB';
-    const label = (isPerp ? _K_PERP_LABEL[w.type_value] : _K_EX_LABEL[w.type_value]) || w.type_value;
-    const tradable = !isPerp && _K_TRADABLE.has(w.type_value);
+    const isPerp  = w.wallet_type === 'perpdex';
+    const isChain = w.wallet_type === 'chain';
+    const color = _kColor(w.type_value);
+    const label = _kLabel(w.type_value);
+    const tradable = !isChain && _K_TRADABLE.has(w.type_value);
     const purpose = w.purpose || (w.can_trade ? 'screener' : 'portfolio');
     const purposePill = purpose === 'both'
       ? '<span class="k-pill ro" title="Portfolio + Screener"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span><span class="k-pill tr" title="Portfolio + Screener"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
@@ -1954,36 +2072,55 @@ async function kSubmit(){
   const purposeErr = document.getElementById('k-purpose-err');
   if (purposeErr) purposeErr.style.display = 'none';
 
-  const isPerp = _K_TYPE === 'perpdex';
+  const isPerp  = _K_TYPE === 'perpdex';
+  const isChain = _K_TYPE === 'chain';
   const perpNeedsKey = isPerp && _K_PERP_NEEDS_KEY.has(ex);
+  const setErr = (m) => { msg.className='k-msg err'; msg.textContent=m; msg.style.display='block'; };
 
-  if (!ex || !name) { msg.className='k-msg err'; msg.textContent='Fill ' + (isPerp?'perp DEX':'exchange') + ' and label'; msg.style.display='block'; return; }
-  if (name.length < 6) { msg.className='k-msg err'; msg.textContent='Label must be at least 6 characters'; msg.style.display='block'; return; }
-  if (isPerp) {
+  if (!ex || !name) { setErr('Fill ' + (isChain ? 'chain' : isPerp ? 'perp DEX' : 'exchange') + ' and label'); return; }
+  if (name.length < 6) { setErr('Label must be at least 6 characters'); return; }
+
+  if (isChain) {
+    if (!address) { setErr('Wallet address required'); return; }
+    if (!_kValidateAddr(ex, address)) {
+      const want = ex === 'tron' ? 'a Tron base58 address (T… 34 chars)'
+                 : ex === 'solana' ? 'a Solana base58 address (32–44 chars)'
+                 : 'an EVM address (0x… 40 hex chars)';
+      setErr(`${_kLabel(ex)} expects ${want}`); return;
+    }
+  } else if (isPerp) {
     if (perpNeedsKey) {
-      if (!apiKey || !apiSecret) { msg.className='k-msg err'; msg.textContent='Aster requires API key + secret'; msg.style.display='block'; return; }
+      if (!apiKey || !apiSecret) { setErr(`${_kLabel(ex)} requires API key + secret`); return; }
     } else {
-      if (!address) { msg.className='k-msg err'; msg.textContent='Wallet address required'; msg.style.display='block'; return; }
+      if (!address) { setErr('Wallet address required'); return; }
+      const isStarknet = (ex === 'paradex');
+      if (isStarknet ? !_K_RE.starknet.test(address) : !_K_RE.evm.test(address)) {
+        setErr(`${_kLabel(ex)} expects ${isStarknet ? 'a Starknet L2 address (0x… felt)' : 'an EVM address (0x… 40 hex chars)'}`);
+        return;
+      }
     }
   } else {
-    if (!apiKey || !apiSecret) { msg.className='k-msg err'; msg.textContent='API key and secret required'; msg.style.display='block'; return; }
+    if (!apiKey || !apiSecret) { setErr('API key and secret required'); return; }
     if (!forPortfolio && !forScreener) { if (purposeErr) purposeErr.style.display='block'; return; }
-    if (_K_PASSPHRASE_EX.has(ex) && !pass) { msg.className='k-msg err'; msg.textContent=_K_EX_LABEL[ex] + ' requires a passphrase'; msg.style.display='block'; return; }
-    if (forScreener && !_K_TRADABLE.has(ex)) { msg.className='k-msg err'; msg.textContent='Screener trading not yet supported on ' + _K_EX_LABEL[ex]; msg.style.display='block'; return; }
+    if (_K_PASSPHRASE_EX.has(ex) && !pass) { setErr(`${_kLabel(ex)} requires a passphrase`); return; }
+    if (pass && !_K_RE.passphrase.test(pass)) { setErr('Passphrase must be printable characters with no spaces'); return; }
+    if (forScreener && !_K_TRADABLE.has(ex)) { setErr(`Screener trading not yet supported on ${_kLabel(ex)}`); return; }
   }
 
   const btn = document.getElementById('k-submit');
   btn.disabled = true; const oldText = btn.textContent;
-  btn.textContent = 'Validating with ' + (_K_EX_LABEL[ex] || ex) + '…';
+  btn.textContent = isChain ? 'Saving…' : `Validating with ${_kLabel(ex)}…`;
 
   try {
     const body = {
       name,
-      wallet_type: isPerp ? 'perpdex' : 'exchange',
+      wallet_type: isChain ? 'chain' : (isPerp ? 'perpdex' : 'exchange'),
       type_value: ex,
-      purpose: isPerp ? 'portfolio' : purpose,
+      purpose: (isChain || isPerp) ? 'portfolio' : purpose,
     };
-    if (isPerp) {
+    if (isChain) {
+      body.address = address;
+    } else if (isPerp) {
       if (perpNeedsKey) { body.api_key = apiKey; body.api_secret = apiSecret; }
       else              { body.address = address; }
     } else {
