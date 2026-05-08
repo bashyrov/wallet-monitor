@@ -2353,16 +2353,16 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         const caret = isOpen ? '▾' : '▸';
         totalUpnl += tPnl;
         const header = `
-          <tr style="background:rgba(26,255,171,0.04);border-top:1px solid rgba(26,255,171,0.18);cursor:pointer;user-select:none"
+          <tr class="pair-header" style="cursor:pointer;user-select:none"
               onclick="window._ptPairToggle('${pairKey}')">
-            <td colspan="2" style="padding:8px 10px">
-              <span style="color:var(--green);font-family:monospace;margin-right:6px">${caret}</span>
-              <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ ${_pairModeLabel(pair)}</span>
-              <span style="margin-left:6px;font-weight:600">${pair.symbol}</span>
-              <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
+            <td colspan="2" style="padding:9px 12px">
+              ${_pairHeaderHtml(pair, caret)}
             </td>
-            <td colspan="2" class="num" style="color:var(--text2);font-size:11px">${legUsd.toFixed(2)} USDT / leg<br><span style="color:var(--text3);font-size:10px">entry spread ${entrySpreadTxt}</span></td>
-            <td colspan="2" class="num" style="color:var(--text3);font-size:11px">Δ pair</td>
+            <td colspan="2" class="num" style="font-size:11px;line-height:1.45">
+              <div style="color:var(--text);font-weight:700;font-size:12.5px">${_fmtUsdShort(legUsd)}</div>
+              <div style="color:var(--text3);font-size:10px;margin-top:1px">/ leg · spread ${entrySpreadTxt}</div>
+            </td>
+            <td colspan="2" class="num" style="color:var(--text4);font-size:10.5px">—</td>
             <td class="num">${hasFunding ? `<span class="${fundCls}">${fmtUsd(tFund)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
             <td class="num ${pnlCls}" style="font-weight:700">${fmtUsd(tPnl)}</td>
             <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
@@ -4677,6 +4677,36 @@ function _pairModeLabel(pair) {
   return 'Futures';
 }
 
+// Pair-row header: type pill (FUTURES/SPOT/DEX) + symbol/USDT + venue chips.
+// Single source of truth used by both /arb's positions panel and the
+// account block on /portfolio so the look stays consistent.
+function _pairHeaderHtml(pair, caret) {
+  const mode = _pairModeLabel(pair);
+  const lEx = (pair.long?.exchange || '').toLowerCase();
+  const sEx = (pair.short?.exchange || '').toLowerCase();
+  const lLbl = EX_LABEL[lEx] || lEx;
+  const sLbl = EX_LABEL[sEx] || sEx;
+  return `
+    <div class="pair-head-row">
+      <span class="pair-caret">${caret}</span>
+      <span class="pair-type-pill" data-mode="${mode.toLowerCase()}">${mode.toUpperCase()}</span>
+      <span class="pair-sym">${pair.symbol}<span class="pair-sym-quote">USDT</span></span>
+      <span class="pair-ex"><span class="ex-dot" data-ex="${lEx}"></span><span>${lLbl}</span></span>
+      <span class="pair-ex-arrow">⇄</span>
+      <span class="pair-ex"><span class="ex-dot" data-ex="${sEx}"></span><span>${sLbl}</span></span>
+    </div>`;
+}
+
+// Compact USD: $1,219.47 → "$1.22K", $58 → "$58.00"
+function _fmtUsdShort(v) {
+  v = Number(v) || 0;
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  if (a >= 1_000_000) return `${sign}$${(a / 1_000_000).toFixed(2)}M`;
+  if (a >= 1_000)     return `${sign}$${(a / 1_000).toFixed(2)}K`;
+  return `${sign}$${a.toFixed(2)}`;
+}
+
 function _renderIfChanged(elId, html){
   if (!window._lastRenderedHTML) window._lastRenderedHTML = new Map();
   const prev = window._lastRenderedHTML.get(elId);
@@ -4908,20 +4938,16 @@ async function accLoadPositions(){
       const isOpen = _accPairOpen.has(pairKey);
       const caret = isOpen ? '▾' : '▸';
       const header = `
-        <tr class="acc-pair-header" data-pair-key="${pairKey}" onclick="_accPairToggle('${pairKey}')"
-            style="background:rgba(26,255,171,0.04);border-top:1px solid rgba(26,255,171,0.18);cursor:pointer;user-select:none">
-          <td colspan="2" style="padding:8px 10px">
-            <span style="color:var(--green);font-family:monospace;margin-right:6px">${caret}</span>
-            <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ ${_pairModeLabel(pair)}</span>
-            <span class="sym" style="margin-left:6px">${pair.symbol}</span>
-            <span style="color:var(--text3);margin-left:3px">USDT</span>
-            <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
+        <tr class="acc-pair-header pair-header" data-pair-key="${pairKey}" onclick="_accPairToggle('${pairKey}')"
+            style="cursor:pointer;user-select:none">
+          <td colspan="2" style="padding:9px 12px">
+            ${_pairHeaderHtml(pair, caret)}
           </td>
-          <td colspan="2" class="num" style="color:var(--text2);font-size:11px">
-            ${pairUsd.toFixed(2)} USDT / leg
-            <br><span style="color:var(--text3);font-size:10px">entry spread ${entrySpreadTxt}</span>
+          <td colspan="2" class="num" style="font-size:11px;line-height:1.45">
+            <div style="color:var(--text);font-weight:700;font-size:12.5px">${_fmtUsdShort(pairUsd)}</div>
+            <div style="color:var(--text3);font-size:10px;margin-top:1px">/ leg · spread ${entrySpreadTxt}</div>
           </td>
-          <td colspan="2" class="num" style="color:var(--text3);font-size:11px">Δ pair</td>
+          <td colspan="2" class="num" style="color:var(--text4);font-size:10.5px">—</td>
           <td class="num">${hasFunding ? `<span class="${fundCls}">${sumUsd(totalFunding)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
           <td class="num ${pnlCls}" style="font-weight:700"
               title="${hasFunding ? `Price uPnL ${sumUsd(totalPnl)} + Funding ${sumUsd(totalFunding)} = Net ${sumUsd(netPnl)}` : `Price uPnL ${sumUsd(totalPnl)}`}">
