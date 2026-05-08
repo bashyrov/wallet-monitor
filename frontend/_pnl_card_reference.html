@@ -88,14 +88,13 @@
 
   .row-prices { display: flex; gap: 38px; margin-top: 20px; margin-bottom: 16px; flex-wrap: wrap; }
   .price-block .lbl { font-size: 13px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
-  /* All numeric values use the same Fraunces face as the hero %, just
-     smaller. Keeps numbers visually consistent across the card. */
+  /* Entry / Mark / Funding values stay in Inter — Fraunces is reserved
+     for the hero (% / $) and the "avalant" brand only. */
   .price-block .val {
-    font-family: 'Fraunces', serif;
-    font-size: 26px;
-    font-weight: 400;
-    letter-spacing: 0;
-    font-variation-settings: "opsz" 144;
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
 
   .ref { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 14px; }
