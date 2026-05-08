@@ -89,13 +89,43 @@ def _split_code(exc: Exception) -> tuple[str | None, str]:
 
 
 class KuCoinAdapter:
+    # Server-time offset cache. KuCoin's signed-request window is fixed
+    # ±5s — there's no recvWindow override — so on a Docker host with
+    # occasional clock jumps we'd hit "400002 Invalid KC-API-TIMESTAMP".
+    # Periodic resync (5 min TTL) of (server_time - local_time) keeps
+    # every signed request within their window.
+    _TIME_OFFSET_MS: float = 0.0
+    _TIME_OFFSET_AT: float = 0.0
+    _TIME_OFFSET_TTL_S: float = 300.0
+
+    @classmethod
+    async def _server_time_offset_ms(cls) -> float:
+        now = time.time()
+        if now - cls._TIME_OFFSET_AT < cls._TIME_OFFSET_TTL_S:
+            return cls._TIME_OFFSET_MS
+        try:
+            async with httpx.AsyncClient(timeout=4) as c:
+                # Public endpoint, no auth — same as Binance's /time.
+                r = await c.get(BASE + "/api/v1/timestamp")
+                if r.status_code < 400:
+                    j = r.json() or {}
+                    server_ms = float(j.get("data") or 0)
+                    if server_ms > 0:
+                        cls._TIME_OFFSET_MS = server_ms - (time.time() * 1000.0)
+                        cls._TIME_OFFSET_AT = time.time()
+        except Exception:
+            # Keep last good offset; better than zero if local clock drifted
+            pass
+        return cls._TIME_OFFSET_MS
+
     @staticmethod
     def _symbol(s: str) -> str:
         return _kc_symbol(s)
 
     @classmethod
     async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None, body: dict | None = None) -> Any:
-        ts = str(int(time.time() * 1000))
+        offset = await cls._server_time_offset_ms()
+        ts = str(int(time.time() * 1000 + offset))
         api_key = creds["api_key"]
         secret = creds["api_secret"]
         passphrase = creds["api_passphrase"]

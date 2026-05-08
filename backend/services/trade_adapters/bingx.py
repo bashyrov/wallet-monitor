@@ -95,6 +95,10 @@ class BingxAdapter:
     async def _req(cls, creds: dict, method: str, path: str, params: dict | None = None) -> Any:
         params = dict(params or {})
         params["timestamp"] = int(time.time() * 1000)
+        # BingX rejects with code 109400 ("timestamp is invalid") if the
+        # request is outside their default 5s window. recvWindow lets us
+        # widen it; 60_000 absorbs Docker host clock drift on prod.
+        params["recvWindow"] = 60_000
         sig = cls._sign(params, creds["api_secret"])
         # Build the query string EXACTLY the same way we signed it — passing
         # params= to httpx may URL-encode differently (e.g. + vs %2B,

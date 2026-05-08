@@ -114,7 +114,11 @@ class BinanceAdapter:
     async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None) -> Any:
         params = dict(params or {})
         params["timestamp"] = int(time.time() * 1000)
-        params["recvWindow"] = 5000
+        # 60_000 (max) absorbs Docker host clock drift / VM pauses without
+        # us having to sync a server-time offset on every call. Was 5000
+        # which rejected ~1-3 reqs/min with "-1021 Timestamp outside
+        # recvWindow" on prod.
+        params["recvWindow"] = 60_000
         sig = cls._sign(params, creds["api_secret"])
         params["signature"] = sig
         headers = {"X-MBX-APIKEY": creds["api_key"]}
