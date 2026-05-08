@@ -374,15 +374,24 @@ func (a *Adapter) ListPositions(ctx context.Context, creds trade.Creds, symbol s
 	if err != nil {
 		return nil, err
 	}
+	// Field names per Paradex's published OpenAPI (responses.PositionResp).
+	// `mark_price` is NOT in this payload — we derive it below from
+	// (entry, unrealized_pnl, size). `cost_usd` is the position notional;
+	// `unrealized_funding_pnl` is the running funding accrual we surface
+	// as funding_pnl_usd to the rest of Avalant.
 	var resp struct {
 		Results []struct {
-			Market         string      `json:"market"`
-			Size           json.Number `json:"size"`
-			Side           string      `json:"side"`
-			AverageEntry   json.Number `json:"average_entry_price"`
-			MarkPrice      json.Number `json:"mark_price"`
-			UnrealizedPnL  json.Number `json:"unrealized_pnl"`
-			Leverage       json.Number `json:"leverage"`
+			Market               string      `json:"market"`
+			Size                 json.Number `json:"size"`
+			Side                 string      `json:"side"`
+			AverageEntry         json.Number `json:"average_entry_price"`
+			AverageEntryUSD      json.Number `json:"average_entry_price_usd"`
+			CostUSD              json.Number `json:"cost_usd"`
+			UnrealizedPnL        json.Number `json:"unrealized_pnl"`
+			UnrealizedFundingPnL json.Number `json:"unrealized_funding_pnl"`
+			Leverage             json.Number `json:"leverage"`
+			Status               string      `json:"status"`
+			CreatedAt            int64       `json:"created_at"`
 		} `json:"results"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -391,6 +400,11 @@ func (a *Adapter) ListPositions(ctx context.Context, creds trade.Creds, symbol s
 	want := strings.ToUpper(symbol)
 	out := make([]trade.Position, 0, len(resp.Results))
 	for _, p := range resp.Results {
+		// Skip closed positions — `size` would be 0 too but check status
+		// explicitly so a partial payload doesn't surface as ghost rows.
+		if strings.EqualFold(p.Status, "CLOSED") {
+			continue
+		}
 		sz, _ := p.Size.Float64()
 		if sz == 0 {
 			continue
@@ -404,17 +418,53 @@ func (a *Adapter) ListPositions(ctx context.Context, creds trade.Creds, symbol s
 			side = trade.SideSell
 		}
 		entry, _ := p.AverageEntry.Float64()
-		mark, _ := p.MarkPrice.Float64()
 		upnl, _ := p.UnrealizedPnL.Float64()
+		funding, _ := p.UnrealizedFundingPnL.Float64()
+		costUSD, _ := p.CostUSD.Float64()
 		levF, _ := p.Leverage.Float64()
+		quantity := abs(sz)
+
+		// Mark price isn't on /v1/positions — invert from PnL identity:
+		//   long  PnL = (mark - entry) * qty   →  mark = entry + PnL/qty
+		//   short PnL = (entry - mark) * qty   →  mark = entry - PnL/qty
+		// Note: unrealized_pnl already includes funding per the spec, so we
+		// subtract it back out to get the pure price-based component first.
+		mark := 0.0
+		if quantity > 0 && entry > 0 {
+			pricePnL := upnl - funding
+			if side == trade.SideBuy {
+				mark = entry + pricePnL/quantity
+			} else {
+				mark = entry - pricePnL/quantity
+			}
+			if mark < 0 {
+				mark = 0
+			}
+		}
+
+		// Notional: prefer Paradex's cost_usd (as reported), fall back
+		// to qty × mark for sanity if the API omits it.
+		notional := costUSD
+		if notional <= 0 && mark > 0 {
+			notional = quantity * mark
+		}
+
+		var openedAt time.Time
+		if p.CreatedAt > 0 {
+			openedAt = time.Unix(p.CreatedAt/1000, (p.CreatedAt%1000)*1_000_000).UTC()
+		}
+
 		out = append(out, trade.Position{
 			Symbol:        coin,
 			Side:          side,
-			Quantity:      abs(sz),
+			Quantity:      quantity,
 			EntryPrice:    entry,
 			MarkPrice:     mark,
+			Notional:      notional,
 			UnrealizedPnL: upnl,
+			FundingPnL:    funding,
 			Leverage:      int(levF),
+			OpenedAt:      openedAt,
 		})
 	}
 	return out, nil
