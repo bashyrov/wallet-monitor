@@ -567,7 +567,12 @@ _POSITIONS_CACHE_TTL_S = 15.0
 # until the next poll succeeds. Successful empty results overwrite this so
 # legitimately-closed positions do disappear.
 _POSITIONS_LASTGOOD: dict[tuple[int, int, str], tuple[float, list[dict]]] = {}
-_POSITIONS_LASTGOOD_TTL_S = 30.0
+# 30s was too tight given exchanges occasionally take 6-10s under load
+# (gate, kucoin) — successive timeouts within a 30s window dropped the
+# row from the UI even though the position was still open. 5 minutes
+# easily covers transient API slowness; we still drop on a confirmed
+# successful empty response (legitimately-closed positions).
+_POSITIONS_LASTGOOD_TTL_S = 300.0
 
 
 async def list_user_positions(db: Session, user_id: int, symbol: str | None = None) -> list[dict]:
@@ -612,7 +617,7 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
 
 _POSITIONS_STALE_MAX_S = 5 * 60.0
 _POSITIONS_REFRESH_INFLIGHT: dict[tuple[int, str], bool] = {}
-_POSITIONS_PER_WALLET_TIMEOUT_S = 6.0  # was 2.0 — Paradex Stark sign + JWT mint + REST = ~3s on first hit
+_POSITIONS_PER_WALLET_TIMEOUT_S = 10.0  # gate/kucoin/binance occasionally take 6-9s under concurrent fan-out
 
 
 async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | None) -> list[dict]:
