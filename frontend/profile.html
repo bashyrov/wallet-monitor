@@ -962,7 +962,8 @@
       transition:opacity .14s, transform .16s cubic-bezier(.16,1,.3,1);
       display:flex; flex-direction:column; gap:2px;
     }
-    .k-dd.open .k-dd-menu { opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+    .k-dd.open .k-dd-menu,
+    .k-dd-menu.is-portal-open { opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
     .k-dd-item {
       display:flex; align-items:center; gap:10px;
       padding:9px 11px; border-radius:7px; cursor:pointer;
@@ -1781,7 +1782,8 @@ function kSwitchTo(tab){
     // Pull venue options + trade_supported set, then rebuild dropdown
     // so the chain tab + new venues show up. Cached after first call.
     kLoadOptions().finally(() => {
-      const menu = document.querySelector('#k-ex-dd .k-dd-menu');
+      const menu = document.querySelector('body > .k-dd-menu[data-portal="1"]')
+                || document.querySelector('#k-ex-dd .k-dd-menu');
       if (menu) { menu.dataset.built = ''; menu.innerHTML = ''; }
       kBuildExchangeDd();
     });
@@ -1821,14 +1823,16 @@ function kPickType(btn){
   const lbl = document.getElementById('k-ex-lbl'); if (lbl) lbl.textContent = _kTypeLabel();
   const txt = document.getElementById('k-ex-text'); if (txt) { txt.textContent = _kTypePlaceholder(); txt.classList.add('is-placeholder'); }
   const dot = document.getElementById('k-ex-dot'); if (dot) dot.style.background = 'var(--border)';
-  // Rebuild menu
-  const menu = document.querySelector('#k-ex-dd .k-dd-menu');
+  // Rebuild menu — locate it whether still inline or already portaled.
+  const menu = document.querySelector('body > .k-dd-menu[data-portal="1"]')
+            || document.querySelector('#k-ex-dd .k-dd-menu');
   if (menu) { menu.dataset.built = ''; menu.innerHTML = ''; kBuildExchangeDd(); }
   _kUpdateFieldVisibility();
 }
 
 function kBuildExchangeDd(){
-  const menu = document.querySelector('#k-ex-dd .k-dd-menu');
+  const menu = document.querySelector('body > .k-dd-menu[data-portal="1"]')
+            || document.querySelector('#k-ex-dd .k-dd-menu');
   if (!menu || menu.dataset.built) return;
   menu.dataset.built = '1';
   const order = _kVenueOrder().length ? _kVenueOrder() : _kVenueOrderFallback();
@@ -1895,11 +1899,29 @@ function _kUpdateFieldVisibility(){
   }
 }
 
+// Portal pattern: the .k-dd-menu lives directly under <body>. Without
+// this, an ancestor with `transform`/`filter`/`will-change:transform`
+// (.section-card has a fadeUp animation that does just that) becomes
+// the containing block for our `position:fixed` menu, so the
+// viewport-relative coords getBoundingClientRect returns no longer
+// match where fixed actually puts it. Moving the menu to <body>
+// detaches it from any such ancestor.
+function _kPortalMenu(){
+  const menu = document.querySelector('#k-ex-dd .k-dd-menu, body > .k-dd-menu[data-portal="1"]');
+  if (!menu) return null;
+  if (menu.dataset.portal !== '1') {
+    menu.dataset.portal = '1';
+    document.body.appendChild(menu);
+    // Click on a portal item still needs to bubble through `kExPick`
+    // — onclick attribute survives the move, no extra wiring needed.
+  }
+  return menu;
+}
 function kExToggle(ev){
   ev && ev.stopPropagation();
   kBuildExchangeDd();
   const dd = document.getElementById('k-ex-dd');
-  const menu = dd.querySelector('.k-dd-menu');
+  _kPortalMenu();
   const open = !dd.classList.contains('open');
   dd.classList.toggle('open', open);
   dd.querySelector('.k-dd-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -1917,7 +1939,7 @@ function _kExPositionMenu(){
   const dd = document.getElementById('k-ex-dd');
   if (!dd || !dd.classList.contains('open')) return;
   const btn = dd.querySelector('.k-dd-btn');
-  const menu = dd.querySelector('.k-dd-menu');
+  const menu = document.querySelector('body > .k-dd-menu[data-portal="1"]') || dd.querySelector('.k-dd-menu');
   if (!btn || !menu) return;
   const r = btn.getBoundingClientRect();
   const menuH = Math.min(320, menu.scrollHeight || 240);
@@ -1926,11 +1948,19 @@ function _kExPositionMenu(){
   menu.style.left = r.left + 'px';
   menu.style.width = r.width + 'px';
   menu.style.top = (flipUp ? (r.top - 6 - menuH) : (r.bottom + 6)) + 'px';
+  // Mirror the .open class onto the portaled menu so its CSS opacity
+  // / transform animation still triggers (selectors like
+  // `.k-dd.open .k-dd-menu` no longer match through the portal hop).
+  menu.classList.add('is-portal-open');
 }
 function _kExOutside(e){
   const dd = document.getElementById('k-ex-dd');
-  if (!dd || dd.contains(e.target)) return;
+  const menu = document.querySelector('body > .k-dd-menu[data-portal="1"]');
+  if (!dd) return;
+  // Click inside the trigger or the portaled menu = keep open.
+  if (dd.contains(e.target) || (menu && menu.contains(e.target))) return;
   dd.classList.remove('open');
+  if (menu) menu.classList.remove('is-portal-open');
   document.removeEventListener('click', _kExOutside);
   window.removeEventListener('scroll', _kExPositionMenu, true);
   window.removeEventListener('resize', _kExPositionMenu);
@@ -1938,14 +1968,19 @@ function _kExOutside(e){
 function kExPick(btn){
   const v = btn.dataset.v;
   const dd = document.getElementById('k-ex-dd');
+  const menu = document.querySelector('body > .k-dd-menu[data-portal="1"]')
+            || dd.querySelector('.k-dd-menu');
   document.getElementById('k-ex').value = v;
-  dd.querySelectorAll('.k-dd-item').forEach(x => x.classList.toggle('is-active', x.dataset.v === v));
-  const label = _K_TYPE === 'perpdex' ? _K_PERP_LABEL[v] : _K_EX_LABEL[v];
-  const color = _K_TYPE === 'perpdex' ? _K_PERP_COLOR[v] : _K_EX_COLOR[v];
+  (menu || dd).querySelectorAll('.k-dd-item').forEach(x => x.classList.toggle('is-active', x.dataset.v === v));
+  const label = _kLabel(v);
+  const color = _kColor(v);
   const txt  = document.getElementById('k-ex-text'); txt.textContent = label || v; txt.classList.remove('is-placeholder');
   const dot  = document.getElementById('k-ex-dot'); dot.style.background = color || 'var(--border)';
   dd.classList.remove('open');
+  if (menu) menu.classList.remove('is-portal-open');
   document.removeEventListener('click', _kExOutside);
+  window.removeEventListener('scroll', _kExPositionMenu, true);
+  window.removeEventListener('resize', _kExPositionMenu);
   _kUpdateFieldVisibility();
   const canTradeHint = document.getElementById('k-for-screener')?.closest('.k-field');
   if (canTradeHint) canTradeHint.style.opacity = (_K_TYPE==='exchange' && _K_TRADABLE.has(v)) ? '1' : '0.55';
@@ -2159,7 +2194,7 @@ async function kSubmit(){
 async function kToggleTrade(id, currentlyOn){
   const w = _kWallets.find(x => x.id === id);
   if (!w) return;
-  const exLabel = _K_EX_LABEL[w.type_value] || w.type_value;
+  const exLabel = _kLabel(w.type_value);
   if (!currentlyOn) {
     const ok = await kConfirm({
       title: 'Enable this key for Screener?',
@@ -2221,7 +2256,7 @@ async function kEdit(id){
   const w = _kWallets.find(x => x.id === id);
   if (!w) return;
   _kEditId = id;
-  document.getElementById('k-edit-title').textContent = 'Edit · ' + (_K_EX_LABEL[w.type_value] || w.type_value);
+  document.getElementById('k-edit-title').textContent = 'Edit · ' + _kLabel(w.type_value);
   document.getElementById('k-edit-name').value = w.name;
   document.getElementById('k-edit-apikey').value = '';
   document.getElementById('k-edit-apisec').value = '';
