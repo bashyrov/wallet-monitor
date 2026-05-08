@@ -612,7 +612,7 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
 
 _POSITIONS_STALE_MAX_S = 5 * 60.0
 _POSITIONS_REFRESH_INFLIGHT: dict[tuple[int, str], bool] = {}
-_POSITIONS_PER_WALLET_TIMEOUT_S = 2.0
+_POSITIONS_PER_WALLET_TIMEOUT_S = 6.0  # was 2.0 — Paradex Stark sign + JWT mint + REST = ~3s on first hit
 
 
 async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | None) -> list[dict]:
