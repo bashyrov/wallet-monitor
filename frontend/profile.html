@@ -844,6 +844,35 @@
                 <span class="k-lbl">Wallet address</span>
                 <input class="k-input mono" id="k-address" placeholder="0x… or T…" autocomplete="off">
               </label>
+              <!-- Perp DEX trade-credential fields. Shown per venue by
+                   _kUpdateFieldVisibility(); kSubmit posts whatever is
+                   filled. Mirror the /portfolio Add-Wallet form. -->
+              <label class="k-field" style="grid-column:1/-1;display:none" id="k-private-key-wrap">
+                <span class="k-lbl">Private Key <span style="color:var(--text3);font-weight:400">(signing — required for trading)</span></span>
+                <input class="k-input mono" id="k-private-key" type="password" placeholder="0x… 64 hex chars" autocomplete="off">
+                <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4" id="k-private-key-hint">EVM private key for order signing. Stored encrypted. Read-only flows work without it.</div>
+              </label>
+              <label class="k-field" style="grid-column:1/-1;display:none" id="k-l2-key-wrap">
+                <span class="k-lbl">L2 Stark Private Key <span style="color:var(--text3);font-weight:400">(Paradex)</span></span>
+                <input class="k-input mono" id="k-l2-key" type="password" placeholder="0x… Stark L2 key (subkey recommended)" autocomplete="off">
+                <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4">
+                  <b style="color:var(--green)">Recommended:</b> create a <em>Subkey</em> in Paradex → Account Security → Key Management. Subkeys can trade but
+                  <b>cannot withdraw or transfer</b> — much safer than your main private key.
+                </div>
+              </label>
+              <label class="k-field" style="grid-column:1/-1;display:none" id="k-subkey-pub-wrap">
+                <span class="k-lbl">Subkey Public Key <span style="color:var(--text3);font-weight:400">(optional — only if Subkey above)</span></span>
+                <input class="k-input mono" id="k-subkey-pub" type="text" placeholder="0x… (leave blank if you used the main key)" autocomplete="off">
+                <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4">From the Subkeys tab in Paradex (or derive from the private key). Tells the server which key to verify against.</div>
+              </label>
+              <label class="k-field" style="grid-column:1/-1;display:none" id="k-account-idx-wrap">
+                <span class="k-lbl">Account Index <span style="color:var(--text3);font-weight:400">(Lighter)</span></span>
+                <input class="k-input mono" id="k-account-idx" placeholder="numeric e.g. 12345" autocomplete="off">
+              </label>
+              <label class="k-field" style="grid-column:1/-1;display:none" id="k-api-key-idx-wrap">
+                <span class="k-lbl">API Key Index <span style="color:var(--text3);font-weight:400">(Lighter — defaults to 255)</span></span>
+                <input class="k-input mono" id="k-api-key-idx" placeholder="default 255" autocomplete="off">
+              </label>
               <div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px">
                 <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600">Where to use this key · pick one or both</div>
                 <label class="k-field k-check">
@@ -1881,12 +1910,24 @@ function _kUpdateFieldVisibility(){
     if (apiSecLbl) apiSecLbl.style.display = needsKey ? 'flex' : 'none';
     if (passphrase) passphrase.style.display = 'none';
     if (addrWrap) addrWrap.style.display = (v && !needsKey) ? 'flex' : 'none';
-    if (purposeRow) purposeRow.style.display = 'none';   // purpose doesn't apply to perpdex (set on /portfolio)
+    if (purposeRow) purposeRow.style.display = 'flex';   // perpdex can also be Screener
     document.getElementById('k-apikey').required = !!needsKey;
     document.getElementById('k-apisec').required = !!needsKey;
     document.getElementById('k-address').required = !!v && !needsKey;
     const ph = document.getElementById('k-address');
     if (ph) ph.placeholder = v === 'paradex' ? '0x… (Starknet L2 address)' : '0x… (40-char EVM)';
+    // Per-venue trade-cred fields
+    const showIf = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'flex' : 'none'; };
+    showIf('k-private-key-wrap', v === 'hyperliquid' || v === 'ethereal' || v === 'lighter');
+    showIf('k-l2-key-wrap',      v === 'paradex');
+    showIf('k-subkey-pub-wrap',  v === 'paradex');
+    showIf('k-account-idx-wrap', v === 'lighter');
+    showIf('k-api-key-idx-wrap', v === 'lighter');
+    // Hint copy for the generic private-key field — Lighter is hex ZK, others EVM
+    const pkHint = document.getElementById('k-private-key-hint');
+    if (pkHint) pkHint.textContent = (v === 'lighter')
+      ? 'Hex ZK private key. Required to sign Lighter trade actions.'
+      : 'EVM private key for order signing. Required to enable Screener.';
   } else {
     if (apiKeyLbl) apiKeyLbl.style.display = 'flex';
     if (apiSecLbl) apiSecLbl.style.display = 'flex';
@@ -2099,6 +2140,12 @@ async function kSubmit(){
   const apiSecret = document.getElementById('k-apisec').value.trim();
   const pass = document.getElementById('k-apipass')?.value?.trim() || '';
   const address = document.getElementById('k-address')?.value?.trim() || '';
+  // Perp DEX trade-credential fields
+  const pkVal     = document.getElementById('k-private-key')?.value?.trim() || '';
+  const l2Val     = document.getElementById('k-l2-key')?.value?.trim() || '';
+  const subPubVal = document.getElementById('k-subkey-pub')?.value?.trim() || '';
+  const accIdxVal = document.getElementById('k-account-idx')?.value?.trim() || '';
+  const apiKeyIdxVal = document.getElementById('k-api-key-idx')?.value?.trim() || '';
   const forPortfolio = document.getElementById('k-for-portfolio').checked;
   const forScreener  = document.getElementById('k-for-screener').checked;
   const purpose = forPortfolio && forScreener ? 'both' : (forScreener ? 'screener' : 'portfolio');
@@ -2134,6 +2181,20 @@ async function kSubmit(){
         return;
       }
     }
+    // Trade-purpose mandates the venue's signing key. Without it we
+    // refuse upfront so the user doesn't think Screener is wired when
+    // it isn't (backend would reject anyway with a less obvious msg).
+    if (forScreener) {
+      if (ex === 'paradex' && !l2Val) {
+        setErr('Paradex Screener key requires the L2 Stark Private Key (subkey recommended)'); return;
+      }
+      if ((ex === 'hyperliquid' || ex === 'ethereal') && !pkVal) {
+        setErr(`${_kLabel(ex)} Screener key requires the EVM private key for signing`); return;
+      }
+      if (ex === 'lighter' && (!accIdxVal || !pkVal)) {
+        setErr('Lighter Screener key requires Account Index + Private Key (and API Key Index — defaults to 255)'); return;
+      }
+    }
   } else {
     if (!apiKey || !apiSecret) { setErr('API key and secret required'); return; }
     if (!forPortfolio && !forScreener) { if (purposeErr) purposeErr.style.display='block'; return; }
@@ -2158,6 +2219,12 @@ async function kSubmit(){
     } else if (isPerp) {
       if (perpNeedsKey) { body.api_key = apiKey; body.api_secret = apiSecret; }
       else              { body.address = address; }
+      // Trade-cred fields — backend stores whatever's present.
+      if (pkVal)      body.private_key       = pkVal;     // HL / Ethereal / Lighter
+      if (l2Val)      body.l2_private_key    = l2Val;     // Paradex
+      if (subPubVal)  body.api_passphrase    = subPubVal; // Paradex subkey pubkey
+      if (accIdxVal)  body.account_index     = accIdxVal; // Lighter
+      if (apiKeyIdxVal) body.api_key_index   = apiKeyIdxVal; // Lighter
     } else {
       body.api_key = apiKey;
       body.api_secret = apiSecret;
