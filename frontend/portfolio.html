@@ -1025,7 +1025,12 @@
       line-height: 1; transition: all 0.12s;
     }
     .modal-x:hover { background: var(--surface3); color: var(--text); }
-    .modal-body { padding: 18px; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    /* min-height:0 unlocks the inner scroll inside a flex column whose
+       parent caps at max-height:88vh — without it the flex child grows
+       to its content's natural height and overflows the modal cap, since
+       flex defaults min-height:auto. Hits us when perpdex acc-item is
+       open with all the trade-cred fields stacked. */
+    .modal-body { padding: 18px; flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .modal-footer {
       padding: 12px 18px 18px;
       border-top: 1px solid var(--border);
