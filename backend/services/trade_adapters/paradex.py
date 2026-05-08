@@ -59,16 +59,22 @@ class ParadexAdapter:
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
         # Prefer the Go path when full creds are present (always-fresh
-        # balance via SNIP-12). Fall back to legacy JWT-based provider
-        # for Portfolio-only wallets that only stored an api_token.
-        if not _need_trade_creds(creds):
+        # balance via SNIP-12). Fall back to legacy JWT-only provider
+        # ONLY if a JWT was actually supplied — otherwise re-raise the
+        # network/auth error with full context so the user sees the real
+        # cause instead of a misleading "missing api_token" message.
+        has_trade_creds = not _need_trade_creds(creds)
+        if has_trade_creds:
             from backend.services import trade_proxy
             try:
                 bal = await trade_proxy.fetch_balance("paradex", creds)
-                return {"usdt": float(bal.get("total_usd") or bal.get("usdt") or 0)}
+                return {"usdt": float(bal.get("total") or bal.get("total_usd") or bal.get("usdt") or 0)}
             except trade_proxy.GoTradeError as e:
-                logger.info("paradex go fetch_balance failed, falling back: %s", e)
-        # Legacy JWT path
+                if not creds.get("api_token"):
+                    logger.warning("paradex go fetch_balance failed (no JWT fallback available): %s", e)
+                    raise RuntimeError(f"Paradex balance fetch via Go failed: {e}") from e
+                logger.info("paradex go fetch_balance failed, trying legacy JWT: %s", e)
+        # Legacy JWT path (only reachable when api_token is set)
         token = creds.get("api_token")
         addr  = creds.get("address") or creds.get("api_key")
         if not token or not addr:

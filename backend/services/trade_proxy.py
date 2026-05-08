@@ -27,7 +27,11 @@ import httpx
 logger = logging.getLogger("avalant.trade.proxy")
 
 _DEFAULT_URL = "http://go-fetcher:8090"
-_TIMEOUT = httpx.Timeout(connect=2.0, read=12.0, write=4.0, pool=4.0)
+# connect=2s was too tight when Portfolio refresh concurrently pinged
+# the proxy for every screener-eligible wallet — DNS + 3-way handshake
+# under load missed the window. 5s is generous, and read/write stay
+# small so a hung Go side still surfaces fast.
+_TIMEOUT = httpx.Timeout(connect=5.0, read=12.0, write=4.0, pool=4.0)
 
 
 def _enabled_venues() -> set[str]:
@@ -71,12 +75,27 @@ class GoTradeError(Exception):
 async def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
     url = _proxy_url() + path
     headers = {"X-Internal-Auth": _secret(), "Content-Type": "application/json"}
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, json=body, headers=headers)
-    except httpx.RequestError as e:
-        # Network blip — caller falls back to local adapter.
-        raise GoTradeError("transient", f"proxy network error: {e}") from e
+    # Brief retry on connect-error — Docker DNS or the SO_BACKLOG queue
+    # occasionally drops a single connect attempt under spikes (Portfolio
+    # refresh fans out N parallel calls). One retry with backoff fixes
+    # virtually all of them; if both fail we surface as transient.
+    last_err = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+                r = await c.post(url, json=body, headers=headers)
+            break
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            last_err = e
+            if attempt == 0:
+                import asyncio as _a
+                await _a.sleep(0.15)
+                continue
+            raise GoTradeError("transient", f"proxy network error: {e!r}") from e
+        except httpx.RequestError as e:
+            raise GoTradeError("transient", f"proxy network error: {e!r}") from e
+    else:
+        raise GoTradeError("transient", f"proxy network error: {last_err!r}")
     if r.status_code == 204:
         return {}
     try:
