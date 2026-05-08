@@ -51,9 +51,16 @@ class PerpDexWallet(WalletBasic):
     address: str = ""
     api_key: str | None = None
     api_secret: str | None = None
-    # Paradex auths via Starknet signature → JWT. Users paste a JWT from an
-    # already-signed-in paradex.trade session; we never sign on their behalf.
+    # Paradex (legacy): JWT pasted from a paradex.trade session — only
+    # used when no private_key is set. With l2_private_key we mint our
+    # own JWTs via SNIP-12 in go-fetcher.
     api_token: str | None = None
+    # Stark L2 private key (paradex) or EVM private key (HL/Ethereal/Lighter).
+    # Required for trade ops; balance read prefers it when present.
+    private_key: str | None = None
+    # Paradex subkey public key — when l2 priv-key is a subkey, tells
+    # the verifier which pubkey to use (`/v1/auth/{pubkey}`).
+    api_passphrase: str | None = None
 
     def _resolve_provider(self, ) -> str:
         from backend.providers import PERPDEX_PROVIDERS

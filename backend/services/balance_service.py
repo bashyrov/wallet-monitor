@@ -84,6 +84,8 @@ async def _fetch_single(db_wallet: Wallet) -> tuple[BalanceResult | None, str | 
                 api_key=creds.get("api_key"),
                 api_secret=creds.get("api_secret"),
                 api_token=creds.get("api_token"),
+                private_key=creds.get("private_key"),
+                api_passphrase=creds.get("api_passphrase"),
             )
         else:
             return None, f"Unknown wallet type: {db_wallet.wallet_type}", "unknown"
