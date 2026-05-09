@@ -3,6 +3,18 @@
  * Usage: <script src="/auth.js"></script>
  */
 
+// Capture ?ref=XYZ on any landing page so the register form can prefill
+// it even if the user navigates through home/pricing/login first.
+(function captureReferral(){
+  try {
+    const params = new URLSearchParams(window.location.search);
+    let code = params.get('ref') || params.get('referral') || params.get('r');
+    if (!code) return;
+    code = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
+    if (code) sessionStorage.setItem('avalant_pending_ref', code);
+  } catch {}
+})();
+
 const Auth = (() => {
   const TOKEN_KEY = 'wm_token';
   const USER_KEY  = 'wm_user';

@@ -218,6 +218,19 @@
 <script>
 Auth.redirectIfAuthed('/screener');
 
+(function prefillReferral(){
+  try {
+    const params = new URLSearchParams(window.location.search);
+    let code = params.get('ref') || params.get('referral') || params.get('r')
+            || sessionStorage.getItem('avalant_pending_ref');
+    if (!code) return;
+    code = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
+    if (!code) return;
+    const inp = document.getElementById('f-ref');
+    if (inp && !inp.value) inp.value = code;
+  } catch {}
+})();
+
 function togglePw(id, btn) {
   const el = document.getElementById(id);
   if (!el) return;
