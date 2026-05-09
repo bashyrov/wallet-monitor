@@ -28,11 +28,34 @@ type Runner struct {
 	symsMu  sync.RWMutex
 	writeMu sync.Mutex // serialises all writes to the live conn
 	log     *zerolog.Logger
+
+	// lastWS — wall-clock of the last WS-driven Store.Apply for this
+	// venue. The REST backstop uses this to skip its tick when WS is
+	// fresh: there's no point hitting REST every 2s when the WS is
+	// pushing every <500ms. Only restored on actual data, not pings.
+	lastWS   time.Time
+	lastWSMu sync.RWMutex
 }
 
 func NewRunner(a Adapter, store *Store) *Runner {
 	l := wmlog.L().With().Str("funding", a.Name()).Logger()
 	return &Runner{a: a, store: store, log: &l}
+}
+
+func (r *Runner) markWSAlive() {
+	r.lastWSMu.Lock()
+	r.lastWS = time.Now()
+	r.lastWSMu.Unlock()
+}
+
+func (r *Runner) wsFreshFor(d time.Duration) bool {
+	r.lastWSMu.RLock()
+	last := r.lastWS
+	r.lastWSMu.RUnlock()
+	if last.IsZero() {
+		return false
+	}
+	return time.Since(last) < d
 }
 
 // safeSend — single sanctioned write path. Holds writeMu so the
@@ -186,6 +209,9 @@ func (r *Runner) wsSession(ctx context.Context) error {
 			r.log.Debug().Err(perr).Msg("ws parse error")
 			continue
 		}
+		if len(ticks) > 0 {
+			r.markWSAlive()
+		}
 		for _, t := range ticks {
 			r.store.Apply(r.a.Name(), t)
 		}
@@ -211,6 +237,14 @@ func (r *Runner) restLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			// Adaptive: skip the REST sweep when WS has pushed any data
+			// in the last 5 seconds. REST exists as safety net for WS
+			// gaps; if WS is delivering, the sweep is just wasted RTT
+			// + bandwidth. Five seconds is generous — even slow
+			// venues push at least once per 1-2s when active.
+			if r.wsFreshFor(5 * time.Second) {
+				continue
+			}
 			r.runBackstopOnce(ctx)
 		}
 	}
