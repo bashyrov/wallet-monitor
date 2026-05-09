@@ -85,6 +85,19 @@ class MEXCUserStream(BaseUserStream):
         await ws.send(json.dumps({"method": "sub.account", "param": {}}))
 
     @classmethod
+    def pong_for(cls, msg) -> str | None:
+        """MEXC contract WS sends `{"channel":"pong"}` after we send a
+        `{"method":"ping"}`. But the SERVER also sends `{"method":"ping"}`
+        every ~30s; without a reply it closes the connection. Same root
+        cause as bingx flapping. Also accept text "ping"/"PING"."""
+        if isinstance(msg, str) and msg.strip().lower() in ("ping", "\"ping\""):
+            return json.dumps({"method": "pong"})
+        if isinstance(msg, dict):
+            if msg.get("method") == "ping" or msg.get("channel") == "ping":
+                return json.dumps({"method": "pong"})
+        return None
+
+    @classmethod
     def parse_event(cls, raw: Any) -> UserStreamEvent | None:
         if not isinstance(raw, dict):
             return None

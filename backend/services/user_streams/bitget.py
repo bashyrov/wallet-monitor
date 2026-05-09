@@ -87,6 +87,18 @@ class BitgetUserStream(BaseUserStream):
         }))
 
     @classmethod
+    def pong_for(cls, msg) -> str | None:
+        """Bitget V2 private WS expects TEXT "ping" → TEXT "pong" every
+        ~30s. Without it the server closes after ~30-60s — observed as
+        recurring `WS error: no close frame received or sent` flap on
+        bitget user-stream. Same root cause as bingx/mexc fix."""
+        if isinstance(msg, str) and msg.strip().lower() == "ping":
+            return "pong"
+        if isinstance(msg, bytes) and msg.strip().lower() == b"ping":
+            return "pong"
+        return None
+
+    @classmethod
     def parse_event(cls, raw: Any) -> UserStreamEvent | None:
         if not isinstance(raw, dict):
             return None
