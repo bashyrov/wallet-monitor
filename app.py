@@ -140,6 +140,18 @@ async def lifespan(app: FastAPI):
     start_expiry_notifier()
     _stop_fns.append(stop_expiry_notifier)
 
+    # Reconcile worker — diffs live positions on every trading wallet vs
+    # trade_positions, captures externally-opened opens, marks externally-
+    # closed positions closed. Used to live on the Python fetcher; after
+    # the Go-fetcher cutover it has to run on the web role. Both replicas
+    # safely run it (each user is processed under a SessionLocal; concurrent
+    # writes are idempotent: insert-if-missing / no-op on already-closed).
+    from backend.services.reconcile_service import (
+        start_reconcile_service, stop_reconcile_service,
+    )
+    start_reconcile_service()
+    _stop_fns.append(stop_reconcile_service)
+
     # Trigger-order daemon: 1s polling loop with atomic claim-on-fire SQL.
     # Safe to run on both replicas — atomic UPDATE ensures exactly-once
     # per trigger across the cluster.
