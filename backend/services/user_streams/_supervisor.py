@@ -537,9 +537,11 @@ async def _scan_and_sync() -> None:
         except Exception as exc:
             logger.warning("userstream: decrypt creds failed wallet=%s: %s", w.id, exc)
             continue
-        if not creds.get("api_key") or not creds.get("api_secret"):
-            # User has the wallet entry but not the actual API keys —
-            # nothing to subscribe with. Skip silently.
+        # Minimum is at least one key. Some venues (lighter) only need the
+        # account_index (stored in api_key) for read-only stream — secret
+        # not required. Adapter raises on missing fields if it needs more.
+        if not (creds.get("api_key") or creds.get("address") or creds.get("private_key")):
+            # Empty wallet entry — nothing to subscribe with. Skip silently.
             continue
         await _ensure_stream(w.user_id, w.id, ex, creds)
 
