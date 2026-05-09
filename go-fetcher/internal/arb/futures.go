@@ -421,7 +421,13 @@ func ComputeInOutPair(books *cache.Store, longEx, shortEx, sym string) (*float64
 	return nil, nil
 }
 
-const inOutStickyTTL = 8 * time.Second
+// Sticky-TTL for the last-good (in_pct, out_pct) when an orderbook
+// briefly drops (WS resub, prune→resub, broker gap). Was 8s — that
+// hid blinking but on volatile pairs the basis can move 0.5-1% in
+// that window, so users were seeing in_pct values that diverged
+// from reality. 2s covers a normal WS reconnect (~1s) without
+// painting ancient data on the screener.
+const inOutStickyTTL = 2 * time.Second
 
 type inOutEntry struct {
 	in, out float64

@@ -1727,12 +1727,12 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-_ARB_CACHE_TTL = _env_float("AVALANT_ARB_CACHE_TTL", 3.0)
-# Bumped from 0.7s → 3s. Web role doesn't compute (data plane is Go) so
-# the TTL only gates how often we re-read+re-serialise arbitrage.json.
-# At 0.7s every other poll missed the cache and paid the 500KB serialise
-# cost; 3s makes 99% of polls hit the cached dict. WS broadcaster pushes
-# its own deltas so live freshness isn't tied to this REST cache.
+_ARB_CACHE_TTL = _env_float("AVALANT_ARB_CACHE_TTL", 0.7)
+# Briefly bumped to 3s for serialise-cost reasons; reverted because users
+# on slow/mobile connections relying on the REST fallback would see in_pct
+# up to 3s stale, and the in_pct column is the user's primary signal for
+# whether a basis is real-time or warmed-over. orjson + mtime-cache cover
+# the perf side; this TTL just gates how fresh REST callers see the data.
 
 
 # Hysteresis state — a (symbol, long_ex, short_ex) opp must be seen for at
