@@ -135,12 +135,13 @@ class OKXAdapter:
             "OK-ACCESS-PASSPHRASE": creds["api_passphrase"],
             "Content-Type": "application/json",
         }
-        url = BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, headers=headers)
-            else:
-                r = await c.post(url, headers=headers, content=body_str)
+        # Persistent client per host — avoid TLS handshake on every call.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        if method == "GET":
+            r = await client.get(path, headers=headers)
+        else:
+            r = await client.post(path, headers=headers, content=body_str)
         if r.status_code >= 400:
             raise RuntimeError(f"OKX HTTP {r.status_code}: {r.text[:300]}")
         j = r.json()

@@ -122,27 +122,29 @@ class BinanceAdapter:
         sig = cls._sign(params, creds["api_secret"])
         params["signature"] = sig
         headers = {"X-MBX-APIKEY": creds["api_key"]}
-        url = BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, params=params, headers=headers)
-            elif method == "POST":
-                r = await c.post(url, params=params, headers=headers)
-            elif method == "DELETE":
-                r = await c.delete(url, params=params, headers=headers)
-            else:
-                raise ValueError(method)
-            if r.status_code >= 400:
-                code = None
-                msg = r.text
-                try:
-                    j = r.json()
-                    code = str(j.get("code")) if j.get("code") is not None else None
-                    msg  = str(j.get("msg") or r.text)
-                except Exception:
-                    pass
-                raise RuntimeError(f"Binance {r.status_code} {code or ''}: {msg}".strip())
-            return r.json()
+        # Persistent client per host — was paying ~100-200ms TLS handshake
+        # per call with the previous `async with httpx.AsyncClient()`.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        if method == "GET":
+            r = await client.get(path, params=params, headers=headers)
+        elif method == "POST":
+            r = await client.post(path, params=params, headers=headers)
+        elif method == "DELETE":
+            r = await client.delete(path, params=params, headers=headers)
+        else:
+            raise ValueError(method)
+        if r.status_code >= 400:
+            code = None
+            msg = r.text
+            try:
+                j = r.json()
+                code = str(j.get("code")) if j.get("code") is not None else None
+                msg  = str(j.get("msg") or r.text)
+            except Exception:
+                pass
+            raise RuntimeError(f"Binance {r.status_code} {code or ''}: {msg}".strip())
+        return r.json()
 
     @staticmethod
     def _symbol(s: str) -> str:

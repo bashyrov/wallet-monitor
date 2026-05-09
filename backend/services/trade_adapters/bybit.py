@@ -116,6 +116,10 @@ class BybitAdapter:
         # without hurting security (the request is HMAC-signed; recv
         # window only bounds replay potential).
         recv = "20000"
+        # Persistent client per host — saves the TLS handshake (~100-300ms
+        # per call) that a per-call `async with httpx.AsyncClient()` paid.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
         if method == "GET":
             q = "&".join(f"{k}={params[k]}" for k in sorted(params)) if params else ""
             sig = cls._sign(creds["api_secret"], creds["api_key"], ts, recv, q)
@@ -126,9 +130,7 @@ class BybitAdapter:
                 "X-BAPI-TIMESTAMP": ts,
                 "X-BAPI-RECV-WINDOW": recv,
             }
-            url = BASE + path + ("?" + q if q else "")
-            async with httpx.AsyncClient(timeout=10) as c:
-                r = await c.get(url, headers=headers)
+            r = await client.get(path + ("?" + q if q else ""), headers=headers)
         else:
             body = jsonlib.dumps(params, separators=(",", ":"))
             sig = cls._sign(creds["api_secret"], creds["api_key"], ts, recv, body)
@@ -140,9 +142,7 @@ class BybitAdapter:
                 "X-BAPI-RECV-WINDOW": recv,
                 "Content-Type": "application/json",
             }
-            url = BASE + path
-            async with httpx.AsyncClient(timeout=10) as c:
-                r = await c.post(url, headers=headers, content=body)
+            r = await client.post(path, headers=headers, content=body)
         if r.status_code >= 400:
             raise RuntimeError(f"Bybit {r.status_code}: {r.text}")
         j = r.json()
