@@ -239,10 +239,21 @@ async def lifespan(app: FastAPI):
         logger.info("Avalant shutting down")
 
 
+# orjson is the same C-backed serialiser already used in our WS broadcast
+# hot path. Promoting it to the FastAPI default response class makes every
+# JSON endpoint serialise ~3-5x faster than stdlib json — the win compounds
+# on screener responses (~500KB each) and pays for itself on every poll.
+# Falls through to the FastAPI default if orjson is missing in some dev env.
+try:
+    from fastapi.responses import ORJSONResponse as _DefaultJSONResponse
+except ImportError:  # pragma: no cover
+    from fastapi.responses import JSONResponse as _DefaultJSONResponse
+
 app = FastAPI(
     title="Avalant",
     version="1.0.0",
     lifespan=lifespan,
+    default_response_class=_DefaultJSONResponse,
     # Hide internal details from public error responses
     docs_url=None,
     redoc_url=None,
