@@ -7299,8 +7299,10 @@ async function trigSubmit(force = false) {
    ─────────────────────────────────────────────────────────────────── */
 .sc-card-host {
   display: block;
-  width: 100%; max-width: 540px;
-  aspect-ratio: 16 / 10;
+  width: 100%; max-width: 580px;
+  /* 16/9 — the wider preview ratio used by Twitter / Telegram link
+     cards. Matches the reference screenshot the user picked. */
+  aspect-ratio: 16 / 9;
   filter: drop-shadow(0 16px 50px rgba(0,0,0,0.55));
 }
 .sc-card {
