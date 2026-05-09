@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,20 +71,36 @@ const (
 	// Spread sanity-cap: rows with |price_spread|>100% are usually
 	// ticker-collisions. Python's threshold; we keep it.
 	highSpreadThreshold = 1.0
-
-	// File-cache cap — top-N kept in arbitrage.json. Bumped from 500 to
-	// 1000: the screener's "tracked set" is whatever ends up in this
-	// file, and the user-touch path auto-subscribes orderbooks for
-	// every (sym, ex) pair we surface. Top-1000 by basis covers more
-	// of the actionable arb space without saturating the WS layer.
-	arbFileTopN = 1000
-
-	// Default volume floor — 24h USD volume. Drops delisted/halted
-	// contracts that the venue still emits funding rows for, plus
-	// dead-microcap pairs which would dominate the screener with
-	// stale data. User policy: 20k USD/24h is the floor.
-	minVolumeUSD = 20_000
 )
+
+// File-cache cap — top-N kept in arbitrage.json. Tunable via
+// AVALANT_ARB_FILE_TOP_N (default 5000). Bumped from 1000 because the
+// screener's "tracked set" IS this file — top-1000 by basis dropped
+// niche venues even when the symbol existed there with real volume
+// (e.g. LITE on OKX vs the leader pair, see Phase 1 plan).
+var arbFileTopN = func() int {
+	if s := strings.TrimSpace(os.Getenv("AVALANT_ARB_FILE_TOP_N")); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			return v
+		}
+	}
+	return 5000
+}()
+
+// Volume floor for inclusion in arb output. Tunable via
+// AVALANT_MIN_VOLUME_USD (default 0 = no filter). Was hardcoded 20k —
+// that dropped legitimate niche pairs (e.g. LITE on OKX showed $3.5M
+// after the OKX volume-unit fix, but used to read $3.5K and got
+// filtered out). Setting to 0 by default; users can tighten at the
+// frontend filter level.
+var minVolumeUSD = func() float64 {
+	if s := strings.TrimSpace(os.Getenv("AVALANT_MIN_VOLUME_USD")); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil && v >= 0 {
+			return v
+		}
+	}
+	return 0
+}()
 
 // Compute is the periodic arb-compute service. Reads funding.Store on a
 // ticker, builds opportunities, dumps arbitrage.json.
