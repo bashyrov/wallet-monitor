@@ -7270,10 +7270,6 @@ async function trigSubmit(force = false) {
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M11 4V2.5A1.5 1.5 0 0 0 9.5 1h-6A1.5 1.5 0 0 0 2 2.5v6A1.5 1.5 0 0 0 3.5 10H5"/></svg>
         Copy image
       </button>
-      <button class="sc-btn" onclick="copyShareText()">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
-        Copy text
-      </button>
     </div>
   </div>
 </div>
@@ -7710,7 +7706,7 @@ function _renderSinglePositionCard(){
   host.innerHTML = `
     <div class="sc-card ${kindClass}">
       <div class="sc-bg-chevrons">${_scChevronsSvg(arrowKind, accent, seed)}</div>
-      <div class="sc-art"><img src="/_pnl_card_imgs/${img}.svg" alt="" crossorigin="anonymous"></div>
+      <div class="sc-art"><img src="/_pnl_card_imgs/${img}.svg" alt=""></div>
       <div class="sc-content">
         <div class="sc-brand">${_SC_LOGO_HTML}<span>avalant</span></div>
         <div class="sc-ticker-row">
@@ -7768,7 +7764,7 @@ function _renderPairCombined(){
   host.innerHTML = `
     <div class="sc-card pair ${kindClass}">
       <div class="sc-bg-chevrons">${_scChevronsSvg('mix', accent, seed)}</div>
-      <div class="sc-art"><img src="/_pnl_card_imgs/${img}.svg" alt="" crossorigin="anonymous"></div>
+      <div class="sc-art"><img src="/_pnl_card_imgs/${img}.svg" alt=""></div>
       <div class="sc-content">
         <div class="sc-brand">${_SC_LOGO_HTML}<span>avalant</span></div>
         <div class="sc-ticker-row">
@@ -7799,9 +7795,17 @@ function _renderPairCombined(){
 // 540×337 viewport target) for sharp social previews.
 async function _scSnapshot(){
   const host = document.getElementById('sc-card-host');
-  if (!host || typeof html2canvas !== 'function') return null;
+  if (!host || typeof html2canvas !== 'function') {
+    console.warn('[share] html2canvas missing or host gone');
+    return null;
+  }
   const card = host.querySelector('.sc-card');
   if (!card) return null;
+  // Wait for any <img> inside to fully decode — html2canvas otherwise
+  // races and renders a blank background where the SVG should be.
+  const imgs = Array.from(card.querySelectorAll('img'));
+  await Promise.all(imgs.map(im => (im.complete && im.naturalWidth) ? Promise.resolve() :
+    new Promise(res => { im.onload = im.onerror = () => res(); })));
   const cardW = card.offsetWidth;
   const cardH = card.offsetHeight;
   const scale = Math.max(2, Math.min(4, 1080 / cardW));
@@ -7810,22 +7814,40 @@ async function _scSnapshot(){
     scale,
     width: cardW,
     height: cardH,
-    useCORS: true,
+    useCORS: false,
     allowTaint: true,
     logging: false,
   });
 }
 
-function downloadShareCard(){
-  _scSnapshot().then(canvas => {
-    if (!canvas) return;
-    const a = document.createElement('a');
+async function downloadShareCard(){
+  try {
+    const canvas = await _scSnapshot();
+    if (!canvas) {
+      if (typeof toast === 'function') toast('Snapshot failed', 'error');
+      return;
+    }
     const sym = (_sharePair && _sharePair.symbol) || (_sharePos && _sharePos.symbol) || 'pnl';
     const tag = _sharePair ? 'pair' : 'pnl';
-    a.download = `avalant-${sym.toLowerCase()}-${tag}-${Date.now()}.png`;
-    a.href = canvas.toDataURL('image/png');
-    a.click();
-  });
+    const fname = `avalant-${sym.toLowerCase()}-${tag}-${Date.now()}.png`;
+    canvas.toBlob(blob => {
+      if (!blob) {
+        if (typeof toast === 'function') toast('PNG encode failed', 'error');
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.download = fname;
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, 'image/png');
+  } catch (e) {
+    console.error('[share] download failed', e);
+    if (typeof toast === 'function') toast('Download failed: ' + (e.message || e), 'error');
+  }
 }
 
 async function copyShareCard(){
