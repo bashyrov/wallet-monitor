@@ -152,6 +152,73 @@ async def lifespan(app: FastAPI):
     start_reconcile_service()
     _stop_fns.append(stop_reconcile_service)
 
+    # User-stream WS supervisor — one persistent WebSocket per
+    # (user, trade-wallet) that pushes live positions / balance / order
+    # events into a Redis-mirrored snapshot store. trade_service reads
+    # the snapshot before falling back to REST. Without this every
+    # position read is a 10s REST poll; with it they're sub-second WS
+    # pushes from the venue.
+    #
+    # Used to live on the Python fetcher (`fetcher/__main__.py`); the
+    # Go-fetcher cutover left it dormant — same gap as the reconcile
+    # worker above. Leader-elected via a Redis SETNX so only ONE
+    # process across all replicas owns the WS connections (otherwise
+    # we'd multiply venue-side connection counts by replica × worker).
+    import asyncio as _asyncio_us
+    import socket as _socket_us
+    from backend.services.user_streams._supervisor import (
+        start_user_stream_supervisor, stop_user_stream_supervisor,
+    )
+    _us_state = {"is_leader": False}
+    _us_lock_key = "avalant:lock:user_stream_supervisor"
+    _us_owner = f"{_socket_us.gethostname()}:{os.getpid()}"
+
+    async def _us_leader_loop():
+        from backend.services.rate_limit import _get_redis
+        rds = None
+        while True:
+            try:
+                if rds is None:
+                    rds = _get_redis()
+                if rds is None:
+                    # No Redis: fall back to single-replica mode (just run).
+                    if not _us_state["is_leader"]:
+                        start_user_stream_supervisor()
+                        _us_state["is_leader"] = True
+                        logger.info("user_stream_supervisor: started (no-redis fallback)")
+                else:
+                    if _us_state["is_leader"]:
+                        # Renew our claim. EX=30s, must renew every ≤25s.
+                        ok = rds.set(_us_lock_key, _us_owner, xx=True, ex=30)
+                        if not ok:
+                            _us_state["is_leader"] = False
+                            try: await stop_user_stream_supervisor()
+                            except Exception: pass
+                            logger.warning("user_stream_supervisor: lost leader lock")
+                    else:
+                        ok = rds.set(_us_lock_key, _us_owner, nx=True, ex=30)
+                        if ok:
+                            start_user_stream_supervisor()
+                            _us_state["is_leader"] = True
+                            logger.info("user_stream_supervisor: acquired leader lock")
+            except Exception:
+                logger.exception("user_stream_supervisor leader loop")
+            await _asyncio_us.sleep(10)
+
+    _us_task = _asyncio_us.create_task(_us_leader_loop())
+
+    async def _us_stop():
+        _us_task.cancel()
+        if _us_state["is_leader"]:
+            try: await stop_user_stream_supervisor()
+            except Exception: pass
+            try:
+                from backend.services.rate_limit import _get_redis as _gr
+                rds = _gr()
+                if rds: rds.delete(_us_lock_key)
+            except Exception: pass
+    _stop_fns.append(_us_stop)
+
     # Trigger-order daemon: 1s polling loop with atomic claim-on-fire SQL.
     # Safe to run on both replicas — atomic UPDATE ensures exactly-once
     # per trigger across the cluster.
