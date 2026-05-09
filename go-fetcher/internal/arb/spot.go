@@ -144,9 +144,10 @@ func (c *SpotCompute) tick(ctx context.Context) {
 	}
 
 	// Cross-product: for each (spot venue × perp venue) on shared symbol,
-	// emit a spot-short opp. Default volume floor — same as the user-
-	// configured value used in futures arb (drops delisted / microcap).
-	const minVolUSD = minVolumeUSD
+	// emit a spot-short opp. Volume floor reuses the futures-side env
+	// AVALANT_MIN_VOLUME_USD (default 0). Was a const tied to the old
+	// hardcoded 20k constant; now it's just the var.
+	minVolUSD := minVolumeUSD
 	opps := make([]map[string]any, 0, 1024)
 	for sym, spotByEx := range spotMap {
 		perpByEx, ok := perpMap[sym]

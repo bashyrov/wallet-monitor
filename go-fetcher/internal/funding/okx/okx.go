@@ -93,7 +93,10 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 				t.IndexPrice, _ = strconv.ParseFloat(v, 64)
 			}
 			if v, ok := d["volCcy24h"].(string); ok {
-				t.Volume24h, _ = strconv.ParseFloat(v, 64)
+				// volCcy24h is in BASE units (see BackstopFetch comment).
+				// Convert to USD via mark price.
+				volBase, _ := strconv.ParseFloat(v, 64)
+				t.Volume24h = volBase * t.MarkPrice
 			}
 		default:
 			continue
@@ -131,7 +134,14 @@ func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]fundin
 		token := strings.TrimSuffix(r.InstID, "-USDT-SWAP")
 		mark, _ := strconv.ParseFloat(r.Last, 64)
 		idx, _ := strconv.ParseFloat(r.IdxPx, 64)
-		vol, _ := strconv.ParseFloat(r.VolCcy24h, 64)
+		// OKX `volCcy24h` for SWAP is volume in BASE currency units
+		// (LITE coins for LITE-USDT-SWAP, BTC for BTC-USDT-SWAP), NOT
+		// in USDT. Convert to USD via mark price so downstream filters
+		// (and the screener column "Vol") see USD numbers like every
+		// other venue. Without this LITE on OKX read as $3.5K instead
+		// of the real $3.5M and got dropped by any volume floor.
+		volBase, _ := strconv.ParseFloat(r.VolCcy24h, 64)
+		vol := volBase * mark
 		byToken[token] = &funding.Tick{
 			Symbol:     token,
 			MarkPrice:  mark,

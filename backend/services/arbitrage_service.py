@@ -1384,21 +1384,48 @@ def _write_file_cache(name: str, data: dict) -> None:
         logger.exception("file cache write failed: %s", name)
 
 
+# In-process memoization for parsed file caches. Same mtime → return the
+# previously parsed object; mtime changed → re-parse. Cuts arbitrage.json /
+# funding.json read latency from ~50ms (open + parse 0.5–1MB) to <100µs
+# (one os.stat + dict reference). Each /screener/* request that previously
+# re-parsed the file now hits this memoization. Stable mtime even at the
+# go-fetcher's 250ms dump cadence is enough — we re-parse at most 4× per
+# second per file across all replicas.
+_PARSE_CACHE: dict[str, tuple[float, dict]] = {}
+_PARSE_CACHE_LOCK = __import__("threading").Lock()
+
+
 def _read_file_cache(name: str, max_age: float = 60.0) -> dict | None:
-    """Read JSON from file cache. Returns None if missing or stale."""
+    """Read JSON from file cache. Returns None if missing or stale.
+
+    Memoized by mtime: we keep the last parsed dict in `_PARSE_CACHE` and
+    only re-parse when the file's mtime changes. The age-vs-max_age check
+    still applies to the actual file, so a stale dump is treated the same
+    way regardless of memoization."""
     import json as _json, os
     path = os.path.join(_FILE_CACHE_DIR, name)
     try:
-        if not os.path.exists(path):
-            return None
-        age = time.time() - os.path.getmtime(path)
-        if age > max_age:
-            return None
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    except Exception:
+        logger.exception("file cache stat failed: %s", name)
+        return None
+    mtime = st.st_mtime
+    if (time.time() - mtime) > max_age:
+        return None
+    cached = _PARSE_CACHE.get(name)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    try:
         with open(path) as f:
-            return _json.load(f)
+            data = _json.load(f)
     except Exception:
         logger.exception("file cache read failed: %s", name)
         return None
+    with _PARSE_CACHE_LOCK:
+        _PARSE_CACHE[name] = (mtime, data)
+    return data
 
 
 async def _read_file_cache_async(name: str, max_age: float = 60.0) -> dict | None:

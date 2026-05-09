@@ -484,11 +484,13 @@ async def maintenance_gate(request: Request, call_next) -> Response:
 # everywhere, so 'unsafe-inline' has to stay until we move to a build step
 # with hashes/nonces. Even with that caveat, locking down origins narrows
 # the XSS blast radius — only avalant origins, the Google Fonts pair, and
-# unpkg (Lightweight Charts CDN) can serve resources to a logged-in user.
+# telegram.org (Login Widget) can serve resources to a logged-in user.
+# Lightweight Charts and html2canvas were self-hosted under /vendor/ —
+# unpkg/jsdelivr no longer needed in script-src.
 _CSP = "; ".join([
     "default-src 'self'",
     # telegram.org hosts the official Login Widget script (telegram-widget.js).
-    "script-src 'self' 'unsafe-inline' https://unpkg.com https://telegram.org",
+    "script-src 'self' 'unsafe-inline' https://telegram.org",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     # img-src must allow exchange logos/avatars + base64 inline + telegram CDN.
@@ -531,6 +533,11 @@ _STATIC_CACHE_BY_SUFFIX = {
 
 def _static_cache_for(path: str) -> str | None:
     p = path.lower()
+    # Vendored libs (html2canvas, lightweight-charts) are version-pinned in
+    # the URL — safe to cache aggressively. Long-cache them so a returning
+    # user never re-downloads even after HTML edits.
+    if p.startswith("/vendor/") and (p.endswith(".js") or p.endswith(".css")):
+        return "public, max-age=2592000, s-maxage=2592000, immutable"
     for suf, cc in _STATIC_CACHE_BY_SUFFIX.items():
         if p.endswith(suf):
             return cc
