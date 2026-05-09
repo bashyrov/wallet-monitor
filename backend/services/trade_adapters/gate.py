@@ -111,18 +111,18 @@ class GateAdapter:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        url = BASE + path
-        if query_str:
-            url += "?" + query_str
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, headers=headers)
-            elif method == "POST":
-                r = await c.post(url, headers=headers, content=body_str)
-            elif method == "DELETE":
-                r = await c.delete(url, headers=headers)
-            else:
-                raise ValueError(method)
+        # Persistent client per host — TLS handshake paid once.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        url_path = path + ("?" + query_str if query_str else "")
+        if method == "GET":
+            r = await client.get(url_path, headers=headers)
+        elif method == "POST":
+            r = await client.post(url_path, headers=headers, content=body_str)
+        elif method == "DELETE":
+            r = await client.delete(url_path, headers=headers)
+        else:
+            raise ValueError(method)
         if r.status_code >= 400:
             label = None
             msg = r.text

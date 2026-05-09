@@ -108,18 +108,20 @@ class BingxAdapter:
         sorted_qs = urllib.parse.urlencode(sorted(params.items()), doseq=True)
         sorted_qs += f"&signature={sig}"
         headers = {"X-BX-APIKEY": creds["api_key"]}
-        url = f"{BASE}{path}?{sorted_qs}"
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, headers=headers)
-            else:
-                r = await c.post(url, headers=headers)
-            body = r.json()
-            code = str(body.get("code", 0))
-            if code != "0" and r.status_code >= 400 or code not in ("0", "200"):
-                msg = str(body.get("msg") or r.text)
-                raise RuntimeError(f"BingX {r.status_code} {code}: {msg}")
-            return body.get("data", body)
+        # Persistent client per host — TLS handshake paid once.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        rel = f"{path}?{sorted_qs}"
+        if method == "GET":
+            r = await client.get(rel, headers=headers)
+        else:
+            r = await client.post(rel, headers=headers)
+        body = r.json()
+        code = str(body.get("code", 0))
+        if code != "0" and r.status_code >= 400 or code not in ("0", "200"):
+            msg = str(body.get("msg") or r.text)
+            raise RuntimeError(f"BingX {r.status_code} {code}: {msg}")
+        return body.get("data", body)
 
     @staticmethod
     def _symbol(s: str) -> str:

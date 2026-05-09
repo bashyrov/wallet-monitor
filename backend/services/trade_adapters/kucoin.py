@@ -163,16 +163,18 @@ class KuCoinAdapter:
             "KC-API-KEY-VERSION": "2",
             "Content-Type": "application/json",
         }
-        url = BASE + url_path if method == "GET" else BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, headers=headers)
-            elif method == "POST":
-                r = await c.post(url, content=send_body, headers=headers)
-            elif method == "DELETE":
-                r = await c.delete(url, headers=headers)
-            else:
-                raise ValueError(method)
+        # Persistent client per host — TLS handshake paid once.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        rel_path = url_path if method == "GET" else path
+        if method == "GET":
+            r = await client.get(rel_path, headers=headers)
+        elif method == "POST":
+            r = await client.post(rel_path, content=send_body, headers=headers)
+        elif method == "DELETE":
+            r = await client.delete(rel_path, headers=headers)
+        else:
+            raise ValueError(method)
 
         j = r.json()
         code = str(j.get("code", ""))

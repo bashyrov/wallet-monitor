@@ -130,12 +130,14 @@ class BitgetAdapter:
             "Content-Type": "application/json",
             "locale": "en-US",
         }
-        url = BASE + sign_path if method == "GET" else BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, headers=headers)
-            else:
-                r = await c.post(url, content=body_str or "{}", headers=headers)
+        # Persistent client per host — TLS handshake paid once.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        rel_path = sign_path if method == "GET" else path
+        if method == "GET":
+            r = await client.get(rel_path, headers=headers)
+        else:
+            r = await client.post(rel_path, content=body_str or "{}", headers=headers)
 
         j = r.json()
         code = str(j.get("code", ""))
