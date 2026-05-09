@@ -27,7 +27,11 @@
 <link rel="dns-prefetch" href="//open-api.bingx.com">
 <link rel="dns-prefetch" href="//whitebit.com">
 <link rel="dns-prefetch" href="//api.prod.paradex.trade">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+<!-- html2canvas: rasterises the DOM share-card preview into a PNG for
+     download / clipboard. v1.4.1 is the last stable release of the
+     original library before maintenance moved to html2canvas-pro. -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="/auth.js"></script>
 <script src="/toast.js"></script>
 <script src="/confirm.js"></script>
@@ -7252,7 +7256,10 @@ async function trigSubmit(force = false) {
       <div class="sc-toggle" id="sc-pair-view" style="display:none"></div>
     </div>
     <div class="sc-preview-wrap">
-      <canvas id="sc-canvas" width="1080" height="1080"></canvas>
+      <!-- Live DOM preview. download/copy use html2canvas to snap this
+           into a PNG. innerHTML is built by _renderShareCard*() based
+           on the current position / pair / mode. -->
+      <div class="sc-card-host" id="sc-card-host"></div>
     </div>
     <div class="sc-actions">
       <button class="sc-btn sc-btn-primary" onclick="downloadShareCard()">
@@ -7287,10 +7294,91 @@ async function trigSubmit(force = false) {
 .sc-pair-view-btn{background:none;border:none;color:var(--text3);font-family:inherit;font-size:12px;font-weight:600;padding:6px 14px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s;}
 .sc-pair-view-btn.is-active{background:var(--surface3);color:var(--text);}
 .sc-preview-wrap{padding:14px 18px;display:flex;justify-content:center;flex:1;min-height:0;overflow:auto;background:radial-gradient(ellipse at center,rgba(26,255,171,0.05),transparent 60%);}
-/* Canvas itself is transparent outside the rounded shape (alpha channel).
-   No CSS background — the canvas paints its own card. Drop-shadow filter
-   follows the actual rounded edges instead of a square box-shadow. */
-#sc-canvas{display:block;width:100%;max-width:480px;height:auto;background:transparent;filter:drop-shadow(0 16px 50px rgba(0,0,0,0.55)) drop-shadow(0 0 0 rgba(0,0,0,0.04));}
+/* ── Share-card preview (live DOM, snapshotted via html2canvas at
+   download time). Mirrors the spec at frontend/_pnl_card_reference.html.
+   ─────────────────────────────────────────────────────────────────── */
+.sc-card-host {
+  display: block;
+  width: 100%; max-width: 540px;
+  aspect-ratio: 16 / 10;
+  filter: drop-shadow(0 16px 50px rgba(0,0,0,0.55));
+}
+.sc-card {
+  position: relative; width: 100%; height: 100%;
+  background: radial-gradient(circle at 75% 55%, rgba(26,255,171,0.07), transparent 55%),
+              linear-gradient(135deg, #06120F 0%, #08171A 100%);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 18px; overflow: hidden;
+  color: #E8EBED;
+  font-family: Inter, system-ui, sans-serif;
+}
+.sc-card.loss {
+  background: radial-gradient(circle at 75% 55%, rgba(248,113,113,0.07), transparent 55%),
+              linear-gradient(135deg, #06120F 0%, #16080A 100%);
+}
+.sc-card .sc-bg-chevrons { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.sc-card .sc-bg-chevrons svg { width: 100%; height: 100%; overflow: visible; }
+.sc-card .sc-art {
+  position: absolute; right: 0; bottom: 0;
+  width: 50%; height: 75%;
+  z-index: 2; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.15) 25%, rgba(0,0,0,0.55) 55%, #000 80%);
+          mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.15) 25%, rgba(0,0,0,0.55) 55%, #000 80%);
+}
+.sc-card .sc-art img { width: 100%; height: 100%; object-fit: contain; object-position: bottom right; display: block; opacity: 0.9; }
+.sc-card.win  .sc-art img { filter: grayscale(1) brightness(1.05) invert(1) sepia(0.85) saturate(8) hue-rotate(85deg) brightness(0.85) contrast(1.1); }
+.sc-card.loss .sc-art img { filter: grayscale(1) brightness(1.05) invert(1) sepia(0.95) saturate(7) hue-rotate(-25deg) brightness(0.85) contrast(1.1); }
+
+.sc-card .sc-content {
+  position: relative; z-index: 4;
+  height: 100%; box-sizing: border-box;
+  padding: 32px 40px 28px;
+  display: flex; flex-direction: column;
+}
+.sc-card .sc-brand {
+  display: inline-flex; align-items: baseline; gap: 12px;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 42px; font-weight: 400;
+  font-variation-settings: "opsz" 144;
+  letter-spacing: 0; line-height: 1;
+  margin-bottom: 30px;
+  color: #E8EBED;
+}
+.sc-card .sc-brand-logo { width: 36px; height: 36px; align-self: center; }
+.sc-card .sc-brand-logo img { width: 100%; height: 100%; display: block; }
+.sc-card .sc-ticker-row { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; flex-wrap: wrap; }
+.sc-card .sc-ticker { font-family: Inter, sans-serif; font-size: 28px; font-weight: 700; letter-spacing: -0.01em; color: #E8EBED; }
+.sc-card .sc-side-pill { display: inline-flex; align-items: center; height: 26px; padding: 0 12px; background: rgba(26,255,171,0.30); color: #1AFFAB; border: 1px solid rgba(26,255,171,0.35); border-radius: 6px; font-size: 13px; font-weight: 800; letter-spacing: 0.10em; font-family: Inter, sans-serif; }
+.sc-card .sc-side-pill.short { background: rgba(248,113,113,0.30); color: #F87171; border-color: rgba(248,113,113,0.35); }
+.sc-card .sc-pair-pill { display: inline-flex; align-items: center; height: 26px; padding: 0 12px; background: rgba(255,255,255,0.06); color: #E8EBED; border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; font-family: Inter, sans-serif; }
+.sc-card .sc-ex-line { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; font-size: 14px; color: #A0A6AA; font-family: Inter, sans-serif; }
+.sc-card .sc-ex { display: inline-flex; align-items: center; gap: 6px; }
+.sc-card .sc-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,0.5); }
+.sc-card .sc-arrow { opacity: 0.5; font-weight: 600; }
+.sc-card .sc-L { color: #1AFFAB; font-weight: 700; }
+.sc-card .sc-S { color: #F87171; font-weight: 700; }
+.sc-card .sc-pct {
+  font-family: 'Fraunces', serif;
+  font-size: 90px; font-weight: 400; line-height: 1;
+  color: #1AFFAB; letter-spacing: -0.02em;
+  margin: 4px 0 auto 0;
+  display: flex; align-items: baseline; gap: 14px;
+}
+.sc-card .sc-pct.red { color: #F87171; }
+.sc-card .sc-pct .sc-pct-sub { font-family: 'Fraunces', serif; font-size: 36px; font-weight: 400; opacity: 0.55; letter-spacing: -0.01em; }
+.sc-card.pair .sc-pct        { font-size: 72px; }
+.sc-card.pair .sc-pct .sc-pct-sub { font-size: 30px; }
+.sc-card .sc-row-prices { display: flex; gap: 38px; margin-top: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+.sc-card .sc-pb-lbl { font-size: 13px; color: #A0A6AA; margin-bottom: 6px; font-weight: 500; font-family: Inter, sans-serif; }
+.sc-card .sc-pb-val { font-family: Inter, sans-serif; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: #E8EBED; }
+.sc-card .sc-ref { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 14px; }
+.sc-card .sc-ref-lbl { font-size: 12px; color: #A0A6AA; margin-bottom: 4px; font-family: Inter, sans-serif; }
+.sc-card .sc-ref-url { font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #E8EBED; }
+.sc-card.pair .sc-brand        { margin-bottom: 22px; font-size: 38px; }
+.sc-card.pair .sc-brand-logo   { width: 32px; height: 32px; }
+.sc-card.pair .sc-ticker-row   { margin-bottom: 10px; }
+.sc-card.pair .sc-row-prices   { margin-top: 14px; margin-bottom: 12px; }
+.sc-card.pair .sc-ref          { padding-top: 12px; }
 .sc-actions{display:flex;gap:8px;padding:12px 18px 18px;border-top:1px solid var(--border);background:var(--surface2);}
 .sc-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--surface3);border:1px solid var(--border);color:var(--text2);padding:10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;transition:background .12s,color .12s,border-color .12s;}
 .sc-btn:hover{background:var(--surface);color:var(--text);}
@@ -7450,416 +7538,276 @@ function _renderShareCardNow(){
   _renderSinglePositionCard();
 }
 
-function _renderSinglePositionCard(){
-  const c = document.getElementById('sc-canvas');
-  const ctx = c.getContext('2d');
-  if (typeof ctx.roundRect !== 'function'){
-    ctx.roundRect = function(x,y,w,h,r){const rad=Math.min(r,w/2,h/2);this.beginPath();this.moveTo(x+rad,y);this.arcTo(x+w,y,x+w,y+h,rad);this.arcTo(x+w,y+h,x,y+h,rad);this.arcTo(x,y+h,x,y,rad);this.arcTo(x,y,x+w,y,rad);this.closePath();return this;};
-  }
+/* ═════════════════════════════════════════════════════════════════
+   Share-card render — DOM-based.
+   Mirrors frontend/_pnl_card_reference.html. Card lives in
+   #sc-card-host as live HTML; download/copy snapshot it through
+   html2canvas. No canvas-2D drawing code anymore.
+   ═════════════════════════════════════════════════════════════════ */
 
-  // 1200×750 (3:2 wider) — Twitter/Telegram preview-friendly.
-  const W = 1200, H = 750;
-  c.width = W; c.height = H;
+// Image bundle on disk (frontend/_pnl_card_imgs/*.svg). Pick at random.
+const _SC_IMGS = ['1','2','3','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','21','22','23','24','25','26','27','28','29','30'];
+function _scPickImg(){ return _SC_IMGS[Math.floor(Math.random() * _SC_IMGS.length)]; }
 
-  const p = _sharePos;
-  const isLong = p.side === 'buy';
-  const profit = (p.unrealized_pnl_usd || 0) >= 0;
-  const sideText = isLong ? 'LONG' : 'SHORT';
-  const accent    = profit ? '#1AFFAB' : '#F87171';
-  const accentRGB = profit ? '26,255,171' : '248,113,113';
-  const sideColor = isLong ? '#1AFFAB' : '#F87171';
-  const sideRGB   = isLong ? '26,255,171' : '248,113,113';
-
-  ctx.textBaseline = 'alphabetic';
-  ctx.clearRect(0,0,W,H);
-  const CARD_R = 18;
-  ctx.save();
-  ctx.beginPath(); ctx.roundRect(0,0,W,H,CARD_R); ctx.clip();
-
-  // Background — same recipe as the demo: linear card-fill +
-  // radial accent wash on the right.
-  const baseGrad = ctx.createLinearGradient(0,0,W,H);
-  baseGrad.addColorStop(0, profit ? '#06120F' : '#0A0808');
-  baseGrad.addColorStop(1, profit ? '#08171A' : '#16080A');
-  ctx.fillStyle = baseGrad; ctx.fillRect(0,0,W,H);
-  const wash = ctx.createRadialGradient(W*0.75, H*0.55, 0, W*0.75, H*0.55, W*0.55);
-  wash.addColorStop(0, `rgba(${accentRGB},0.07)`);
-  wash.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = wash; ctx.fillRect(0,0,W,H);
-
-  // ── Concentric arrow ripple on the right ─────────────────────────────
-  _scDrawRippleArrow(ctx, W*0.78, H*0.50, accent, isLong ? 'up' : 'down');
-
-  // ── Brand row (top-left) ──────────────────────────────────────────────
-  const PAD = 60;
-  let y = 56;
-  _scDrawAvalantLogo(ctx, PAD, y - 2, 40);
-  ctx.font = '600 56px "Fraunces", Georgia, serif';
-  ctx.fillStyle = '#E8EBED';
-  ctx.fillText('avalant', PAD + 56, y + 38);
-
-  // ── Ticker + side pill ────────────────────────────────────────────────
-  y = 196;
-  ctx.font = '700 36px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#E8EBED';
-  ctx.fillText(p.symbol, PAD, y);
-  const tickerW = ctx.measureText(p.symbol).width;
-
-  // Side pill: SHORT 1X / LONG 20X
-  const lev = (p.leverage && p.leverage > 0) ? `${p.leverage}X` : '';
-  const pillText = lev ? `${sideText} ${lev}` : sideText;
-  ctx.font = '800 16px "Inter", system-ui, sans-serif';
-  const pillTW = ctx.measureText(pillText).width;
-  const pillW = pillTW + 28, pillH = 32;
-  const pillX = PAD + tickerW + 18, pillY = y - 24;
-  ctx.beginPath(); ctx.roundRect(pillX, pillY, pillW, pillH, 6);
-  ctx.fillStyle = `rgba(${sideRGB},0.30)`; ctx.fill();
-  ctx.strokeStyle = `rgba(${sideRGB},0.55)`; ctx.lineWidth = 1.4; ctx.stroke();
-  ctx.fillStyle = sideColor;
-  ctx.font = '800 16px "Inter", system-ui, sans-serif';
-  ctx.fillText(pillText, pillX + 14, pillY + 22);
-
-  // ── Hero PnL ──────────────────────────────────────────────────────────
-  const pnlPct = +p.pnl_pct || 0;
-  const pctStr = `${pnlPct >= 0 ? '+' : '−'}${Math.abs(pnlPct).toFixed(2).replace('.', ',')}%`;
-  let pctSize = 130;
-  ctx.font = `400 ${pctSize}px "Fraunces", Georgia, serif`;
-  while (ctx.measureText(pctStr).width > W - PAD*2 - 100 && pctSize > 64){
-    pctSize -= 8;
-    ctx.font = `400 ${pctSize}px "Fraunces", Georgia, serif`;
-  }
-  ctx.fillStyle = accent;
-  ctx.fillText(pctStr, PAD, 360);
-
-  // ── Bottom 3 cols: Entry / Mark / Funding ─────────────────────────────
-  const colY = 510;
-  const colYVal = colY + 32;
-  const cols = [
-    {lbl:'Entry Price',  val: _scFmtPrice(p.entry_price), color:'#E8EBED'},
-    {lbl:'Mark Price',   val: _scFmtPrice(p.mark_price),  color:'#E8EBED'},
-    {lbl:'Funding P&L',  val: _scFmtUsd(p.funding_pnl_usd), color: ((p.funding_pnl_usd||0) >= 0 ? '#1AFFAB' : '#F87171')},
-  ];
-  let cx = PAD;
-  const gap = 230;
-  for (const col of cols){
-    ctx.font = '500 15px "Inter", system-ui, sans-serif';
-    ctx.fillStyle = '#A0A6AA';
-    ctx.fillText(col.lbl, cx, colY);
-    ctx.font = '600 26px "Inter", system-ui, sans-serif';
-    ctx.fillStyle = col.color;
-    ctx.fillText(col.val, cx, colYVal);
-    cx += gap;
-  }
-
-  // ── Footer divider + referral block ───────────────────────────────────
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(PAD, 614, W - PAD*2, 1);
-
-  ctx.font = '500 15px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#A0A6AA';
-  ctx.fillText('Referral code:', PAD, 642);
-
-  ctx.font = '500 18px "JetBrains Mono", monospace';
-  ctx.fillStyle = '#E8EBED';
-  const refUrl = _shareRefCode
-    ? `https://avalant.xyz/?ref=${_shareRefCode}`
-    : 'https://avalant.xyz';
-  ctx.fillText(refUrl, PAD, 678);
-
-  ctx.restore();
+// Format helpers (comma-decimal in line with the spec).
+function _scFmtPctStr(v){
+  const n = +v || 0;
+  return `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(2).replace('.', ',')}%`;
+}
+function _scFmtUsdStr(v){
+  const n = +v || 0;
+  return `${n >= 0 ? '+$' : '−$'}${Math.abs(n).toFixed(2)}`;
+}
+function _scFmtPriceStr(p){
+  if (p == null || !isFinite(p)) return '—';
+  p = +p;
+  if (p >= 1000)  return p.toLocaleString('en-US', {maximumFractionDigits: 2}).replace(/,/g, ' ').replace('.', ',');
+  if (p >= 1)     return p.toFixed(4).replace('.', ',');
+  if (p >= 0.01)  return p.toFixed(5).replace('.', ',');
+  return p.toPrecision(4).replace('.', ',');
+}
+function _scFmtFundingFor(mode, fundUsd, fundPct){
+  const sign = (n) => (n >= 0 ? '+' : '−');
+  const usd = `${sign(fundUsd)}$${Math.abs(+fundUsd || 0).toFixed(2)}`;
+  const pct = `${sign(fundPct)}${Math.abs(+fundPct || 0).toFixed(2).replace('.', ',')}%`;
+  if (mode === 'pct') return pct;
+  if (mode === 'usd') return usd;
+  return `${usd} <span style="font-size:13px;opacity:0.55">(${pct})</span>`;
+}
+function _scHeroHtml(mode, pct, usd, isLoss){
+  const pctTxt = _scFmtPctStr(pct);
+  const usdTxt = _scFmtUsdStr(usd);
+  const cls = isLoss ? ' red' : '';
+  if (mode === 'pct') return `<div class="sc-pct${cls}">${pctTxt}</div>`;
+  if (mode === 'usd') return `<div class="sc-pct${cls}">${usdTxt}</div>`;
+  return `<div class="sc-pct${cls}">${usdTxt}<span class="sc-pct-sub">(${pctTxt})</span></div>`;
 }
 
-// ─── Pair card (long+short on different venues) ────────────────────────
-function _renderPairCombined(){
-  const pp = _sharePair;
-  if (!pp) return;
-  const c = document.getElementById('sc-canvas');
-  const ctx = c.getContext('2d');
-  if (typeof ctx.roundRect !== 'function'){
-    ctx.roundRect = function(x,y,w,h,r){const rad=Math.min(r,w/2,h/2);this.beginPath();this.moveTo(x+rad,y);this.arcTo(x+w,y,x+w,y+h,rad);this.arcTo(x+w,y+h,x,y+h,rad);this.arcTo(x,y+h,x,y,rad);this.arcTo(x,y,x+w,y,rad);this.closePath();return this;};
+// Logo block — uses /avalant-logo.svg shipped with the app.
+const _SC_LOGO_HTML = `<span class="sc-brand-logo"><img src="/avalant-logo.svg" alt=""></span>`;
+
+// ─── Chevron wallpaper (mulberry32-seeded scatter) ───
+const _SC_SHAPES = {
+  up:   [[0,-22],[28,2],[14,2],[14,22],[-14,22],[-14,2],[-28,2]],
+  down: [[0, 22],[28,-2],[14,-2],[14,-22],[-14,-22],[-14,-2],[-28,-2]],
+};
+function _scRoundedPoly(verts, r){
+  const n = verts.length;
+  const seg = (a,b) => Math.hypot(b[0]-a[0], b[1]-a[1]);
+  const unit = (a,b) => { const d = seg(a,b); return [(b[0]-a[0])/d, (b[1]-a[1])/d]; };
+  const arcs = verts.map((v, i) => {
+    const prev = verts[(i - 1 + n) % n], next = verts[(i + 1) % n];
+    const inLen = seg(prev, v), outLen = seg(v, next);
+    const rEff = Math.min(r, inLen * 0.5, outLen * 0.5);
+    const inDir = unit(prev, v), outDir = unit(v, next);
+    return {
+      start: [v[0] - rEff * inDir[0], v[1] - rEff * inDir[1]],
+      end:   [v[0] + rEff * outDir[0], v[1] + rEff * outDir[1]],
+      ctrl:  v,
+    };
+  });
+  let d = `M ${arcs[0].start[0].toFixed(2)},${arcs[0].start[1].toFixed(2)}`;
+  for (let i = 0; i < n; i++){
+    const a = arcs[i], next = arcs[(i + 1) % n];
+    d += ` Q ${a.ctrl[0].toFixed(2)},${a.ctrl[1].toFixed(2)} ${a.end[0].toFixed(2)},${a.end[1].toFixed(2)}`;
+    d += ` L ${next.start[0].toFixed(2)},${next.start[1].toFixed(2)}`;
   }
-
+  return d + ' Z';
+}
+function _scMulberry32(seed){
+  return function(){
+    let t = (seed += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// Returns the inner SVG markup for the chevron wallpaper.
+function _scChevronsSvg(kind, color, seed){
   const W = 1200, H = 750;
-  c.width = W; c.height = H;
+  const COUNT = 55;
+  const rand = _scMulberry32(0xA1B2 + seed * 0x10093);
+  let paths = '';
+  for (let i = 0; i < COUNT; i++){
+    const k = (kind === 'mix') ? (rand() < 0.5 ? 'up' : 'down') : kind;
+    const bucket = rand();
+    let size;
+    if      (bucket < 0.62) size = 14 + rand() * 18;
+    else if (bucket < 0.90) size = 32 + rand() * 26;
+    else                    size = 60 + rand() * 30;
+    const x = 30 + rand() * (W - 60);
+    const y = 30 + rand() * (H - 60);
+    const rotation = (rand() - 0.5) * 50;
+    const opacity = (size > 48) ? 0.05 + rand() * 0.10 : 0.10 + rand() * 0.18;
+    const scale = size / 44;
+    const verts = _SC_SHAPES[k].map(([vx, vy]) => [vx * scale, vy * scale]);
+    const d = _scRoundedPoly(verts, 9 * scale);
+    const sw = Math.max(1.2, 1.6 * (size / 36)).toFixed(2);
+    paths += `<path d="${d}" transform="translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${rotation.toFixed(1)})" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round" opacity="${opacity.toFixed(2)}"/>`;
+  }
+  return `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice">
+      <g>${paths}</g>
+    </svg>`;
+}
 
+// Return referral URL (cached). Uses _shareRefCode populated by
+// _ensureRefCode(). If the code hasn't loaded yet, render the bare URL.
+function _scRefUrl(){
+  return _shareRefCode ? `avalant.xyz/?ref=${_shareRefCode}` : 'avalant.xyz';
+}
+
+function _renderSinglePositionCard(){
+  const host = document.getElementById('sc-card-host');
+  if (!host || !_sharePos) return;
+  const p = _sharePos;
+  const isLong = p.side === 'buy';
+  const isLoss = (+p.unrealized_pnl_usd || 0) < 0;
+  const kindClass = isLoss ? 'loss' : 'win';
+  const accent = isLoss ? '#F87171' : '#1AFFAB';
+  const arrowKind = isLong ? 'up' : 'down';
+
+  const sideText = isLong ? 'LONG' : 'SHORT';
+  const sideCls = isLong ? '' : 'short';
+  const lev = (p.leverage && p.leverage > 0) ? `${p.leverage}X` : '';
+  const sidePill = lev ? `${sideText} ${lev}` : sideText;
+
+  const pct = +p.pnl_pct || 0;
+  const usd = +p.unrealized_pnl_usd || 0;
+
+  const fundUsd = +p.funding_pnl_usd || 0;
+  // No reliable funding-pct on single-pos rows; use 0 as a neutral fallback.
+  const fundPct = (p.funding_pnl_pct != null) ? (+p.funding_pnl_pct) : 0;
+  const fundCol = fundUsd >= 0 ? '#1AFFAB' : '#F87171';
+  const fundCell = (_shareMode === 'pct')
+    ? _scFmtFundingFor('pct', fundUsd, fundPct)
+    : (_shareMode === 'usd')
+      ? _scFmtFundingFor('usd', fundUsd, fundPct)
+      : _scFmtFundingFor('both', fundUsd, fundPct);
+
+  const seed = (p.symbol || 'x').split('').reduce((s, c) => s + c.charCodeAt(0), 0) + (p.exchange || '').length;
+  const img = _scPickImg();
+
+  host.innerHTML = `
+    <div class="sc-card ${kindClass}">
+      <div class="sc-bg-chevrons">${_scChevronsSvg(arrowKind, accent, seed)}</div>
+      <div class="sc-art"><img src="/_pnl_card_imgs/${img}.svg" alt="" crossorigin="anonymous"></div>
+      <div class="sc-content">
+        <div class="sc-brand">${_SC_LOGO_HTML}<span>avalant</span></div>
+        <div class="sc-ticker-row">
+          <span class="sc-ticker">${p.symbol}</span>
+          <span class="sc-side-pill ${sideCls}">${sidePill}</span>
+        </div>
+        ${_scHeroHtml(_shareMode, pct, usd, isLoss)}
+        <div class="sc-row-prices">
+          <div><div class="sc-pb-lbl">Entry Price</div><div class="sc-pb-val">${_scFmtPriceStr(p.entry_price)}</div></div>
+          <div><div class="sc-pb-lbl">Mark Price</div><div class="sc-pb-val">${_scFmtPriceStr(p.mark_price)}</div></div>
+          <div><div class="sc-pb-lbl">Funding P&amp;L</div><div class="sc-pb-val" style="color:${fundCol}">${fundCell}</div></div>
+        </div>
+        <div class="sc-ref">
+          <div class="sc-ref-lbl">Referral code:</div>
+          <div class="sc-ref-url">https://${_scRefUrl()}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderPairCombined(){
+  const host = document.getElementById('sc-card-host');
+  if (!host || !_sharePair) return;
+  const pp = _sharePair;
   const totalPnl = +pp.total_pnl_usd || 0;
-  const profit = totalPnl >= 0;
   const combinedPct = +pp.combined_pct || 0;
-  const accent    = profit ? '#1AFFAB' : '#F87171';
-  const accentRGB = profit ? '26,255,171' : '248,113,113';
+  const isLoss = totalPnl < 0;
+  const kindClass = isLoss ? 'loss' : 'win';
+  const accent = isLoss ? '#F87171' : '#1AFFAB';
 
-  ctx.textBaseline = 'alphabetic';
-  ctx.clearRect(0,0,W,H);
-  ctx.save();
-  ctx.beginPath(); ctx.roundRect(0,0,W,H,18); ctx.clip();
-
-  // Background
-  const baseGrad = ctx.createLinearGradient(0,0,W,H);
-  baseGrad.addColorStop(0, profit ? '#06120F' : '#0A0808');
-  baseGrad.addColorStop(1, profit ? '#08171A' : '#16080A');
-  ctx.fillStyle = baseGrad; ctx.fillRect(0,0,W,H);
-  const wash = ctx.createRadialGradient(W*0.75, H*0.55, 0, W*0.75, H*0.55, W*0.55);
-  wash.addColorStop(0, `rgba(${accentRGB},0.07)`);
-  wash.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = wash; ctx.fillRect(0,0,W,H);
-
-  // Pair-mode ripple: criss-cross swap arrows
-  _scDrawRippleArrow(ctx, W*0.78, H*0.50, accent, 'swap');
-
-  // ── Brand
-  const PAD = 60;
-  _scDrawAvalantLogo(ctx, PAD, 54, 40);
-  ctx.font = '600 56px "Fraunces", Georgia, serif';
-  ctx.fillStyle = '#E8EBED';
-  ctx.fillText('avalant', PAD + 56, 92);
-
-  // ── Ticker + FUTURES PAIR pill
-  let y = 186;
-  ctx.font = '700 36px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#E8EBED';
-  ctx.fillText(pp.symbol, PAD, y);
-  const tw = ctx.measureText(pp.symbol).width;
-
-  ctx.font = '800 16px "Inter", system-ui, sans-serif';
-  const pTxt = 'FUTURES PAIR';
-  const pTW = ctx.measureText(pTxt).width;
-  const pillX = PAD + tw + 18, pillY = y - 24;
-  ctx.beginPath(); ctx.roundRect(pillX, pillY, pTW + 28, 32, 6);
-  ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.4; ctx.stroke();
-  ctx.fillStyle = '#E8EBED';
-  ctx.fillText(pTxt, pillX + 14, pillY + 22);
-
-  // ── Exchange line
-  y = 240;
   const lEx = (pp.long?.exchange || '').toLowerCase();
   const sEx = (pp.short?.exchange || '').toLowerCase();
   const lLbl = _shareEx(lEx);
   const sLbl = _shareEx(sEx);
   const lCol = _shareExColor(lEx);
   const sCol = _shareExColor(sEx);
-  ctx.font = '500 18px "Inter", system-ui, sans-serif';
-  let exX = PAD;
-  // long
-  ctx.beginPath(); ctx.arc(exX + 6, y - 7, 5, 0, Math.PI*2); ctx.fillStyle = lCol; ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = '#A0A6AA';
-  ctx.fillText(lLbl, exX + 18, y);
-  exX += 18 + ctx.measureText(lLbl).width + 8;
-  ctx.fillStyle = '#1AFFAB'; ctx.font = '700 18px "Inter", system-ui, sans-serif';
-  ctx.fillText('LONG', exX, y);
-  exX += ctx.measureText('LONG').width + 14;
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '700 20px "Inter", system-ui, sans-serif';
-  ctx.fillText('⇄', exX, y);
-  exX += ctx.measureText('⇄').width + 14;
-  ctx.fillStyle = sCol;
-  ctx.beginPath(); ctx.arc(exX + 6, y - 7, 5, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.font = '500 18px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#A0A6AA';
-  ctx.fillText(sLbl, exX + 18, y);
-  exX += 18 + ctx.measureText(sLbl).width + 8;
-  ctx.fillStyle = '#F87171'; ctx.font = '700 18px "Inter", system-ui, sans-serif';
-  ctx.fillText('SHORT', exX, y);
 
-  // ── Hero PnL (combined %)
-  const pctStr = `${combinedPct >= 0 ? '+' : '−'}${Math.abs(combinedPct).toFixed(2).replace('.', ',')}%`;
-  let pctSize = 100;
-  ctx.font = `400 ${pctSize}px "Fraunces", Georgia, serif`;
-  while (ctx.measureText(pctStr).width > W - PAD*2 - 100 && pctSize > 56){
-    pctSize -= 8;
-    ctx.font = `400 ${pctSize}px "Fraunces", Georgia, serif`;
-  }
-  ctx.fillStyle = accent;
-  ctx.fillText(pctStr, PAD, 380);
+  const totalFund = +pp.total_funding_usd || +pp.total_funding || 0;
+  const fundPct = (pp.total_funding_pct != null) ? (+pp.total_funding_pct) : 0;
+  const fundCol = totalFund >= 0 ? '#1AFFAB' : '#F87171';
 
-  // ── Bottom 3 cols
-  const colY = 504, colYVal = colY + 32;
-  const fund = +pp.total_funding_usd || 0;
-  const cols = [
-    {lbl:'Entry Spread', val: ((+pp.entry_spread_pct || 0) >= 0 ? '+' : '−') + Math.abs(+pp.entry_spread_pct || 0).toFixed(2).replace('.', ',') + '%', color:'#E8EBED'},
-    {lbl:'uPnL',         val: _scFmtUsd(totalPnl), color: profit ? '#1AFFAB' : '#F87171'},
-    {lbl:'Funding',      val: _scFmtUsd(fund), color: fund >= 0 ? '#1AFFAB' : '#F87171'},
-  ];
-  let cx = PAD;
-  const gap = 230;
-  for (const col of cols){
-    ctx.font = '500 15px "Inter", system-ui, sans-serif';
-    ctx.fillStyle = '#A0A6AA';
-    ctx.fillText(col.lbl, cx, colY);
-    ctx.font = '600 26px "Inter", system-ui, sans-serif';
-    ctx.fillStyle = col.color;
-    ctx.fillText(col.val, cx, colYVal);
-    cx += gap;
-  }
+  const fundCell = _scFmtFundingFor(_shareMode, totalFund, fundPct);
+  const entrySpread = +pp.entry_spread_pct || 0;
+  const entrySpreadStr = `${entrySpread >= 0 ? '+' : '−'}${Math.abs(entrySpread).toFixed(2).replace('.', ',')}%`;
 
-  // ── Footer
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(PAD, 612, W - PAD*2, 1);
-  ctx.font = '500 15px "Inter", system-ui, sans-serif';
-  ctx.fillStyle = '#A0A6AA';
-  ctx.fillText('Referral code:', PAD, 640);
-  ctx.font = '500 18px "JetBrains Mono", monospace';
-  ctx.fillStyle = '#E8EBED';
-  const refUrl = _shareRefCode
-    ? `https://avalant.xyz/?ref=${_shareRefCode}`
-    : 'https://avalant.xyz';
-  ctx.fillText(refUrl, PAD, 676);
+  const seed = (pp.symbol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0) + lEx.length + sEx.length;
+  const img = _scPickImg();
 
-  ctx.restore();
+  host.innerHTML = `
+    <div class="sc-card pair ${kindClass}">
+      <div class="sc-bg-chevrons">${_scChevronsSvg('mix', accent, seed)}</div>
+      <div class="sc-art"><img src="/_pnl_card_imgs/${img}.svg" alt="" crossorigin="anonymous"></div>
+      <div class="sc-content">
+        <div class="sc-brand">${_SC_LOGO_HTML}<span>avalant</span></div>
+        <div class="sc-ticker-row">
+          <span class="sc-ticker">${pp.symbol}</span>
+          <span class="sc-pair-pill">FUTURES PAIR</span>
+        </div>
+        <div class="sc-ex-line">
+          <span class="sc-ex"><span class="sc-dot" style="background:${lCol}"></span>${lLbl} <span class="sc-L">LONG</span></span>
+          <span class="sc-arrow">⇄</span>
+          <span class="sc-ex"><span class="sc-dot" style="background:${sCol}"></span>${sLbl} <span class="sc-S">SHORT</span></span>
+        </div>
+        ${_scHeroHtml(_shareMode, combinedPct, totalPnl, isLoss)}
+        <div class="sc-row-prices">
+          <div><div class="sc-pb-lbl">Entry Spread</div><div class="sc-pb-val">${entrySpreadStr}</div></div>
+          <div><div class="sc-pb-lbl">${_shareMode === 'pct' ? 'ROI' : 'uPnL'}</div><div class="sc-pb-val" style="color:${totalPnl >= 0 ? '#1AFFAB' : '#F87171'}">${_shareMode === 'pct' ? _scFmtPctStr(combinedPct) : _scFmtUsdStr(totalPnl)}</div></div>
+          <div><div class="sc-pb-lbl">Funding</div><div class="sc-pb-val" style="color:${fundCol}">${fundCell}</div></div>
+        </div>
+        <div class="sc-ref">
+          <div class="sc-ref-lbl">Referral code:</div>
+          <div class="sc-ref-url">https://${_scRefUrl()}</div>
+        </div>
+      </div>
+    </div>`;
 }
 
-// ─── Share-card drawing helpers ────────────────────────────────────────
-// Avalant logo from /avalant-logo.svg — green slash (the "A") + white
-// dot (the cursor). Drawn at logical (x,y) top-left with `size` height.
-function _scDrawAvalantLogo(ctx, x, y, size){
-  const k = size / 1500;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(k, k);
-  // Green slash: 4-vertex polygon, transformed by translate(87,88) per
-  // the source SVG. Path coordinates baked in.
-  ctx.beginPath();
-  ctx.moveTo(87 + 320.625, 88 + 1343.238281);
-  ctx.lineTo(87 - 87.007812, 88 + 1103.289062);
-  ctx.lineTo(87 + 614.089844, 88 - 87.769531);
-  ctx.lineTo(87 + 1021.726562, 88 + 152.179688);
-  ctx.closePath();
-  ctx.fillStyle = '#1AFFAB';
-  ctx.fill();
-  // White cursor dot
-  ctx.beginPath();
-  ctx.arc(1256, 1101, 244, 0, Math.PI * 2);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fill();
-  ctx.restore();
-}
-
-// Concentric ripple of an arrow polygon centered at (cx, cy). `kind`
-// is 'up' (long), 'down' (short) or 'swap' (pair). Each ring is a
-// stroke-only scaled copy with decreasing opacity — same as the SVG
-// reference in /tmp demo.
-function _scDrawRippleArrow(ctx, cx, cy, color, kind){
-  // Path coords in a [-110, 110] frame centered on (0,0).
-  const pathFn = (() => {
-    if (kind === 'down'){
-      return (ctx) => {
-        ctx.beginPath();
-        ctx.moveTo(0, 110);
-        ctx.lineTo(75, 30);
-        ctx.lineTo(40, 30);
-        ctx.lineTo(40, -75);
-        ctx.lineTo(-40, -75);
-        ctx.lineTo(-40, 30);
-        ctx.lineTo(-75, 30);
-        ctx.closePath();
-      };
-    }
-    if (kind === 'swap'){
-      // Two horizontal arrows pointing opposite directions, stacked.
-      return (ctx) => {
-        // Top arrow → right
-        ctx.beginPath();
-        ctx.moveTo(-110, -45); ctx.lineTo(90, -45);
-        ctx.moveTo(60, -75);   ctx.lineTo(110, -45); ctx.lineTo(60, -15);
-        // Bottom arrow → left
-        ctx.moveTo(110,  45);  ctx.lineTo(-90, 45);
-        ctx.moveTo(-60, 15);   ctx.lineTo(-110, 45); ctx.lineTo(-60, 75);
-      };
-    }
-    // up
-    return (ctx) => {
-      ctx.beginPath();
-      ctx.moveTo(0, -110);
-      ctx.lineTo(75, -30);
-      ctx.lineTo(40, -30);
-      ctx.lineTo(40, 75);
-      ctx.lineTo(-40, 75);
-      ctx.lineTo(-40, -30);
-      ctx.lineTo(-75, -30);
-      ctx.closePath();
-    };
-  })();
-
-  const rings = [
-    {s: 1.00, o: 1.00},
-    {s: 1.13, o: 0.85},
-    {s: 1.27, o: 0.72},
-    {s: 1.42, o: 0.60},
-    {s: 1.58, o: 0.50},
-    {s: 1.75, o: 0.40},
-    {s: 1.93, o: 0.32},
-    {s: 2.12, o: 0.25},
-    {s: 2.32, o: 0.18},
-    {s: 2.53, o: 0.12},
-    {s: 2.75, o: 0.07},
-  ];
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.strokeStyle = color;
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  // Scale so the inner arrow is roughly 200px tall — proportional to card.
-  const baseScale = 1.2;
-  for (const r of rings){
-    ctx.save();
-    ctx.scale(r.s * baseScale, r.s * baseScale);
-    ctx.lineWidth = 3 / (r.s * baseScale);
-    ctx.globalAlpha = r.o;
-    pathFn(ctx);
-    ctx.stroke();
-    ctx.restore();
-  }
-  ctx.restore();
-}
-
-// Format helpers — keep the comma-decimal style from the demo.
-function _scFmtPrice(v){
-  if (v == null || !isFinite(v)) return '—';
-  v = +v;
-  if (v >= 1000) return v.toLocaleString('en-US',{maximumFractionDigits:2}).replace(/,/g, ' ').replace('.', ',');
-  if (v >= 1)    return v.toFixed(4).replace('.', ',');
-  if (v >= 0.01) return v.toFixed(5).replace('.', ',');
-  return v.toPrecision(4).replace('.', ',');
-}
-function _scFmtUsd(v){
-  v = +v || 0;
-  const sign = v >= 0 ? '+$' : '−$';
-  return sign + Math.abs(v).toFixed(2);
-}
-
-// Helper: draw text with letter-spacing tracking. Canvas has no native
-// letter-spacing API, so we draw character-by-character with fixed offsets.
-// Cheap; called only on label/caption strings.
-function _drawTracked(ctx, text, x, y, tracking, align){
-  // Pre-measure for right alignment
-  let totalW = 0;
-  for (const ch of text){ totalW += ctx.measureText(ch).width + tracking; }
-  totalW -= tracking;
-  let startX = x;
-  if (align === 'right') startX = x - totalW;
-  let cur = startX;
-  for (const ch of text){
-    ctx.fillText(ch, cur, y);
-    cur += ctx.measureText(ch).width + tracking;
-  }
+// ─── Snapshot helpers ────────────────────────────────────────────────
+// html2canvas captures the live DOM. We build a 1080×675 PNG (2× the
+// 540×337 viewport target) for sharp social previews.
+async function _scSnapshot(){
+  const host = document.getElementById('sc-card-host');
+  if (!host || typeof html2canvas !== 'function') return null;
+  const card = host.querySelector('.sc-card');
+  if (!card) return null;
+  const cardW = card.offsetWidth;
+  const cardH = card.offsetHeight;
+  const scale = Math.max(2, Math.min(4, 1080 / cardW));
+  return await html2canvas(card, {
+    backgroundColor: null,
+    scale,
+    width: cardW,
+    height: cardH,
+    useCORS: true,
+    allowTaint: true,
+    logging: false,
+  });
 }
 
 function downloadShareCard(){
-  const c = document.getElementById('sc-canvas');
-  const a = document.createElement('a');
-  const sym = (_sharePair && _sharePair.symbol) || (_sharePos && _sharePos.symbol) || 'pnl';
-  const tag = _sharePair ? 'pair' : 'pnl';
-  a.download = `avalant-${sym.toLowerCase()}-${tag}-${Date.now()}.png`;
-  a.href = c.toDataURL('image/png');
-  a.click();
+  _scSnapshot().then(canvas => {
+    if (!canvas) return;
+    const a = document.createElement('a');
+    const sym = (_sharePair && _sharePair.symbol) || (_sharePos && _sharePos.symbol) || 'pnl';
+    const tag = _sharePair ? 'pair' : 'pnl';
+    a.download = `avalant-${sym.toLowerCase()}-${tag}-${Date.now()}.png`;
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  });
 }
 
 async function copyShareCard(){
-  const c = document.getElementById('sc-canvas');
   try {
-    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const canvas = await _scSnapshot();
+    if (!canvas) throw new Error('snapshot fail');
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
     if (!blob) throw new Error('blob fail');
     if (navigator.clipboard && window.ClipboardItem){
       await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
@@ -7871,7 +7819,6 @@ async function copyShareCard(){
     _scFlash('sc-copy-btn', 'Use Download');
   }
 }
-
 async function copyShareText(){
   // Make sure we've fetched the ref code at least once before the user
   // clicks Copy, otherwise the snippet would lack their handle on first
