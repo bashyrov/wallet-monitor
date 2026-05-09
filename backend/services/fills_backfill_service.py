@@ -55,9 +55,9 @@ BACKFILL_DAYS = 7
 _VENUE_CONCURRENCY = 4
 
 # A wallet × exchange × market pair gets this many seconds to complete
-# before we bail out for the run. Prevents a hung adapter from blocking
-# the whole sync.
-_PER_VENUE_TIMEOUT_S = 30.0
+# before we bail out for the run. 60s lets per-symbol-sweep adapters
+# (Binance / Aster / BingX) finish a 7-day window with 50+ symbols.
+_PER_VENUE_TIMEOUT_S = 60.0
 
 # Markets every adapter is offered. Adapters that don't support a market
 # return [] from fetch_recent_fills; that's a no-op for us.
@@ -191,10 +191,15 @@ async def _sync_one(user_id: int, wallet: Wallet, market: str) -> int:
     except NotImplementedError:
         return 0
     except Exception as exc:  # noqa: BLE001
-        logger.info("fills_backfill: %s/%s adapter raised: %s", ex, market, exc)
+        logger.info("fills_backfill: %s/%s wallet=%s adapter raised: %s",
+                    ex, market, wallet.id, exc)
         return 0
 
     if not rows:
+        # Empty return — could be "no fills in window" or "silent API
+        # failure". Log so a recurring 0 from an active venue is visible.
+        logger.info("fills_backfill: %s/%s wallet=%s returned 0 fills since %s",
+                    ex, market, wallet.id, since_ts.isoformat())
         # Touch cursor so we don't re-fetch the same window every time.
         _touch_cursor(user_id, wallet.id, ex, market, since_ts)
         return 0

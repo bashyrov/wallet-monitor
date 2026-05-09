@@ -489,7 +489,8 @@ class BybitAdapter:
                 params["cursor"] = cursor
             try:
                 data = await cls._signed(creds, "GET", "/v5/execution/list", params)
-            except Exception:
+            except Exception as exc:
+                logger.info("bybit fills %s failed: %s", category, exc)
                 break
             rows = (data or {}).get("list") or []
             for r in rows:
@@ -537,7 +538,8 @@ class BybitAdapter:
                 try:
                     data = await cls._signed(creds, "GET",
                                              "/v5/account/transaction-log", params)
-                except Exception:
+                except Exception as exc:
+                    logger.info("bybit funding log failed: %s", exc)
                     break
                 rows = (data or {}).get("list") or []
                 for r in rows:

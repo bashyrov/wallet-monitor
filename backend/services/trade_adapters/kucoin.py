@@ -296,7 +296,15 @@ class KuCoinAdapter:
             notional = qty_lots * multiplier * mark_price
             required = notional / max(1, leverage)
             if bal + 0.01 < required:
-                return {"ok": False, "reason": f"Insufficient margin: need ~${required:.2f} USDT, have ${bal:.2f}."}
+                # KuCoin separates Main/Spot and Futures balances — funds in
+                # Main don't count toward futures margin. Most "insufficient
+                # margin" reports trace to a user who has cash but hasn't
+                # transferred it to the Futures account. Spell that out.
+                return {"ok": False, "reason": (
+                    f"KuCoin Futures account has ${bal:.2f} USDT, need ~${required:.2f}. "
+                    f"If you have funds in your Main/Spot account, transfer them "
+                    f"to Futures on KuCoin (Assets → Transfer)."
+                )}
 
         return {"ok": True, "qty_lots": qty_lots, "multiplier": multiplier, "lot_size": lot_size}
 
@@ -490,9 +498,14 @@ class KuCoinAdapter:
                 data = await cls._signed(creds, "GET", "/api/v1/fills", {
                     "startAt": start_ms, "pageSize": 200, "currentPage": page,
                 }) or {}
-            except Exception:
+            except Exception as exc:
+                logger.info("kucoin fills page=%s failed: %s", page, exc)
                 break
-            rows = (data.get("items") or data.get("data") or {}).get("items") if isinstance(data.get("data"), dict) else (data.get("items") or [])
+            # _signed returns j["data"], so for KuCoin paginated endpoints
+            # this is already {currentPage, pageSize, items, totalPage}.
+            rows = data.get("items") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                rows = []
             if not rows:
                 break
             for r in rows:
