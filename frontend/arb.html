@@ -7300,7 +7300,10 @@ async function trigSubmit(force = false) {
 .sc-card-host {
   display: block;
   width: 100%; max-width: 540px;
-  aspect-ratio: 16 / 10;
+  /* 16/11 (taller than 16/10) gives the referral block enough vertical
+     room without truncation when the card is rasterised by
+     html2canvas. */
+  aspect-ratio: 16 / 11;
   filter: drop-shadow(0 16px 50px rgba(0,0,0,0.55));
 }
 .sc-card {
@@ -7435,6 +7438,9 @@ function _openShareFromBtn(btn){
 function openShareCard(pos){
   _sharePos = pos;
   _sharePair = null;
+  // Pick illustration once per modal session — re-rolling on every
+  // mode toggle (ROI / PNL / ROI·PNL) felt jittery.
+  _scLockNewImg();
   const bd = document.getElementById('sc-backdrop');
   if (!bd) { console.error('sc-backdrop missing'); return; }
   bd.classList.add('open');
@@ -7459,6 +7465,7 @@ function openSharePairCard(pair){
   _sharePair = pair;
   _sharePos = null;
   _sharePairView = 'combined';
+  _scLockNewImg();   // lock image for the modal session
   const bd = document.getElementById('sc-backdrop');
   if (!bd) return;
   bd.classList.add('open');
@@ -7546,8 +7553,12 @@ function _renderShareCardNow(){
    ═════════════════════════════════════════════════════════════════ */
 
 // Image bundle on disk (frontend/_pnl_card_imgs/*.svg). Pick at random.
+// Locked per-modal-session: openShareCard / openSharePairCard sets it
+// once so toggling ROI / PNL / ROI·PNL doesn't reroll the illustration.
 const _SC_IMGS = ['1','2','3','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','21','22','23','24','25','26','27','28','29','30'];
-function _scPickImg(){ return _SC_IMGS[Math.floor(Math.random() * _SC_IMGS.length)]; }
+let _scLockedImg = null;
+function _scLockNewImg(){ _scLockedImg = _SC_IMGS[Math.floor(Math.random() * _SC_IMGS.length)]; }
+function _scImg(){ return _scLockedImg || _SC_IMGS[0]; }
 
 // Format helpers (comma-decimal in line with the spec).
 function _scFmtPctStr(v){
@@ -7676,8 +7687,16 @@ function _renderSinglePositionCard(){
   const usd = +p.unrealized_pnl_usd || 0;
 
   const fundUsd = +p.funding_pnl_usd || 0;
-  // No reliable funding-pct on single-pos rows; use 0 as a neutral fallback.
-  const fundPct = (p.funding_pnl_pct != null) ? (+p.funding_pnl_pct) : 0;
+  // Funding-ROI = funding ÷ margin (deployed capital). margin = notional
+  // / leverage. Without this the ROI mode shows +0,00% even when
+  // funding is non-zero. Falls back to 0 if any input is missing.
+  const _qty = +p.quantity || 0;
+  const _entry = +p.entry_price || 0;
+  const _lev = +p.leverage || 1;
+  const _margin = (_qty > 0 && _entry > 0 && _lev > 0) ? (_qty * _entry / _lev) : 0;
+  const fundPct = (p.funding_pnl_pct != null)
+    ? (+p.funding_pnl_pct)
+    : (_margin > 0 ? (fundUsd / _margin * 100) : 0);
   const fundCol = fundUsd >= 0 ? '#1AFFAB' : '#F87171';
   const fundCell = (_shareMode === 'pct')
     ? _scFmtFundingFor('pct', fundUsd, fundPct)
@@ -7686,7 +7705,7 @@ function _renderSinglePositionCard(){
       : _scFmtFundingFor('both', fundUsd, fundPct);
 
   const seed = (p.symbol || 'x').split('').reduce((s, c) => s + c.charCodeAt(0), 0) + (p.exchange || '').length;
-  const img = _scPickImg();
+  const img = _scImg();
 
   host.innerHTML = `
     <div class="sc-card ${kindClass}">
@@ -7730,7 +7749,13 @@ function _renderPairCombined(){
   const sCol = _shareExColor(sEx);
 
   const totalFund = +pp.total_funding_usd || +pp.total_funding || 0;
-  const fundPct = (pp.total_funding_pct != null) ? (+pp.total_funding_pct) : 0;
+  // Funding-ROI = total funding ÷ deployed capital (pair_size_usd is
+  // single-leg notional, the actual money put up). Without this the
+  // ROI mode shows +0,00% even when funding is non-zero.
+  const pairSize = +pp.pair_size_usd || 0;
+  const fundPct = (pp.total_funding_pct != null)
+    ? (+pp.total_funding_pct)
+    : (pairSize > 0 ? (totalFund / pairSize * 100) : 0);
   const fundCol = totalFund >= 0 ? '#1AFFAB' : '#F87171';
 
   const fundCell = _scFmtFundingFor(_shareMode, totalFund, fundPct);
@@ -7738,7 +7763,7 @@ function _renderPairCombined(){
   const entrySpreadStr = `${entrySpread >= 0 ? '+' : '−'}${Math.abs(entrySpread).toFixed(2).replace('.', ',')}%`;
 
   const seed = (pp.symbol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0) + lEx.length + sEx.length;
-  const img = _scPickImg();
+  const img = _scImg();
 
   host.innerHTML = `
     <div class="sc-card pair ${kindClass}">
