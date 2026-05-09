@@ -106,13 +106,13 @@ class MexcAdapter:
             "Signature": signature,
             "Content-Type": "application/json",
         }
-        url = BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, params=params, headers=headers)
-            else:
-                import json as jsonlib
-                r = await c.post(url, content=jsonlib.dumps(body or {}, separators=(",", ":")), headers=headers)
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        if method == "GET":
+            r = await client.get(path, params=params, headers=headers)
+        else:
+            import json as jsonlib
+            r = await client.post(path, content=jsonlib.dumps(body or {}, separators=(",", ":")), headers=headers)
 
         # MEXC's edge (Akamai) returns 403 + HTML "Access Denied" for blocked
         # IPs — without this guard we'd fall through to r.json() and surface

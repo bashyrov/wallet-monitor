@@ -118,28 +118,28 @@ class BackpackAdapter:
             "X-Timestamp": str(ts),
             "X-Window": str(RECV_WINDOW),
         }
-        url = BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, params=params, headers=headers)
-            elif method == "POST":
-                headers["Content-Type"] = "application/json"
-                r = await c.post(url, json=body, headers=headers)
-            elif method == "DELETE":
-                r = await c.delete(url, params=params, headers=headers)
-            else:
-                raise ValueError(method)
-            if r.status_code >= 400:
-                msg = r.text
-                try:
-                    j = r.json()
-                    msg = str(j.get("message") or j.get("error") or r.text)
-                except Exception:
-                    pass
-                raise RuntimeError(f"Backpack {r.status_code}: {msg}")
-            if not r.content:
-                return {}
-            return r.json()
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        if method == "GET":
+            r = await client.get(path, params=params, headers=headers)
+        elif method == "POST":
+            headers["Content-Type"] = "application/json"
+            r = await client.post(path, json=body, headers=headers)
+        elif method == "DELETE":
+            r = await client.delete(path, params=params, headers=headers)
+        else:
+            raise ValueError(method)
+        if r.status_code >= 400:
+            msg = r.text
+            try:
+                j = r.json()
+                msg = str(j.get("message") or j.get("error") or r.text)
+            except Exception:
+                pass
+            raise RuntimeError(f"Backpack {r.status_code}: {msg}")
+        if not r.content:
+            return {}
+        return r.json()
 
     @staticmethod
     def _symbol(s: str) -> str:

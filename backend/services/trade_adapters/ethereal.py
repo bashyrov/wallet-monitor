@@ -53,17 +53,17 @@ class EtherealAdapter:
             "X-Ethereal-Signature": signed.signature.hex(),
         }
 
-        url = BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url, params=params, headers=headers)
-            elif method == "POST":
-                r = await c.post(url, json=body, headers=headers)
-            else:
-                raise ValueError(method)
-            if r.status_code >= 400:
-                raise RuntimeError(f"Ethereal {r.status_code}: {r.text[:200]}")
-            return r.json()
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        if method == "GET":
+            r = await client.get(path, params=params, headers=headers)
+        elif method == "POST":
+            r = await client.post(path, json=body, headers=headers)
+        else:
+            raise ValueError(method)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Ethereal {r.status_code}: {r.text[:200]}")
+        return r.json()
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:

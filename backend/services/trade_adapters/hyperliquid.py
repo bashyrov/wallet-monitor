@@ -122,25 +122,27 @@ class HyperliquidAdapter:
             "vaultAddress": None,
         }
 
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(f"{BASE}/exchange", json=payload,
-                             headers={"Content-Type": "application/json"})
-            if r.status_code >= 400:
-                raise RuntimeError(f"Hyperliquid {r.status_code}: {r.text[:200]}")
-            j = r.json()
-            if j.get("status") == "err":
-                raise RuntimeError(f"Hyperliquid: {j.get('response', j)}")
-            return j
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        r = await client.post("/exchange", json=payload,
+                              headers={"Content-Type": "application/json"})
+        if r.status_code >= 400:
+            raise RuntimeError(f"Hyperliquid {r.status_code}: {r.text[:200]}")
+        j = r.json()
+        if j.get("status") == "err":
+            raise RuntimeError(f"Hyperliquid: {j.get('response', j)}")
+        return j
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
         address = creds.get("address") or creds.get("api_key") or ""
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(f"{BASE}/info", json={"type": "clearinghouseState", "user": address},
-                             headers={"Content-Type": "application/json"})
-            j = r.json()
-            margin = j.get("marginSummary", {})
-            return {"usdt": float(margin.get("accountValue", 0) or 0)}
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        r = await client.post("/info", json={"type": "clearinghouseState", "user": address},
+                              headers={"Content-Type": "application/json"})
+        j = r.json()
+        margin = j.get("marginSummary", {})
+        return {"usdt": float(margin.get("accountValue", 0) or 0)}
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

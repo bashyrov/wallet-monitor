@@ -117,17 +117,16 @@ async def _signed_request(creds: dict, method: str, path: str,
         "Authent": authent,
         "Accept": "application/json",
     }
+    from backend.services.trade_adapters._http import http_client
+    client = http_client(BASE, timeout=10.0)
+    rel = ROOT + path
     if method == "GET":
-        url = f"{BASE}{ROOT}{path}"
         if post_data:
-            url += "?" + post_data
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(url, headers=headers)
+            rel += "?" + post_data
+        r = await client.get(rel, headers=headers)
     else:
-        url = f"{BASE}{ROOT}{path}"
         headers["Content-Type"] = "application/x-www-form-urlencoded"
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(url, headers=headers, content=post_data)
+        r = await client.post(rel, headers=headers, content=post_data)
     if r.status_code >= 400:
         raise RuntimeError(f"Kraken {r.status_code}: {r.text[:200]}")
     data = r.json()

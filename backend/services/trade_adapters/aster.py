@@ -75,25 +75,27 @@ class AsterAdapter:
             "X-AB-APIKEY": creds["api_key"],
         }
 
-        url = BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(f"{url}?{qs}&signature={sig_hex}", headers=headers)
-            elif method == "POST":
-                r = await c.post(f"{url}?{qs}&signature={sig_hex}", headers=headers)
-            elif method == "DELETE":
-                r = await c.delete(f"{url}?{qs}&signature={sig_hex}", headers=headers)
-            else:
-                raise ValueError(method)
-            if r.status_code >= 400:
-                msg = r.text[:200]
-                try:
-                    j = r.json()
-                    msg = str(j.get("msg", msg))
-                except Exception:
-                    pass
-                raise RuntimeError(f"Aster {r.status_code}: {msg}")
-            return r.json()
+        # Persistent client per host — eliminates TLS handshake on each call.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        rel = f"{path}?{qs}&signature={sig_hex}"
+        if method == "GET":
+            r = await client.get(rel, headers=headers)
+        elif method == "POST":
+            r = await client.post(rel, headers=headers)
+        elif method == "DELETE":
+            r = await client.delete(rel, headers=headers)
+        else:
+            raise ValueError(method)
+        if r.status_code >= 400:
+            msg = r.text[:200]
+            try:
+                j = r.json()
+                msg = str(j.get("msg", msg))
+            except Exception:
+                pass
+            raise RuntimeError(f"Aster {r.status_code}: {msg}")
+        return r.json()
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:

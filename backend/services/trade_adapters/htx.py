@@ -106,19 +106,21 @@ class HtxAdapter:
         payload = _sign_payload(method, SPOT_HOST, path, p)
         p["Signature"] = b64_hmac_sha256(creds["api_secret"], payload)
         qs = urlencode(p, quote_via=quote)
-        url = f"{SPOT_BASE}{path}?{qs}"
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "GET":
-                r = await c.get(url)
-            elif method == "POST":
-                import json as _j
-                r = await c.post(
-                    url,
-                    content=_j.dumps(body or {}, separators=(",", ":")),
-                    headers={"Content-Type": "application/json"},
-                )
-            else:
-                raise ValueError(method)
+        # Persistent client per host — no TLS handshake on every call.
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(SPOT_BASE, timeout=10.0)
+        rel = f"{path}?{qs}"
+        if method == "GET":
+            r = await client.get(rel)
+        elif method == "POST":
+            import json as _j
+            r = await client.post(
+                rel,
+                content=_j.dumps(body or {}, separators=(",", ":")),
+                headers={"Content-Type": "application/json"},
+            )
+        else:
+            raise ValueError(method)
         if r.status_code >= 400:
             raise RuntimeError(f"HTX {r.status_code}: {r.text}")
         data = r.json()
@@ -167,16 +169,17 @@ class HtxAdapter:
         payload = _sign_payload(method, FUT_HOST, path, p)
         p["Signature"] = b64_hmac_sha256(creds["api_secret"], payload)
         qs = urlencode(p, quote_via=quote)
-        url = f"{FUT_BASE}{path}?{qs}"
-        async with httpx.AsyncClient(timeout=10) as c:
-            if method == "POST":
-                r = await c.post(
-                    url,
-                    content=_j.dumps(body or {}, separators=(",", ":")),
-                    headers={"Content-Type": "application/json"},
-                )
-            else:
-                r = await c.get(url)
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(FUT_BASE, timeout=10.0)
+        rel = f"{path}?{qs}"
+        if method == "POST":
+            r = await client.post(
+                rel,
+                content=_j.dumps(body or {}, separators=(",", ":")),
+                headers={"Content-Type": "application/json"},
+            )
+        else:
+            r = await client.get(rel)
         if r.status_code >= 400:
             raise RuntimeError(f"HTX-fut {r.status_code}: {r.text[:200]}")
         data = r.json()

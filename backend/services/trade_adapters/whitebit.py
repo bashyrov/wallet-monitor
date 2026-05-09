@@ -111,21 +111,21 @@ class WhitebitAdapter:
             "X-TXC-SIGNATURE": sig,
             "Content-Type": "application/json",
         }
-        url = BASE + path
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.post(url, content=body_json, headers=headers)
-            if r.status_code >= 400:
-                msg = r.text
-                try:
-                    j = r.json()
-                    msg = str(j.get("message") or j.get("errors") or r.text)
-                except Exception:
-                    pass
-                raise RuntimeError(f"WhiteBIT {r.status_code}: {msg}")
-            data = r.json()
-            if isinstance(data, dict) and data.get("code") and data.get("code") != 0:
-                raise RuntimeError(f"WhiteBIT: {data.get('message', data)}")
-            return data
+        from backend.services.trade_adapters._http import http_client
+        client = http_client(BASE, timeout=10.0)
+        r = await client.post(path, content=body_json, headers=headers)
+        if r.status_code >= 400:
+            msg = r.text
+            try:
+                j = r.json()
+                msg = str(j.get("message") or j.get("errors") or r.text)
+            except Exception:
+                pass
+            raise RuntimeError(f"WhiteBIT {r.status_code}: {msg}")
+        data = r.json()
+        if isinstance(data, dict) and data.get("code") and data.get("code") != 0:
+            raise RuntimeError(f"WhiteBIT: {data.get('message', data)}")
+        return data
 
     @staticmethod
     def _symbol(s: str) -> str:
