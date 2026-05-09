@@ -7300,10 +7300,7 @@ async function trigSubmit(force = false) {
 .sc-card-host {
   display: block;
   width: 100%; max-width: 540px;
-  /* 16/11 (taller than 16/10) gives the referral block enough vertical
-     room without truncation when the card is rasterised by
-     html2canvas. */
-  aspect-ratio: 16 / 11;
+  aspect-ratio: 16 / 10;
   filter: drop-shadow(0 16px 50px rgba(0,0,0,0.55));
 }
 .sc-card {
