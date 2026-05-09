@@ -32,6 +32,14 @@ LOGIN_PREHASH_PATH = "/user/verify"
 
 class BitgetUserStream(BaseUserStream):
     name = "bitget"
+    # Bitget V2 private WS server doesn't send pings — closes idle
+    # connections after ~30-60s. Per docs: client should send TEXT
+    # "ping" every 30s. We use 25s for safety margin.
+    ws_ping_interval_s = 25.0
+
+    @classmethod
+    def ws_ping_payload(cls):
+        return "ping"
 
     @classmethod
     async def get_ws_url(cls, creds: dict) -> tuple[str, dict]:

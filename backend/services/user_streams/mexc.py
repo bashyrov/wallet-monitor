@@ -36,6 +36,14 @@ WS_URL = "wss://contract.mexc.com/edge"
 
 class MEXCUserStream(BaseUserStream):
     name = "mexc"
+    # MEXC contract WS server doesn't send pings — it just times out the
+    # connection if it doesn't see traffic for ~60s. Client-initiated
+    # ping every 25s keeps the socket alive.
+    ws_ping_interval_s = 25.0
+
+    @classmethod
+    def ws_ping_payload(cls):
+        return json.dumps({"method": "ping"})
 
     @classmethod
     async def get_ws_url(cls, creds: dict) -> tuple[str, dict]:

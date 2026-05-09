@@ -77,3 +77,14 @@ class BaseUserStream:
         HTX, Bitget, MEXC override this to keep the socket alive past their
         ~30s server-side timeout."""
         return None
+
+    # Override on venues that require client-initiated app-level pings
+    # (bitget, mexc — server doesn't send pings, just closes the socket
+    # if it doesn't see traffic). Returns the text/bytes payload to send,
+    # or None to skip a tick.
+    ws_ping_interval_s: float = 0.0  # 0 = disabled
+
+    @classmethod
+    def ws_ping_payload(cls) -> str | bytes | None:
+        """Payload to send periodically when ws_ping_interval_s > 0."""
+        return None

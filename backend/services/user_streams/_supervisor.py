@@ -228,6 +228,30 @@ class StreamTask:
                 ka_task = asyncio.create_task(adapter.keep_alive_loop(self.creds, self.stop_event))
                 hb_task = asyncio.create_task(self._heartbeat_loop())
 
+                # Optional: client-initiated app-level pings for venues
+                # whose servers DON'T send pings but DO time out idle
+                # connections (bitget, mexc — observed flap every ~60s).
+                # Adapter sets ws_ping_interval_s > 0 + ws_ping_payload().
+                ws_ping_task = None
+                interval = float(getattr(adapter, "ws_ping_interval_s", 0) or 0)
+                if interval > 0:
+                    async def _ws_ping_loop():
+                        while not self.stop_event.is_set():
+                            try:
+                                await asyncio.wait_for(self.stop_event.wait(),
+                                                       timeout=interval)
+                                return
+                            except asyncio.TimeoutError:
+                                pass
+                            payload = adapter.ws_ping_payload()
+                            if payload is None:
+                                continue
+                            try:
+                                await ws.send(payload)
+                            except Exception:
+                                return
+                    ws_ping_task = asyncio.create_task(_ws_ping_loop())
+
                 try:
                     while not self.stop_event.is_set():
                         try:
@@ -278,7 +302,9 @@ class StreamTask:
                 finally:
                     ka_task.cancel()
                     hb_task.cancel()
-                    for t in (ka_task, hb_task):
+                    if ws_ping_task is not None:
+                        ws_ping_task.cancel()
+                    for t in (ka_task, hb_task) + ((ws_ping_task,) if ws_ping_task else ()):
                         try:
                             await t
                         except (asyncio.CancelledError, Exception):
