@@ -416,3 +416,97 @@ class BitgetAdapter:
         if info:
             return info.get("maxLeverage", 100)
         return 100
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """Bitget v2 mix fills since `since_ts`.
+
+        Futures: /api/v2/mix/order/fills?productType=USDT-FUTURES&startTime=<ms>.
+        Funding: /api/v2/mix/account/account-bill?coin=USDT&businessType=
+        contract_settle_fee. Spot returns []."""
+        from datetime import datetime as _dt
+        if market != "futures":
+            return []
+        start_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        try:
+            data = await cls._signed(creds, "GET",
+                                     "/api/v2/mix/order/fills", {
+                                         "productType": "USDT-FUTURES",
+                                         "startTime": start_ms,
+                                         "limit": 500,
+                                     }) or {}
+        except Exception:
+            data = {}
+        rows = (data.get("fillList") if isinstance(data, dict) else None) or []
+        if isinstance(data, dict) and not rows:
+            rows = (data.get("data") or {}).get("fillList") if isinstance(data.get("data"), dict) else []
+            rows = rows or []
+        for r in rows:
+            try:
+                sym_raw = str(r.get("symbol") or "")
+                sym = sym_raw.replace("USDT", "")
+                side = "buy" if str(r.get("side") or "").lower() == "buy" else "sell"
+                qty = float(r.get("baseVolume") or r.get("size") or 0)
+                if qty <= 0:
+                    continue
+                ts_raw = r.get("cTime") or r.get("ctime")
+                ts_ms = int(ts_raw) if ts_raw else 0
+                if ts_ms <= 0:
+                    continue
+                rpnl_raw = r.get("profit") or r.get("realizedPL")
+                rpnl = float(rpnl_raw) if rpnl_raw not in (None, "") else None
+                fee_raw = (r.get("feeDetail") or [{}])
+                fee = None
+                if isinstance(fee_raw, list) and fee_raw:
+                    fee_v = fee_raw[0].get("totalFee") or fee_raw[0].get("fee")
+                    if fee_v is not None:
+                        fee = abs(float(fee_v))
+                out.append({
+                    "symbol": sym.upper(),
+                    "side": side,
+                    "qty": qty,
+                    "price": float(r.get("price") or 0),
+                    "fee_usd": fee,
+                    "realized_pnl_usd": rpnl,
+                    "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                    "ext_trade_id": str(r.get("tradeId") or r.get("fillId") or ""),
+                    "ext_order_id": str(r.get("orderId") or "") or None,
+                    "kind": "trade",
+                })
+            except Exception:
+                continue
+        try:
+            fdata = await cls._signed(creds, "GET",
+                                      "/api/v2/mix/account/account-bill", {
+                                          "productType": "USDT-FUTURES",
+                                          "coin": "USDT",
+                                          "businessType": "contract_settle_fee",
+                                          "startTime": start_ms,
+                                          "limit": 100,
+                                      }) or {}
+            f_rows = (fdata.get("bills") if isinstance(fdata, dict) else None) or []
+            for r in f_rows:
+                try:
+                    sym_raw = str(r.get("symbol") or "")
+                    sym = sym_raw.replace("USDT", "")
+                    ts_ms = int(r.get("cTime") or 0)
+                    if ts_ms <= 0:
+                        continue
+                    out.append({
+                        "symbol": sym.upper(),
+                        "side": None,
+                        "qty": 0.0, "price": 0.0, "fee_usd": None,
+                        "realized_pnl_usd": float(r.get("amount") or 0),
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(r.get("billId")
+                                            or f"funding-{ts_ms}-{sym}"),
+                        "ext_order_id": None,
+                        "kind": "funding",
+                    })
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return out

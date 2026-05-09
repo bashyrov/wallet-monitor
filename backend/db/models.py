@@ -651,6 +651,10 @@ class TradePosition(Base):
     leg_a_fees_usd = Column(Float, nullable=True)
     leg_a_open_order_id = Column(Integer, ForeignKey("trade_orders.id", ondelete="SET NULL"), nullable=True)
     leg_a_close_order_id = Column(Integer, ForeignKey("trade_orders.id", ondelete="SET NULL"), nullable=True)
+    # 'futures' (default) or 'spot'. Set explicitly during fills-backfill so
+    # the spot/short auto-pair logic can match a closed spot LONG with a
+    # closed futures SHORT on the same symbol/window.
+    leg_a_market = Column(String, nullable=False, default="futures")
 
     leg_b_wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
     leg_b_exchange = Column(String, nullable=True)
@@ -663,7 +667,13 @@ class TradePosition(Base):
     leg_b_fees_usd = Column(Float, nullable=True)
     leg_b_open_order_id = Column(Integer, ForeignKey("trade_orders.id", ondelete="SET NULL"), nullable=True)
     leg_b_close_order_id = Column(Integer, ForeignKey("trade_orders.id", ondelete="SET NULL"), nullable=True)
+    leg_b_market = Column(String, nullable=True)
 
+    # 'platform' (we placed the order), 'reconcile' (we saw it via the live
+    # positions endpoint, then noticed it was gone), or 'fills_backfill'
+    # (reconstructed from trade_fills). Lets the UI tag rows and helps the
+    # backfill service avoid re-creating rows that already exist.
+    source = Column(String, nullable=False, default="platform")
     realized_pnl_usd = Column(Float, nullable=True)
     entry_spread_pct = Column(Float, nullable=True)
     exit_spread_pct = Column(Float, nullable=True)
@@ -699,6 +709,66 @@ class TradePairDecision(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "leg_a_key", "leg_b_key", name="uq_pair_decisions_user_legs"),
+    )
+
+
+class TradeFill(Base):
+    """Raw venue fill row.
+
+    One row per execution returned by the venue's fills/trade-history API.
+    Backfilled by `fills_backfill_service` on user demand (PnL tab Sync
+    button) and used to reconstruct closed `trade_positions` rows.
+    Idempotent re-syncs are safe via UNIQUE on
+    (wallet_id, exchange, market, ext_trade_id)."""
+    __tablename__ = "trade_fills"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="SET NULL"),
+                       nullable=True, index=True)
+    exchange = Column(String, nullable=False)
+    market = Column(String, nullable=False)  # 'futures' | 'spot'
+    # 'trade' = actual order fill, 'funding' = periodic funding settlement.
+    kind = Column(String, nullable=False, default="trade")
+    symbol = Column(String, nullable=False)
+    side = Column(String, nullable=True)     # 'buy' | 'sell' | null for funding
+    qty = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    fee_usd = Column(Float, nullable=True)
+    realized_pnl_usd = Column(Float, nullable=True)
+    ts = Column(DateTime, nullable=False)
+    ext_trade_id = Column(String, nullable=False)
+    ext_order_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("wallet_id", "exchange", "market", "kind", "ext_trade_id",
+                         name="uq_trade_fills_dedup"),
+    )
+
+
+class FillsSyncCursor(Base):
+    """High-watermark for delta pulls of `trade_fills`. Per
+    (wallet, exchange, market) we remember the last fill ts we ingested
+    and the last time the sync ran. The next pull asks for fills strictly
+    > last_ts so re-syncs cost ~one HTTP round-trip per venue when the
+    user hasn't traded."""
+    __tablename__ = "fills_sync_cursor"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    wallet_id = Column(Integer, ForeignKey("wallets.id", ondelete="CASCADE"),
+                       nullable=False)
+    exchange = Column(String, nullable=False)
+    market = Column(String, nullable=False)
+    last_ts = Column(DateTime, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("wallet_id", "exchange", "market",
+                         name="uq_fills_sync_cursor_key"),
     )
 
 

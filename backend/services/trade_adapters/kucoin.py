@@ -469,3 +469,91 @@ class KuCoinAdapter:
         if info:
             return info.get("maxLeverage", 100)
         return 100
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """KuCoin futures fills + funding since `since_ts`.
+
+        /api/v1/fills?startAt=<ms>&pageSize=200 (paginated). Funding via
+        /api/v1/funding-history?startAt=<ms>. Spot is on a separate base
+        URL (api.kucoin.com); we don't currently have spot trade adapter,
+        so spot=[] for now."""
+        from datetime import datetime as _dt
+        if market != "futures":
+            return []  # spot endpoint lives on a different base URL
+        start_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        page = 1
+        for _ in range(20):
+            try:
+                data = await cls._signed(creds, "GET", "/api/v1/fills", {
+                    "startAt": start_ms, "pageSize": 200, "currentPage": page,
+                }) or {}
+            except Exception:
+                break
+            rows = (data.get("items") or data.get("data") or {}).get("items") if isinstance(data.get("data"), dict) else (data.get("items") or [])
+            if not rows:
+                break
+            for r in rows:
+                try:
+                    sym_raw = str(r.get("symbol") or "")
+                    sym = sym_raw.replace("XBTUSDTM", "BTC").replace("USDTM", "")
+                    side = "buy" if str(r.get("side") or "").lower() == "buy" else "sell"
+                    qty = float(r.get("size") or 0)
+                    if qty <= 0:
+                        continue
+                    ts_raw = r.get("tradeTime") or r.get("createdAt")
+                    ts_v = float(ts_raw) if ts_raw else 0
+                    if ts_v <= 0:
+                        continue
+                    # tradeTime is nanoseconds, createdAt is ms.
+                    ts = ts_v / 1e9 if ts_v > 1e15 else ts_v / 1000.0
+                    out.append({
+                        "symbol": sym.upper(),
+                        "side": side,
+                        "qty": qty,
+                        "price": float(r.get("price") or 0),
+                        "fee_usd": float(r.get("fee") or 0),
+                        "realized_pnl_usd": None,
+                        "ts": _dt.utcfromtimestamp(ts),
+                        "ext_trade_id": str(r.get("tradeId") or r.get("id") or ""),
+                        "ext_order_id": str(r.get("orderId") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+            total_pages = (data.get("totalPage") or 1)
+            page += 1
+            if page > int(total_pages):
+                break
+        try:
+            f_data = await cls._signed(creds, "GET", "/api/v1/funding-history", {
+                "startAt": start_ms,
+            }) or {}
+            f_rows = f_data.get("dataList") or f_data.get("data") or []
+            if isinstance(f_rows, dict):
+                f_rows = f_rows.get("dataList") or []
+            for r in f_rows:
+                try:
+                    sym_raw = str(r.get("symbol") or "")
+                    sym = sym_raw.replace("XBTUSDTM", "BTC").replace("USDTM", "")
+                    ts_v = float(r.get("timePoint") or 0)
+                    if ts_v <= 0:
+                        continue
+                    out.append({
+                        "symbol": sym.upper(),
+                        "side": None,
+                        "qty": 0.0, "price": 0.0, "fee_usd": None,
+                        "realized_pnl_usd": float(r.get("funding") or 0),
+                        "ts": _dt.utcfromtimestamp(ts_v / 1000),
+                        "ext_trade_id": str(r.get("id")
+                                            or f"funding-{int(ts_v)}-{sym}"),
+                        "ext_order_id": None,
+                        "kind": "funding",
+                    })
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return out

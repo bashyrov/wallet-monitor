@@ -2,6 +2,44 @@
 
 ## Recent work — TL;DR for new sessions
 
+**PnL backfill from venue fills** (shipped 2026-05-09).
+
+The reconcile worker was wired into web-role startup (was dormant since the Go-fetcher cutover — last `trade_positions` write was 2026-04-29). Going forward, externally-opened positions now flow into our DB.
+
+Net-new: PnL tab "Sync" button does a 7-day fills + funding pull from each venue, materialises closed positions, and runs auto-pair detection. Spot/short basis pairs (closed spot LONG + closed futures SHORT same symbol within 12% notional / 5min) auto-pair as `pair_kind='spot_short'`. Manual Sync ⇆ / Unpair persists via existing `TradePairDecision`.
+
+New tables: `trade_fills` (raw venue fills + funding events, idempotent via UNIQUE on `(wallet_id, exchange, market, kind, ext_trade_id)`), `fills_sync_cursor` (per-(wallet, exchange, market) high-watermark for delta pulls). `trade_positions` gained `leg_a_market` / `leg_b_market` (`futures` | `spot`) + `source` (`platform` | `reconcile` | `fills_backfill`).
+
+API: `POST /api/trade/pnl/sync` (Redis-locked per user, 5-min TTL, runs in background), `GET /api/trade/pnl/sync` (status). Frontend auto-syncs on PnL-tab open if last sync > 30 min, manual button otherwise.
+
+**Per-venue capability matrix** (fills backfill):
+
+| Venue | Futures fills | Spot fills | Funding events | Realized PnL on fill | Notes |
+|---|---|---|---|---|---|
+| binance | ✓ /fapi/v1/userTrades | ✓ /api/v3/myTrades | ✓ /fapi/v1/income FUNDING_FEE | ✓ realizedPnl | Per-symbol sweep (endpoint requires symbol); symbols enumerated via /income |
+| bybit | ✓ /v5/execution/list cat=linear | ✓ /v5/execution/list cat=spot | ✓ /v5/account/transaction-log type=SETTLEMENT | ✓ closedPnl | Cleanest API |
+| okx | ✓ /api/v5/trade/fills-history SWAP | ✓ /api/v5/trade/fills-history SPOT | ✓ /api/v5/account/bills-archive type=8 | ✓ fillPnl | SWAP fillSz is in contracts — multiplied by ctVal from /instruments |
+| gate | ✓ /api/v4/futures/usdt/my_trades | ✓ /api/v4/spot/my_trades | ✓ /api/v4/futures/usdt/account_book type=fund | · | Spot per-pair sweep from balances |
+| kucoin | ✓ /api/v1/fills | · spot lives on different base URL | ✓ /api/v1/funding-history | · | Spot adapter not present today |
+| bitget | ✓ /api/v2/mix/order/fills | · | ✓ /api/v2/mix/account/account-bill businessType=contract_settle_fee | ✓ profit | |
+| bingx | ✓ /openApi/swap/v2/trade/allFillOrders (per-symbol) | · | ✓ /openApi/swap/v2/user/income FUNDING_FEE | partial | Per-symbol sweep via income |
+| hyperliquid | ✓ /info userFillsByTime | · L1 spot product not exposed | ✓ /info userFunding | ✓ closedPnl | |
+| aster | ✓ Binance-fork — same /fapi/v1/userTrades | · | ✓ /fapi/v1/income FUNDING_FEE | ✓ realizedPnl | Same shape as Binance |
+| paradex | _todo_ | · | _todo_ | · | /v1/fills via Stark JWT — implement after first deploy verifies the rest |
+| lighter | _todo_ | · | _todo_ | · | /api/v1/fills available; not yet implemented |
+| ethereal | _todo_ | · | _todo_ | · | Socket.IO-only public stream; private fills endpoint TBD |
+| backpack | _todo_ | _todo_ | _todo_ | · | /api/v1/history/fills — not yet implemented |
+| kraken | _todo_ | · | _todo_ | · | /derivatives/api/v3/historicalexecutions — not yet implemented |
+| whitebit | _todo_ | _todo_ | · | · | /api/v4/trade-account/executed-history — not yet implemented |
+| htx | _todo_ | · | _todo_ | · | /linear-swap-api/v3/swap_financial_record — not yet implemented |
+| mexc | **skip** | **skip** | **skip** | — | Per user decision; v3 futures endpoint deprecated |
+
+`fills_backfill_service` skips MEXC explicitly. The remaining `_todo_` venues have `fetch_recent_fills` undefined — `hasattr` guard in the service skips them gracefully (no-op, no error). Adding them is mechanical: implement the per-venue fills + funding fetch per the table above.
+
+**Reconstruction algorithm**: walk fills chronologically per (wallet × exchange × market × symbol), maintain net-qty + VWAP entry; on net→0 emit a `trade_positions` row (`source='fills_backfill'`, `opened_externally=closed_externally=True`). Idempotent — checks for existing row with matching wallet/exchange/market/side/symbol within ±2 min of the candidate's opened_at AND closed_at. Funding-kind fills are accumulated into the open position's `leg_a_funding_pnl_usd`.
+
+---
+
 **Orderbook WS fixes** (shipped 2026-05-07). HEAD: `f5a459d` on `main`.
 
 Three fixes to go-fetcher orderbook WebSocket adapters that were silently dead:

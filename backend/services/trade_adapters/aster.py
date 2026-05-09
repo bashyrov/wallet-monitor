@@ -319,3 +319,73 @@ class AsterAdapter:
         if qty_r <= 0 or qty_r < min_qty:
             return {"ok": False, "reason": f"Aster min qty is {min_qty} {symbol.upper()}."}
         return {"ok": True, "qty_rounded": qty_r, "step_size": step, "min_qty": min_qty, "min_notional": min_not}
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """Aster is a Binance-API fork — same /fapi/v1/userTrades + income.
+        Spot returns []."""
+        from datetime import datetime as _dt
+        if market != "futures":
+            return []
+        start_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        try:
+            income = await cls._signed(creds, "GET", "/fapi/v1/income", {
+                "startTime": start_ms, "limit": 1000,
+            }) or []
+        except Exception:
+            income = []
+        symbols: set[str] = set()
+        for it in income:
+            try:
+                sym = str(it.get("symbol") or "")
+                if sym:
+                    symbols.add(sym)
+                if str(it.get("incomeType") or "") == "FUNDING_FEE":
+                    ts_ms = int(it.get("time") or 0)
+                    if ts_ms <= 0:
+                        continue
+                    out.append({
+                        "symbol": sym.replace("USDT", ""),
+                        "side": None, "qty": 0.0, "price": 0.0, "fee_usd": None,
+                        "realized_pnl_usd": float(it.get("income") or 0),
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(it.get("tranId")
+                                            or f"funding-{ts_ms}-{sym}"),
+                        "ext_order_id": None,
+                        "kind": "funding",
+                    })
+            except Exception:
+                continue
+        for sym in symbols:
+            try:
+                rows = await cls._signed(creds, "GET", "/fapi/v1/userTrades", {
+                    "symbol": sym, "startTime": start_ms, "limit": 1000,
+                }) or []
+            except Exception:
+                continue
+            for r in rows:
+                try:
+                    ts_ms = int(r.get("time") or 0)
+                    if ts_ms <= 0:
+                        continue
+                    side = "buy" if str(r.get("side") or "").upper() == "BUY" else "sell"
+                    qty = float(r.get("qty") or 0)
+                    if qty <= 0:
+                        continue
+                    rpnl = r.get("realizedPnl")
+                    out.append({
+                        "symbol": sym.replace("USDT", ""),
+                        "side": side, "qty": qty,
+                        "price": float(r.get("price") or 0),
+                        "fee_usd": float(r.get("commission") or 0),
+                        "realized_pnl_usd": (float(rpnl) if rpnl not in (None, "") else None),
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(r.get("id") or ""),
+                        "ext_order_id": str(r.get("orderId") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+        return out

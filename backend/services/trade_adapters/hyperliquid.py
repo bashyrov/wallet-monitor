@@ -404,3 +404,85 @@ class HyperliquidAdapter:
             "max_qty": None,
             "unit": "coin",
         }
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """HL fills + funding via /info type=userFillsByTime / userFunding.
+
+        HL spot trading lives on a separate L1 product not exposed via the
+        same API; we return [] for spot."""
+        from datetime import datetime as _dt
+        if market != "futures":
+            return []
+        address = creds.get("address") or creds.get("api_key") or ""
+        if not address:
+            return []
+        start_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        async with httpx.AsyncClient(timeout=10) as c:
+            try:
+                r = await c.post(f"{BASE}/info", json={
+                    "type": "userFillsByTime",
+                    "user": address,
+                    "startTime": start_ms,
+                })
+                fills = r.json() if r.status_code == 200 else []
+            except Exception:
+                fills = []
+            for r in fills if isinstance(fills, list) else []:
+                try:
+                    sym = str(r.get("coin") or "").upper()
+                    side = "buy" if str(r.get("side") or "") == "B" else "sell"
+                    qty = float(r.get("sz") or 0)
+                    if qty <= 0:
+                        continue
+                    ts_ms = int(r.get("time") or 0)
+                    if ts_ms <= 0:
+                        continue
+                    rpnl = r.get("closedPnl")
+                    out.append({
+                        "symbol": sym,
+                        "side": side,
+                        "qty": qty,
+                        "price": float(r.get("px") or 0),
+                        "fee_usd": float(r.get("fee") or 0),
+                        "realized_pnl_usd": (float(rpnl)
+                                             if rpnl not in (None, "") else None),
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(r.get("tid") or r.get("hash") or ""),
+                        "ext_order_id": str(r.get("oid") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+            try:
+                r = await c.post(f"{BASE}/info", json={
+                    "type": "userFunding",
+                    "user": address,
+                    "startTime": start_ms,
+                })
+                funds = r.json() if r.status_code == 200 else []
+            except Exception:
+                funds = []
+            for r in funds if isinstance(funds, list) else []:
+                try:
+                    delta = r.get("delta") or {}
+                    sym = str(delta.get("coin") or "").upper()
+                    ts_ms = int(r.get("time") or 0)
+                    if ts_ms <= 0:
+                        continue
+                    out.append({
+                        "symbol": sym,
+                        "side": None,
+                        "qty": 0.0, "price": 0.0, "fee_usd": None,
+                        "realized_pnl_usd": float(delta.get("usdc") or 0),
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(r.get("hash")
+                                            or f"funding-{ts_ms}-{sym}"),
+                        "ext_order_id": None,
+                        "kind": "funding",
+                    })
+                except Exception:
+                    continue
+        return out

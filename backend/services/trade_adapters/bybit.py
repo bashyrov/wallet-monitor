@@ -460,3 +460,108 @@ class BybitAdapter:
             p["funding_pnl_usd"] = f if isinstance(f, (int, float)) else None
             p.pop("_api_symbol", None)
         return positions
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """Bybit fills + funding settlements since `since_ts`.
+
+        Futures: /v5/execution/list?category=linear (cap 100/page, paginate
+        until cursor exhausts or starts < since_ts) + /v5/account/transaction-log
+        ?type=SETTLEMENT for funding events.
+        Spot:    /v5/execution/list?category=spot.
+
+        Returns dicts shaped per fills_backfill_service spec."""
+        from datetime import datetime as _dt
+        if market not in ("futures", "spot"):
+            return []
+        category = "linear" if market == "futures" else "spot"
+        start_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        cursor = ""
+        for _ in range(20):  # safety: 20 pages × 100 = 2000 fills
+            params: dict[str, Any] = {
+                "category": category,
+                "startTime": start_ms,
+                "limit": 100,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            try:
+                data = await cls._signed(creds, "GET", "/v5/execution/list", params)
+            except Exception:
+                break
+            rows = (data or {}).get("list") or []
+            for r in rows:
+                try:
+                    sym = str(r.get("symbol") or "").upper().replace("USDT", "")
+                    side = "buy" if str(r.get("side") or "").lower() == "buy" else "sell"
+                    qty = float(r.get("execQty") or 0)
+                    price = float(r.get("execPrice") or 0)
+                    fee = float(r.get("execFee") or 0)
+                    ts_ms = int(r.get("execTime") or 0)
+                    if not (qty > 0 and ts_ms > 0):
+                        continue
+                    rpnl_raw = r.get("closedPnl")
+                    rpnl = float(rpnl_raw) if rpnl_raw not in (None, "") else None
+                    out.append({
+                        "symbol": sym,
+                        "side": side,
+                        "qty": qty,
+                        "price": price,
+                        "fee_usd": fee,
+                        "realized_pnl_usd": rpnl,
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(r.get("execId") or ""),
+                        "ext_order_id": str(r.get("orderId") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+            cursor = (data or {}).get("nextPageCursor") or ""
+            if not cursor or len(rows) < 100:
+                break
+
+        if market == "futures":
+            # Funding settlements come from a different endpoint.
+            cursor = ""
+            for _ in range(20):
+                params = {
+                    "category": "linear",
+                    "type": "SETTLEMENT",
+                    "startTime": start_ms,
+                    "limit": 50,
+                }
+                if cursor:
+                    params["cursor"] = cursor
+                try:
+                    data = await cls._signed(creds, "GET",
+                                             "/v5/account/transaction-log", params)
+                except Exception:
+                    break
+                rows = (data or {}).get("list") or []
+                for r in rows:
+                    try:
+                        sym = str(r.get("symbol") or "").upper().replace("USDT", "")
+                        change = float(r.get("change") or 0)
+                        ts_ms = int(r.get("transactionTime") or 0)
+                        if ts_ms <= 0:
+                            continue
+                        out.append({
+                            "symbol": sym,
+                            "side": None,
+                            "qty": 0.0,
+                            "price": 0.0,
+                            "fee_usd": None,
+                            "realized_pnl_usd": change,
+                            "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                            "ext_trade_id": str(r.get("id") or f"funding-{ts_ms}-{sym}"),
+                            "ext_order_id": None,
+                            "kind": "funding",
+                        })
+                    except Exception:
+                        continue
+                cursor = (data or {}).get("nextPageCursor") or ""
+                if not cursor or len(rows) < 50:
+                    break
+        return out

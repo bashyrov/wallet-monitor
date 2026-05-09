@@ -456,3 +456,111 @@ class OKXAdapter:
         if info:
             return info.get("lever", 125)
         return 125
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """OKX fills + funding since `since_ts`.
+
+        /api/v5/trade/fills-history?instType=SWAP|SPOT&begin=<ms> — paginated
+        via `after` (the latest billId returned). Funding via
+        /api/v5/account/bills-archive?type=8 (settlement type code 8)."""
+        from datetime import datetime as _dt
+        if market not in ("futures", "spot"):
+            return []
+        inst_type = "SWAP" if market == "futures" else "SPOT"
+        out: list[dict] = []
+        begin_ms = int(since_ts.timestamp() * 1000)
+        # Pull fills (paginated by `after`).
+        after = ""
+        for _ in range(20):
+            qs = f"instType={inst_type}&begin={begin_ms}&limit=100"
+            if after:
+                qs += f"&after={after}"
+            try:
+                rows = await cls._req(creds, "GET",
+                                      f"/api/v5/trade/fills-history?{qs}") or []
+            except Exception:
+                break
+            if not rows:
+                break
+            for r in rows:
+                try:
+                    inst = str(r.get("instId") or "")  # e.g. BTC-USDT-SWAP / BTC-USDT
+                    sym = inst.split("-")[0] if inst else ""
+                    side_raw = str(r.get("side") or "").lower()
+                    side = "buy" if side_raw == "buy" else "sell"
+                    sz = float(r.get("fillSz") or 0)
+                    if sz <= 0:
+                        continue
+                    px = float(r.get("fillPx") or 0)
+                    fee_raw = r.get("fee")
+                    fee = abs(float(fee_raw)) if fee_raw not in (None, "") else None
+                    ts_ms = int(r.get("ts") or 0)
+                    if ts_ms <= 0:
+                        continue
+                    pnl_raw = r.get("fillPnl")
+                    rpnl = float(pnl_raw) if pnl_raw not in (None, "") else None
+                    # OKX SWAP returns size in CONTRACTS, not coins. Convert.
+                    if inst_type == "SWAP":
+                        instruments = await _instruments()
+                        info = instruments.get(inst) or {}
+                        ct_val = float(info.get("ctVal") or 0)
+                        if ct_val > 0:
+                            sz = sz * ct_val
+                    out.append({
+                        "symbol": sym.upper(),
+                        "side": side,
+                        "qty": sz,
+                        "price": px,
+                        "fee_usd": fee,
+                        "realized_pnl_usd": rpnl,
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(r.get("tradeId")
+                                            or r.get("billId") or ""),
+                        "ext_order_id": str(r.get("ordId") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+            after = rows[-1].get("billId") or rows[-1].get("ts") or ""
+            if len(rows) < 100:
+                break
+
+        if market == "futures":
+            after = ""
+            for _ in range(20):
+                qs = f"type=8&begin={begin_ms}&limit=100"
+                if after:
+                    qs += f"&after={after}"
+                try:
+                    rows = await cls._req(creds, "GET",
+                                          f"/api/v5/account/bills-archive?{qs}") or []
+                except Exception:
+                    break
+                if not rows:
+                    break
+                for r in rows:
+                    try:
+                        inst = str(r.get("instId") or "")
+                        sym = inst.split("-")[0] if inst else ""
+                        ts_ms = int(r.get("ts") or 0)
+                        if ts_ms <= 0:
+                            continue
+                        out.append({
+                            "symbol": sym.upper(),
+                            "side": None,
+                            "qty": 0.0, "price": 0.0, "fee_usd": None,
+                            "realized_pnl_usd": float(r.get("balChg") or 0),
+                            "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                            "ext_trade_id": str(r.get("billId")
+                                                or f"funding-{ts_ms}-{sym}"),
+                            "ext_order_id": None,
+                            "kind": "funding",
+                        })
+                    except Exception:
+                        continue
+                after = rows[-1].get("billId") or ""
+                if len(rows) < 100:
+                    break
+        return out

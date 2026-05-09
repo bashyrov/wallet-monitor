@@ -440,3 +440,131 @@ class GateAdapter:
         if info:
             return info.get("leverage_max", 100)
         return 100
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """Gate fills + funding since `since_ts`.
+
+        Futures: /api/v4/futures/usdt/my_trades?from=<sec>&limit=1000 + funding
+        via /api/v4/futures/usdt/account_book?type=fund.
+        Spot: /api/v4/spot/my_trades. Spot side requires a `currency_pair`
+        param for some accounts; we sweep top USDT pairs from balances."""
+        from datetime import datetime as _dt
+        from_s = int(since_ts.timestamp())
+        out: list[dict] = []
+        if market == "futures":
+            try:
+                rows = await cls._req(creds, "GET",
+                                      "/api/v4/futures/usdt/my_trades",
+                                      query={"from": from_s, "limit": 1000}) or []
+            except Exception:
+                rows = []
+            # Build per-contract qty multiplier (size is in contracts).
+            try:
+                contracts = await _contracts()
+            except Exception:
+                contracts = {}
+            for r in rows:
+                try:
+                    contract = str(r.get("contract") or "")
+                    sym = contract.replace("_USDT", "")
+                    sz_contracts = float(r.get("size") or 0)
+                    side = "buy" if sz_contracts > 0 else "sell"
+                    info = contracts.get(contract) or {}
+                    multiplier = float(info.get("quanto_multiplier") or 1.0) or 1.0
+                    qty = abs(sz_contracts) * multiplier
+                    if qty <= 0:
+                        continue
+                    ts_raw = r.get("create_time")
+                    ts_s = float(ts_raw) if ts_raw else 0
+                    if ts_s <= 0:
+                        continue
+                    out.append({
+                        "symbol": sym.upper(),
+                        "side": side,
+                        "qty": qty,
+                        "price": float(r.get("price") or 0),
+                        "fee_usd": None,
+                        "realized_pnl_usd": None,
+                        "ts": _dt.utcfromtimestamp(ts_s),
+                        "ext_trade_id": str(r.get("id") or ""),
+                        "ext_order_id": str(r.get("order_id") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+            try:
+                fund_rows = await cls._req(creds, "GET",
+                                           "/api/v4/futures/usdt/account_book",
+                                           query={"from": from_s, "type": "fund",
+                                                  "limit": 1000}) or []
+            except Exception:
+                fund_rows = []
+            for r in fund_rows:
+                try:
+                    contract = str(r.get("text") or "")  # contract goes in "text"
+                    sym = contract.replace("_USDT", "")
+                    ts_s = float(r.get("time") or 0)
+                    if ts_s <= 0:
+                        continue
+                    out.append({
+                        "symbol": sym.upper(),
+                        "side": None,
+                        "qty": 0.0, "price": 0.0, "fee_usd": None,
+                        "realized_pnl_usd": float(r.get("change") or 0),
+                        "ts": _dt.utcfromtimestamp(ts_s),
+                        "ext_trade_id": str(r.get("id") or f"funding-{ts_s}-{sym}"),
+                        "ext_order_id": None,
+                        "kind": "funding",
+                    })
+                except Exception:
+                    continue
+            return out
+        if market == "spot":
+            # Sweep spot pairs from non-USDT balances.
+            try:
+                balances = await cls._req(creds, "GET", "/api/v4/spot/accounts") or []
+            except Exception:
+                return out
+            stables = {"USDT", "USDC", "BUSD", "DAI"}
+            for b in balances:
+                cur = str(b.get("currency") or "").upper()
+                total = float(b.get("available") or 0) + float(b.get("locked") or 0)
+                if cur in stables or total <= 0:
+                    continue
+                pair = f"{cur}_USDT"
+                try:
+                    rows = await cls._req(creds, "GET",
+                                          "/api/v4/spot/my_trades",
+                                          query={"currency_pair": pair,
+                                                 "from": from_s,
+                                                 "limit": 1000}) or []
+                except Exception:
+                    continue
+                for r in rows:
+                    try:
+                        sz = float(r.get("amount") or 0)
+                        if sz <= 0:
+                            continue
+                        side = "buy" if str(r.get("side") or "") == "buy" else "sell"
+                        ts_raw = r.get("create_time")
+                        ts_s = float(ts_raw) if ts_raw else 0
+                        if ts_s <= 0:
+                            continue
+                        out.append({
+                            "symbol": cur,
+                            "side": side,
+                            "qty": sz,
+                            "price": float(r.get("price") or 0),
+                            "fee_usd": float(r.get("fee") or 0),
+                            "realized_pnl_usd": None,
+                            "ts": _dt.utcfromtimestamp(ts_s),
+                            "ext_trade_id": str(r.get("id") or ""),
+                            "ext_order_id": str(r.get("order_id") or "") or None,
+                            "kind": "trade",
+                        })
+                    except Exception:
+                        continue
+            return out
+        return out

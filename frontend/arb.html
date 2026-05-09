@@ -494,6 +494,20 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
         </div>
       </div>
       <div class="acc-pane" id="acc-pane-pnl">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 8px;gap:10px;flex-wrap:wrap">
+          <div style="font-size:12px;color:var(--text3)">
+            <span id="acc-pnl-synced">Syncing fills from your venues…</span>
+            <span id="acc-pnl-syncing" style="display:none;color:var(--green);margin-left:8px">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="animation:spin 1s linear infinite;vertical-align:-1px"><path d="M2 8a6 6 0 1 0 11.2-3"/></svg>
+              syncing
+            </span>
+          </div>
+          <button id="acc-pnl-sync-btn" onclick="accSyncPnl(this)" class="btn-sync"
+                  style="background:transparent;border:1px solid var(--border);color:var(--text2);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:6px">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8a6 6 0 1 1-1.76-4.24M14 3v3h-3"/></svg>
+            Sync
+          </button>
+        </div>
         <div class="acc-sum-grid" style="padding-bottom:6px">
           <div class="acc-sum-card"><div class="acc-sum-lbl">Closed (30d)</div><div class="acc-sum-val" id="acc-pnl-total">$0.00</div></div>
           <div class="acc-sum-card"><div class="acc-sum-lbl">Trades</div><div class="acc-sum-val" id="acc-pnl-count">0</div></div>
@@ -4274,6 +4288,81 @@ async function accLoadPnl(){
   } catch {
     _renderPnl([]);
   }
+  _updatePnlSyncStatus();
+  // First open: kick off a sync if it's been > 30 min since the last
+  // one, OR if no sync has ever happened. Quiet — happens in the
+  // background while the table renders.
+  if (!window._pnlAutoSynced){
+    window._pnlAutoSynced = true;
+    try {
+      const sr = await Auth.apiFetch('/trade/pnl/sync');
+      if (sr.ok){
+        const j = await sr.json();
+        const last = j.last_synced_at ? new Date(j.last_synced_at).getTime() : 0;
+        const stale = !last || (Date.now() - last > 30 * 60 * 1000);
+        if (stale && !j.in_progress){
+          accSyncPnl(null, /*quiet*/true);
+        }
+      }
+    } catch {}
+  }
+}
+
+async function accSyncPnl(btn, quiet){
+  const button = btn || document.getElementById('acc-pnl-sync-btn');
+  const flag = document.getElementById('acc-pnl-syncing');
+  if (button) button.disabled = true;
+  if (flag) flag.style.display = 'inline-flex';
+  try {
+    const r = await Auth.apiFetch('/trade/pnl/sync', { method: 'POST' });
+    if (!r.ok) throw new Error('sync failed');
+  } catch (e) {
+    if (!quiet && typeof toast === 'function') toast('Sync failed', 'error');
+    if (button) button.disabled = false;
+    if (flag) flag.style.display = 'none';
+    return;
+  }
+  // Poll status every 3s, up to 60s.
+  const t0 = Date.now();
+  while (Date.now() - t0 < 60_000){
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const r = await Auth.apiFetch('/trade/pnl/sync');
+      if (!r.ok) break;
+      const j = await r.json();
+      if (!j.in_progress) break;
+    } catch { break; }
+  }
+  // Refetch PnL list — backfill may have created new rows.
+  try {
+    const r = await Auth.apiFetch('/trade/pnl?days=30');
+    if (r.ok) _renderPnl(await r.json());
+  } catch {}
+  if (button) button.disabled = false;
+  if (flag) flag.style.display = 'none';
+  _updatePnlSyncStatus();
+  if (!quiet && typeof toast === 'function') toast('PnL synced', 'success');
+}
+
+async function _updatePnlSyncStatus(){
+  const el = document.getElementById('acc-pnl-synced');
+  if (!el) return;
+  try {
+    const r = await Auth.apiFetch('/trade/pnl/sync');
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.last_synced_at) {
+      el.textContent = 'Sync to pull recent fills from your venues';
+      return;
+    }
+    const ts = new Date(j.last_synced_at).getTime();
+    const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    const human = sec < 60 ? 'just now'
+                : sec < 3600 ? `${Math.floor(sec/60)} min ago`
+                : sec < 86400 ? `${Math.floor(sec/3600)} h ago`
+                : `${Math.floor(sec/86400)} d ago`;
+    el.textContent = `Last synced ${human}`;
+  } catch {}
 }
 function _renderPnl(rows){
   window._pnlLastRows = rows || [];
@@ -4327,6 +4416,11 @@ function _renderPnl(rows){
       notional = Number(r.qty || 0) * Number(r.entry_price || 0);
     }
     if (notional > 0) roiCell = _pnlFmtRoi(total, notional);
+    const shareData = _htmlEsc(JSON.stringify(r));
+    const shareBtn = `<button class="pnl-share" title="Share P&amp;L card"
+                     data-share-pnl='${shareData}'
+                     onclick='event.stopPropagation();_openShareFromPnl(this)'
+                     style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:6px">↗</button>`;
     const main = `
       <tr onclick="_pnlToggle('${r.id}')" style="cursor:pointer">
         <td>${chev}</td>
@@ -4335,7 +4429,7 @@ function _renderPnl(rows){
         <td><span class="sym">${_esc(r.symbol||'')}</span></td>
         <td>${venuesCell}</td>
         <td class="num"><span class="${totalCls}">${_pnlFmtUsd(total)}</span></td>
-        <td class="num"><span class="${totalCls}">${roiCell}</span></td>
+        <td class="num"><span class="${totalCls}">${roiCell}</span>${shareBtn}</td>
       </tr>`;
     if (!isOpen) return main;
 
@@ -7427,6 +7521,71 @@ function _openShareFromBtn(btn){
     openShareCard(pos);
   } catch (e) {
     console.error('share-card data parse failed', e, btn.getAttribute('data-share'));
+    if (typeof toast === 'function') toast('Could not open share card', 'error');
+  }
+}
+
+// Closed-pnl row → share card. Reshapes the PnL row (which carries
+// realized_pnl_usd / exit_price / etc.) into the share-card pos/pair
+// shape so the existing renderer works unchanged.
+function _openShareFromPnl(btn){
+  try {
+    const raw = btn.getAttribute('data-share-pnl');
+    const r = JSON.parse(raw);
+    if (r.kind === 'pair'){
+      const totalPnl = Number(r.total_pnl_usd || 0);
+      const lq = Number(r.long.qty||0) * Number(r.long.entry_price||0);
+      const sq = Number(r.short.qty||0) * Number(r.short.entry_price||0);
+      const pairUsd = (lq + sq) / 2;
+      const combinedPct = pairUsd > 0 ? (totalPnl / pairUsd * 100) : 0;
+      openSharePairCard({
+        symbol: r.symbol,
+        long: {
+          exchange: r.long.exchange, side: 'buy',
+          quantity: Number(r.long.qty||0),
+          entry_price: Number(r.long.entry_price||0),
+          mark_price: Number(r.long.exit_price||r.long.entry_price||0),
+          leverage: 1,
+          unrealized_pnl_usd: Number(r.long.realized_pnl_usd||0),
+        },
+        short: {
+          exchange: r.short.exchange, side: 'sell',
+          quantity: Number(r.short.qty||0),
+          entry_price: Number(r.short.entry_price||0),
+          mark_price: Number(r.short.exit_price||r.short.entry_price||0),
+          leverage: 1,
+          unrealized_pnl_usd: Number(r.short.realized_pnl_usd||0),
+        },
+        total_pnl_usd: totalPnl,
+        total_funding_usd: Number(r.total_funding_pnl_usd||0),
+        pair_size_usd: pairUsd,
+        combined_pct: combinedPct,
+        entry_spread_pct: Number(r.entry_spread_pct||0),
+        _closed: true,
+      });
+      return;
+    }
+    // Single closed row
+    const realized = Number(r.realized_pnl_usd||0)
+                    + Number(r.funding_pnl_usd||0)
+                    - Number(r.fees_usd||0);
+    const notional = Number(r.qty||0) * Number(r.entry_price||0);
+    const pnlPct = notional > 0 ? (realized / notional * 100) : 0;
+    openShareCard({
+      symbol: r.symbol,
+      exchange: r.exchange,
+      side: r.side,
+      quantity: Number(r.qty||0),
+      entry_price: Number(r.entry_price||0),
+      mark_price: Number(r.exit_price||r.entry_price||0),
+      leverage: 1,
+      unrealized_pnl_usd: Number(r.realized_pnl_usd||0),
+      pnl_pct: pnlPct,
+      funding_pnl_usd: Number(r.funding_pnl_usd||0),
+      _closed: true,
+    });
+  } catch (e) {
+    console.error('share-pnl parse failed', e);
     if (typeof toast === 'function') toast('Could not open share card', 'error');
   }
 }

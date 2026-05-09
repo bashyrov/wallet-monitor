@@ -84,6 +84,81 @@ def pnl(
     return trade_service.list_user_pnl(db, user.id, days=days)
 
 
+# ── Fills backfill — pulls closed positions from each venue ────────────────
+@router.post("/pnl/sync")
+async def pnl_sync(
+    user: User = Depends(get_current_user),
+):
+    """Kick off a fills backfill across every trade-enabled wallet for the
+    last 7 days. Returns immediately; the actual sync runs in the
+    background. A Redis lock prevents concurrent syncs across replicas.
+    Poll GET /pnl/sync to check status."""
+    import asyncio as _asyncio
+    from backend.services import fills_backfill_service
+    from backend.services.rate_limit import _get_redis
+
+    rds = _get_redis()
+    lock_key = f"pnl_sync_lock:{user.id}"
+    if rds is not None:
+        # Try to acquire — TTL 5 min so a crashed worker doesn't permanently
+        # block the user. NX = only set if not exists.
+        try:
+            ok = rds.set(lock_key, "1", nx=True, ex=300)
+        except Exception:
+            ok = True  # treat redis blip as "lock free" — best effort
+    else:
+        ok = True
+    if not ok:
+        return {"syncing": True, "in_progress": True}
+
+    async def _run():
+        try:
+            res = await fills_backfill_service.sync_user(user.id)
+            logger.info("pnl_sync: user=%s result=%s", user.id, res)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("pnl_sync: user=%s failed: %s", user.id, exc)
+        finally:
+            if rds is not None:
+                try:
+                    rds.delete(lock_key)
+                except Exception:
+                    pass
+
+    _asyncio.create_task(_run())
+    return {"syncing": True, "in_progress": False}
+
+
+@router.get("/pnl/sync")
+def pnl_sync_status(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Status of the user's last fills backfill. Returns the most recent
+    `last_synced_at` across cursors and whether a sync is currently
+    holding the Redis lock."""
+    from backend.db.models import FillsSyncCursor
+    from backend.services.rate_limit import _get_redis
+
+    rds = _get_redis()
+    in_progress = False
+    if rds is not None:
+        try:
+            in_progress = bool(rds.get(f"pnl_sync_lock:{user.id}"))
+        except Exception:
+            in_progress = False
+
+    last = (
+        db.query(FillsSyncCursor.last_synced_at)
+        .filter(FillsSyncCursor.user_id == user.id)
+        .order_by(FillsSyncCursor.last_synced_at.desc())
+        .first()
+    )
+    return {
+        "in_progress": in_progress,
+        "last_synced_at": last[0].isoformat() if last and last[0] else None,
+    }
+
+
 @router.get("/spot-short-pairs")
 async def spot_short_pairs(
     user: User = Depends(get_current_user),

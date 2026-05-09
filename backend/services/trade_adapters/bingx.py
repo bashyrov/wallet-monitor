@@ -393,6 +393,90 @@ class BingxAdapter:
     async def get_public_max_leverage(cls, symbol: str) -> int:
         return 150
 
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """BingX swap fills + funding since `since_ts`.
+
+        Futures: /openApi/swap/v2/trade/allFillOrders requires symbol param,
+        so we sweep symbols seen in /openApi/swap/v2/user/income (which gives
+        FUNDING_FEE + REALIZED_PNL with symbol). Spot returns []."""
+        from datetime import datetime as _dt
+        if market != "futures":
+            return []
+        start_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        try:
+            income = await cls._req(creds, "GET",
+                                    "/openApi/swap/v2/user/income", {
+                                        "startTime": start_ms, "limit": 1000,
+                                    }) or []
+        except Exception:
+            income = []
+        symbols: set[str] = set()
+        for it in income:
+            try:
+                sym = str(it.get("symbol") or "")
+                if sym:
+                    symbols.add(sym)
+                if str(it.get("incomeType") or "") == "FUNDING_FEE":
+                    ts_ms = int(it.get("time") or 0)
+                    if ts_ms <= 0:
+                        continue
+                    out.append({
+                        "symbol": sym.replace("-USDT", "").replace("USDT", "").upper(),
+                        "side": None,
+                        "qty": 0.0, "price": 0.0, "fee_usd": None,
+                        "realized_pnl_usd": float(it.get("income")
+                                                  or it.get("amount") or 0),
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(it.get("tradeId")
+                                            or f"funding-{ts_ms}-{sym}"),
+                        "ext_order_id": None,
+                        "kind": "funding",
+                    })
+            except Exception:
+                continue
+        for sym in symbols:
+            try:
+                rows = await cls._req(creds, "GET",
+                                      "/openApi/swap/v2/trade/allFillOrders", {
+                                          "symbol": sym,
+                                          "startTime": start_ms,
+                                          "limit": 1000,
+                                      })
+            except Exception:
+                continue
+            data = (rows or {}).get("fill_orders") or rows or []
+            if not isinstance(data, list):
+                continue
+            for r in data:
+                try:
+                    side = "buy" if str(r.get("side") or "").upper() == "BUY" else "sell"
+                    qty = float(r.get("filledTm") or r.get("qty") or 0)
+                    if qty <= 0:
+                        continue
+                    ts_ms = int(r.get("filledTime") or r.get("time") or 0)
+                    if ts_ms <= 0:
+                        continue
+                    rpnl_raw = r.get("realisedPNL") or r.get("profit")
+                    rpnl = float(rpnl_raw) if rpnl_raw not in (None, "") else None
+                    out.append({
+                        "symbol": sym.replace("-USDT", "").replace("USDT", "").upper(),
+                        "side": side,
+                        "qty": qty,
+                        "price": float(r.get("price") or 0),
+                        "fee_usd": float(r.get("commission") or 0),
+                        "realized_pnl_usd": rpnl,
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(r.get("tradeId") or r.get("id") or ""),
+                        "ext_order_id": str(r.get("orderId") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+        return out
+
 
 def _split_code(exc: Exception) -> tuple[str | None, str]:
     import re

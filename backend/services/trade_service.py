@@ -997,12 +997,78 @@ def _spot_short_paired_keys(db: Session, user_id: int) -> set[tuple[str, str]]:
     return out
 
 
+def _pnl_can_pair_spot_short(spot_long, futures_short, paired: set, unpaired: set) -> bool:
+    """Auto-pair rule for closed spot LONG + closed futures SHORT.
+
+    A basis-trade closure is two events: (1) selling the spot holding,
+    materialized as a closed kind='single' leg_a_market='spot' side='buy';
+    and (2) buying back the futures short, materialized as a closed
+    side='sell' leg_a_market='futures'. We pair them if:
+      - same symbol
+      - notional within 12% (same tolerance as long/short auto-pair)
+      - closed within 5 min of each other
+    User overrides via TradePairDecision still apply. Decision keys reuse
+    the spot|<sym>|<wallet_id> ↔ <sym>|<short_ex>|<short_wallet_id>
+    pattern so the live spot/short flow and the historical one share
+    storage.
+    """
+    sym = (spot_long.symbol or "").upper()
+    if (futures_short.symbol or "").upper() != sym:
+        return False
+    spot_wallet = spot_long.leg_a_wallet_id or 0
+    short_ex = (futures_short.leg_a_exchange or "").lower()
+    short_wallet = futures_short.leg_a_wallet_id or 0
+    leg_a_key = f"{sym}|spot|{spot_wallet}"
+    leg_b_key = f"{sym}|{short_ex}|{short_wallet}"
+    if (leg_a_key, leg_b_key) in unpaired:
+        return False
+    if (leg_a_key, leg_b_key) in paired:
+        return True
+    le = float(spot_long.leg_a_entry_price or 0)
+    se = float(futures_short.leg_a_entry_price or 0)
+    if le <= 0 or se <= 0:
+        return False
+    long_n = float(spot_long.leg_a_qty or 0) * le
+    short_n = float(futures_short.leg_a_qty or 0) * se
+    max_n = max(long_n, short_n)
+    if max_n <= 0:
+        return False
+    diff_pct = abs(long_n - short_n) / max_n * 100.0
+    if diff_pct > 12.0:
+        return False
+    if spot_long.closed_at and futures_short.closed_at:
+        delta = abs((spot_long.closed_at - futures_short.closed_at).total_seconds())
+        if delta > 5 * 60:
+            return False
+    return True
+
+
+def _spot_short_decisions_keyed(db: Session, user_id: int) -> tuple[set, set]:
+    """Return (paired, unpaired) sets keyed by (leg_a_key, leg_b_key) for
+    spot/short pair decisions — leg_a starts with `<sym>|spot|...`."""
+    from backend.db.models import TradePairDecision
+    paired: set = set()
+    unpaired: set = set()
+    rows = db.query(TradePairDecision).filter(TradePairDecision.user_id == user_id).all()
+    for r in rows:
+        a = r.leg_a_key or ""
+        b = r.leg_b_key or ""
+        if "|spot|" not in a:
+            continue
+        key = (a, b)
+        (paired if r.decision == "paired" else unpaired).add(key)
+    return paired, unpaired
+
+
 def list_user_pnl(db: Session, user_id: int, *, days: int = 30) -> list[dict]:
     """P&L tab — closed positions over the last `days` days, grouped into
     pairs where pair-decision OR auto-detect (spread%±5% / 5-min window)
     applies. Partial-closed pairs (one leg closed, the other still open)
     are filtered out — those still belong in the live Positions tab.
 
+    Two pairing passes run on the closed singles:
+      1. Long/Short on futures legs (existing rule).
+      2. Spot LONG + Futures SHORT (basis trade — new in fills-backfill).
     Closed SHORT positions whose user has a 'paired' spot/short decision
     on the same (symbol, exchange) are tagged `paired_with_spot=True` so
     the UI can show them as basis-trade closures instead of plain shorts.
@@ -1012,6 +1078,7 @@ def list_user_pnl(db: Session, user_id: int, *, days: int = 30) -> list[dict]:
     cutoff = datetime.utcnow() - _td(days=int(days))
     paired, unpaired = _pnl_pair_decisions(db, user_id)
     spot_paired_keys = _spot_short_paired_keys(db, user_id)
+    spot_paired_set, spot_unpaired_set = _spot_short_decisions_keyed(db, user_id)
 
     closed = (
         db.query(TradePosition)
@@ -1048,14 +1115,50 @@ def list_user_pnl(db: Session, user_id: int, *, days: int = 30) -> list[dict]:
     used_ids: set[int] = set()
     out: list[dict] = []
 
+    # Pre-pass: spot LONG + futures SHORT auto-pair (basis trade closures).
+    # Runs first because a closed spot row has the same shape as a normal
+    # single — without this pass it would render as a stand-alone "spot"
+    # row and the user would need to mentally pair them up.
+    spot_longs = [c for c in closed
+                  if c.id not in used_ids
+                  and (c.leg_a_market or "futures") == "spot"
+                  and (c.leg_a_side or "").lower() == "buy"]
+    fut_shorts = [c for c in closed
+                  if c.id not in used_ids
+                  and (c.leg_a_market or "futures") == "futures"
+                  and (c.leg_a_side or "").lower() == "sell"]
+    for sl in spot_longs:
+        if sl.id in used_ids:
+            continue
+        for fs in fut_shorts:
+            if fs.id in used_ids:
+                continue
+            if _pnl_can_pair_spot_short(sl, fs, spot_paired_set, spot_unpaired_set):
+                used_ids.add(sl.id)
+                used_ids.add(fs.id)
+                out.append(_serialize_pnl_spot_short(sl, fs))
+                break
+
     # First pass: pair up closed singles into pair rows.
     for r in closed:
         if r.id in used_ids:
             continue
+        # Skip spot rows — they only pair via the spot/short pass above; if
+        # they got here unmatched they render as stand-alone spot singles.
+        if (r.leg_a_market or "futures") != "futures":
+            sym = (r.symbol or "").upper()
+            side = (r.leg_a_side or "").lower()
+            used_ids.add(r.id)
+            out.append(_serialize_pnl_single(r))
+            continue
         sym = (r.symbol or "").upper()
         side = (r.leg_a_side or "").lower()
         opp_side = "sell" if side == "buy" else "buy"
-        candidates = [c for c in by_sym_side.get((sym, opp_side), []) if c.id not in used_ids]
+        # Restrict counterparts to FUTURES legs — spot can't pair via the
+        # long/short rule.
+        candidates = [c for c in by_sym_side.get((sym, opp_side), [])
+                      if c.id not in used_ids
+                      and (c.leg_a_market or "futures") == "futures"]
 
         long_pos, short_pos = (r, None) if side == "buy" else (None, r)
         match = None
@@ -1113,6 +1216,7 @@ def _serialize_pnl_single(r, *, paired_with_spot: bool = False) -> dict:
         "id": r.id,
         "symbol": r.symbol,
         "exchange": r.leg_a_exchange,
+        "market": r.leg_a_market or "futures",
         "side": r.leg_a_side,
         "qty": r.leg_a_qty,
         "entry_price": r.leg_a_entry_price,
@@ -1127,11 +1231,69 @@ def _serialize_pnl_single(r, *, paired_with_spot: bool = False) -> dict:
         "closed_at": r.closed_at.isoformat() if r.closed_at else None,
         "opened_externally": bool(r.opened_externally),
         "closed_externally": bool(r.closed_externally),
+        "source": r.source or "platform",
         # Tag set on shorts that had a paired spot leg via TradePairDecision.
         # The spot leg's PnL isn't tracked here (we don't keep historical
         # balance snapshots), so the row is marked so the UI can hint the
         # full P&L lives on the venue's spot history.
         "paired_with_spot": paired_with_spot,
+    }
+
+
+def _serialize_pnl_spot_short(spot_long, futures_short) -> dict:
+    """Serialize a closed spot/short basis pair. Mirrors the long/short
+    serializer shape so the frontend can render either kind with one
+    component, just keyed off `pair_kind`."""
+    le = float(spot_long.leg_a_entry_price or 0)
+    se = float(futures_short.leg_a_entry_price or 0)
+    long_realized = spot_long.leg_a_realized_pnl_usd or 0
+    short_realized = futures_short.leg_a_realized_pnl_usd or 0
+    long_funding = spot_long.leg_a_funding_pnl_usd or 0
+    short_funding = futures_short.leg_a_funding_pnl_usd or 0
+    long_fees = spot_long.leg_a_fees_usd or 0
+    short_fees = futures_short.leg_a_fees_usd or 0
+    total = long_realized + short_realized + long_funding + short_funding - long_fees - short_fees
+    spread_pct = abs((se - le) / le) * 100.0 if le > 0 else None
+    opened_at = max(filter(None, [spot_long.opened_at, futures_short.opened_at])) \
+        if (spot_long.opened_at or futures_short.opened_at) else None
+    closed_at = max(filter(None, [spot_long.closed_at, futures_short.closed_at])) \
+        if (spot_long.closed_at or futures_short.closed_at) else None
+    return {
+        "kind": "pair",
+        "pair_kind": "spot_short",
+        "id": f"{spot_long.id}-{futures_short.id}",
+        "symbol": spot_long.symbol,
+        "long":  {
+            "exchange": spot_long.leg_a_exchange,
+            "market": "spot",
+            "qty": spot_long.leg_a_qty,
+            "entry_price": spot_long.leg_a_entry_price,
+            "exit_price": spot_long.leg_a_exit_price,
+            "realized_pnl_usd": long_realized,
+            "funding_pnl_usd": long_funding,
+            "fees_usd": long_fees,
+            "opened_externally": bool(spot_long.opened_externally),
+            "closed_externally": bool(spot_long.closed_externally),
+        },
+        "short": {
+            "exchange": futures_short.leg_a_exchange,
+            "market": "futures",
+            "qty": futures_short.leg_a_qty,
+            "entry_price": futures_short.leg_a_entry_price,
+            "exit_price": futures_short.leg_a_exit_price,
+            "realized_pnl_usd": short_realized,
+            "funding_pnl_usd": short_funding,
+            "fees_usd": short_fees,
+            "opened_externally": bool(futures_short.opened_externally),
+            "closed_externally": bool(futures_short.closed_externally),
+        },
+        "total_realized_pnl_usd": long_realized + short_realized,
+        "total_funding_pnl_usd": long_funding + short_funding,
+        "total_fees_usd": long_fees + short_fees,
+        "total_pnl_usd": total,
+        "entry_spread_pct": spread_pct,
+        "opened_at": opened_at.isoformat() if opened_at else None,
+        "closed_at": closed_at.isoformat() if closed_at else None,
     }
 
 

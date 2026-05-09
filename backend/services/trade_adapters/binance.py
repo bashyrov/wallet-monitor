@@ -436,6 +436,169 @@ class BinanceAdapter:
     async def get_public_max_leverage(cls, symbol: str) -> int:
         return 125
 
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *,
+                                 market: str = "futures") -> list[dict]:
+        """Binance fills + funding since `since_ts`.
+
+        Futures: /fapi/v1/userTrades?startTime=… per-symbol-or-all (the
+        endpoint requires a symbol; we sweep recent symbols traded via
+        /fapi/v1/income[incomeType=REALIZED_PNL] which gives us the symbol
+        list cheaply, then per-symbol pulls fills).
+        Funding via /fapi/v1/income?incomeType=FUNDING_FEE.
+        Spot: /api/v3/myTrades — symbol required; we sweep account positions
+        history for spot via /api/v3/account symbols + scoped queries.
+
+        Cap each per-symbol page to 1000 (Binance max). Pagination by
+        `fromId` not supported here; we trust the time window."""
+        from datetime import datetime as _dt
+        out: list[dict] = []
+        start_ms = int(since_ts.timestamp() * 1000)
+        if market == "futures":
+            try:
+                # Pull income (REALIZED_PNL + FUNDING_FEE) — gives both
+                # close-PnL signal AND symbol enumeration in one call.
+                income = await cls._signed(creds, "GET", "/fapi/v1/income", {
+                    "startTime": start_ms, "limit": 1000,
+                }) or []
+            except Exception:
+                income = []
+            symbols: set[str] = set()
+            for it in income:
+                try:
+                    sym = str(it.get("symbol") or "")
+                    if sym:
+                        symbols.add(sym)
+                    if str(it.get("incomeType") or "") == "FUNDING_FEE":
+                        ts_ms = int(it.get("time") or 0)
+                        if ts_ms <= 0:
+                            continue
+                        out.append({
+                            "symbol": sym.replace("USDT", ""),
+                            "side": None,
+                            "qty": 0.0, "price": 0.0, "fee_usd": None,
+                            "realized_pnl_usd": float(it.get("income") or 0),
+                            "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                            "ext_trade_id": str(it.get("tranId")
+                                                or f"funding-{ts_ms}-{sym}"),
+                            "ext_order_id": None,
+                            "kind": "funding",
+                        })
+                except Exception:
+                    continue
+            # Per-symbol fills (Binance requires symbol param).
+            for sym in symbols:
+                try:
+                    rows = await cls._signed(creds, "GET",
+                                             "/fapi/v1/userTrades", {
+                                                 "symbol": sym,
+                                                 "startTime": start_ms,
+                                                 "limit": 1000,
+                                             }) or []
+                except Exception:
+                    continue
+                for r in rows:
+                    try:
+                        ts_ms = int(r.get("time") or 0)
+                        if ts_ms <= 0:
+                            continue
+                        side = "buy" if str(r.get("side") or "").upper() == "BUY" else "sell"
+                        qty = float(r.get("qty") or 0)
+                        if qty <= 0:
+                            continue
+                        rpnl = r.get("realizedPnl")
+                        out.append({
+                            "symbol": sym.replace("USDT", ""),
+                            "side": side,
+                            "qty": qty,
+                            "price": float(r.get("price") or 0),
+                            "fee_usd": float(r.get("commission") or 0),
+                            "realized_pnl_usd": (float(rpnl)
+                                                 if rpnl not in (None, "") else None),
+                            "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                            "ext_trade_id": str(r.get("id") or ""),
+                            "ext_order_id": str(r.get("orderId") or "") or None,
+                            "kind": "trade",
+                        })
+                    except Exception:
+                        continue
+            return out
+        if market == "spot":
+            # Spot needs a separate signed client; reuse the same signing.
+            spot_base = "https://api.binance.com"
+            # Discover candidate symbols from non-zero balances + recent
+            # /api/v3/myTrades sweep for top USDT pairs the user holds.
+            try:
+                acct = await cls._signed_at(creds, "GET", "/api/v3/account",
+                                            base=spot_base) or {}
+            except Exception:
+                return out
+            assets = [b for b in (acct.get("balances") or [])
+                      if float(b.get("free") or 0) + float(b.get("locked") or 0) > 0]
+            for b in assets:
+                asset = str(b.get("asset") or "").upper()
+                if asset in ("USDT", "USDC", "BUSD", "DAI"):
+                    continue
+                sym = f"{asset}USDT"
+                try:
+                    rows = await cls._signed_at(creds, "GET",
+                                                "/api/v3/myTrades", {
+                                                    "symbol": sym,
+                                                    "startTime": start_ms,
+                                                    "limit": 1000,
+                                                }, base=spot_base) or []
+                except Exception:
+                    continue
+                for r in rows:
+                    try:
+                        ts_ms = int(r.get("time") or 0)
+                        if ts_ms <= 0:
+                            continue
+                        is_buyer = bool(r.get("isBuyer"))
+                        out.append({
+                            "symbol": asset,
+                            "side": "buy" if is_buyer else "sell",
+                            "qty": float(r.get("qty") or 0),
+                            "price": float(r.get("price") or 0),
+                            "fee_usd": float(r.get("commission") or 0),
+                            "realized_pnl_usd": None,
+                            "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                            "ext_trade_id": str(r.get("id") or ""),
+                            "ext_order_id": str(r.get("orderId") or "") or None,
+                            "kind": "trade",
+                        })
+                    except Exception:
+                        continue
+            return out
+        return out
+
+    @classmethod
+    async def _signed_at(cls, creds: dict, method: str, path: str,
+                         params: dict | None = None, *, base: str):
+        """_signed() pinned to the futures BASE; _signed_at lets callers
+        target the spot endpoint with the same signing logic."""
+        import time as _t
+        import urllib.parse as _up
+        api_key = (creds.get("api_key") or "").strip()
+        api_secret = (creds.get("api_secret") or "").strip()
+        if not (api_key and api_secret):
+            raise RuntimeError("Binance: api_key/api_secret missing")
+        params = dict(params or {})
+        params["timestamp"] = int(_t.time() * 1000)
+        params["recvWindow"] = 60000
+        qs = _up.urlencode(sorted(params.items()))
+        sig = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+        url = f"{base}{path}?{qs}&signature={sig}"
+        headers = {"X-MBX-APIKEY": api_key}
+        async with httpx.AsyncClient(timeout=10) as c:
+            if method == "GET":
+                r = await c.get(url, headers=headers)
+            else:
+                r = await c.request(method, url, headers=headers)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Binance {r.status_code}: {r.text[:200]}")
+        return r.json()
+
 
 def _split_code(exc: Exception) -> tuple[str | None, str]:
     """Extract (code, msg) from 'Binance 400 -1111: ...'."""
