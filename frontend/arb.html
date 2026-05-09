@@ -4858,7 +4858,7 @@ async function accLoadPositions(){
           <td style="white-space:nowrap">
             <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button>
             <button class="pos-share" title="Share P&amp;L card"
-                    data-share='${_htmlEsc(JSON.stringify({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct}))}'
+                    data-share='${_htmlEsc(JSON.stringify({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct,funding_pnl_usd:(p.funding_pnl_usd!=null?Number(p.funding_pnl_usd):null)}))}'
                     onclick='_openShareFromBtn(this)'
                     style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:4px">↗</button>
           </td>
@@ -7669,9 +7669,6 @@ function _renderSinglePositionCard(){
   if (!host || !_sharePos) return;
   const p = _sharePos;
   const isLong = p.side === 'buy';
-  const isLoss = (+p.unrealized_pnl_usd || 0) < 0;
-  const kindClass = isLoss ? 'loss' : 'win';
-  const accent = isLoss ? '#F87171' : '#1AFFAB';
   const arrowKind = isLong ? 'up' : 'down';
 
   const sideText = isLong ? 'LONG' : 'SHORT';
@@ -7679,10 +7676,7 @@ function _renderSinglePositionCard(){
   const lev = (p.leverage && p.leverage > 0) ? `${p.leverage}X` : '';
   const sidePill = lev ? `${sideText} ${lev}` : sideText;
 
-  const pct = +p.pnl_pct || 0;
-  const usd = +p.unrealized_pnl_usd || 0;
-
-  const fundUsd = +p.funding_pnl_usd || 0;
+  const fundUsd = (p.funding_pnl_usd != null) ? Number(p.funding_pnl_usd) : 0;
   // Funding-ROI = funding ÷ margin (deployed capital). margin = notional
   // / leverage. Without this the ROI mode shows +0,00% even when
   // funding is non-zero. Falls back to 0 if any input is missing.
@@ -7693,6 +7687,15 @@ function _renderSinglePositionCard(){
   const fundPct = (p.funding_pnl_pct != null)
     ? (+p.funding_pnl_pct)
     : (_margin > 0 ? (fundUsd / _margin * 100) : 0);
+  // Hero pct/usd include funding so the displayed ROI/uPnL matches what
+  // the user actually has — same convention as the pair card (total_pnl
+  // includes funding).
+  const priceUsd = +p.unrealized_pnl_usd || 0;
+  const usd = priceUsd + fundUsd;
+  const pct = (+p.pnl_pct || 0) + fundPct;
+  const isLoss = usd < 0;
+  const kindClass = isLoss ? 'loss' : 'win';
+  const accent = isLoss ? '#F87171' : '#1AFFAB';
   const fundCol = fundUsd >= 0 ? '#1AFFAB' : '#F87171';
   const fundCell = (_shareMode === 'pct')
     ? _scFmtFundingFor('pct', fundUsd, fundPct)
