@@ -84,6 +84,38 @@ class BingXUserStream(BaseUserStream):
                 logger.warning("bingx: listenKey renew failed: %s", exc)
 
     @classmethod
+    def pong_for(cls, raw: Any) -> str | None:
+        """BingX server sends `{"ping":"<ts>"}` (or text "Ping") every
+        ~30-60s and expects a matching pong within ~60s, otherwise it
+        closes the connection. Without this we were getting LIVE↔
+        DEGRADED flap every ~30-60s. Reply on the same wire format —
+        if the ping carries a ts, echo it; otherwise reply with bare
+        "Pong" string (BingX accepts both).
+        """
+        # text-frame "Ping"
+        if isinstance(raw, str) and raw.strip().lower() == "ping":
+            return "Pong"
+        # bytes that decode to "Ping"
+        if isinstance(raw, bytes):
+            try:
+                txt = gzip.GzipFile(fileobj=io.BytesIO(raw)).read().decode()
+            except Exception:
+                try: txt = raw.decode()
+                except Exception: txt = ""
+            if txt.strip().lower() == "ping":
+                return "Pong"
+            try:
+                obj = json.loads(txt)
+                if isinstance(obj, dict) and obj.get("ping"):
+                    return json.dumps({"pong": obj["ping"]})
+            except Exception:
+                pass
+            return None
+        if isinstance(raw, dict) and raw.get("ping"):
+            return json.dumps({"pong": raw["ping"]})
+        return None
+
+    @classmethod
     def parse_event(cls, raw: Any) -> UserStreamEvent | None:
         # BingX wraps events as gzip'd binary on the WS — but the
         # websockets library handles compression for permessage-deflate.
@@ -99,7 +131,8 @@ class BingXUserStream(BaseUserStream):
             return None
         e = raw.get("e") or raw.get("eventType")
 
-        # Heartbeat ping
+        # Heartbeat ping (handled by pong_for above; this is a defensive
+        # pass-through when the supervisor calls parse_event anyway).
         if isinstance(raw, dict) and raw.get("ping"):
             return None
 

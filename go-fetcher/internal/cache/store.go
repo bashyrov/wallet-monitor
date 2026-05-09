@@ -162,3 +162,24 @@ func (s *Store) Prune(idle time.Duration) int {
 	}
 	return removed
 }
+
+// EvictStale removes entries whose UpdatedAt is older than `staleAfter`
+// regardless of LastRequestAt. Catches the case where a WS adapter
+// remains "subscribed" to a contract that the venue has stopped pushing
+// deltas for (delisted / halted) — Prune wouldn't catch it because the
+// per-process userSubs map keeps refreshing LastRequestAt.
+//
+// Returns count of entries dropped. Caller decides cadence; we use 60s.
+func (s *Store) EvictStale(staleAfter time.Duration) int {
+	cutoff := time.Now().Add(-staleAfter)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	removed := 0
+	for k, e := range s.books {
+		if e.UpdatedAt.Before(cutoff) {
+			delete(s.books, k)
+			removed++
+		}
+	}
+	return removed
+}

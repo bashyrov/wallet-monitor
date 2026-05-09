@@ -56,7 +56,7 @@ class GateUserStream(BaseUserStream):
         sig = _sign_v4_ws(api_secret, "futures.login", "api", ts)
 
         # Step 1: login
-        await ws.send(json.dumps({
+        login_frame = {
             "time": ts,
             "channel": "futures.login",
             "event": "api",
@@ -66,28 +66,40 @@ class GateUserStream(BaseUserStream):
                 "timestamp": str(ts),
                 "req_id": "login-1",
             },
-        }))
+        }
+        await ws.send(json.dumps(login_frame))
 
-        # Wait for login response.
-        for _ in range(5):
+        # Wait for login response. Up to 8 frames * 5s each — Gate often
+        # sends an empty heartbeat or pong before the login result, and
+        # the login channel ack arrives on the SAME `futures.login`
+        # channel but with `event="api"` and a `header.status` field.
+        # Log every frame at INFO so a future "gate login: timeout" tells
+        # us what came back instead of just dying silently.
+        last_seen: list[str] = []
+        for attempt in range(8):
             try:
-                raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
+                raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
             except asyncio.TimeoutError:
-                raise RuntimeError("gate login: timeout")
+                raise RuntimeError(f"gate login: timeout after {attempt} frames; saw {last_seen}")
             try:
                 msg = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
             except Exception:
+                last_seen.append("<non-json>")
                 continue
-            if msg.get("channel") == "futures.login" and msg.get("event") == "api":
-                if msg.get("error"):
-                    raise RuntimeError(f"gate login failed: {msg.get('error')}")
-                # Header line — confirm via header.status: success
+            ch = msg.get("channel") if isinstance(msg, dict) else ""
+            ev = msg.get("event") if isinstance(msg, dict) else ""
+            last_seen.append(f"{ch}:{ev}")
+            if ch == "futures.login" and ev == "api":
+                err = msg.get("error")
+                if err:
+                    raise RuntimeError(f"gate login failed: {err}")
                 hdr = msg.get("header") or {}
-                if hdr.get("status") and hdr.get("status") != "200":
+                if hdr.get("status") and str(hdr.get("status")) != "200":
                     raise RuntimeError(f"gate login bad status: {hdr}")
+                logger.info("gate user-stream: login ok (frames seen: %s)", last_seen)
                 break
         else:
-            raise RuntimeError("gate login: no response after 5 frames")
+            raise RuntimeError(f"gate login: no api ack after 8 frames; saw {last_seen}")
 
         # Step 2: subscribe to positions + balances. After login, the
         # API key is bound to the connection — no per-subscribe auth.

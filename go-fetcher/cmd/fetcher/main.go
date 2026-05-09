@@ -369,6 +369,28 @@ func main() {
 		}
 	})
 
+	// Stale-data eviction — every 60s, drops entries whose UpdatedAt is
+	// older than 30 min regardless of LastRequestAt. Catches the
+	// "subscribed but never pushed" case where a venue keeps a contract
+	// in its symbol list but stops streaming deltas (delisted / halted).
+	// Without this, the screener showed bid/ask from hours ago for those
+	// contracts. 30 min is generous — even thinly-traded perps tick at
+	// least once per 30 min during US/EU hours.
+	g.Go(func() error {
+		t := time.NewTicker(60 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-gctx.Done():
+				return nil
+			case <-t.C:
+				if n := store.EvictStale(30 * time.Minute); n > 0 {
+					l.Info().Int("removed", n).Msg("cache stale-eviction")
+				}
+			}
+		}
+	})
+
 	// Orderbook adapters. SymbolManager.RegisterOrderbook + the initial
 	// prewarm are the two inputs that decide what each runner subscribes
 	// to; from there reconcile() drives all updates (every 5s).
