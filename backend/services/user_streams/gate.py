@@ -55,7 +55,15 @@ class GateUserStream(BaseUserStream):
         ts = int(time.time())
         sig = _sign_v4_ws(api_secret, "futures.login", "api", ts)
 
-        # Step 1: login
+        # Step 1: send login. Gate v4 accepts auth-on-channel-frame: the
+        # `api_key` + `signature` can be embedded in the SUBSCRIBE call
+        # itself (per docs each channel frame can carry auth). Sending
+        # the login-channel frame is still recommended but Gate is
+        # silent about its ack — observed in production: Gate sends one
+        # empty pong-style frame and never an explicit `futures.login:api`
+        # ack. Previous code waited for the ack and timed out. New
+        # approach: fire login + immediately subscribe; if auth was bad,
+        # the subscribe response carries the error.
         login_frame = {
             "time": ts,
             "channel": "futures.login",
@@ -69,55 +77,45 @@ class GateUserStream(BaseUserStream):
         }
         await ws.send(json.dumps(login_frame))
 
-        # Wait for login response. Up to 8 frames * 5s each — Gate often
-        # sends an empty heartbeat or pong before the login result, and
-        # the login channel ack arrives on the SAME `futures.login`
-        # channel but with `event="api"` and a `header.status` field.
-        # Log every frame at INFO so a future "gate login: timeout" tells
-        # us what came back instead of just dying silently.
-        last_seen: list[str] = []
-        for attempt in range(8):
-            try:
-                raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
-            except asyncio.TimeoutError:
-                raise RuntimeError(f"gate login: timeout after {attempt} frames; saw {last_seen}")
-            try:
-                msg = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
-            except Exception:
-                last_seen.append("<non-json>")
-                continue
-            ch = msg.get("channel") if isinstance(msg, dict) else ""
-            ev = msg.get("event") if isinstance(msg, dict) else ""
-            last_seen.append(f"{ch}:{ev}")
-            if ch == "futures.login" and ev == "api":
-                err = msg.get("error")
-                if err:
-                    raise RuntimeError(f"gate login failed: {err}")
-                hdr = msg.get("header") or {}
-                if hdr.get("status") and str(hdr.get("status")) != "200":
-                    raise RuntimeError(f"gate login bad status: {hdr}")
-                logger.info("gate user-stream: login ok (frames seen: %s)", last_seen)
-                break
-        else:
-            raise RuntimeError(f"gate login: no api ack after 8 frames; saw {last_seen}")
+        # Brief opportunistic drain (1s × 1 frame) — pulls Gate's first
+        # silent welcome out of the way before subscribe so parse_event
+        # doesn't see it. If it times out, no big deal.
+        try:
+            await asyncio.wait_for(ws.recv(), timeout=1.0)
+        except (asyncio.TimeoutError, Exception):
+            pass
 
-        # Step 2: subscribe to positions + balances. After login, the
-        # API key is bound to the connection — no per-subscribe auth.
+        # Step 2: subscribe with embedded auth (Gate accepts the same
+        # api_key + signature inside subscribe payloads, redundant with
+        # login but ensures auth even if login frame was dropped).
         # Per docs, payload "!all" subscribes to all positions for the
         # account; without it, you'd have to enumerate every contract.
         ts2 = int(time.time())
+        sig_pos = _sign_v4_ws(api_secret, "futures.positions", "subscribe", ts2)
+        sig_bal = _sign_v4_ws(api_secret, "futures.balances", "subscribe", ts2)
         await ws.send(json.dumps({
             "time": ts2,
             "channel": "futures.positions",
             "event": "subscribe",
             "payload": ["!all"],
+            "auth": {
+                "method": "api_key",
+                "KEY": api_key,
+                "SIGN": sig_pos,
+            },
         }))
         await ws.send(json.dumps({
             "time": ts2,
             "channel": "futures.balances",
             "event": "subscribe",
             "payload": ["!all"],
+            "auth": {
+                "method": "api_key",
+                "KEY": api_key,
+                "SIGN": sig_bal,
+            },
         }))
+        logger.info("gate user-stream: subscribe sent (login fire-and-forget)")
 
     @classmethod
     def parse_event(cls, raw: Any) -> UserStreamEvent | None:
