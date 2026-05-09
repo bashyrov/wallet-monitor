@@ -141,6 +141,16 @@ class KuCoinAdapter:
             url_path = path
             body_str = ""
 
+        # KuCoin sign covers the EXACT body bytes we send. Previous code
+        # signed body_str="" but POSTed `content=body_str or "{}"`, which
+        # made server see {} but signature over "" — error 400005 on
+        # every POST without a body (e.g. /api/v1/bullet-private). Fix:
+        # if we're POSTing, ensure send-body == sign-body.
+        send_body = body_str
+        if method == "POST" and not send_body:
+            send_body = "{}"
+            body_str = "{}"
+
         sign_str = ts + method + url_path + body_str
         signature = b64_hmac_sha256(secret, sign_str)
         passphrase_sign = b64_hmac_sha256(secret, passphrase)
@@ -158,7 +168,7 @@ class KuCoinAdapter:
             if method == "GET":
                 r = await c.get(url, headers=headers)
             elif method == "POST":
-                r = await c.post(url, content=body_str or "{}", headers=headers)
+                r = await c.post(url, content=send_body, headers=headers)
             elif method == "DELETE":
                 r = await c.delete(url, headers=headers)
             else:
