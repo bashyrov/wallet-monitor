@@ -7676,23 +7676,19 @@ function _renderSinglePositionCard(){
   const lev = (p.leverage && p.leverage > 0) ? `${p.leverage}X` : '';
   const sidePill = lev ? `${sideText} ${lev}` : sideText;
 
-  const fundUsd = (p.funding_pnl_usd != null) ? Number(p.funding_pnl_usd) : 0;
-  // Funding-ROI = funding ÷ margin (deployed capital). margin = notional
-  // / leverage. Without this the ROI mode shows +0,00% even when
-  // funding is non-zero. Falls back to 0 if any input is missing.
+  // ROI denominator = margin (deployed capital) = notional / leverage.
+  // All three hero numbers (usd / pct / isLoss) derive from the SAME
+  // totalUsd so the card colour, the hero number sign, and the hero
+  // pct sign can never disagree.
   const _qty = +p.quantity || 0;
   const _entry = +p.entry_price || 0;
   const _lev = +p.leverage || 1;
   const _margin = (_qty > 0 && _entry > 0 && _lev > 0) ? (_qty * _entry / _lev) : 0;
-  const fundPct = (p.funding_pnl_pct != null)
-    ? (+p.funding_pnl_pct)
-    : (_margin > 0 ? (fundUsd / _margin * 100) : 0);
-  // Hero pct/usd include funding so the displayed ROI/uPnL matches what
-  // the user actually has — same convention as the pair card (total_pnl
-  // includes funding).
   const priceUsd = +p.unrealized_pnl_usd || 0;
+  const fundUsd = (p.funding_pnl_usd != null) ? Number(p.funding_pnl_usd) : 0;
+  const fundPct = _margin > 0 ? (fundUsd / _margin * 100) : 0;
   const usd = priceUsd + fundUsd;
-  const pct = (+p.pnl_pct || 0) + fundPct;
+  const pct = _margin > 0 ? (usd / _margin * 100) : (+p.pnl_pct || 0);
   const isLoss = usd < 0;
   const kindClass = isLoss ? 'loss' : 'win';
   const accent = isLoss ? '#F87171' : '#1AFFAB';
