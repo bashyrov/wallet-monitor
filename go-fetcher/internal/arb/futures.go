@@ -74,17 +74,19 @@ const (
 )
 
 // File-cache cap — top-N kept in arbitrage.json. Tunable via
-// AVALANT_ARB_FILE_TOP_N (default 5000). Bumped from 1000 because the
-// screener's "tracked set" IS this file — top-1000 by basis dropped
-// niche venues even when the symbol existed there with real volume
-// (e.g. LITE on OKX vs the leader pair, see Phase 1 plan).
+// AVALANT_ARB_FILE_TOP_N (default 1000). Briefly tried 5000 to widen
+// coverage but the wire payload grew 5x (Python serialises 2.5MB →
+// browser, ~2.5s vs ~0.5s) — bad UX trade-off. The volume-filter
+// removal + OKX volume fix already let niche pairs (e.g. LITE-on-OKX)
+// through within the top-1000 since their basis (~6%) is far above
+// the median.
 var arbFileTopN = func() int {
 	if s := strings.TrimSpace(os.Getenv("AVALANT_ARB_FILE_TOP_N")); s != "" {
 		if v, err := strconv.Atoi(s); err == nil && v > 0 {
 			return v
 		}
 	}
-	return 5000
+	return 1000
 }()
 
 // Volume floor for inclusion in arb output. Tunable via
