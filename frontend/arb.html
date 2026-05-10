@@ -1302,19 +1302,16 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             <div class="col-info-title">Execute trade</div>
             <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column">
 
-              <!-- LONG leg: BUY on DEX / Spot venue.
-                   DEX path keeps the wallet-handoff link (we never sign).
-                   Spot path mirrors the SHORT (perp) form 1:1 minus the
-                   leverage + margin-mode rows (spot is always 1×). -->
-              <div class="trade-leg" id="pt-trade-long">
-                <div class="trade-leg-head">
-                  <span class="trade-leg-badge trade-leg-long" style="${IS_DEX ? 'color:#A78BFA;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.35)' : ''}">${IS_DEX ? 'DEX' : 'SPOT'}</span>
-                  <span class="trade-leg-ex" id="pt-trade-long-venue">—</span>
-                  <span class="trade-leg-status missing" id="pt-spot-status">${IS_DEX ? 'manual' : '—'}</span>
-                </div>
-                <div class="trade-leg-body">
-                  ${IS_DEX
-                    ? `<div class="trade-price-row">
+              ${IS_DEX
+                ? `<!-- DEX leg keeps the simple wallet-handoff card — we never sign DEX swaps -->
+                   <div class="trade-leg" id="pt-trade-long">
+                     <div class="trade-leg-head">
+                       <span class="trade-leg-badge trade-leg-long" style="color:#A78BFA;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.35)">DEX</span>
+                       <span class="trade-leg-ex" id="pt-trade-long-venue">—</span>
+                       <span class="trade-leg-status missing">manual</span>
+                     </div>
+                     <div class="trade-leg-body">
+                       <div class="trade-price-row">
                          <span class="trade-lbl">Last</span>
                          <span class="trade-last mono" id="pt-trade-long-px">—</span>
                          <span class="trade-spacer"></span>
@@ -1326,98 +1323,172 @@ if (TYPE === 'spot' || TYPE === 'dex') {
                          <div class="trade-info-row"><span>Basis at entry</span><span class="mono" id="pt-long-basis">—</span></div>
                        </div>
                        <a id="pt-dex-swap" class="trade-submit trade-long-btn" href="#" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#A78BFA 0%,#8B5CF6 100%);color:#0B0B0E;text-align:center;text-decoration:none;display:block">Open swap on DEX →</a>
-                       <div style="font-size:10.5px;color:var(--text3);line-height:1.45;text-align:center;margin-top:4px">Swap runs in your wallet (MetaMask / Phantom) via DexScreener.</div>`
-                    : `<div class="trade-price-row">
-                         <span class="trade-lbl">Last</span>
-                         <span class="trade-last mono" id="pt-trade-long-px">—</span>
-                         <span class="trade-spacer"></span>
-                         <span class="trade-lbl">Balance</span>
-                         <span class="trade-bal mono" id="pt-spot-bal">— USDT</span>
+                       <div style="font-size:10.5px;color:var(--text3);line-height:1.45;text-align:center;margin-top:4px">Swap runs in your wallet (MetaMask / Phantom) via DexScreener.</div>
+                     </div>
+                   </div>`
+                : `<!-- Spot/short reuses the unified lt-panel from the futures layout — same triggers, TP/SL, portion size, schedule, account picker, all of it.
+                       ltInit() auto-derives pair_kind='spot_short' from URL ?type= so the long-leg margin row is hidden and leverage caps to the perp-leg max. -->
+                   <section class="info-card lt-panel" id="lt-panel">
+                     <div class="auth-lock">
+                       <div class="auth-lock-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
+                       <h3>Sign in to trade</h3>
+                       <p>Opening positions requires connected API keys. Create an account or log in to start trading this pair.</p>
+                       <a href="/login?next=/arb" class="auth-lock-cta">Sign in</a>
+                     </div>
+                     <div class="lt-tabs" role="tablist">
+                       <button class="lt-tab is-active" data-mode="open"  onclick="ltSwitchMode('open')"  role="tab">Open</button>
+                       <button class="lt-tab"            data-mode="close" onclick="ltSwitchMode('close')" role="tab">Close</button>
+                     </div>
+                     <div class="lt-balances">
+                       <div class="lt-bal-card" id="lt-bal-long">
+                         <div class="lt-bal-label-row">
+                           <div class="lt-bal-label" id="lt-bal-long-label">SPOT · —</div>
+                           <button type="button" class="lt-keys-btn" onclick="ltOpenKeys('long')" title="Pick account / API key">
+                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"/></svg>
+                             Keys
+                           </button>
+                         </div>
+                         <div class="lt-bal-row"><span class="lt-bal-k">Account</span><span class="lt-bal-v" id="lt-bal-long-name" style="font-size:10px;color:var(--text3)">—</span></div>
+                         <div class="lt-bal-row"><span class="lt-bal-k">Wallet</span><span class="lt-bal-v" id="lt-bal-long-total">—</span></div>
+                         <div class="lt-bal-row"><span class="lt-bal-k">Available</span><span class="lt-bal-v" id="lt-bal-long-avail">—</span></div>
                        </div>
-                       <div class="trade-size-row">
-                         <input class="trade-size-input" id="pt-spot-size" type="number" placeholder="Size" oninput="_pt_spot_updateCalc()">
-                         <div class="trade-unit-toggle">
-                           <button class="trade-unit is-active" id="pt-spot-unit-tok" onclick="_pt_spot_setUnit('token')">TOK</button>
-                           <button class="trade-unit" id="pt-spot-unit-usd" onclick="_pt_spot_setUnit('usdt')">USDT</button>
+                       <div class="lt-bal-card" id="lt-bal-short">
+                         <div class="lt-bal-label-row">
+                           <div class="lt-bal-label" id="lt-bal-short-label">SHORT · —</div>
+                           <button type="button" class="lt-keys-btn" onclick="ltOpenKeys('short')" title="Pick account / API key">
+                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"/></svg>
+                             Keys
+                           </button>
+                         </div>
+                         <div class="lt-bal-row"><span class="lt-bal-k">Account</span><span class="lt-bal-v" id="lt-bal-short-name" style="font-size:10px;color:var(--text3)">—</span></div>
+                         <div class="lt-bal-row"><span class="lt-bal-k">Wallet</span><span class="lt-bal-v" id="lt-bal-short-total">—</span></div>
+                         <div class="lt-bal-row"><span class="lt-bal-k">Available</span><span class="lt-bal-v" id="lt-bal-short-avail">—</span></div>
+                       </div>
+                     </div>
+                     <div class="lt-keys-pop hidden" id="lt-keys-pop" onclick="if(event.target===this)ltCloseKeys()">
+                       <div class="lt-keys-modal" id="lt-keys-modal">
+                         <div class="lt-keys-head">
+                           <span id="lt-keys-title">Select account</span>
+                           <button type="button" class="lt-keys-x" onclick="ltCloseKeys()">×</button>
+                         </div>
+                         <div class="lt-keys-body" id="lt-keys-body"></div>
+                         <div class="lt-keys-foot">
+                           <a href="/portfolio#wallets" target="_blank" rel="noopener" class="lt-keys-add">+ Add a key</a>
                          </div>
                        </div>
-                       <div class="trade-slider-wrap">
-                         <input type="range" class="trade-slider" min="0" max="100" step="1" value="0" id="pt-spot-slider" oninput="_pt_spot_slide(this.value)">
-                         <div class="trade-slider-ticks">
-                           <button class="trade-tick" onclick="_pt_spot_slide(0)">0</button>
-                           <button class="trade-tick" onclick="_pt_spot_slide(25)">25</button>
-                           <button class="trade-tick" onclick="_pt_spot_slide(50)">50</button>
-                           <button class="trade-tick" onclick="_pt_spot_slide(75)">75</button>
-                           <button class="trade-tick" onclick="_pt_spot_slide(100)">100</button>
+                     </div>
+                     <div class="lt-row" id="lt-margin-row">
+                       <label class="lt-lbl">Margin</label>
+                       <div class="lt-seg">
+                         <button type="button" class="lt-seg-btn is-active" data-v="isolated" onclick="ltSetMargin('isolated')">Isolated</button>
+                         <button type="button" class="lt-seg-btn" data-v="cross" onclick="ltSetMargin('cross')">Cross</button>
+                       </div>
+                       <span class="lt-lbl" id="lt-lev-lbl" style="margin-left:14px">Leverage</span>
+                       <select class="lt-sel" id="lt-leverage" onchange="ltRecalc()">
+                         <option value="1">1x</option><option value="2">2x</option><option value="3" selected>3x</option>
+                         <option value="5">5x</option><option value="10">10x</option><option value="20">20x</option>
+                         <option value="50">50x</option><option value="100">100x</option>
+                       </select>
+                     </div>
+                     <div class="lt-row">
+                       <label class="lt-lbl">Trigger Spread</label>
+                       <div class="lt-input-wrap">
+                         <input id="lt-trig" class="lt-input" type="number" step="0.001" placeholder="Last" oninput="ltCheckImmediate()">
+                         <span class="lt-suffix">%</span>
+                       </div>
+                     </div>
+                     <div class="lt-warn" id="lt-warn" style="display:none"></div>
+                     <div class="lt-row">
+                       <label class="lt-lbl">Quantity</label>
+                       <div class="lt-input-wrap">
+                         <input id="lt-qty" class="lt-input" type="number" step="0.001" placeholder="0.00"
+                                oninput="ltOnQtyInput()" onblur="ltOnQtyBlur()">
+                         <div class="lt-unit-toggle">
+                           <button type="button" class="lt-unit-btn is-active" data-unit="token" onclick="ltSetUnit('token')" id="lt-unit-token">—</button>
+                           <button type="button" class="lt-unit-btn"           data-unit="usdt"  onclick="ltSetUnit('usdt')"  id="lt-unit-usdt">USDT</button>
                          </div>
                        </div>
-                       <div class="trade-info-rows">
-                         <div class="trade-info-row"><span>Notional</span><span class="mono" id="pt-spot-notional">0.00 USDT</span></div>
-                         <div class="trade-info-row"><span>Fees (round-trip)</span><span class="mono" id="pt-long-fees">—</span></div>
-                         <div class="trade-info-row"><span>Basis at entry</span><span class="mono" id="pt-long-basis">—</span></div>
+                     </div>
+                     <div class="lt-qty-hint" id="lt-qty-hint"></div>
+                     <div class="lt-alloc">
+                       <div class="lt-alloc-head">
+                         <span>% Allocation</span>
+                         <span class="mono" id="lt-alloc-pct">0%</span>
                        </div>
-                       <button class="trade-submit trade-long-btn" id="pt-spot-submit" onclick="_pt_spot_submit()">Buy SPOT · —</button>
-                       <div class="trade-err" id="pt-spot-err" style="display:none;padding:6px 10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:5px;color:var(--red);font-size:10.5px;margin-top:2px"></div>`}
-                </div>
-              </div>
-
-              <!-- SHORT leg: perp short panel (full 1:1 with futures) -->
-              <div class="trade-leg" id="pt-trade-short">
-                <div class="trade-leg-head">
-                  <span class="trade-leg-badge trade-leg-short">SHORT</span>
-                  <span class="trade-leg-ex">${EX_LABEL[SHORT]||SHORT}</span>
-                  <span class="trade-leg-status missing" id="pt-trade-status">—</span>
-                </div>
-                <div class="trade-leg-body">
-                  <div class="trade-row">
-                    <div class="trade-dd">
-                      <span class="trade-dd-chip is-active" id="pt-mm-iso" onclick="_pt_setMM('isolated')">Isolated</span>
-                      <span class="trade-dd-chip" id="pt-mm-cross" onclick="_pt_setMM('cross')">Cross</span>
-                    </div>
-                    <div class="trade-lev">
-                      <button class="trade-lev-btn" onclick="_pt_lev(-1)">−</button>
-                      <span class="trade-lev-val" id="pt-lev-val">3×</span>
-                      <button class="trade-lev-btn" onclick="_pt_lev(1)">+</button>
-                    </div>
-                  </div>
-                  <div class="trade-price-row">
-                    <span class="trade-lbl">Last</span>
-                    <span class="trade-last mono" id="pt-last">—</span>
-                    <span class="trade-spacer"></span>
-                    <span class="trade-lbl">Balance</span>
-                    <span class="trade-bal mono" id="pt-bal">— USDT</span>
-                  </div>
-                  <div class="trade-size-row">
-                    <input class="trade-size-input" id="pt-size" type="number" placeholder="Size" oninput="_pt_updateCalc()">
-                    <div class="trade-unit-toggle">
-                      <button class="trade-unit is-active" id="pt-unit-tok" onclick="_pt_setUnit('token')">TOK</button>
-                      <button class="trade-unit" id="pt-unit-usd" onclick="_pt_setUnit('usdt')">USDT</button>
-                    </div>
-                  </div>
-                  <div class="trade-slider-wrap">
-                    <input type="range" class="trade-slider" min="0" max="100" step="1" value="0" id="pt-slider" oninput="_pt_slide(this.value)">
-                    <div class="trade-slider-ticks">
-                      <button class="trade-tick" onclick="_pt_slide(0)">0</button>
-                      <button class="trade-tick" onclick="_pt_slide(25)">25</button>
-                      <button class="trade-tick" onclick="_pt_slide(50)">50</button>
-                      <button class="trade-tick" onclick="_pt_slide(75)">75</button>
-                      <button class="trade-tick" onclick="_pt_slide(100)">100</button>
-                    </div>
-                  </div>
-                  <div class="trade-info-rows">
-                    <div class="trade-info-row"><span>Position Value</span><span class="mono" id="pt-notional">0.00 USDT</span></div>
-                    <div class="trade-info-row"><span>Margin Used</span><span class="mono" id="pt-margin">0.00 USDT</span></div>
-                  </div>
-                  <button class="trade-submit trade-short-btn" id="pt-submit" onclick="_pt_submit()" disabled>Open Short · —</button>
-                  <div class="trade-err" id="pt-err" style="display:none;padding:6px 10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:5px;color:var(--red);font-size:10.5px;margin-top:2px"></div>
-
-                  <!-- Open positions for this symbol — Close + Share buttons -->
-                  <div id="pt-positions-wrap" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-                    <div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;padding:0 2px">Open positions</div>
-                    <div id="pt-positions-list" style="display:flex;flex-direction:column;gap:6px"></div>
-                  </div>
-                </div>
-              </div>
+                       <div class="lt-alloc-bar">
+                         <input type="range" id="lt-alloc-slider" min="0" max="100" value="0" oninput="ltOnAlloc(event)">
+                         <div class="lt-alloc-marks">
+                           <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+                         </div>
+                       </div>
+                     </div>
+                     <div class="lt-summary">
+                       <div class="lt-sum-row"><span>Position Value</span><span class="mono" id="lt-pos-value">0.00 USDT</span></div>
+                       <div class="lt-sum-row"><span>Margin Used</span><span class="mono" id="lt-margin-used">0.00 USDT</span></div>
+                       <div class="lt-sum-row"><span>Effective spread @ size</span><span class="mono" id="lt-eff-spread">—</span></div>
+                     </div>
+                     <details class="lt-fold">
+                       <summary><input type="checkbox" id="lt-portion-on" onchange="ltOnPortionToggle(event)"> Portion Size</summary>
+                       <div class="lt-fold-body">
+                         <div class="lt-row">
+                           <label class="lt-lbl">Portion</label>
+                           <div class="lt-input-wrap">
+                             <input id="lt-portion" class="lt-input" type="number" step="0.001" placeholder="0.00">
+                             <span class="lt-suffix" id="lt-portion-suffix">—</span>
+                           </div>
+                         </div>
+                         <div class="lt-sum-row"><span>One Portion Cost</span><span class="mono" id="lt-portion-cost">0.00 USDT</span></div>
+                         <label class="lt-flag"><input type="checkbox" id="lt-infinite"> Infinite Fill <span class="lt-flag-hint">re-arm after every fill until cancelled</span></label>
+                       </div>
+                     </details>
+                     <details class="lt-fold">
+                       <summary><input type="checkbox" id="lt-tp-on" onchange="ltOnTpToggle(event)"> Take Profit</summary>
+                       <div class="lt-fold-body">
+                         <div class="lt-row">
+                           <label class="lt-lbl">Trigger Spread</label>
+                           <div class="lt-input-wrap">
+                             <input id="lt-tp" class="lt-input" type="number" step="0.001" placeholder="0.00">
+                             <span class="lt-suffix">%</span>
+                           </div>
+                         </div>
+                         <div class="lt-row">
+                           <label class="lt-lbl">Portion (opt.)</label>
+                           <div class="lt-input-wrap">
+                             <input id="lt-tp-portion" class="lt-input" type="number" step="0.001" placeholder="full">
+                             <span class="lt-suffix" id="lt-tp-portion-suffix">—</span>
+                           </div>
+                         </div>
+                       </div>
+                     </details>
+                     <details class="lt-fold">
+                       <summary><input type="checkbox" id="lt-sl-on" onchange="ltOnSlToggle(event)"> Stop Loss</summary>
+                       <div class="lt-fold-body">
+                         <div class="lt-row">
+                           <label class="lt-lbl">Trigger Spread</label>
+                           <div class="lt-input-wrap">
+                             <input id="lt-sl" class="lt-input" type="number" step="0.001" placeholder="0.00">
+                             <span class="lt-suffix">%</span>
+                           </div>
+                         </div>
+                         <div class="lt-row">
+                           <label class="lt-lbl">Portion (opt.)</label>
+                           <div class="lt-input-wrap">
+                             <input id="lt-sl-portion" class="lt-input" type="number" step="0.001" placeholder="full">
+                             <span class="lt-suffix" id="lt-sl-portion-suffix">—</span>
+                           </div>
+                         </div>
+                       </div>
+                     </details>
+                     <div class="lt-flags">
+                       <label class="lt-flag"><input type="checkbox" id="lt-reduce"> Reduce Only</label>
+                       <label class="lt-flag">
+                         <input type="checkbox" id="lt-schedule-on" onchange="ltOnScheduleToggle(event)"> Start Time
+                       </label>
+                       <input id="lt-schedule" class="lt-input" type="datetime-local" style="display:none;flex:1;min-width:180px">
+                     </div>
+                     <button type="button" class="lt-submit" id="lt-submit" onclick="ltSubmit()">Place Trigger</button>
+                     <div class="lt-err" id="lt-err" style="display:none"></div>
+                   </section>`}
 
               <!-- Calculator / breakdown -->
               <div style="padding:10px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border);background:var(--surface2)">
@@ -1622,7 +1693,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     _ptRecalc();
     // Spot leg recalc — Buy button label needs the live price to flip
     // from "enter size" to "Buy SPOT · X TOKEN".
-    if (typeof window._pt_spot_updateCalc === 'function') window._pt_spot_updateCalc();
+    // Spot-leg recalc no longer applies — lt-panel handles its own state.
 
     // Calculator cards — plain text + inline colour (CSS classes kept mono)
     const setCol = (id, text, isPos) => {
@@ -2252,104 +2323,11 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   _ptFetchStatus();
   setInterval(_ptFetchStatus, 15000);
 
-  // ── Spot leg trade form (mirrors the SHORT/perp form, no leverage/margin) ─
-  // Native spot order API isn't ported yet — submit opens the venue's
-  // own spot trading page in a new tab with sane defaults pre-filled in
-  // the URL where supported. The form fields (size, slider, notional) are
-  // wired so calculation works today; once the spot adapter ships the
-  // submit handler swaps to /trade/open with leverage=1.
-  if (TYPE === 'spot') {
-    const _ptSpot = { unit: 'token', size: 0, balance: null, wallet_id: null };
-    function _spotPx() { return _row ? (+_row.spot_price || 0) : 0; }
-    async function _ptSpotFetchStatus() {
-      try {
-        // Re-use /trade/status with the spot venue as long_ex; the long-side
-        // wallet (spot key on that venue) is what we need.
-        const r = await Auth.apiFetch(`/trade/status?symbol=${SYM}&long_ex=${LONG}&short_ex=${SHORT}`);
-        if (!r.ok) return;
-        const j = await r.json();
-        const s = j.long || {};
-        _ptSpot.wallet_id = s.wallet_id || null;
-        _ptSpot.balance = s.balance_usdt;
-        const st = $('pt-spot-status');
-        if (st) {
-          if (_ptSpot.wallet_id) { st.textContent = 'ok'; st.className = 'trade-leg-status ok'; }
-          else { st.textContent = 'no keys'; st.className = 'trade-leg-status missing'; }
-        }
-        setT('pt-spot-bal', _ptSpot.balance != null ? (+_ptSpot.balance).toFixed(2) + ' USDT' : '— USDT');
-        _ptSpotRecalc();
-      } catch { /* ignore */ }
-    }
-    function _ptSpotRecalc() {
-      const px = _spotPx();
-      const sz = +_ptSpot.size;
-      let tokQty = 0, notional = 0;
-      if (sz > 0 && px > 0) {
-        if (_ptSpot.unit === 'token') { tokQty = sz; notional = sz * px; }
-        else { notional = sz; tokQty = sz / px; }
-      }
-      setT('pt-spot-notional', notional > 0 ? notional.toFixed(2) + ' USDT' : '0.00 USDT');
-      const btn = $('pt-spot-submit');
-      if (btn) {
-        if (!tokQty) btn.textContent = 'Buy SPOT · enter size';
-        else btn.textContent = `Buy SPOT · ${tokQty.toFixed(6).replace(/0+$/,'').replace(/\.$/,'')} ${SYM}`;
-      }
-    }
-    window._pt_spot_setUnit = function (u) {
-      if (u === _ptSpot.unit) return;
-      const inp = $('pt-spot-size');
-      const cur = parseFloat((inp && inp.value) || '0') || 0;
-      const px = _spotPx();
-      if (cur > 0 && px > 0 && inp) {
-        if (_ptSpot.unit === 'token' && u === 'usdt') inp.value = (cur * px).toFixed(2);
-        else if (_ptSpot.unit === 'usdt' && u === 'token') inp.value = (cur / px).toFixed(6);
-        _ptSpot.size = parseFloat(inp.value) || 0;
-      }
-      _ptSpot.unit = u;
-      $('pt-spot-unit-tok').classList.toggle('is-active', u === 'token');
-      $('pt-spot-unit-usd').classList.toggle('is-active', u === 'usdt');
-      if (inp) inp.placeholder = u === 'token' ? `Size · ${SYM}` : 'Size · USDT';
-      _ptSpotRecalc();
-    };
-    window._pt_spot_updateCalc = function () {
-      _ptSpot.size = parseFloat(($('pt-spot-size').value || '0'));
-      _ptSpotRecalc();
-    };
-    window._pt_spot_slide = function (pct) {
-      const p = Math.max(0, Math.min(100, +pct));
-      $('pt-spot-slider').value = p;
-      const bal = +_ptSpot.balance || 0;
-      const px = _spotPx();
-      if (!bal || !px) return;
-      const notional = bal * (p / 100);   // spot is always 1× — no leverage multiplier
-      const tokQty = notional / px;
-      if (_ptSpot.unit === 'token') $('pt-spot-size').value = tokQty > 0 ? (+tokQty.toFixed(6)).toString() : '';
-      else $('pt-spot-size').value = notional > 0 ? (+notional.toFixed(2)).toString() : '';
-      _ptSpot.size = +($('pt-spot-size').value || 0);
-      _ptSpotRecalc();
-    };
-    window._pt_spot_submit = async function () {
-      const px = _spotPx();
-      const tokQty = _ptSpot.unit === 'token' ? +_ptSpot.size : (+_ptSpot.size / px);
-      const err = $('pt-spot-err');
-      if (err) err.style.display = 'none';
-      if (tokQty <= 0) {
-        if (err) { err.textContent = 'Enter a size first'; err.style.display = 'block'; }
-        return;
-      }
-      // No native spot adapter yet — open the venue's spot trading page in
-      // a new tab. When the spot trade API ships, swap this for an
-      // Auth.apiFetch('/trade/open', {leverage:1, side:'buy', ...}) call.
-      const url = _ptSpotUrl(LONG, SYM);
-      if (url && url !== '#') {
-        window.open(url, '_blank', 'noopener');
-      } else {
-        if (err) { err.textContent = 'No spot URL for ' + LONG; err.style.display = 'block'; }
-      }
-    };
-    _ptSpotFetchStatus();
-    setInterval(_ptSpotFetchStatus, 15000);
-  }
+  // Spot/short trade UI is now driven by the unified lt-panel (rendered
+  // inside the spot/dex body template). lt-panel auto-detects pair_kind
+  // from URL ?type= in ltInit() and handles balances, leverage caps,
+  // triggers, TP/SL, portion size, schedule — same code path as futures.
+  // No spot-specific JS needed here.
 
   // ── Open positions list for spot/dex mode (Close + Share buttons) ──
   // Pull positions for the SHORT-leg exchange (perp). The long leg is
