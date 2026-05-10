@@ -360,3 +360,54 @@ class LighterAdapter:
             return {"ok": True}
         except Exception as exc:
             return {"ok": False, "reason": str(exc)[:180]}
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts: float, *, market: str = "futures") -> list[dict]:
+        """Pull fills from Lighter /api/v1/fills — unsigned read endpoint."""
+        import httpx
+        account_index, _, _ = _creds_to_signer_args(creds)
+        params = {
+            "accountIndex": str(account_index),
+            "limit": "200",
+            "startTime": str(int(since_ts * 1000)),  # ms
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                r = await c.get(f"{BASE_URL}/api/v1/fills", params=params)
+            if r.status_code != 200:
+                return []
+            data = r.json()
+        except Exception:
+            return []
+
+        fills = data if isinstance(data, list) else data.get("fills") or []
+        out: list[dict] = []
+        for f in fills:
+            try:
+                ts = float(f.get("createdAt") or f.get("timestamp") or 0) / 1000
+                qty = float(f.get("baseAmount") or f.get("quantity") or 0)
+                px = float(f.get("price") or 0)
+                sym = (f.get("symbol") or f.get("market") or "").upper()
+                if sym.endswith("-USDC") or sym.endswith("-USDT"):
+                    sym = sym.rsplit("-", 1)[0]
+                side = "sell" if f.get("isAsk") else "buy"
+                ext_id = str(f.get("orderId") or f.get("id") or "")
+                fee = float(f.get("fee") or 0)
+                pnl = float(f.get("realizedPnl") or 0)
+                if qty <= 0 or px <= 0 or ts <= 0:
+                    continue
+                out.append({
+                    "ts": ts,
+                    "symbol": sym,
+                    "side": side,
+                    "quantity": qty,
+                    "price": px,
+                    "fee_usd": fee,
+                    "realized_pnl_usd": pnl,
+                    "ext_trade_id": ext_id,
+                    "kind": "trade",
+                    "market": "futures",
+                })
+            except (TypeError, ValueError, KeyError):
+                continue
+        return out

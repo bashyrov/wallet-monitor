@@ -349,17 +349,37 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.Side == trade.SideSell {
 		side = "sell"
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost,
-		"/api/v2/mix/order/place-order", nil, map[string]any{
-			"symbol":      sym,
-			"productType": "USDT-FUTURES",
-			"marginMode":  bgMode,
-			"marginCoin":  "USDT",
-			"side":        side,
-			"tradeSide":   "open",
-			"orderType":   "market",
-			"size":        qtyString(qty, info.VolumePlace),
-		})
+	orderReq := map[string]any{
+		"symbol":      sym,
+		"productType": "USDT-FUTURES",
+		"marginMode":  bgMode,
+		"marginCoin":  "USDT",
+		"side":        side,
+		"tradeSide":   "open",
+		"size":        qtyString(qty, info.VolumePlace),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderReq["orderType"] = "limit"
+		orderReq["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+	case trade.OrderStopMarket:
+		orderReq["orderType"] = "market"
+		orderReq["triggerType"] = "mark_price"
+		orderReq["triggerPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+		orderReq["tpslType"] = "normal"
+	case trade.OrderTakeProfitMkt:
+		orderReq["orderType"] = "market"
+		orderReq["triggerType"] = "mark_price"
+		orderReq["triggerPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+		orderReq["tpslType"] = "normal"
+	default:
+		orderReq["orderType"] = "market"
+	}
+	endpoint := "/api/v2/mix/order/place-order"
+	if req.OrderType.IsConditional() {
+		endpoint = "/api/v2/mix/order/place-tpsl-order"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, endpoint, nil, orderReq)
 	if err != nil {
 		return nil, err
 	}

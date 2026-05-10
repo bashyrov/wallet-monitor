@@ -325,16 +325,30 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.Side == trade.SideSell {
 		dir = "sell"
 	}
+	orderBody := map[string]any{
+		"contract_code": cc,
+		"volume":        volume,
+		"direction":     dir,
+		"offset":        "open",
+		"lever_rate":    req.Leverage,
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderBody["order_price_type"] = "limit"
+		orderBody["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+	case trade.OrderStopMarket:
+		orderBody["order_price_type"] = "market"
+		orderBody["trigger_price"] = req.StopPrice
+		orderBody["order_type"] = 1 // stop
+	case trade.OrderTakeProfitMkt:
+		orderBody["order_price_type"] = "market"
+		orderBody["trigger_price"] = req.StopPrice
+		orderBody["order_type"] = 2 // take_profit
+	default:
+		orderBody["order_price_type"] = "optimal_20"
+	}
 	body, err := a.signedRequest(ctx, creds, http.MethodPost,
-		"/linear-swap-api/v1/swap_cross_order",
-		map[string]any{
-			"contract_code":    cc,
-			"volume":           volume,
-			"direction":        dir,
-			"offset":           "open",
-			"lever_rate":       req.Leverage,
-			"order_price_type": "optimal_20",
-		})
+		"/linear-swap-api/v1/swap_cross_order", orderBody)
 	if err != nil {
 		return nil, err
 	}

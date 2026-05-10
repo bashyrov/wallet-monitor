@@ -51,6 +51,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -399,19 +400,28 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
+	if req.OrderType.IsConditional() {
+		return nil, errUser("stop/TP orders on Hyperliquid require the trigger-order action type — not yet implemented; use market or limit")
+	}
 	idx, err := a.assetIndex(ctx, req.Symbol)
 	if err != nil {
 		return nil, err
+	}
+	px := "0"
+	tif := "Ioc"
+	if req.OrderType.IsLimit() {
+		px = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+		tif = "Gtc"
 	}
 	action := orderAction{
 		Type: "order",
 		Orders: []orderLeg{{
 			A: idx,
 			B: req.Side == trade.SideBuy,
-			P: "0",
+			P: px,
 			S: qtyString(req.Quantity),
 			R: false,
-			T: orderTypeBox{Limit: orderLimit{Tif: "Ioc"}},
+			T: orderTypeBox{Limit: orderLimit{Tif: tif}},
 		}},
 		Grouping: "na",
 	}
@@ -419,12 +429,13 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if err != nil {
 		return nil, err
 	}
-	oid := extractOrderID(body)
+	oid, avgPx := extractOrderResult(body)
 	return &trade.Result{
 		OrderID:   oid,
 		Symbol:    req.Symbol,
 		Side:      req.Side,
 		Quantity:  req.Quantity,
+		AvgPrice:  avgPx,
 		Status:    "NEW",
 		CreatedAt: time.Now().UTC(),
 		Raw:       body,
@@ -464,7 +475,7 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 	if err != nil {
 		return nil, err
 	}
-	oid := extractOrderID(body)
+	oid, avgPx := extractOrderResult(body)
 	closeSide := trade.SideSell
 	if closeIsBuy {
 		closeSide = trade.SideBuy
@@ -474,16 +485,17 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 		Symbol:    req.Symbol,
 		Side:      closeSide,
 		Quantity:  p.Quantity,
+		AvgPrice:  avgPx,
 		Status:    "NEW",
 		CreatedAt: time.Now().UTC(),
 		Raw:       body,
 	}, nil
 }
 
-// extractOrderID picks the oid out of HL's response envelope:
+// extractOrderResult parses oid and avgPx from HL's response envelope:
 //
-//	{"status":"ok","response":{"data":{"statuses":[{"resting":{"oid":...}}|{"filled":{"oid":...}}]}}}
-func extractOrderID(body []byte) string {
+//	{"status":"ok","response":{"data":{"statuses":[{"resting":{"oid":...}}|{"filled":{"oid":...,"avgPx":"..."}}]}}}
+func extractOrderResult(body []byte) (oid string, avgPx float64) {
 	var env struct {
 		Response struct {
 			Data struct {
@@ -492,10 +504,10 @@ func extractOrderID(body []byte) string {
 		} `json:"response"`
 	}
 	if err := json.Unmarshal(body, &env); err != nil {
-		return ""
+		return
 	}
 	if len(env.Response.Data.Statuses) == 0 {
-		return ""
+		return
 	}
 	for _, key := range []string{"resting", "filled"} {
 		raw, ok := env.Response.Data.Statuses[0][key]
@@ -503,13 +515,16 @@ func extractOrderID(body []byte) string {
 			continue
 		}
 		var inner struct {
-			Oid json.Number `json:"oid"`
+			Oid   json.Number `json:"oid"`
+			AvgPx json.Number `json:"avgPx"`
 		}
 		if err := json.Unmarshal(raw, &inner); err == nil {
-			return inner.Oid.String()
+			oid = inner.Oid.String()
+			avgPx, _ = inner.AvgPx.Float64()
+			return
 		}
 	}
-	return ""
+	return
 }
 
 func (a *Adapter) ListPositions(ctx context.Context, creds trade.Creds, symbol string) ([]trade.Position, error) {

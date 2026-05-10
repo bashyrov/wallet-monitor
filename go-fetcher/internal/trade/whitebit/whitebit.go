@@ -162,12 +162,26 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.Side == trade.SideSell {
 		side = "sell"
 	}
-	body, err := a.signedRequest(ctx, creds, "/api/v4/order/collateral/market",
-		map[string]any{
-			"market": toWBSymbol(req.Symbol),
-			"side":   side,
-			"amount": qtyString(req.Quantity),
-		})
+	var endpoint string
+	orderBody := map[string]any{
+		"market": toWBSymbol(req.Symbol),
+		"side":   side,
+		"amount": qtyString(req.Quantity),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		endpoint = "/api/v4/order/collateral/limit"
+		orderBody["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+	case trade.OrderStopMarket:
+		endpoint = "/api/v4/order/collateral/stop-market"
+		orderBody["activationPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	case trade.OrderTakeProfitMkt:
+		endpoint = "/api/v4/order/collateral/stop-market"
+		orderBody["activationPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	default:
+		endpoint = "/api/v4/order/collateral/market"
+	}
+	body, err := a.signedRequest(ctx, creds, endpoint, orderBody)
 	if err != nil {
 		return nil, err
 	}

@@ -317,15 +317,57 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.MarginMode == trade.MarginCross {
 		openType = 2
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost,
-		"/api/v1/private/order/submit", nil, map[string]any{
+
+	var orderBody map[string]any
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderBody = map[string]any{
+			"symbol":   sym,
+			"price":    strconv.FormatFloat(req.LimitPrice, 'f', -1, 64),
+			"vol":      vol,
+			"side":     mexcSide,
+			"type":     1, // limit
+			"openType": openType,
+		}
+	case trade.OrderStopMarket:
+		orderBody = map[string]any{
+			"symbol":       sym,
+			"price":        "0",
+			"vol":          vol,
+			"side":         mexcSide,
+			"type":         5, // market execution on trigger
+			"openType":     openType,
+			"triggerPrice": strconv.FormatFloat(req.StopPrice, 'f', -1, 64),
+			"triggerType":  2, // last_price
+			"planCategory": 2, // stop_loss
+		}
+	case trade.OrderTakeProfitMkt:
+		orderBody = map[string]any{
+			"symbol":       sym,
+			"price":        "0",
+			"vol":          vol,
+			"side":         mexcSide,
+			"type":         5,
+			"openType":     openType,
+			"triggerPrice": strconv.FormatFloat(req.StopPrice, 'f', -1, 64),
+			"triggerType":  2,
+			"planCategory": 1, // take_profit
+		}
+	default:
+		orderBody = map[string]any{
 			"symbol":   sym,
 			"price":    "0",
 			"vol":      vol,
 			"side":     mexcSide,
 			"type":     5, // market
 			"openType": openType,
-		})
+		}
+	}
+	endpoint := "/api/v1/private/order/submit"
+	if req.OrderType.IsConditional() {
+		endpoint = "/api/v1/private/planorder/place"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, endpoint, nil, orderBody)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +385,7 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 			orderID = string(obj.OrderID)
 		}
 	}
-	return &trade.Result{
+	res := &trade.Result{
 		OrderID:   orderID,
 		Symbol:    req.Symbol,
 		Side:      req.Side,
@@ -351,7 +393,39 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		Status:    "NEW",
 		CreatedAt: time.Now().UTC(),
 		Raw:       body,
-	}, nil
+	}
+	if orderID != "" && req.OrderType.EffectiveMarket() {
+		if avg := a.fetchMexcAvgPrice(ctx, creds, orderID); avg > 0 {
+			res.AvgPrice = avg
+		}
+	}
+	return res, nil
+}
+
+func (a *Adapter) fetchMexcAvgPrice(ctx context.Context, creds trade.Creds, orderID string) float64 {
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return 0
+	}
+	data, err := a.signedRequest(ctx, creds, http.MethodGet,
+		"/api/v1/private/order/get_order_id", map[string]string{"order_id": orderID}, nil)
+	if err != nil {
+		return 0
+	}
+	var ord struct {
+		AvgPrice string `json:"avgPrice"`
+		DealAvgPrice string `json:"dealAvgPrice"`
+	}
+	_ = json.Unmarshal(data, &ord)
+	if ord.AvgPrice != "" {
+		v, _ := strconv.ParseFloat(ord.AvgPrice, 64)
+		return v
+	}
+	v, _ := strconv.ParseFloat(ord.DealAvgPrice, 64)
+	return v
 }
 
 func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trade.CloseRequest) (*trade.Result, error) {

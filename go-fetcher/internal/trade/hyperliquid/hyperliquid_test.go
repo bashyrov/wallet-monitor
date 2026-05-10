@@ -213,17 +213,25 @@ func TestSignPhantomAgent_PythonParity(t *testing.T) {
 	}
 }
 
-func TestExtractOrderID_Resting(t *testing.T) {
+func TestExtractOrderResult_Resting(t *testing.T) {
 	body := []byte(`{"status":"ok","response":{"data":{"statuses":[{"resting":{"oid":12345}}]}}}`)
-	if got := extractOrderID(body); got != "12345" {
-		t.Errorf("got %q", got)
+	oid, avg := extractOrderResult(body)
+	if oid != "12345" {
+		t.Errorf("oid got %q", oid)
+	}
+	if avg != 0 {
+		t.Errorf("avg got %v, want 0", avg)
 	}
 }
 
-func TestExtractOrderID_Filled(t *testing.T) {
-	body := []byte(`{"status":"ok","response":{"data":{"statuses":[{"filled":{"oid":7}}]}}}`)
-	if got := extractOrderID(body); got != "7" {
-		t.Errorf("got %q", got)
+func TestExtractOrderResult_Filled(t *testing.T) {
+	body := []byte(`{"status":"ok","response":{"data":{"statuses":[{"filled":{"oid":7,"avgPx":"43000.5"}}]}}}`)
+	oid, avg := extractOrderResult(body)
+	if oid != "7" {
+		t.Errorf("oid got %q", oid)
+	}
+	if avg != 43000.5 {
+		t.Errorf("avg got %v, want 43000.5", avg)
 	}
 }
 

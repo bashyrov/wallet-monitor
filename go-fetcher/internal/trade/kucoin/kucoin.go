@@ -312,16 +312,23 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.MarginMode == trade.MarginCross {
 		mgn = "CROSS"
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/api/v1/orders", nil,
-		map[string]any{
-			"clientOid":  uuid(),
-			"symbol":     sym,
-			"side":       side,
-			"type":       "market",
-			"size":       contracts,
-			"leverage":   strconv.Itoa(req.Leverage),
-			"marginMode": mgn,
-		})
+	orderReq := map[string]any{
+		"clientOid":  uuid(),
+		"symbol":     sym,
+		"side":       side,
+		"size":       contracts,
+		"leverage":   strconv.Itoa(req.Leverage),
+		"marginMode": mgn,
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderReq["type"] = "limit"
+		orderReq["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+		orderReq["timeInForce"] = "GTC"
+	default:
+		orderReq["type"] = "market"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/api/v1/orders", nil, orderReq)
 	if err != nil {
 		return nil, err
 	}

@@ -356,14 +356,27 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if info, ok := contracts[sym]; ok {
 		prec = info.QuantityPrecision
 	}
+	orderParams := map[string]string{
+		"symbol":       sym,
+		"side":         side,
+		"positionSide": posSide,
+		"quantity":     qtyString(req.Quantity, prec),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderParams["type"] = "LIMIT"
+		orderParams["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+	case trade.OrderStopMarket:
+		orderParams["type"] = "STOP_MARKET"
+		orderParams["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	case trade.OrderTakeProfitMkt:
+		orderParams["type"] = "TAKE_PROFIT_MARKET"
+		orderParams["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	default:
+		orderParams["type"] = "MARKET"
+	}
 	body, err := a.signedRequest(ctx, creds, http.MethodPost,
-		"/openApi/swap/v2/trade/order", map[string]string{
-			"symbol":       sym,
-			"type":         "MARKET",
-			"side":         side,
-			"positionSide": posSide,
-			"quantity":     qtyString(req.Quantity, prec),
-		})
+		"/openApi/swap/v2/trade/order", orderParams)
 	if err != nil {
 		return nil, err
 	}

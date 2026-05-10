@@ -220,14 +220,27 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.Side == trade.SideSell {
 		side = "Ask"
 	}
+	orderParams := map[string]string{
+		"symbol":   toBPSymbol(req.Symbol),
+		"side":     side,
+		"quantity": qtyString(req.Quantity),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderParams["orderType"] = "Limit"
+		orderParams["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+		orderParams["timeInForce"] = "GTC"
+	case trade.OrderStopMarket:
+		orderParams["orderType"] = "StopMarket"
+		orderParams["triggerPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	case trade.OrderTakeProfitMkt:
+		orderParams["orderType"] = "TakeProfitMarket"
+		orderParams["triggerPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	default:
+		orderParams["orderType"] = "Market"
+	}
 	body, err := a.signedRequest(ctx, creds, http.MethodPost,
-		"/api/v1/order", "orderExecute", nil,
-		map[string]string{
-			"symbol":    toBPSymbol(req.Symbol),
-			"side":      side,
-			"orderType": "Market",
-			"quantity":  qtyString(req.Quantity),
-		})
+		"/api/v1/order", "orderExecute", nil, orderParams)
 	if err != nil {
 		return nil, err
 	}

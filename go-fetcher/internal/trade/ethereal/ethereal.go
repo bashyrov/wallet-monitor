@@ -225,25 +225,69 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/v1/order", map[string]any{
+	orderReq := map[string]any{
 		"symbol":   strings.ToUpper(req.Symbol),
 		"side":     string(req.Side),
-		"type":     "market",
 		"quantity": qtyString(req.Quantity),
-	})
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderReq["type"] = "limit"
+		orderReq["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+	case trade.OrderStopMarket:
+		orderReq["type"] = "stop_market"
+		orderReq["triggerPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	case trade.OrderTakeProfitMkt:
+		orderReq["type"] = "take_profit_market"
+		orderReq["triggerPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	default:
+		orderReq["type"] = "market"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/v1/order", orderReq)
 	if err != nil {
 		return nil, err
 	}
 	id := extractOrderID(body)
+	var avgPx float64
+	if id != "" && req.OrderType.EffectiveMarket() {
+		avgPx = a.fetchEtherealAvgPrice(ctx, creds, id)
+	}
 	return &trade.Result{
 		OrderID:   id,
 		Symbol:    req.Symbol,
 		Side:      req.Side,
 		Quantity:  req.Quantity,
+		AvgPrice:  avgPx,
 		Status:    "NEW",
 		CreatedAt: time.Now().UTC(),
 		Raw:       body,
 	}, nil
+}
+
+func (a *Adapter) fetchEtherealAvgPrice(ctx context.Context, creds trade.Creds, orderID string) float64 {
+	timer := time.NewTimer(400 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return 0
+	}
+	data, err := a.signedRequest(ctx, creds, http.MethodGet, "/v1/order/"+orderID, nil)
+	if err != nil {
+		return 0
+	}
+	var ord struct {
+		AvgFillPrice json.Number `json:"avgFillPrice"`
+		FillPrice    json.Number `json:"fillPrice"`
+		AvgPrice     json.Number `json:"avgPrice"`
+	}
+	_ = json.Unmarshal(data, &ord)
+	for _, v := range []json.Number{ord.AvgFillPrice, ord.FillPrice, ord.AvgPrice} {
+		if f, err := v.Float64(); err == nil && f > 0 {
+			return f
+		}
+	}
+	return 0
 }
 
 func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trade.CloseRequest) (*trade.Result, error) {

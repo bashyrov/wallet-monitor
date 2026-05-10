@@ -227,13 +227,25 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.Side == trade.SideSell {
 		side = "sell"
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/sendorder",
-		map[string]string{
-			"orderType": "mkt",
-			"symbol":    toKrakenSymbol(req.Symbol),
-			"side":      side,
-			"size":      qtyString(req.Quantity),
-		})
+	orderParams := map[string]string{
+		"symbol": toKrakenSymbol(req.Symbol),
+		"side":   side,
+		"size":   qtyString(req.Quantity),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderParams["orderType"] = "lmt"
+		orderParams["limitPrice"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+	case trade.OrderStopMarket:
+		orderParams["orderType"] = "stp"
+		orderParams["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	case trade.OrderTakeProfitMkt:
+		orderParams["orderType"] = "take_profit"
+		orderParams["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	default:
+		orderParams["orderType"] = "mkt"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/sendorder", orderParams)
 	if err != nil {
 		return nil, err
 	}

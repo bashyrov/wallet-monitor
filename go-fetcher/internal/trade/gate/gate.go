@@ -314,13 +314,37 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.Side == trade.SideSell {
 		size = -num
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost,
-		"/api/v4/futures/usdt/orders", nil, map[string]any{
+	var orderBody map[string]any
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderBody = map[string]any{
+			"contract": contract,
+			"size":     size,
+			"price":    strconv.FormatFloat(req.LimitPrice, 'f', -1, 64),
+			"tif":      "gtc",
+		}
+	case trade.OrderStopMarket:
+		orderBody = map[string]any{
+			"contract": contract, "size": size,
+			"price": "0", "tif": "ioc",
+			"stop_trigger": req.StopPrice,
+		}
+	case trade.OrderTakeProfitMkt:
+		orderBody = map[string]any{
+			"contract": contract, "size": size,
+			"price": "0", "tif": "ioc",
+			"stop_trigger": req.StopPrice,
+		}
+	default:
+		orderBody = map[string]any{
 			"contract": contract,
 			"size":     size,
 			"price":    "0",
 			"tif":      "ioc",
-		})
+		}
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost,
+		"/api/v4/futures/usdt/orders", nil, orderBody)
 	if err != nil {
 		return nil, err
 	}

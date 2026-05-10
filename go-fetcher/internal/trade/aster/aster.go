@@ -272,13 +272,26 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.Side == trade.SideSell {
 		side = "SELL"
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v1/order",
-		map[string]string{
-			"symbol":   toAsterSymbol(req.Symbol),
-			"side":     side,
-			"type":     "MARKET",
-			"quantity": qtyString(req.Quantity),
-		})
+	orderParams := map[string]string{
+		"symbol":   toAsterSymbol(req.Symbol),
+		"side":     side,
+		"quantity": qtyString(req.Quantity),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderParams["type"] = "LIMIT"
+		orderParams["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+		orderParams["timeInForce"] = "GTC"
+	case trade.OrderStopMarket:
+		orderParams["type"] = "STOP_MARKET"
+		orderParams["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	case trade.OrderTakeProfitMkt:
+		orderParams["type"] = "TAKE_PROFIT_MARKET"
+		orderParams["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	default:
+		orderParams["type"] = "MARKET"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v1/order", orderParams)
 	if err != nil {
 		return nil, err
 	}
