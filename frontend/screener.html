@@ -40,6 +40,7 @@
       <button class="mode-tab active" id="tab-arb" onclick="switchMode('arb')">Long/Short</button>
       <button class="mode-tab" id="tab-spot"    onclick="switchMode('spot')">Spot/Short</button>
       <button class="mode-tab" id="tab-dex"     onclick="switchMode('dex')">DEX/Short</button>
+      <button class="mode-tab" id="tab-funding-arb" onclick="switchMode('funding-arb')">Funding Arb</button>
       <button class="mode-tab" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
     </div>
 
@@ -328,6 +329,30 @@
       <div class="pager" id="pager-dex"></div>
     </div>
 
+    <!-- ── FUNDING ARB SECTION (positive-funding spot+short, same-venue OK) ── -->
+    <div id="section-funding-arb" style="display:none">
+      <div class="table-wrap">
+        <table id="tbl-fa">
+          <thead>
+            <tr>
+              <th onclick="sortFA('symbol')"           data-facol="symbol"          data-tip="Token ticker">Token <span class="sort-arrow">↕</span></th>
+              <th onclick="sortFA('spot_exchange')"    data-facol="spot_exchange"   data-tip="Spot venue to buy">Spot / Vol <span class="sort-arrow">↕</span></th>
+              <th onclick="sortFA('short_exchange')"   data-facol="short_exchange"  data-tip="Perp venue to short. Same as spot is allowed for funding-only plays.">Short / Vol <span class="sort-arrow">↕</span></th>
+              <th onclick="sortFA('short_funding_8h')" data-facol="short_funding_8h" class="sorted" data-tip="Funding paid to shorts per 8h (positive only — that's the whole point)">Funding /8h <span class="sort-arrow">↓</span></th>
+              <th onclick="sortFA('funding_apr')"      data-facol="funding_apr"     data-tip="Annualised pure funding return (3 settlements × 365 days)">APR <span class="sort-arrow">↕</span></th>
+              <th onclick="sortFA('basis_pct')"        data-facol="basis_pct"       data-tip="Spot vs perp price gap. Smaller is better — you want pure funding play, not a basis trade.">Basis % <span class="sort-arrow">↕</span></th>
+              <th onclick="sortFA('total_fees')"       data-facol="total_fees"      data-tip="Round-trip taker fees on both legs (spot + perp)">Fees <span class="sort-arrow">↕</span></th>
+              <th onclick="sortFA('net_funding_8h')"   data-facol="net_funding_8h"  data-tip="Pure funding net of fees: short_funding_8h − total_fees. Basis ignored.">Net funding /8h <span class="sort-arrow">↕</span></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-fa"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading funding arbitrage…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-fa"></div>
+      <div class="pager" id="pager-fa"></div>
+    </div>
+
     <!-- ── ALL (combined) SECTION ── -->
     <div id="section-all" style="display:none">
       <div style="display:flex;align-items:center;gap:6px;padding:10px 16px 6px;flex-wrap:wrap">
@@ -551,7 +576,7 @@ const _MODE_ALIAS = {
   'dex-short': 'dex',  'dexshort':  'dex',
 };
 let _mode = (() => {
-  const VALID = new Set(['all','arb','spot','dex','funding','alpha']);
+  const VALID = new Set(['all','arb','spot','dex','funding','funding-arb','alpha']);
   const u = (new URLSearchParams(location.search).get('mode') || '').toLowerCase();
   if (u) {
     if (VALID.has(u)) return u;
@@ -562,7 +587,7 @@ let _mode = (() => {
   return 'arb';
 })();
 // Canonicalise URL param name for sharing (?mode=long-short not ?mode=arb)
-const _MODE_CANON = {arb:'long-short', spot:'spot-short', dex:'dex-short'};
+const _MODE_CANON = {arb:'long-short', spot:'spot-short', dex:'dex-short', 'funding-arb':'funding-arb'};
 let _rows = [];           // funding rows
 let _arbRows = [];                    // flat array for table rendering
 // Tracks whether the first in_pct landing has triggered a one-time sort.
@@ -858,6 +883,7 @@ function _reapplyCurrentMode() {
   if (_mode === 'funding') applyFilter();
   else if (_mode === 'spot') applySpot();
   else if (_mode === 'dex')  applyDex();
+  else if (_mode === 'funding-arb') applyFA();
   else if (_mode === 'all')  renderAll();
   else applyArb();
 }
@@ -957,16 +983,16 @@ function switchMode(mode) {
     url.searchParams.set('mode', _MODE_CANON[mode] || mode);
     history.replaceState(null, '', url);
   } catch {}
-  ['all','arb','spot','dex','funding','alpha'].forEach(m => {
+  ['all','arb','spot','dex','funding','funding-arb','alpha'].forEach(m => {
     const t = document.getElementById('tab-' + m);
     if (t) t.classList.toggle('active', mode === m);
     const s = document.getElementById('section-' + m);
     if (s) s.style.display = mode === m ? '' : 'none';
   });
   document.getElementById('lp-filters-funding').style.display   = mode === 'funding' ? '' : 'none';
-  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex') ? '' : 'none';
+  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex' || mode === 'funding-arb') ? '' : 'none';
   const mf = document.getElementById('mob-filters-funding'); if (mf) mf.style.display = mode === 'funding' ? '' : 'none';
-  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex') ? '' : 'none';
+  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex' || mode === 'funding-arb') ? '' : 'none';
   const mobSortF = document.getElementById('mobile-sort-funding'); if (mobSortF) mobSortF.style.display = mode === 'funding' ? '' : 'none';
   const mobSortA = document.getElementById('mobile-sort-arb');     if (mobSortA) mobSortA.style.display = mode === 'arb'     ? '' : 'none';
   renderAlphaStatus();
@@ -975,6 +1001,7 @@ function switchMode(mode) {
   else if (mode === 'funding') { _pollFunding(false); applyFilter(); }
   else if (mode === 'spot') loadSpot();
   else if (mode === 'dex') loadDex();
+  else if (mode === 'funding-arb') loadFundingArb();
   else if (mode === 'all') loadAll();
   else applyArb();
 }
@@ -1440,6 +1467,163 @@ function renderSpotCards() {
 }
 
 function goPageSP(p) { _pageSP = p; renderSpot(); }
+
+// ── Funding Arb ──────────────────────────────────────────────────────────────
+// Pure-funding play: positive short funding, basis ignored. Reuses /screener/
+// spot-short data — backend already emits same-venue rows (no spotEx==perpEx
+// skip in spot.go). Filter to funding_rate > 0, sort by net_funding_8h.
+let _faFiltered = [];
+let _pageFA = 0;
+let _faSort = { col: 'short_funding_8h', dir: 'desc' };
+let _faTimer = null;
+
+async function loadFundingArb() {
+  // Reuse the spot data path so we don't double-poll.
+  await loadSpot();
+  applyFA();
+  clearInterval(_faTimer);
+  _faTimer = setInterval(() => {
+    if (_mode === 'funding-arb') { loadSpot().then(applyFA); }
+  }, 1000);
+}
+
+function sortFA(col) {
+  if (_faSort.col === col) _faSort.dir = _faSort.dir === 'desc' ? 'asc' : 'desc';
+  else { _faSort.col = col; _faSort.dir = 'desc'; }
+  document.querySelectorAll('#tbl-fa th[data-facol]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (th.dataset.facol === col) { th.classList.add('sorted'); if (arrow) arrow.textContent = _faSort.dir === 'desc' ? '↓' : '↑'; }
+    else { th.classList.remove('sorted'); if (arrow) arrow.textContent = '↕'; }
+  });
+  applyFA();
+}
+
+function applyFA(keepPage = false) {
+  const q = (document.getElementById('search').value || '').trim().toUpperCase();
+  const minVol = parseFloat(document.getElementById('f-min-vol').value) || 0;
+  // Funding arb keeps positive-funding rows only — that's the whole point.
+  // Same-venue rows ARE allowed (purpose of this tab). Compute net_funding_8h
+  // and funding_apr on the fly so we can sort by them.
+  _faFiltered = _spotRows
+    .filter(r => {
+      if (q && !r.symbol.toUpperCase().includes(q)) return false;
+      if (_exDisabled.has(r.spot_exchange) || _exDisabled.has(r.short_exchange)) return false;
+      if (_hiddenTokens.has(r.symbol)) return false;
+      if ((r.short_funding_8h || 0) <= 0) return false;
+      if (minVol && (Math.min(r.spot_volume_usd || 0, r.perp_volume_usd || 0) < minVol)) return false;
+      return true;
+    })
+    .map(r => ({
+      ...r,
+      net_funding_8h: (r.short_funding_8h || 0) - (r.total_fees || 0),
+      // 3 settlements/day × 365 days = 1095. Approx for 8h-cycle venues.
+      funding_apr: (r.short_funding_8h || 0) * 3 * 365,
+      same_venue: r.spot_exchange === r.short_exchange,
+    }));
+  const dir = _faSort.dir === 'desc' ? -1 : 1;
+  _faFiltered.sort((a, b) => {
+    let av = a[_faSort.col], bv = b[_faSort.col];
+    if (typeof av === 'string') return av.localeCompare(bv) * dir;
+    if (av == null) av = dir === -1 ? -Infinity : Infinity;
+    if (bv == null) bv = dir === -1 ? -Infinity : Infinity;
+    return (av - bv) * dir;
+  });
+  if (!keepPage) _pageFA = 0;
+  renderFA();
+}
+
+function renderFA() {
+  const tbody = document.getElementById('tbody-fa');
+  if (!tbody) return;
+  const start = _pageFA * PAGE_SIZE;
+  const page = _faFiltered.slice(start, start + PAGE_SIZE);
+  if (!_faFiltered.length) {
+    const msg = _spotRows.length ? 'No positive-funding pairs match your filter' : 'No data yet';
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    renderPager('pager-fa', _pageFA, _faFiltered.length, 'goPageFA');
+    renderFACards();
+    return;
+  }
+  tbody.innerHTML = page.map(r => {
+    const netCls = r.net_funding_8h > 0 ? 'net-pos' : 'net-neg';
+    const netSign = r.net_funding_8h >= 0 ? '+' : '';
+    const aprCls = r.funding_apr > 0 ? 'rate-pos' : 'rate-neg';
+    const basisAbs = Math.abs(r.basis_pct || 0);
+    const basisCls = basisAbs < 0.5 ? 'rate-pos' : (basisAbs < 2 ? 'rate-zero' : 'rate-neg');
+    const lhealth = _exHealth[r.spot_exchange] || {};
+    const shealth = _exHealth[r.short_exchange] || {};
+    const ldot = `<span class="ex-status-dot ${lhealth.klass || ''}" title="${r.spot_exchange}"></span>`;
+    const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.short_exchange}"></span>`;
+    const sameBadge = r.same_venue ? '<span style="background:rgba(26,255,171,0.15);color:#1AFFAB;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px">SAME</span>' : '';
+    const detailUrl = `/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(r.short_exchange)}`;
+    return `<tr style="cursor:pointer" onclick="window.open('${detailUrl}','_blank')">
+      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${sameBadge}</td>
+      <td>
+        <div class="arb-pair">
+          <div class="arb-ex-rate"><span class="arb-label">spot</span>${window.EX.chip(r.spot_exchange)}${ldot}</div>
+          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.spot_price)} · <span style="font-family:var(--mono)">${fmtVol(r.spot_volume_usd)}</span></div>
+        </div>
+      </td>
+      <td>
+        <div class="arb-pair">
+          <div class="arb-ex-rate"><span class="arb-label">short</span>${window.EX.chip(r.short_exchange)}${sdot}</div>
+          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.perp_price)} · <span style="font-family:var(--mono)">${fmtVol(r.perp_volume_usd)}</span></div>
+        </div>
+      </td>
+      <td class="td-gross"><span class="rate-pos">+${r.short_funding_8h.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">per 8h</span></td>
+      <td><span class="${aprCls}" style="font-weight:700">+${r.funding_apr.toFixed(2)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">APR</span></td>
+      <td class="${basisCls}">${(r.basis_pct >= 0 ? '+' : '')}${r.basis_pct.toFixed(4)}%</td>
+      <td class="td-fees">−${r.total_fees.toFixed(4)}%</td>
+      <td><span class="td-net ${netCls}">${netSign}${r.net_funding_8h.toFixed(4)}%</span></td>
+      <td><a href="${detailUrl}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a></td>
+    </tr>`;
+  }).join('');
+  renderPager('pager-fa', _pageFA, _faFiltered.length, 'goPageFA');
+  renderFACards();
+}
+
+function renderFACards() {
+  const wrap = document.getElementById('cards-fa');
+  if (!wrap) return;
+  if (!_faFiltered.length) {
+    const msg = _spotRows.length ? 'No positive-funding pairs match your filter' : 'No data yet';
+    wrap.innerHTML = `<div class="empty-msg">${msg}</div>`;
+    return;
+  }
+  const start = _pageFA * PAGE_SIZE;
+  const page = _faFiltered.slice(start, start + PAGE_SIZE);
+  wrap.innerHTML = page.map(r => {
+    const netCls = r.net_funding_8h > 0 ? 'net-pos' : 'net-neg';
+    const netSign = r.net_funding_8h >= 0 ? '+' : '';
+    const sameBadge = r.same_venue ? '<span style="background:rgba(26,255,171,0.15);color:#1AFFAB;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px">SAME</span>' : '';
+    return `
+    <div class="card">
+      <div class="card-head">
+        <span class="type-pill tp-spot" style="margin-right:6px">FA</span>
+        ${symbolLink(r.symbol, r.spot_exchange)}${sameBadge}
+        <div class="card-badges">${exBadge(r.spot_exchange, r.symbol)}<span style="color:var(--text3);font-size:11px">→</span>${exBadge(r.short_exchange, r.symbol)}</div>
+        <div class="card-right">
+          <span class="card-net ${netCls}">${netSign}${r.net_funding_8h.toFixed(4)}%</span>
+          <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">net funding /8h</span>
+        </div>
+      </div>
+      <div class="card-row">
+        <span>Funding /8h</span><span class="rate-pos" style="font-weight:700">+${r.short_funding_8h.toFixed(4)}%</span>
+      </div>
+      <div class="card-row">
+        <span>APR</span><span class="rate-pos" style="font-weight:700">+${r.funding_apr.toFixed(2)}%</span>
+      </div>
+      <div class="card-row">
+        <span>Basis</span><span>${(r.basis_pct >= 0 ? '+' : '')}${r.basis_pct.toFixed(4)}%</span>
+      </div>
+      <div class="card-row">
+        <span>Fees</span><span>−${r.total_fees.toFixed(4)}%</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function goPageFA(p) { _pageFA = p; renderFA(); }
 
 // ── All (combined) ───────────────────────────────────────────────────────────
 let _allRows = [];
