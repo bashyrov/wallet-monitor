@@ -52,8 +52,14 @@
 <script>
 // Arb detail is public. User-specific sections (positions / balances / orders /
 // trade card) are locked behind IS_AUTHED — anonymous visitors see a "sign in"
-// CTA on the account + trade panels.
-const IS_AUTHED = Auth.isLoggedIn();
+// CTA on the account + trade panels. Token check accepts EITHER localStorage
+// (Bearer JWT) OR the `wm_authed=1` companion cookie set by the backend on
+// login — fixes the case where localStorage was wiped (extension, fresh
+// browser profile, www↔apex hop) but the session cookie is still alive
+// server-side. Without the cookie fallback the page would lock the user out
+// even when /api/auth/me would return 200.
+const IS_AUTHED = Auth.isLoggedIn() ||
+  document.cookie.split('; ').some(c => c.startsWith('wm_authed=1'));
 if (!IS_AUTHED) document.documentElement.classList.add('no-auth');
 </script>
 
@@ -590,13 +596,6 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
            "Classic view" link in the header. localStorage remembers
            preference across reloads. -->
       <section class="info-card lt-panel" id="lt-panel">
-        <div class="auth-lock">
-          <div class="auth-lock-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
-          <h3>Sign in to trade</h3>
-          <p>Opening positions requires connected API keys. Create an account or log in to start trading this pair.</p>
-          <a href="/login?next=/arb" class="auth-lock-cta">Sign in</a>
-        </div>
-
         <div class="lt-tabs" role="tablist">
           <button class="lt-tab is-active" data-mode="open"  onclick="ltSwitchMode('open')"  role="tab">Open</button>
           <button class="lt-tab"            data-mode="close" onclick="ltSwitchMode('close')" role="tab">Close</button>
@@ -1329,12 +1328,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
                 : `<!-- Spot/short reuses the unified lt-panel from the futures layout — same triggers, TP/SL, portion size, schedule, account picker, all of it.
                        ltInit() auto-derives pair_kind='spot_short' from URL ?type= so the long-leg margin row is hidden and leverage caps to the perp-leg max. -->
                    <section class="info-card lt-panel" id="lt-panel">
-                     <div class="auth-lock">
-                       <div class="auth-lock-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></div>
-                       <h3>Sign in to trade</h3>
-                       <p>Opening positions requires connected API keys. Create an account or log in to start trading this pair.</p>
-                       <a href="/login?next=/arb" class="auth-lock-cta">Sign in</a>
-                     </div>
                      <div class="lt-tabs" role="tablist">
                        <button class="lt-tab is-active" data-mode="open"  onclick="ltSwitchMode('open')"  role="tab">Open</button>
                        <button class="lt-tab"            data-mode="close" onclick="ltSwitchMode('close')" role="tab">Close</button>
