@@ -3,14 +3,22 @@
 // URL: wss://mainnet.zklighter.elliot.ai/stream
 // Subscribe: {"type":"subscribe","channel":"order_book/<market_id>"}
 //
-// Inbound: {"type":"update/order_book/N","channel":"order_book/N",
-//   "order_book":{"asks":[{"price":"...","size":"..."},...], "bids":[...]}}
+// QUIRK — snapshot vs delta: Lighter pushes two distinct frame types on
+// the same channel:
+//   - type="subscribed/order_book/N" → full snapshot, replace book
+//   - type="update/order_book/N"     → delta, merge (size=0 deletes)
+//
+// Original parser treated every push as a snapshot, so a delta of 2-3
+// levels would wipe out the full book. Result: 23 of 25 cached symbols
+// had <10 levels in the depth audit. Now we distinguish via the Type
+// field and maintain a local book per market_id.
 package lighter
 
 import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
@@ -22,10 +30,21 @@ const futuresWS = "wss://mainnet.zklighter.elliot.ai/stream"
 type Futures struct {
 	store *cache.Store
 	ids   *idMap
+	mu    sync.Mutex
+	books map[int]*book
+}
+
+type book struct {
+	bids map[float64]float64
+	asks map[float64]float64
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, ids: newIDMap()}
+	a := &Futures{
+		store: store,
+		ids:   newIDMap(),
+		books: make(map[int]*book),
+	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("lighter", snap.Symbol, snap, "ws")
 	})
@@ -100,24 +119,47 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		return nil, nil
 	}
 
-	parse := func(rows []struct {
+	// Distinguish snapshot vs delta. Lighter sets:
+	//   "subscribed/order_book/N" → initial full snapshot
+	//   "update/order_book/N"     → delta (only changed levels)
+	// On snapshot we replace the book wholesale; on delta we merge level
+	// by level (size=0 deletes). Treating delta as snapshot was the
+	// shrinkage bug — a 2-level delta would wipe a 30-level book.
+	isSnapshot := strings.HasPrefix(msg.Type, "subscribed/")
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	bk, ok := a.books[id]
+	if !ok {
+		bk = &book{bids: make(map[float64]float64), asks: make(map[float64]float64)}
+		a.books[id] = bk
+	}
+	if isSnapshot {
+		bk.bids = make(map[float64]float64, len(msg.OrderBook.Bids))
+		bk.asks = make(map[float64]float64, len(msg.OrderBook.Asks))
+	}
+	apply := func(side map[float64]float64, rows []struct {
 		Price string `json:"price"`
 		Size  string `json:"size"`
-	}) []ws.Level {
-		out := make([]ws.Level, 0, len(rows))
+	}) {
 		for _, r := range rows {
 			px, _ := strconv.ParseFloat(r.Price, 64)
 			sz, _ := strconv.ParseFloat(r.Size, 64)
-			if sz > 0 {
-				out = append(out, ws.Level{px, sz})
+			if sz == 0 {
+				delete(side, px)
+			} else {
+				side[px] = sz
 			}
 		}
-		return out
 	}
+	apply(bk.bids, msg.OrderBook.Bids)
+	apply(bk.asks, msg.OrderBook.Asks)
+
 	return &ws.Snapshot{
 		Symbol: sym,
-		Bids:   parse(msg.OrderBook.Bids),
-		Asks:   parse(msg.OrderBook.Asks),
+		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
 	}, nil
 }
 
@@ -128,4 +170,8 @@ func (a *Futures) UseLibPings() bool                { return true }
 func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
 func (a *Futures) MaxSymbols() int                  { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
-func (a *Futures) OnReconnect()                     {}
+func (a *Futures) OnReconnect() {
+	a.mu.Lock()
+	a.books = make(map[int]*book)
+	a.mu.Unlock()
+}
