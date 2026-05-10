@@ -85,6 +85,19 @@ def _set_session_cookie(response: Response, token: str) -> None:
         max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
         path="/",
     )
+    # Non-httpOnly companion flag so client JS can detect "server thinks
+    # I'm logged in" without exposing the JWT itself. Used by auth.js to
+    # decide whether to call /api/auth/cookie-session for localStorage
+    # recovery — without it we'd probe on every anonymous page load.
+    response.set_cookie(
+        key="wm_authed",
+        value="1",
+        httponly=False,
+        secure=_cookie_secure(),
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
+        path="/",
+    )
 
 
 @router.post("/register", status_code=201)
@@ -378,6 +391,7 @@ def logout(
     via the Redis-backed blacklist. Subsequent requests carrying the old
     Bearer token will get 401, even though it'd otherwise still verify."""
     response.delete_cookie("session", path="/")
+    response.delete_cookie("wm_authed", path="/")
     if authorization and authorization.startswith("Bearer "):
         from backend.services.auth_service import decode_payload
         from backend.services import token_blacklist
@@ -427,6 +441,56 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
 
 
 from pydantic import BaseModel as _BM
+
+
+@router.get("/cookie-session")
+def cookie_session(request: Request, db: Session = Depends(get_db)):
+    """Recover the JWT from the HttpOnly session cookie.
+
+    The frontend's Auth.isLoggedIn() / IS_AUTHED check reads the
+    localStorage `wm_token` Bearer token, NOT the session cookie. So if
+    the user lands on a page where localStorage was cleared (privacy
+    extension, "clear browsing data", different browser profile, x-domain
+    nav between www.avalant.xyz and avalant.xyz, etc.) the page renders
+    its anonymous lockout overlay even though the session cookie is still
+    valid server-side.
+
+    auth.js calls this on every page load when localStorage is empty; if
+    the session cookie carries a live JWT we just hand it back so the
+    client can repopulate localStorage and the page un-locks. No new
+    session is minted — we re-emit exactly what's in the cookie.
+
+    Returns 401 if the cookie is missing/invalid; the client treats that
+    as "stay anonymous" and shows the sign-in CTA as designed.
+    """
+    from backend.services.auth_service import decode_token, get_user_by_id
+    from backend.services import token_blacklist
+    from backend.services.auth_service import decode_payload as _dp
+    token = request.cookies.get("session")
+    if not token:
+        raise HTTPException(status_code=401, detail="No session cookie")
+    payload = _dp(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired cookie")
+    if payload.get("scope"):
+        raise HTTPException(status_code=401, detail="Cookie carries a scoped token")
+    jti = payload.get("jti")
+    if jti and token_blacklist.is_revoked(jti):
+        raise HTTPException(status_code=401, detail="Session revoked")
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    user = get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    if getattr(user, "is_blocked", False):
+        raise HTTPException(status_code=403, detail="Account is blocked")
+    out = UserOut.model_validate(user)
+    out.tg_linked = bool(user.tg_chat_id)
+    out.totp_enabled = bool(getattr(user, "totp_verified_at", None))
+    out.auto_renew = bool(getattr(user, "auto_renew", True))
+    return {"access_token": token, "user": out}
 
 
 class _UserPatch(_BM):

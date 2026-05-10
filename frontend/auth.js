@@ -113,3 +113,26 @@ const Auth = (() => {
 
   return { getToken, getUser, setSession, clearSession, isLoggedIn, isAdmin, requireAuth, requireAdmin, redirectIfAuthed, logout, apiFetch };
 })();
+
+// One-shot: if localStorage is empty but the HttpOnly session cookie carries
+// a live JWT (the user is logged in server-side but lost their localStorage —
+// privacy extension, clear-browsing-data, navigated between www and apex,
+// fresh browser profile etc.), recover the token so the page's IS_AUTHED
+// check stops showing the anonymous lockout overlay. Gated on the
+// non-httpOnly `wm_authed=1` companion cookie so we only probe when the
+// server says we're logged in — anonymous page loads skip the network call.
+(function recoverFromCookie() {
+  if (Auth.isLoggedIn()) return;
+  if (!document.cookie.split('; ').some(c => c.startsWith('wm_authed=1'))) return;
+  fetch('/api/auth/cookie-session', { credentials: 'include' })
+    .then(r => r.ok ? r.json() : null)
+    .then(j => {
+      if (!j || !j.access_token) return;
+      Auth.setSession(j.access_token, j.user);
+      // The page already painted with the anonymous state — reload so
+      // sections gated on IS_AUTHED (auth-lock overlays, watchlist
+      // populates, account/positions blocks) re-render correctly.
+      location.reload();
+    })
+    .catch(() => {});
+})();
