@@ -1219,9 +1219,65 @@ Auth.requireAuth('/login');
       _renderPlanCard(me);
       _updateTgStatus(me.tg_linked, me.tg_username);
       _updateTfaStatus(!!me.totp_enabled);
+      window._HAS_PASSWORD = me.has_password !== false;
+      _adaptTfaInputsForPasswordless();
     }
   } catch(e) {}
 })();
+
+// For Google-only users (has_password=false), swap every "Current password"
+// input under the 2FA card for an email-code input + "Send code" trigger.
+// The submit handlers detect the swap by reading window._HAS_PASSWORD.
+function _adaptTfaInputsForPasswordless(){
+  if (window._HAS_PASSWORD !== false) return;
+  ['tfa-enable', 'tfa-disable', 'tfa-regen'].forEach(prefix => {
+    const inp = document.getElementById(prefix + '-pwd');
+    if (!inp) return;
+    inp.type = 'text';
+    inp.inputMode = 'numeric';
+    inp.autocomplete = 'one-time-code';
+    inp.maxLength = 6;
+    inp.placeholder = '6-digit email code';
+    // Inject a "Send code to my email" helper above the input if not present.
+    if (!inp.previousElementSibling || !inp.previousElementSibling.classList?.contains('email-code-helper')) {
+      const helper = document.createElement('div');
+      helper.className = 'email-code-helper';
+      helper.style.cssText = 'font-size:11.5px;color:var(--text3);margin:0 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+      helper.innerHTML = '<span>You signed in via Google — we\'ll email a 6-digit code to confirm.</span><a href="#" onclick="requestEmailCode(this,event);return false" style="color:var(--green);text-decoration:none;font-weight:600">Send code</a><span class="ec-status" style="color:var(--text2)"></span>';
+      inp.parentNode.insertBefore(helper, inp);
+    }
+  });
+}
+
+async function requestEmailCode(linkEl, evt){
+  if (evt) evt.preventDefault();
+  const status = linkEl.parentElement.querySelector('.ec-status');
+  linkEl.style.pointerEvents = 'none';
+  linkEl.style.opacity = '0.6';
+  if (status) status.textContent = 'Sending…';
+  try {
+    const r = await Auth.apiFetch('/auth/me/email-confirm/request', { method: 'POST' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'Send failed');
+    if (status) {
+      if (j.dev_code) status.textContent = `dev code: ${j.dev_code}`;
+      else status.textContent = j.delivered ? 'Sent. Check your email (10 min).' : 'Sent (mail backend not configured — ask ops).';
+    }
+    // Re-enable Send link after 30s for retry
+    setTimeout(() => {
+      linkEl.style.pointerEvents = '';
+      linkEl.style.opacity = '';
+    }, 30000);
+  } catch (e) {
+    if (status) status.textContent = 'Failed: ' + (e.message || 'try again');
+    linkEl.style.pointerEvents = '';
+    linkEl.style.opacity = '';
+  }
+}
+
+function _gateBody(pwd){
+  return window._HAS_PASSWORD === false ? { email_code: pwd } : { password: pwd };
+}
 
 // ── 2FA ─────────────────────────────────────────────────────────────────────
 function _updateTfaStatus(enabled) {
@@ -1280,7 +1336,7 @@ async function tfaSetup() {
   try {
     const r = await Auth.apiFetch('/auth/me/2fa/setup', {
       method: 'POST',
-      body: JSON.stringify({ password: pwd }),
+      body: JSON.stringify(_gateBody(pwd)),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'setup failed');
@@ -1359,7 +1415,7 @@ async function tfaDisable() {
   try {
     const r = await Auth.apiFetch('/auth/me/2fa/disable', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pwd }),
+      body: JSON.stringify(_gateBody(pwd)),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'disable failed');
@@ -1422,7 +1478,7 @@ async function tfaRegen(){
   try {
     const r = await Auth.apiFetch('/auth/me/2fa/recovery-codes/regenerate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pwd }),
+      body: JSON.stringify(_gateBody(pwd)),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'failed');

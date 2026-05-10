@@ -296,6 +296,92 @@ async def login_totp(body: dict, request: Request, response: Response, db: Sessi
     return Token(access_token=token, recovery_used=used_recovery if used_recovery else None)
 
 
+def _verify_password_or_email_code(user: User, body: dict, request: Request, *, action: str) -> None:
+    """Shared gate for /me/2fa/* and account-delete endpoints. Either:
+      • user.has_password=True → require body.password
+      • user.has_password=False → require body.email_code (issued via
+        /me/email-confirm/request, single-use, 10min TTL)
+
+    On failure raises HTTPException (401 or 429 for throttle). On success
+    clears the throttle bucket and returns None."""
+    from backend.services import login_throttle, email_confirm as _ec
+    ip = _get_ip(request)
+    throttle_key = f"pwd:{user.id}"
+    retry_after = login_throttle.check(throttle_key)
+    if retry_after:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if user.has_password:
+        pwd = (body.get("password") or "").strip()
+        if not pwd or not svc.verify_password(pwd, user.hashed_password):
+            cooldown = login_throttle.register_failure(throttle_key)
+            logger.warning("%s: bad password uid=%s ip=%s", action, user.id, ip)
+            if cooldown:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                    headers={"Retry-After": str(cooldown)},
+                )
+            raise HTTPException(status_code=401, detail="Password mismatch")
+    else:
+        code = (body.get("email_code") or "").strip()
+        if not _ec.verify(user.id, code):
+            cooldown = login_throttle.register_failure(throttle_key)
+            logger.warning("%s: bad email code uid=%s ip=%s", action, user.id, ip)
+            if cooldown:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                    headers={"Retry-After": str(cooldown)},
+                )
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired email code. Request a fresh one.",
+            )
+    login_throttle.clear(throttle_key)
+
+
+@router.post("/me/email-confirm/request")
+def me_email_confirm_request(current_user: User = Depends(get_current_user)):
+    """Issue a 6-digit email confirmation code for the current user.
+    Used as an alternative to the password gate when a Google-only user
+    enables/disables 2FA or regenerates recovery codes.
+
+    Always returns ok — never leaks whether SMTP delivered. If the
+    mailer is not configured AND AVALANT_AUTH_DEV_EXPOSE_TOKEN=1, the
+    code is included in the response so ops/dev can complete the flow."""
+    from backend.services import email_confirm as _ec, mailer as _mailer
+    code = _ec.issue(current_user.id)
+    import os as _osmod
+    dev_expose = (_osmod.environ.get("AVALANT_AUTH_DEV_EXPOSE_TOKEN") or "").strip() == "1"
+
+    delivered = False
+    if _mailer.is_configured():
+        try:
+            _mailer.send(
+                to=current_user.email,
+                subject="Your Avalant confirmation code",
+                body=(
+                    f"Your Avalant confirmation code is: {code}\n\n"
+                    f"This code is valid for 10 minutes and can only be used once.\n\n"
+                    f"If you didn't request this, you can safely ignore this email.\n\n"
+                    f"— Avalant"
+                ),
+            )
+            delivered = True
+        except Exception:
+            delivered = False
+
+    resp = {"status": "ok", "delivered": delivered}
+    if not delivered and dev_expose:
+        resp["dev_code"] = code
+    return resp
+
+
 @router.post("/me/2fa/setup")
 async def me_2fa_setup(body: dict, request: Request,
                         current_user: User = Depends(get_current_user),
@@ -304,36 +390,12 @@ async def me_2fa_setup(body: dict, request: Request,
     otpauth URI as a QR code in their authenticator app and confirms
     via /me/2fa/verify with a generated code.
 
-    Requires the current password — without this, an attacker on a
-    hijacked session could replace a verified TOTP secret with their
-    own and lock the legitimate owner out at the next login. /disable
-    has always required the password; setup is the symmetric gate.
-    Throttled per-user same as disable.
+    Gate: password (if user.has_password) OR email_code (single-use,
+    issued via /me/email-confirm/request, 10min TTL). Without this gate
+    a hijacked session could replace a verified TOTP secret with the
+    attacker's own and lock out the legitimate owner.
     """
-    from backend.services import login_throttle
-    ip = _get_ip(request)
-    throttle_key = f"pwd:{current_user.id}"
-    retry_after = login_throttle.check(throttle_key)
-    if retry_after:
-        await login_throttle.response_delay()
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
-            headers={"Retry-After": str(retry_after)},
-        )
-    pwd = body.get("password") or ""
-    if not svc.verify_password(pwd, current_user.hashed_password):
-        cooldown = login_throttle.register_failure(throttle_key)
-        await login_throttle.response_delay()
-        logger.warning("2FA setup: bad password uid=%s ip=%s", current_user.id, ip)
-        if cooldown:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
-                headers={"Retry-After": str(cooldown)},
-            )
-        raise HTTPException(status_code=401, detail="Password mismatch")
-    login_throttle.clear(throttle_key)
+    _verify_password_or_email_code(current_user, body, request, action="2fa_setup")
 
     from backend.services import totp as _totp
     secret = _totp.generate_secret()
@@ -369,34 +431,11 @@ async def me_2fa_recovery_regenerate(body: dict, request: Request,
                                       current_user: User = Depends(get_current_user),
                                       db: Session = Depends(get_db)):
     """Regenerate the 8 single-use recovery codes. Requires the current
-    password — same gate as /me/2fa/setup and /disable. Old codes are
-    invalidated. Returns the new plaintext codes ONCE; user must save them."""
+    password OR a single-use email confirmation code (for Google-only users).
+    Old codes are invalidated. Returns new plaintext codes ONCE."""
     if not current_user.totp_verified_at:
         raise HTTPException(status_code=400, detail="2FA not enabled")
-    from backend.services import login_throttle
-    ip = _get_ip(request)
-    throttle_key = f"pwd:{current_user.id}"
-    retry_after = login_throttle.check(throttle_key)
-    if retry_after:
-        await login_throttle.response_delay()
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
-            headers={"Retry-After": str(retry_after)},
-        )
-    pwd = body.get("password") or ""
-    if not svc.verify_password(pwd, current_user.hashed_password):
-        cooldown = login_throttle.register_failure(throttle_key)
-        await login_throttle.response_delay()
-        logger.warning("2FA recovery regen: bad password uid=%s ip=%s", current_user.id, ip)
-        if cooldown:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
-                headers={"Retry-After": str(cooldown)},
-            )
-        raise HTTPException(status_code=401, detail="Password mismatch")
-    login_throttle.clear(throttle_key)
+    _verify_password_or_email_code(current_user, body, request, action="2fa_regen")
     from backend.services import totp as _totp
     plain_codes = _totp.generate_recovery_codes(8)
     current_user.totp_recovery_codes = _totp.hash_recovery_codes(plain_codes)
@@ -409,33 +448,10 @@ async def me_2fa_recovery_regenerate(body: dict, request: Request,
 async def me_2fa_disable(body: dict, request: Request,
                           current_user: User = Depends(get_current_user),
                           db: Session = Depends(get_db)):
-    """Disarm 2FA. Requires the current password to prevent a stolen
-    session from undoing protection silently. Throttled per-user so an
-    attacker on a hijacked session can't brute-force the password."""
-    from backend.services import login_throttle
-    ip = _get_ip(request)
-    throttle_key = f"pwd:{current_user.id}"
-    retry_after = login_throttle.check(throttle_key)
-    if retry_after:
-        await login_throttle.response_delay()
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
-            headers={"Retry-After": str(retry_after)},
-        )
-    pwd = body.get("password") or ""
-    if not svc.verify_password(pwd, current_user.hashed_password):
-        cooldown = login_throttle.register_failure(throttle_key)
-        await login_throttle.response_delay()
-        logger.warning("2FA disable: bad password uid=%s ip=%s", current_user.id, ip)
-        if cooldown:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
-                headers={"Retry-After": str(cooldown)},
-            )
-        raise HTTPException(status_code=401, detail="Password mismatch")
-    login_throttle.clear(throttle_key)
+    """Disarm 2FA. Requires the current password OR a single-use email
+    confirmation code (for Google-only users). Prevents a stolen session
+    from undoing protection silently."""
+    _verify_password_or_email_code(current_user, body, request, action="2fa_disable")
     current_user.totp_secret_enc = None
     current_user.totp_verified_at = None
     current_user.totp_recovery_codes = None
@@ -475,6 +491,7 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
     out = UserOut.model_validate(current_user)
     out.tg_linked = bool(current_user.tg_chat_id)
     out.totp_enabled = bool(getattr(current_user, "totp_verified_at", None))
+    out.has_password = bool(getattr(current_user, "has_password", True))
     out.auto_renew = bool(getattr(current_user, "auto_renew", True))
     # Enrich with effective limits so the frontend picker / pricing page
     # can show the right cap without round-tripping to /api/plans.
@@ -552,6 +569,7 @@ def cookie_session(request: Request, db: Session = Depends(get_db)):
     out = UserOut.model_validate(user)
     out.tg_linked = bool(user.tg_chat_id)
     out.totp_enabled = bool(getattr(user, "totp_verified_at", None))
+    out.has_password = bool(getattr(user, "has_password", True))
     out.auto_renew = bool(getattr(user, "auto_renew", True))
     return {"access_token": token, "user": out}
 
@@ -790,6 +808,7 @@ def password_reset_confirm(body: _PwResetConfirm, request: Request, db: Session 
         raise HTTPException(400, "Token invalid or expired")
 
     user.hashed_password = svc.hash_password(body.new_password)
+    user.has_password = True  # Google-only users gain a local password here.
     row.used_at = _dt.utcnow()
     db.commit()
 
@@ -1231,5 +1250,6 @@ def patch_me(body: _UserPatch, current_user: User = Depends(get_current_user), d
     out = UserOut.model_validate(current_user)
     out.tg_linked = bool(current_user.tg_chat_id)
     out.totp_enabled = bool(getattr(current_user, "totp_verified_at", None))
+    out.has_password = bool(getattr(current_user, "has_password", True))
     out.auto_renew = bool(getattr(current_user, "auto_renew", True))
     return out

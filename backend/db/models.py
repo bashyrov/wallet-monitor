@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, JSON, Boolean, Float, Numeric, UniqueConstraint
 from sqlalchemy.orm import relationship
 
@@ -49,6 +50,13 @@ class User(Base):
     # When the last successful TOTP code was used — surfaced on /profile for
     # security visibility (catches stolen-device scenarios).
     totp_last_used_at = Column(DateTime, nullable=True)
+    # FALSE for users who registered exclusively via OAuth (Google) and have
+    # never set a local password. Sensitive endpoints (/me/2fa/setup, /disable,
+    # /recovery-codes/regenerate, account deletion) gate on either the local
+    # password OR a one-time email-confirm code based on this flag — without
+    # it, a Google-only user can't satisfy the password prompt because they
+    # don't know the random one we minted at registration.
+    has_password = Column(Boolean, nullable=False, default=True, server_default=sa.true())
 
     # Subscription auto-renewal. False = user clicked Cancel from /profile —
     # the plan keeps running until plan_expires_at, but expiry notifications

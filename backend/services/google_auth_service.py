@@ -169,9 +169,12 @@ def login_or_register_via_google(db: Session, info: dict) -> tuple[User, str, bo
         # password later via the password-reset flow.
         random_pw = secrets.token_urlsafe(32)
         user = svc.register_user(db, username, email, random_pw)
-        # Mark email as verified — Google already vouched for it.
+        # Google verified the email + the random password is something the
+        # user CAN'T enter (we never show it). Mark accordingly so 2FA setup
+        # and other password-gated endpoints fall back to email-confirm.
         from datetime import datetime
         user.email_verified_at = datetime.utcnow()
+        user.has_password = False
         # Mint a referral code so the new user can share immediately.
         try:
             from backend.services import referral_service

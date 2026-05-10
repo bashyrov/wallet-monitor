@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_CLIENT_SECRET: str | None = None
     GOOGLE_OAUTH_REDIRECT_URI: str | None = None
 
+    # ── SMTP mailer (used for email-confirm codes on 2FA for Google-only users)
+    # Empty SMTP_HOST → mailer disabled, email-confirm/request returns
+    # delivered=False (and dev_code if AVALANT_AUTH_DEV_EXPOSE_TOKEN=1).
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None
+    SMTP_PASS: str | None = None
+    SMTP_FROM: str = "Avalant <no-reply@avalant.xyz>"
+    SMTP_TLS: str = "1"  # "1" STARTTLS, "ssl" SMTPS, "0" plaintext (don't)
+
     ETHEREUM_RPC: str | None = None
     BSC_RPC: str | None = None
     POLYGON_RPC: str | None = None
