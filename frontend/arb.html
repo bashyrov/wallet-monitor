@@ -1189,7 +1189,11 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         <div class="ex-card-row">
           ${IS_DEX
             ? '<span class="cell"><span class="lbl">Liquidity</span><span class="val muted" id="pt-liq">—</span></span><span class="cell"><span class="lbl">Vol 24h</span><span class="val muted" id="pt-dv">—</span></span>'
-            : '<span class="cell"><span class="lbl">Exchange</span><span class="val muted" id="pt-spot-exlbl">—</span></span>'}
+            : `<span class="cell" style="flex:1"><span class="lbl">SPOT venue · change to switch</span>
+                <select id="pt-spot-ex-sel" class="nav-sel" style="width:100%;margin-top:4px"
+                        onchange="(function(s){var u=new URL(location.href);u.searchParams.set('long',s.value);location.href=u.toString();})(this)">
+                </select>
+              </span>`}
         </div>
       </div>
 
@@ -1534,7 +1538,15 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       setT('pt-dv', fmtVol(r.dex_volume_usd));
     } else {
       setT('pt-sv', fmtVol(r.spot_volume_usd));
-      setT('pt-spot-exlbl', EX_LABEL[r.spot_exchange] || r.spot_exchange);
+      // Populate the spot-venue dropdown once: 9 supported spot venues
+      // (matches go-fetcher/internal/arb/spot.go::spotExchanges).
+      const sel = document.getElementById('pt-spot-ex-sel');
+      if (sel && !sel.options.length) {
+        const SPOT_VENUES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx'];
+        sel.innerHTML = SPOT_VENUES.map(e =>
+          `<option value="${e}" ${e === LONG ? 'selected' : ''}>${EX_LABEL[e] || e}${e === SHORT ? ' (same as short)' : ''}</option>`
+        ).join('');
+      }
     }
     setT('pt-pv', fmtVol(r.perp_volume_usd));
 
