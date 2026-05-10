@@ -178,7 +178,11 @@ async def exchange_health():
     rows whose exchanges are unhealthy get dimmed in the UI.
     """
     from backend.services.arbitrage_service import get_exchange_health
-    return {"exchanges": get_exchange_health(), "generated_at": time.time()}
+    # get_exchange_health() reads funding_ws.json + funding.json synchronously
+    # (~1MB parse). Offload to a thread so we don't stall the event loop for
+    # other concurrent requests on this worker.
+    data = await asyncio.to_thread(get_exchange_health)
+    return {"exchanges": data, "generated_at": time.time()}
 
 
 @router.get("/availability")
@@ -188,7 +192,7 @@ async def availability():
     disabled. Served from the shared funding.json file cache so every
     worker returns in <30ms without any upstream refetch."""
     from backend.services import admin_settings
-    from backend.services.arbitrage_service import _read_file_cache
+    from backend.services.arbitrage_service import _read_file_cache_async
 
     now = time.time()
     if _availability_cache["data"] and now - _availability_cache["ts"] < _AVAILABILITY_TTL:
@@ -197,7 +201,7 @@ async def availability():
     # Shared file cache — written by the broadcaster every 3s. Tolerate up
     # to 30s stale; the user-visible cost of a slightly stale symbol list is
     # zero (we just show the page).
-    data = _read_file_cache("funding.json", max_age=30.0)
+    data = await _read_file_cache_async("funding.json", max_age=30.0)
     if not data:
         # Brand-new container / cold start — fall back to the expensive path
         data = await get_funding_data()

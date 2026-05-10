@@ -344,10 +344,14 @@ async def _reconcile_arb_positions(db: Session, user_id: int,
             ap.realized_pnl_usd = realized_sum + funding_sum
             ap.updated_at = _dt.utcnow()
             # Cascade-cancel any pending TP/SL children that haven't fired.
+            # error_kind column is varchar(16); 'pos_closed_ext' fits and is
+            # the same bucket as the prior 'position_closed_externally' string
+            # which was getting rejected with StringDataRightTruncation every
+            # reconcile pass.
             db.execute(
                 _text(
                     "UPDATE arb_trigger_orders "
-                    "SET status='cancelled', error_kind='position_closed_externally', "
+                    "SET status='cancelled', error_kind='pos_closed_ext', "
                     "    error_message='reconcile detected external close', "
                     "    updated_at=:now "
                     "WHERE arb_position_id=:pid AND status IN ('pending','firing','scheduled')"

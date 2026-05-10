@@ -335,14 +335,18 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
     """
     if os.environ.get("AVALANT_ROLE", "").lower() == "web":
         # Web NEVER computes — always serves whatever the fetcher wrote.
-        cached = _arb._read_file_cache("spot_arbitrage.json", max_age=120.0)
+        # Async read offloads the 458KB JSON parse to a thread so we don't
+        # stall the event loop and starve other concurrent requests on the
+        # same uvicorn worker. Burst load on this endpoint was triggering
+        # nginx connect-timeout → both upstreams marked dead → 502 storms.
+        cached = await _arb._read_file_cache_async("spot_arbitrage.json", max_age=120.0)
         if cached and isinstance(cached, dict):
             return cached
         # Cold-start: block briefly so the page doesn't flash an empty table
         # when the fetcher is about to land its first write. Up to 500 ms.
         for _ in range(10):
             await asyncio.sleep(0.05)
-            cached = _arb._read_file_cache("spot_arbitrage.json", max_age=120.0)
+            cached = await _arb._read_file_cache_async("spot_arbitrage.json", max_age=120.0)
             if cached and isinstance(cached, dict):
                 return cached
         return {"opportunities": [], "generated_at": int(time.time()), "spot_exchanges": SPOT_EXCHANGES, "cold": True}

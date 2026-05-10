@@ -1946,7 +1946,11 @@ async def get_arbitrage_opportunities(force: bool = False) -> dict:
         # Web role has no data plane — read with a longer staleness budget
         # and never compute locally.
         max_age = 120.0 if is_web else _ARB_CACHE_TTL * 3
-        fc = _read_file_cache("arbitrage.json", max_age=max_age)
+        # Async read offloads the 500KB JSON parse to a thread pool —
+        # without this, every request stalls the event loop while parsing,
+        # and burst load (every screener page open hits this) starves
+        # other concurrent requests on the same uvicorn worker.
+        fc = await _read_file_cache_async("arbitrage.json", max_age=max_age)
         if fc and fc.get("opportunities"):
             _arb_result_cache["data"] = fc
             _arb_result_cache["ts"] = now
