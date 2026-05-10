@@ -1357,6 +1357,16 @@ Auth.requireAuth('/login');
 // so the user can skip the email round-trip. Inputs are already styled
 // inline in the HTML (cf-input class), so no type-swap needed.
 function _adaptTfaInputs(){
+  // Reparent each modal to <body> so it overlays the whole page. As
+  // children of .section-card their position:fixed gets confined to
+  // the card's containing block (the card has an `animation: fade-up`
+  // with transform — transforms create a fixed-positioning anchor).
+  ['tfa-enable-form', 'tfa-disable-form', 'tfa-regen-form'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.parentElement !== document.body) {
+      document.body.appendChild(el);
+    }
+  });
   if (window._TFA_ENABLED) {
     ['tfa-disable', 'tfa-regen'].forEach(prefix => {
       const inp = document.getElementById(prefix + '-pwd');
