@@ -28,6 +28,11 @@ const Auth = (() => {
   function setSession(token, user) {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    // Remove the page's anonymous-state class without a reload — pages that
+    // gate UI on `html.no-auth` (auth-lock overlays on /arb, etc.) can
+    // re-paint as authed immediately. Login flows never set this class so
+    // the remove is a no-op there.
+    try { document.documentElement.classList.remove('no-auth'); } catch (_) {}
   }
 
   function clearSession() {
@@ -118,21 +123,25 @@ const Auth = (() => {
 // a live JWT (the user is logged in server-side but lost their localStorage —
 // privacy extension, clear-browsing-data, navigated between www and apex,
 // fresh browser profile etc.), recover the token so the page's IS_AUTHED
-// check stops showing the anonymous lockout overlay. Gated on the
-// non-httpOnly `wm_authed=1` companion cookie so we only probe when the
-// server says we're logged in — anonymous page loads skip the network call.
+// check stops showing the anonymous lockout overlay.
+//
+// We always probe (no `wm_authed=1` gate any more) — gating on the cookie
+// missed legacy sessions that predate the companion-cookie deploy. The
+// extra request is cheap (HMAC + DB user lookup, ~5-10ms) and only fires
+// when localStorage is empty; recurring visitors with a token short-circuit
+// at the isLoggedIn check.
+//
+// On success we DON'T reload — Auth.setSession's classList.remove('no-auth')
+// + downstream handlers re-running their fetch on next interval will repaint
+// the page in place. Reload was a sledgehammer that ate any in-flight WS
+// state.
 (function recoverFromCookie() {
   if (Auth.isLoggedIn()) return;
-  if (!document.cookie.split('; ').some(c => c.startsWith('wm_authed=1'))) return;
   fetch('/api/auth/cookie-session', { credentials: 'include' })
     .then(r => r.ok ? r.json() : null)
     .then(j => {
       if (!j || !j.access_token) return;
       Auth.setSession(j.access_token, j.user);
-      // The page already painted with the anonymous state — reload so
-      // sections gated on IS_AUTHED (auth-lock overlays, watchlist
-      // populates, account/positions blocks) re-render correctly.
-      location.reload();
     })
     .catch(() => {});
 })();
