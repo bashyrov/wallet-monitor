@@ -1166,14 +1166,16 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
     <div class="infobar">
       <div class="hero-block">
-        <span class="hero-sym">${SYM}</span>
+        ${IS_DEX
+          ? `<span class="hero-sym">${SYM}</span>`
+          : `<span class="hero-sym" onclick="openSymbolPopover(this)" title="Change symbol">${SYM}</span>`}
         <span class="live-dot"></span>
         <div class="hero-exs">
           ${IS_DEX
             ? `<span class="hero-ex"><span class="dot" style="background:#A78BFA"></span><span>${LONG_LABEL_PLAIN}</span></span>`
             : `<span class="hero-ex" onclick="openExPopover(this,'long')" title="Change spot venue"><span class="dot dot-${LONG}"></span><span>SPOT · ${EX_LABEL[LONG]||LONG}</span></span>`}
           <span class="hero-swap" style="opacity:.5;cursor:default">⇄</span>
-          <span class="hero-ex"><span class="dot dot-${SHORT}"></span><span>${EX_LABEL[SHORT]||SHORT}</span></span>
+          <span class="hero-ex" onclick="openExPopover(this,'short')" title="Change short exchange"><span class="dot dot-${SHORT}"></span><span>${EX_LABEL[SHORT]||SHORT}</span></span>
         </div>
       </div>
       <div class="ap-pop" id="ap-pop">
@@ -3693,7 +3695,8 @@ function _pickPop(i){
 function closePopover(){document.getElementById('ap-pop').classList.remove('open');}
 
 function openSymbolPopover(anchor){
-  const onPick=v=>{location.href=`/arb?symbol=${v}&long=${LONG}&short=${SHORT}`;};
+  const typeParam = TYPE === 'spot' ? '&type=spot-short' : (TYPE === 'dex' ? '&type=dex-short' : '');
+  const onPick=v=>{location.href=`/arb?symbol=${v}&long=${LONG}&short=${SHORT}${typeParam}`;};
   // Open immediately with whatever we have (cached or placeholder) — no waiting on fetch
   const cached=_allSymbols.length?_allSymbols:[SYM];
   _openPop(anchor,{items:cached.map(s=>({value:s,label:s})),current:SYM,placeholder:'Search token…',onPick});
