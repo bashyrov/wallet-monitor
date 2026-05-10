@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signing you in… — Avalant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/design.css">
+  <style>
+    body { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; overflow: hidden; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(26,255,171,0.06), transparent 70%);
+    }
+    .shell { position: relative; z-index: 1; max-width: 380px; width: 100%; text-align: center; }
+    .mark { width: 56px; height: 56px; margin: 0 auto 18px; background: var(--green-soft); border: 1px solid var(--green-edge); border-radius: var(--r-lg); display: grid; place-items: center; color: var(--green); }
+    .mark.err { background: rgba(248,113,113,0.08); border-color: rgba(248,113,113,0.3); color: var(--red); }
+    .title { font-family: 'Fraunces', Georgia, serif; font-size: 26px; font-weight: 400; margin: 0 0 6px; }
+    .sub { color: var(--text2); font-size: 13px; line-height: 1.55; }
+    .err { display: none; color: var(--red); font-size: 13px; margin-top: 8px; }
+    .retry { display: none; margin-top: 16px; padding: 10px 18px; border-radius: var(--r); background: var(--surface3); color: var(--text); border: 1px solid var(--border); text-decoration: none; font-size: 13px; font-weight: 500; }
+    .spinner { width: 22px; height: 22px; border: 2px solid var(--surface3); border-top-color: var(--green); border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 14px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <div class="mark" id="mark">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+  </div>
+  <h1 class="title" id="title">Signing you in…</h1>
+  <div class="spinner" id="spin"></div>
+  <p class="sub" id="sub">Just a moment.</p>
+  <div class="err" id="err"></div>
+  <a class="retry" id="retry" href="/login">Back to login</a>
+</div>
+<script src="/auth.js"></script>
+<script>
+(async () => {
+  const params = new URLSearchParams(location.search);
+  let next = params.get('next') || '/portfolio';
+  if (!next.startsWith('/')) next = '/portfolio';
+
+  const fail = (msg) => {
+    document.getElementById('spin').style.display = 'none';
+    document.getElementById('mark').className = 'mark err';
+    document.getElementById('mark').innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>';
+    document.getElementById('title').textContent = 'Sign-in incomplete';
+    document.getElementById('sub').style.display = 'none';
+    const e = document.getElementById('err'); e.textContent = msg; e.style.display = 'block';
+    document.getElementById('retry').style.display = 'inline-block';
+  };
+
+  try {
+    // The OAuth callback already set the HttpOnly session cookie. Hydrate
+    // localStorage from it so the destination page's Auth.requireAuth()
+    // synchronous check passes — without this hop, the page's <script>
+    // would race the cookie-session probe and bounce us to /login.
+    const r = await fetch('/api/auth/cookie-session', { credentials: 'include', cache: 'no-store' });
+    if (!r.ok) return fail(`Could not read your session (HTTP ${r.status}). Try again.`);
+    const j = await r.json();
+    if (!j.access_token || !j.user) return fail('Session payload incomplete. Try again.');
+    Auth.setSession(j.access_token, j.user);
+    location.replace(next);
+  } catch (e) {
+    fail(e?.message || 'Something went wrong while finishing your sign-in.');
+  }
+})();
+</script>
+</body>
+</html>

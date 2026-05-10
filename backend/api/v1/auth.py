@@ -630,7 +630,12 @@ async def google_callback(request: Request, response: Response,
     except Exception as exc:
         logger.warning("Google OAuth: login_or_register failed — %s", exc)
         return RedirectResponse("/login?google_error=db_failed", status_code=302)
-    redirect = RedirectResponse(next_path, status_code=302)
+    # Bounce through /google-done so the bridge page can hydrate localStorage
+    # from the cookie BEFORE landing on the destination — otherwise pages
+    # like /portfolio call Auth.requireAuth() synchronously, race the
+    # async cookie-session probe in auth.js, and bounce us back to /login.
+    from urllib.parse import quote
+    redirect = RedirectResponse(f"/google-done?next={quote(next_path, safe='/')}", status_code=302)
     _set_session_cookie(redirect, token)
     logger.info("Google OAuth login OK: uid=%s created=%s email=%s",
                 user.id, created, info.get("email"))
