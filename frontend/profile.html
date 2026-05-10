@@ -701,6 +701,13 @@
     </div>
     <div class="danger-row">
       <div>
+        <div class="danger-label" style="color:var(--text)">Export my data</div>
+        <div class="danger-desc">Download a JSON archive of everything we hold on you (GDPR Art. 15 / 20)</div>
+      </div>
+      <button onclick="exportMyData()" id="export-data-btn" style="padding:0 14px;height:30px;border-radius:99px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;transition:all .12s;" onmouseover="this.style.background='var(--surface3)';this.style.color='var(--text)'" onmouseout="this.style.background='transparent';this.style.color='var(--text2)'">Download JSON</button>
+    </div>
+    <div class="danger-row">
+      <div>
         <div class="danger-label">Sign out</div>
         <div class="danger-desc">Sign out of your account on this device</div>
       </div>
@@ -714,6 +721,36 @@
       <button class="btn-danger" onclick="toast('Account deletion coming soon', 'info')">Delete account</button>
     </div>
   </div>
+
+  <script>
+  async function exportMyData(){
+    const btn = document.getElementById('export-data-btn');
+    if (!btn) return;
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Preparing…';
+    try {
+      const r = await Auth.apiFetch('/auth/me/data-export');
+      if (!r.ok) throw new Error('Export failed');
+      const blob = await r.blob();
+      const disp = r.headers.get('Content-Disposition') || '';
+      const m = disp.match(/filename="([^"]+)"/);
+      const fname = m ? m[1] : 'avalant-data.json';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname;
+      document.body.appendChild(a); a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (typeof toast === 'function') toast('Archive downloaded', 'success');
+    } catch (e) {
+      if (typeof toast === 'function') toast(e.message || 'Export failed', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  }
+  </script>
 
   </div><!-- /sec-account -->
 
@@ -782,6 +819,37 @@
       </div>
 
       <div id="tfa-msg" style="display:none;font-size:12px;margin-top:10px;padding:8px 10px;border-radius:6px"></div>
+
+      <!-- Recovery codes display — shown once after verify or after regenerate.
+           Hashed in DB; this is the only time the plain values are visible. -->
+      <div id="tfa-recovery-wrap" style="display:none;margin-top:16px;padding:14px;border:1px solid rgba(229,192,123,0.32);border-radius:8px;background:rgba(229,192,123,0.05)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#E5C07B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1l6 3v4c0 4-2.7 7-6 7s-6-3-6-7V4l6-3z"/></svg>
+          <span style="font-weight:700;font-size:13px;color:#E5C07B">Recovery codes — save these now</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--text2);line-height:1.55;margin-bottom:10px">
+          Each code works <strong>once</strong> to sign in if you lose your authenticator. We hash them — once you close this panel they're gone from the screen forever. Store them in a password manager.
+        </div>
+        <div id="tfa-recovery-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px">
+          <button onclick="tfaRecoveryCopy()" style="flex:1;padding:7px;border-radius:6px;background:var(--surface3);border:1px solid var(--border2);color:var(--text);cursor:pointer;font-family:inherit;font-size:12px">Copy all</button>
+          <button onclick="_hideRecoveryCodes()" style="padding:7px 14px;border-radius:6px;background:#E5C07B;color:#0B0B0E;border:0;cursor:pointer;font-weight:600;font-size:12px">I saved them</button>
+        </div>
+      </div>
+
+      <!-- Regenerate recovery codes — only shown when 2FA is on -->
+      <div id="tfa-on-view-regen" style="display:none;margin-top:10px">
+        <button onclick="tfaRegenShow()" style="padding:7px 14px;border-radius:6px;background:transparent;border:1px solid var(--border);color:var(--text2);cursor:pointer;font-family:inherit;font-size:11.5px">Regenerate recovery codes</button>
+        <div id="tfa-regen-form" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2)">
+          <div style="font-size:11.5px;color:var(--text2);margin-bottom:6px">Old codes are invalidated. Confirm with your password.</div>
+          <input id="tfa-regen-pwd" type="password" placeholder="Current password" autocomplete="current-password" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:12.5px;margin-bottom:6px">
+          <div style="display:flex;gap:6px">
+            <button onclick="tfaRegen()" id="tfa-regen-btn" style="flex:1;padding:7px;border-radius:6px;background:var(--green);color:#001a0d;border:0;cursor:pointer;font-weight:600;font-size:12px">Generate new codes</button>
+            <button onclick="tfaRegenHide()" style="padding:7px 12px;border-radius:6px;background:transparent;color:var(--text3);border:1px solid var(--border);cursor:pointer;font-size:12px">Cancel</button>
+          </div>
+          <div id="tfa-regen-err" style="display:none;font-size:11px;color:var(--red);margin-top:6px"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1165,6 +1233,9 @@ function _updateTfaStatus(enabled) {
   document.getElementById('tfa-on-view').style.display  = enabled ? 'block' : 'none';
   document.getElementById('tfa-off-view').style.display = enabled ? 'none'  : 'block';
   document.getElementById('tfa-setup-view').style.display = 'none';
+  const regen = document.getElementById('tfa-on-view-regen');
+  if (regen) regen.style.display = enabled ? 'block' : 'none';
+  if (!enabled) _hideRecoveryCodes();
 }
 
 let _qrLibPromise = null;
@@ -1252,7 +1323,10 @@ async function tfaVerify() {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'invalid code');
     _updateTfaStatus(true);
-    if (typeof toast === 'function') toast('2FA enabled. Next sign-in will ask for a code.', 'success');
+    if (j.recovery_codes && Array.isArray(j.recovery_codes)) {
+      _showRecoveryCodes(j.recovery_codes);
+    }
+    if (typeof toast === 'function') toast('2FA enabled. Save your recovery codes.', 'success');
   } catch (e) {
     errEl.textContent = e.message || 'Invalid code';
     errEl.style.display = 'block';
@@ -1297,6 +1371,69 @@ async function tfaDisable() {
     errEl.style.display = 'block';
   } finally {
     btn.disabled = false; btn.textContent = 'Disable';
+  }
+}
+
+function _showRecoveryCodes(codes){
+  const wrap = document.getElementById('tfa-recovery-wrap');
+  const list = document.getElementById('tfa-recovery-list');
+  if (!wrap || !list) return;
+  list.innerHTML = codes.map(c => `<code class="mono" style="display:block;padding:6px 8px;background:var(--surface3);border-radius:4px;font-size:12.5px;letter-spacing:0.08em">${c}</code>`).join('');
+  wrap.style.display = 'block';
+  wrap.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function _hideRecoveryCodes(){
+  const wrap = document.getElementById('tfa-recovery-wrap');
+  if (wrap) wrap.style.display = 'none';
+  const list = document.getElementById('tfa-recovery-list');
+  if (list) list.innerHTML = '';
+}
+
+function tfaRecoveryCopy(){
+  const list = document.getElementById('tfa-recovery-list');
+  if (!list) return;
+  const text = [...list.querySelectorAll('code')].map(el => el.textContent).join('\n');
+  navigator.clipboard.writeText(text).then(()=>{
+    if (typeof toast === 'function') toast('Recovery codes copied', 'success');
+  }, ()=>{
+    if (typeof toast === 'function') toast('Copy failed — select manually', 'error');
+  });
+}
+
+function tfaRegenShow(){
+  document.getElementById('tfa-regen-form').style.display = 'block';
+  document.getElementById('tfa-regen-pwd').focus();
+}
+
+function tfaRegenHide(){
+  document.getElementById('tfa-regen-form').style.display = 'none';
+  document.getElementById('tfa-regen-err').style.display = 'none';
+  document.getElementById('tfa-regen-pwd').value = '';
+}
+
+async function tfaRegen(){
+  const pwd = document.getElementById('tfa-regen-pwd').value;
+  const errEl = document.getElementById('tfa-regen-err');
+  const btn = document.getElementById('tfa-regen-btn');
+  errEl.style.display = 'none';
+  if (!pwd) { errEl.textContent = 'Enter your password.'; errEl.style.display = 'block'; return; }
+  btn.disabled = true; btn.textContent = 'Generating…';
+  try {
+    const r = await Auth.apiFetch('/auth/me/2fa/recovery-codes/regenerate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'failed');
+    _showRecoveryCodes(j.recovery_codes || []);
+    tfaRegenHide();
+    if (typeof toast === 'function') toast('New recovery codes generated. Old codes invalidated.', 'success');
+  } catch (e) {
+    errEl.textContent = e.message || 'Regenerate failed';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generate new codes';
   }
 }
 

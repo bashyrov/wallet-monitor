@@ -35,13 +35,20 @@ class User(Base):
     tg_chat_id = Column(Integer, nullable=True)   # filled after user runs /start to the bot
     tg_id = Column(Integer, nullable=True, index=True, unique=True)  # Telegram numeric user id (from widget / bot update)
 
-    # Admin TOTP 2FA. Secret is Fernet-encrypted at rest. `totp_verified_at`
-    # acts as the "armed" flag — the secret is meaningful only after the
-    # admin proves they configured their authenticator by entering one
-    # valid code. Login flow gates admin sessions on a second-factor
-    # check whenever totp_verified_at is set.
+    # TOTP 2FA (any user, not just admins). Secret is Fernet-encrypted at rest.
+    # `totp_verified_at` acts as the "armed" flag — the secret is meaningful
+    # only after the user proves they configured their authenticator by entering
+    # one valid code. Login flow gates sessions on a second-factor check whenever
+    # totp_verified_at is set.
     totp_secret_enc = Column(String, nullable=True)
     totp_verified_at = Column(DateTime, nullable=True)
+    # 8 single-use bcrypt-hashed recovery codes. Generated once at verify-time,
+    # shown to user once, then stored as hashes. User can spend one to log in
+    # if they lose their authenticator. Regenerate-able via /me/2fa/recovery-codes.
+    totp_recovery_codes = Column(JSON, nullable=True)
+    # When the last successful TOTP code was used — surfaced on /profile for
+    # security visibility (catches stolen-device scenarios).
+    totp_last_used_at = Column(DateTime, nullable=True)
 
     # Subscription auto-renewal. False = user clicked Cancel from /profile —
     # the plan keeps running until plan_expires_at, but expiry notifications

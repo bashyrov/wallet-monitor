@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Avalant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/navbar.css">
+  <style>
+    body { padding: 0; position: relative; overflow-x: hidden; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 50% 0%, rgba(26,255,171,0.04), transparent 70%),
+        linear-gradient(rgba(255,255,255,0.01) 1px, transparent 1px) 0 0/100% 64px,
+        linear-gradient(90deg, rgba(255,255,255,0.01) 1px, transparent 1px) 0 0/64px 100%;
+    }
+    .legal-shell { position: relative; z-index: 1; max-width: 820px; margin: 0 auto; padding: 88px 24px 80px; }
+    .legal-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 56px 56px; box-shadow: var(--shadow-lg); }
+    .legal-title { font-family: 'Fraunces', Georgia, serif; font-size: 42px; font-weight: 400; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .legal-sub { color: var(--text3); font-size: 13px; margin: 0 0 36px; }
+    .legal-toc { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px 20px; margin-bottom: 32px; }
+    .legal-toc-title { font-weight: 600; font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+    .legal-toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 24px; }
+    .legal-toc li { font-size: 13px; line-height: 1.9; }
+    .legal-toc a { color: var(--text2); text-decoration: none; }
+    .legal-toc a:hover { color: var(--text); }
+    .legal-card h2 { font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 500; letter-spacing: -0.01em; margin: 36px 0 12px; scroll-margin-top: 80px; }
+    .legal-card h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: var(--text); }
+    .legal-card p, .legal-card li { color: var(--text2); font-size: 14px; line-height: 1.72; }
+    .legal-card ul { padding-left: 20px; }
+    .legal-card li { margin-bottom: 6px; }
+    .legal-card strong { color: var(--text); font-weight: 600; }
+    .legal-card a { color: var(--green); text-decoration: none; }
+    .legal-card a:hover { text-decoration: underline; }
+    .legal-card table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+    .legal-card th, .legal-card td { border: 1px solid var(--border); padding: 10px 12px; text-align: left; vertical-align: top; }
+    .legal-card th { background: var(--surface2); font-weight: 600; color: var(--text); }
+    .legal-card td { color: var(--text2); }
+    .legal-draft-warn { background: rgba(229,192,123,0.08); border: 1px solid rgba(229,192,123,0.28); border-radius: var(--r); padding: 14px 18px; font-size: 13px; color: #E5C07B; margin-bottom: 28px; line-height: 1.55; }
+    .legal-cta { background: var(--green-soft); border: 1px solid var(--green-edge); border-radius: var(--r); padding: 18px 22px; margin: 28px 0; }
+    .legal-cta-title { font-weight: 600; color: var(--green); margin-bottom: 6px; }
+    .legal-cta p { color: var(--text); margin: 0 0 12px; }
+    .legal-cta a.btn-cta { display: inline-block; padding: 9px 16px; border-radius: var(--r); background: var(--green); color: #0B0B0E; font-weight: 600; text-decoration: none; font-size: 13px; }
+    .legal-cta a.btn-cta:hover { text-decoration: none; opacity: 0.9; }
+    @media (max-width: 760px) {
+      .legal-shell { padding: 56px 16px 60px; }
+      .legal-card { padding: 36px 24px; border-radius: var(--r-lg); }
+      .legal-title { font-size: 30px; }
+      .legal-toc ol { columns: 1; }
+    }
+  </style>
+  <script src="/banner.js" defer></script>
+  <script src="/navbar.js" defer></script>
+</head>
+<body>
+  <app-navbar></app-navbar>
+  <div class="legal-shell">
+    <article class="legal-card">
+      <h1 class="legal-title">Privacy Policy</h1>
+      <div class="legal-sub">Last updated: 2026-05-10</div>
+
+      <div class="legal-draft-warn">
+        <strong>Draft notice.</strong> This document is a starting template prepared in good faith. It has NOT been reviewed by a lawyer. Before relying on it for a public launch — particularly in the EU/EEA where GDPR applies — consult counsel. Replace bracketed placeholders with your legal entity details.
+      </div>
+
+      <div class="legal-toc">
+        <div class="legal-toc-title">Contents</div>
+        <ol>
+          <li><a href="#who">Who we are</a></li>
+          <li><a href="#what">What data we collect</a></li>
+          <li><a href="#how">How we use it</a></li>
+          <li><a href="#legal-basis">Legal basis (GDPR)</a></li>
+          <li><a href="#sharing">Sharing with third parties</a></li>
+          <li><a href="#cookies">Cookies &amp; local storage</a></li>
+          <li><a href="#retention">Retention</a></li>
+          <li><a href="#security">Security</a></li>
+          <li><a href="#your-rights">Your rights (GDPR)</a></li>
+          <li><a href="#international">International transfers</a></li>
+          <li><a href="#children">Children</a></li>
+          <li><a href="#changes">Changes</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ol>
+      </div>
+
+      <h2 id="who">1. Who we are</h2>
+      <p>The Service &ldquo;Avalant&rdquo; is operated by <strong>[LEGAL ENTITY NAME]</strong>, registered at <strong>[ADDRESS]</strong>, [JURISDICTION]. We are the data controller for personal data we collect when you use the Service.</p>
+
+      <h2 id="what">2. What data we collect</h2>
+      <table>
+        <thead>
+          <tr><th>Category</th><th>Examples</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Account</td>
+            <td>Username, email, hashed password, plan, registration date</td>
+            <td>You, at sign-up</td>
+          </tr>
+          <tr>
+            <td>2FA</td>
+            <td>TOTP secret (encrypted), hashed recovery codes, last-used timestamp</td>
+            <td>You, when enabling 2FA</td>
+          </tr>
+          <tr>
+            <td>Telegram</td>
+            <td>TG user ID, chat ID, username (if linked)</td>
+            <td>Telegram, when you connect</td>
+          </tr>
+          <tr>
+            <td>Exchange API keys</td>
+            <td>API key, secret, passphrase, address (Fernet-encrypted at rest)</td>
+            <td>You, when adding a key</td>
+          </tr>
+          <tr>
+            <td>Portfolio data</td>
+            <td>Balance snapshots, addresses, transaction history</td>
+            <td>Fetched from exchanges/chains via your keys</td>
+          </tr>
+          <tr>
+            <td>Trading data</td>
+            <td>Orders placed via the Service, positions, P&amp;L, fills</td>
+            <td>The Service, when you execute trades</td>
+          </tr>
+          <tr>
+            <td>Payments</td>
+            <td>Plan purchase records, promo codes used, referral commissions</td>
+            <td>CryptoCloud webhook + the Service</td>
+          </tr>
+          <tr>
+            <td>Operational</td>
+            <td>IP address, user-agent (server logs), audit-log of admin actions</td>
+            <td>Server-side</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>We do <strong>not</strong> collect: your private keys, seed phrases, withdrawal permissions, or payment-card data.</p>
+
+      <h2 id="how">3. How we use it</h2>
+      <ul>
+        <li>To run the Service — fetch balances, run trades you initiated, surface analytics, send alerts;</li>
+        <li>To operate your subscription (renewal reminders, plan changes);</li>
+        <li>To prevent abuse (rate limiting, login throttling, honeypot probes);</li>
+        <li>To comply with legal obligations and respond to enforcement requests;</li>
+        <li>To improve the Service (aggregated, anonymized usage metrics).</li>
+      </ul>
+
+      <h2 id="legal-basis">4. Legal basis (GDPR)</h2>
+      <p>If you are in the EU/EEA, we process your personal data under the following GDPR legal bases:</p>
+      <ul>
+        <li><strong>Contract (Art. 6(1)(b))</strong> — account, API keys, portfolio data, trades, payments. Necessary to provide the Service you signed up for.</li>
+        <li><strong>Legitimate interests (Art. 6(1)(f))</strong> — operational logs, abuse prevention, fraud detection, basic anonymized analytics.</li>
+        <li><strong>Consent (Art. 6(1)(a))</strong> — optional features you opt into (e.g. linking Telegram, marketing announcements).</li>
+        <li><strong>Legal obligation (Art. 6(1)(c))</strong> — record-keeping where law requires.</li>
+      </ul>
+
+      <h2 id="sharing">5. Sharing with third parties</h2>
+      <p>We do not sell your personal data. We share it only with the processors necessary to run the Service:</p>
+      <ul>
+        <li><strong>Cryptocurrency exchanges &amp; DEXs</strong> — your API keys talk directly to them; we don&rsquo;t intermediate the credentials beyond storing them encrypted;</li>
+        <li><strong>Telegram</strong> (Telegram Messenger Inc.) — for bot login &amp; alerts you opt into;</li>
+        <li><strong>CryptoCloud</strong> — for payment processing of subscription plans;</li>
+        <li><strong>Hosting / infrastructure</strong> — [HOSTING PROVIDER NAME] provides server hosting in [REGION];</li>
+        <li><strong>Law enforcement</strong> — when legally required by court order or subpoena.</li>
+      </ul>
+
+      <h2 id="cookies">6. Cookies &amp; local storage</h2>
+      <p>We use only essential cookies and localStorage:</p>
+      <ul>
+        <li><code>session</code> cookie (HttpOnly, Secure, 30 days) — your authenticated session;</li>
+        <li>localStorage keys for UI preferences (theme, screener filters, anonymous-preview timer, dismissed popups).</li>
+      </ul>
+      <p>We do <strong>not</strong> use third-party tracking cookies, advertising pixels, or analytics scripts that profile individual users.</p>
+
+      <h2 id="retention">7. Retention</h2>
+      <ul>
+        <li>Account data — retained while your account is active;</li>
+        <li>Balance / trade history — kept for as long as you have the account, archived after account deletion for up to 30 days, then permanently deleted;</li>
+        <li>Audit logs and operational logs — 90 days;</li>
+        <li>Payment records — retained for the legally required period (typically 5–7 years for tax purposes);</li>
+        <li>Backups — overwritten on a rolling schedule (no longer than 90 days).</li>
+      </ul>
+
+      <h2 id="security">8. Security</h2>
+      <p>We implement industry-standard safeguards:</p>
+      <ul>
+        <li>Exchange credentials and TOTP secrets are encrypted at rest using <code>Fernet</code> (AES-128-CBC + HMAC-SHA256) with a key derived from <code>ENCRYPTION_KEY</code> via PBKDF2-SHA256 (260,000 iterations);</li>
+        <li>Passwords are hashed with <code>bcrypt</code> (workfactor 12);</li>
+        <li>All traffic is TLS 1.2+ with HSTS;</li>
+        <li>Per-account login lockout, rate limiting, optional 2FA with single-use recovery codes;</li>
+        <li>Strict CSP, X-Frame-Options DENY, no third-party trackers.</li>
+      </ul>
+      <p>No system is 100% secure. If you suspect unauthorized access to your account, change your password and contact us immediately.</p>
+
+      <h2 id="your-rights">9. Your rights (GDPR)</h2>
+      <p>If you are in the EU/EEA, you have the right to:</p>
+      <ul>
+        <li><strong>Access</strong> — get a copy of the personal data we hold. Download a machine-readable JSON archive from <a href="/profile">/profile</a> → &ldquo;Export my data&rdquo;, or call <code>GET /api/auth/me/data-export</code>;</li>
+        <li><strong>Rectification</strong> — correct inaccurate data via <a href="/profile">/profile</a>;</li>
+        <li><strong>Erasure (&ldquo;right to be forgotten&rdquo;)</strong> — delete your account from <a href="/profile">/profile</a> → Danger Zone. We delete within 30 days, except for legally retained records;</li>
+        <li><strong>Restriction</strong> — temporarily restrict processing while you contest accuracy or object to processing;</li>
+        <li><strong>Portability</strong> — receive your data in a structured, commonly used, machine-readable format (JSON via the export endpoint);</li>
+        <li><strong>Object</strong> — to processing based on legitimate interests; we will assess your specific situation;</li>
+        <li><strong>Withdraw consent</strong> — for processing based on consent (e.g. disconnect Telegram via <a href="/profile">/profile</a>);</li>
+        <li><strong>Complain</strong> — lodge a complaint with your local data-protection authority.</li>
+      </ul>
+
+      <div class="legal-cta">
+        <div class="legal-cta-title">Want your data right now?</div>
+        <p>Logged-in users can download a full JSON archive of everything we hold on you. One click, one file.</p>
+        <a class="btn-cta" href="/profile#sec-account">Open profile</a>
+      </div>
+
+      <h2 id="international">10. International transfers</h2>
+      <p>Our servers are located in [REGION]. If you access the Service from outside this region, your personal data is transferred to and processed there. Where transfers to a country without an adequacy decision occur, we rely on Standard Contractual Clauses (SCCs) approved by the European Commission.</p>
+
+      <h2 id="children">11. Children</h2>
+      <p>The Service is not intended for individuals under 18. We do not knowingly collect data from minors. If you believe a minor has registered, contact us and we will delete the account.</p>
+
+      <h2 id="changes">12. Changes</h2>
+      <p>We may update this Policy. Material changes will be announced via email or in-app banner at least 14 days before they take effect.</p>
+
+      <h2 id="contact">13. Contact</h2>
+      <p>Privacy questions / GDPR requests: <a href="mailto:privacy@avalant.xyz">privacy@avalant.xyz</a>.</p>
+    </article>
+  </div>
+</body>
+</html>

@@ -4,7 +4,7 @@ from collections import defaultdict
 from threading import Lock
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_user
@@ -254,7 +254,21 @@ async def login_totp(body: dict, request: Request, response: Response, db: Sessi
         secret = _totp.decrypt_secret(user.totp_secret_enc)
     except Exception:
         raise HTTPException(status_code=500, detail="2FA secret unreadable; contact ops")
-    if not _totp.verify_code(secret, code):
+
+    # Two paths: 6-digit TOTP OR 9-char recovery code (xxxx-xxxx).
+    accepted = False
+    used_recovery = False
+    if _totp.is_recovery_format(code):
+        stored = user.totp_recovery_codes or []
+        ok, remaining = _totp.verify_and_consume_recovery_code(stored, code)
+        if ok:
+            user.totp_recovery_codes = remaining
+            accepted = True
+            used_recovery = True
+    if not accepted and _totp.verify_code(secret, code):
+        accepted = True
+
+    if not accepted:
         _record_attempt(ip)
         cooldown = login_throttle.register_failure(throttle_key)
         await login_throttle.response_delay()
@@ -273,10 +287,13 @@ async def login_totp(body: dict, request: Request, response: Response, db: Sessi
         raise HTTPException(status_code=401, detail="Invalid code")
     login_throttle.clear(throttle_key)
     _clear_attempts(ip)
+    user.totp_last_used_at = _dt.utcnow()
+    db.commit()
     token = svc.create_token(user.id)
     _set_session_cookie(response, token)
-    logger.info("2FA login OK: %s (id=%d, admin=%s)", user.username, user.id, user.is_admin)
-    return Token(access_token=token)
+    logger.info("2FA login OK: %s (id=%d, admin=%s, recovery=%s)",
+                user.username, user.id, user.is_admin, used_recovery)
+    return Token(access_token=token, recovery_used=used_recovery if used_recovery else None)
 
 
 @router.post("/me/2fa/setup")
@@ -330,7 +347,8 @@ async def me_2fa_setup(body: dict, request: Request,
 @router.post("/me/2fa/verify")
 def me_2fa_verify(body: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """User enters the first valid code from their authenticator —
-    flips totp_verified_at so future logins start requiring it."""
+    flips totp_verified_at so future logins start requiring it. Also
+    generates 8 single-use recovery codes (returned ONCE, hashed in DB)."""
     if not current_user.totp_secret_enc:
         raise HTTPException(status_code=400, detail="Run /me/2fa/setup first")
     from backend.services import totp as _totp
@@ -339,9 +357,52 @@ def me_2fa_verify(body: dict, current_user: User = Depends(get_current_user), db
     if not _totp.verify_code(secret, code):
         raise HTTPException(status_code=400, detail="Invalid code")
     current_user.totp_verified_at = _dt.utcnow()
+    plain_codes = _totp.generate_recovery_codes(8)
+    current_user.totp_recovery_codes = _totp.hash_recovery_codes(plain_codes)
     db.commit()
     logger.info("2FA armed: uid=%d (admin=%s)", current_user.id, current_user.is_admin)
-    return {"ok": True}
+    return {"ok": True, "recovery_codes": plain_codes}
+
+
+@router.post("/me/2fa/recovery-codes/regenerate")
+async def me_2fa_recovery_regenerate(body: dict, request: Request,
+                                      current_user: User = Depends(get_current_user),
+                                      db: Session = Depends(get_db)):
+    """Regenerate the 8 single-use recovery codes. Requires the current
+    password — same gate as /me/2fa/setup and /disable. Old codes are
+    invalidated. Returns the new plaintext codes ONCE; user must save them."""
+    if not current_user.totp_verified_at:
+        raise HTTPException(status_code=400, detail="2FA not enabled")
+    from backend.services import login_throttle
+    ip = _get_ip(request)
+    throttle_key = f"pwd:{current_user.id}"
+    retry_after = login_throttle.check(throttle_key)
+    if retry_after:
+        await login_throttle.response_delay()
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {retry_after} second{'s' if retry_after != 1 else ''}.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    pwd = body.get("password") or ""
+    if not svc.verify_password(pwd, current_user.hashed_password):
+        cooldown = login_throttle.register_failure(throttle_key)
+        await login_throttle.response_delay()
+        logger.warning("2FA recovery regen: bad password uid=%s ip=%s", current_user.id, ip)
+        if cooldown:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                headers={"Retry-After": str(cooldown)},
+            )
+        raise HTTPException(status_code=401, detail="Password mismatch")
+    login_throttle.clear(throttle_key)
+    from backend.services import totp as _totp
+    plain_codes = _totp.generate_recovery_codes(8)
+    current_user.totp_recovery_codes = _totp.hash_recovery_codes(plain_codes)
+    db.commit()
+    logger.info("2FA recovery codes regenerated: uid=%d", current_user.id)
+    return {"ok": True, "recovery_codes": plain_codes}
 
 
 @router.post("/me/2fa/disable")
@@ -377,6 +438,8 @@ async def me_2fa_disable(body: dict, request: Request,
     login_throttle.clear(throttle_key)
     current_user.totp_secret_enc = None
     current_user.totp_verified_at = None
+    current_user.totp_recovery_codes = None
+    current_user.totp_last_used_at = None
     db.commit()
     logger.info("2FA disabled: uid=%d", current_user.id)
     return {"ok": True}
@@ -823,6 +886,215 @@ def resume_subscription(current_user: User = Depends(get_current_user),
 
 class _DeleteMeBody(_BM):
     password: str
+
+
+@router.get("/me/data-export")
+def me_data_export(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """GDPR Art. 15 (right of access) + Art. 20 (data portability) endpoint.
+    Returns a JSON archive of everything we hold on the user. Sensitive
+    fields (password hashes, raw API secrets, TOTP secret) are stripped —
+    only the fact that they exist is exposed."""
+    from datetime import datetime
+    from backend.db.models import (
+        Wallet, BalanceSnapshot, BalanceHistory, ArbAlert, AuditLogEntry,
+        Payment, PromoCodeUsage, TradeOrder, TradePosition, TradePairDecision,
+        TradeFill, ReferralEarning, ReferralPayoutRequest, PopupDismissal,
+    )
+
+    def _iso(dt): return dt.isoformat() if dt else None
+
+    def _scalar_dict(obj, fields):
+        return {f: getattr(obj, f, None) for f in fields}
+
+    # Profile (minus credentials)
+    profile = {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "is_admin": current_user.is_admin,
+        "is_blocked": current_user.is_blocked,
+        "plan": current_user.plan,
+        "plan_id": current_user.plan_id,
+        "plan_expires_at": _iso(current_user.plan_expires_at),
+        "created_at": _iso(current_user.created_at),
+        "email_verified_at": _iso(current_user.email_verified_at),
+        "tg_username": current_user.tg_username,
+        "tg_linked": bool(current_user.tg_chat_id),
+        "auto_renew": bool(current_user.auto_renew),
+        "totp_enabled": bool(current_user.totp_verified_at),
+        "totp_last_used_at": _iso(current_user.totp_last_used_at),
+        "referral_code": current_user.referral_code,
+        "referred_by_id": current_user.referred_by_id,
+    }
+
+    # Wallets — credentials redacted to a SHA-256 prefix so the user
+    # can tell which key but not extract it.
+    import hashlib
+    wallets = []
+    for w in db.query(Wallet).filter(Wallet.user_id == current_user.id).all():
+        cred_keys = []
+        try:
+            from backend.crypto import decrypt_credentials
+            decrypted = decrypt_credentials(w.credentials) if w.credentials else {}
+            for k, v in (decrypted or {}).items():
+                if v:
+                    digest = hashlib.sha256(str(v).encode()).hexdigest()[:8]
+                    cred_keys.append({"field": k, "fingerprint_sha256_prefix": digest})
+        except Exception:
+            cred_keys = [{"field": "(encrypted)", "fingerprint_sha256_prefix": None}]
+        wallets.append({
+            "id": w.id, "name": w.name, "wallet_type": w.wallet_type,
+            "type_value": w.type_value, "is_archived": w.is_archived,
+            "purpose": w.purpose, "is_main": w.is_main,
+            "created_at": _iso(w.created_at),
+            "credentials_redacted": cred_keys,
+        })
+
+    # Balance snapshots + history
+    balance_snapshots = []
+    for s in db.query(BalanceSnapshot).join(Wallet).filter(Wallet.user_id == current_user.id).all():
+        balance_snapshots.append({
+            "wallet_id": s.wallet_id, "totals": s.totals,
+            "stable_total": float(s.stable_total or 0),
+            "updated_at": _iso(s.updated_at),
+        })
+    balance_history = [
+        {"timestamp": _iso(h.timestamp), "total_usd": float(h.total_usd or 0), "totals": h.totals}
+        for h in db.query(BalanceHistory).filter(BalanceHistory.user_id == current_user.id).all()
+    ]
+
+    # Alerts
+    alerts = [
+        _scalar_dict(a, ["id", "long_exchange", "short_exchange", "symbol",
+                         "threshold_pct", "cooldown_minutes", "enabled"])
+        for a in db.query(ArbAlert).filter(ArbAlert.user_id == current_user.id).all()
+    ]
+
+    # Payments + promo usage
+    payments = []
+    for p in db.query(Payment).filter(Payment.user_id == current_user.id).all():
+        payments.append({
+            "id": p.id, "amount_usd": float(p.amount_usd or 0),
+            "final_amount_usd": float(p.final_amount_usd or 0),
+            "currency": p.currency, "status": p.status,
+            "plan_id": p.plan_id, "period_id": p.period_id,
+            "activated_until": _iso(p.activated_until),
+            "created_at": _iso(p.created_at),
+            "refunded_at": _iso(getattr(p, "refunded_at", None)),
+        })
+    promo_usage = [
+        {"promo_code_id": u.promo_code_id, "payment_id": u.payment_id,
+         "discount_pct": float(u.discount_pct or 0), "created_at": _iso(u.created_at)}
+        for u in db.query(PromoCodeUsage).filter(PromoCodeUsage.user_id == current_user.id).all()
+    ]
+
+    # Trading
+    trade_orders = []
+    for o in db.query(TradeOrder).filter(TradeOrder.user_id == current_user.id).all():
+        trade_orders.append({
+            "id": o.id, "wallet_id": o.wallet_id, "exchange": o.exchange,
+            "symbol": o.symbol, "side": o.side, "intent": o.intent,
+            "status": o.status, "exchange_order_id": o.exchange_order_id,
+            "filled_qty": float(o.filled_qty or 0),
+            "avg_fill_price": float(o.avg_fill_price or 0),
+            "fee_usd": float(o.fee_usd or 0),
+            "created_at": _iso(o.created_at),
+        })
+    trade_positions = []
+    for p in db.query(TradePosition).filter(TradePosition.user_id == current_user.id).all():
+        trade_positions.append({
+            "id": p.id, "kind": p.kind, "pair_kind": p.pair_kind,
+            "leg_a_symbol": p.leg_a_symbol, "leg_a_exchange": p.leg_a_exchange,
+            "leg_a_side": p.leg_a_side, "leg_a_quantity": float(p.leg_a_quantity or 0),
+            "leg_a_entry_price": float(p.leg_a_entry_price or 0),
+            "leg_a_market": p.leg_a_market,
+            "leg_b_symbol": p.leg_b_symbol, "leg_b_exchange": p.leg_b_exchange,
+            "leg_b_side": p.leg_b_side, "leg_b_quantity": float(p.leg_b_quantity or 0),
+            "leg_b_entry_price": float(p.leg_b_entry_price or 0),
+            "leg_b_market": p.leg_b_market,
+            "realized_pnl_usd": float(p.realized_pnl_usd or 0),
+            "source": p.source,
+            "opened_at": _iso(p.opened_at), "closed_at": _iso(p.closed_at),
+        })
+
+    # Trade fills
+    trade_fills = []
+    try:
+        for f in db.query(TradeFill).filter(TradeFill.wallet_id.in_(
+            [w["id"] for w in wallets]
+        )).all():
+            trade_fills.append({
+                "wallet_id": f.wallet_id, "exchange": f.exchange,
+                "market": f.market, "kind": f.kind, "symbol": f.symbol,
+                "side": f.side, "quantity": float(f.quantity or 0),
+                "price": float(f.price or 0), "fee_usd": float(f.fee_usd or 0),
+                "realized_pnl_usd": float(f.realized_pnl_usd or 0),
+                "ts": _iso(f.ts), "ext_trade_id": f.ext_trade_id,
+            })
+    except Exception:
+        pass
+
+    # Referrals
+    referral_earnings = [
+        {"id": e.id, "referee_id": e.referee_id, "payment_id": e.payment_id,
+         "amount_usd": float(e.amount_usd or 0), "pct": float(e.pct or 0),
+         "created_at": _iso(e.created_at),
+         "reversed_at": _iso(getattr(e, "reversed_at", None)),
+         "reversal_reason": getattr(e, "reversal_reason", None)}
+        for e in db.query(ReferralEarning).filter(ReferralEarning.referrer_id == current_user.id).all()
+    ]
+    referral_payouts = [
+        {"id": r.id, "amount_usd": float(r.amount_usd or 0),
+         "address": r.address, "status": r.status, "note": r.note,
+         "created_at": _iso(r.created_at), "resolved_at": _iso(r.resolved_at)}
+        for r in db.query(ReferralPayoutRequest).filter(ReferralPayoutRequest.user_id == current_user.id).all()
+    ]
+
+    # Audit log entries about this user
+    audit = []
+    try:
+        for a in db.query(AuditLogEntry).filter(
+            (AuditLogEntry.actor_id == current_user.id) | (AuditLogEntry.target_id == current_user.id)
+        ).all():
+            audit.append({
+                "id": a.id, "action": getattr(a, "action", None),
+                "actor_id": a.actor_id, "target_id": a.target_id,
+                "metadata": getattr(a, "metadata_", None) or getattr(a, "meta", None),
+                "created_at": _iso(getattr(a, "created_at", None)),
+            })
+    except Exception:
+        pass
+
+    # Popups dismissed
+    popups = [
+        {"popup_id": d.popup_id, "dismissed_at": _iso(d.dismissed_at)}
+        for d in db.query(PopupDismissal).filter(PopupDismissal.user_id == current_user.id).all()
+    ]
+
+    archive = {
+        "export_format_version": "1",
+        "exported_at_utc": _iso(datetime.utcnow()),
+        "profile": profile,
+        "wallets": wallets,
+        "balance_snapshots": balance_snapshots,
+        "balance_history": balance_history,
+        "alerts": alerts,
+        "payments": payments,
+        "promo_code_usages": promo_usage,
+        "trade_orders": trade_orders,
+        "trade_positions": trade_positions,
+        "trade_fills": trade_fills,
+        "referral_earnings": referral_earnings,
+        "referral_payouts": referral_payouts,
+        "audit_log": audit,
+        "popups_dismissed": popups,
+        "note": "Sensitive secrets (password hashes, raw API keys, TOTP secret, recovery code hashes) are intentionally excluded. Where credentials existed, only an 8-char SHA-256 fingerprint is shown so you can correlate without leaking the key.",
+    }
+    fname = f"avalant-data-{current_user.id}-{datetime.utcnow().strftime('%Y%m%d')}.json"
+    return JSONResponse(archive, headers={
+        "Content-Disposition": f'attachment; filename="{fname}"',
+        "Cache-Control": "no-store",
+    })
 
 
 @router.delete("/me")

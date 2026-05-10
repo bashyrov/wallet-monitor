@@ -1082,7 +1082,7 @@ Third-party loggers suppressed to WARNING: httpx, httpcore, urllib3, websockets,
 34. **`/avashare` and `/api/popups`** are blocked by portfolio maintenance scope. `/pricing` and `/checkout` stay open intentionally so users can renew.
 35. **Encryption key rotation**: `python scripts/rotate_encryption_key.py` with `AVALANT_OLD_ENCRYPTION_KEY` + `AVALANT_NEW_ENCRYPTION_KEY` env. Idempotent — re-run after a partial failure tries OLD then NEW per row.
 36. **register strips secrets**: `AVALANT_AUTH_DEV_EXPOSE_TOKEN=1` is the only way to get raw password-reset / email-verify tokens back from the API. Default never exposes.
-37. **2FA TOTP gates admin login only**. Regular users have no 2FA option yet.
+37. **2FA TOTP is open to all users** (admin + non-admin). 8 single-use recovery codes generated at verify-time, bcrypt-hashed in `users.totp_recovery_codes`, shown to user ONCE; regenerate via POST `/auth/me/2fa/recovery-codes/regenerate` (password required). `users.totp_last_used_at` tracked for security visibility on /profile.
 38. **Compose env-block must list each var** — a host `.env` entry isn't auto-forwarded; `x-app-env: &app-env` in `docker-compose.yml` enumerates every `${VAR:-default}` it passes into containers.
 39. **Per-account login lockout** — 5 failed attempts = lock. Counter on `users.failed_login_attempts`, cleared on successful login.
 40. **`payment.amount_usd` does NOT exist** — use `final_amount_usd`. There was a bug where referral commission silently failed because of this.

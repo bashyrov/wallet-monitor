@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service — Avalant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/navbar.css">
+  <style>
+    body { padding: 0; position: relative; overflow-x: hidden; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 50% 0%, rgba(26,255,171,0.04), transparent 70%),
+        linear-gradient(rgba(255,255,255,0.01) 1px, transparent 1px) 0 0/100% 64px,
+        linear-gradient(90deg, rgba(255,255,255,0.01) 1px, transparent 1px) 0 0/64px 100%;
+    }
+    .legal-shell { position: relative; z-index: 1; max-width: 820px; margin: 0 auto; padding: 88px 24px 80px; }
+    .legal-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 56px 56px; box-shadow: var(--shadow-lg); }
+    .legal-title { font-family: 'Fraunces', Georgia, serif; font-size: 42px; font-weight: 400; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .legal-sub { color: var(--text3); font-size: 13px; margin: 0 0 36px; }
+    .legal-toc { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px 20px; margin-bottom: 32px; }
+    .legal-toc-title { font-weight: 600; font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+    .legal-toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 24px; }
+    .legal-toc li { font-size: 13px; line-height: 1.9; }
+    .legal-toc a { color: var(--text2); text-decoration: none; }
+    .legal-toc a:hover { color: var(--text); }
+    .legal-card h2 { font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 500; letter-spacing: -0.01em; margin: 36px 0 12px; scroll-margin-top: 80px; }
+    .legal-card h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: var(--text); }
+    .legal-card p, .legal-card li { color: var(--text2); font-size: 14px; line-height: 1.72; }
+    .legal-card ul { padding-left: 20px; }
+    .legal-card li { margin-bottom: 6px; }
+    .legal-card strong { color: var(--text); font-weight: 600; }
+    .legal-card a { color: var(--green); text-decoration: none; }
+    .legal-card a:hover { text-decoration: underline; }
+    .legal-draft-warn { background: rgba(229,192,123,0.08); border: 1px solid rgba(229,192,123,0.28); border-radius: var(--r); padding: 14px 18px; font-size: 13px; color: #E5C07B; margin-bottom: 28px; line-height: 1.55; }
+    @media (max-width: 760px) {
+      .legal-shell { padding: 56px 16px 60px; }
+      .legal-card { padding: 36px 24px; border-radius: var(--r-lg); }
+      .legal-title { font-size: 30px; }
+      .legal-toc ol { columns: 1; }
+    }
+  </style>
+  <script src="/banner.js" defer></script>
+  <script src="/navbar.js" defer></script>
+</head>
+<body>
+  <app-navbar></app-navbar>
+  <div class="legal-shell">
+    <article class="legal-card">
+      <h1 class="legal-title">Terms of Service</h1>
+      <div class="legal-sub">Last updated: 2026-05-10</div>
+
+      <div class="legal-draft-warn">
+        <strong>Draft notice.</strong> This document is a starting template prepared in good faith. It has NOT been reviewed by a lawyer. Before relying on it for a public launch, consult counsel in your jurisdiction. Replace bracketed placeholders with your legal entity details.
+      </div>
+
+      <div class="legal-toc">
+        <div class="legal-toc-title">Contents</div>
+        <ol>
+          <li><a href="#acceptance">Acceptance</a></li>
+          <li><a href="#service">Description of service</a></li>
+          <li><a href="#eligibility">Eligibility &amp; jurisdiction</a></li>
+          <li><a href="#account">Your account</a></li>
+          <li><a href="#api-keys">API keys &amp; trading</a></li>
+          <li><a href="#risk">Risk disclaimer</a></li>
+          <li><a href="#subscriptions">Subscriptions &amp; payments</a></li>
+          <li><a href="#acceptable">Acceptable use</a></li>
+          <li><a href="#ip">Intellectual property</a></li>
+          <li><a href="#termination">Termination</a></li>
+          <li><a href="#liability">Limitation of liability</a></li>
+          <li><a href="#indemnity">Indemnity</a></li>
+          <li><a href="#changes">Changes</a></li>
+          <li><a href="#governing-law">Governing law</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ol>
+      </div>
+
+      <h2 id="acceptance">1. Acceptance</h2>
+      <p>By accessing or using Avalant (the &ldquo;Service&rdquo;), you agree to these Terms of Service (the &ldquo;Terms&rdquo;) and the <a href="/privacy">Privacy Policy</a>. If you don&rsquo;t agree, don&rsquo;t use the Service.</p>
+
+      <h2 id="service">2. Description of service</h2>
+      <p>Avalant is an analytics &amp; execution platform for cryptocurrency markets. It aggregates funding rates, orderbook depth, and portfolio data across centralized exchanges (CEX) and perpetual decentralized exchanges (DEX), and can place trades on your behalf when you supply your own API keys with the relevant permissions.</p>
+      <p>The Service is provided &ldquo;as is&rdquo; without warranty. We do not custody your funds and do not hold deposits — all balances remain on the venues you connect.</p>
+
+      <h2 id="eligibility">3. Eligibility &amp; jurisdiction</h2>
+      <ul>
+        <li>You must be at least 18 years old (or the age of majority in your jurisdiction, whichever is higher).</li>
+        <li>You may not use the Service if you are located in, or resident of, a jurisdiction where the use of cryptocurrency derivatives or our Service is prohibited by law, including but not limited to OFAC-sanctioned territories.</li>
+        <li>You are solely responsible for ensuring your use of the Service complies with the laws of your jurisdiction, including tax-reporting obligations.</li>
+      </ul>
+
+      <h2 id="account">4. Your account</h2>
+      <p>You agree to (a) provide accurate registration information, (b) keep your password and 2FA credentials confidential, and (c) notify us immediately of any unauthorized account access. You are responsible for all activity that occurs under your account.</p>
+      <p>We strongly recommend enabling two-factor authentication (2FA) on your account and storing the recovery codes in a password manager.</p>
+
+      <h2 id="api-keys">5. API keys &amp; trading</h2>
+      <p>You may grant the Service exchange API keys with read-only or trading permissions. We store credentials encrypted at rest using Fernet (AES-128-CBC + HMAC-SHA256). You are responsible for:</p>
+      <ul>
+        <li>Selecting the correct permission scope on each exchange — we recommend disabling withdrawal permissions for any key you store with us;</li>
+        <li>Revoking keys on the exchange side if you stop using the Service;</li>
+        <li>The consequences of any trade executed via your keys, whether initiated manually through the Service or automatically through an alert/trigger you configured.</li>
+      </ul>
+
+      <h2 id="risk">6. Risk disclaimer</h2>
+      <p><strong>Cryptocurrency trading is high-risk.</strong> Prices are volatile, leverage amplifies both gains and losses, and you can lose more than your initial margin. Funding rates and basis trades can flip sign unexpectedly. Exchange APIs can be slow, throttled, or temporarily disconnected — orders may execute differently than displayed.</p>
+      <p>Nothing in the Service constitutes investment advice. All analytics, signals, opportunities, and scores are informational only. You alone decide whether to trade, what size, and with what leverage.</p>
+
+      <h2 id="subscriptions">7. Subscriptions &amp; payments</h2>
+      <p>Paid subscription plans grant additional features (portfolio limits, trading-key slots, etc.). Pricing and feature differences are listed on <a href="/pricing">/pricing</a>.</p>
+      <ul>
+        <li>Payments are processed by CryptoCloud in cryptocurrency. We don&rsquo;t accept credit-card payments and don&rsquo;t store payment-card data.</li>
+        <li>Subscriptions auto-renew unless you cancel via the <a href="/profile">/profile</a> page. Cancellation stops future billing and reminders; your current plan remains active until the period ends.</li>
+        <li>Cryptocurrency payments are generally non-refundable. We may, at our sole discretion, issue a refund within 7 days of payment if the Service was materially unavailable. Refunds for promo-redeemed bonus days are not available.</li>
+        <li>Referral commissions are paid out in USDT-TRC20 after a manual admin review. Self-referrals and abuse trigger forfeiture.</li>
+      </ul>
+
+      <h2 id="acceptable">8. Acceptable use</h2>
+      <p>You agree NOT to:</p>
+      <ul>
+        <li>Reverse-engineer, decompile, or attempt to access the Service&rsquo;s source code;</li>
+        <li>Scrape the Service&rsquo;s data, including funding rates, orderbooks, or arbitrage feeds, beyond the rate limits posted on our endpoints;</li>
+        <li>Use the Service to wash-trade, manipulate markets, or evade exchange terms of service;</li>
+        <li>Use the Service from an account that is not yours, or share your credentials;</li>
+        <li>Attempt to bypass paywalls, anti-bot measures, or rate limits;</li>
+        <li>Submit malicious data, run intrusion attempts, or otherwise probe our infrastructure without prior written authorization.</li>
+      </ul>
+
+      <h2 id="ip">9. Intellectual property</h2>
+      <p>The Service, including its design, code, brand, and content, is owned by [LEGAL ENTITY NAME] and protected by intellectual-property laws. You receive a limited, non-exclusive, non-transferable license to use the Service for your personal trading; no other rights are granted.</p>
+
+      <h2 id="termination">10. Termination</h2>
+      <p>You may delete your account at any time from <a href="/profile">/profile</a>. We may suspend or terminate your account if you breach these Terms, abuse the Service, or as required by law. Upon termination, your data is removed from active systems within 30 days, subject to legal-retention requirements.</p>
+
+      <h2 id="liability">11. Limitation of liability</h2>
+      <p>To the maximum extent permitted by law, [LEGAL ENTITY NAME] is not liable for indirect, incidental, special, consequential, or punitive damages arising from your use of the Service, including but not limited to: trading losses, missed opportunities, exchange downtime, data inaccuracy, or unauthorized access to your exchange accounts via your stored API keys.</p>
+      <p>Our total aggregate liability for any claim arising from the Service is limited to the greater of (a) the fees you paid us in the 12 months preceding the claim, or (b) USD 100.</p>
+
+      <h2 id="indemnity">12. Indemnity</h2>
+      <p>You agree to defend and indemnify [LEGAL ENTITY NAME] from any third-party claims arising from your use of the Service, your breach of these Terms, or your violation of applicable law.</p>
+
+      <h2 id="changes">13. Changes</h2>
+      <p>We may update these Terms from time to time. Material changes will be announced via email or in-app banner at least 14 days before they take effect. Continued use after the effective date constitutes acceptance.</p>
+
+      <h2 id="governing-law">14. Governing law</h2>
+      <p>These Terms are governed by the laws of [JURISDICTION], without regard to conflict-of-law principles. Disputes are subject to the exclusive jurisdiction of the courts of [COURTS].</p>
+
+      <h2 id="contact">15. Contact</h2>
+      <p>Questions about these Terms: <a href="mailto:legal@avalant.xyz">legal@avalant.xyz</a>.</p>
+    </article>
+  </div>
+</body>
+</html>

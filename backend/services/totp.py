@@ -2,19 +2,25 @@
 provisioning URI for the QR code, and verify codes with a small ±1
 step skew tolerance for clock drift.
 
-Used by /api/auth/admin-2fa/* endpoints. Non-admin users never go
-through this code path — the migration leaves totp_* NULL for them
-and the auth router checks `is_admin` before invoking the gate.
+Open to all users (not just admins): /me/2fa/* endpoints in auth.py.
+Login flow issues a totp_challenge token whenever the user has
+totp_verified_at set.
+
+Recovery codes: 8 single-use codes generated at verify-time, stored as
+bcrypt hashes in users.totp_recovery_codes. Spend one to log in if the
+authenticator app is lost.
 """
 from __future__ import annotations
 
 import base64
 import logging
 import os
+import secrets
 from datetime import datetime
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
+from passlib.hash import bcrypt
 
 logger = logging.getLogger("avalant.totp")
 
@@ -64,3 +70,39 @@ def verify_code(secret: str, code: str, *, valid_window: int = 1) -> bool:
     except Exception as exc:
         logger.debug("totp verify exception: %s", exc)
         return False
+
+
+def generate_recovery_codes(n: int = 8) -> list[str]:
+    """Return n plaintext recovery codes (format `xxxx-xxxx`)."""
+    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/O, 1/l/I for legibility
+    out: list[str] = []
+    for _ in range(n):
+        chunk1 = "".join(secrets.choice(alphabet) for _ in range(4))
+        chunk2 = "".join(secrets.choice(alphabet) for _ in range(4))
+        out.append(f"{chunk1}-{chunk2}")
+    return out
+
+
+def hash_recovery_codes(codes: list[str]) -> list[str]:
+    return [bcrypt.hash(c) for c in codes]
+
+
+def verify_and_consume_recovery_code(stored_hashes: list[str], code: str) -> tuple[bool, list[str]]:
+    """Try to match `code` against `stored_hashes`. On match: return
+    (True, hashes-with-matched-entry-removed). On miss: (False, stored_hashes)."""
+    if not code or not stored_hashes:
+        return False, stored_hashes
+    candidate = code.strip().lower()
+    for i, h in enumerate(stored_hashes):
+        try:
+            if bcrypt.verify(candidate, h):
+                return True, stored_hashes[:i] + stored_hashes[i+1:]
+        except Exception:
+            continue
+    return False, stored_hashes
+
+
+def is_recovery_format(code: str) -> bool:
+    """Heuristic: TOTP codes are 6 digits; recovery codes are 9 chars (4-4 with hyphen)."""
+    s = (code or "").strip()
+    return "-" in s and len(s) >= 8
