@@ -296,15 +296,18 @@ async def login_totp(body: dict, request: Request, response: Response, db: Sessi
     return Token(access_token=token, recovery_used=used_recovery if used_recovery else None)
 
 
-def _verify_password_or_email_code(user: User, body: dict, request: Request, *, action: str) -> None:
-    """Shared gate for /me/2fa/* and account-delete endpoints. Either:
-      • user.has_password=True → require body.password
-      • user.has_password=False → require body.email_code (issued via
-        /me/email-confirm/request, single-use, 10min TTL)
+def _verify_sensitive_op_gate(user: User, body: dict, request: Request, *, action: str) -> None:
+    """Shared gate for sensitive ops (/me/2fa/setup, /disable,
+    /recovery-codes/regenerate, account delete). Accepts either:
+      • body.email_code — single-use 6-digit code issued via
+        /me/email-confirm/request, 10min TTL (always works)
+      • body.totp_code  — current 6-digit code from the user's authenticator
+        (only works if user has 2FA armed; preferred when enabled — no email
+        round-trip)
 
-    On failure raises HTTPException (401 or 429 for throttle). On success
-    clears the throttle bucket and returns None."""
-    from backend.services import login_throttle, email_confirm as _ec
+    Password is NOT accepted — it's reserved for login only. Same throttle
+    bucket as login (pwd:<uid>) so failed attempts cool down."""
+    from backend.services import login_throttle, email_confirm as _ec, totp as _totp
     ip = _get_ip(request)
     throttle_key = f"pwd:{user.id}"
     retry_after = login_throttle.check(throttle_key)
@@ -315,33 +318,37 @@ def _verify_password_or_email_code(user: User, body: dict, request: Request, *, 
             headers={"Retry-After": str(retry_after)},
         )
 
-    if user.has_password:
-        pwd = (body.get("password") or "").strip()
-        if not pwd or not svc.verify_password(pwd, user.hashed_password):
-            cooldown = login_throttle.register_failure(throttle_key)
-            logger.warning("%s: bad password uid=%s ip=%s", action, user.id, ip)
-            if cooldown:
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
-                    headers={"Retry-After": str(cooldown)},
-                )
-            raise HTTPException(status_code=401, detail="Password mismatch")
-    else:
-        code = (body.get("email_code") or "").strip()
-        if not _ec.verify(user.id, code):
-            cooldown = login_throttle.register_failure(throttle_key)
-            logger.warning("%s: bad email code uid=%s ip=%s", action, user.id, ip)
-            if cooldown:
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
-                    headers={"Retry-After": str(cooldown)},
-                )
+    accepted = False
+    # TOTP path (only when 2FA is armed) — preferred since no mail round-trip
+    totp_code = (body.get("totp_code") or "").strip()
+    if totp_code and user.totp_verified_at and user.totp_secret_enc:
+        try:
+            secret = _totp.decrypt_secret(user.totp_secret_enc)
+            if _totp.verify_code(secret, totp_code):
+                accepted = True
+        except Exception:
+            accepted = False
+
+    # Email-code path (always available — primary gate for setup-time
+    # operations when 2FA isn't armed yet)
+    if not accepted:
+        email_code = (body.get("email_code") or "").strip()
+        if email_code and _ec.verify(user.id, email_code):
+            accepted = True
+
+    if not accepted:
+        cooldown = login_throttle.register_failure(throttle_key)
+        logger.warning("%s: bad gate uid=%s ip=%s", action, user.id, ip)
+        if cooldown:
             raise HTTPException(
-                status_code=401,
-                detail="Invalid or expired email code. Request a fresh one.",
+                status_code=429,
+                detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
+                headers={"Retry-After": str(cooldown)},
             )
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired confirmation code. Request a fresh one.",
+        )
     login_throttle.clear(throttle_key)
 
 
@@ -388,7 +395,7 @@ async def me_2fa_setup(body: dict, request: Request,
     a hijacked session could replace a verified TOTP secret with the
     attacker's own and lock out the legitimate owner.
     """
-    _verify_password_or_email_code(current_user, body, request, action="2fa_setup")
+    _verify_sensitive_op_gate(current_user, body, request, action="2fa_setup")
 
     from backend.services import totp as _totp
     secret = _totp.generate_secret()
@@ -428,7 +435,7 @@ async def me_2fa_recovery_regenerate(body: dict, request: Request,
     Old codes are invalidated. Returns new plaintext codes ONCE."""
     if not current_user.totp_verified_at:
         raise HTTPException(status_code=400, detail="2FA not enabled")
-    _verify_password_or_email_code(current_user, body, request, action="2fa_regen")
+    _verify_sensitive_op_gate(current_user, body, request, action="2fa_regen")
     from backend.services import totp as _totp
     plain_codes = _totp.generate_recovery_codes(8)
     current_user.totp_recovery_codes = _totp.hash_recovery_codes(plain_codes)
@@ -444,7 +451,7 @@ async def me_2fa_disable(body: dict, request: Request,
     """Disarm 2FA. Requires the current password OR a single-use email
     confirmation code (for Google-only users). Prevents a stolen session
     from undoing protection silently."""
-    _verify_password_or_email_code(current_user, body, request, action="2fa_disable")
+    _verify_sensitive_op_gate(current_user, body, request, action="2fa_disable")
     current_user.totp_secret_enc = None
     current_user.totp_verified_at = None
     current_user.totp_recovery_codes = None

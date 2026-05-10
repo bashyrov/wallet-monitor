@@ -778,8 +778,8 @@
         </div>
         <button onclick="tfaDisableShow()" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text);padding:8px 14px;border-radius:7px;cursor:pointer;font-family:inherit;font-size:12.5px">Disable 2FA</button>
         <div id="tfa-disable-form" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2)">
-          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Confirm with your password to disable.</div>
-          <input id="tfa-disable-pwd" type="password" placeholder="Current password" autocomplete="current-password" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;margin-bottom:8px">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Confirm by email or authenticator code to disable.</div>
+          <input id="tfa-disable-pwd" type="text" inputmode="numeric" placeholder="6-digit email code" autocomplete="one-time-code" maxlength="6" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;margin-bottom:8px">
           <div style="display:flex;gap:8px">
             <button onclick="tfaDisable()" id="tfa-disable-btn" style="flex:1;padding:9px;border-radius:7px;background:var(--red);color:#fff;border:0;cursor:pointer;font-weight:600;font-size:12.5px">Disable</button>
             <button onclick="tfaDisableHide()" style="padding:9px 14px;border-radius:7px;background:transparent;color:var(--text3);border:1px solid var(--border);cursor:pointer">Cancel</button>
@@ -791,8 +791,8 @@
       <div id="tfa-off-view">
         <button id="tfa-enable-btn" onclick="tfaEnableShow()" style="padding:10px 16px;border-radius:8px;background:var(--green);color:#001a0d;border:0;cursor:pointer;font-weight:700;font-size:13px">Enable 2FA</button>
         <div id="tfa-enable-form" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2)">
-          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Confirm with your password to begin setup.</div>
-          <input id="tfa-enable-pwd" type="password" placeholder="Current password" autocomplete="current-password" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;margin-bottom:8px">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Confirm by email code to begin setup.</div>
+          <input id="tfa-enable-pwd" type="text" inputmode="numeric" placeholder="6-digit email code" autocomplete="one-time-code" maxlength="6" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;margin-bottom:8px">
           <div style="display:flex;gap:8px">
             <button onclick="tfaSetup()" id="tfa-enable-submit" style="flex:1;padding:9px;border-radius:7px;background:var(--green);color:#001a0d;border:0;cursor:pointer;font-weight:600;font-size:12.5px">Continue</button>
             <button onclick="tfaEnableHide()" style="padding:9px 14px;border-radius:7px;background:transparent;color:var(--text3);border:1px solid var(--border);cursor:pointer">Cancel</button>
@@ -841,8 +841,8 @@
       <div id="tfa-on-view-regen" style="display:none;margin-top:10px">
         <button onclick="tfaRegenShow()" style="padding:7px 14px;border-radius:6px;background:transparent;border:1px solid var(--border);color:var(--text2);cursor:pointer;font-family:inherit;font-size:11.5px">Regenerate recovery codes</button>
         <div id="tfa-regen-form" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2)">
-          <div style="font-size:11.5px;color:var(--text2);margin-bottom:6px">Old codes are invalidated. Confirm with your password.</div>
-          <input id="tfa-regen-pwd" type="password" placeholder="Current password" autocomplete="current-password" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:12.5px;margin-bottom:6px">
+          <div style="font-size:11.5px;color:var(--text2);margin-bottom:6px">Old codes are invalidated. Confirm by email or authenticator code.</div>
+          <input id="tfa-regen-pwd" type="text" inputmode="numeric" placeholder="6-digit email code" autocomplete="one-time-code" maxlength="6" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:12.5px;margin-bottom:6px">
           <div style="display:flex;gap:6px">
             <button onclick="tfaRegen()" id="tfa-regen-btn" style="flex:1;padding:7px;border-radius:6px;background:var(--green);color:#001a0d;border:0;cursor:pointer;font-weight:600;font-size:12px">Generate new codes</button>
             <button onclick="tfaRegenHide()" style="padding:7px 12px;border-radius:6px;background:transparent;color:var(--text3);border:1px solid var(--border);cursor:pointer;font-size:12px">Cancel</button>
@@ -1218,18 +1218,19 @@ Auth.requireAuth('/login');
       }
       _renderPlanCard(me);
       _updateTgStatus(me.tg_linked, me.tg_username);
+      window._TFA_ENABLED = !!me.totp_enabled;
       _updateTfaStatus(!!me.totp_enabled);
-      window._HAS_PASSWORD = me.has_password !== false;
-      _adaptTfaInputsForPasswordless();
+      _adaptTfaInputs();
     }
   } catch(e) {}
 })();
 
-// For Google-only users (has_password=false), swap every "Current password"
-// input under the 2FA card for an email-code input + "Send code" trigger.
-// The submit handlers detect the swap by reading window._HAS_PASSWORD.
-function _adaptTfaInputsForPasswordless(){
-  if (window._HAS_PASSWORD !== false) return;
+// Replace every "Current password" input under the 2FA card with the
+// new gate: 6-digit email code (always available) PLUS, when 2FA is
+// already armed, a sibling input for the TOTP code (preferred — no
+// email round-trip). Password is no longer accepted by the backend
+// for these endpoints; it's reserved for login only.
+function _adaptTfaInputs(){
   ['tfa-enable', 'tfa-disable', 'tfa-regen'].forEach(prefix => {
     const inp = document.getElementById(prefix + '-pwd');
     if (!inp) return;
@@ -1238,15 +1239,36 @@ function _adaptTfaInputsForPasswordless(){
     inp.autocomplete = 'one-time-code';
     inp.maxLength = 6;
     inp.placeholder = '6-digit email code';
-    // Inject a "Send code to my email" helper above the input if not present.
+    inp.dataset.gate = 'email_code';
+    // "Send code" helper above the input
     if (!inp.previousElementSibling || !inp.previousElementSibling.classList?.contains('email-code-helper')) {
       const helper = document.createElement('div');
       helper.className = 'email-code-helper';
       helper.style.cssText = 'font-size:11.5px;color:var(--text3);margin:0 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap';
-      helper.innerHTML = '<span>You signed in via Google — we\'ll email a 6-digit code to confirm.</span><a href="#" onclick="requestEmailCode(this,event);return false" style="color:var(--green);text-decoration:none;font-weight:600">Send code</a><span class="ec-status" style="color:var(--text2)"></span>';
+      helper.innerHTML = '<span>We\'ll send a 6-digit code to your email.</span><a href="#" onclick="requestEmailCode(this,event);return false" style="color:var(--green);text-decoration:none;font-weight:600">Send code</a><span class="ec-status" style="color:var(--text2)"></span>';
       inp.parentNode.insertBefore(helper, inp);
     }
+    // For disable/regen: when 2FA is already on, offer TOTP as alt path.
+    if (window._TFA_ENABLED && (prefix === 'tfa-disable' || prefix === 'tfa-regen')) {
+      _injectTotpAlt(inp, prefix);
+    }
   });
+}
+
+function _injectTotpAlt(emailInp, prefix){
+  if (document.getElementById(prefix + '-totp')) return;
+  const wrap = document.createElement('div');
+  wrap.id = prefix + '-totp-wrap';
+  wrap.style.cssText = 'margin-top:6px;font-size:11.5px;color:var(--text3)';
+  wrap.innerHTML = `
+    <div style="margin:6px 0 4px;display:flex;align-items:center;gap:6px">
+      <span style="height:1px;background:var(--border);flex:1"></span>
+      <span>or use authenticator</span>
+      <span style="height:1px;background:var(--border);flex:1"></span>
+    </div>
+    <input id="${prefix}-totp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code from your authenticator app" style="width:100%;padding:8px 11px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.1em">
+  `;
+  emailInp.parentNode.insertBefore(wrap, emailInp.nextSibling);
 }
 
 async function requestEmailCode(linkEl, evt){
@@ -1275,8 +1297,16 @@ async function requestEmailCode(linkEl, evt){
   }
 }
 
-function _gateBody(pwd){
-  return window._HAS_PASSWORD === false ? { email_code: pwd } : { password: pwd };
+// Build the body for sensitive ops. `prefix` selects which form's
+// inputs to read. We always pack email_code (from the main input)
+// AND, when present, totp_code (alt input for disable/regen). Server
+// accepts either; whichever validates wins.
+function _gateBody(prefix, primary){
+  const body = {};
+  if (primary) body.email_code = String(primary).trim();
+  const totpEl = document.getElementById(prefix + '-totp');
+  if (totpEl && totpEl.value) body.totp_code = totpEl.value.trim();
+  return body;
 }
 
 // ── 2FA ─────────────────────────────────────────────────────────────────────
@@ -1324,11 +1354,11 @@ async function tfaSetup() {
   const setupErr = document.getElementById('tfa-setup-err');
   const enableErr = document.getElementById('tfa-enable-err');
   const submit = document.getElementById('tfa-enable-submit');
-  const pwd = document.getElementById('tfa-enable-pwd').value || '';
+  const code = document.getElementById('tfa-enable-pwd').value || '';
   setupErr.style.display = 'none';
   enableErr.style.display = 'none';
-  if (!pwd) {
-    enableErr.textContent = 'Enter your password';
+  if (!code) {
+    enableErr.textContent = 'Enter the email code (use Send code above)';
     enableErr.style.display = 'block';
     return;
   }
@@ -1336,7 +1366,7 @@ async function tfaSetup() {
   try {
     const r = await Auth.apiFetch('/auth/me/2fa/setup', {
       method: 'POST',
-      body: JSON.stringify(_gateBody(pwd)),
+      body: JSON.stringify(_gateBody('tfa-enable', code)),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'setup failed');
@@ -1402,12 +1432,13 @@ function tfaDisableHide() {
 }
 
 async function tfaDisable() {
-  const pwd   = document.getElementById('tfa-disable-pwd').value;
+  const code  = document.getElementById('tfa-disable-pwd').value;
+  const totp  = (document.getElementById('tfa-disable-totp') || {}).value || '';
   const errEl = document.getElementById('tfa-disable-err');
   const btn   = document.getElementById('tfa-disable-btn');
   errEl.style.display = 'none';
-  if (!pwd) {
-    errEl.textContent = 'Enter your password.';
+  if (!code && !totp) {
+    errEl.textContent = 'Enter the email code (or your authenticator code).';
     errEl.style.display = 'block';
     return;
   }
@@ -1415,7 +1446,7 @@ async function tfaDisable() {
   try {
     const r = await Auth.apiFetch('/auth/me/2fa/disable', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(_gateBody(pwd)),
+      body: JSON.stringify(_gateBody('tfa-disable', code)),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'disable failed');
@@ -1469,16 +1500,17 @@ function tfaRegenHide(){
 }
 
 async function tfaRegen(){
-  const pwd = document.getElementById('tfa-regen-pwd').value;
+  const code = document.getElementById('tfa-regen-pwd').value;
+  const totp = (document.getElementById('tfa-regen-totp') || {}).value || '';
   const errEl = document.getElementById('tfa-regen-err');
   const btn = document.getElementById('tfa-regen-btn');
   errEl.style.display = 'none';
-  if (!pwd) { errEl.textContent = 'Enter your password.'; errEl.style.display = 'block'; return; }
+  if (!code && !totp) { errEl.textContent = 'Enter the email code (or your authenticator code).'; errEl.style.display = 'block'; return; }
   btn.disabled = true; btn.textContent = 'Generating…';
   try {
     const r = await Auth.apiFetch('/auth/me/2fa/recovery-codes/regenerate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(_gateBody(pwd)),
+      body: JSON.stringify(_gateBody('tfa-regen', code)),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'failed');
