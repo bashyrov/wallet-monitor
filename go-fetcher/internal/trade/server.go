@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
@@ -89,6 +90,7 @@ type balanceBody struct {
 // ── Handlers ─────────────────────────────────────────────────────────────
 
 func handleOpen(w http.ResponseWriter, r *http.Request) {
+	t0 := time.Now()
 	var b openBody
 	if !decodeJSON(w, r, &b) {
 		return
@@ -97,11 +99,24 @@ func handleOpen(w http.ResponseWriter, r *http.Request) {
 	if a == nil {
 		return
 	}
+	tBeforePlace := time.Now()
 	res, err := a.PlaceOrder(r.Context(), b.Creds, b.Request)
+	tAfterPlace := time.Now()
+	totalMs := tAfterPlace.Sub(t0).Milliseconds()
+	venueMs := tAfterPlace.Sub(tBeforePlace).Milliseconds()
 	if err != nil {
+		log.L().Warn().
+			Str("ex", b.Exchange).Str("sym", b.Request.Symbol).
+			Int64("total_ms", totalMs).Int64("venue_ms", venueMs).
+			Err(err).Msg("trade open failed")
 		writeError(w, err)
 		return
 	}
+	log.L().Info().
+		Str("ex", b.Exchange).Str("sym", b.Request.Symbol).
+		Int64("total_ms", totalMs).Int64("venue_ms", venueMs).
+		Str("order_id", res.OrderID).
+		Msg("trade open")
 	writeJSON(w, http.StatusOK, res)
 }
 
