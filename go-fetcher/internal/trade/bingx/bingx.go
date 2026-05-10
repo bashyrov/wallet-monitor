@@ -57,8 +57,12 @@ func New() *Adapter {
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 8,
-				IdleConnTimeout:     60 * time.Second,
+				ForceAttemptHTTP2:   true,
+				MaxIdleConns:        200,
+				MaxIdleConnsPerHost: 32,
+				MaxConnsPerHost:     64,
+				IdleConnTimeout:     300 * time.Second,
+				TLSHandshakeTimeout: 5 * time.Second,
 			},
 		},
 		info: make(map[string]symbolInfo, 256),
