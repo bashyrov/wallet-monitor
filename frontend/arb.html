@@ -1169,10 +1169,16 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         <span class="hero-sym">${SYM}</span>
         <span class="live-dot"></span>
         <div class="hero-exs">
-          <span class="hero-ex"><span class="dot" style="background:${IS_DEX ? '#A78BFA' : 'var(--green)'}"></span><span>${LONG_LABEL_PLAIN}</span></span>
+          ${IS_DEX
+            ? `<span class="hero-ex"><span class="dot" style="background:#A78BFA"></span><span>${LONG_LABEL_PLAIN}</span></span>`
+            : `<span class="hero-ex" onclick="openExPopover(this,'long')" title="Change spot venue"><span class="dot dot-${LONG}"></span><span>SPOT · ${EX_LABEL[LONG]||LONG}</span></span>`}
           <span class="hero-swap" style="opacity:.5;cursor:default">⇄</span>
           <span class="hero-ex"><span class="dot dot-${SHORT}"></span><span>${EX_LABEL[SHORT]||SHORT}</span></span>
         </div>
+      </div>
+      <div class="ap-pop" id="ap-pop">
+        <div class="ap-search"><input id="ap-search-input" type="text" placeholder="Search…" autocomplete="off"/></div>
+        <div class="ap-list" id="ap-list"></div>
       </div>
 
       <div class="ex-card">
@@ -1189,11 +1195,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         <div class="ex-card-row">
           ${IS_DEX
             ? '<span class="cell"><span class="lbl">Liquidity</span><span class="val muted" id="pt-liq">—</span></span><span class="cell"><span class="lbl">Vol 24h</span><span class="val muted" id="pt-dv">—</span></span>'
-            : `<span class="cell" style="flex:1"><span class="lbl">SPOT venue · change to switch</span>
-                <select id="pt-spot-ex-sel" class="nav-sel" style="width:100%;margin-top:4px"
-                        onchange="(function(s){var u=new URL(location.href);u.searchParams.set('long',s.value);location.href=u.toString();})(this)">
-                </select>
-              </span>`}
+            : '<span class="cell"><span class="lbl">Exchange</span><span class="val muted" id="pt-spot-exlbl">—</span></span>'}
         </div>
       </div>
 
@@ -1538,15 +1540,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       setT('pt-dv', fmtVol(r.dex_volume_usd));
     } else {
       setT('pt-sv', fmtVol(r.spot_volume_usd));
-      // Populate the spot-venue dropdown once: 9 supported spot venues
-      // (matches go-fetcher/internal/arb/spot.go::spotExchanges).
-      const sel = document.getElementById('pt-spot-ex-sel');
-      if (sel && !sel.options.length) {
-        const SPOT_VENUES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx'];
-        sel.innerHTML = SPOT_VENUES.map(e =>
-          `<option value="${e}" ${e === LONG ? 'selected' : ''}>${EX_LABEL[e] || e}${e === SHORT ? ' (same as short)' : ''}</option>`
-        ).join('');
-      }
+      setT('pt-spot-exlbl', EX_LABEL[r.spot_exchange] || r.spot_exchange);
     }
     setT('pt-pv', fmtVol(r.perp_volume_usd));
 
@@ -3721,6 +3715,21 @@ function swapExchanges(){
 async function openExPopover(anchor,side){
   const current=side==='long'?LONG:SHORT;
   const other=side==='long'?SHORT:LONG;
+  // Spot/short mode: LONG leg is a spot venue. Same-venue is allowed
+  // (powers the funding-arb play) so we don't filter `other` out.
+  if (TYPE === 'spot' && side === 'long') {
+    const SPOT_VENUES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx'];
+    const items = SPOT_VENUES.map(e => ({
+      value: e,
+      label: (EX_LABEL[e]||e) + (e === SHORT ? ' · same as short' : ''),
+      color: EX_COLOR[e],
+    }));
+    _openPop(anchor,{items,current,placeholder:'Search spot venue…',
+      onPick:v=>{
+        location.href=`/arb?type=spot-short&symbol=${SYM}&long=${v}&short=${SHORT}`;
+      }});
+    return;
+  }
   // Show loading popover first, fetch listed exchanges, then replace list
   _openPop(anchor,{items:[{value:'__loading',label:'Loading…'}],current,placeholder:'Search exchange…',onPick:()=>{}});
   let listed=_EXCHANGES;
@@ -3736,7 +3745,8 @@ async function openExPopover(anchor,side){
     onPick:v=>{
       const newLong=side==='long'?v:LONG;
       const newShort=side==='short'?v:SHORT;
-      location.href=`/arb?symbol=${SYM}&long=${newLong}&short=${newShort}`;
+      const typeParam = TYPE === 'spot' ? '&type=spot-short' : (TYPE === 'dex' ? '&type=dex-short' : '');
+      location.href=`/arb?symbol=${SYM}&long=${newLong}&short=${newShort}${typeParam}`;
     }});
 }
 
