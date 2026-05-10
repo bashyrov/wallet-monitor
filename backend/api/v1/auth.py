@@ -362,16 +362,9 @@ def me_email_confirm_request(current_user: User = Depends(get_current_user)):
     delivered = False
     if _mailer.is_configured():
         try:
-            _mailer.send(
-                to=current_user.email,
-                subject="Your Avalant confirmation code",
-                body=(
-                    f"Your Avalant confirmation code is: {code}\n\n"
-                    f"This code is valid for 10 minutes and can only be used once.\n\n"
-                    f"If you didn't request this, you can safely ignore this email.\n\n"
-                    f"— Avalant"
-                ),
-            )
+            from backend.services import email_templates as _tmpl
+            subject, text, html = _tmpl.confirm_code(code)
+            _mailer.send(to=current_user.email, subject=subject, body=text, html=html)
             delivered = True
         except Exception:
             delivered = False

@@ -37,10 +37,10 @@ def _smtp_from() -> str:
     return src or "Avalant <no-reply@avalant.xyz>"
 
 
-def send(to: str, subject: str, body: str) -> None:
-    """Send a plain-text email. Raises RuntimeError if mailer is not
-    configured or SMTP returns an error. Caller is responsible for
-    catching and falling back."""
+def send(to: str, subject: str, body: str, html: str | None = None) -> None:
+    """Send an email. If `html` is provided, sends a multipart/alternative
+    so clients render the HTML and fall back to `body` (plain text) when
+    they can't. Raises RuntimeError if mailer is not configured."""
     if not is_configured():
         raise RuntimeError("SMTP not configured (set SMTP_HOST)")
     host = os.environ["SMTP_HOST"].strip()
@@ -54,6 +54,8 @@ def send(to: str, subject: str, body: str) -> None:
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
 
     ctx = ssl.create_default_context()
     try:
