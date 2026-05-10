@@ -1670,6 +1670,7 @@ function _countAll() {
 function renderAll() {
   _countAll();
   const q = (document.getElementById('search').value || '').trim().toUpperCase();
+  const minVol = parseFloat(document.getElementById('f-min-vol').value) || 0;
   const rows = _allRows.filter(r => {
     const rType = r.type || 'futures';
     if (_allTypeFilter !== 'all' && rType !== _allTypeFilter) return false;
@@ -1682,6 +1683,17 @@ function renderAll() {
     const shortEx = r.short_exchange;
     if (longEx && _exDisabled.has(longEx)) return false;
     if (_exDisabled.has(shortEx)) return false;
+    if (minVol > 0) {
+      // Per-row leg-min: futures = min(long, short); spot/dex = min(long-side, perp).
+      // Dex rows expose dex_volume_usd or dex_liquidity_usd as the long-side proxy.
+      const longV = r.type === 'spot_short' ? (r.spot_volume_usd || 0)
+                  : r.type === 'dex_short'  ? (r.dex_volume_usd  || r.dex_liquidity_usd || 0)
+                  :                           (r.long_volume     || 0);
+      const shortV = r.type === 'spot_short' ? (r.perp_volume_usd || 0)
+                   : r.type === 'dex_short'  ? (r.perp_volume_usd || 0)
+                   :                           (r.short_volume    || 0);
+      if (Math.min(longV, shortV) < minVol) return false;
+    }
     // Drop rows without a live orderbook on at least the short leg —
     // an arb you can't enter isn't an opportunity. Same rule the
     // spot/dex tabs apply, just not previously enforced on the
@@ -2142,11 +2154,13 @@ async function loadArb() {
 function applyFilter(keepPage = false) {
   const q = document.getElementById('search').value.trim().toUpperCase();
   const minApr = parseFloat(document.getElementById('f-min-apr').value) || 0;
+  const minVol = parseFloat(document.getElementById('f-min-vol').value) || 0;
   _filtered = _rows.filter(r => {
     if (_exDisabled.has(r.exchange)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
     if (q && !r.symbol.includes(q)) return false;
     if (minApr > 0 && Math.abs(r.apr) < minApr) return false;
+    if (minVol > 0 && (r.volume_usd || 0) < minVol) return false;
     if (_crossOnly && !r.cross_listed) return false;
     return true;
   });
@@ -2191,7 +2205,7 @@ function setMinVol(v, btn){
   document.querySelectorAll('.vol-chip').forEach(el => {
     el.classList.toggle('is-active', Number(el.dataset.v) === Number(v));
   });
-  applyArb();
+  _reapplyCurrentMode();
 }
 
 function applyArb(keepPage = false) {
