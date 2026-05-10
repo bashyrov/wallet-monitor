@@ -1246,6 +1246,88 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
         </div><!-- /.main.top-row -->
 
+    <!-- ── Bottom panel: Positions / Active Triggers / Orders / P&L / Balances.
+         Lives INSIDE .left-stack (same as the futures layout) so .col-info
+         on the right is sibling of left-stack and spans the full workspace
+         height. When this section was outside .workspace the right panel
+         got squished by acc-block's vertical bite out of the body height. -->
+    <section class="acc-block" id="acc-block">
+      <div class="acc-tabs" role="tablist">
+        <div class="acc-tab is-active" data-pane="positions" onclick="accSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
+        <div class="acc-tab" data-pane="triggers" onclick="accSwitch(this)" role="tab">Active Triggers <span class="acc-count" id="acc-cnt-triggers">0</span></div>
+        <div class="acc-tab" data-pane="orders"   onclick="accSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
+        <div class="acc-tab" data-pane="pnl"      onclick="accSwitch(this)" role="tab">P&amp;L</div>
+        <div class="acc-tab" data-pane="balances" onclick="accSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
+        <span class="acc-spacer"></span>
+        <div class="acc-keyinfo" id="acc-keyinfo">
+          <span class="pill ro" title="Read-only keys"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
+          <span class="pill tr" title="Trading keys"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
+          <button type="button" class="pill" style="background:none;cursor:pointer;font-family:inherit" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
+        </div>
+      </div>
+      <div class="acc-body">
+        <div class="acc-pane is-active" id="acc-pane-positions">
+          <table class="acc-table">
+            <thead><tr><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Funding P&amp;L</th><th class="num">uPnL</th><th class="num">uPnL %</th><th></th></tr></thead>
+            <tbody id="acc-positions-body"></tbody>
+          </table>
+          <div class="acc-empty" id="acc-positions-empty">
+            <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg></div>
+            <h4>No open positions</h4>
+            <p>Connect a read-only API key to see exchange positions here.</p>
+            <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
+          </div>
+        </div>
+        <div class="acc-pane" id="acc-pane-triggers">
+          <table class="acc-table">
+            <thead><tr>
+              <th>Type</th><th>Pair</th><th>Long → Short</th>
+              <th class="num">Trigger</th><th class="num">Filled</th>
+              <th class="num">Qty</th><th>Mode</th><th>Status</th>
+              <th>Created</th><th></th>
+            </tr></thead>
+            <tbody id="acc-triggers-body"></tbody>
+          </table>
+          <div class="acc-empty" id="acc-triggers-empty">
+            <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></svg></div>
+            <h4>No active triggers</h4>
+            <p>Place a trigger from the Live Trading panel — it'll fire when spread crosses your target.</p>
+          </div>
+        </div>
+        <div class="acc-pane" id="acc-pane-orders">
+          <table class="acc-table">
+            <thead><tr><th style="width:24px"></th><th>Time</th><th>Action</th><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th>Status</th></tr></thead>
+            <tbody id="acc-orders-body"></tbody>
+          </table>
+          <div class="acc-empty" id="acc-orders-empty">
+            <h4>No orders yet</h4>
+            <p>Order history shows up here after you place trades.</p>
+          </div>
+        </div>
+        <div class="acc-pane" id="acc-pane-pnl">
+          <table class="acc-table">
+            <thead><tr><th>Pair</th><th>Status</th><th class="num">Entry %</th><th class="num">Exit %</th><th class="num">Long $</th><th class="num">Short $</th><th class="num">Funding $</th><th class="num">Total $</th><th>Duration</th></tr></thead>
+            <tbody id="acc-pnl-body"></tbody>
+          </table>
+          <div class="acc-empty" id="acc-pnl-empty">
+            <h4>No P&amp;L yet</h4>
+            <p>Closed pairs show up here with combined leg + funding P&amp;L.</p>
+          </div>
+        </div>
+        <div class="acc-pane" id="acc-pane-balances">
+          <table class="acc-table">
+            <thead><tr><th>Exchange</th><th>Account</th><th>Purpose</th><th class="num">Balance</th><th class="num">Reserved</th><th class="num">Available</th></tr></thead>
+            <tbody id="acc-balances-body"></tbody>
+          </table>
+          <div class="acc-empty" id="acc-balances-empty">
+            <h4>No connected exchanges</h4>
+            <p>Add API keys in Portfolio to see live balances here.</p>
+            <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
       </div><!-- /.left-stack -->
 
           <!-- RIGHT: Trade panel — sibling of .left-stack so it spans full height -->
@@ -1469,87 +1551,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             </div>
           </div><!-- /col-info -->
     </div><!-- /.workspace -->
-
-    <!-- ── Bottom panel: Positions / Active Triggers / Orders / P&L / Balances ──
-         Same markup as the futures layout so the global accSwitch() +
-         accLoadPositions/Triggers/Orders/Pnl/Balances helpers work without
-         change. Spot/dex pages were missing this entirely. -->
-    <section class="acc-block" id="acc-block">
-      <div class="acc-tabs" role="tablist">
-        <div class="acc-tab is-active" data-pane="positions" onclick="accSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
-        <div class="acc-tab" data-pane="triggers" onclick="accSwitch(this)" role="tab">Active Triggers <span class="acc-count" id="acc-cnt-triggers">0</span></div>
-        <div class="acc-tab" data-pane="orders"   onclick="accSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
-        <div class="acc-tab" data-pane="pnl"      onclick="accSwitch(this)" role="tab">P&amp;L</div>
-        <div class="acc-tab" data-pane="balances" onclick="accSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
-        <span class="acc-spacer"></span>
-        <div class="acc-keyinfo" id="acc-keyinfo">
-          <span class="pill ro" title="Read-only keys"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
-          <span class="pill tr" title="Trading keys"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
-          <button type="button" class="pill" style="background:none;cursor:pointer;font-family:inherit" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
-        </div>
-      </div>
-      <div class="acc-body">
-        <div class="acc-pane is-active" id="acc-pane-positions">
-          <table class="acc-table">
-            <thead><tr><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Funding P&amp;L</th><th class="num">uPnL</th><th class="num">uPnL %</th><th></th></tr></thead>
-            <tbody id="acc-positions-body"></tbody>
-          </table>
-          <div class="acc-empty" id="acc-positions-empty">
-            <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg></div>
-            <h4>No open positions</h4>
-            <p>Connect a read-only API key to see exchange positions here.</p>
-            <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
-          </div>
-        </div>
-        <div class="acc-pane" id="acc-pane-triggers">
-          <table class="acc-table">
-            <thead><tr>
-              <th>Type</th><th>Pair</th><th>Long → Short</th>
-              <th class="num">Trigger</th><th class="num">Filled</th>
-              <th class="num">Qty</th><th>Mode</th><th>Status</th>
-              <th>Created</th><th></th>
-            </tr></thead>
-            <tbody id="acc-triggers-body"></tbody>
-          </table>
-          <div class="acc-empty" id="acc-triggers-empty">
-            <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></svg></div>
-            <h4>No active triggers</h4>
-            <p>Place a trigger from the Live Trading panel — it'll fire when spread crosses your target.</p>
-          </div>
-        </div>
-        <div class="acc-pane" id="acc-pane-orders">
-          <table class="acc-table">
-            <thead><tr><th style="width:24px"></th><th>Time</th><th>Action</th><th>Symbol</th><th>Exchange</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th>Status</th></tr></thead>
-            <tbody id="acc-orders-body"></tbody>
-          </table>
-          <div class="acc-empty" id="acc-orders-empty">
-            <h4>No orders yet</h4>
-            <p>Order history shows up here after you place trades.</p>
-          </div>
-        </div>
-        <div class="acc-pane" id="acc-pane-pnl">
-          <table class="acc-table">
-            <thead><tr><th>Pair</th><th>Status</th><th class="num">Entry %</th><th class="num">Exit %</th><th class="num">Long $</th><th class="num">Short $</th><th class="num">Funding $</th><th class="num">Total $</th><th>Duration</th></tr></thead>
-            <tbody id="acc-pnl-body"></tbody>
-          </table>
-          <div class="acc-empty" id="acc-pnl-empty">
-            <h4>No P&amp;L yet</h4>
-            <p>Closed pairs show up here with combined leg + funding P&amp;L.</p>
-          </div>
-        </div>
-        <div class="acc-pane" id="acc-pane-balances">
-          <table class="acc-table">
-            <thead><tr><th>Exchange</th><th>Account</th><th>Purpose</th><th class="num">Balance</th><th class="num">Reserved</th><th class="num">Available</th></tr></thead>
-            <tbody id="acc-balances-body"></tbody>
-          </table>
-          <div class="acc-empty" id="acc-balances-empty">
-            <h4>No connected exchanges</h4>
-            <p>Add API keys in Portfolio to see live balances here.</p>
-            <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
-          </div>
-        </div>
-      </div>
-    </section>
   `;
 
   // Pair-level state
