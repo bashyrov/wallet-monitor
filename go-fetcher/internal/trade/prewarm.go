@@ -33,8 +33,10 @@ var venueHostnames = []string{
 	"api.gateio.ws",          // gate
 	"open-api.bingx.com",     // bingx
 	"api.hyperliquid.xyz",    // hyperliquid
-	"api-futures.kucoin.com", // kucoin
-	"contract.mexc.com",      // mexc
+	"api-futures.kucoin.com", // kucoin futures
+	"api.kucoin.com",         // kucoin spot
+	"contract.mexc.com",      // mexc futures
+	"api.mexc.com",           // mexc spot
 	"api.backpack.exchange",  // backpack
 	"mainnet.zklighter.elliot.ai", // lighter
 	"whitebit.com",           // whitebit
