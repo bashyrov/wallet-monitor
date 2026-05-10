@@ -78,7 +78,16 @@ func New() *Adapter {
 	}
 }
 
-func init() { trade.Register("gate", New()) }
+func init() {
+	a := New()
+	trade.Register("gate", a)
+	go func() {
+		time.Sleep(2 * time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = a.loadContracts(ctx)
+	}()
+}
 
 func (a *Adapter) Name() string { return "gate" }
 

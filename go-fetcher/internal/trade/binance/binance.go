@@ -95,7 +95,19 @@ func New() *Adapter {
 }
 
 func init() {
-	trade.Register("binance", New())
+	a := New()
+	trade.Register("binance", a)
+	// Pre-warm TCP+TLS pool + exchangeInfo cache. Background goroutine —
+	// process boot doesn't block. By the time any user places an order,
+	// the connection is already in the keepalive pool and the symbol
+	// filter map is loaded. Saves ~150-300ms on the very first order
+	// after a fresh container restart.
+	go func() {
+		time.Sleep(2 * time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = a.exchangeInfo(ctx)
+	}()
 }
 
 func (a *Adapter) Name() string { return "binance" }
