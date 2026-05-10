@@ -50,12 +50,16 @@ var venueHostnames = []string{
 // the host, we just log and move on — the per-call DNS lookup will surface
 // the failure when an order is actually placed.
 func PrewarmDNS() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	r := net.DefaultResolver
 	for _, host := range venueHostnames {
 		host := host
 		go func() {
+			// Per-goroutine ctx — the prior `defer cancel()` in
+			// PrewarmDNS() fired immediately on return, killing every
+			// in-flight goroutine's DNS lookup. Now each goroutine
+			// owns its own 5s timeout context.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 			t0 := time.Now()
 			ips, err := r.LookupIPAddr(ctx, host)
 			elapsed := time.Since(t0)
