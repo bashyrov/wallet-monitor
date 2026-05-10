@@ -57,6 +57,11 @@ x-app-env: &app-env
   CRYPTOCLOUD_WEBHOOK_SECRET: ${CRYPTOCLOUD_WEBHOOK_SECRET:-}
   CRYPTOCLOUD_SUCCESS_URL: ${CRYPTOCLOUD_SUCCESS_URL:-https://avalant.xyz/checkout?status=success}
   CRYPTOCLOUD_FAIL_URL: ${CRYPTOCLOUD_FAIL_URL:-https://avalant.xyz/checkout?status=fail}
+  # Google OAuth (Sign in with Google). Leave blank to disable the button;
+  # /api/auth/google/status returns enabled=false and the UI hides the button.
+  GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+  GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+  GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-}
   AVALANT_COOKIE_SECURE: ${AVALANT_COOKIE_SECURE:-1}
   AVALANT_AUTH_DEV_EXPOSE_TOKEN: ${AVALANT_AUTH_DEV_EXPOSE_TOKEN:-}
   AVALANT_ALLOW_FIRST_USER_ADMIN: ${AVALANT_ALLOW_FIRST_USER_ADMIN:-}

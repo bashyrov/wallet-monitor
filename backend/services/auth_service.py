@@ -28,7 +28,8 @@ def verify_password(plain: str, hashed: str) -> bool:
 _ALGORITHM = "HS256"
 
 
-def create_token(user_id: int, *, ttl_minutes: int | None = None, scope: str | None = None) -> str:
+def create_token(user_id: int, *, ttl_minutes: int | None = None,
+                  scope: str | None = None, extra: dict | None = None) -> str:
     import uuid
     if ttl_minutes is None:
         expire = datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
@@ -39,11 +40,16 @@ def create_token(user_id: int, *, ttl_minutes: int | None = None, scope: str | N
     # touching any other still-valid token for the same user.
     payload: dict = {"sub": str(user_id), "exp": expire, "jti": uuid.uuid4().hex}
     if scope:
-        # Scope marks short-lived tokens (e.g. "totp_challenge") so
-        # downstream `get_current_user` can refuse them on regular
-        # endpoints — only the matching second-factor route accepts
-        # the challenge.
+        # Scope marks short-lived tokens (e.g. "totp_challenge", "google_oauth_state")
+        # so downstream `get_current_user` can refuse them on regular endpoints —
+        # only the matching second-factor / callback route accepts the challenge.
         payload["scope"] = scope
+    if extra:
+        # Extra claims (e.g. `next` redirect in OAuth state). Reserved keys
+        # like sub/exp/jti/scope are ignored to avoid accidental override.
+        for k, v in extra.items():
+            if k not in payload:
+                payload[k] = v
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=_ALGORITHM)
 
 

@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     CRYPTOCLOUD_SUCCESS_URL: str = "https://avalant.xyz/checkout?status=success"
     CRYPTOCLOUD_FAIL_URL: str = "https://avalant.xyz/checkout?status=fail"
 
+    # ── Google OAuth (Sign in with Google) ─────────────────────────────
+    # Empty → feature disabled, /api/auth/google/status returns enabled=false.
+    GOOGLE_OAUTH_CLIENT_ID: str | None = None
+    GOOGLE_OAUTH_CLIENT_SECRET: str | None = None
+    GOOGLE_OAUTH_REDIRECT_URI: str | None = None
+
     ETHEREUM_RPC: str | None = None
     BSC_RPC: str | None = None
     POLYGON_RPC: str | None = None

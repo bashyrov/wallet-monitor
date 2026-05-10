@@ -587,6 +587,63 @@ def tg_bot_username():
     return {"username": name, "bot_id": bot_id}
 
 
+@router.get("/google/authorize")
+def google_authorize(request: Request, next: str = "/portfolio"):
+    """Start a Google OAuth flow. Redirects the user to Google's consent
+    screen with a signed `state` carrying the original `next` redirect."""
+    from backend.services import google_auth_service
+    if not google_auth_service.is_configured():
+        raise HTTPException(status_code=503, detail="Google sign-in not configured")
+    url = google_auth_service.build_authorize_url(next_path=next)
+    return RedirectResponse(url, status_code=302)
+
+
+@router.get("/google/callback")
+async def google_callback(request: Request, response: Response,
+                           code: str | None = None, state: str | None = None,
+                           error: str | None = None,
+                           db: Session = Depends(get_db)):
+    """Google bounces back here with ?code=&state=. We verify state,
+    exchange the code for a userinfo, find-or-create the user, and
+    redirect to the originally requested `next` path with a session cookie."""
+    from backend.services import google_auth_service
+    if error:
+        logger.info("Google OAuth: user denied / error=%s", error)
+        return RedirectResponse(f"/login?google_error={error}", status_code=302)
+    if not code or not state:
+        return RedirectResponse("/login?google_error=missing_params", status_code=302)
+    try:
+        state_payload = google_auth_service._decode_state(state)
+    except Exception as exc:
+        logger.warning("Google OAuth: bad state — %s", exc)
+        return RedirectResponse("/login?google_error=bad_state", status_code=302)
+    next_path = (state_payload or {}).get("next") or "/portfolio"
+    if not next_path.startswith("/"):
+        next_path = "/portfolio"
+    try:
+        info = google_auth_service.exchange_code(code)
+    except Exception as exc:
+        logger.warning("Google OAuth: exchange failed — %s", exc)
+        return RedirectResponse("/login?google_error=exchange_failed", status_code=302)
+    try:
+        user, token, created = google_auth_service.login_or_register_via_google(db, info)
+    except Exception as exc:
+        logger.warning("Google OAuth: login_or_register failed — %s", exc)
+        return RedirectResponse("/login?google_error=db_failed", status_code=302)
+    redirect = RedirectResponse(next_path, status_code=302)
+    _set_session_cookie(redirect, token)
+    logger.info("Google OAuth login OK: uid=%s created=%s email=%s",
+                user.id, created, info.get("email"))
+    return redirect
+
+
+@router.get("/google/status")
+def google_status():
+    """Frontend probe: is Google sign-in available on this server?"""
+    from backend.services import google_auth_service
+    return {"enabled": google_auth_service.is_configured()}
+
+
 @router.post("/tg-login", response_model=Token)
 def tg_login(body: _TgWidgetAuth, request: Request, response: Response, db: Session = Depends(get_db)):
     """Accept Telegram Login Widget payload, verify HMAC signature, issue JWT."""
