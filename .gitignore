@@ -8,7 +8,12 @@ dist/
 build/
 
 # ── Frontend ──────────────────────────────────────────
-# No build step — every script tag points at the source file directly.
+# esbuild outputs — rebuilt by `npm run build` (or `npm run watch` for dev).
+# Source files in frontend/*.js stay loadable directly so pages can opt-in
+# to the bundle gradually.
+frontend/dist/
+node_modules/
+package-lock.json
 
 # ── Virtual envs ──────────────────────────────────────
 .venv/

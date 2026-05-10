@@ -71,6 +71,19 @@ deploy_frontend() {
   # max-age=60 on JS/CSS means returning users see new code within ~1 min.
   step "Pulling latest code"
   git pull --ff-only
+  # esbuild bundle — opt-in. If package.json exists AND node is on PATH,
+  # produce minified frontend/dist/*. Source files keep working directly
+  # (gradual migration), but pages that opted into <script src="/dist/core.min.js">
+  # will pick up the rebuild here. Skipped if either tool is missing.
+  if [ -f package.json ] && command -v npm >/dev/null 2>&1; then
+    step "esbuild bundle"
+    if [ ! -d node_modules ]; then
+      npm install --omit=dev=false --no-audit --no-fund --silent
+    fi
+    npm run build
+  else
+    echo "  → skipping esbuild (no package.json or npm not on PATH)"
+  fi
   echo "  → frontend ready, no container action needed"
   smoke
 }

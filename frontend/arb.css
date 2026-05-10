@@ -773,7 +773,9 @@ body.light .bnav-item.active{color:#000;}
 .trade-price-row .mono { font-size:11px; color:var(--text); font-weight:600; }
 .trade-spacer { flex:1; }
 
-.trade-size-row { display:flex; gap:4px; }
+.trade-size-row { display:flex; gap:4px; align-items:center; }
+.trade-price-inp-row { margin-top:-2px; }
+.trade-price-inp-row .trade-lbl { font-size:10.5px; color:var(--text3); text-transform:uppercase; letter-spacing:0.04em; font-weight:600; }
 .trade-size-input { flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:8px 10px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; outline:none; transition:border-color .15s, box-shadow .15s; }
 .trade-size-input:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(26,255,171,0.1); }
 .trade-unit-toggle { display:flex; background:var(--surface2); border:1px solid var(--border); border-radius:6px; overflow:hidden; flex-shrink:0; }
@@ -883,6 +885,41 @@ body.light .trade-position-row { background:#F7F7F7; }
 .wl-star-btn.pop { animation:wl-star-pop .32s cubic-bezier(.34,1.56,.64,1); }
 body.light .wl-star-btn { background: rgba(229,192,123,0.08); border-color: rgba(107,80,17,0.35); color: var(--yellow); }
 body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
+
+/* ─── Trade card — mobile polish ──────────────────────────────────── */
+/* Tablet & below: tighten padding, give chips bigger touch targets, ensure
+   the slider thumb is finger-friendly. Order-type row becomes 2×2 grid on
+   narrow phones (4 chips on one line is too cramped under 380px). */
+@media (max-width: 768px){
+  .trade-leg-body{padding:9px;gap:8px;}
+  .trade-dd-chip{padding:7px 8px;font-size:11.5px;}
+  .trade-tab{padding:8px 10px;font-size:12px;}
+  .trade-size-input{padding:10px 11px;font-size:14px;}
+  .trade-lev-btn{width:30px;font-size:15px;}
+  .trade-slider{height:5px;}
+  .trade-slider::-webkit-slider-thumb{width:18px;height:18px;}
+  .trade-slider::-moz-range-thumb{width:18px;height:18px;}
+  .trade-tick{padding:4px 6px;font-size:11px;min-width:28px;min-height:24px;}
+  .trade-submit{padding:11px 14px;font-size:13px;min-height:42px;}
+  .trade-arb-btn{padding:10px 14px;font-size:12.5px;min-height:42px;}
+}
+@media (max-width: 480px){
+  /* On very narrow phones the margin-mode dropdown + leverage stepper
+     fit edge-to-edge; stack them so each row gets full width. */
+  .trade-row:not(.trade-otype-row){flex-wrap:wrap;}
+  .trade-row .trade-dd{flex:1 1 100%;}
+  .trade-row .trade-lev{align-self:flex-start;margin-top:4px;}
+  /* 4-way order type → 2×2 grid */
+  .trade-otype-row{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--surface2);padding:3px;border-radius:7px;border:1px solid var(--border);}
+  .trade-otype-row .trade-dd-chip{padding:8px 6px;font-size:11px;}
+  /* Price input row gets full width on its own */
+  #trade-price-inp-row-long, #trade-price-inp-row-short{margin-top:2px;}
+  /* Hide TOK/USDT label words → render as compact symbols only if needed */
+  .trade-unit{padding:8px 7px;}
+  /* Leg head: tighter spacing */
+  .trade-leg-head{padding:7px 9px;gap:6px;}
+  .trade-leg-ex{font-size:11.5px;}
+}
 
 /* ─── Trigger / TP / SL card (Task 7) ─────────────────────────────── */
 .trig-card {

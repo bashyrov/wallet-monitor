@@ -72,7 +72,7 @@ ssh root@217.216.108.111 "cd /root/wallet-monitor && git checkout pre-redesign-v
 **Prod load (current baseline)**: 12-core EPYC, 48 GB RAM. go-fetcher fixed ~9.5 cores (24 ob-WS + 12 funding-WS + 3 arb engines). app+app2 ~1.5 cores under near-zero traffic. Headroom for ~2 000 concurrent users before WS broadcaster (single Go process) and Redis pub/sub become the ceiling. RAM is not a bottleneck at this scale (44 GB free).
 
 **Things to know when continuing redesign work**:
-- No frontend bundling — every page now loads `auth.js`, `navbar.js`, etc. directly. Edits propagate immediately, no rebuild step. The previous `dist/core.js`/`dist/aux.js` minified bundles + `build.mjs` were removed because the rebuild ergonomics weren't worth ~14 KB of minification gain (nginx already gzips).
+- **esbuild bundling — opt-in** (reintroduced 2026-05-10). `package.json` + `frontend/build.mjs` produce minified per-module `frontend/dist/*.min.js` and a single concatenated `frontend/dist/core.min.js` (~53 KB before gzip, down from ~80 KB raw). Each source file in `frontend/*.js` is still loadable directly so pages can opt in gradually. `deploy.sh frontend` runs `npm install` + `npm run build` if `package.json` + `npm` are present; otherwise skips cleanly. `node_modules/` and `frontend/dist/` are gitignored. Dev: `npm run watch`.
 - `landing.html` is intentionally NOT touched by the redesign — it's the visual reference and was self-contained before. The homepage `/index.html` is the propagated copy.
 - Screener.html and arb.html are the heaviest pages (3 k / 6.6 k lines) and JS-coupled; the redesign treated them as polish-only (background gradient, design.css cascade), no markup edits.
 
@@ -1212,7 +1212,7 @@ Third-party loggers suppressed to WARNING: httpx, httpcore, urllib3, websockets,
 - **Lighter writes route to Python**, not Go (errZK). Don't add `lighter` to `GO_TRADE_VENUES`.
 - **In/Out columns are baked into arb WS output**, not separate poll. Don't re-introduce `/in-out` polling.
 - **`/ws/funding` REST poll** (3s) replaced WS subscription. Don't re-add the WS path on the client.
-- **No frontend build step**. No npm. No bundler. Vanilla HTML/CSS/JS.
+- **esbuild bundling is opt-in** (decision reversed 2026-05-10). `frontend/build.mjs` produces `frontend/dist/<name>.min.js` + concatenated `frontend/dist/core.min.js`. Sources stay loadable individually for gradual migration. `npm run build` / `npm run watch`. Don't add a transpiler or framework; the bundler is bytes-only.
 - **Risky perf changes go to a feature branch**, not main. Even after revert, isolate the next iteration in `perf/...`.
 - **No transient-ban workarounds** (no TTL bumps, no fallback chains for venue rate-limits). Plan for happy path; address bans separately when they hit.
 

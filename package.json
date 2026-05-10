@@ -1,0 +1,13 @@
+{
+  "name": "avalant-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "esbuild bundler for the Avalant vanilla-JS frontend. No framework, no transpilation — just minify + concatenate the shared modules so each page makes one HTTP request instead of 11.",
+  "scripts": {
+    "build": "node frontend/build.mjs",
+    "watch": "node frontend/build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  }
+}
