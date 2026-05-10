@@ -1302,32 +1302,62 @@ if (TYPE === 'spot' || TYPE === 'dex') {
             <div class="col-info-title">Execute trade</div>
             <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column">
 
-              <!-- LONG leg: BUY on DEX / Spot venue -->
+              <!-- LONG leg: BUY on DEX / Spot venue.
+                   DEX path keeps the wallet-handoff link (we never sign).
+                   Spot path mirrors the SHORT (perp) form 1:1 minus the
+                   leverage + margin-mode rows (spot is always 1×). -->
               <div class="trade-leg" id="pt-trade-long">
                 <div class="trade-leg-head">
                   <span class="trade-leg-badge trade-leg-long" style="${IS_DEX ? 'color:#A78BFA;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.35)' : ''}">${IS_DEX ? 'DEX' : 'SPOT'}</span>
                   <span class="trade-leg-ex" id="pt-trade-long-venue">—</span>
-                  <span class="trade-leg-status" style="color:var(--text3);background:var(--surface3);border:1px solid var(--border)">manual</span>
+                  <span class="trade-leg-status missing" id="pt-spot-status">${IS_DEX ? 'manual' : '—'}</span>
                 </div>
                 <div class="trade-leg-body">
-                  <div class="trade-price-row">
-                    <span class="trade-lbl">Last</span>
-                    <span class="trade-last mono" id="pt-trade-long-px">—</span>
-                    <span class="trade-spacer"></span>
-                    <span class="trade-lbl">${IS_DEX ? 'Liq' : 'Vol 24h'}</span>
-                    <span class="trade-bal mono" id="pt-trade-long-meta">—</span>
-                  </div>
-                  <div class="trade-info-rows">
-                    <div class="trade-info-row"><span>Fees (round-trip)</span><span class="mono" id="pt-long-fees">—</span></div>
-                    <div class="trade-info-row"><span>Basis at entry</span><span class="mono" id="pt-long-basis">—</span></div>
-                  </div>
                   ${IS_DEX
-                    ? `<a id="pt-dex-swap" class="trade-submit trade-long-btn" href="#" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#A78BFA 0%,#8B5CF6 100%);color:#0B0B0E;text-align:center;text-decoration:none;display:block">Open swap on DEX →</a>`
-                    : `<a id="pt-spot-link" class="trade-submit trade-long-btn" href="#" target="_blank" rel="noopener" style="text-align:center;text-decoration:none;display:block">Open on exchange →</a>`
-                  }
-                  <div style="font-size:10.5px;color:var(--text3);line-height:1.45;text-align:center;margin-top:4px">${IS_DEX
-                    ? 'Swap runs in your wallet (MetaMask / Phantom) via DexScreener.'
-                    : 'Native spot order API via connected key — coming next.'}</div>
+                    ? `<div class="trade-price-row">
+                         <span class="trade-lbl">Last</span>
+                         <span class="trade-last mono" id="pt-trade-long-px">—</span>
+                         <span class="trade-spacer"></span>
+                         <span class="trade-lbl">Liq</span>
+                         <span class="trade-bal mono" id="pt-trade-long-meta">—</span>
+                       </div>
+                       <div class="trade-info-rows">
+                         <div class="trade-info-row"><span>Fees (round-trip)</span><span class="mono" id="pt-long-fees">—</span></div>
+                         <div class="trade-info-row"><span>Basis at entry</span><span class="mono" id="pt-long-basis">—</span></div>
+                       </div>
+                       <a id="pt-dex-swap" class="trade-submit trade-long-btn" href="#" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#A78BFA 0%,#8B5CF6 100%);color:#0B0B0E;text-align:center;text-decoration:none;display:block">Open swap on DEX →</a>
+                       <div style="font-size:10.5px;color:var(--text3);line-height:1.45;text-align:center;margin-top:4px">Swap runs in your wallet (MetaMask / Phantom) via DexScreener.</div>`
+                    : `<div class="trade-price-row">
+                         <span class="trade-lbl">Last</span>
+                         <span class="trade-last mono" id="pt-trade-long-px">—</span>
+                         <span class="trade-spacer"></span>
+                         <span class="trade-lbl">Balance</span>
+                         <span class="trade-bal mono" id="pt-spot-bal">— USDT</span>
+                       </div>
+                       <div class="trade-size-row">
+                         <input class="trade-size-input" id="pt-spot-size" type="number" placeholder="Size" oninput="_pt_spot_updateCalc()">
+                         <div class="trade-unit-toggle">
+                           <button class="trade-unit is-active" id="pt-spot-unit-tok" onclick="_pt_spot_setUnit('token')">TOK</button>
+                           <button class="trade-unit" id="pt-spot-unit-usd" onclick="_pt_spot_setUnit('usdt')">USDT</button>
+                         </div>
+                       </div>
+                       <div class="trade-slider-wrap">
+                         <input type="range" class="trade-slider" min="0" max="100" step="1" value="0" id="pt-spot-slider" oninput="_pt_spot_slide(this.value)">
+                         <div class="trade-slider-ticks">
+                           <button class="trade-tick" onclick="_pt_spot_slide(0)">0</button>
+                           <button class="trade-tick" onclick="_pt_spot_slide(25)">25</button>
+                           <button class="trade-tick" onclick="_pt_spot_slide(50)">50</button>
+                           <button class="trade-tick" onclick="_pt_spot_slide(75)">75</button>
+                           <button class="trade-tick" onclick="_pt_spot_slide(100)">100</button>
+                         </div>
+                       </div>
+                       <div class="trade-info-rows">
+                         <div class="trade-info-row"><span>Notional</span><span class="mono" id="pt-spot-notional">0.00 USDT</span></div>
+                         <div class="trade-info-row"><span>Fees (round-trip)</span><span class="mono" id="pt-long-fees">—</span></div>
+                         <div class="trade-info-row"><span>Basis at entry</span><span class="mono" id="pt-long-basis">—</span></div>
+                       </div>
+                       <button class="trade-submit trade-long-btn" id="pt-spot-submit" onclick="_pt_spot_submit()">Buy SPOT · —</button>
+                       <div class="trade-err" id="pt-spot-err" style="display:none;padding:6px 10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:5px;color:var(--red);font-size:10.5px;margin-top:2px"></div>`}
                 </div>
               </div>
 
@@ -1576,19 +1606,23 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       ? `${(r.dex_name||'').toUpperCase()} · ${(r.dex_chain||'').toUpperCase()}`
       : (EX_LABEL[r.spot_exchange] || r.spot_exchange || ''));
     setT('pt-trade-long-px', fmtPxUsd(IS_DEX ? r.dex_price : r.spot_price));
-    setT('pt-trade-long-meta', IS_DEX ? fmtVol(r.dex_liquidity_usd) : fmtVol(r.spot_volume_usd));
+    // pt-trade-long-meta is DEX-only now (Liq); the spot leg shows Balance
+    // in this slot and that's populated by _ptSpotFetchStatus.
+    if (IS_DEX) setT('pt-trade-long-meta', fmtVol(r.dex_liquidity_usd));
     setT('pt-long-fees', `−${(IS_DEX ? (r.fee_dex||0) : (r.fee_spot||0)).toFixed(3)}%`);
     setT('pt-long-basis', `${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`);
     if (IS_DEX) {
       const swap = $('pt-dex-swap');
       if (swap && r.dex_pair_url) swap.href = r.dex_pair_url;
-    } else {
-      const sp = $('pt-spot-link');
-      if (sp) sp.href = _ptSpotUrl(r.spot_exchange || LONG, SYM);
     }
+    // Spot path: nothing to wire here — _ptSpot._submit reads LONG + SYM
+    // directly when the user clicks Buy.
     // SHORT leg Last price (updates every refresh)
     setT('pt-last', fmtPx(r.perp_price));
     _ptRecalc();
+    // Spot leg recalc — Buy button label needs the live price to flip
+    // from "enter size" to "Buy SPOT · X TOKEN".
+    if (typeof window._pt_spot_updateCalc === 'function') window._pt_spot_updateCalc();
 
     // Calculator cards — plain text + inline colour (CSS classes kept mono)
     const setCol = (id, text, isPos) => {
@@ -2217,6 +2251,105 @@ if (TYPE === 'spot' || TYPE === 'dex') {
 
   _ptFetchStatus();
   setInterval(_ptFetchStatus, 15000);
+
+  // ── Spot leg trade form (mirrors the SHORT/perp form, no leverage/margin) ─
+  // Native spot order API isn't ported yet — submit opens the venue's
+  // own spot trading page in a new tab with sane defaults pre-filled in
+  // the URL where supported. The form fields (size, slider, notional) are
+  // wired so calculation works today; once the spot adapter ships the
+  // submit handler swaps to /trade/open with leverage=1.
+  if (TYPE === 'spot') {
+    const _ptSpot = { unit: 'token', size: 0, balance: null, wallet_id: null };
+    function _spotPx() { return _row ? (+_row.spot_price || 0) : 0; }
+    async function _ptSpotFetchStatus() {
+      try {
+        // Re-use /trade/status with the spot venue as long_ex; the long-side
+        // wallet (spot key on that venue) is what we need.
+        const r = await Auth.apiFetch(`/trade/status?symbol=${SYM}&long_ex=${LONG}&short_ex=${SHORT}`);
+        if (!r.ok) return;
+        const j = await r.json();
+        const s = j.long || {};
+        _ptSpot.wallet_id = s.wallet_id || null;
+        _ptSpot.balance = s.balance_usdt;
+        const st = $('pt-spot-status');
+        if (st) {
+          if (_ptSpot.wallet_id) { st.textContent = 'ok'; st.className = 'trade-leg-status ok'; }
+          else { st.textContent = 'no keys'; st.className = 'trade-leg-status missing'; }
+        }
+        setT('pt-spot-bal', _ptSpot.balance != null ? (+_ptSpot.balance).toFixed(2) + ' USDT' : '— USDT');
+        _ptSpotRecalc();
+      } catch { /* ignore */ }
+    }
+    function _ptSpotRecalc() {
+      const px = _spotPx();
+      const sz = +_ptSpot.size;
+      let tokQty = 0, notional = 0;
+      if (sz > 0 && px > 0) {
+        if (_ptSpot.unit === 'token') { tokQty = sz; notional = sz * px; }
+        else { notional = sz; tokQty = sz / px; }
+      }
+      setT('pt-spot-notional', notional > 0 ? notional.toFixed(2) + ' USDT' : '0.00 USDT');
+      const btn = $('pt-spot-submit');
+      if (btn) {
+        if (!tokQty) btn.textContent = 'Buy SPOT · enter size';
+        else btn.textContent = `Buy SPOT · ${tokQty.toFixed(6).replace(/0+$/,'').replace(/\.$/,'')} ${SYM}`;
+      }
+    }
+    window._pt_spot_setUnit = function (u) {
+      if (u === _ptSpot.unit) return;
+      const inp = $('pt-spot-size');
+      const cur = parseFloat((inp && inp.value) || '0') || 0;
+      const px = _spotPx();
+      if (cur > 0 && px > 0 && inp) {
+        if (_ptSpot.unit === 'token' && u === 'usdt') inp.value = (cur * px).toFixed(2);
+        else if (_ptSpot.unit === 'usdt' && u === 'token') inp.value = (cur / px).toFixed(6);
+        _ptSpot.size = parseFloat(inp.value) || 0;
+      }
+      _ptSpot.unit = u;
+      $('pt-spot-unit-tok').classList.toggle('is-active', u === 'token');
+      $('pt-spot-unit-usd').classList.toggle('is-active', u === 'usdt');
+      if (inp) inp.placeholder = u === 'token' ? `Size · ${SYM}` : 'Size · USDT';
+      _ptSpotRecalc();
+    };
+    window._pt_spot_updateCalc = function () {
+      _ptSpot.size = parseFloat(($('pt-spot-size').value || '0'));
+      _ptSpotRecalc();
+    };
+    window._pt_spot_slide = function (pct) {
+      const p = Math.max(0, Math.min(100, +pct));
+      $('pt-spot-slider').value = p;
+      const bal = +_ptSpot.balance || 0;
+      const px = _spotPx();
+      if (!bal || !px) return;
+      const notional = bal * (p / 100);   // spot is always 1× — no leverage multiplier
+      const tokQty = notional / px;
+      if (_ptSpot.unit === 'token') $('pt-spot-size').value = tokQty > 0 ? (+tokQty.toFixed(6)).toString() : '';
+      else $('pt-spot-size').value = notional > 0 ? (+notional.toFixed(2)).toString() : '';
+      _ptSpot.size = +($('pt-spot-size').value || 0);
+      _ptSpotRecalc();
+    };
+    window._pt_spot_submit = async function () {
+      const px = _spotPx();
+      const tokQty = _ptSpot.unit === 'token' ? +_ptSpot.size : (+_ptSpot.size / px);
+      const err = $('pt-spot-err');
+      if (err) err.style.display = 'none';
+      if (tokQty <= 0) {
+        if (err) { err.textContent = 'Enter a size first'; err.style.display = 'block'; }
+        return;
+      }
+      // No native spot adapter yet — open the venue's spot trading page in
+      // a new tab. When the spot trade API ships, swap this for an
+      // Auth.apiFetch('/trade/open', {leverage:1, side:'buy', ...}) call.
+      const url = _ptSpotUrl(LONG, SYM);
+      if (url && url !== '#') {
+        window.open(url, '_blank', 'noopener');
+      } else {
+        if (err) { err.textContent = 'No spot URL for ' + LONG; err.style.display = 'block'; }
+      }
+    };
+    _ptSpotFetchStatus();
+    setInterval(_ptSpotFetchStatus, 15000);
+  }
 
   // ── Open positions list for spot/dex mode (Close + Share buttons) ──
   // Pull positions for the SHORT-leg exchange (perp). The long leg is
