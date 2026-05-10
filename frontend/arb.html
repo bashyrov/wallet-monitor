@@ -1625,11 +1625,18 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     }
   }
 
-  // DexScreener embed (DEX mode)
-  if (IS_DEX && DEX_CHAIN && DEX_PAIR) {
+  // DexScreener embed (DEX mode). `trades=0` hides the trades/txns panel
+  // so the user sees just the price candlestick chart of the asset.
+  // _setDexEmbed is also called from _refreshPair when we discover a pair
+  // via DexScreener search fallback (URL didn't carry chain+pair).
+  function _setDexEmbed(chain, pair) {
+    if (!IS_DEX || !chain || !pair) return;
     const frame = $('pt-dex-frame');
-    if (frame) frame.src = `https://dexscreener.com/${DEX_CHAIN}/${DEX_PAIR}?embed=1&theme=dark&trades=1&info=0`;
+    if (!frame) return;
+    const url = `https://dexscreener.com/${chain}/${pair}?embed=1&theme=dark&trades=0&info=0`;
+    if (frame.src !== url) frame.src = url;
   }
+  _setDexEmbed(DEX_CHAIN, DEX_PAIR);
 
   // Live Entry/Exit chart for Spot / Short — candlestick series (5s buckets).
   // Each push aggregates (mid_short − mid_long) / mid_long × 100 into the
@@ -1712,18 +1719,43 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // Build the pair row from independent sources — top-200 opps cache often
   // doesn't contain our exact pair, so rely on primary endpoints directly.
   async function _fetchDexDirect() {
-    if (!DEX_ADDR) return null;
+    // Path A: address known → /tokens/<addr> (deterministic)
+    // Path B: no address → /search?q=<symbol> (best-effort, picks the
+    //         highest-liquidity match on the requested chain). Without
+    //         this fallback the DEX card stayed empty whenever the
+    //         screener row didn't have dex_base_address populated.
+    let pairs = [];
     try {
-      const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${DEX_ADDR}`, {cache: 'no-store'});
-      if (!r.ok) return null;
-      const j = await r.json();
-      const pairs = j.pairs || [];
+      if (DEX_ADDR) {
+        const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${DEX_ADDR}`, {cache: 'no-store'});
+        if (r.ok) {
+          const j = await r.json();
+          pairs = j.pairs || [];
+        }
+      }
+      if (pairs.length === 0 && SYM) {
+        const r = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(SYM)}`, {cache: 'no-store'});
+        if (r.ok) {
+          const j = await r.json();
+          pairs = j.pairs || [];
+        }
+      }
+    } catch { return null; }
+    if (!pairs.length) return null;
+    try {
       const ACCEPTED = new Set(['USDC','USDT','DAI','BUSD','USDC.E','FDUSD','PYUSD','WETH','WBTC','WBNB','WSOL','SOL','ETH','BNB','MATIC','WMATIC']);
+      const symU = (SYM || '').toUpperCase();
       let best = null, bestLiq = 0;
       for (const p of pairs) {
         if (DEX_CHAIN && (p.chainId || '') !== DEX_CHAIN) continue;
         const base = p.baseToken || {};
-        if ((base.address || '').toLowerCase() !== DEX_ADDR) continue;
+        // If we have an address (path A) require exact match; if we don't
+        // (path B — symbol search) require base symbol to match instead.
+        if (DEX_ADDR) {
+          if ((base.address || '').toLowerCase() !== DEX_ADDR) continue;
+        } else if (symU) {
+          if ((base.symbol || '').toUpperCase() !== symU) continue;
+        }
         const q = ((p.quoteToken || {}).symbol || '').toUpperCase();
         if (!ACCEPTED.has(q)) continue;
         const liq = +(((p.liquidity || {}).usd) || 0);
@@ -1798,6 +1830,7 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       dex_chain: dex.chain || '',
       dex_name: dex.dex || '',
       dex_pair_url: dex.url || '',
+      dex_pair_address: dex.pair_address || '',
       dex_price: IS_DEX ? dexPx : undefined,
       spot_price: IS_DEX ? undefined : dexPx,
       dex_liquidity_usd: dex.liquidity_usd || 0,
@@ -1813,6 +1846,12 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       if (IS_DEX) {
         const [dex, perp] = await Promise.all([_fetchDexDirect(), _fetchPerpData()]);
         row = _buildRow(dex, perp);
+        // If we resolved chain+pair via search fallback (URL had no
+        // pair param), load the embed iframe NOW that we know which
+        // pair to chart.
+        if (row && !DEX_PAIR && row.dex_chain && row.dex_pair_address) {
+          _setDexEmbed(row.dex_chain, row.dex_pair_address);
+        }
       } else {
         row = await _fetchSpotData();
         if (!row) {
