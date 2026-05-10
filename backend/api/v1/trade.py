@@ -397,6 +397,11 @@ class OpenOrderIn(BaseModel):
     # caller. When "spot", trade_service skips leverage/margin validation
     # and the dispatcher routes to the venue's SpotAdapter.
     market_type: str = Field("futures", pattern="^(futures|spot)$")
+    # Order type (default market). "limit" requires limit_price;
+    # "stop_market"/"take_profit_market" require stop_price.
+    order_type: str = Field("market", pattern="^(market|limit|stop_market|take_profit_market)$")
+    limit_price: float | None = Field(None, gt=0)
+    stop_price: float | None = Field(None, gt=0)
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -413,6 +418,8 @@ async def open_order(
         return await trade_service.place_open_order(
             db, user.id, body.wallet_id, body.symbol, body.side, body.quantity,
             body.leverage, body.margin_mode, market_type=body.market_type,
+            order_type=body.order_type, limit_price=body.limit_price,
+            stop_price=body.stop_price,
         )
     except trade_service.TradeError as e:
         # Internal errors are sanitized so we don't leak internals to the

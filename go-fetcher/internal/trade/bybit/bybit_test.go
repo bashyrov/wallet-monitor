@@ -92,6 +92,9 @@ func TestPlaceOrder_HappyPath(t *testing.T) {
 				t.Errorf("body missing symbol: %s", body)
 			}
 			io.WriteString(w, `{"retCode":0,"result":{"orderId":"abc123"}}`)
+		case strings.HasSuffix(r.URL.Path, "/v5/order/history"):
+			// avg_price follow-up query — return filled order
+			io.WriteString(w, `{"retCode":0,"result":{"list":[{"avgPrice":"43000.5"}]}}`)
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 			http.Error(w, "?", http.StatusNotFound)

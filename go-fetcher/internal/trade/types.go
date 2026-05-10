@@ -77,6 +77,20 @@ type Creds struct {
 	Extra      map[string]string `json:"extra,omitempty"` // future-proof
 }
 
+// OrderType selects the order execution strategy.
+type OrderType string
+
+const (
+	OrderMarket         OrderType = "market"               // default — immediate fill at market
+	OrderLimit          OrderType = "limit"                // fill at LimitPrice or better (GTC)
+	OrderStopMarket     OrderType = "stop_market"          // market-execute when price hits StopPrice
+	OrderTakeProfitMkt  OrderType = "take_profit_market"   // market-execute TP when price hits StopPrice
+)
+
+func (o OrderType) IsLimit() bool         { return o == OrderLimit }
+func (o OrderType) IsConditional() bool   { return o == OrderStopMarket || o == OrderTakeProfitMkt }
+func (o OrderType) EffectiveMarket() bool { return o == "" || o == OrderMarket }
+
 // OpenRequest mirrors Python `place_order(creds, symbol, side, qty,
 // leverage, margin_mode)`. Only fields that vary per call.
 //
@@ -91,6 +105,10 @@ type OpenRequest struct {
 	Leverage   int        `json:"leverage"`
 	MarginMode MarginMode `json:"margin_mode"`
 	MarketType MarketType `json:"market_type,omitempty"`
+	// Limit / conditional order fields (zero = not used)
+	OrderType  OrderType  `json:"order_type,omitempty"`  // default: market
+	LimitPrice float64    `json:"limit_price,omitempty"` // required for limit orders
+	StopPrice  float64    `json:"stop_price,omitempty"`  // required for stop/tp orders
 }
 
 func (r OpenRequest) Validate() error {
@@ -102,6 +120,12 @@ func (r OpenRequest) Validate() error {
 	}
 	if r.Quantity <= 0 {
 		return errUser("quantity must be > 0")
+	}
+	if r.OrderType.IsLimit() && r.LimitPrice <= 0 {
+		return errUser("limit_price required for limit orders")
+	}
+	if r.OrderType.IsConditional() && r.StopPrice <= 0 {
+		return errUser("stop_price required for stop/take_profit orders")
 	}
 	// Leverage + margin only required on futures. Spot is always 1× / cash
 	// — no preflight calls, no hedge-mode dance, just a single signed POST.

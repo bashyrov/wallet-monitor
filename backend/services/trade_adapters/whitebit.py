@@ -283,3 +283,60 @@ class WhitebitAdapter:
     @classmethod
     async def get_public_max_leverage(cls, symbol: str) -> int:
         return 100
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *, market: str = "futures") -> list[dict]:
+        """WhiteBIT executed trade history since `since_ts`.
+        Endpoint: POST /api/v4/trade-account/executed-history (futures + spot).
+        market='futures' uses _PERP symbol suffix; market='spot' uses _USDT."""
+        from datetime import datetime as _dt
+        if market not in ("futures", "spot"):
+            return []
+        since_ts_unix = int(since_ts.timestamp())
+        out: list[dict] = []
+        offset = 0
+        limit = 100
+        for _ in range(20):
+            try:
+                body: dict = {"limit": limit, "offset": offset}
+                data = await cls._req(creds, "/api/v4/trade-account/executed-history", body)
+                rows = (data or {}).get("records") or data if isinstance(data, list) else []
+                if not rows:
+                    break
+                for r in rows:
+                    try:
+                        ts = int(r.get("time") or r.get("timestamp") or 0)
+                        if ts < since_ts_unix:
+                            continue
+                        market_name = str(r.get("market") or "")
+                        if market == "futures" and not market_name.endswith("_PERP"):
+                            continue
+                        if market == "spot" and not market_name.endswith("_USDT"):
+                            continue
+                        base = market_name.replace("_PERP", "").replace("_USDT", "")
+                        qty = float(r.get("amount") or r.get("quantity") or 0)
+                        price = float(r.get("price") or 0)
+                        fee = float(r.get("fee") or 0)
+                        side_raw = (r.get("side") or "").lower()
+                        side = "buy" if side_raw in ("buy", "bid") else "sell"
+                        out.append({
+                            "symbol": base,
+                            "side": side,
+                            "qty": qty,
+                            "price": price,
+                            "fee_usd": abs(fee),
+                            "realized_pnl_usd": None,
+                            "ts": _dt.utcfromtimestamp(ts),
+                            "ext_trade_id": str(r.get("id") or r.get("tradeId") or ""),
+                            "ext_order_id": str(r.get("orderId") or "") or None,
+                            "kind": "trade",
+                        })
+                    except Exception:
+                        continue
+                if len(rows) < limit:
+                    break
+                offset += limit
+            except Exception as exc:
+                logger.info("whitebit fills fetch failed: %s", exc)
+                break
+        return out

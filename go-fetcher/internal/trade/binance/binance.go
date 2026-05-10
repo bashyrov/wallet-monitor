@@ -432,8 +432,21 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	params := map[string]string{
 		"symbol":   sym,
 		"side":     binanceSide(req.Side),
-		"type":     "MARKET",
 		"quantity": qtyString(qty, info.QuantityPrecision),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		params["type"] = "LIMIT"
+		params["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+		params["timeInForce"] = "GTC"
+	case trade.OrderStopMarket:
+		params["type"] = "STOP_MARKET"
+		params["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	case trade.OrderTakeProfitMkt:
+		params["type"] = "TAKE_PROFIT_MARKET"
+		params["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+	default:
+		params["type"] = "MARKET"
 	}
 	if a.isHedgeMode(ctx, creds) {
 		if req.Side == trade.SideBuy {

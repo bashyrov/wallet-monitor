@@ -330,7 +330,7 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		ClientID string `json:"clientOid"`
 	}
 	_ = json.Unmarshal(body, &resp)
-	return &trade.Result{
+	res := &trade.Result{
 		OrderID:       resp.OrderID,
 		Symbol:        req.Symbol,
 		Side:          req.Side,
@@ -339,7 +339,40 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		ClientOrderID: resp.ClientID,
 		CreatedAt:     time.Now().UTC(),
 		Raw:           body,
-	}, nil
+	}
+	if resp.OrderID != "" {
+		if avg := a.fetchKucoinAvgPrice(ctx, creds, resp.OrderID); avg > 0 {
+			res.AvgPrice = avg
+		}
+	}
+	return res, nil
+}
+
+func (a *Adapter) fetchKucoinAvgPrice(ctx context.Context, creds trade.Creds, orderID string) float64 {
+	timer := time.NewTimer(400 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return 0
+	}
+	data, err := a.signedRequest(ctx, creds, http.MethodGet, "/api/v1/orders/"+orderID, nil, nil)
+	if err != nil {
+		return 0
+	}
+	var ord struct {
+		DealFunds string `json:"dealFunds"`
+		DealSize  string `json:"dealSize"`
+		Price     string `json:"price"`
+	}
+	_ = json.Unmarshal(data, &ord)
+	funds, _ := strconv.ParseFloat(ord.DealFunds, 64)
+	size, _ := strconv.ParseFloat(ord.DealSize, 64)
+	if funds > 0 && size > 0 {
+		return funds / size
+	}
+	px, _ := strconv.ParseFloat(ord.Price, 64)
+	return px
 }
 
 func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trade.CloseRequest) (*trade.Result, error) {

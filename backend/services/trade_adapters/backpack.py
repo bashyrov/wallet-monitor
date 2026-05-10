@@ -291,3 +291,61 @@ class BackpackAdapter:
     @classmethod
     async def get_public_max_leverage(cls, symbol: str) -> int:
         return 1  # Spot only — no leverage
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *, market: str = "futures") -> list[dict]:
+        """Backpack spot fills since `since_ts`.
+        Endpoint: GET /api/v1/history/fills?symbol=X&limit=1000
+        Backpack is spot-only; ignore market != 'spot'."""
+        from datetime import datetime as _dt
+        if market not in ("futures", "spot"):
+            return []
+        since_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        # Fetch all markets to know what symbols to sweep
+        try:
+            mkts = await _markets()
+            symbols = [s for s in mkts if s.endswith("_USDT")]
+        except Exception:
+            symbols = []
+        for sym in symbols:
+            base = sym.replace("_USDT", "")
+            try:
+                data = await cls._req(creds, "GET", "/api/v1/history/fills",
+                                       "fillHistoryQueryAll",
+                                       params={"symbol": sym, "limit": 1000})
+                rows = data if isinstance(data, list) else (data or {}).get("fills") or []
+                for r in rows:
+                    try:
+                        ts_str = r.get("timestamp") or r.get("createdAt") or ""
+                        if ts_str:
+                            from datetime import timezone
+                            ts = _dt.fromisoformat(ts_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+                        else:
+                            continue
+                        ts_ms = int(ts.timestamp() * 1000)
+                        if ts_ms < since_ms:
+                            continue
+                        qty = float(r.get("quantity") or r.get("qty") or 0)
+                        price = float(r.get("price") or 0)
+                        fee = float(r.get("fee") or 0)
+                        side_raw = (r.get("side") or "").lower()
+                        side = "buy" if side_raw in ("bid", "buy") else "sell"
+                        out.append({
+                            "symbol": base,
+                            "side": side,
+                            "qty": qty,
+                            "price": price,
+                            "fee_usd": fee,
+                            "realized_pnl_usd": None,
+                            "ts": ts.replace(tzinfo=None),
+                            "ext_trade_id": str(r.get("id") or r.get("tradeId") or ""),
+                            "ext_order_id": str(r.get("orderId") or "") or None,
+                            "kind": "trade",
+                        })
+                    except Exception:
+                        continue
+            except Exception as exc:
+                logger.debug("backpack fills %s failed: %s", sym, exc)
+                continue
+        return out

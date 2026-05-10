@@ -316,3 +316,86 @@ class HtxAdapter:
                 "margin_mode": "cross",
             })
         return out
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *, market: str = "futures") -> list[dict]:
+        """HTX futures fills + funding since `since_ts`.
+        Endpoint: POST /linear-swap-api/v3/swap_financial_record (financial records).
+        type=3 = close_long, type=4 = close_short, type=5 = open_long, type=6 = open_short
+        type=19,24 = fund fee (funding payment/receipt).
+        market='spot' not implemented (HTX spot fills endpoint TBD)."""
+        from datetime import datetime as _dt
+        if market != "futures":
+            return []
+        since_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        # Trade fills: types 3,4,5,6 (open/close long/short)
+        for type_id in ("3", "4", "5", "6"):
+            page = 1
+            for _ in range(10):
+                try:
+                    data = await cls._signed_fut(
+                        creds, "POST", "/linear-swap-api/v3/swap_financial_record",
+                        body={"type": type_id, "create_date": 90,
+                              "page_index": page, "page_size": 50})
+                    rows = (data or {}).get("financial_record") or []
+                    for r in rows:
+                        try:
+                            ts_ms = int(r.get("ts") or 0)
+                            if ts_ms < since_ms:
+                                continue
+                            sym_raw = r.get("contract_code") or r.get("symbol") or ""
+                            sym = sym_raw.replace("-USDT", "").upper()
+                            amount = float(r.get("amount") or 0)
+                            out.append({
+                                "symbol": sym,
+                                "side": "buy" if type_id in ("5", "4") else "sell",
+                                "qty": abs(amount),
+                                "price": 0.0,
+                                "fee_usd": 0.0,
+                                "realized_pnl_usd": None,
+                                "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                                "ext_trade_id": str(r.get("id") or ""),
+                                "ext_order_id": None,
+                                "kind": "trade",
+                            })
+                        except Exception:
+                            continue
+                    if len(rows) < 50:
+                        break
+                    page += 1
+                except Exception as exc:
+                    logger.info("htx fills type=%s page=%d failed: %s", type_id, page, exc)
+                    break
+        # Funding events: type 19 (fund fee, user pays) + 24 (fund fee, user receives)
+        for type_id in ("19", "24"):
+            try:
+                data = await cls._signed_fut(
+                    creds, "POST", "/linear-swap-api/v3/swap_financial_record",
+                    body={"type": type_id, "create_date": 90,
+                          "page_index": 1, "page_size": 50})
+                for r in (data or {}).get("financial_record") or []:
+                    try:
+                        ts_ms = int(r.get("ts") or 0)
+                        if ts_ms < since_ms:
+                            continue
+                        sym_raw = r.get("contract_code") or r.get("symbol") or ""
+                        sym = sym_raw.replace("-USDT", "").upper()
+                        amount = float(r.get("amount") or 0)
+                        out.append({
+                            "symbol": sym,
+                            "side": "buy",
+                            "qty": 0.0,
+                            "price": 0.0,
+                            "fee_usd": 0.0,
+                            "realized_pnl_usd": amount,
+                            "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                            "ext_trade_id": str(r.get("id") or ""),
+                            "ext_order_id": None,
+                            "kind": "funding",
+                        })
+                    except Exception:
+                        continue
+            except Exception as exc:
+                logger.info("htx funding type=%s failed: %s", type_id, exc)
+        return out

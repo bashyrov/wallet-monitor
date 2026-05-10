@@ -398,14 +398,31 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if req.Side == trade.SideSell {
 		side = "Sell"
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost,
-		"/v5/order/create", nil, map[string]any{
-			"category":  "linear",
-			"symbol":    sym,
-			"side":      side,
-			"orderType": "Market",
-			"qty":       qtyString(qty),
-		})
+	orderBody := map[string]any{
+		"category": "linear",
+		"symbol":   sym,
+		"side":     side,
+		"qty":      qtyString(qty),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderBody["orderType"] = "Limit"
+		orderBody["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+		orderBody["timeInForce"] = "GTC"
+	case trade.OrderStopMarket:
+		orderBody["orderType"] = "Market"
+		orderBody["triggerPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+		orderBody["triggerDirection"] = 2 // price falls to stop
+		orderBody["tpslMode"] = "Full"
+	case trade.OrderTakeProfitMkt:
+		orderBody["orderType"] = "Market"
+		orderBody["triggerPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+		orderBody["triggerDirection"] = 1 // price rises to TP
+		orderBody["tpslMode"] = "Full"
+	default:
+		orderBody["orderType"] = "Market"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/v5/order/create", nil, orderBody)
 	if err != nil {
 		return nil, err
 	}
@@ -414,16 +431,54 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		ClientID string `json:"orderLinkId"`
 	}
 	_ = json.Unmarshal(body, &resp)
-	return &trade.Result{
+	res := &trade.Result{
 		OrderID:       resp.OrderID,
 		Symbol:        req.Symbol,
 		Side:          req.Side,
 		Quantity:      qty,
-		Status:        "NEW", // Bybit returns the orderId immediately; market fill confirmed via WS.
+		Status:        "NEW",
 		ClientOrderID: resp.ClientID,
 		CreatedAt:     time.Now().UTC(),
 		Raw:           body,
-	}, nil
+	}
+	// Fetch fill price — Bybit doesn't return avgPrice on placement; poll once.
+	if resp.OrderID != "" {
+		if avg := a.fetchBybitAvgPrice(ctx, creds, sym, resp.OrderID); avg > 0 {
+			res.AvgPrice = avg
+		}
+	}
+	return res, nil
+}
+
+// fetchBybitAvgPrice polls /v5/order/history once (after 300ms) to get the
+// actual average fill price of a freshly-placed market order.
+func (a *Adapter) fetchBybitAvgPrice(ctx context.Context, creds trade.Creds, sym, orderID string) float64 {
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return 0
+	}
+	data, err := a.signedRequest(ctx, creds, http.MethodGet, "/v5/order/history", map[string]string{
+		"category": "linear",
+		"symbol":   sym,
+		"orderId":  orderID,
+	}, nil)
+	if err != nil {
+		return 0
+	}
+	var env struct {
+		List []struct {
+			AvgPrice string `json:"avgPrice"`
+		} `json:"list"`
+	}
+	_ = json.Unmarshal(data, &env)
+	if len(env.List) > 0 {
+		v, _ := strconv.ParseFloat(env.List[0].AvgPrice, 64)
+		return v
+	}
+	return 0
 }
 
 func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trade.CloseRequest) (*trade.Result, error) {

@@ -399,15 +399,31 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		tdMode = "cross"
 	}
 
-	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/api/v5/trade/order",
-		map[string]any{
-			"instId":  instID,
-			"tdMode":  tdMode,
-			"side":    side,
-			"posSide": posSide,
-			"ordType": "market",
-			"sz":      qtyString(contracts),
-		})
+	orderParams := map[string]any{
+		"instId":  instID,
+		"tdMode":  tdMode,
+		"side":    side,
+		"posSide": posSide,
+		"sz":      qtyString(contracts),
+	}
+	switch req.OrderType {
+	case trade.OrderLimit:
+		orderParams["ordType"] = "limit"
+		orderParams["px"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
+	case trade.OrderStopMarket:
+		orderParams["ordType"] = "conditional"
+		orderParams["slTriggerPx"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+		orderParams["slOrdPx"] = "-1" // market execution
+		orderParams["slTriggerPxType"] = "last"
+	case trade.OrderTakeProfitMkt:
+		orderParams["ordType"] = "conditional"
+		orderParams["tpTriggerPx"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+		orderParams["tpOrdPx"] = "-1" // market execution
+		orderParams["tpTriggerPxType"] = "last"
+	default:
+		orderParams["ordType"] = "market"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/api/v5/trade/order", orderParams)
 	if err != nil {
 		return nil, err
 	}

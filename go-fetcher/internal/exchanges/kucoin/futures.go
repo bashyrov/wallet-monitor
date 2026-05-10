@@ -1,11 +1,16 @@
 // Package kucoin — KuCoin futures (USDT-M perp).
 //
 // URL: dynamically fetched (see auth.go bullet-public flow).
-// Subscribe: {"id":1,"type":"subscribe","topic":"/contractMarket/level2:XBTUSDTM,...","privateChannel":false,"response":true}
+// Subscribe: {"id":1,"type":"subscribe","topic":"/contractMarket/level2Depth5:XBTUSDTM","privateChannel":false,"response":true}
 //
 // QUIRKS:
 //   - URL needs token + connectId fetched via POST (auth.go) — bug #17
-//   - Subscribe rate-limited to ~3/sec/conn → SubscribeDelay 400ms (bug #19)
+//   - level2Depth5 pushes every 100ms guaranteed (vs level2Depth50 which only
+//     pushes on change — caused 45-55s stale for inactive symbols). One symbol
+//     per subscribe frame: KuCoin futures depth topics don't aggregate results
+//     for comma-separated lists the way spot does, so batching silently dropped
+//     all symbols except the first.
+//   - Subscribe rate limit ~3 msg/sec/conn → SubscribeDelay 350ms
 //   - App-level "ping": {"id":1,"type":"ping"} → server replies
 //     {"id":"1","type":"pong"} every interval-from-bullet (default 18s)
 //   - Symbol form: <TOKEN>USDTM with XBT alias for BTC
@@ -46,30 +51,17 @@ func (a *Futures) URL(ctx context.Context) (string, error) {
 	return u, err
 }
 
-// kucoinBatch — symbols per subscribe frame. KuCoin supports comma-separated
-// topics; batching cuts frame count 10× (100 syms → 10 frames) and stays
-// well under any per-connection subscribe rate limit.
-const kucoinBatch = 10
-
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	topics := make([]string, len(symbols))
+	frames := make([][]byte, 0, len(symbols))
 	for i, s := range symbols {
 		token := strings.ToUpper(s)
 		if token == "BTC" {
 			token = "XBT"
 		}
-		topics[i] = token + "USDTM"
-	}
-	frames := make([][]byte, 0, (len(topics)+kucoinBatch-1)/kucoinBatch)
-	for i := 0; i < len(topics); i += kucoinBatch {
-		end := i + kucoinBatch
-		if end > len(topics) {
-			end = len(topics)
-		}
 		f := map[string]any{
 			"id":             time.Now().UnixNano() + int64(i),
 			"type":           "subscribe",
-			"topic":          "/contractMarket/level2Depth50:" + strings.Join(topics[i:end], ","),
+			"topic":          "/contractMarket/level2Depth5:" + token + "USDTM",
 			"privateChannel": false,
 			"response":       true,
 		}
@@ -92,10 +84,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if msg.Type != "message" || !strings.HasPrefix(msg.Topic, "/contractMarket/level2Depth50:") {
+	if msg.Type != "message" || !strings.HasPrefix(msg.Topic, "/contractMarket/level2Depth5:") {
 		return nil, nil
 	}
-	contract := strings.TrimPrefix(msg.Topic, "/contractMarket/level2Depth50:")
+	contract := strings.TrimPrefix(msg.Topic, "/contractMarket/level2Depth5:")
 	if !strings.HasSuffix(contract, "USDTM") {
 		return nil, nil
 	}
@@ -143,7 +135,7 @@ func (a *Futures) Heartbeat() []byte {
 func (a *Futures) HeartbeatInterval() time.Duration { return 15 * time.Second }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return false }
-func (a *Futures) SubscribeDelay() time.Duration    { return 400 * time.Millisecond }
+func (a *Futures) SubscribeDelay() time.Duration    { return 350 * time.Millisecond }
 func (a *Futures) MaxSymbols() int                  { return 100 }
 func (a *Futures) DecompressGzip() bool             { return false }
 

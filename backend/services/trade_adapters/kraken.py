@@ -322,3 +322,82 @@ class KrakenAdapter:
             return {"ok": True}
         except Exception as exc:
             return {"ok": False, "reason": str(exc)[:180]}
+
+    @classmethod
+    async def fetch_recent_fills(cls, creds: dict, since_ts, *, market: str = "futures") -> list[dict]:
+        """Kraken Futures fills + funding since `since_ts`.
+        Endpoint: GET /derivatives/api/v3/historicalexecutions
+        Funding:  GET /derivatives/api/v3/historicalexecutions?type=funding"""
+        from datetime import datetime as _dt
+        if market != "futures":
+            return []
+        since_ms = int(since_ts.timestamp() * 1000)
+        out: list[dict] = []
+        # Fills
+        try:
+            data = await _signed_request(creds, "GET", "/historicalexecutions",
+                                         {"since": since_ms, "sort": "asc", "limit": 500})
+            for r in (data or {}).get("elements") or []:
+                ev = r.get("event") or {}
+                ex = ev.get("execution") or {}
+                order = ex.get("order") or {}
+                if not ex:
+                    continue
+                try:
+                    qty = float(ex.get("quantity") or 0)
+                    price = float(ex.get("price") or 0)
+                    ts_ms = int(r.get("timestamp") or 0)
+                    if not (qty > 0 and ts_ms > 0):
+                        continue
+                    sym_raw = order.get("symbol") or ""
+                    sym = _denorm_symbol(sym_raw)
+                    side = "buy" if (order.get("direction") or "").lower() == "buy" else "sell"
+                    out.append({
+                        "symbol": sym,
+                        "side": side,
+                        "qty": qty,
+                        "price": price,
+                        "fee_usd": 0.0,
+                        "realized_pnl_usd": None,
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(ex.get("uid") or r.get("uid") or ""),
+                        "ext_order_id": str(order.get("orderId") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+        except Exception as exc:
+            logger.info("kraken fills fetch failed: %s", exc)
+        # Funding
+        try:
+            data = await _signed_request(creds, "GET", "/historicalexecutions",
+                                         {"since": since_ms, "sort": "asc",
+                                          "limit": 500, "type": "funding"})
+            for r in (data or {}).get("elements") or []:
+                ev = r.get("event") or {}
+                fn = ev.get("funding") or {}
+                if not fn:
+                    continue
+                try:
+                    amount = float(fn.get("payment") or 0)
+                    ts_ms = int(r.get("timestamp") or 0)
+                    if not ts_ms:
+                        continue
+                    sym = _denorm_symbol(fn.get("symbol") or "")
+                    out.append({
+                        "symbol": sym,
+                        "side": "buy",
+                        "qty": 0.0,
+                        "price": 0.0,
+                        "fee_usd": 0.0,
+                        "realized_pnl_usd": amount,
+                        "ts": _dt.utcfromtimestamp(ts_ms / 1000),
+                        "ext_trade_id": str(r.get("uid") or ""),
+                        "ext_order_id": None,
+                        "kind": "funding",
+                    })
+                except Exception:
+                    continue
+        except Exception as exc:
+            logger.info("kraken funding fetch failed: %s", exc)
+        return out

@@ -266,6 +266,9 @@ async def place_open_order(
     wallet_id: int, symbol: str, side: str, quantity: float,
     leverage: int, margin_mode: str,
     *, market_type: str = "futures",
+    order_type: str = "market",
+    limit_price: float | None = None,
+    stop_price: float | None = None,
 ) -> dict:
     # Normalise inputs
     symbol = (symbol or "").strip().upper()
@@ -418,6 +421,9 @@ async def place_open_order(
                     ex, creds, symbol, side, quantity,
                     leverage=leverage, margin_mode=margin_mode,
                     market_type=market_type,
+                    order_type=order_type,
+                    limit_price=limit_price,
+                    stop_price=stop_price,
                 )
                 logger.info("Order placed via go-fetcher: ex=%s sym=%s market=%s order_id=%s",
                             ex, symbol, market_type, result.get("order_id"))

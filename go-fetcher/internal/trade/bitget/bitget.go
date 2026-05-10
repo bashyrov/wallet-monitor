@@ -368,7 +368,7 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		ClientOrdID string `json:"clientOid"`
 	}
 	_ = json.Unmarshal(body, &resp)
-	return &trade.Result{
+	res := &trade.Result{
 		OrderID:       resp.OrderID,
 		Symbol:        req.Symbol,
 		Side:          req.Side,
@@ -377,7 +377,38 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		ClientOrderID: resp.ClientOrdID,
 		CreatedAt:     time.Now().UTC(),
 		Raw:           body,
-	}, nil
+	}
+	if resp.OrderID != "" {
+		if avg := a.fetchBitgetAvgPrice(ctx, creds, sym, resp.OrderID); avg > 0 {
+			res.AvgPrice = avg
+		}
+	}
+	return res, nil
+}
+
+func (a *Adapter) fetchBitgetAvgPrice(ctx context.Context, creds trade.Creds, sym, orderID string) float64 {
+	timer := time.NewTimer(400 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return 0
+	}
+	data, err := a.signedRequest(ctx, creds, http.MethodGet,
+		"/api/v2/mix/order/detail", map[string]string{
+			"symbol":      sym,
+			"productType": "USDT-FUTURES",
+			"orderId":     orderID,
+		}, nil)
+	if err != nil {
+		return 0
+	}
+	var ord struct {
+		PriceAvg string `json:"priceAvg"`
+	}
+	_ = json.Unmarshal(data, &ord)
+	v, _ := strconv.ParseFloat(ord.PriceAvg, 64)
+	return v
 }
 
 func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trade.CloseRequest) (*trade.Result, error) {

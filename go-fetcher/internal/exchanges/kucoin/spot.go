@@ -109,10 +109,15 @@ func (a *Spot) URL(ctx context.Context) (string, error) {
 	return u, err
 }
 
+// spotBatch — KuCoin SPOT level2Depth50 supports comma-separated symbols
+// (unlike futures depth which only processes the first symbol per frame).
+// 10 symbols/frame stays well under any per-connection subscribe rate limit.
+const spotBatch = 10
+
 func (a *Spot) BuildSubscribe(symbols []string) [][]byte {
-	frames := make([][]byte, 0, (len(symbols)+kucoinBatch-1)/kucoinBatch)
-	for i := 0; i < len(symbols); i += kucoinBatch {
-		end := i + kucoinBatch
+	frames := make([][]byte, 0, (len(symbols)+spotBatch-1)/spotBatch)
+	for i := 0; i < len(symbols); i += spotBatch {
+		end := i + spotBatch
 		if end > len(symbols) {
 			end = len(symbols)
 		}

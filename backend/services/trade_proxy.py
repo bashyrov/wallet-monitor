@@ -117,6 +117,9 @@ async def place_order(
     exchange: str, creds: dict, symbol: str, side: str, quantity: float,
     leverage: int = 1, margin_mode: str = "isolated",
     market_type: str = "futures",
+    order_type: str = "market",
+    limit_price: float | None = None,
+    stop_price: float | None = None,
 ) -> dict:
     """Forward a place-order to the Go engine. Output shape matches what
     trade_adapters/<ex>.py.place_order returns (order_id + avg_price)."""
@@ -128,9 +131,13 @@ async def place_order(
         "margin_mode": margin_mode,
     }
     if market_type and market_type != "futures":
-        # Only emit when non-default — keeps the wire shape backward
-        # compatible for existing futures-only flows.
         request["market_type"] = market_type
+    if order_type and order_type != "market":
+        request["order_type"] = order_type
+    if limit_price and limit_price > 0:
+        request["limit_price"] = float(limit_price)
+    if stop_price and stop_price > 0:
+        request["stop_price"] = float(stop_price)
     body = {
         "exchange": exchange.lower(),
         "creds": _strip_creds(exchange, creds),
