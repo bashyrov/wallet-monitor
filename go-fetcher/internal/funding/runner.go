@@ -330,16 +330,38 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// HTTPGet is a convenience used by REST backstops. Times out per-call so
-// a hung venue doesn't pin the runner.
+// httpClient — process-wide HTTP/1.1+keepalive client used by all REST
+// backstops. Single Transport keeps idle connections warm so successive
+// per-symbol REST calls (e.g. OKX funding-rate sweep, BingX userTrades
+// per-symbol) reuse the same TCP+TLS instead of re-handshaking each.
+//
+// HTTP/2 not enabled: most exchange APIs that we hit (binance fapi, bybit,
+// okx) accept HTTP/2 but their CDN servers (Cloudfront, Akamai) sometimes
+// limit per-stream throughput in ways that hurt parallel-fanout latency.
+// HTTP/1.1 with a 100-conn pool gives more predictable behaviour.
+var httpClient = &http.Client{
+	Timeout: 8 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 50,
+		IdleConnTimeout:     300 * time.Second,
+		// Disable per-request connection cap; the per-host idle pool above
+		// handles burst control.
+		DisableCompression: false,
+		ForceAttemptHTTP2:  true, // upgrade where venue supports it
+	},
+}
+
+// HTTPGet is a convenience used by REST backstops. Reuses a process-wide
+// client so successive calls reuse warm TCP+TLS connections (was paying
+// a fresh handshake per call).
 func HTTPGet(ctx context.Context, url string, out any) error {
-	cl := &http.Client{Timeout: 8 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 avalant-fetcher/go")
-	resp, err := cl.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}

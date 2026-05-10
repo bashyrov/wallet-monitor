@@ -353,6 +353,17 @@ class StreamTask:
                 self.user_id, self.wallet_id, self.exchange,
                 evt.symbol or "", payload,
             )
+            # Pre-warm the leverage state cache from live position data so
+            # the first order on this symbol can skip set_leverage entirely.
+            # Only if BOTH leverage AND margin_mode are present (some venues
+            # push partial events).
+            if evt.symbol and evt.leverage and evt.margin_mode:
+                try:
+                    from backend.services.trade_adapters import _state_cache
+                    _state_cache.record(self.exchange, self.creds,
+                                        evt.symbol, evt.leverage, evt.margin_mode)
+                except Exception:
+                    pass
         elif evt.kind == EVT_BALANCE_UPDATE:
             _snapshot.update_balance(self.user_id, self.wallet_id, evt.balance_usdt)
 
