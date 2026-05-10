@@ -773,6 +773,12 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
                 <button class="trade-lev-btn" onclick="tradeLevStep(event, 'long', 1)">+</button>
               </div>
             </div>
+            <div class="trade-row trade-otype-row" id="trade-otype-row-long">
+              <span class="trade-dd-chip is-active" data-v="market" data-leg="long" onclick="tradeSetOtype(this)">Market</span>
+              <span class="trade-dd-chip" data-v="limit" data-leg="long" onclick="tradeSetOtype(this)">Limit</span>
+              <span class="trade-dd-chip" data-v="stop_market" data-leg="long" onclick="tradeSetOtype(this)">Stop</span>
+              <span class="trade-dd-chip" data-v="take_profit_market" data-leg="long" onclick="tradeSetOtype(this)">TP</span>
+            </div>
             <div class="trade-price-row">
               <span class="trade-lbl">Last</span>
               <span class="trade-last mono" id="trade-last-long">—</span>
@@ -786,6 +792,11 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
                 <button class="trade-unit is-active" data-v="token" data-leg="long" onclick="tradeSetUnit(this)" id="trade-unit-tok-long">TOK</button>
                 <button class="trade-unit" data-v="usdt" data-leg="long" onclick="tradeSetUnit(this)" id="trade-unit-usd-long">USDT</button>
               </div>
+            </div>
+            <div class="trade-size-row" id="trade-price-inp-row-long" style="display:none;margin-top:-4px">
+              <span class="trade-lbl" id="trade-price-lbl-long" style="min-width:72px">Limit Price</span>
+              <input class="trade-size-input" id="trade-price-long" type="number" placeholder="0.00" step="any" style="flex:1">
+              <span class="trade-lbl mono" style="padding:0 4px">USDT</span>
             </div>
             <div class="trade-slider-wrap">
               <input type="range" class="trade-slider" min="0" max="100" step="1" value="0" id="trade-slider-long" oninput="tradeSlide('long', this.value)">
@@ -834,6 +845,12 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
                 <button class="trade-lev-btn" onclick="tradeLevStep(event, 'short', 1)">+</button>
               </div>
             </div>
+            <div class="trade-row trade-otype-row" id="trade-otype-row-short">
+              <span class="trade-dd-chip is-active" data-v="market" data-leg="short" onclick="tradeSetOtype(this)">Market</span>
+              <span class="trade-dd-chip" data-v="limit" data-leg="short" onclick="tradeSetOtype(this)">Limit</span>
+              <span class="trade-dd-chip" data-v="stop_market" data-leg="short" onclick="tradeSetOtype(this)">Stop</span>
+              <span class="trade-dd-chip" data-v="take_profit_market" data-leg="short" onclick="tradeSetOtype(this)">TP</span>
+            </div>
             <div class="trade-price-row">
               <span class="trade-lbl">Last</span>
               <span class="trade-last mono" id="trade-last-short">—</span>
@@ -847,6 +864,11 @@ body.arb-loading .col-left-tab, body.arb-loading .ob-row { opacity: 0.55; }
                 <button class="trade-unit is-active" data-v="token" data-leg="short" onclick="tradeSetUnit(this)" id="trade-unit-tok-short">TOK</button>
                 <button class="trade-unit" data-v="usdt" data-leg="short" onclick="tradeSetUnit(this)" id="trade-unit-usd-short">USDT</button>
               </div>
+            </div>
+            <div class="trade-size-row" id="trade-price-inp-row-short" style="display:none;margin-top:-4px">
+              <span class="trade-lbl" id="trade-price-lbl-short" style="min-width:72px">Limit Price</span>
+              <input class="trade-size-input" id="trade-price-short" type="number" placeholder="0.00" step="any" style="flex:1">
+              <span class="trade-lbl mono" style="padding:0 4px">USDT</span>
             </div>
             <div class="trade-slider-wrap">
               <input type="range" class="trade-slider" min="0" max="100" step="1" value="0" id="trade-slider-short" oninput="tradeSlide('short', this.value)">
@@ -5294,8 +5316,8 @@ async function toggleArbWatch(){
 // ═══════════════════════════════════════════════════════════════════════
 const LEVELS = [1, 2, 3, 5, 10, 20, 25, 50, 75, 100, 125];
 const _trade = {
-  long:  { leverage: 3, maxLeverage: 125, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
-  short: { leverage: 3, maxLeverage: 125, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing' },
+  long:  { leverage: 3, maxLeverage: 125, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing', orderType: 'market' },
+  short: { leverage: 3, maxLeverage: 125, margin: 'isolated', unit: 'token', balance: 0, last: 0, qty: 0, walletId: null, keyStatus: 'missing', orderType: 'market' },
 };
 let _tradePosTimer = null;
 
@@ -5439,9 +5461,18 @@ function tradeSetMargin(el){
   const leg = el.parentElement.dataset.leg;
   _trade[leg].margin = el.dataset.v;
   el.parentElement.querySelectorAll('.trade-dd-chip').forEach(c => c.classList.toggle('is-active', c === el));
-  // Margin mode doesn't change the calculated numbers, but rerender so the
-  // submit button reflects the active mode immediately.
   tradeRecalc(leg);
+}
+
+function tradeSetOtype(el){
+  const leg = el.dataset.leg;
+  const v = el.dataset.v;
+  _trade[leg].orderType = v;
+  el.closest('.trade-otype-row').querySelectorAll('.trade-dd-chip').forEach(c => c.classList.toggle('is-active', c === el));
+  const priceRow = document.getElementById('trade-price-inp-row-' + leg);
+  const priceLbl = document.getElementById('trade-price-lbl-' + leg);
+  priceRow.style.display = v === 'market' ? 'none' : 'flex';
+  if (priceLbl) priceLbl.textContent = v === 'limit' ? 'Limit Price' : 'Stop Price';
 }
 
 function tradeSetUnit(el){
@@ -5705,13 +5736,23 @@ async function tradeOpen(leg){
   const prev = btn.textContent;
   btn.innerHTML = '<span class="trade-busy-ring"></span>Submitting…';
   try {
+    const _orderBody = {
+      wallet_id: t.walletId, symbol: SYM,
+      side: leg === 'long' ? 'buy' : 'sell',
+      quantity: t.qty, leverage: t.leverage, margin_mode: t.margin,
+    };
+    if (t.orderType && t.orderType !== 'market') {
+      _orderBody.order_type = t.orderType;
+      const _priceInp = document.getElementById('trade-price-' + leg);
+      const _priceVal = parseFloat(_priceInp?.value);
+      if (_priceVal > 0) {
+        if (t.orderType === 'limit') _orderBody.limit_price = _priceVal;
+        else _orderBody.stop_price = _priceVal;
+      }
+    }
     const r = await Auth.apiFetch('/trade/open', {
       method: 'POST',
-      body: JSON.stringify({
-        wallet_id: t.walletId, symbol: SYM,
-        side: leg === 'long' ? 'buy' : 'sell',
-        quantity: t.qty, leverage: t.leverage, margin_mode: t.margin,
-      }),
+      body: JSON.stringify(_orderBody),
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.detail || 'Order failed');

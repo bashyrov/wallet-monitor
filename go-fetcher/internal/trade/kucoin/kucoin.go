@@ -325,10 +325,25 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		orderReq["type"] = "limit"
 		orderReq["price"] = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
 		orderReq["timeInForce"] = "GTC"
+	case trade.OrderStopMarket, trade.OrderTakeProfitMkt:
+		// stop="down" triggers when price drops to stopPrice (SL for long);
+		// stop="up" triggers when price rises to stopPrice (TP for long).
+		stopDir := "down"
+		if req.OrderType == trade.OrderTakeProfitMkt {
+			stopDir = "up"
+		}
+		orderReq["type"] = "market"
+		orderReq["stop"] = stopDir
+		orderReq["stopPrice"] = strconv.FormatFloat(req.StopPrice, 'f', -1, 64)
+		orderReq["stopPriceType"] = "TP"
 	default:
 		orderReq["type"] = "market"
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/api/v1/orders", nil, orderReq)
+	endpoint := "/api/v1/orders"
+	if req.OrderType.IsConditional() {
+		endpoint = "/api/v1/stop-orders"
+	}
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, endpoint, nil, orderReq)
 	if err != nil {
 		return nil, err
 	}

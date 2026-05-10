@@ -323,18 +323,46 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 			"price":    strconv.FormatFloat(req.LimitPrice, 'f', -1, 64),
 			"tif":      "gtc",
 		}
-	case trade.OrderStopMarket:
-		orderBody = map[string]any{
-			"contract": contract, "size": size,
-			"price": "0", "tif": "ioc",
-			"stop_trigger": req.StopPrice,
+	case trade.OrderStopMarket, trade.OrderTakeProfitMkt:
+		// Gate conditional orders use a separate price_orders endpoint.
+		// rule: 1=price>=trigger (TP for long), 2=price<=trigger (SL for long)
+		rule := 2 // stop_market default: trigger when price drops
+		if req.OrderType == trade.OrderTakeProfitMkt {
+			rule = 1
 		}
-	case trade.OrderTakeProfitMkt:
-		orderBody = map[string]any{
-			"contract": contract, "size": size,
-			"price": "0", "tif": "ioc",
-			"stop_trigger": req.StopPrice,
+		condBody := map[string]any{
+			"trigger": map[string]any{
+				"strategy_type": 0, // by_price
+				"price_type":    0, // last_price
+				"price":         strconv.FormatFloat(req.StopPrice, 'f', -1, 64),
+				"rule":          rule,
+				"expiration":    86400,
+			},
+			"order": map[string]any{
+				"contract": contract,
+				"size":     size,
+				"price":    "0",
+				"tif":      "ioc",
+			},
 		}
+		condBody2, err := a.signedRequest(ctx, creds, http.MethodPost,
+			"/api/v4/futures/usdt/price_orders", nil, condBody)
+		if err != nil {
+			return nil, err
+		}
+		var condResp struct {
+			ID json.Number `json:"id"`
+		}
+		_ = json.Unmarshal(condBody2, &condResp)
+		return &trade.Result{
+			OrderID:   string(condResp.ID),
+			Symbol:    req.Symbol,
+			Side:      req.Side,
+			Quantity:  float64(num) * info.QuantoMultiplier,
+			Status:    "PENDING",
+			CreatedAt: time.Now().UTC(),
+			Raw:       condBody2,
+		}, nil
 	default:
 		orderBody = map[string]any{
 			"contract": contract,

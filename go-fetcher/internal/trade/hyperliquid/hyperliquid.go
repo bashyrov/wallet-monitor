@@ -126,6 +126,33 @@ type orderAction struct {
 	Grouping string     `msgpack:"grouping" json:"grouping"`
 }
 
+// Trigger order types (stop/TP). Separate structs to avoid altering the
+// field layout of the regular order structs (msgpack field order is wire order).
+type triggerType struct {
+	IsMarket  bool   `msgpack:"isMarket" json:"isMarket"`
+	TriggerPx string `msgpack:"triggerPx" json:"triggerPx"`
+	Tpsl      string `msgpack:"tpsl" json:"tpsl"`
+}
+
+type triggerTypeBox struct {
+	Trigger triggerType `msgpack:"trigger" json:"trigger"`
+}
+
+type triggerOrderLeg struct {
+	A int            `msgpack:"a" json:"a"`
+	B bool           `msgpack:"b" json:"b"`
+	P string         `msgpack:"p" json:"p"`
+	S string         `msgpack:"s" json:"s"`
+	R bool           `msgpack:"r" json:"r"`
+	T triggerTypeBox `msgpack:"t" json:"t"`
+}
+
+type triggerOrderAction struct {
+	Type     string            `msgpack:"type" json:"type"`
+	Orders   []triggerOrderLeg `msgpack:"orders" json:"orders"`
+	Grouping string            `msgpack:"grouping" json:"grouping"`
+}
+
 type updateLeverageAction struct {
 	Type     string `msgpack:"type" json:"type"`
 	Asset    int    `msgpack:"asset" json:"asset"`
@@ -400,13 +427,48 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
-	if req.OrderType.IsConditional() {
-		return nil, errUser("stop/TP orders on Hyperliquid require the trigger-order action type — not yet implemented; use market or limit")
-	}
 	idx, err := a.assetIndex(ctx, req.Symbol)
 	if err != nil {
 		return nil, err
 	}
+
+	if req.OrderType.IsConditional() {
+		tpsl := "sl"
+		if req.OrderType == trade.OrderTakeProfitMkt {
+			tpsl = "tp"
+		}
+		action := triggerOrderAction{
+			Type: "order",
+			Orders: []triggerOrderLeg{{
+				A: idx,
+				B: req.Side == trade.SideBuy,
+				P: strconv.FormatFloat(req.StopPrice, 'f', -1, 64),
+				S: qtyString(req.Quantity),
+				R: false,
+				T: triggerTypeBox{Trigger: triggerType{
+					IsMarket:  true,
+					TriggerPx: strconv.FormatFloat(req.StopPrice, 'f', -1, 64),
+					Tpsl:      tpsl,
+				}},
+			}},
+			Grouping: "na",
+		}
+		body, err := a.postAction(ctx, creds, action)
+		if err != nil {
+			return nil, err
+		}
+		oid, _ := extractOrderResult(body)
+		return &trade.Result{
+			OrderID:   oid,
+			Symbol:    req.Symbol,
+			Side:      req.Side,
+			Quantity:  req.Quantity,
+			Status:    "PENDING",
+			CreatedAt: time.Now().UTC(),
+			Raw:       body,
+		}, nil
+	}
+
 	px := "0"
 	tif := "Ioc"
 	if req.OrderType.IsLimit() {
