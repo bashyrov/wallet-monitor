@@ -33,11 +33,17 @@ const Auth = (() => {
     // re-paint as authed immediately. Login flows never set this class so
     // the remove is a no-op there.
     try { document.documentElement.classList.remove('no-auth'); } catch (_) {}
+    // Signal listeners (notably <app-navbar>) so they re-render auth-aware
+    // bits like the avatar initial. Without this, a navbar that rendered
+    // BEFORE the async cookie-session probe finished would stay stuck on
+    // the placeholder "U" until next full page load.
+    try { window.dispatchEvent(new CustomEvent('avalant:auth-changed', { detail: { user } })); } catch (_) {}
   }
 
   function clearSession() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    try { window.dispatchEvent(new CustomEvent('avalant:auth-changed', { detail: { user: null } })); } catch (_) {}
   }
 
   function isLoggedIn() { return !!getToken(); }

@@ -61,7 +61,12 @@ function _drawerLink(link, active, idx) {
 }
 
 function _avatarBtn() {
-  return `<a href="/profile" class="avatar-btn" id="nav-avatar" title="Profile">U</a>`;
+  // Default to a neutral silhouette icon. Once Auth state is known
+  // (sync read from localStorage, or after the cookie-session probe
+  // dispatches avalant:auth-changed), _applyAuth() replaces this with
+  // the user's initial. The icon prevents a misleading "U" placeholder
+  // when localStorage is briefly empty after a hard refresh.
+  return `<a href="/profile" class="avatar-btn" id="nav-avatar" title="Profile" aria-label="Profile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg></a>`;
 }
 
 function _rightHtml(page) {
@@ -197,6 +202,11 @@ class AppNavbar extends HTMLElement {
   }
 
   _initAuth(page) {
+    // Re-apply on every auth state change (Auth.setSession dispatches the
+    // event after cookie-session probe lands, OAuth bridge completes, etc.).
+    // Without this the avatar stays stuck on the placeholder "U" when the
+    // navbar was rendered before localStorage was populated.
+    window.addEventListener('avalant:auth-changed', () => this._applyAuth(page));
     if (typeof Auth === 'undefined') {
       document.addEventListener('DOMContentLoaded', () => this._applyAuth(page));
       return;
