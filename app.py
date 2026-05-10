@@ -690,6 +690,11 @@ import os
 
 _AUTH_PAGES  = {"portfolio", "profile", "archive", "watchlist"}
 _ADMIN_PAGES = {"admin", "admin-user"}
+# Logged-in users hitting these get bounced to /portfolio server-side —
+# the page never paints, so there's no client-side flash before the
+# Auth.redirectIfAuthed() JS fires. tg-done is intentionally NOT in here
+# (it's the post-login bridge that consumes the deep-link token).
+_GUEST_PAGES = {"login", "register"}
 
 # Legacy /app → /portfolio. Old bookmarks and existing TG-bot links keep
 # working forever via 301; once browsers cache the redirect, follow-up
@@ -757,6 +762,14 @@ async def serve_page(page: str, request: Request, db: Session = Depends(get_db))
         filepath = _safe_frontend_path(page + ".html")
     if filepath is None:
         raise HTTPException(status_code=404)
+
+    if base in _GUEST_PAGES:
+        # Already-authenticated users skip login/register — the page would
+        # only flash and JS-redirect anyway.
+        from backend.services.auth_service import decode_token
+        token = request.cookies.get("session")
+        if token and decode_token(token):
+            return RedirectResponse("/portfolio", status_code=302)
 
     if base in _AUTH_PAGES or base in _ADMIN_PAGES:
         from backend.services.auth_service import decode_token, get_user_by_id
