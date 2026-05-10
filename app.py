@@ -363,19 +363,18 @@ def _maintenance_on() -> bool:
         return False
 
 
-# Paths blocked by per-section maintenance flags. /api/admin/* and the
-# auth/health endpoints are intentionally NEVER in either set so admins can
-# always toggle the flags back off and uptime monitors keep working.
-_SCREENER_PATHS = ("/screener", "/arb", "/watchlist")
-_SCREENER_API_PREFIXES = ("/api/screener/",)
-# Portfolio scope covers everything that touches a user's wallet/account
-# data — but DOES NOT include /pricing or /checkout so a user with a near-
-# expired plan can still renew while we're working on the portfolio side.
-_PORTFOLIO_PATHS = ("/portfolio", "/app", "/archive", "/profile", "/avashare")
-_PORTFOLIO_API_PREFIXES = (
-    "/api/wallets", "/api/portfolio", "/api/alerts", "/api/trade",
-    "/api/popups",  # popups are tied to the logged-in experience
-)
+# Paths blocked by per-section maintenance flags. Per-scope toggles are
+# intentionally surgical: a "screener" toggle only blocks /screener, and a
+# "portfolio" toggle only blocks /portfolio (incl. its /app legacy alias).
+# Sibling pages — /arb, /watchlist, /profile, /archive, /avashare — stay
+# online so the user keeps a working UI for everything that doesn't depend
+# on the section under maintenance. /api/admin/* and the auth/health
+# endpoints are NEVER blocked so admins can toggle flags back off and
+# uptime monitors keep working.
+_SCREENER_PATHS = ("/screener",)
+_SCREENER_API_PREFIXES = ()
+_PORTFOLIO_PATHS = ("/portfolio", "/app")
+_PORTFOLIO_API_PREFIXES = ()
 
 
 def _section_maintenance_html(section: str, title: str, body: str,
