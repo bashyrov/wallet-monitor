@@ -393,6 +393,22 @@ def _section_maintenance_html(section: str, title: str, body: str,
     <div class="eta-time" id="eta-abs">—</div>
     <div class="eta-count" id="eta-cd">—</div>
   </div>"""
+    # Per-scope navigation pills — only sections that aren't blocked by the
+    # current scope. Saves the user from clicking around the navbar and
+    # bouncing back into the same maintenance page (the original "Back to
+    # home" CTA was a dead-end when 3 of 4 nav links were portfolio-scoped).
+    if scope == "portfolio":
+        nav_links = [("Screener", "/screener"), ("Pricing", "/pricing"),
+                     ("Sign in", "/login")]
+    elif scope == "screener":
+        nav_links = [("Portfolio", "/portfolio"), ("Profile", "/profile"),
+                     ("Pricing", "/pricing")]
+    else:  # site-wide — nothing's available
+        nav_links = []
+    alt_nav_block = ""
+    if nav_links:
+        pills = "".join(f'<a href="{href}">{label}</a>' for label, href in nav_links)
+        alt_nav_block = f'<div class="alt-lbl">Still available</div><div class="alt-nav">{pills}</div>'
     return f"""<!DOCTYPE html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>{title} · avalant_</title>
@@ -412,6 +428,10 @@ p{{margin:0 0 16px;color:#9B9FAB;font-size:13.5px;line-height:1.55;}}
 .eta-count{{font-family:'JetBrains Mono',monospace;font-size:12px;color:#9B9FAB;margin-top:6px;}}
 .cta{{display:inline-block;padding:10px 22px;border-radius:9px;background:#1AFFAB;color:#0a0a0f;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:-0.005em;transition:transform .15s,box-shadow .15s;}}
 .cta:hover{{transform:translateY(-1px);box-shadow:0 6px 18px rgba(26,255,171,0.25);}}
+.alt-nav{{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px;}}
+.alt-nav a{{padding:7px 14px;border-radius:8px;border:1px solid #22222A;background:#0E0E11;color:#9B9FAB;font-size:12px;font-weight:600;text-decoration:none;letter-spacing:-0.005em;transition:border-color .15s,color .15s;}}
+.alt-nav a:hover{{border-color:rgba(26,255,171,0.4);color:#E6E8E3;}}
+.alt-lbl{{font-size:10px;font-weight:700;letter-spacing:0.12em;color:#676B7E;text-transform:uppercase;margin-top:18px;}}
 .brand{{margin-top:26px;font-weight:800;font-size:14px;letter-spacing:-0.02em;color:#676B7E;}}
 .brand span{{color:#1AFFAB;animation:blink 1s infinite;}}
 @keyframes blink{{50%{{opacity:0;}}}}
@@ -422,6 +442,7 @@ p{{margin:0 0 16px;color:#9B9FAB;font-size:13.5px;line-height:1.55;}}
   <h1>{title}</h1>
   <p>{body}</p>{eta_block}
   <a class=cta href="/">Back to home</a>
+  {alt_nav_block}
   <div class=brand>avalant<span>_</span></div>
 </div></div>
 <script>
