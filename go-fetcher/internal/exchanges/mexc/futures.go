@@ -10,12 +10,23 @@
 //   {"channel":"push.depth","data":{"asks":[[px,sz,n],...],"bids":[...],"version":N},
 //    "symbol":"BTC_USDT","ts":...}
 //
+// QUIRK — book shrinkage: `sub.depth limit:20` only pushes deltas WITHIN
+// the current top-20 window. When trading eats edge levels, MEXC sends
+// sz=0 to remove them but never backfills with the levels that just
+// entered the top-20 from below. Over a long session the local book
+// shrinks from 20 to single-digit levels. Fix: `restBackstopLoop()`
+// re-fetches the full depth via REST every 30s and replaces the local
+// book wholesale, capping the worst-case drift to one cycle.
+//
 // Heartbeat: {"method":"ping"} → server replies {"channel":"pong"}.
 package mexc
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
@@ -23,10 +34,14 @@ import (
 )
 
 const futuresWS = "wss://contract.mexc.com/edge"
+const restBase = "https://contract.mexc.com/api/v1/contract/depth"
+const restBackstopInterval = 30 * time.Second
 
 type Futures struct {
 	store *cache.Store
+	mu    sync.Mutex
 	books map[string]*book
+	http  *http.Client
 }
 
 type book struct {
@@ -36,7 +51,12 @@ type book struct {
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, books: make(map[string]*book)}
+	a := &Futures{
+		store: store,
+		books: make(map[string]*book),
+		http:  &http.Client{Timeout: 5 * time.Second},
+	}
+	go a.restBackstopLoop()
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("mexc", snap.Symbol, snap, "ws")
 	})
@@ -77,6 +97,9 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		return nil, nil
 	}
 	token := strings.TrimSuffix(msg.Symbol, "_USDT")
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	bk, ok := a.books[token]
 	if !ok {
@@ -131,5 +154,76 @@ func (a *Futures) DecompressGzip() bool             { return false }
 
 func (a *Futures) OnReconnect() {
 	// Clear all books — next push per symbol will be treated as a fresh snapshot.
+	a.mu.Lock()
 	a.books = make(map[string]*book)
+	a.mu.Unlock()
+}
+
+// restBackstopLoop periodically pulls the full depth via REST for every
+// symbol we currently track and replaces the local book. Counters MEXC's
+// top-20 delta protocol drifting down to single-digit levels as edge
+// rows are filled without backfill.
+func (a *Futures) restBackstopLoop() {
+	t := time.NewTicker(restBackstopInterval)
+	defer t.Stop()
+	for range t.C {
+		a.mu.Lock()
+		syms := make([]string, 0, len(a.books))
+		for s := range a.books {
+			syms = append(syms, s)
+		}
+		a.mu.Unlock()
+		for _, sym := range syms {
+			a.fetchAndReplace(sym)
+		}
+	}
+}
+
+func (a *Futures) fetchAndReplace(sym string) {
+	url := restBase + "/" + strings.ToUpper(sym) + "_USDT"
+	resp, err := a.http.Get(url)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return
+	}
+	var payload struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Bids [][]float64 `json:"bids"`
+			Asks [][]float64 `json:"asks"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return
+	}
+	if !payload.Success || (len(payload.Data.Bids) == 0 && len(payload.Data.Asks) == 0) {
+		return
+	}
+	a.mu.Lock()
+	bk, ok := a.books[sym]
+	if !ok {
+		// Symbol got unsubscribed between snapshot start and now — drop.
+		a.mu.Unlock()
+		return
+	}
+	bk.bids = make(map[float64]float64, len(payload.Data.Bids))
+	bk.asks = make(map[float64]float64, len(payload.Data.Asks))
+	for _, r := range payload.Data.Bids {
+		if len(r) >= 2 && r[1] > 0 {
+			bk.bids[r[0]] = r[1]
+		}
+	}
+	for _, r := range payload.Data.Asks {
+		if len(r) >= 2 && r[1] > 0 {
+			bk.asks[r[0]] = r[1]
+		}
+	}
+	bk.seeded = true
+	bids := ws.SortedLevels(bk.bids, ws.Bids, 200)
+	asks := ws.SortedLevels(bk.asks, ws.Asks, 200)
+	a.mu.Unlock()
+	a.store.Store("mexc", sym, ws.Snapshot{Symbol: sym, Bids: bids, Asks: asks}, "rest")
 }
