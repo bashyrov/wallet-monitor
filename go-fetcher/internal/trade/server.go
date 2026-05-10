@@ -99,14 +99,30 @@ func handleOpen(w http.ResponseWriter, r *http.Request) {
 	if a == nil {
 		return
 	}
+	// Spot dispatch: if MarketType=spot, the adapter must implement
+	// SpotAdapter. Falls through to perp PlaceOrder otherwise. Spot path
+	// skips leverage/margin validation (handled in OpenRequest.Validate)
+	// and never preflights — single signed POST.
 	tBeforePlace := time.Now()
-	res, err := a.PlaceOrder(r.Context(), b.Creds, b.Request)
+	var res *Result
+	var err error
+	if b.Request.MarketType == MarketSpot {
+		sa, ok := a.(SpotAdapter)
+		if !ok {
+			writeError(w, &Error{Kind: KindUser, Message: ErrSpotUnsupported.Error()})
+			return
+		}
+		res, err = sa.PlaceSpotOrder(r.Context(), b.Creds, b.Request)
+	} else {
+		res, err = a.PlaceOrder(r.Context(), b.Creds, b.Request)
+	}
 	tAfterPlace := time.Now()
 	totalMs := tAfterPlace.Sub(t0).Milliseconds()
 	venueMs := tAfterPlace.Sub(tBeforePlace).Milliseconds()
 	if err != nil {
 		log.L().Warn().
 			Str("ex", b.Exchange).Str("sym", b.Request.Symbol).
+			Str("market", string(b.Request.MarketType)).
 			Int64("total_ms", totalMs).Int64("venue_ms", venueMs).
 			Err(err).Msg("trade open failed")
 		writeError(w, err)
@@ -114,6 +130,7 @@ func handleOpen(w http.ResponseWriter, r *http.Request) {
 	}
 	log.L().Info().
 		Str("ex", b.Exchange).Str("sym", b.Request.Symbol).
+		Str("market", string(b.Request.MarketType)).
 		Int64("total_ms", totalMs).Int64("venue_ms", venueMs).
 		Str("order_id", res.OrderID).
 		Msg("trade open")
@@ -129,7 +146,18 @@ func handleClose(w http.ResponseWriter, r *http.Request) {
 	if a == nil {
 		return
 	}
-	res, err := a.ClosePosition(r.Context(), b.Creds, b.Request)
+	var res *Result
+	var err error
+	if b.Request.MarketType == MarketSpot {
+		sa, ok := a.(SpotAdapter)
+		if !ok {
+			writeError(w, &Error{Kind: KindUser, Message: ErrSpotUnsupported.Error()})
+			return
+		}
+		res, err = sa.CloseSpotPosition(r.Context(), b.Creds, b.Request)
+	} else {
+		res, err = a.ClosePosition(r.Context(), b.Creds, b.Request)
+	}
 	if err != nil {
 		writeError(w, err)
 		return

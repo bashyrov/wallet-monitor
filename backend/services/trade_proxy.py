@@ -116,19 +116,25 @@ async def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
 async def place_order(
     exchange: str, creds: dict, symbol: str, side: str, quantity: float,
     leverage: int = 1, margin_mode: str = "isolated",
+    market_type: str = "futures",
 ) -> dict:
     """Forward a place-order to the Go engine. Output shape matches what
     trade_adapters/<ex>.py.place_order returns (order_id + avg_price)."""
+    request = {
+        "symbol": symbol.upper(),
+        "side": side,
+        "quantity": float(quantity),
+        "leverage": int(leverage),
+        "margin_mode": margin_mode,
+    }
+    if market_type and market_type != "futures":
+        # Only emit when non-default — keeps the wire shape backward
+        # compatible for existing futures-only flows.
+        request["market_type"] = market_type
     body = {
         "exchange": exchange.lower(),
         "creds": _strip_creds(exchange, creds),
-        "request": {
-            "symbol": symbol.upper(),
-            "side": side,
-            "quantity": float(quantity),
-            "leverage": int(leverage),
-            "margin_mode": margin_mode,
-        },
+        "request": request,
     }
     out = await _post("/internal/trade/open", body)
     return {
@@ -139,11 +145,15 @@ async def place_order(
     }
 
 
-async def close_position(exchange: str, creds: dict, symbol: str, side: str) -> dict:
+async def close_position(exchange: str, creds: dict, symbol: str, side: str,
+                          market_type: str = "futures") -> dict:
+    request = {"symbol": symbol.upper(), "side": side}
+    if market_type and market_type != "futures":
+        request["market_type"] = market_type
     body = {
         "exchange": exchange.lower(),
         "creds": _strip_creds(exchange, creds),
-        "request": {"symbol": symbol.upper(), "side": side},
+        "request": request,
     }
     out = await _post("/internal/trade/close", body)
     return {

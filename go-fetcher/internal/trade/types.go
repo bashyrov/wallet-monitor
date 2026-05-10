@@ -52,6 +52,18 @@ const (
 
 func (m MarginMode) IsValid() bool { return m == MarginIsolated || m == MarginCross }
 
+// MarketType selects spot vs perp/futures order routing on venues that
+// support both. Default zero-value "" treated as MarketFutures for
+// backward compatibility (every existing call site is futures-only).
+type MarketType string
+
+const (
+	MarketFutures MarketType = "futures"
+	MarketSpot    MarketType = "spot"
+)
+
+func (m MarketType) IsSpot() bool { return m == MarketSpot }
+
 // Creds — flattened per-exchange credential bag. Mirror of Python's
 // `decrypt_credentials(w.credentials)` output. Fields not used by an
 // exchange are simply ignored (e.g. Hyperliquid uses Wallet for sk).
@@ -67,12 +79,18 @@ type Creds struct {
 
 // OpenRequest mirrors Python `place_order(creds, symbol, side, qty,
 // leverage, margin_mode)`. Only fields that vary per call.
+//
+// MarketType is futures-by-default (zero-value resolves to "futures")
+// so every existing caller works unchanged. Set MarketSpot to route
+// the order through the venue's spot adapter where supported. Spot
+// orders ignore Leverage + MarginMode (spot is always 1× / cash).
 type OpenRequest struct {
 	Symbol     string     `json:"symbol"`
 	Side       Side       `json:"side"`
 	Quantity   float64    `json:"quantity"`
 	Leverage   int        `json:"leverage"`
 	MarginMode MarginMode `json:"margin_mode"`
+	MarketType MarketType `json:"market_type,omitempty"`
 }
 
 func (r OpenRequest) Validate() error {
@@ -85,11 +103,15 @@ func (r OpenRequest) Validate() error {
 	if r.Quantity <= 0 {
 		return errUser("quantity must be > 0")
 	}
-	if r.Leverage <= 0 {
-		return errUser("leverage must be > 0")
-	}
-	if !r.MarginMode.IsValid() {
-		return errUser("margin_mode must be isolated/cross")
+	// Leverage + margin only required on futures. Spot is always 1× / cash
+	// — no preflight calls, no hedge-mode dance, just a single signed POST.
+	if !r.MarketType.IsSpot() {
+		if r.Leverage <= 0 {
+			return errUser("leverage must be > 0")
+		}
+		if !r.MarginMode.IsValid() {
+			return errUser("margin_mode must be isolated/cross")
+		}
 	}
 	return nil
 }
@@ -98,9 +120,14 @@ func (r OpenRequest) Validate() error {
 // SAME side as the position to close (Python's contract). When the
 // exchange uses one-way mode and `side` is "", the adapter resolves
 // it from list_positions.
+//
+// For spot, "close" means "sell the long position" — the adapter
+// computes available base-asset balance and sells it as a market order.
+// Side on spot CloseRequest is ignored (spot can't be short).
 type CloseRequest struct {
-	Symbol string `json:"symbol"`
-	Side   Side   `json:"side"`
+	Symbol     string     `json:"symbol"`
+	Side       Side       `json:"side"`
+	MarketType MarketType `json:"market_type,omitempty"`
 }
 
 // LeverageRequest — set isolated/cross leverage for one symbol. Idempotent.
@@ -161,5 +188,17 @@ type Adapter interface {
 	GetBalance(ctx context.Context, creds Creds) (*Balance, error)
 }
 
+// SpotAdapter — optional venue extension for spot order routing. Adapters
+// that implement this also support PlaceOrder/ClosePosition for the same
+// venue's perp/futures (Adapter is required). The dispatcher checks for
+// this at request time when req.MarketType == MarketSpot. Adapters that
+// don't implement it return ErrSpotUnsupported and the dispatcher returns
+// a 4xx to the caller.
+type SpotAdapter interface {
+	PlaceSpotOrder(ctx context.Context, creds Creds, req OpenRequest) (*Result, error)
+	CloseSpotPosition(ctx context.Context, creds Creds, req CloseRequest) (*Result, error)
+}
+
 // Sentinel — adapter not registered for the requested exchange.
 var ErrUnsupported = errors.New("exchange not supported by Go trade engine")
+var ErrSpotUnsupported = errors.New("spot trading not supported on this venue (yet)")

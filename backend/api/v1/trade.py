@@ -393,6 +393,10 @@ class OpenOrderIn(BaseModel):
     quantity: float = Field(..., gt=0, le=1_000_000)
     leverage: int = Field(3, ge=1, le=125)
     margin_mode: str = Field("isolated", pattern="^(isolated|cross)$")
+    # Spot vs futures routing. Default "futures" preserves every existing
+    # caller. When "spot", trade_service skips leverage/margin validation
+    # and the dispatcher routes to the venue's SpotAdapter.
+    market_type: str = Field("futures", pattern="^(futures|spot)$")
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -408,7 +412,7 @@ async def open_order(
     try:
         return await trade_service.place_open_order(
             db, user.id, body.wallet_id, body.symbol, body.side, body.quantity,
-            body.leverage, body.margin_mode,
+            body.leverage, body.margin_mode, market_type=body.market_type,
         )
     except trade_service.TradeError as e:
         # Internal errors are sanitized so we don't leak internals to the

@@ -524,11 +524,16 @@ async def _execute_open_portion(
 
     leverage = order.leverage or 1
     margin_mode = order.margin_mode or "isolated"
+    # spot_short pair fires the LONG leg as a spot market buy (1×, cash)
+    # while the short leg stays perp at the user's leverage. Long-short
+    # pairs route both legs as futures.
+    long_market = "spot" if order.kind == "spot_short" else "futures"
 
     async def _open_long():
         return await trade_service.place_open_order(
             db, order.user_id, long_w.id, order.long_symbol or "",
-            "buy", qty, leverage, margin_mode,
+            "buy", qty, 1 if long_market == "spot" else leverage, margin_mode,
+            market_type=long_market,
         )
 
     async def _open_short():

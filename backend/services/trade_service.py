@@ -265,6 +265,7 @@ async def place_open_order(
     db: Session, user_id: int,
     wallet_id: int, symbol: str, side: str, quantity: float,
     leverage: int, margin_mode: str,
+    *, market_type: str = "futures",
 ) -> dict:
     # Normalise inputs
     symbol = (symbol or "").strip().upper()
@@ -272,8 +273,13 @@ async def place_open_order(
         raise TradeError(f"Invalid symbol: {symbol!r}", kind="user")
     if side not in ("buy", "sell"):
         raise TradeError(f"Invalid side: {side!r}", kind="user")
-    if margin_mode not in ("isolated", "cross"):
-        raise TradeError(f"Invalid margin_mode: {margin_mode!r}", kind="user")
+    if market_type not in ("futures", "spot"):
+        raise TradeError(f"Invalid market_type: {market_type!r}", kind="user")
+    is_spot = market_type == "spot"
+    # Spot is always 1× / cash — leverage + margin_mode irrelevant.
+    if not is_spot:
+        if margin_mode not in ("isolated", "cross"):
+            raise TradeError(f"Invalid margin_mode: {margin_mode!r}", kind="user")
     if quantity <= 0:
         raise TradeError("quantity must be > 0", kind="user")
 
@@ -411,9 +417,10 @@ async def place_open_order(
                 result = await trade_proxy.place_order(
                     ex, creds, symbol, side, quantity,
                     leverage=leverage, margin_mode=margin_mode,
+                    market_type=market_type,
                 )
-                logger.info("Order placed via go-fetcher: ex=%s sym=%s order_id=%s",
-                            ex, symbol, result.get("order_id"))
+                logger.info("Order placed via go-fetcher: ex=%s sym=%s market=%s order_id=%s",
+                            ex, symbol, market_type, result.get("order_id"))
             except trade_proxy.GoTradeError as gerr:
                 if gerr.kind in ("user", "exchange"):
                     # Same outcome we'd get from the local adapter —
@@ -427,6 +434,15 @@ async def place_open_order(
                                gerr.kind, gerr.message)
                 result = None
         if result is None:
+            if is_spot:
+                # Python adapters don't have a spot path yet — refuse with
+                # a clear message rather than silently routing through the
+                # futures method.
+                raise TradeError(
+                    f"Spot trading on {ex} requires the Go proxy "
+                    f"(GO_TRADE_VENUES) and a SpotAdapter implementation.",
+                    kind="user",
+                )
             result = await adapter.place_order(creds, symbol, side, quantity,
                                                leverage=leverage, margin_mode=margin_mode)
     except TradeError:
