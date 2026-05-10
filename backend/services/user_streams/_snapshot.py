@@ -174,6 +174,26 @@ def get_positions(user_id: int, wallet_id: int) -> list[dict] | None:
         return None
 
 
+def get_balance(user_id: int, wallet_id: int) -> float | None:
+    """Last-known USDT balance for this wallet from the user-stream.
+    Returns None if no fresh snapshot. Used by preflight to skip the
+    REST `fetch_balance` round-trip when a LIVE WS stream has the
+    value cached already."""
+    key = (user_id, wallet_id)
+    if key in _local_balance:
+        return _local_balance[key]
+    c = _redis()
+    if c is None:
+        return None
+    try:
+        val = c.get(_key_balance(user_id, wallet_id))
+        if val is None:
+            return None
+        return json.loads(val)
+    except Exception:
+        return None
+
+
 def clear_wallet(user_id: int, wallet_id: int) -> None:
     """Drop everything we have for one wallet — called when stream stops."""
     key = (user_id, wallet_id)

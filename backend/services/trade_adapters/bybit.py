@@ -264,11 +264,15 @@ class BybitAdapter:
         min_notional = float(info.get("minNotional") or 0)
         if mark_price and min_notional and qty_r * mark_price < min_notional:
             return {"ok": False, "reason": f"Notional below minimum (~${qty_r * mark_price:.2f} < ${min_notional:.2f})."}
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            code, msg = _split_code(str(e))
-            return {"ok": False, "reason": _friendly_bybit(code, msg)}
+        cached_bal = creds.get("_cached_balance_usdt")
+        if cached_bal is not None:
+            bal = float(cached_bal)
+        else:
+            try:
+                bal = (await cls.fetch_balance(creds)).get("usdt", 0)
+            except RuntimeError as e:
+                code, msg = _split_code(str(e))
+                return {"ok": False, "reason": _friendly_bybit(code, msg)}
         if mark_price and leverage > 0:
             required = (qty_r * mark_price) / max(1, leverage)
             if bal + 0.01 < required:

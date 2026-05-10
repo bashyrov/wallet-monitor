@@ -263,6 +263,10 @@ func main() {
 		// network — nginx never proxies /internal/*. Auth-gated by the
 		// AVALANT_INTERNAL_SECRET shared header.
 		trade.Routes(mux)
+		// DNS pre-resolve all venue hostnames in the background. Eliminates
+		// the ~5-30ms first-call DNS lookup tax on every venue after a
+		// fetcher restart. Best-effort; logged on success/failure.
+		trade.PrewarmDNS()
 		srv := &http.Server{Addr: ":" + cfg.WSBroadcastPort, Handler: mux}
 		g.Go(func() error {
 			wsSvc.Run(gctx)

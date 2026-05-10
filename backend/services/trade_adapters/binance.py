@@ -257,11 +257,17 @@ class BinanceAdapter:
                     "reason": f"Notional below minimum (~${qty_r * mark_price:.2f} < ${min_notional:.2f}). "
                               f"Increase size or leverage."}
 
-        # Balance vs required margin
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            return {"ok": False, "reason": _friendly_error(*_split_code(e))}
+        # Balance vs required margin. Honor `_cached_balance_usdt` hint
+        # from user-stream snapshot — saves the fetch_balance REST RTT
+        # (~50-100ms) on every order while the WS stream is LIVE.
+        cached_bal = creds.get("_cached_balance_usdt")
+        if cached_bal is not None:
+            bal = float(cached_bal)
+        else:
+            try:
+                bal = (await cls.fetch_balance(creds)).get("usdt", 0)
+            except RuntimeError as e:
+                return {"ok": False, "reason": _friendly_error(*_split_code(e))}
         if mark_price and leverage > 0:
             required = (qty_r * mark_price) / max(1, leverage)
             if bal + 0.01 < required:

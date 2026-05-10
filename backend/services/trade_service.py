@@ -319,6 +319,19 @@ async def place_open_order(
 
     creds = decrypt_credentials(w.credentials or {})
 
+    # Inject cached balance from user-stream snapshot — adapter's
+    # preflight can use it as a hint to skip the REST `fetch_balance`
+    # round-trip (~50-100ms saved per order on LIVE-stream venues).
+    # Adapter ignores the hint if it doesn't know about it.
+    try:
+        from backend.services.user_streams import _snapshot as _us_snapshot
+        if _us_snapshot.get_status(user_id, wallet_id) == "LIVE":
+            cached_bal = _us_snapshot.get_balance(user_id, wallet_id)
+            if cached_bal is not None:
+                creds["_cached_balance_usdt"] = float(cached_bal)
+    except Exception:
+        pass
+
     # ── Pre-flight: round qty, validate notional + balance BEFORE signing an order ──
     # Run preflight concurrently with set_leverage when the cache says leverage
     # already matches — in that case we can skip the leverage call entirely.

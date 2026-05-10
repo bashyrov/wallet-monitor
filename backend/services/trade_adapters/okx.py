@@ -248,11 +248,15 @@ class OKXAdapter:
         except Exception:
             pass
 
-        # Balance check
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            return {"ok": False, "reason": _friendly_okx(*_split_code(e))}
+        # Balance check — honor cached hint if available.
+        cached_bal = creds.get("_cached_balance_usdt")
+        if cached_bal is not None:
+            bal = float(cached_bal)
+        else:
+            try:
+                bal = (await cls.fetch_balance(creds)).get("usdt", 0)
+            except RuntimeError as e:
+                return {"ok": False, "reason": _friendly_okx(*_split_code(e))}
 
         notional = contracts * ct_val * mark_price
         if mark_price and leverage > 0:
