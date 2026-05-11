@@ -148,12 +148,33 @@ class BackpackAdapter:
     # ── Balance ──
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._req(creds, "GET", "/api/v1/capital", "balanceQuery")
-        usdt = 0.0
-        if isinstance(data, dict):
-            entry = data.get("USDT", {})
-            usdt = float(entry.get("available") or 0) + float(entry.get("locked") or 0)
-        return {"usdt": usdt}
+        # Backpack stores futures-trading collateral on a DIFFERENT endpoint
+        # than spot capital. Sum both so users who funded for perp trading
+        # see their balance.
+        total = 0.0
+        # 1) Futures collateral — what counts for trading
+        try:
+            col = await cls._req(creds, "GET", "/api/v1/capital/collateral", "collateralQuery")
+            if isinstance(col, dict):
+                # netEquity already nets out borrows / pnl; prefer it if present
+                ne = col.get("netEquity")
+                if ne is not None:
+                    total += float(ne or 0)
+        except Exception:
+            pass
+        # 2) Spot capital — USDT / USDC held un-staked
+        try:
+            spot = await cls._req(creds, "GET", "/api/v1/capital", "balanceQuery")
+            if isinstance(spot, dict):
+                for asset in ("USDT", "USDC", "USD"):
+                    entry = spot.get(asset, {}) or {}
+                    try:
+                        total += float(entry.get("available") or 0) + float(entry.get("locked") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+        return {"usdt": total}
 
     # ── Leverage (Backpack spot has no leverage API — stub) ──
     @classmethod
