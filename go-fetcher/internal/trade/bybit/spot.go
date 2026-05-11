@@ -86,13 +86,17 @@ func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req tra
 	if info.MinOrderQty > 0 && req.Quantity < info.MinOrderQty {
 		return nil, errUser("Quantity below minimum (%g %s)", info.MinOrderQty, req.Symbol)
 	}
+	// Bybit spot market orders default `qty` to QUOTE currency for BUY
+	// and BASE currency for SELL. We always pass base-coin quantity, so
+	// force marketUnit=baseCoin to keep semantics consistent.
 	body, err := a.signedRequest(ctx, creds, http.MethodPost,
 		"/v5/order/create", nil, map[string]any{
-			"category":  "spot",
-			"symbol":    sym,
-			"side":      side,
-			"orderType": "Market",
-			"qty":       qtyString(req.Quantity),
+			"category":   "spot",
+			"symbol":     sym,
+			"side":       side,
+			"orderType":  "Market",
+			"qty":        qtyString(req.Quantity),
+			"marketUnit": "baseCoin",
 		})
 	if err != nil {
 		return nil, err
@@ -160,11 +164,12 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 	}
 	out, err := a.signedRequest(ctx, creds, http.MethodPost,
 		"/v5/order/create", nil, map[string]any{
-			"category":  "spot",
-			"symbol":    base + "USDT",
-			"side":      "Sell",
-			"orderType": "Market",
-			"qty":       qtyString(freeBase),
+			"category":   "spot",
+			"symbol":     base + "USDT",
+			"side":       "Sell",
+			"orderType":  "Market",
+			"qty":        qtyString(freeBase),
+			"marketUnit": "baseCoin",
 		})
 	if err != nil {
 		return nil, err

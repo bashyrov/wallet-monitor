@@ -32,6 +32,8 @@ func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req tra
 	if req.Side == trade.SideSell {
 		side = "sell"
 	}
+	// OKX spot market BUY defaults `sz` to QUOTE currency (USDT). Force
+	// tgtCcy=base_ccy so we can always pass base-coin quantity.
 	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/api/v5/trade/order",
 		map[string]any{
 			"instId":  instID,
@@ -39,6 +41,7 @@ func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req tra
 			"side":    side,
 			"ordType": "market",
 			"sz":      qtyString(req.Quantity),
+			"tgtCcy":  "base_ccy",
 		})
 	if err != nil {
 		return nil, err
@@ -109,6 +112,7 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 			"side":    "sell",
 			"ordType": "market",
 			"sz":      qtyString(freeBase),
+			"tgtCcy":  "base_ccy",
 		})
 	if err != nil {
 		return nil, err

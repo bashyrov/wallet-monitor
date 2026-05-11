@@ -10,6 +10,7 @@ package bitget
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +24,34 @@ func parseFloat(s string) float64 {
 	return v
 }
 
+// bitgetSpotPrice fetches current ticker price for BUY-market sizing.
+// Public endpoint, no auth.
+func (a *Adapter) bitgetSpotPrice(ctx context.Context, symbol string) (float64, error) {
+	url := "https://api.bitget.com/api/v2/spot/market/tickers?symbol=" + symbol
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var env struct {
+		Data []struct {
+			LastPr string `json:"lastPr"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return 0, err
+	}
+	if len(env.Data) == 0 {
+		return 0, errUser("no ticker for %s", symbol)
+	}
+	return parseFloat(env.Data[0].LastPr), nil
+}
+
 func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req trade.OpenRequest) (*trade.Result, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -32,12 +61,24 @@ func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req tra
 	if req.Side == trade.SideSell {
 		side = "sell"
 	}
+	// Bitget v2 spot market BUY interprets `size` as QUOTE currency
+	// (USDT), SELL interprets as BASE. We always receive base-coin qty,
+	// so convert for BUY using a quick public-ticker fetch.
+	sizeStr := qtyString(req.Quantity, 8)
+	if side == "buy" {
+		px, perr := a.bitgetSpotPrice(ctx, sym)
+		if perr != nil || px <= 0 {
+			return nil, errUser("Bitget spot BUY: could not fetch price for %s: %v", sym, perr)
+		}
+		// 2-decimal USDT precision is the safe default Bitget accepts.
+		sizeStr = strconv.FormatFloat(req.Quantity*px, 'f', 2, 64)
+	}
 	body, err := a.signedRequest(ctx, creds, http.MethodPost,
 		"/api/v2/spot/trade/place-order", nil, map[string]any{
 			"symbol":    sym,
 			"side":      side,
 			"orderType": "market",
-			"size":      qtyString(req.Quantity, 8),
+			"size":      sizeStr,
 			"force":     "ioc",
 		})
 	if err != nil {

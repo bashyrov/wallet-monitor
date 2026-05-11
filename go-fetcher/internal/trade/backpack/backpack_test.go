@@ -10,16 +10,16 @@ import (
 )
 
 func TestSymbol(t *testing.T) {
-	if got := toBPSymbol("btc"); got != "BTC_USDT" {
+	if got := toBPSymbol("btc"); got != "BTC_USDC_PERP" {
 		t.Errorf("got %q", got)
 	}
 }
 
 func TestBuildSignString_Canonical(t *testing.T) {
 	got := buildSignString("orderExecute", 1234567890, map[string]string{
-		"symbol": "BTC_USDT", "side": "Bid", "orderType": "Market",
+		"symbol": "BTC_USDC_PERP", "side": "Bid", "orderType": "Market",
 	})
-	want := "instruction=orderExecute&orderType=Market&side=Bid&symbol=BTC_USDT&timestamp=1234567890&window=60000"
+	want := "instruction=orderExecute&orderType=Market&side=Bid&symbol=BTC_USDC_PERP&timestamp=1234567890&window=60000"
 	if got != want {
 		t.Errorf("got\n %q\nwant\n %q", got, want)
 	}

@@ -72,7 +72,9 @@ func init() { trade.Register("backpack", New()) }
 
 func (a *Adapter) Name() string { return "backpack" }
 
-func toBPSymbol(sym string) string { return strings.ToUpper(sym) + "_USDT" }
+// Backpack perpetuals are USDC-margined: SOL_USDC_PERP, BTC_USDC_PERP, etc.
+// Spot pairs are SOL_USDC, BTC_USDC. The futures adapter trades perps.
+func toBPSymbol(sym string) string { return strings.ToUpper(sym) + "_USDC_PERP" }
 
 // ── Signing ──────────────────────────────────────────────────────────────
 

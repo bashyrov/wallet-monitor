@@ -143,7 +143,13 @@ class BackpackAdapter:
 
     @staticmethod
     def _symbol(s: str) -> str:
-        return s.upper() + "_USDT"
+        # Backpack perpetuals are USDC-margined: SOL_USDC_PERP, BTC_USDC_PERP, etc.
+        # Spot pairs use SOL_USDC. We trade perps here.
+        return s.upper() + "_USDC_PERP"
+
+    @staticmethod
+    def _spot_symbol(s: str) -> str:
+        return s.upper() + "_USDC"
 
     # ── Balance ──
     @classmethod
@@ -309,7 +315,9 @@ class BackpackAdapter:
 
     @classmethod
     async def get_public_max_leverage(cls, symbol: str) -> int:
-        return 1  # Spot only — no leverage
+        # Backpack perpetuals support up to 50x. The market filter
+        # `maxMultiplier` is for price banding, not leverage.
+        return 50
 
     @classmethod
     async def fetch_recent_fills(cls, creds: dict, since_ts, *, market: str = "futures") -> list[dict]:
@@ -321,14 +329,19 @@ class BackpackAdapter:
             return []
         since_ms = int(since_ts.timestamp() * 1000)
         out: list[dict] = []
-        # Fetch all markets to know what symbols to sweep
+        # Fetch all markets to know what symbols to sweep. Backpack
+        # perpetuals are _USDC_PERP; spot is _USDC. Pull both flavours
+        # so we capture spot_short pair legs even if user is mostly perp.
         try:
             mkts = await _markets()
-            symbols = [s for s in mkts if s.endswith("_USDT")]
+            if market == "futures":
+                symbols = [s for s in mkts if s.endswith("_USDC_PERP")]
+            else:
+                symbols = [s for s in mkts if s.endswith("_USDC") and not s.endswith("_PERP")]
         except Exception:
             symbols = []
         for sym in symbols:
-            base = sym.replace("_USDT", "")
+            base = sym.replace("_USDC_PERP", "").replace("_USDC", "").replace("_USDT", "")
             try:
                 data = await cls._req(creds, "GET", "/api/v1/history/fills",
                                        "fillHistoryQueryAll",

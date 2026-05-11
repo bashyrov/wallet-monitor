@@ -30,7 +30,12 @@ func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req tra
 	if req.Side == trade.SideSell {
 		side = "sell"
 	}
-	body, err := a.signedRequest(ctx, creds, "/api/v4/order/market",
+	// WhiteBit has two spot market endpoints:
+	//   /api/v4/order/market        — `amount` in QUOTE currency (USDT)
+	//   /api/v4/order/stock_market  — `amount` in BASE currency (SOL)
+	// We always carry base-coin qty, so use the latter. Default endpoint
+	// silently treats our 0.15 as "spend 0.15 USDT" → fails validation.
+	body, err := a.signedRequest(ctx, creds, "/api/v4/order/stock_market",
 		map[string]any{
 			"market": toWBSpot(req.Symbol),
 			"side":   side,
@@ -82,7 +87,7 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 	if freeBase <= 0 {
 		return nil, errUser("No %s balance to close on WhiteBIT spot", base)
 	}
-	out, err := a.signedRequest(ctx, creds, "/api/v4/order/market",
+	out, err := a.signedRequest(ctx, creds, "/api/v4/order/stock_market",
 		map[string]any{
 			"market": base + "_USDT",
 			"side":   "sell",
