@@ -938,9 +938,19 @@
     </div>
     <div class="section-body-wrap">
     <div class="section-body" style="padding:0">
+      <!-- 2FA gate banner — visible only when TOTP is off. Server-side block
+           also returns 403 on POST /api/wallets so this is defense-in-depth UX. -->
+      <div id="k-2fa-gate" style="display:none;margin:12px 14px 0;padding:12px 14px;border-radius:8px;background:rgba(229,192,123,0.06);border:1px solid rgba(229,192,123,0.32);font-size:12.5px;color:var(--text2);line-height:1.55">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:600;color:#E5C07B;margin-bottom:4px">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1l6 3v4c0 4-2.7 7-6 7s-6-3-6-7V4l6-3z"/></svg>
+          Enable 2FA to add API keys
+        </div>
+        <div>API keys are sensitive — they can read balances and execute trades. Set up two-factor authentication first.</div>
+        <button onclick="document.querySelector('#sec-security').scrollIntoView({behavior:'smooth',block:'start'});tfaEnableShow()" style="margin-top:8px;padding:7px 14px;border-radius:6px;background:#E5C07B;color:#0B0B0E;border:0;cursor:pointer;font-weight:700;font-size:12px;font-family:inherit">Enable 2FA</button>
+      </div>
       <div class="k-tabs">
         <button class="k-tab is-active" data-tab="list" onclick="kSwitch(this)">My Keys <span class="k-count" id="k-count">0</span></button>
-        <button class="k-tab" data-tab="add" onclick="kSwitch(this)">+ Add Key</button>
+        <button class="k-tab" id="k-tab-add" data-tab="add" onclick="kSwitch(this)">+ Add Key</button>
       </div>
       <div class="k-panes">
         <div class="k-pane is-active" id="k-pane-list">
@@ -1465,6 +1475,7 @@ function _gateBody(prefix, primary){
 
 // ── 2FA ─────────────────────────────────────────────────────────────────────
 function _updateTfaStatus(enabled) {
+  window._TFA_ENABLED = !!enabled;
   const st = document.getElementById('tfa-status');
   if (st) {
     if (enabled) { st.textContent = 'Enabled ✓'; st.className = 'tg-status tg-status-on'; }
@@ -1472,10 +1483,25 @@ function _updateTfaStatus(enabled) {
   }
   document.getElementById('tfa-on-view').style.display  = enabled ? 'block' : 'none';
   document.getElementById('tfa-off-view').style.display = enabled ? 'none'  : 'block';
-  document.getElementById('tfa-setup-view').style.display = 'none';
   const regen = document.getElementById('tfa-on-view-regen');
   if (regen) regen.style.display = enabled ? 'block' : 'none';
   if (!enabled) _hideRecoveryCodes();
+  // Gate API key creation: banner + disable Add tab. Server returns 403 on
+  // POST /api/wallets when totp_verified_at is NULL, so this is UX only.
+  const gate = document.getElementById('k-2fa-gate');
+  const addTab = document.getElementById('k-tab-add');
+  if (gate) gate.style.display = enabled ? 'none' : '';
+  if (addTab) {
+    addTab.disabled = !enabled;
+    addTab.style.opacity = enabled ? '' : '0.4';
+    addTab.style.cursor = enabled ? '' : 'not-allowed';
+    addTab.title = enabled ? '' : 'Enable 2FA to add keys';
+    // If add pane was active when 2FA got disabled, bounce back to list
+    if (!enabled && addTab.classList.contains('is-active')) {
+      const listTab = document.querySelector('.k-tab[data-tab="list"]');
+      if (listTab) kSwitch(listTab);
+    }
+  }
 }
 
 function tfaEnableShow() {
@@ -2197,6 +2223,13 @@ let _kWallets = [];
 
 function kSwitch(el){ kSwitchTo(el.dataset.tab); }
 function kSwitchTo(tab){
+  // Refuse Add tab when 2FA is off. Server returns 403 anyway, but UX-wise
+  // we don't want the user to fill the form and only then see the rejection.
+  if (tab === 'add' && window._TFA_ENABLED === false) {
+    document.querySelector('#sec-security').scrollIntoView({behavior:'smooth', block:'start'});
+    if (typeof toast === 'function') toast('Enable 2FA to add API keys', 'info');
+    return;
+  }
   document.querySelectorAll('.k-tab').forEach(t => t.classList.toggle('is-active', t.dataset.tab === tab));
   document.querySelectorAll('.k-pane').forEach(p => p.classList.toggle('is-active', p.id === 'k-pane-' + tab));
   if (tab === 'add') {

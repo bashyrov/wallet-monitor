@@ -3982,6 +3982,27 @@ document.addEventListener('DOMContentLoaded', () => {
 // ═══════════════════════════════════════════════════
 function openAddWalletModal() {
   if (S.wallets.length >= FREE_WALLET_LIMIT) { openUpgradePopup(); return; }
+  // 2FA gate — server-side check on POST /api/wallets returns 403 with
+  // X-Avalant-Reason: enable_2fa_required. Pre-flight via /auth/me (cached
+  // in S.me at page load) so we surface a clear CTA instead of a generic
+  // form-submission error.
+  if (S.me && S.me.totp_enabled === false) {
+    if (typeof Confirm !== 'undefined' && Confirm.ask) {
+      Confirm.ask({
+        title: 'Enable 2FA to add a wallet',
+        message: 'API keys are sensitive — they can read balances and execute trades. Set up two-factor authentication on your profile first.',
+        okText: 'Open profile',
+        cancelText: 'Cancel',
+        info: true,
+      }).then(ok => {
+        if (ok) window.location.href = '/profile#sec-security';
+      });
+    } else {
+      if (typeof toast === 'function') toast('Enable 2FA on /profile first', 'info');
+      setTimeout(() => { window.location.href = '/profile#sec-security'; }, 1500);
+    }
+    return;
+  }
   S.walletType = null;
   document.getElementById('modal-wallet').classList.remove('hidden');
   document.getElementById('wallet-form').reset();

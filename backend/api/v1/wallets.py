@@ -95,6 +95,18 @@ async def create_wallet(
 ):
     from backend.services import rate_limit as _rl
     _rl.enforce("wallets_create", request, suffix=str(current_user.id))
+    # Security gate: API keys are sensitive (they can read balances and,
+    # for screener-purpose keys, execute trades). We require the user to
+    # have 2FA armed before they can store any new key with us — pairs the
+    # session-stealing risk with a TOTP second factor at login. Existing
+    # keys keep working; only NEW additions are blocked. Admins are NOT
+    # exempted — they store keys too and have higher blast radius.
+    if not current_user.totp_verified_at:
+        raise HTTPException(
+            status_code=403,
+            detail="Enable two-factor authentication on your profile before adding API keys.",
+            headers={"X-Avalant-Reason": "enable_2fa_required"},
+        )
     # Honour admin-disabled providers without leaking stale UI into the DB.
     tv = (body.type_value or "").lower()
     if body.wallet_type == "exchange" and tv in admin_settings.get_disabled_wallet_exchanges():
