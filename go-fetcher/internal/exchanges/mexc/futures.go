@@ -73,13 +73,13 @@ func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	frames := make([][]byte, 0, len(symbols))
 	for _, s := range symbols {
+		// sub.depth.full pushes the FULL top-20 book on every update —
+		// no deltas, no shrinkage. Same `push.depth` channel name so
+		// Parse() handles it as before, but bk.seeded path now replaces
+		// the book on EVERY push instead of just the first one.
 		f := map[string]any{
-			"method": "sub.depth",
-			// Subscribe with limit=100 instead of 20 — gives more headroom
-			// before the shrinkage quirk eats the book down to empty.
-			// Combined with 3s REST backstop, the effective lag drops
-			// from ~30s worst-case to <3s.
-			"param":  map[string]any{"symbol": strings.ToUpper(s) + "_USDT", "limit": 100},
+			"method": "sub.depth.full",
+			"param":  map[string]any{"symbol": strings.ToUpper(s) + "_USDT", "limit": 20},
 		}
 		b, _ := ws.MarshalJSON(f)
 		frames = append(frames, b)
@@ -111,47 +111,24 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	defer a.mu.Unlock()
 
 	bk, ok := a.books[token]
-	freshSubscribe := false
 	if !ok {
 		bk = &book{bids: make(map[float64]float64), asks: make(map[float64]float64)}
 		a.books[token] = bk
-		freshSubscribe = true
 	}
 
-	if !bk.seeded {
-		// First push after subscribe is a full snapshot — replace the book.
-		bk.bids = make(map[float64]float64, len(msg.Data.Bids))
-		bk.asks = make(map[float64]float64, len(msg.Data.Asks))
-		bk.seeded = true
-	}
-
-	// Fresh subscribe → kick off an async REST snapshot in parallel. If
-	// the first WS push happens to be a thin delta (size=0 removals), the
-	// REST snapshot lands ~200ms later and replaces the empty book wholesale.
-	// Without this, depleted books on active symbols (e.g. MEXC LAB) could
-	// sit empty for up to one backstop interval.
-	if freshSubscribe {
-		go a.fetchAndReplace(token)
-	}
-
-	// Apply levels: sz=0 (index 1) means remove; sz>0 means add/update.
+	// With sub.depth.full every push IS the full top-20 snapshot —
+	// replace the book wholesale on every message. No delta semantics,
+	// no shrinkage drift.
+	bk.bids = make(map[float64]float64, len(msg.Data.Bids))
+	bk.asks = make(map[float64]float64, len(msg.Data.Asks))
+	bk.seeded = true
 	for _, r := range msg.Data.Bids {
-		if len(r) < 2 {
-			continue
-		}
-		if r[1] == 0 {
-			delete(bk.bids, r[0])
-		} else {
+		if len(r) >= 2 && r[1] > 0 {
 			bk.bids[r[0]] = r[1]
 		}
 	}
 	for _, r := range msg.Data.Asks {
-		if len(r) < 2 {
-			continue
-		}
-		if r[1] == 0 {
-			delete(bk.asks, r[0])
-		} else {
+		if len(r) >= 2 && r[1] > 0 {
 			bk.asks[r[0]] = r[1]
 		}
 	}
