@@ -31,7 +31,10 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
 
-const broadcastIntervalLongShort = 250 * time.Millisecond
+// 250ms → 100ms — match the new arb-compute cadence (200ms). Clients
+// merge diffs incrementally so 10×/sec push is fine. Reduces the
+// user-visible "lag" between funding tick and screener row update.
+const broadcastIntervalLongShort = 100 * time.Millisecond
 
 // LongShort is the channel state. One instance owned by the Service.
 type LongShort struct {

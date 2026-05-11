@@ -28,10 +28,11 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
 
-// 250ms — same cadence as long-short. Python ran funding at 300ms
-// because it shared the asyncio loop with everything else; we have a
-// dedicated goroutine so the tighter cadence is essentially free.
-const broadcastIntervalFunding = 250 * time.Millisecond
+// 100ms — funding rates change every 8h, but mark-price + 24h volume
+// + interval-to-next-funding update continuously. 10×/sec broadcast
+// keeps countdown timers and prices buttery-smooth. Dedicated goroutine
+// so cost is essentially free.
+const broadcastIntervalFunding = 100 * time.Millisecond
 
 type Funding struct {
 	hub      *Hub

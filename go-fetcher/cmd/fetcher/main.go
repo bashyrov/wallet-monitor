@@ -177,7 +177,10 @@ func main() {
 	// Futures arb compute — port of Python's arbitrage_service.py. Reads
 	// the funding store, builds cross-venue opportunities, writes
 	// arbitrage.json every 700ms (matches AVALANT_ARB_CACHE_TTL on prod).
-	arbCompute := arb.NewCompute(fundingStore, store, cfg.CacheDir, 500*time.Millisecond)
+	// 500ms → 200ms: arb opps recompute 5×/sec instead of 2×/sec.
+	// With orderbook + funding broadcasts now sub-100ms, the arb tick
+	// was the dominant pre-display lag.
+	arbCompute := arb.NewCompute(fundingStore, store, cfg.CacheDir, 200*time.Millisecond)
 	g.Go(func() error {
 		return arbCompute.Run(gctx)
 	})
@@ -185,7 +188,8 @@ func main() {
 	// Spot arb compute — Python's spot_arbitrage_service. REST tickers
 	// from 9 spot venues + funding store join → spot_arbitrage.json
 	// every 2s.
-	spotCompute := arb.NewSpotCompute(fundingStore, store, cfg.CacheDir, 1*time.Second)
+	// 1s → 500ms: spot/perp basis recomputed twice as often.
+	spotCompute := arb.NewSpotCompute(fundingStore, store, cfg.CacheDir, 500*time.Millisecond)
 	g.Go(func() error {
 		return spotCompute.Run(gctx)
 	})
