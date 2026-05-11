@@ -127,18 +127,18 @@ class AsterAdapter:
         from backend.services.trade_adapters._http import http_client
         client = http_client(host or BASE, timeout=10.0)
         url = f"{path}?{msg}&signature={sig_hex}"
-        # NB: sapi.asterdex.com sits behind a WAF that 500s on
-        # User-Agent="avalant-fetcher/*". Use the demo's UA which is allow-listed.
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "PythonApp/1.0",
-        }
+        # The sapi.asterdex.com WAF 500s on GET requests that carry a
+        # Content-Type header (GET has no body, so it's nonsensical and
+        # the WAF treats it as suspicious). Send Content-Type only on
+        # POST/DELETE where the body could be form-encoded.
+        ua = {"User-Agent": "PythonApp/1.0"}
+        ct = {"Content-Type": "application/x-www-form-urlencoded"}
         if method == "GET":
-            r = await client.get(url, headers=headers)
+            r = await client.get(url, headers=ua)
         elif method == "POST":
-            r = await client.post(url, headers=headers)
+            r = await client.post(url, headers={**ua, **ct})
         elif method == "DELETE":
-            r = await client.delete(url, headers=headers)
+            r = await client.delete(url, headers={**ua, **ct})
         else:
             raise ValueError(method)
         if r.status_code >= 400:
