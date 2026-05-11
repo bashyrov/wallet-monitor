@@ -49,6 +49,7 @@ class WhiteBITProvider(BaseWalletProvider):
         ).hexdigest()
         headers = {
             "X-TXC-APIKEY": wallet.api_key.strip(),
+            "X-TXC-PAYLOAD": b64_body,
             "X-TXC-SIGNATURE": sign,
             "X-TXC-NONCE": nonce,
             "Content-Type": "application/json",

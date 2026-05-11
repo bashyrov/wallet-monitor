@@ -73,15 +73,26 @@ class BackpackProvider(BaseWalletProvider):
         return dict(out)
 
     async def _get_futures(self, key, secret):
+        """Backpack /api/v1/capital/collateral returns
+        { "assetsValue":"...", "netEquity":"...", "collateral":[{symbol, totalQuantity, ...}] }.
+        Earlier code iterated data.values() which broke on the top-level
+        string fields. Iterate the nested `collateral` list properly; fall
+        back to legacy list shape if Backpack ever flattens it."""
         data = await self._get("/api/v1/capital/collateral", "collateralQuery", key, secret)
         out = defaultdict(Decimal)
-
-        for x in data if isinstance(data, list) else data.values():
+        items = []
+        if isinstance(data, dict):
+            items = data.get("collateral") or []
+        elif isinstance(data, list):
+            items = data
+        for x in items:
+            if not isinstance(x, dict):
+                continue
             sym = (x.get("symbol") or "").upper()
-            total = self._d(x.get("available")) + self._d(x.get("locked"))
+            total = (self._d(x.get("totalQuantity"))
+                     or self._d(x.get("availableQuantity")) + self._d(x.get("lendQuantity")))
             if sym and total > 0:
                 out[sym] += total
-
         return dict(out)
 
     async def fetch_balance(self, wallet: ExchangeWallet):

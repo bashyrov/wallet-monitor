@@ -229,8 +229,14 @@ class KuCoinAdapter:
                         pass
         except Exception:
             pass
+        # `usdt` is the portfolio-level total: ALL futures pots
+        # (USDT+USDC+XBT) summed in USD-equivalent, plus spot stables.
+        # The previous "USDT pot only" definition silently hid users'
+        # USDC-margined futures balances. `futures_usd` mirrors fut_total
+        # for consistency with other adapters' {usdt,spot_usd,futures_usd}
+        # contract.
         return {
-            "usdt":            usdt_fut + spot_usd,
+            "usdt":            fut_total + spot_usd,
             "spot_usd":        spot_usd,
             "futures_usd":     fut_total,
             "available":       usdt_pot["available"],
