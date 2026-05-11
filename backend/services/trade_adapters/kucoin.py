@@ -123,7 +123,8 @@ class KuCoinAdapter:
         return _kc_symbol(s)
 
     @classmethod
-    async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None, body: dict | None = None) -> Any:
+    async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None,
+                      body: dict | None = None, host: str | None = None) -> Any:
         offset = await cls._server_time_offset_ms()
         ts = str(int(time.time() * 1000 + offset))
         api_key = creds["api_key"]
@@ -164,8 +165,10 @@ class KuCoinAdapter:
             "Content-Type": "application/json",
         }
         # Persistent client per host — TLS handshake paid once.
+        # KuCoin keeps spot on api.kucoin.com and futures on api-futures.kucoin.com.
+        # Same signing scheme; just need to swap the base URL for cross-host reads.
         from backend.services.trade_adapters._http import http_client
-        client = http_client(BASE, timeout=10.0)
+        client = http_client(host or BASE, timeout=10.0)
         rel_path = url_path if method == "GET" else path
         if method == "GET":
             r = await client.get(rel_path, headers=headers)
@@ -217,15 +220,16 @@ class KuCoinAdapter:
         usdt_pot = by_cur.get("USDT", {"available": 0.0, "equity": 0.0})
         usdt_fut = usdt_pot["available"] if usdt_pot["available"] > 0 else usdt_pot["equity"]
         fut_total = sum(r["equity"] for r in results)
-        # Spot — KuCoin keeps funds in multiple sub-accounts (main, trade,
-        # margin, etc.) that the user can transfer between on-demand. Sum
-        # across ALL sub-accounts (no type= filter) so portfolio + arb
-        # display the user's true exchange total — otherwise $20 sitting
-        # in Main shows as unavailable while it's a one-click transfer
-        # away from being tradable.
+        # Spot — KuCoin Spot/Margin/Main lives on api.kucoin.com (the
+        # futures adapter's BASE is api-futures.kucoin.com which doesn't
+        # expose /accounts). Sum across ALL sub-accounts (no type= filter)
+        # so portfolio + arb display the user's true exchange total —
+        # otherwise $20 sitting in Main shows as unavailable while it's
+        # a one-click transfer from being tradable.
         spot_usd = 0.0
         try:
-            data = await cls._signed(creds, "GET", "/api/v1/accounts")
+            data = await cls._signed(creds, "GET", "/api/v1/accounts",
+                                     host="https://api.kucoin.com")
             for r in (data or []):
                 if (r.get("currency") or "").upper() in ("USDT", "USDC"):
                     try:
