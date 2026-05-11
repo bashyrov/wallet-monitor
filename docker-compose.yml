@@ -269,6 +269,10 @@ services:
       # cold-start freshness under quarter-second while cutting the
       # marshal-loop CPU by ~60%.
       AVALANT_FILE_DUMP_INTERVAL: ${AVALANT_FILE_DUMP_INTERVAL:-250ms}
+      # Safety-net tick for /ws/book. Push-through (OnBookUpdate) handles
+      # real-time updates; this tick covers pairs that didn't fire a Store
+      # callback. 1s default — was 25ms, redundant on the hot path.
+      AVALANT_BOOK_TICK_INTERVAL: ${AVALANT_BOOK_TICK_INTERVAL:-1s}
       # Override LOG_LEVEL specifically for go-fetcher: WARN silences the
       # per-frame "subscribe frame sent" / "recv frame" diagnostics that
       # added measurable CPU + log I/O on prod (~10% of one core).

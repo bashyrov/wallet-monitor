@@ -24,6 +24,7 @@ package wsbroadcast
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -35,9 +36,25 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
+// bookBroadcastIntervalDefault — 1s, safety-net cadence.
+// Real-time updates flow through OnBookUpdate (push-through) — this
+// tick only catches pairs where the Redis MGET path needs to fill in
+// for a missed Store callback. Was 25ms; bumped because push-through
+// makes the tick redundant on the hot path.
+const bookBroadcastIntervalDefault = 1 * time.Second
+
+// bookBroadcastInterval is set from env var AVALANT_BOOK_TICK_INTERVAL
+// at init time (e.g. "500ms", "2s", "100ms"). Defaults to 1s.
+var bookBroadcastInterval = func() time.Duration {
+	if v := os.Getenv("AVALANT_BOOK_TICK_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return bookBroadcastIntervalDefault
+}()
+
 const (
-	// 25ms — same cadence Python's _book_broadcast_loop runs at.
-	bookBroadcastInterval = 25 * time.Millisecond
 	// Per-client cap. /arb pair-page needs 2 (long + short side); the
 	// screener live-In/Out feature needs ~80 for the top-40 rows. 100 is
 	// what Python uses (BOOK_MAX_PAIRS_PER_CLIENT).
