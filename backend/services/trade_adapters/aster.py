@@ -31,75 +31,112 @@ class AsterAdapter:
     def _symbol(s: str) -> str:
         return s.upper() + "USDT"
 
+    # In-process nonce monotonic-by-microsecond + counter to avoid the
+    # "100-most-recent-nonces, reject if smaller than minimum" rule.
+    _NONCE_LOCK = None
+    _NONCE_LAST = 0
+    _NONCE_COUNTER = 0
+
+    @classmethod
+    def _next_nonce(cls) -> int:
+        import threading
+        if cls._NONCE_LOCK is None:
+            cls._NONCE_LOCK = threading.Lock()
+        with cls._NONCE_LOCK:
+            now = int(time.time())
+            if now == cls._NONCE_LAST:
+                cls._NONCE_COUNTER += 1
+            else:
+                cls._NONCE_LAST = now
+                cls._NONCE_COUNTER = 0
+            return now * 1_000_000 + cls._NONCE_COUNTER
+
     @classmethod
     async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None) -> Any:
-        """EIP-712 signing — same as Aster's API wallet auth."""
+        """Aster V3 Pro API EIP-712 signing (chainId 1666, primaryType=Message).
+        Replaces the legacy V1 X-AB-APIKEY + HMAC scheme — V1 key creation
+        was closed on 2026-03-25 so new credentials only work via V3.
+
+        creds layout (we store both):
+          api_key    → master/login wallet address ("user" param)
+          api_secret → API wallet private key ("signer" derived from it)
+        """
         try:
             from eth_account import Account
-            from eth_account.messages import encode_typed_data
+            from eth_account.messages import encode_structured_data
+            import urllib.parse
         except ImportError:
-            raise RuntimeError("eth_account package required for Aster trading")
+            raise RuntimeError("eth_account package required for Aster V3")
 
-        params = dict(params or {})
-        params["timestamp"] = str(int(time.time() * 1e6))  # microseconds
-        params["recvWindow"] = "5000"
+        master = (creds.get("api_key") or "").strip()
+        priv = (creds.get("api_secret") or "").strip()
+        if not master or not priv:
+            raise RuntimeError("Aster requires master wallet address + API wallet private key")
+        acct = Account.from_key(priv if priv.startswith("0x") else "0x" + priv)
+        signer_addr = acct.address
 
-        # Build query string
-        qs = "&".join(f"{k}={params[k]}" for k in sorted(params))
+        body = dict(params or {})
+        body["asterChain"] = "Mainnet"
+        body["user"] = master
+        body["signer"] = signer_addr
+        body["nonce"] = str(cls._next_nonce())
+        msg = urllib.parse.urlencode(body)
 
-        # EIP-712 typed data
-        domain = {
-            "name": "AsterSignTransaction",
-            "chainId": 1666,
+        typed_data = {
+            "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"},
+                ],
+                "Message": [
+                    {"name": "msg", "type": "string"},
+                ],
+            },
+            "primaryType": "Message",
+            "domain": {
+                "name": "AsterSignTransaction",
+                "version": "1",
+                "chainId": 1666,
+                "verifyingContract": "0x0000000000000000000000000000000000000000",
+            },
+            "message": {"msg": msg},
         }
-        types = {
-            "AsterSignTransaction": [
-                {"name": "params", "type": "string"},
-            ],
-        }
-        message = {"params": qs}
-
-        acct = Account.from_key(creds["api_secret"])
-        full_message = {
-            "types": types,
-            "primaryType": "AsterSignTransaction",
-            "domain": domain,
-            "message": message,
-        }
-        signed = acct.sign_typed_data(full_message=full_message)
+        em = encode_structured_data(typed_data)
+        signed = Account.sign_message(em, private_key=priv if priv.startswith("0x") else "0x" + priv)
         sig_hex = signed.signature.hex()
-        if not sig_hex.startswith("0x"):
-            sig_hex = "0x" + sig_hex
 
-        headers = {
-            "X-AB-APIKEY": creds["api_key"],
-        }
-
-        # Persistent client per host — eliminates TLS handshake on each call.
         from backend.services.trade_adapters._http import http_client
         client = http_client(BASE, timeout=10.0)
-        rel = f"{path}?{qs}&signature={sig_hex}"
+        url = f"{path}?{msg}&signature={sig_hex}"
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "avalant-fetcher/1.0",
+        }
         if method == "GET":
-            r = await client.get(rel, headers=headers)
+            r = await client.get(url, headers=headers)
         elif method == "POST":
-            r = await client.post(rel, headers=headers)
+            r = await client.post(url, headers=headers)
         elif method == "DELETE":
-            r = await client.delete(rel, headers=headers)
+            r = await client.delete(url, headers=headers)
         else:
             raise ValueError(method)
         if r.status_code >= 400:
-            msg = r.text[:200]
+            msg_err = r.text[:240]
             try:
                 j = r.json()
-                msg = str(j.get("msg", msg))
+                msg_err = str(j.get("msg") or j.get("message") or msg_err)
             except Exception:
                 pass
-            raise RuntimeError(f"Aster {r.status_code}: {msg}")
+            raise RuntimeError(f"Aster {r.status_code}: {msg_err}")
         return r.json()
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._signed(creds, "GET", "/fapi/v2/balance")
+        # V3 endpoint — V2 was deprecated when V1 key creation closed
+        # (2026-03-25). Response shape is the same array as V1/V2.
+        data = await cls._signed(creds, "GET", "/fapi/v3/balance")
         for x in (data if isinstance(data, list) else []):
             if x.get("asset") == "USDT":
                 return {"usdt": float(x.get("availableBalance", 0) or 0)}
