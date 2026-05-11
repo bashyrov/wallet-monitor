@@ -45,6 +45,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -114,6 +115,10 @@ type marketMeta struct {
 	CollateralPrecision  int
 	// Default taker fee from the market (decimal as string, e.g. "0.00045")
 	TakerFee             float64
+	// Tick rules from tradingConfig — required to avoid "Invalid price/qty precision"
+	MinPriceChange       float64 // e.g. 0.01 → price must be a multiple
+	MinOrderSize         float64 // e.g. 0.1  → min base qty
+	MinOrderSizeChange   float64 // e.g. 0.01 → qty step
 }
 
 type Adapter struct {
@@ -234,7 +239,10 @@ func (a *Adapter) loadMarkets(ctx context.Context) error {
 				SettlementExternalID string `json:"settlement_external_id"`
 			} `json:"collateral_asset"`
 			TradingConfig struct {
-				TakerFee string `json:"takerFee"`
+				TakerFee           string `json:"takerFee"`
+				MinPriceChange     string `json:"minPriceChange"`
+				MinOrderSize       string `json:"minOrderSize"`
+				MinOrderSizeChange string `json:"minOrderSizeChange"`
 			} `json:"tradingConfig"`
 		} `json:"data"`
 	}
@@ -257,6 +265,9 @@ func (a *Adapter) loadMarkets(ctx context.Context) error {
 		if fee == 0 {
 			fee = 0.00045 // sensible default
 		}
+		minPx, _ := strconv.ParseFloat(m.TradingConfig.MinPriceChange, 64)
+		minSz, _ := strconv.ParseFloat(m.TradingConfig.MinOrderSize, 64)
+		minSzChg, _ := strconv.ParseFloat(m.TradingConfig.MinOrderSizeChange, 64)
 		out[m.Name] = marketMeta{
 			Name:                 m.Name,
 			SyntheticAssetID:     parseFelt(m.SyntheticAsset.SettlementExternalID),
@@ -264,6 +275,9 @@ func (a *Adapter) loadMarkets(ctx context.Context) error {
 			CollateralAssetID:    parseFelt(m.CollateralAsset.SettlementExternalID),
 			CollateralPrecision:  m.CollateralAssetPrecision,
 			TakerFee:             fee,
+			MinPriceChange:       minPx,
+			MinOrderSize:         minSz,
+			MinOrderSizeChange:   minSzChg,
 		}
 	}
 	a.mu.Lock()
@@ -414,7 +428,6 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	default:
 		orderType = "MARKET"
 		tif = "IOC"
-		// Resolve a market reference price for slippage padding.
 		ref, err := a.lastPrice(ctx, market)
 		if err != nil || ref <= 0 {
 			return nil, errInternal("get market price for slippage padding", err)
@@ -423,7 +436,31 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		if req.Side == trade.SideSell {
 			pad = 1 - marketSlippage
 		}
-		priceStr = strconv.FormatFloat(ref*pad, 'f', -1, 64)
+		// Round to the market's minPriceChange — otherwise Extended
+		// rejects with "Invalid price precision". Default 0.01 if unset.
+		px := ref * pad
+		tick := mm.MinPriceChange
+		if tick <= 0 {
+			tick = 0.01
+		}
+		px = math.Round(px/tick) * tick
+		// Compute decimal places from the tick (e.g. 0.01 → 2 decimals).
+		decs := 0
+		t := tick
+		for t < 1 && decs < 12 {
+			t *= 10
+			decs++
+		}
+		priceStr = strconv.FormatFloat(px, 'f', decs, 64)
+	}
+	// Round qty DOWN to minOrderSizeChange so the signed quote_amount
+	// matches an acceptable order size.
+	if mm.MinOrderSizeChange > 0 {
+		req.Quantity = math.Floor(req.Quantity/mm.MinOrderSizeChange) * mm.MinOrderSizeChange
+	}
+	if mm.MinOrderSize > 0 && req.Quantity < mm.MinOrderSize {
+		return nil, errUser("Extended: qty %g below min %g for %s",
+			req.Quantity, mm.MinOrderSize, market)
 	}
 
 	// Compute signed StarkAmounts. Sign convention: base is negative when
