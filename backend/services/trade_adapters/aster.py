@@ -108,12 +108,13 @@ class AsterAdapter:
             },
             "message": {"msg": msg},
         }
-        # encode_typed_data() in newer eth_account takes the same nested dict
-        # but may expect it as `full_message=typed_data` kwarg in some versions.
+        # encode_typed_data() in newer eth_account interprets positional
+        # arg as the domain only. We MUST pass via full_message=… kwarg.
+        # Fall back to positional for older versions where that's correct.
         try:
-            em = _encode(typed_data)
-        except TypeError:
             em = _encode(full_message=typed_data)
+        except TypeError:
+            em = _encode(typed_data)
         signed = Account.sign_message(em, private_key=priv if priv.startswith("0x") else "0x" + priv)
         sig_hex = signed.signature.hex()
 
