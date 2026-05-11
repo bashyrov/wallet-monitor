@@ -148,12 +148,20 @@ class AsterAdapter:
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
         # V3 endpoint — V2 was deprecated when V1 key creation closed
-        # (2026-03-25). Response shape is the same array as V1/V2.
+        # (2026-03-25). Response is a list of {asset, balance,
+        # availableBalance, ...} per asset. Aster supports USDT *and* USDC
+        # as stable collateral; sum both so we don't show $0 to a user
+        # who funded the account with USDC.
         data = await cls._signed(creds, "GET", "/fapi/v3/balance")
+        total = 0.0
         for x in (data if isinstance(data, list) else []):
-            if x.get("asset") == "USDT":
-                return {"usdt": float(x.get("availableBalance", 0) or 0)}
-        return {"usdt": 0.0}
+            asset = (x.get("asset") or "").upper()
+            if asset in ("USDT", "USDC", "USD1", "BUSD"):
+                try:
+                    total += float(x.get("availableBalance") or 0)
+                except (TypeError, ValueError):
+                    pass
+        return {"usdt": total}
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:
