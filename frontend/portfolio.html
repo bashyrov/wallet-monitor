@@ -2240,13 +2240,12 @@ async function evSendVerify() {
                   <div class="field-err" id="err-perpdex_private_key"></div>
                 </div>
                 <div class="form-group" id="perpdex-l2-key-group" style="display:none">
-                  <label class="form-label">L2 Stark Private Key</label>
+                  <label class="form-label" id="perpdex-l2-label">Stark L2 Private Key</label>
                   <input class="form-input" name="perpdex_l2_private_key" type="password"
-                         placeholder="0x… Stark L2 key (subkey recommended)" spellcheck="false" autocomplete="off">
-                  <div class="form-hint" style="margin-top:4px;font-size:12px;color:var(--text3)">
-                    <strong style="color:var(--green)">Recommended:</strong> create a <em>Subkey</em> in Paradex → Account Security → Key Management. Subkeys can trade but
-                    <strong>cannot withdraw or transfer funds</strong> — much safer than your main private key.
-                    Either works here.
+                         id="perpdex-l2-input"
+                         placeholder="0x… 64 hex chars" spellcheck="false" autocomplete="off">
+                  <div class="form-hint" style="margin-top:4px;font-size:12px;color:var(--text3)" id="perpdex-l2-hint">
+                    Stark L2 private key for order signing. Stored encrypted.
                   </div>
                   <div class="field-err" id="err-perpdex_l2_private_key"></div>
                 </div>
@@ -4091,19 +4090,34 @@ function _onPerpdexSelect(opt) {
   showIf('perpdex-account-index-group',   !!opt.needs_account_index);
   showIf('perpdex-api-key-index-group',   !!opt.needs_api_key_index);
   showIf('perpdex-vault-group',            !!opt.needs_vault);
-  // Extended uses the address slot for the Stark L2 public key and the
-  // l2_private_key slot for the Stark private key. Tweak labels so the
-  // user sees domain-appropriate copy instead of "EVM Address" /
-  // "L2 Stark Private Key (Paradex subkey hint)".
+  // ── Venue-specific label/placeholder/hint copy ────────────────────
+  // Default labels in the HTML stay neutral ("Stark L2 Private Key",
+  // "EVM Address" etc). When a venue is picked we override them so the
+  // user doesn't see Paradex copy while filling an Extended key.
+  const addrLbl = document.querySelector('#perpdex-address-group .form-label');
+  const addrInp = document.querySelector('#perpdex-address-group input');
+  const l2Lbl   = document.getElementById('perpdex-l2-label');
+  const l2Inp   = document.getElementById('perpdex-l2-input');
+  const l2Hint  = document.getElementById('perpdex-l2-hint');
   if (opt.value === 'extended') {
-    const addr = document.querySelector('#perpdex-address-group .form-label');
-    if (addr) addr.textContent = 'Stark L2 Public Key';
-    const addrInp = document.querySelector('#perpdex-address-group input');
+    if (addrLbl) addrLbl.textContent = 'Stark L2 Public Key';
     if (addrInp) addrInp.placeholder = '0x… Stark L2 public key';
-    const l2 = document.querySelector('#perpdex-l2-key-group .form-label');
-    if (l2) l2.textContent = 'Stark L2 Private Key';
-    const l2Hint = document.querySelector('#perpdex-l2-key-group .form-hint');
-    if (l2Hint) l2Hint.innerHTML = 'From your Extended API Management page. Stored encrypted (Fernet/AES-128).';
+    if (l2Lbl)   l2Lbl.textContent   = 'Stark L2 Private Key (Extended)';
+    if (l2Inp)   l2Inp.placeholder   = '0x… Stark L2 private key from Extended API Management';
+    if (l2Hint)  l2Hint.innerHTML    = 'From your Extended → API Management page. Stored encrypted (Fernet/AES-128).';
+  } else if (opt.value === 'paradex') {
+    if (addrLbl) addrLbl.textContent = 'Starknet L2 Address';
+    if (addrInp) addrInp.placeholder = '0x… (Starknet L2 address)';
+    if (l2Lbl)   l2Lbl.textContent   = 'L2 Stark Private Key (Paradex)';
+    if (l2Inp)   l2Inp.placeholder   = '0x… Stark L2 key (subkey recommended)';
+    if (l2Hint)  l2Hint.innerHTML    = '<strong style="color:var(--green)">Recommended:</strong> create a <em>Subkey</em> in Paradex → Account Security → Key Management. Subkeys can trade but <strong>cannot withdraw or transfer funds</strong>.';
+  } else {
+    // Neutral defaults for hyperliquid / aster / ethereal / lighter / others.
+    if (addrLbl) addrLbl.textContent = 'EVM Address';
+    if (addrInp) addrInp.placeholder = '0x...';
+    if (l2Lbl)   l2Lbl.textContent   = 'Stark L2 Private Key';
+    if (l2Inp)   l2Inp.placeholder   = '0x… 64 hex chars';
+    if (l2Hint)  l2Hint.textContent  = 'Stark L2 private key for order signing. Stored encrypted.';
   }
 }
 function _resetProtoChips() {

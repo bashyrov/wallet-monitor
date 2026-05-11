@@ -1005,11 +1005,10 @@
                 <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4" id="k-private-key-hint">EVM private key for order signing. Stored encrypted. Read-only flows work without it.</div>
               </label>
               <label class="k-field" style="grid-column:1/-1;display:none" id="k-l2-key-wrap">
-                <span class="k-lbl">L2 Stark Private Key <span style="color:var(--text3);font-weight:400">(Paradex)</span></span>
-                <input class="k-input mono" id="k-l2-key" type="password" placeholder="0x… Stark L2 key (subkey recommended)" autocomplete="off">
-                <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4">
-                  <b style="color:var(--green)">Recommended:</b> create a <em>Subkey</em> in Paradex → Account Security → Key Management. Subkeys can trade but
-                  <b>cannot withdraw or transfer</b> — much safer than your main private key.
+                <span class="k-lbl" id="k-l2-key-label">Stark L2 Private Key</span>
+                <input class="k-input mono" id="k-l2-key" type="password" placeholder="0x… 64 hex chars" autocomplete="off">
+                <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4" id="k-l2-key-hint">
+                  Stark L2 private key for order signing. Stored encrypted.
                 </div>
               </label>
               <label class="k-field" style="grid-column:1/-1;display:none" id="k-subkey-pub-wrap">
@@ -2375,6 +2374,14 @@ function _kUpdateFieldVisibility(){
     // specifically for Extended (it only uses api_key, no api_secret).
     if (apiKeyLbl) apiKeyLbl.style.display = needsKey ? 'flex' : 'none';
     if (apiSecLbl) apiSecLbl.style.display = (needsKey && !isExtended) ? 'flex' : 'none';
+    // Venue-specific copy for the api_key input — Extended's "API Key"
+    // is from their dashboard, NOT a public key (that's the address row).
+    const apiKeyInp = document.getElementById('k-apikey');
+    if (apiKeyInp) {
+      apiKeyInp.placeholder = isExtended
+        ? 'API key from Extended → API Management'
+        : (v === 'aster' ? 'Aster API key' : 'Public key from exchange');
+    }
     if (passphrase) passphrase.style.display = 'none';
     if (addrWrap) addrWrap.style.display = (v && (!needsKey || isExtended)) ? 'flex' : 'none';
     if (purposeRow) purposeRow.style.display = 'flex';
@@ -2398,11 +2405,25 @@ function _kUpdateFieldVisibility(){
     showIf('k-account-idx-wrap', v === 'lighter');
     showIf('k-api-key-idx-wrap', v === 'lighter');
     showIf('k-vault-wrap',        v === 'extended');
-    // L2-key label/hint copy — different audience for Extended vs Paradex.
-    const l2Lbl = document.querySelector('#k-l2-key-wrap .k-lbl');
-    if (l2Lbl) l2Lbl.innerHTML = isExtended
-      ? 'Stark L2 Private Key <span style="color:var(--text3);font-weight:400">(Extended — from API Management)</span>'
-      : 'L2 Stark Private Key <span style="color:var(--text3);font-weight:400">(Paradex)</span>';
+    // L2-key label/placeholder/hint copy per venue — each venue's L2 key
+    // has different provenance and best-practice. Defaults stay neutral
+    // in the HTML; we override here when a venue is picked.
+    const l2Lbl  = document.getElementById('k-l2-key-label');
+    const l2Inp  = document.getElementById('k-l2-key');
+    const l2Hint = document.getElementById('k-l2-key-hint');
+    if (v === 'paradex') {
+      if (l2Lbl)  l2Lbl.innerHTML  = 'L2 Stark Private Key <span style="color:var(--text3);font-weight:400">(Paradex)</span>';
+      if (l2Inp)  l2Inp.placeholder = '0x… Stark L2 key (subkey recommended)';
+      if (l2Hint) l2Hint.innerHTML = '<b style="color:var(--green)">Recommended:</b> create a <em>Subkey</em> in Paradex → Account Security → Key Management. Subkeys can trade but <b>cannot withdraw or transfer</b> — much safer than your main private key.';
+    } else if (isExtended) {
+      if (l2Lbl)  l2Lbl.innerHTML  = 'Stark L2 Private Key <span style="color:var(--text3);font-weight:400">(Extended)</span>';
+      if (l2Inp)  l2Inp.placeholder = '0x… Stark L2 private key from Extended API Management';
+      if (l2Hint) l2Hint.innerHTML = 'From your Extended → API Management page. Stored encrypted (Fernet/AES-128).';
+    } else {
+      if (l2Lbl)  l2Lbl.textContent = 'Stark L2 Private Key';
+      if (l2Inp)  l2Inp.placeholder = '0x… 64 hex chars';
+      if (l2Hint) l2Hint.textContent = 'Stark L2 private key for order signing. Stored encrypted.';
+    }
     // Hint copy for the generic private-key field — Lighter is hex ZK, others EVM
     const pkHint = document.getElementById('k-private-key-hint');
     if (pkHint) pkHint.textContent = (v === 'lighter')
@@ -2417,6 +2438,10 @@ function _kUpdateFieldVisibility(){
     document.getElementById('k-apikey').required = true;
     document.getElementById('k-apisec').required = true;
     document.getElementById('k-address').required = false;
+    // Reset neutral placeholders (we may be coming from a perpdex venue
+    // that left "API key from Extended" in there).
+    const apiKeyInp = document.getElementById('k-apikey');
+    if (apiKeyInp) apiKeyInp.placeholder = 'Public key from exchange';
   }
 }
 
