@@ -184,9 +184,13 @@ func (a *Adapter) loadContracts(ctx context.Context) (map[string]symbolInfo, err
 		}
 		minQ, _ := c.TradeMinQuantity.Float64()
 		prec, _ := c.QuantityPrecision.Int64()
-		step, _ := c.Size.Float64()
+		// NB: BingX's `size` field is the contract-size unit (always "1"
+		// for USDT-M swaps — qty is in base coin), NOT a step-size. Using
+		// it as step rejected every sub-$100 order on SOL/etc with
+		// "quantity below BingX minimum". Quantity precision is the only
+		// step rule that actually applies here.
 		out[c.Symbol] = symbolInfo{
-			StepSize:          step,
+			StepSize:          0,
 			MinQty:            minQ,
 			QuantityPrecision: int(prec),
 		}

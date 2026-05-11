@@ -203,14 +203,14 @@ class AsterAdapter:
 
         async def _mode():
             try:
-                await cls._signed(creds, "POST", "/fapi/v1/marginType",
+                await cls._signed(creds, "POST", "/fapi/v3/marginType",
                                   {"symbol": sym, "marginType": "ISOLATED" if margin_mode == "isolated" else "CROSSED"})
             except RuntimeError as e:
                 if "No need" not in str(e) and "-4046" not in str(e):
                     raise
 
         async def _lev():
-            await cls._signed(creds, "POST", "/fapi/v1/leverage",
+            await cls._signed(creds, "POST", "/fapi/v3/leverage",
                               {"symbol": sym, "leverage": str(leverage)})
 
         await asyncio.gather(_mode(), _lev())
@@ -219,7 +219,7 @@ class AsterAdapter:
     async def place_order(cls, creds: dict, symbol: str, side: str, quantity: float,
                           leverage: int = 1, margin_mode: str = "isolated") -> dict:
         sym = cls._symbol(symbol)
-        r = await cls._signed(creds, "POST", "/fapi/v1/order", {
+        r = await cls._signed(creds, "POST", "/fapi/v3/order", {
             "symbol": sym,
             "side": "BUY" if side == "buy" else "SELL",
             "type": "MARKET",
@@ -242,7 +242,7 @@ class AsterAdapter:
         reduce_side = "SELL" if p["side"] == "buy" else "BUY"
         qty_s = f"{p['quantity']:.6f}".rstrip("0").rstrip(".")
         try:
-            r = await cls._signed(creds, "POST", "/fapi/v1/order", {
+            r = await cls._signed(creds, "POST", "/fapi/v3/order", {
                 "symbol": sym,
                 "side": reduce_side,
                 "type": "MARKET",
