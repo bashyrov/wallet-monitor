@@ -80,11 +80,13 @@ class AsterAdapter:
         acct = Account.from_key(priv if priv.startswith("0x") else "0x" + priv)
         signer_addr = acct.address
 
+        # Field order matters — must match the prior working implementation
+        # (commit 8e46c44, perp_dexes/aster_provider.py). asterChain is in
+        # the demo but breaks agent lookup on prod: nonce → user → signer.
         body = dict(params or {})
-        body["asterChain"] = "Mainnet"
+        body["nonce"] = str(cls._next_nonce())
         body["user"] = master
         body["signer"] = signer_addr
-        body["nonce"] = str(cls._next_nonce())
         msg = urllib.parse.urlencode(body)
 
         typed_data = {
