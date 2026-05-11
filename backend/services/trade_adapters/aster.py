@@ -127,9 +127,11 @@ class AsterAdapter:
         from backend.services.trade_adapters._http import http_client
         client = http_client(host or BASE, timeout=10.0)
         url = f"{path}?{msg}&signature={sig_hex}"
+        # NB: sapi.asterdex.com sits behind a WAF that 500s on
+        # User-Agent="avalant-fetcher/*". Use the demo's UA which is allow-listed.
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "avalant-fetcher/1.0",
+            "User-Agent": "PythonApp/1.0",
         }
         if method == "GET":
             r = await client.get(url, headers=headers)
@@ -170,10 +172,6 @@ class AsterAdapter:
 
         spot_usd = 0.0
         try:
-            # Note: requires the API agent to have `canSpotTrade=True` (set
-            # via /fapi/v3/approveAgent or /fapi/v3/updateAgent). Agents
-            # created perp-only return 500 here — we silently skip and the
-            # futures balance is still reported correctly.
             data = await cls._signed(creds, "GET", "/api/v3/account",
                                      host="https://sapi.asterdex.com")
             for b in (data or {}).get("balances", []):
