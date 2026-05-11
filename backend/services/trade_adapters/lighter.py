@@ -399,7 +399,7 @@ class LighterAdapter:
                     "entry_price": entry,
                     "unrealized_pnl_usd": upnl,
                     "funding_pnl_usd": funding,
-                    "leverage": int(p.allocated_margin or 0) or None,
+                    "leverage": int(float(p.allocated_margin or 0)) or None,
                     "margin_mode": "cross",
                 })
             return out
