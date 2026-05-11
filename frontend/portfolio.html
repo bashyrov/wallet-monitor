@@ -2216,11 +2216,13 @@ async function evSendVerify() {
                   <div class="form-group">
                     <label class="form-label" id="perpdex-key-label">Wallet Address</label>
                     <input class="form-input" name="perpdex_api_key" placeholder="0x..." spellcheck="false" autocomplete="off">
+                    <div class="form-hint" id="perpdex-key-hint" style="margin-top:4px;font-size:11.5px;color:var(--text3);display:none"></div>
                     <div class="field-err" id="err-perpdex_api_key"></div>
                   </div>
                   <div class="form-group">
                     <label class="form-label" id="perpdex-secret-label">API Private Key</label>
-                    <input class="form-input" name="perpdex_api_secret" placeholder="0x..." spellcheck="false" autocomplete="off">
+                    <input class="form-input" name="perpdex_api_secret" type="password" placeholder="0x..." spellcheck="false" autocomplete="off">
+                    <div class="form-hint" id="perpdex-secret-hint" style="margin-top:4px;font-size:11.5px;color:var(--text3);display:none"></div>
                     <div class="field-err" id="err-perpdex_api_secret"></div>
                   </div>
                 </div>
@@ -4099,6 +4101,35 @@ function _onPerpdexSelect(opt) {
   const l2Lbl   = document.getElementById('perpdex-l2-label');
   const l2Inp   = document.getElementById('perpdex-l2-input');
   const l2Hint  = document.getElementById('perpdex-l2-hint');
+  // Per-venue copy for the api_key/secret pair (when needs_api_key=true).
+  const keyLbl  = document.getElementById('perpdex-key-label');
+  const keyInp  = document.querySelector('#perpdex-apikey-group input[name="perpdex_api_key"]');
+  const keyHint = document.getElementById('perpdex-key-hint');
+  const secLbl  = document.getElementById('perpdex-secret-label');
+  const secInp  = document.querySelector('#perpdex-apikey-group input[name="perpdex_api_secret"]');
+  const secHint = document.getElementById('perpdex-secret-hint');
+  if (opt.value === 'aster') {
+    if (keyLbl) keyLbl.textContent = 'Master Wallet Address';
+    if (keyInp) keyInp.placeholder = '0x… (your login wallet, NOT the API wallet)';
+    if (keyHint) { keyHint.style.display = 'block'; keyHint.innerHTML = 'Address of your <strong>main Aster account</strong> (the one you log in with). Visible in your Aster dashboard. <em>Not</em> the API-wallet address.'; }
+    if (secLbl) secLbl.textContent = 'API Wallet Private Key';
+    if (secInp) secInp.placeholder = '0x… private key of the API wallet';
+    if (secHint) { secHint.style.display = 'block'; secHint.innerHTML = 'EVM private key of the API wallet you created at <code>asterdex.com/en/api-wallet</code>. Permission must include Perp Trade — withdrawals stay disabled.'; }
+  } else if (opt.value === 'extended') {
+    if (keyLbl) keyLbl.textContent = 'API Key';
+    if (keyInp) keyInp.placeholder = 'API key from Extended → API Management';
+    if (keyHint) keyHint.style.display = 'none';
+    if (secLbl) secLbl.textContent = 'API Secret';
+    if (secInp) secInp.placeholder = 'unused for Extended';
+    if (secHint) secHint.style.display = 'none';
+  } else {
+    if (keyLbl) keyLbl.textContent = 'Wallet Address';
+    if (keyInp) keyInp.placeholder = '0x...';
+    if (keyHint) keyHint.style.display = 'none';
+    if (secLbl) secLbl.textContent = 'API Private Key';
+    if (secInp) secInp.placeholder = '0x...';
+    if (secHint) secHint.style.display = 'none';
+  }
   if (opt.value === 'extended') {
     if (addrLbl) addrLbl.textContent = 'Stark L2 Public Key';
     if (addrInp) addrInp.placeholder = '0x… Stark L2 public key';

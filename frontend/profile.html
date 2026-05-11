@@ -2374,13 +2374,28 @@ function _kUpdateFieldVisibility(){
     // specifically for Extended (it only uses api_key, no api_secret).
     if (apiKeyLbl) apiKeyLbl.style.display = needsKey ? 'flex' : 'none';
     if (apiSecLbl) apiSecLbl.style.display = (needsKey && !isExtended) ? 'flex' : 'none';
-    // Venue-specific copy for the api_key input — Extended's "API Key"
-    // is from their dashboard, NOT a public key (that's the address row).
+    // Venue-specific copy for the api_key / api_secret pair. Aster's
+    // "api_key" is the MASTER login wallet address; "api_secret" is the
+    // API-wallet PRIVATE key — these are commonly mixed up.
     const apiKeyInp = document.getElementById('k-apikey');
-    if (apiKeyInp) {
-      apiKeyInp.placeholder = isExtended
-        ? 'API key from Extended → API Management'
-        : (v === 'aster' ? 'Aster API key' : 'Public key from exchange');
+    const apiSecInp = document.getElementById('k-apisec');
+    const apiKeyLblTxt = document.querySelector('#k-apikey')?.closest('.k-field')?.querySelector('.k-lbl');
+    const apiSecLblTxt = document.querySelector('#k-apisec')?.closest('.k-field')?.querySelector('.k-lbl');
+    if (v === 'aster') {
+      if (apiKeyLblTxt) apiKeyLblTxt.innerHTML = 'Master Wallet Address <span style="color:var(--text3);font-weight:400">(your Aster login wallet)</span>';
+      if (apiKeyInp) apiKeyInp.placeholder = '0x… login wallet (NOT the API wallet address)';
+      if (apiSecLblTxt) apiSecLblTxt.innerHTML = 'API Wallet Private Key <span style="color:var(--text3);font-weight:400">(EVM hex)</span>';
+      if (apiSecInp) apiSecInp.placeholder = '0x… private key of the API wallet';
+    } else if (isExtended) {
+      if (apiKeyLblTxt) apiKeyLblTxt.innerHTML = 'API Key <span style="color:var(--text3);font-weight:400">(Extended → API Management)</span>';
+      if (apiKeyInp) apiKeyInp.placeholder = 'API key from Extended → API Management';
+      if (apiSecLblTxt) apiSecLblTxt.textContent = 'API Secret';
+      if (apiSecInp) apiSecInp.placeholder = 'Secret';
+    } else {
+      if (apiKeyLblTxt) apiKeyLblTxt.textContent = 'API Key';
+      if (apiKeyInp) apiKeyInp.placeholder = 'Public key from exchange';
+      if (apiSecLblTxt) apiSecLblTxt.textContent = 'API Secret';
+      if (apiSecInp) apiSecInp.placeholder = 'Secret';
     }
     if (passphrase) passphrase.style.display = 'none';
     if (addrWrap) addrWrap.style.display = (v && (!needsKey || isExtended)) ? 'flex' : 'none';
