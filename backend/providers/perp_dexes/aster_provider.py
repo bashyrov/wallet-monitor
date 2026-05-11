@@ -81,9 +81,13 @@ class AsterProvider(BaseWalletProvider):
     soon = False
 
     def __init__(self):
+        # NB: sapi.asterdex.com WAF 500s on GET requests carrying a
+        # Content-Type header (GET has no body, so it's nonsensical). The
+        # demo UA "PythonApp/1.0" is allow-listed. Don't set a default
+        # Content-Type here — apply per-method in _signed_get instead.
         self._client = httpx.AsyncClient(
             timeout=20.0,
-            headers={"User-Agent": "PythonApp/1.0", "Content-Type": "application/x-www-form-urlencoded"},
+            headers={"User-Agent": "PythonApp/1.0"},
         )
 
     async def aclose(self):
@@ -97,7 +101,7 @@ class AsterProvider(BaseWalletProvider):
             return Decimal("0")
 
     async def _signed_get(self, path: str, user: str, signer: str, private_key: str,
-                          extra: dict | None = None) -> httpx.Response:
+                          extra: dict | None = None, host: str | None = None) -> httpx.Response:
         params: dict = {}
         if extra:
             params.update(extra)
@@ -106,7 +110,7 @@ class AsterProvider(BaseWalletProvider):
         params["signer"] = signer
         msg = urllib.parse.urlencode(params)
         sig = _eip712_sign(private_key, msg)
-        url = f"{BASE}{path}?{msg}&signature={sig}"
+        url = f"{host or BASE}{path}?{msg}&signature={sig}"
         return await self._client.get(url)
 
     async def fetch_balance(self, wallet) -> BalanceResult:
@@ -119,16 +123,37 @@ class AsterProvider(BaseWalletProvider):
         signer = Account.from_key(private_key).address
 
         # ── Баланс ───────────────────────────────────────────────────────────
-        resp = await self._signed_get("/fapi/v3/balance", user, signer, private_key)
-        resp.raise_for_status()
-        data = resp.json()
-
-        totals: dict[str, Decimal] = {}
-        for item in (data if isinstance(data, list) else []):
-            symbol = (item.get("asset") or "").upper()
-            bal = self._d(item.get("balance") or item.get("crossWalletBalance") or "0")
-            if symbol and bal > 0:
-                totals[symbol] = totals.get(symbol, Decimal("0")) + bal
+        # Futures (fapi.asterdex.com)
+        spot_totals: dict[str, Decimal] = {}
+        fut_totals: dict[str, Decimal] = {}
+        try:
+            resp = await self._signed_get("/fapi/v3/balance", user, signer, private_key)
+            resp.raise_for_status()
+            data = resp.json()
+            for item in (data if isinstance(data, list) else []):
+                symbol = (item.get("asset") or "").upper()
+                bal = self._d(item.get("balance") or item.get("crossWalletBalance") or "0")
+                if symbol and bal > 0:
+                    fut_totals[symbol] = fut_totals.get(symbol, Decimal("0")) + bal
+        except Exception:
+            pass
+        # Spot (sapi.asterdex.com) — same V3 EIP-712 signing, different host
+        try:
+            resp = await self._signed_get("/api/v3/account", user, signer, private_key,
+                                          host="https://sapi.asterdex.com")
+            if resp.is_success:
+                for b in (resp.json() or {}).get("balances", []):
+                    symbol = (b.get("asset") or "").upper()
+                    free = self._d(b.get("free") or 0)
+                    locked = self._d(b.get("locked") or 0)
+                    total_b = free + locked
+                    if symbol and total_b > 0:
+                        spot_totals[symbol] = spot_totals.get(symbol, Decimal("0")) + total_b
+        except Exception:
+            pass
+        totals = {**fut_totals}
+        for k, v in spot_totals.items():
+            totals[k] = totals.get(k, Decimal("0")) + v
 
         # ── Открытые позиции ─────────────────────────────────────────────────
         positions = []
