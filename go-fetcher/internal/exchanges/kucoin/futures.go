@@ -136,7 +136,11 @@ func (a *Futures) HeartbeatInterval() time.Duration { return 15 * time.Second }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return false }
 func (a *Futures) SubscribeDelay() time.Duration    { return 350 * time.Millisecond }
-func (a *Futures) MaxSymbols() int                  { return 100 }
+// 100 → 30: KuCoin futures resets the connection with "write reset by
+// peer" around the 99th subscribe frame. Tighter per-connection symbol
+// cap means more connections but each one stays under the server's
+// per-conn subscribe limit. SubscribeDelay 350ms still applies.
+func (a *Futures) MaxSymbols() int                  { return 30 }
 func (a *Futures) DecompressGzip() bool             { return false }
 
 func (a *Futures) OnReconnect() {
