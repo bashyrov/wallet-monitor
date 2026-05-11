@@ -523,15 +523,17 @@ class KuCoinAdapter:
     @classmethod
     async def fetch_recent_fills(cls, creds: dict, since_ts, *,
                                  market: str = "futures") -> list[dict]:
-        """KuCoin futures fills + funding since `since_ts`.
+        """KuCoin futures fills + funding since `since_ts`, or spot fills
+        if market='spot' (different host: api.kucoin.com).
 
-        /api/v1/fills?startAt=<ms>&pageSize=200 (paginated). Funding via
-        /api/v1/funding-history?startAt=<ms>. Spot is on a separate base
-        URL (api.kucoin.com); we don't currently have spot trade adapter,
-        so spot=[] for now."""
+        Futures: /api/v1/fills?startAt=<ms>&pageSize=200 + /api/v1/funding-history
+        Spot:    /api/v1/fills?startAt=<ms>&pageSize=500 on api.kucoin.com
+                 (same signing scheme, different host)."""
         from datetime import datetime as _dt
+        if market == "spot":
+            return await cls._fetch_spot_fills(creds, since_ts)
         if market != "futures":
-            return []  # spot endpoint lives on a different base URL
+            return []
         start_ms = int(since_ts.timestamp() * 1000)
         out: list[dict] = []
         page = 1
@@ -611,4 +613,59 @@ class KuCoinAdapter:
                     continue
         except Exception:
             pass
+        return out
+
+    @classmethod
+    async def _fetch_spot_fills(cls, creds: dict, since_ts) -> list[dict]:
+        """KuCoin Spot fills via api.kucoin.com /api/v1/fills (different host
+        from futures' api-futures.kucoin.com). Same signing scheme — pass
+        the spot host override into _signed."""
+        from datetime import datetime as _dt
+        start_ms = int(since_ts.timestamp() * 1000)
+        end_ms = int(_dt.utcnow().timestamp() * 1000)
+        out: list[dict] = []
+        page = 1
+        for _ in range(10):
+            try:
+                data = await cls._signed(creds, "GET", "/api/v1/fills",
+                                         {"startAt": start_ms, "endAt": end_ms,
+                                          "pageSize": 500, "currentPage": page},
+                                         host="https://api.kucoin.com") or {}
+            except Exception as exc:
+                logger.info("kucoin spot fills page=%s failed: %s", page, exc)
+                break
+            rows = data.get("items") if isinstance(data, dict) else None
+            if not isinstance(rows, list) or not rows:
+                break
+            for r in rows:
+                try:
+                    sym_raw = str(r.get("symbol") or "")  # e.g. SOL-USDT
+                    if not sym_raw.endswith("-USDT"):
+                        continue  # only USDT pairs (matches our short-leg convention)
+                    sym = sym_raw.replace("-USDT", "")
+                    side = "buy" if str(r.get("side") or "").lower() == "buy" else "sell"
+                    qty = float(r.get("size") or 0)
+                    if qty <= 0:
+                        continue
+                    ts_v = float(r.get("createdAt") or 0)
+                    if ts_v <= 0:
+                        continue
+                    out.append({
+                        "symbol": sym.upper(),
+                        "side": side,
+                        "qty": qty,
+                        "price": float(r.get("price") or 0),
+                        "fee_usd": float(r.get("fee") or 0),
+                        "realized_pnl_usd": None,
+                        "ts": _dt.utcfromtimestamp(ts_v / 1000.0),
+                        "ext_trade_id": str(r.get("tradeId") or r.get("id") or ""),
+                        "ext_order_id": str(r.get("orderId") or "") or None,
+                        "kind": "trade",
+                    })
+                except Exception:
+                    continue
+            total_pages = int(data.get("totalPage") or 1)
+            page += 1
+            if page > total_pages:
+                break
         return out
