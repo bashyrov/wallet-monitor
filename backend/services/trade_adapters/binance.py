@@ -111,7 +111,8 @@ class BinanceAdapter:
         return hmac.new(secret.encode(), q.encode(), hashlib.sha256).hexdigest()
 
     @classmethod
-    async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None) -> Any:
+    async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None,
+                      spot_host: str | None = None) -> Any:
         params = dict(params or {})
         params["timestamp"] = int(time.time() * 1000)
         # 60_000 (max) absorbs Docker host clock drift / VM pauses without
@@ -125,7 +126,10 @@ class BinanceAdapter:
         # Persistent client per host — was paying ~100-200ms TLS handshake
         # per call with the previous `async with httpx.AsyncClient()`.
         from backend.services.trade_adapters._http import http_client
-        client = http_client(BASE, timeout=10.0)
+        # spot_host lets fetch_balance hit api.binance.com for spot reads
+        # while everything else still targets fapi.binance.com.
+        host = spot_host or BASE
+        client = http_client(host, timeout=10.0)
         if method == "GET":
             r = await client.get(path, params=params, headers=headers)
         elif method == "POST":
@@ -153,23 +157,42 @@ class BinanceAdapter:
     # ── Balance ──
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        """Return available Futures USDT. If a user holds funds in cross-wallet
-        but has positions open, `availableBalance` can be low or zero — fall
-        back to `crossWalletBalance` (total margin wallet) so the UI shows the
-        real money, not just the free portion."""
-        data = await cls._signed(creds, "GET", "/fapi/v2/balance")
-        for x in data:
-            if x.get("asset") == "USDT":
-                avail = float(x.get("availableBalance", 0) or 0)
-                if avail > 0:
-                    return {"usdt": avail, "total": float(x.get("balance", 0) or 0)}
-                # availableBalance=0 → try crossWalletBalance / balance. Means
-                # user has funds but they're currently used as margin.
-                total = float(x.get("balance", 0) or 0)
-                cross = float(x.get("crossWalletBalance", 0) or 0)
-                return {"usdt": max(avail, cross, total), "total": total,
-                        "available": avail}
-        return {"usdt": 0.0}
+        """Return BOTH futures + spot USDT/USDC balances. Portfolio uses
+        `usdt` (total). Arb engine and Screener can use `spot_usd` /
+        `futures_usd` for routing decisions (spot-short vs long-short)."""
+        # Futures (USD-M) — existing path
+        fut_usd = 0.0
+        try:
+            data = await cls._signed(creds, "GET", "/fapi/v2/balance")
+            for x in data:
+                if x.get("asset") == "USDT":
+                    avail = float(x.get("availableBalance", 0) or 0)
+                    total = float(x.get("balance", 0) or 0)
+                    cross = float(x.get("crossWalletBalance", 0) or 0)
+                    fut_usd = max(avail, cross, total)
+                    break
+        except Exception:
+            pass
+        # Spot — sums USDT + USDC free+locked. Endpoint:
+        # GET /api/v3/account on the spot host api.binance.com.
+        spot_usd = 0.0
+        try:
+            spot_host = BASE.replace("fapi", "api")  # fapi.binance.com → api.binance.com
+            data = await cls._signed(creds, "GET", "/api/v3/account", spot_host=spot_host)
+            for b in (data or {}).get("balances", []):
+                asset = (b.get("asset") or "").upper()
+                if asset in ("USDT", "USDC", "BUSD", "FDUSD"):
+                    try:
+                        spot_usd += float(b.get("free") or 0) + float(b.get("locked") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+        return {
+            "usdt": fut_usd + spot_usd,
+            "spot_usd": spot_usd,
+            "futures_usd": fut_usd,
+        }
 
     # ── Position mode ──
     @classmethod
