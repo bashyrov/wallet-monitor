@@ -128,12 +128,17 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 	if freeBase <= 0 {
 		return nil, errUser("No %s balance to close on Bitget spot", base)
 	}
+	// Bitget rejects 'checkBDScale error' if size exceeds the symbol's
+	// baseScale. 4 decimals is the conservative default Bitget accepts
+	// for SOL/BTC/ETH USDT pairs; rarely a pair has more.
+	sym := base + "USDT"
+	sizeStr := qtyString(freeBase, 4)
 	out, err := a.signedRequest(ctx, creds, http.MethodPost,
 		"/api/v2/spot/trade/place-order", nil, map[string]any{
-			"symbol":    base + "USDT",
+			"symbol":    sym,
 			"side":      "sell",
 			"orderType": "market",
-			"size":      qtyString(freeBase, 8),
+			"size":      sizeStr,
 			"force":     "ioc",
 		})
 	if err != nil {
