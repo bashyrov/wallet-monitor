@@ -194,7 +194,11 @@ class LighterAdapter:
             sc = None
             try:
                 sc, _ = await _build_signer(creds)
-                err = await sc.check_client()
+                # SDK version drift: check_client() may return a str directly
+                # in newer releases, or a coroutine in older ones. Handle both.
+                import inspect
+                raw = sc.check_client()
+                err = await raw if inspect.iscoroutine(raw) else raw
                 if err:
                     out["error"] = _friendly(err, "Lighter signer check failed")
                 else:
@@ -204,7 +208,11 @@ class LighterAdapter:
             finally:
                 if sc is not None:
                     try:
-                        await sc.close()
+                        # close() may also be sync depending on SDK version
+                        import inspect as _ins
+                        rc = sc.close()
+                        if _ins.iscoroutine(rc):
+                            await rc
                     except Exception:
                         pass
         return out
