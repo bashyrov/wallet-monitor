@@ -1126,6 +1126,33 @@
     .field-err.show { display: block; }
     .form-error { font-size: 12px; color: var(--red); margin-top: 8px; display: none; }
     .form-error.show { display: block; }
+
+    /* ── Venue help "How to connect?" panel ─────────────────────────── */
+    .venue-help-row { margin: 14px 0 4px; }
+    .venue-help-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 999px; cursor: pointer;
+      background: rgba(26,255,171,0.06); border: 1px solid rgba(26,255,171,0.28);
+      color: var(--green); font-family: inherit; font-size: 12px; font-weight: 600;
+      letter-spacing: -0.01em;
+      transition: background .12s, border-color .12s;
+    }
+    .venue-help-toggle:hover { background: rgba(26,255,171,0.12); border-color: rgba(26,255,171,0.45); }
+    .venue-help-toggle .venue-help-chev { transition: transform .15s; margin-left: 2px; }
+    .venue-help-row.is-open .venue-help-toggle .venue-help-chev { transform: rotate(180deg); }
+    .venue-help-panel {
+      display: none; margin-top: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px;
+      font-size: 12px; line-height: 1.55; color: var(--text2);
+    }
+    .venue-help-row.is-open .venue-help-panel { display: block; }
+    .venue-help-line { display: flex; gap: 8px; margin-bottom: 6px; }
+    .venue-help-icon { flex-shrink: 0; line-height: 1.3; }
+    .venue-help-fields { margin: 8px 0 0; padding-left: 20px; font-size: 11.5px; }
+    .venue-help-fields li { margin-bottom: 4px; }
+    .venue-help-fields strong { color: var(--text); }
+    .venue-help-empty { font-size: 12px; color: var(--text3); }
     .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
 
     /* credentials section */
@@ -2298,6 +2325,17 @@ async function evSendVerify() {
 
         </div>
 
+        <!-- Venue help "How to connect?" — single slot, updated from
+             _onExchangeSelect / _onPerpdexSelect / chain pick. -->
+        <div class="venue-help-row" id="w-venue-help-row" style="display:none">
+          <button type="button" class="venue-help-toggle" onclick="wToggleVenueHelp()">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 11v0.01M8 4.5a1.5 1.5 0 011.5 1.5c0 1-1.5 1.5-1.5 2.5"/></svg>
+            <span>How to connect?</span>
+            <svg class="venue-help-chev" width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
+          </button>
+          <div class="venue-help-panel" id="w-venue-help-panel"></div>
+        </div>
+
         <div class="form-error" id="wallet-err"></div>
       </form>
 
@@ -2406,6 +2444,7 @@ async function evSendVerify() {
 <script src="/navbar.js"></script>
 <script src="/banner.js" defer></script>
 <script src="/auth.js"></script>
+<script src="/venue-help.js" defer></script>
 <script src="/toast.js"></script>
 <script src="/popup.js" defer></script>
 <script src="/expiry-banner.js" defer></script>
@@ -2582,7 +2621,7 @@ async function loadAddressBook() {
 
 function populateSelects() {
   renderProtoGrid('proto-exchange', 'exchange_type', S.options.exchange_types, _onExchangeSelect);
-  renderProtoGrid('proto-chain',    'chain_type',    S.options.chain_types,    null);
+  renderProtoGrid('proto-chain',    'chain_type',    S.options.chain_types,    (opt) => _wRenderVenueHelp(opt && opt.value));
   renderProtoGrid('proto-perpdex',  'perpdex_type',  S.options.perpdex_types,  _onPerpdexSelect);
 }
 function renderProtoGrid(containerId, fieldName, options, onSelect) {
@@ -4019,6 +4058,7 @@ function openAddWalletModal() {
     return;
   }
   S.walletType = null;
+  _wRenderVenueHelp(null);
   document.getElementById('modal-wallet').classList.remove('hidden');
   document.getElementById('wallet-form').reset();
   document.getElementById('wallet-err').classList.remove('show');
@@ -4061,8 +4101,29 @@ function selectWalletType(type) {
   _clearFieldErrors();
 }
 
+function wToggleVenueHelp(){
+  const row = document.getElementById('w-venue-help-row');
+  if (row) row.classList.toggle('is-open');
+}
+
+function _wRenderVenueHelp(venue){
+  const row = document.getElementById('w-venue-help-row');
+  const panel = document.getElementById('w-venue-help-panel');
+  if (!row || !panel) return;
+  if (!venue) {
+    row.style.display = 'none';
+    row.classList.remove('is-open');
+    return;
+  }
+  row.style.display = '';
+  if (typeof window.renderVenueHelp === 'function') {
+    panel.innerHTML = window.renderVenueHelp(venue);
+  }
+}
+
 function _onExchangeSelect(opt) {
   document.getElementById('passphrase-group').style.display = opt.needs_passphrase ? '' : 'none';
+  _wRenderVenueHelp(opt && opt.value);
 }
 function _onPerpdexSelect(opt) {
   const needsKey = opt.needs_api_key;
@@ -4153,6 +4214,7 @@ function _onPerpdexSelect(opt) {
     if (l2Inp)   l2Inp.placeholder   = '0x… 64 hex chars';
     if (l2Hint)  l2Hint.textContent  = 'Stark L2 private key for order signing. Stored encrypted.';
   }
+  _wRenderVenueHelp(opt && opt.value);
 }
 function _resetProtoChips() {
   [
