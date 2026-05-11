@@ -1025,6 +1025,11 @@
                 <span class="k-lbl">API Key Index <span style="color:var(--text3);font-weight:400">(Lighter — defaults to 255)</span></span>
                 <input class="k-input mono" id="k-api-key-idx" placeholder="default 255" autocomplete="off">
               </label>
+              <label class="k-field" style="grid-column:1/-1;display:none" id="k-vault-wrap">
+                <span class="k-lbl">Vault <span style="color:var(--text3);font-weight:400">(Extended — collateral_position_id)</span></span>
+                <input class="k-input mono" id="k-vault" inputmode="numeric" placeholder="numeric e.g. 12345" autocomplete="off">
+                <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4">Integer ID of your Extended sub-account. Visible in API Management → Vault on extended.exchange.</div>
+              </label>
               <div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px">
                 <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:600">Where to use this key · pick one or both</div>
                 <label class="k-field k-check">
@@ -2281,7 +2286,9 @@ let _K_TYPE = 'exchange';  // 'exchange' | 'perpdex' | 'chain'
 const _K_EX_ORDER_DEFAULT   = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','whitebit','kraken','htx','backpack'];
 const _K_PERP_ORDER_DEFAULT = ['hyperliquid','aster','lighter','ethereal','paradex','extended'];
 const _K_CHAIN_ORDER_DEFAULT = ['ethereum','bsc','polygon','arbitrum','optimism','base','avalanche','tron','solana','zksync','linea','scroll','mantle','blast','fantom'];
-const _K_PERP_NEEDS_KEY = new Set(['aster']);  // Aster uses api_key+secret; others use address
+// Perpdex venues that take an Exchange-UI api_key. Aster uses api_key+secret.
+// Extended takes ONLY api_key (no api_secret) AND also needs address + L2 keys.
+const _K_PERP_NEEDS_KEY = new Set(['aster', 'extended']);
 
 function _kVenueOrder(){
   if (_K_TYPE === 'chain')   return (_K_OPTS?.chain_types    || []).map(o => o.value);
@@ -2362,23 +2369,40 @@ function _kUpdateFieldVisibility(){
     }
   } else if (_K_TYPE === 'perpdex') {
     const needsKey = v && _K_PERP_NEEDS_KEY.has(v);
+    const isExtended = v === 'extended';
+    // Extended needs BOTH api_key AND address — the rest of the perpdex
+    // venues are either-or. apikey shows for needsKey; apisec hidden
+    // specifically for Extended (it only uses api_key, no api_secret).
     if (apiKeyLbl) apiKeyLbl.style.display = needsKey ? 'flex' : 'none';
-    if (apiSecLbl) apiSecLbl.style.display = needsKey ? 'flex' : 'none';
+    if (apiSecLbl) apiSecLbl.style.display = (needsKey && !isExtended) ? 'flex' : 'none';
     if (passphrase) passphrase.style.display = 'none';
-    if (addrWrap) addrWrap.style.display = (v && !needsKey) ? 'flex' : 'none';
-    if (purposeRow) purposeRow.style.display = 'flex';   // perpdex can also be Screener
+    if (addrWrap) addrWrap.style.display = (v && (!needsKey || isExtended)) ? 'flex' : 'none';
+    if (purposeRow) purposeRow.style.display = 'flex';
     document.getElementById('k-apikey').required = !!needsKey;
-    document.getElementById('k-apisec').required = !!needsKey;
-    document.getElementById('k-address').required = !!v && !needsKey;
+    document.getElementById('k-apisec').required = !!needsKey && !isExtended;
+    document.getElementById('k-address').required = !!v && (!needsKey || isExtended);
     const ph = document.getElementById('k-address');
-    if (ph) ph.placeholder = v === 'paradex' ? '0x… (Starknet L2 address)' : '0x… (40-char EVM)';
+    if (ph) {
+      if (isExtended) ph.placeholder = '0x… Stark L2 public key';
+      else if (v === 'paradex') ph.placeholder = '0x… (Starknet L2 address)';
+      else ph.placeholder = '0x… (40-char EVM)';
+    }
+    // Address label copy for Extended.
+    const addrLbl = document.querySelector('#k-address-wrap .k-lbl');
+    if (addrLbl) addrLbl.textContent = isExtended ? 'Stark L2 Public Key' : 'Wallet address';
     // Per-venue trade-cred fields
     const showIf = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'flex' : 'none'; };
     showIf('k-private-key-wrap', v === 'hyperliquid' || v === 'ethereal' || v === 'lighter');
-    showIf('k-l2-key-wrap',      v === 'paradex');
+    showIf('k-l2-key-wrap',      v === 'paradex' || v === 'extended');
     showIf('k-subkey-pub-wrap',  v === 'paradex');
     showIf('k-account-idx-wrap', v === 'lighter');
     showIf('k-api-key-idx-wrap', v === 'lighter');
+    showIf('k-vault-wrap',        v === 'extended');
+    // L2-key label/hint copy — different audience for Extended vs Paradex.
+    const l2Lbl = document.querySelector('#k-l2-key-wrap .k-lbl');
+    if (l2Lbl) l2Lbl.innerHTML = isExtended
+      ? 'Stark L2 Private Key <span style="color:var(--text3);font-weight:400">(Extended — from API Management)</span>'
+      : 'L2 Stark Private Key <span style="color:var(--text3);font-weight:400">(Paradex)</span>';
     // Hint copy for the generic private-key field — Lighter is hex ZK, others EVM
     const pkHint = document.getElementById('k-private-key-hint');
     if (pkHint) pkHint.textContent = (v === 'lighter')
@@ -2627,8 +2651,14 @@ async function kSubmit(){
       setErr(`${_kLabel(ex)} expects ${want}`); return;
     }
   } else if (isPerp) {
+    const isExtended = ex === 'extended';
     if (perpNeedsKey) {
-      if (!apiKey || !apiSecret) { setErr(`${_kLabel(ex)} requires API key + secret`); return; }
+      if (isExtended) {
+        if (!apiKey) { setErr('Extended requires its API key'); return; }
+        if (!address) { setErr('Extended requires the Stark L2 public key (address)'); return; }
+      } else if (!apiKey || !apiSecret) {
+        setErr(`${_kLabel(ex)} requires API key + secret`); return;
+      }
     } else {
       if (!address) { setErr('Wallet address required'); return; }
       const isStarknet = (ex === 'paradex');
@@ -2649,6 +2679,11 @@ async function kSubmit(){
       }
       if (ex === 'lighter' && (!accIdxVal || !pkVal)) {
         setErr('Lighter Screener key requires Account Index + Private Key (and API Key Index — defaults to 255)'); return;
+      }
+      if (isExtended) {
+        if (!l2Val) { setErr('Extended Screener key requires the Stark L2 Private Key'); return; }
+        const vault = document.getElementById('k-vault')?.value?.trim() || '';
+        if (!vault) { setErr('Extended Screener key requires the Vault (collateral_position_id)'); return; }
       }
     }
   } else {
@@ -2673,12 +2708,21 @@ async function kSubmit(){
     if (isChain) {
       body.address = address;
     } else if (isPerp) {
-      if (perpNeedsKey) { body.api_key = apiKey; body.api_secret = apiSecret; }
-      else              { body.address = address; }
+      const isExtended = ex === 'extended';
+      if (isExtended) {
+        body.api_key = apiKey;     // Extended UI api_key (HTTP auth)
+        body.address = address;    // Stark L2 public key
+        const vault = document.getElementById('k-vault')?.value?.trim() || '';
+        if (vault) body.api_passphrase = vault;   // collateral_position_id
+      } else if (perpNeedsKey) {
+        body.api_key = apiKey; body.api_secret = apiSecret;
+      } else {
+        body.address = address;
+      }
       // Trade-cred fields — backend stores whatever's present.
       if (pkVal)      body.private_key       = pkVal;     // HL / Ethereal / Lighter
-      if (l2Val)      body.l2_private_key    = l2Val;     // Paradex
-      if (subPubVal)  body.api_passphrase    = subPubVal; // Paradex subkey pubkey
+      if (l2Val)      body.l2_private_key    = l2Val;     // Paradex / Extended
+      if (subPubVal)  body.api_passphrase    = subPubVal; // Paradex subkey pubkey (won't fire for Extended — vault already filled it)
       if (accIdxVal)  body.account_index     = accIdxVal; // Lighter
       if (apiKeyIdxVal) body.api_key_index   = apiKeyIdxVal; // Lighter
     } else {
