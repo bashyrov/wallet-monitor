@@ -142,8 +142,22 @@ class LighterAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
+        # PUBLIC read — no signing required. We only need account_index
+        # (or an L1 address from which to derive it). Don't go through
+        # _creds_to_signer_args which insists on api_secret too.
         from lighter import AccountApi, ApiClient, Configuration
-        account_index, _, _ = _creds_to_signer_args(creds)
+        raw_acc = (creds.get("api_key") or "").strip()
+        addr = (creds.get("address") or creds.get("wallet") or "").strip()
+        if not raw_acc and addr:
+            resolved = _resolve_account_index_from_address(addr)
+            if resolved:
+                raw_acc = resolved
+        if not raw_acc:
+            return {"usdt": 0.0}   # no account on Lighter; nothing to read
+        try:
+            account_index = int(raw_acc)
+        except ValueError:
+            return {"usdt": 0.0}
         cfg = Configuration(host=BASE_URL)
         ac = ApiClient(cfg)
         try:
@@ -152,6 +166,17 @@ class LighterAdapter:
             acc = (res.accounts or [None])[0]
             if acc is None:
                 return {"usdt": 0.0}
+            # Lighter reports the user's total USD collateral at the account
+            # level (`collateral` field). The per-asset `assets[].balance`
+            # is a position-token quantity, NOT USD — summing it gave $0.01
+            # while the real collateral was $40.
+            collateral = getattr(acc, "collateral", None)
+            if collateral is not None:
+                try:
+                    return {"usdt": float(collateral)}
+                except (TypeError, ValueError):
+                    pass
+            # Fallback to per-asset USDC/USDT sum if `collateral` is missing.
             usdc = 0.0
             for a in (acc.assets or []):
                 sym = (a.symbol or "").upper()
