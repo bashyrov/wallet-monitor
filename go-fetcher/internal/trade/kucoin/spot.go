@@ -129,6 +129,79 @@ func toKucoinSpot(sym string) string {
 	return strings.ToUpper(strings.TrimSpace(sym)) + "-USDT"
 }
 
+// KuCoin spot symbol info cache. baseIncrement varies per pair (SOL-USDT
+// is 0.001; BTC-USDT is 0.00000001). Round qty DOWN to the increment
+// before submit, otherwise KuCoin rejects with "Order size increment
+// invalid".
+type spotSymbolInfo struct {
+	BaseIncrement string `json:"baseIncrement"`
+	BaseMinSize   string `json:"baseMinSize"`
+}
+
+var (
+	spotSymbolsMu       sync.RWMutex
+	spotSymbolsCache    map[string]spotSymbolInfo
+	spotSymbolsLoadedAt time.Time
+)
+
+func (a *Adapter) loadSpotSymbols(ctx context.Context) (map[string]spotSymbolInfo, error) {
+	spotSymbolsMu.RLock()
+	if spotSymbolsCache != nil && time.Since(spotSymbolsLoadedAt) < 30*time.Minute {
+		c := spotSymbolsCache
+		spotSymbolsMu.RUnlock()
+		return c, nil
+	}
+	spotSymbolsMu.RUnlock()
+	// Public endpoint — no auth.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		spotBaseURL+"/api/v2/symbols", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := getSpotClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var env struct {
+		Data []struct {
+			Symbol        string `json:"symbol"`
+			BaseIncrement string `json:"baseIncrement"`
+			BaseMinSize   string `json:"baseMinSize"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, err
+	}
+	out := make(map[string]spotSymbolInfo, len(env.Data))
+	for _, s := range env.Data {
+		out[s.Symbol] = spotSymbolInfo{BaseIncrement: s.BaseIncrement, BaseMinSize: s.BaseMinSize}
+	}
+	spotSymbolsMu.Lock()
+	spotSymbolsCache = out
+	spotSymbolsLoadedAt = time.Now()
+	spotSymbolsMu.Unlock()
+	return out, nil
+}
+
+// roundSpotQty rounds qty DOWN to the nearest multiple of baseIncrement.
+// Returns the qty formatted as a string with the same precision as
+// baseIncrement so KuCoin's parser doesn't reject it for extra zeros.
+func roundSpotQty(qty float64, baseIncrement string) string {
+	inc, err := strconv.ParseFloat(baseIncrement, 64)
+	if err != nil || inc <= 0 {
+		return strconv.FormatFloat(qty, 'f', -1, 64)
+	}
+	rounded := float64(int64(qty/inc)) * inc
+	// Match the increment's decimal precision.
+	prec := 0
+	if i := strings.IndexByte(baseIncrement, '.'); i >= 0 {
+		prec = len(baseIncrement) - i - 1
+	}
+	return strconv.FormatFloat(rounded, 'f', prec, 64)
+}
+
 func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req trade.OpenRequest) (*trade.Result, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -138,13 +211,20 @@ func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req tra
 		side = "sell"
 	}
 	clientOID := newSpotClientOID()
+	sym := toKucoinSpot(req.Symbol)
+	sizeStr := strconv.FormatFloat(req.Quantity, 'f', -1, 64)
+	if syms, err := a.loadSpotSymbols(ctx); err == nil {
+		if info, ok := syms[sym]; ok && info.BaseIncrement != "" {
+			sizeStr = roundSpotQty(req.Quantity, info.BaseIncrement)
+		}
+	}
 	body, err := a.signedSpotRequest(ctx, creds, http.MethodPost, "/api/v1/orders", nil,
 		map[string]any{
 			"clientOid": clientOID,
-			"symbol":    toKucoinSpot(req.Symbol),
+			"symbol":    sym,
 			"side":      side,
 			"type":      "market",
-			"size":      strconv.FormatFloat(req.Quantity, 'f', -1, 64),
+			"size":      sizeStr,
 		})
 	if err != nil {
 		return nil, err
@@ -192,13 +272,20 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 		return nil, errUser("No %s balance to close on KuCoin spot", base)
 	}
 	clientOID := newSpotClientOID()
+	sym := base + "-USDT"
+	sizeStr := strconv.FormatFloat(freeBase, 'f', -1, 64)
+	if syms, err := a.loadSpotSymbols(ctx); err == nil {
+		if info, ok := syms[sym]; ok && info.BaseIncrement != "" {
+			sizeStr = roundSpotQty(freeBase, info.BaseIncrement)
+		}
+	}
 	out, err := a.signedSpotRequest(ctx, creds, http.MethodPost, "/api/v1/orders", nil,
 		map[string]any{
 			"clientOid": clientOID,
-			"symbol":    base + "-USDT",
+			"symbol":    sym,
 			"side":      "sell",
 			"type":      "market",
-			"size":      strconv.FormatFloat(freeBase, 'f', -1, 64),
+			"size":      sizeStr,
 		})
 	if err != nil {
 		return nil, err
