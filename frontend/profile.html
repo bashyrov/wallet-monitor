@@ -2694,8 +2694,11 @@ async function kSubmit(){
     const isExtended = ex === 'extended';
     if (perpNeedsKey) {
       if (isExtended) {
+        // Extended balance reads use X-Api-Key only — api_key alone is
+        // enough for Portfolio. Address (Stark pubkey) + L2 priv + vault
+        // are only needed when the user wants to TRADE.
         if (!apiKey) { setErr('Extended requires its API key'); return; }
-        if (!address) { setErr('Extended requires the Stark L2 public key (address)'); return; }
+        if (forScreener && !address) { setErr('Extended Screener needs the Stark L2 public key (address)'); return; }
       } else if (!apiKey || !apiSecret) {
         setErr(`${_kLabel(ex)} requires API key + secret`); return;
       }
@@ -2717,8 +2720,12 @@ async function kSubmit(){
       if ((ex === 'hyperliquid' || ex === 'ethereal') && !pkVal) {
         setErr(`${_kLabel(ex)} Screener key requires the EVM private key for signing`); return;
       }
-      if (ex === 'lighter' && (!accIdxVal || !pkVal)) {
-        setErr('Lighter Screener key requires Account Index + Private Key (and API Key Index — defaults to 255)'); return;
+      if (ex === 'lighter' && !pkVal) {
+        // Account Index is auto-derived from the L1 address by the
+        // backend now (lighter.py / wallet_service.py call Lighter's
+        // public /api/v1/account?by=l1_address endpoint). Only the
+        // ZK private key + API Key Index are user-required for Screener.
+        setErr('Lighter Screener key requires Private Key (and API Key Index — defaults to 255)'); return;
       }
       if (isExtended) {
         if (!l2Val) { setErr('Extended Screener key requires the Stark L2 Private Key'); return; }

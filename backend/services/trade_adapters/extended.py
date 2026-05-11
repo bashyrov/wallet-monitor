@@ -34,18 +34,23 @@ class ExtendedAdapter:
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:
         out = {"can_read": False, "can_trade": False, "balance_usdt": None, "error": None}
-        # Quick credential shape check before hitting the network.
+        # Quick credential shape check before hitting the network. Balance
+        # reads on Extended use only the X-Api-Key header — no Stark
+        # signature, no vault, no public key. Those four fields are only
+        # required when the user wants to TRADE.
         missing = []
         if not (creds.get("api_key") or "").strip():
             missing.append("api_key")
-        if not (creds.get("private_key") or creds.get("api_secret") or "").strip():
-            missing.append("private_key (Stark L2)")
-        if not (creds.get("address") or creds.get("wallet") or "").strip():
-            missing.append("address (Stark L2 public key)")
-        if not (creds.get("api_passphrase") or creds.get("passphrase") or "").strip():
-            missing.append("vault (collateral_position_id)")
+        if need_trade:
+            if not (creds.get("private_key") or creds.get("api_secret") or "").strip():
+                missing.append("private_key (Stark L2)")
+            if not (creds.get("address") or creds.get("wallet") or "").strip():
+                missing.append("address (Stark L2 public key)")
+            if not (creds.get("api_passphrase") or creds.get("passphrase") or "").strip():
+                missing.append("vault (collateral_position_id)")
         if missing:
-            out["error"] = "Extended requires: " + ", ".join(missing)
+            label = "Extended (trading)" if need_trade else "Extended"
+            out["error"] = f"{label} requires: " + ", ".join(missing)
             return out
 
         from backend.services import trade_proxy
