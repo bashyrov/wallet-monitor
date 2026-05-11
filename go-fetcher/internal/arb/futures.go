@@ -64,9 +64,12 @@ func feeOf(ex string) float64 {
 }
 
 const (
-	// Hysteresis windows — same as Python.
-	oppMinLifetime = 3 * time.Second
-	oppPurgeAfter  = 30 * time.Second
+	// Hysteresis windows — quicker reveal + longer tolerance to brief gaps
+	// so an opp doesn't flicker if a venue's funding tick drops momentarily.
+	// Previously 3s/30s — bumped purgeAfter so a 5-15s WS reconnect on one
+	// venue doesn't blow away firstSeen and trigger another 3s wait.
+	oppMinLifetime = 1 * time.Second
+	oppPurgeAfter  = 90 * time.Second
 
 	// Spread sanity-cap: rows with |price_spread|>100% are usually
 	// ticker-collisions. Python's threshold; we keep it.

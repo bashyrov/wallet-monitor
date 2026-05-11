@@ -424,6 +424,14 @@ class GateAdapter:
             # that leverage. There's no separate marginMode field.
             lev_val = float(p.get("leverage") or 0)
             margin_mode = "isolated" if lev_val > 0 else "cross"
+            # Gate hedge ("dual_long"/"dual_short") returns BOTH legs with
+            # the same contract; one-way returns a single row with net
+            # signed size. Disambiguate position_id by mode so the FE
+            # doesn't dedupe two legs as one.
+            mode = (p.get("mode") or "").lower()
+            pos_id = cname
+            if mode in ("dual_long", "dual_short"):
+                pos_id = f"{cname}#{mode}"
             positions.append({
                 "exchange": "gate",
                 "symbol": sym,
@@ -435,7 +443,7 @@ class GateAdapter:
                 "unrealized_pnl_usd": float(p.get("unrealised_pnl") or 0),
                 "leverage": int(lev_val) if lev_val > 0 else int(float(p.get("cross_leverage_limit") or 1)),
                 "margin_mode": margin_mode,
-                "position_id": cname,
+                "position_id": pos_id,
             })
         if not positions:
             return []
