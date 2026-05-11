@@ -215,13 +215,28 @@ class KuCoinAdapter:
         results = await _asyncio.gather(*(_one(c) for c in ("USDT", "USDC", "XBT")))
         by_cur = {r["currency"]: r for r in results}
         usdt_pot = by_cur.get("USDT", {"available": 0.0, "equity": 0.0})
-        usdt = usdt_pot["available"] if usdt_pot["available"] > 0 else usdt_pot["equity"]
+        usdt_fut = usdt_pot["available"] if usdt_pot["available"] > 0 else usdt_pot["equity"]
+        fut_total = sum(r["equity"] for r in results)
+        # Spot — KuCoin Main Account via /api/v1/accounts?type=trade
+        spot_usd = 0.0
+        try:
+            data = await cls._signed(creds, "GET", "/api/v1/accounts", {"type": "trade"})
+            for r in (data or []):
+                if (r.get("currency") or "").upper() in ("USDT", "USDC"):
+                    try:
+                        spot_usd += float(r.get("balance") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
         return {
-            "usdt":            usdt,
+            "usdt":            usdt_fut + spot_usd,
+            "spot_usd":        spot_usd,
+            "futures_usd":     fut_total,
             "available":       usdt_pot["available"],
             "equity":          usdt_pot["equity"],
             "available_total": sum(r["available"] for r in results),
-            "equity_total":    sum(r["equity"]    for r in results),
+            "equity_total":    fut_total,
             "by_currency":     by_cur,
         }
 

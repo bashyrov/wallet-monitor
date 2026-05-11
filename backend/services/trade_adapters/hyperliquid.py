@@ -135,14 +135,44 @@ class HyperliquidAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
+        """HL has separate perp + spot states under the same master address:
+          clearinghouseState     → perp account (marginSummary.accountValue)
+          spotClearinghouseState → spot tokens (balances[].total per coin)
+        Spot 'USDC' is the cash token; PURR + others are spot positions. We
+        sum the stable spot balance and report the breakdown."""
         address = creds.get("address") or creds.get("api_key") or ""
+        if not address:
+            return {"usdt": 0.0, "spot_usd": 0.0, "futures_usd": 0.0}
         from backend.services.trade_adapters._http import http_client
         client = http_client(BASE, timeout=10.0)
-        r = await client.post("/info", json={"type": "clearinghouseState", "user": address},
-                              headers={"Content-Type": "application/json"})
-        j = r.json()
-        margin = j.get("marginSummary", {})
-        return {"usdt": float(margin.get("accountValue", 0) or 0)}
+
+        async def _perp() -> float:
+            try:
+                r = await client.post("/info", json={"type": "clearinghouseState", "user": address},
+                                      headers={"Content-Type": "application/json"})
+                j = r.json()
+                return float((j.get("marginSummary") or {}).get("accountValue", 0) or 0)
+            except Exception:
+                return 0.0
+
+        async def _spot() -> float:
+            try:
+                r = await client.post("/info", json={"type": "spotClearinghouseState", "user": address},
+                                      headers={"Content-Type": "application/json"})
+                j = r.json()
+                t = 0.0
+                for b in (j.get("balances") or []):
+                    if (b.get("coin") or "").upper() in ("USDC", "USDT"):
+                        try:
+                            t += float(b.get("total") or 0)
+                        except (TypeError, ValueError):
+                            pass
+                return t
+            except Exception:
+                return 0.0
+
+        fut_usd, spot_usd = await asyncio.gather(_perp(), _spot())
+        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

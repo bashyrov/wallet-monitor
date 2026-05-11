@@ -52,7 +52,8 @@ class AsterAdapter:
             return now * 1_000_000 + cls._NONCE_COUNTER
 
     @classmethod
-    async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None) -> Any:
+    async def _signed(cls, creds: dict, method: str, path: str, params: dict | None = None,
+                      host: str | None = None) -> Any:
         """Aster V3 Pro API EIP-712 signing (chainId 1666, primaryType=Message).
         Replaces the legacy V1 X-AB-APIKEY + HMAC scheme — V1 key creation
         was closed on 2026-03-25 so new credentials only work via V3.
@@ -60,6 +61,9 @@ class AsterAdapter:
         creds layout (we store both):
           api_key    → master/login wallet address ("user" param)
           api_secret → API wallet private key ("signer" derived from it)
+
+        host override (e.g. sapi.asterdex.com) lets the same signer hit
+        Aster Spot V3 endpoints (same EIP-712 scheme, different base URL).
         """
         try:
             from eth_account import Account
@@ -121,7 +125,7 @@ class AsterAdapter:
         sig_hex = signed.signature.hex()
 
         from backend.services.trade_adapters._http import http_client
-        client = http_client(BASE, timeout=10.0)
+        client = http_client(host or BASE, timeout=10.0)
         url = f"{path}?{msg}&signature={sig_hex}"
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -147,21 +151,37 @@ class AsterAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        # V3 endpoint — V2 was deprecated when V1 key creation closed
-        # (2026-03-25). Response is a list of {asset, balance,
-        # availableBalance, ...} per asset. Aster supports USDT *and* USDC
-        # as stable collateral; sum both so we don't show $0 to a user
-        # who funded the account with USDC.
-        data = await cls._signed(creds, "GET", "/fapi/v3/balance")
-        total = 0.0
-        for x in (data if isinstance(data, list) else []):
-            asset = (x.get("asset") or "").upper()
-            if asset in ("USDT", "USDC", "USD1", "BUSD"):
-                try:
-                    total += float(x.get("availableBalance") or 0)
-                except (TypeError, ValueError):
-                    pass
-        return {"usdt": total}
+        """Aster has separate futures + spot accounts (same API wallet keys,
+        different base URL). Futures lives on fapi.asterdex.com, spot on
+        sapi.asterdex.com. Both use the same V3 EIP-712 signing."""
+        STABLES = ("USDT", "USDC", "USD1", "BUSD")
+
+        fut_usd = 0.0
+        try:
+            data = await cls._signed(creds, "GET", "/fapi/v3/balance")
+            for x in (data if isinstance(data, list) else []):
+                if (x.get("asset") or "").upper() in STABLES:
+                    try:
+                        fut_usd += float(x.get("availableBalance") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+
+        spot_usd = 0.0
+        try:
+            data = await cls._signed(creds, "GET", "/api/v3/account",
+                                     host="https://sapi.asterdex.com")
+            for b in (data or {}).get("balances", []):
+                if (b.get("asset") or "").upper() in STABLES:
+                    try:
+                        spot_usd += float(b.get("free") or 0) + float(b.get("locked") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+
+        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

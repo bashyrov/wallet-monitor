@@ -138,12 +138,50 @@ class MexcAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._signed(creds, "GET", "/api/v1/private/account/assets")
-        if isinstance(data, list):
-            for a in data:
-                if a.get("currency") == "USDT":
-                    return {"usdt": float(a.get("availableBalance") or 0)}
-        return {"usdt": 0.0}
+        # Futures — contract.mexc.com API (existing path).
+        fut_usd = 0.0
+        try:
+            data = await cls._signed(creds, "GET", "/api/v1/private/account/assets")
+            if isinstance(data, list):
+                for a in data:
+                    if a.get("currency") == "USDT":
+                        fut_usd = float(a.get("availableBalance") or 0)
+                        break
+        except Exception:
+            pass
+        # Spot — api.mexc.com / Binance-compatible /api/v3/account
+        spot_usd = 0.0
+        try:
+            spot_usd = await cls._fetch_spot_usd(creds)
+        except Exception:
+            pass
+        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
+
+    @classmethod
+    async def _fetch_spot_usd(cls, creds: dict) -> float:
+        """MEXC Spot API uses Binance-style HMAC auth on a different host."""
+        import hashlib, hmac, time, urllib.parse
+        api_key = (creds.get("api_key") or "").strip()
+        secret = (creds.get("api_secret") or "").strip()
+        if not api_key or not secret:
+            return 0.0
+        params = {"timestamp": int(time.time() * 1000), "recvWindow": 5000}
+        qs = urllib.parse.urlencode(params)
+        sig = hmac.new(secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+        url = f"https://api.mexc.com/api/v3/account?{qs}&signature={sig}"
+        from backend.services.trade_adapters._http import http_client
+        client = http_client("https://api.mexc.com", timeout=10.0)
+        r = await client.get(url, headers={"X-MEXC-APIKEY": api_key})
+        if r.status_code >= 400:
+            return 0.0
+        total = 0.0
+        for b in r.json().get("balances", []):
+            if (b.get("asset") or "").upper() in ("USDT", "USDC"):
+                try:
+                    total += float(b.get("free") or 0) + float(b.get("locked") or 0)
+                except (TypeError, ValueError):
+                    pass
+        return total
 
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:

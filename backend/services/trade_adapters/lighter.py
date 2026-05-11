@@ -153,11 +153,11 @@ class LighterAdapter:
             if resolved:
                 raw_acc = resolved
         if not raw_acc:
-            return {"usdt": 0.0}   # no account on Lighter; nothing to read
+            return {"usdt": 0.0, "spot_usd": 0.0, "futures_usd": 0.0}
         try:
             account_index = int(raw_acc)
         except ValueError:
-            return {"usdt": 0.0}
+            return {"usdt": 0.0, "spot_usd": 0.0, "futures_usd": 0.0}
         cfg = Configuration(host=BASE_URL)
         ac = ApiClient(cfg)
         try:
@@ -165,27 +165,36 @@ class LighterAdapter:
             res = await api.account(by="index", value=str(account_index))
             acc = (res.accounts or [None])[0]
             if acc is None:
-                return {"usdt": 0.0}
+                return {"usdt": 0.0, "spot_usd": 0.0, "futures_usd": 0.0}
             # Lighter reports the user's total USD collateral at the account
             # level (`collateral` field). The per-asset `assets[].balance`
             # is a position-token quantity, NOT USD — summing it gave $0.01
             # while the real collateral was $40.
-            collateral = getattr(acc, "collateral", None)
-            if collateral is not None:
+            #
+            # account_type=1 is the perp sub-account (collateral is futures
+            # margin); account_type=2 is the spot sub-account. We surface
+            # whichever this index represents in the matching field.
+            collateral = 0.0
+            c = getattr(acc, "collateral", None)
+            if c is not None:
                 try:
-                    return {"usdt": float(collateral)}
+                    collateral = float(c)
                 except (TypeError, ValueError):
                     pass
-            # Fallback to per-asset USDC/USDT sum if `collateral` is missing.
-            usdc = 0.0
-            for a in (acc.assets or []):
-                sym = (a.symbol or "").upper()
-                if sym in ("USDC", "USDT"):
-                    try:
-                        usdc += float(a.balance or 0) + float(a.locked_balance or 0)
-                    except (TypeError, ValueError):
-                        pass
-            return {"usdt": usdc}
+            if collateral == 0.0:
+                # Fallback to per-asset USDC/USDT sum if `collateral` is missing.
+                for a in (acc.assets or []):
+                    sym = (a.symbol or "").upper()
+                    if sym in ("USDC", "USDT"):
+                        try:
+                            collateral += float(a.balance or 0) + float(a.locked_balance or 0)
+                        except (TypeError, ValueError):
+                            pass
+            acct_type = getattr(acc, "account_type", None)
+            is_spot = str(acct_type).lower() == "spot" or acct_type == 2
+            if is_spot:
+                return {"usdt": collateral, "spot_usd": collateral, "futures_usd": 0.0}
+            return {"usdt": collateral, "spot_usd": 0.0, "futures_usd": collateral}
         finally:
             await ac.close()
 

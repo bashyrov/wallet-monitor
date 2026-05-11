@@ -141,17 +141,17 @@ class KrakenAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
+        # Kraken Futures adapter — spot lives on a different API (api.kraken.com)
+        # under a different key; the futures key alone can't read spot. Report
+        # spot_usd=0 and let the user add a separate spot wallet if they need it.
         data = await _signed_request(creds, "GET", "/accounts")
-        # accounts.flex.balanceValue is the USD value of the multi-collateral
-        # flex account (the standard portfolio account on Kraken Futures).
         accounts = (data or {}).get("accounts") or {}
         flex = accounts.get("flex") or {}
-        usdt = float(flex.get("balanceValue") or 0)
-        if usdt == 0:
-            # Older accounts have a "cash" section keyed by currency — sum USD/USDT
+        fut_usd = float(flex.get("balanceValue") or 0)
+        if fut_usd == 0:
             cash = (accounts.get("cash") or {}).get("balances") or {}
-            usdt = float(cash.get("USD") or 0) + float(cash.get("USDT") or 0)
-        return {"usdt": usdt}
+            fut_usd = float(cash.get("USD") or 0) + float(cash.get("USDT") or 0)
+        return {"usdt": fut_usd, "spot_usd": 0.0, "futures_usd": fut_usd}
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

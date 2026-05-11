@@ -68,7 +68,9 @@ class ParadexAdapter:
             from backend.services import trade_proxy
             try:
                 bal = await trade_proxy.fetch_balance("paradex", creds)
-                return {"usdt": float(bal.get("total") or bal.get("total_usd") or bal.get("usdt") or 0)}
+                total = float(bal.get("total") or bal.get("total_usd") or bal.get("usdt") or 0)
+                # Paradex is futures-only (Paraclear).
+                return {"usdt": total, "spot_usd": 0.0, "futures_usd": total}
             except trade_proxy.GoTradeError as e:
                 if not creds.get("api_token"):
                     logger.warning("paradex go fetch_balance failed (no JWT fallback available): %s", e)
@@ -96,7 +98,7 @@ class ParadexAdapter:
                 total += float(item.get("size") or 0)
             except (TypeError, ValueError):
                 pass
-        return {"usdt": total}
+        return {"usdt": total, "spot_usd": 0.0, "futures_usd": total}
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

@@ -130,9 +130,25 @@ class BingxAdapter:
     # ── Balance ──
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._req(creds, "GET", "/openApi/swap/v2/user/balance")
-        bal = data.get("balance", data) if isinstance(data, dict) else {}
-        return {"usdt": float(bal.get("availableMargin") or bal.get("equity") or 0)}
+        fut_usd = 0.0
+        try:
+            data = await cls._req(creds, "GET", "/openApi/swap/v2/user/balance")
+            bal = data.get("balance", data) if isinstance(data, dict) else {}
+            fut_usd = float(bal.get("equity") or bal.get("availableMargin") or 0)
+        except Exception:
+            pass
+        spot_usd = 0.0
+        try:
+            data = await cls._req(creds, "GET", "/openApi/spot/v1/account/balance")
+            for r in (data or {}).get("balances", []):
+                if (r.get("asset") or "").upper() in ("USDT", "USDC"):
+                    try:
+                        spot_usd += float(r.get("free") or 0) + float(r.get("locked") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     # ── Leverage + margin mode ──
     @classmethod

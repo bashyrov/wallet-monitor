@@ -146,13 +146,32 @@ class HtxAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        acct = await cls._spot_account_id(creds)
-        data = await cls._signed(creds, "GET", f"/v1/account/accounts/{acct}/balance")
-        free_usdt = 0.0
-        for row in (data.get("data") or {}).get("list") or []:
-            if (row.get("currency") or "").upper() == "USDT" and row.get("type") == "trade":
-                free_usdt += float(row.get("balance") or 0)
-        return {"usdt": free_usdt}
+        spot_usd = 0.0
+        try:
+            acct = await cls._spot_account_id(creds)
+            data = await cls._signed(creds, "GET", f"/v1/account/accounts/{acct}/balance")
+            for row in (data.get("data") or {}).get("list") or []:
+                if (row.get("currency") or "").upper() in ("USDT", "USDC") and row.get("type") == "trade":
+                    try:
+                        spot_usd += float(row.get("balance") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+        # Futures (USDT-M linear swap) — api.hbdm.com /linear-swap-api/v1/swap_cross_account_info
+        fut_usd = 0.0
+        try:
+            data = await cls._signed_fut(creds, "POST", "/linear-swap-api/v1/swap_cross_account_info",
+                                          body={"margin_account": "USDT"})
+            for x in (data.get("data") or []):
+                # cross USDT account
+                try:
+                    fut_usd += float(x.get("margin_balance") or x.get("margin_available") or 0)
+                except (TypeError, ValueError):
+                    pass
+        except Exception:
+            pass
+        return {"usdt": spot_usd + fut_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     # ── Futures-side signing (api.hbdm.com) ──────────────────────────────────
     @classmethod

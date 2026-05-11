@@ -147,11 +147,28 @@ class BitgetAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._signed(creds, "GET", "/api/v2/mix/account/accounts", {"productType": "USDT-FUTURES"})
-        for acct in (data or []):
-            if acct.get("marginCoin") == "USDT":
-                return {"usdt": float(acct.get("available") or acct.get("crossedMaxAvailable") or 0)}
-        return {"usdt": 0.0}
+        fut_usd = 0.0
+        try:
+            data = await cls._signed(creds, "GET", "/api/v2/mix/account/accounts", {"productType": "USDT-FUTURES"})
+            for acct in (data or []):
+                if acct.get("marginCoin") == "USDT":
+                    fut_usd = float(acct.get("available") or acct.get("crossedMaxAvailable") or 0)
+                    break
+        except Exception:
+            pass
+        # Spot — Bitget /api/v2/spot/account/assets
+        spot_usd = 0.0
+        try:
+            spot_rows = await cls._signed(creds, "GET", "/api/v2/spot/account/assets")
+            for r in (spot_rows or []):
+                if (r.get("coin") or "").upper() in ("USDT", "USDC", "BUSD"):
+                    try:
+                        spot_usd += float(r.get("available") or 0) + float(r.get("frozen") or 0) + float(r.get("locked") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:

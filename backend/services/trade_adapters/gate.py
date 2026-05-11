@@ -140,8 +140,31 @@ class GateAdapter:
     # ── Balance ──
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._req(creds, "GET", "/api/v4/futures/usdt/accounts")
-        return {"usdt": float(data.get("available") or 0)}
+        # Futures (USDT perp) — main collateral / availableMargin.
+        fut_usd = 0.0
+        try:
+            data = await cls._req(creds, "GET", "/api/v4/futures/usdt/accounts")
+            fut_usd = float(data.get("total") or data.get("available") or 0)
+        except Exception:
+            pass
+        # Spot — sum USDT/USDC across spot wallet rows.
+        spot_usd = 0.0
+        try:
+            rows = await cls._req(creds, "GET", "/api/v4/spot/accounts")
+            for r in rows if isinstance(rows, list) else []:
+                cur = (r.get("currency") or "").upper()
+                if cur in ("USDT", "USDC", "BUSD"):
+                    try:
+                        spot_usd += float(r.get("available") or 0) + float(r.get("locked") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+        return {
+            "usdt": fut_usd + spot_usd,
+            "spot_usd": spot_usd,
+            "futures_usd": fut_usd,
+        }
 
     # ── Leverage ──
     @classmethod

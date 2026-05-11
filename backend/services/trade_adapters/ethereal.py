@@ -77,10 +77,10 @@ class EtherealAdapter:
                 raise RuntimeError(f"Ethereal {r.status_code}: {r.text[:200]}")
             subs = (r.json() or {}).get("data") or []
             if not subs:
-                return {"usdt": 0.0}
+                return {"usdt": 0.0, "spot_usd": 0.0, "futures_usd": 0.0}
             sub_id = subs[0].get("id")
             if not sub_id:
-                return {"usdt": 0.0}
+                return {"usdt": 0.0, "spot_usd": 0.0, "futures_usd": 0.0}
             r2 = await c.get(f"{BASE}/v1/subaccount/balance", params={"subaccountId": sub_id})
             if r2.status_code >= 400:
                 raise RuntimeError(f"Ethereal balance {r2.status_code}: {r2.text[:200]}")
@@ -99,7 +99,8 @@ class EtherealAdapter:
                     total += (avail + used) or amount
                 except (TypeError, ValueError):
                     continue
-            return {"usdt": total}
+            # Ethereal is futures-only.
+            return {"usdt": total, "spot_usd": 0.0, "futures_usd": total}
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

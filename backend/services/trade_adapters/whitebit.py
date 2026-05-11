@@ -134,12 +134,45 @@ class WhitebitAdapter:
     # ── Balance ──
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._req(creds, "/api/v4/trade-account/balance")
-        usdt = 0.0
-        if isinstance(data, dict):
-            entry = data.get("USDT", {})
-            usdt = float(entry.get("available") or entry.get("balance") or 0)
-        return {"usdt": usdt}
+        """WhiteBIT keeps spot and collateral (futures margin) in separate
+        accounts that the user funds independently.
+          Spot:       POST /api/v4/trade-account/balance      → {USDT:{available,balance},...}
+          Futures:    POST /api/v4/collateral-account/balance → {USDT:1000, BTC:1, ...}
+        """
+        def _sum_trade(d: dict) -> float:
+            t = 0.0
+            for k, v in (d or {}).items():
+                if k.upper() in ("USDT", "USDC", "BUSD") and isinstance(v, dict):
+                    try:
+                        t += float(v.get("available") or v.get("balance") or 0)
+                    except (TypeError, ValueError):
+                        pass
+            return t
+        def _sum_collateral(d: dict) -> float:
+            t = 0.0
+            for k, v in (d or {}).items():
+                if k.upper() in ("USDT", "USDC", "BUSD"):
+                    try:
+                        t += float(v or 0)
+                    except (TypeError, ValueError):
+                        pass
+            return t
+
+        spot_usd = 0.0
+        try:
+            data = await cls._req(creds, "/api/v4/trade-account/balance")
+            if isinstance(data, dict):
+                spot_usd = _sum_trade(data)
+        except Exception:
+            pass
+        fut_usd = 0.0
+        try:
+            data = await cls._req(creds, "/api/v4/collateral-account/balance")
+            if isinstance(data, dict):
+                fut_usd = _sum_collateral(data)
+        except Exception:
+            pass
+        return {"usdt": spot_usd + fut_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     # ── Leverage ──
     @classmethod

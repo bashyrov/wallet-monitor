@@ -156,14 +156,51 @@ class BybitAdapter:
 
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._signed(creds, "GET", "/v5/account/wallet-balance", {"accountType": "UNIFIED"})
-        usdt = 0.0
-        for row in data.get("list", []):
-            for coin in row.get("coin", []):
-                if coin.get("coin") == "USDT":
-                    usdt = float(coin.get("availableToWithdraw") or coin.get("walletBalance") or 0)
-                    break
-        return {"usdt": usdt}
+        """Bybit V5 account flavours:
+        - UNIFIED (default since 2023) — single pool for spot + linear-futures.
+          Stable coins in coin[] can fund BOTH; we report the same total for
+          spot_usd / futures_usd so arb routing treats it as available for either.
+        - Classic — separate SPOT and CONTRACT accounts (legacy users only).
+          Read each and report separately.
+        Try UNIFIED first; if "not unified" (30086) or empty, fall back to
+        SPOT + CONTRACT.
+        """
+        def _sum_stables(rows: list) -> float:
+            t = 0.0
+            for row in rows or []:
+                for coin in row.get("coin", []):
+                    if (coin.get("coin") or "").upper() in ("USDT", "USDC", "BUSD"):
+                        try:
+                            t += float(coin.get("walletBalance") or coin.get("availableToWithdraw") or 0)
+                        except (TypeError, ValueError):
+                            pass
+            return t
+
+        # 1) UNIFIED — most users.
+        try:
+            data = await cls._signed(creds, "GET", "/v5/account/wallet-balance", {"accountType": "UNIFIED"})
+            pool = _sum_stables(data.get("list", []))
+            if pool > 0:
+                return {"usdt": pool, "spot_usd": pool, "futures_usd": pool}
+        except RuntimeError as e:
+            # 30086 = "Unified margin account is not opened" — classic account.
+            if "30086" not in str(e):
+                logger.debug("Bybit UNIFIED balance failed: %s", e)
+
+        # 2) Classic — SPOT + CONTRACT separately.
+        spot_usd = 0.0
+        fut_usd = 0.0
+        try:
+            d = await cls._signed(creds, "GET", "/v5/account/wallet-balance", {"accountType": "SPOT"})
+            spot_usd = _sum_stables(d.get("list", []))
+        except Exception:
+            pass
+        try:
+            d = await cls._signed(creds, "GET", "/v5/account/wallet-balance", {"accountType": "CONTRACT"})
+            fut_usd = _sum_stables(d.get("list", []))
+        except Exception:
+            pass
+        return {"usdt": spot_usd + fut_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:

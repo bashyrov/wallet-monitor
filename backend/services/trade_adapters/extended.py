@@ -81,7 +81,9 @@ class ExtendedAdapter:
     async def fetch_balance(cls, creds: dict) -> dict:
         from backend.services import trade_proxy
         bal = await trade_proxy.fetch_balance("extended", creds)
-        return {"usdt": float(bal.get("usdt") or bal.get("total") or 0)}
+        total = float(bal.get("usdt") or bal.get("total") or 0)
+        # Extended is futures-only (no spot product live yet).
+        return {"usdt": total, "spot_usd": 0.0, "futures_usd": total}
 
     # ── Trade methods — Python fallbacks when GO_TRADE_VENUES doesn't
     # include "extended". When the proxy is enabled it short-circuits

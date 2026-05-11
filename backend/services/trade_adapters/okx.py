@@ -159,12 +159,39 @@ class OKXAdapter:
     # ── Balance ──
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
-        data = await cls._req(creds, "GET", "/api/v5/account/balance")
-        for acct in data:
-            for d in acct.get("details", []):
-                if d.get("ccy") == "USDT":
-                    return {"usdt": float(d.get("availBal") or d.get("cashBal") or 0)}
-        return {"usdt": 0.0}
+        """OKX has a unified trading account (cross-margin pool funds spot AND
+        futures together) plus a separate Funding account for idle off-trade
+        assets. Report both — `spot_usd` / `futures_usd` are populated with
+        the trading-pool total (single pool can margin either side); `usdt`
+        sums in funding for the portfolio total."""
+        trading = 0.0
+        try:
+            data = await cls._req(creds, "GET", "/api/v5/account/balance")
+            for acct in data:
+                for d in acct.get("details", []):
+                    if (d.get("ccy") or "").upper() in ("USDT", "USDC", "USDK"):
+                        try:
+                            trading += float(d.get("cashBal") or d.get("availBal") or 0)
+                        except (TypeError, ValueError):
+                            pass
+        except Exception:
+            pass
+        funding = 0.0
+        try:
+            data = await cls._req(creds, "GET", "/api/v5/asset/balances")
+            for d in data if isinstance(data, list) else []:
+                if (d.get("ccy") or "").upper() in ("USDT", "USDC", "USDK"):
+                    try:
+                        funding += float(d.get("bal") or d.get("availBal") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
+        return {
+            "usdt": trading + funding,
+            "spot_usd": trading,    # unified pool funds spot orders
+            "futures_usd": trading, # unified pool funds futures margin
+        }
 
     # ── Leverage + margin mode ──
     @classmethod
