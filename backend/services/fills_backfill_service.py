@@ -235,18 +235,23 @@ async def _sync_one(user_id: int, wallet: Wallet, market: str) -> int:
                     ext_trade_id=ext_id,
                     ext_order_id=(str(r["ext_order_id"]) if r.get("ext_order_id") else None),
                 )
-                db.add(f)
+                # Use SAVEPOINT (begin_nested) so an IntegrityError on a
+                # single duplicate row rolls back ONLY that row, not the
+                # whole batch. Plain db.rollback() on the outer session
+                # would discard every previously-flushed row in this loop
+                # — that's how a single duplicate dropped 12 OKX fills
+                # silently and made fills_inserted unreliable.
                 try:
-                    db.flush()
+                    with db.begin_nested():
+                        db.add(f)
+                        db.flush()
                     inserted += 1
                 except IntegrityError:
-                    db.rollback()
                     continue
                 if max_ts is None or ts > max_ts:
                     max_ts = ts
             except Exception as exc:  # noqa: BLE001
                 logger.info("fills_backfill: row insert failed: %s", exc)
-                db.rollback()
                 continue
 
         # Advance the cursor to max(ts) we ingested. If nothing new came
