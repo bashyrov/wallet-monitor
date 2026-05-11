@@ -11,8 +11,11 @@ package whitebit
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade"
@@ -20,6 +23,60 @@ import (
 
 func toWBSpot(symbol string) string {
 	return strings.ToUpper(strings.TrimSpace(symbol)) + "_USDT"
+}
+
+// wbMarkets caches /api/v4/public/markets for stockPrec lookups.
+var (
+	wbMarketsMu  sync.RWMutex
+	wbMarkets    map[string]int
+	wbMarketsAt  time.Time
+)
+
+// wbStockPrec returns the stockPrec for `market` (e.g. SOL_USDT). -1 if unknown.
+// WhiteBIT rejects sell orders whose amount exceeds this precision with a
+// generic "Validation failed" — round DOWN before submit.
+func wbStockPrec(ctx context.Context, market string) int {
+	wbMarketsMu.RLock()
+	if wbMarkets != nil && time.Since(wbMarketsAt) < 30*time.Minute {
+		p, ok := wbMarkets[market]
+		wbMarketsMu.RUnlock()
+		if ok {
+			return p
+		}
+		return -1
+	}
+	wbMarketsMu.RUnlock()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://whitebit.com/api/v4/public/markets", nil)
+	if err != nil {
+		return -1
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return -1
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var rows []struct {
+		Name      string `json:"name"`
+		StockPrec string `json:"stockPrec"`
+	}
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return -1
+	}
+	out := make(map[string]int, len(rows))
+	for _, r := range rows {
+		p, _ := strconv.Atoi(r.StockPrec)
+		out[r.Name] = p
+	}
+	wbMarketsMu.Lock()
+	wbMarkets = out
+	wbMarketsAt = time.Now()
+	wbMarketsMu.Unlock()
+	if p, ok := out[market]; ok {
+		return p
+	}
+	return -1
 }
 
 func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req trade.OpenRequest) (*trade.Result, error) {
@@ -35,11 +92,23 @@ func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req tra
 	//   /api/v4/order/stock_market  — `amount` in BASE currency (SOL)
 	// We always carry base-coin qty, so use the latter. Default endpoint
 	// silently treats our 0.15 as "spend 0.15 USDT" → fails validation.
+	market := toWBSpot(req.Symbol)
+	amount := req.Quantity
+	prec := wbStockPrec(ctx, market)
+	amountStr := qtyString(amount)
+	if prec >= 0 {
+		factor := 1.0
+		for i := 0; i < prec; i++ {
+			factor *= 10
+		}
+		amount = float64(int64(amount*factor)) / factor
+		amountStr = strconv.FormatFloat(amount, 'f', prec, 64)
+	}
 	body, err := a.signedRequest(ctx, creds, "/api/v4/order/stock_market",
 		map[string]any{
-			"market": toWBSpot(req.Symbol),
+			"market": market,
 			"side":   side,
-			"amount": qtyString(req.Quantity),
+			"amount": amountStr,
 		})
 	if err != nil {
 		return nil, err
@@ -97,11 +166,23 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 	if freeBase <= 0 {
 		return nil, errUser("No %s balance to close on WhiteBIT spot", base)
 	}
+	// Round DOWN to market's stockPrec — WhiteBIT returns generic
+	// "Validation failed" if the amount exceeds the precision.
+	market := base + "_USDT"
+	prec := wbStockPrec(ctx, market)
+	rounded := freeBase
+	if prec >= 0 {
+		factor := 1.0
+		for i := 0; i < prec; i++ {
+			factor *= 10
+		}
+		rounded = float64(int64(freeBase*factor)) / factor
+	}
 	out, err := a.signedRequest(ctx, creds, "/api/v4/order/stock_market",
 		map[string]any{
-			"market": base + "_USDT",
+			"market": market,
 			"side":   "sell",
-			"amount": qtyString(freeBase),
+			"amount": strconv.FormatFloat(rounded, 'f', prec, 64),
 		})
 	if err != nil {
 		return nil, err

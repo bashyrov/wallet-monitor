@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -166,13 +167,28 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 	if freeBase <= 0 {
 		return nil, errUser("No %s balance to close on Bybit spot", base)
 	}
+	// Round DOWN to the symbol's basePrecision — Bybit rejects with
+	// "Order quantity has too many decimals" if the qty exceeds the lot.
+	sym := base + "USDT"
+	qtyStr := qtyString(freeBase)
+	if info, ierr := a.spotInstrument(ctx, sym); ierr == nil && info.BasePrecisionStr != "" {
+		if step, perr := strconv.ParseFloat(info.BasePrecisionStr, 64); perr == nil && step > 0 {
+			rounded := float64(int64(freeBase/step)) * step
+			// Match the precision's decimal count for clean serialization.
+			prec := 0
+			if i := strings.IndexByte(info.BasePrecisionStr, '.'); i >= 0 {
+				prec = len(info.BasePrecisionStr) - i - 1
+			}
+			qtyStr = strconv.FormatFloat(rounded, 'f', prec, 64)
+		}
+	}
 	out, err := a.signedRequest(ctx, creds, http.MethodPost,
 		"/v5/order/create", nil, map[string]any{
 			"category":   "spot",
-			"symbol":     base + "USDT",
+			"symbol":     sym,
 			"side":       "Sell",
 			"orderType":  "Market",
-			"qty":        qtyString(freeBase),
+			"qty":        qtyStr,
 			"marketUnit": "baseCoin",
 		})
 	if err != nil {
