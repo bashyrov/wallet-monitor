@@ -1017,8 +1017,9 @@
                 <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4">From the Subkeys tab in Paradex (or derive from the private key). Tells the server which key to verify against.</div>
               </label>
               <label class="k-field" style="grid-column:1/-1;display:none" id="k-account-idx-wrap">
-                <span class="k-lbl">Account Index <span style="color:var(--text3);font-weight:400">(Lighter)</span></span>
-                <input class="k-input mono" id="k-account-idx" placeholder="numeric e.g. 12345" autocomplete="off">
+                <span class="k-lbl">Account Index <span style="color:var(--text3);font-weight:400">(Lighter — optional)</span></span>
+                <input class="k-input mono" id="k-account-idx" placeholder="leave blank — we'll derive from your address" autocomplete="off">
+                <div style="font-size:10.5px;color:var(--text3);margin-top:4px;line-height:1.4">Lighter's API-keys popup doesn't show this. We auto-resolve it from your EVM address via Lighter's public REST.</div>
               </label>
               <label class="k-field" style="grid-column:1/-1;display:none" id="k-api-key-idx-wrap">
                 <span class="k-lbl">API Key Index <span style="color:var(--text3);font-weight:400">(Lighter — defaults to 255)</span></span>
