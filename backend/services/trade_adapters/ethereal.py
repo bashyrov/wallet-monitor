@@ -69,11 +69,20 @@ class EtherealAdapter:
     async def fetch_balance(cls, creds: dict) -> dict:
         address = creds.get("address") or creds.get("api_key") or ""
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{BASE}/v1/subaccount", params={"address": address})
+            # API expects `sender=...` not `address=...` — confirmed by 400
+            # response: "property address should not exist".
+            r = await c.get(f"{BASE}/v1/subaccount", params={"sender": address})
             if r.status_code >= 400:
                 raise RuntimeError(f"Ethereal {r.status_code}: {r.text[:200]}")
             j = r.json()
-            equity = float(j.get("equity", 0) or j.get("accountValue", 0) or 0)
+            # Response shape: {"subaccounts": [{positions, balance, ...}]} or
+            # a single object. Prefer total equity if present, else sum.
+            if isinstance(j, dict) and j.get("subaccounts"):
+                sub = j["subaccounts"][0] if j["subaccounts"] else {}
+            else:
+                sub = j if isinstance(j, dict) else {}
+            equity = float(sub.get("equity", 0) or sub.get("accountValue", 0)
+                           or sub.get("availableMargin", 0) or 0)
             return {"usdt": equity}
 
     @classmethod
@@ -137,10 +146,13 @@ class EtherealAdapter:
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         address = creds.get("address") or creds.get("api_key") or ""
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(f"{BASE}/v1/subaccount", params={"address": address})
+            r = await c.get(f"{BASE}/v1/subaccount", params={"sender": address})
             if r.status_code >= 400:
                 return []
             j = r.json()
+            # Handle {"subaccounts":[{positions}]} shape too
+            if isinstance(j, dict) and j.get("subaccounts"):
+                j = j["subaccounts"][0] if j["subaccounts"] else {}
         out = []
         for p in j.get("positions", []):
             qty = float(p.get("size", 0) or 0)
