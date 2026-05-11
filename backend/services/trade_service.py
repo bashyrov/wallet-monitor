@@ -695,6 +695,13 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
         # wallet, return its in-memory snapshot instead of hitting the
         # exchange REST API. Status TTL is 60s on Redis — stale = stream
         # broken/down → fall through to REST.
+        #
+        # SAFETY NET: if the snapshot is LIVE but reports ZERO positions,
+        # also fall through to REST. WS adapters sometimes connect
+        # successfully but miss the initial position snapshot (positions
+        # opened before WS connection are silently absent — observed on
+        # MEXC). REST is authoritative; trust WS only when it AGREES with
+        # REST or has non-zero positions.
         try:
             from backend.services.user_streams import _snapshot as _us_snapshot
             if _us_snapshot.get_status(user_id, w.id) == "LIVE":
@@ -702,12 +709,15 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
                 if symbol:
                     sym_norm = symbol.upper().strip()
                     rows = [r for r in rows if (r.get("symbol") or "").upper() == sym_norm]
-                for r in rows:
-                    r["wallet_id"] = w.id
-                _POSITIONS_LASTGOOD[lg_key] = (_time.time(), rows)
-                return rows
+                if rows:
+                    for r in rows:
+                        r["wallet_id"] = w.id
+                    _POSITIONS_LASTGOOD[lg_key] = (_time.time(), rows)
+                    return rows
+                # Empty snapshot — could be "truly zero" or "WS missed an
+                # existing position". Fall through to REST so the user
+                # never sees a phantom-empty wallet.
         except Exception as exc:
-            # Snapshot read should never throw — log and continue to REST.
             logger.debug("userstream snapshot read failed: %s", exc)
 
         try:
