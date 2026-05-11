@@ -237,7 +237,14 @@ class GateAdapter:
         # Otherwise force integer.
         if quanto > 0:
             raw = quantity / quanto
-            num_contracts = round(raw, 4) if enable_decimal else int(raw)
+            # Gate enable_decimal accepts at most 1-decimal-place granularity
+            # in practice (0.1 OK, 0.15 rejected as "invalid size") even
+            # though the API gives no explicit lot field. Round DOWN to 0.1.
+            if enable_decimal:
+                import math as _math
+                num_contracts = _math.floor(raw * 10) / 10
+            else:
+                num_contracts = int(raw)
         else:
             num_contracts = quantity if enable_decimal else int(quantity)
 
@@ -300,7 +307,14 @@ class GateAdapter:
 
         if quanto > 0:
             raw = quantity / quanto
-            num_contracts = round(raw, 4) if enable_decimal else int(raw)
+            # Gate enable_decimal accepts at most 1-decimal-place granularity
+            # in practice (0.1 OK, 0.15 rejected as "invalid size") even
+            # though the API gives no explicit lot field. Round DOWN to 0.1.
+            if enable_decimal:
+                import math as _math
+                num_contracts = _math.floor(raw * 10) / 10
+            else:
+                num_contracts = int(raw)
         else:
             num_contracts = quantity if enable_decimal else int(quantity)
         if num_contracts <= 0:

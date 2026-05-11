@@ -133,25 +133,29 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 	if err != nil {
 		return nil, err
 	}
+	// signedRequest already unwraps Bybit's outer envelope — body is the
+	// `result` content directly. Walk list[0].coin[] for the base asset.
 	var env struct {
-		Result struct {
-			List []struct {
-				Coin []struct {
-					Coin               string `json:"coin"`
-					AvailableToWithdraw string `json:"availableToWithdraw"`
-					WalletBalance      string `json:"walletBalance"`
-				} `json:"coin"`
-			} `json:"list"`
-		} `json:"result"`
+		List []struct {
+			Coin []struct {
+				Coin                string `json:"coin"`
+				AvailableToWithdraw string `json:"availableToWithdraw"`
+				WalletBalance       string `json:"walletBalance"`
+				Free                string `json:"free"`
+			} `json:"coin"`
+		} `json:"list"`
 	}
 	if err := json.Unmarshal(body, &env); err != nil {
 		return nil, errInternal("parse wallet-balance", err)
 	}
 	var freeBase float64
-	if len(env.Result.List) > 0 {
-		for _, c := range env.Result.List[0].Coin {
+	if len(env.List) > 0 {
+		for _, c := range env.List[0].Coin {
 			if c.Coin == base {
-				freeBase = parseFloat(c.AvailableToWithdraw)
+				freeBase = parseFloat(c.Free)
+				if freeBase == 0 {
+					freeBase = parseFloat(c.AvailableToWithdraw)
+				}
 				if freeBase == 0 {
 					freeBase = parseFloat(c.WalletBalance)
 				}

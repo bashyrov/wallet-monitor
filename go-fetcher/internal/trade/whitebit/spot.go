@@ -75,14 +75,24 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 	if err != nil {
 		return nil, err
 	}
-	// Response: {"BTC": {"available":"0.5", ...}}
-	var balances map[string]struct {
+	// Response with `ticker`: {"available":"0.5","freeze":"0"} (flat)
+	// Response without `ticker`: {"BTC":{"available":...}, "ETH":{...}}
+	freeBase := 0.0
+	var flat struct {
 		Available string `json:"available"`
 	}
-	_ = json.Unmarshal(body, &balances)
-	freeBase := 0.0
-	if b, ok := balances[base]; ok {
-		freeBase, _ = strconv.ParseFloat(b.Available, 64)
+	if err := json.Unmarshal(body, &flat); err == nil && flat.Available != "" {
+		freeBase, _ = strconv.ParseFloat(flat.Available, 64)
+	}
+	if freeBase == 0 {
+		var balances map[string]struct {
+			Available string `json:"available"`
+		}
+		if err := json.Unmarshal(body, &balances); err == nil {
+			if b, ok := balances[base]; ok {
+				freeBase, _ = strconv.ParseFloat(b.Available, 64)
+			}
+		}
 	}
 	if freeBase <= 0 {
 		return nil, errUser("No %s balance to close on WhiteBIT spot", base)

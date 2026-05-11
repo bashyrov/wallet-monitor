@@ -316,8 +316,9 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		if info.QuantoMultiplier > 0 {
 			raw = req.Quantity / info.QuantoMultiplier
 		}
-		// Round to 4 decimals — Gate accepts the string representation.
-		raw = math.Floor(raw*1e4) / 1e4
+		// Gate enable_decimal accepts only 1-decimal-place granularity in
+		// practice (0.1 OK, 0.15 → "invalid size"). Round DOWN to 0.1.
+		raw = math.Floor(raw*10) / 10
 		if raw <= 0 {
 			return nil, errUser("quantity too small for %s (rounds to 0 contracts)", contract)
 		}
