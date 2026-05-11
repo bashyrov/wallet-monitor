@@ -69,21 +69,35 @@ class EtherealAdapter:
     async def fetch_balance(cls, creds: dict) -> dict:
         address = creds.get("address") or creds.get("api_key") or ""
         async with httpx.AsyncClient(timeout=10) as c:
-            # API expects `sender=...` not `address=...` — confirmed by 400
-            # response: "property address should not exist".
+            # Two-step lookup matches the working portfolio provider:
+            #   1) /v1/subaccount?sender=ADDR → { "data": [{id, ...}] }
+            #   2) /v1/subaccount/balance?subaccountId=ID → { "data": [{tokenName, available, totalUsed, ...}] }
             r = await c.get(f"{BASE}/v1/subaccount", params={"sender": address})
             if r.status_code >= 400:
                 raise RuntimeError(f"Ethereal {r.status_code}: {r.text[:200]}")
-            j = r.json()
-            # Response shape: {"subaccounts": [{positions, balance, ...}]} or
-            # a single object. Prefer total equity if present, else sum.
-            if isinstance(j, dict) and j.get("subaccounts"):
-                sub = j["subaccounts"][0] if j["subaccounts"] else {}
-            else:
-                sub = j if isinstance(j, dict) else {}
-            equity = float(sub.get("equity", 0) or sub.get("accountValue", 0)
-                           or sub.get("availableMargin", 0) or 0)
-            return {"usdt": equity}
+            subs = (r.json() or {}).get("data") or []
+            if not subs:
+                return {"usdt": 0.0}
+            sub_id = subs[0].get("id")
+            if not sub_id:
+                return {"usdt": 0.0}
+            r2 = await c.get(f"{BASE}/v1/subaccount/balance", params={"subaccountId": sub_id})
+            if r2.status_code >= 400:
+                raise RuntimeError(f"Ethereal balance {r2.status_code}: {r2.text[:200]}")
+            items = (r2.json() or {}).get("data") or []
+            total = 0.0
+            for it in items:
+                token = (it.get("tokenName") or "").upper()
+                if token not in ("USDT", "USDC"):
+                    continue
+                try:
+                    avail = float(it.get("available") or 0)
+                    used = float(it.get("totalUsed") or 0)
+                    amount = float(it.get("amount") or 0)
+                    total += (avail + used) or amount
+                except (TypeError, ValueError):
+                    continue
+            return {"usdt": total}
 
     @classmethod
     async def validate_key(cls, creds: dict, need_trade: bool = False) -> dict:

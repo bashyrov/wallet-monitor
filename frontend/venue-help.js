@@ -108,19 +108,19 @@ window.VENUE_HELP = {
 
   // ── Perp DEX ───────────────────────────────────────────────────────
   hyperliquid: {
-    where: 'hyperliquid.xyz/agentWallet → Generate (NOT your main wallet privkey!)',
+    where: 'hyperliquid.xyz/agentWallet → 1) Generate, 2) Approve on-chain with your main wallet',
     perms: 'Agent Wallet can trade but CANNOT withdraw — safe to give us',
     fields: [
-      ['Wallet Address', 'Your MAIN HL wallet 0x… (the one you log in with)'],
-      ['Private Key',    'Agent Wallet private key (shown once at Generate)'],
+      ['Wallet Address', 'Your MAIN HL wallet 0x… (the account that owns the funds — NOT the agent wallet address)'],
+      ['Private Key',    'Agent Wallet private key (shown ONCE at Generate). After Generate you MUST click Approve so the main wallet signs an on-chain tx — without it the agent can\'t trade.'],
     ],
   },
   aster: {
-    where: 'asterdex.com/en/api-wallet → Generate API Wallet (NOT login wallet!)',
+    where: 'asterdex.com/en/api-wallet → 1) Generate, 2) Authorize on-chain (most users miss step 2!)',
     perms: '✅ Read + Perp Trade + Spot Trade (NO withdraw — agent wallets can\'t)',
     fields: [
-      ['Master Wallet Address',  'Your MAIN Aster login wallet 0x…'],
-      ['API Wallet Private Key', 'EVM privkey of the generated API wallet'],
+      ['Master Wallet Address',  'Your MAIN Aster login wallet 0x… (the account that owns the funds — NOT the API wallet)'],
+      ['API Wallet Private Key', 'EVM privkey from the Generate popup (shown ONCE). Then you MUST click Authorize and sign an on-chain tx with your master wallet — without that step the key returns "No agent found".'],
     ],
   },
   ethereal: {
