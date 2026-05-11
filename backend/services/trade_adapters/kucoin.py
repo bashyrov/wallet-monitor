@@ -217,10 +217,15 @@ class KuCoinAdapter:
         usdt_pot = by_cur.get("USDT", {"available": 0.0, "equity": 0.0})
         usdt_fut = usdt_pot["available"] if usdt_pot["available"] > 0 else usdt_pot["equity"]
         fut_total = sum(r["equity"] for r in results)
-        # Spot — KuCoin Main Account via /api/v1/accounts?type=trade
+        # Spot — KuCoin keeps funds in multiple sub-accounts (main, trade,
+        # margin, etc.) that the user can transfer between on-demand. Sum
+        # across ALL sub-accounts (no type= filter) so portfolio + arb
+        # display the user's true exchange total — otherwise $20 sitting
+        # in Main shows as unavailable while it's a one-click transfer
+        # away from being tradable.
         spot_usd = 0.0
         try:
-            data = await cls._signed(creds, "GET", "/api/v1/accounts", {"type": "trade"})
+            data = await cls._signed(creds, "GET", "/api/v1/accounts")
             for r in (data or []):
                 if (r.get("currency") or "").upper() in ("USDT", "USDC"):
                     try:
