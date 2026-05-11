@@ -73,12 +73,12 @@ func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	frames := make([][]byte, 0, len(symbols))
 	for _, s := range symbols {
-		// sub.depth (incremental, 4.8/sec live-measured on active LAB
-		// vs 3.0/sec on sub.depth.full). Each push is a delta within the
-		// top-20 window. We seed via REST on fresh subscribe (in Parse)
-		// then apply deltas: size>0 = upsert, size=0 = remove.
+		// sub.depth.full pushes the FULL top-20 book on every update —
+		// no deltas, no shrinkage. Same `push.depth` channel name so
+		// Parse() handles it as before, but bk.seeded path now replaces
+		// the book on EVERY push instead of just the first one.
 		f := map[string]any{
-			"method": "sub.depth",
+			"method": "sub.depth.full",
 			"param":  map[string]any{"symbol": strings.ToUpper(s) + "_USDT", "limit": 20},
 		}
 		b, _ := ws.MarshalJSON(f)
@@ -99,10 +99,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	// sub.depth pushes on channel `push.depth` (incremental delta).
-	// sub.depth.full pushes on `push.depth.full` — accept both so a
-	// venue config change doesn't break us silently.
-	if msg.Channel != "push.depth" && msg.Channel != "push.depth.full" {
+	// sub.depth.full pushes arrive on channel `push.depth.full`; the
+	// legacy `push.depth` (delta) channel we still accept in case MEXC
+	// ever changes the naming.
+	if msg.Channel != "push.depth.full" && msg.Channel != "push.depth" {
 		return nil, nil
 	}
 	if !strings.HasSuffix(msg.Symbol, "_USDT") {
@@ -114,45 +114,27 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	defer a.mu.Unlock()
 
 	bk, ok := a.books[token]
-	freshSubscribe := false
 	if !ok {
 		bk = &book{bids: make(map[float64]float64), asks: make(map[float64]float64)}
 		a.books[token] = bk
-		freshSubscribe = true
 	}
 
-	// Fresh subscribe → trigger async REST snapshot in parallel. The
-	// initial WS pushes are incremental deltas within the top-20 window;
-	// without a seed the book sits sparse until enough deltas fill it.
-	// REST returns the full top-20 ~200ms later and we replace.
-	if freshSubscribe {
-		go a.fetchAndReplace(token)
-	}
-
-	// Apply incremental deltas: size>0 = upsert level, size=0 = remove.
-	// This is sub.depth's wire format; sub.depth.full would send a
-	// complete snapshot but at 3/sec vs 5/sec for the incremental path.
+	// With sub.depth.full every push IS the full top-20 snapshot —
+	// replace the book wholesale on every message. No delta semantics,
+	// no shrinkage drift.
+	bk.bids = make(map[float64]float64, len(msg.Data.Bids))
+	bk.asks = make(map[float64]float64, len(msg.Data.Asks))
+	bk.seeded = true
 	for _, r := range msg.Data.Bids {
-		if len(r) < 2 {
-			continue
-		}
-		if r[1] == 0 {
-			delete(bk.bids, r[0])
-		} else {
+		if len(r) >= 2 && r[1] > 0 {
 			bk.bids[r[0]] = r[1]
 		}
 	}
 	for _, r := range msg.Data.Asks {
-		if len(r) < 2 {
-			continue
-		}
-		if r[1] == 0 {
-			delete(bk.asks, r[0])
-		} else {
+		if len(r) >= 2 && r[1] > 0 {
 			bk.asks[r[0]] = r[1]
 		}
 	}
-	bk.seeded = true
 
 	return &ws.Snapshot{
 		Symbol: token,
