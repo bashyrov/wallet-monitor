@@ -335,6 +335,16 @@ func (r *Runner) session(ctx context.Context) error {
 
 // subscribe sends BuildSubscribe frames. Caller already holds wanted set.
 func (r *Runner) subscribe(conn *websocket.Conn, syms []string) error {
+	// Enforce per-connection MaxSymbols cap. Venues like KuCoin futures
+	// hard-cap at ~100 topics per WS — exceeding it makes the server
+	// reset the connection mid-subscribe (frame 99 RST). With the cap
+	// we ensure each subscribe stays within bounds; symbols beyond the
+	// cap get dropped (visible in logs) until split-connection support
+	// is implemented.
+	if max := r.a.MaxSymbols(); max > 0 && len(syms) > max {
+		r.log.Warn().Int("syms", len(syms)).Int("max", max).Msg("subscribe truncated to MaxSymbols cap")
+		syms = syms[:max]
+	}
 	r.log.Info().Int("syms", len(syms)).Msg("subscribe")
 	r.symMu.Lock()
 	frames := r.a.BuildSubscribe(syms)
