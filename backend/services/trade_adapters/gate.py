@@ -48,6 +48,10 @@ async def _contracts() -> dict[str, dict]:
                 "leverage_max": int(it.get("leverage_max") or 100),
                 "mark_price_round": float(it.get("mark_price_round") or 0.01),
                 "order_price_round": float(it.get("order_price_round") or 0.01),
+                # Gate USDT-margined contracts can opt into fractional
+                # contract sizes via enable_decimal. When True, 0.1 contracts
+                # is valid; when False, contracts must be integer.
+                "enable_decimal": bool(it.get("enable_decimal", False)),
             }
         _CONTRACT_CACHE["data"] = out
         _CONTRACT_CACHE["ts"] = time.time()
@@ -222,18 +226,27 @@ class GateAdapter:
 
         quanto = info["quanto_multiplier"]
         min_size = info["order_size_min"]
+        enable_decimal = info.get("enable_decimal", False)
 
-        # Convert coin quantity → contracts: 1 contract = quanto_multiplier coins
+        # Convert coin quantity → contracts: 1 contract = quanto_multiplier coins.
+        # If enable_decimal=True, Gate accepts fractional contracts (e.g. 0.1).
+        # Otherwise force integer.
         if quanto > 0:
-            num_contracts = int(quantity / quanto)
+            raw = quantity / quanto
+            num_contracts = round(raw, 4) if enable_decimal else int(raw)
         else:
-            num_contracts = int(quantity)
+            num_contracts = quantity if enable_decimal else int(quantity)
 
-        if num_contracts < min_size:
+        # Floor on the min — even with decimal mode there's a floor below
+        # which Gate rejects. order_size_min=0 means "no floor", so skip.
+        if min_size > 0 and num_contracts < min_size:
             return {"ok": False,
                     "reason": f"Quantity below minimum ({min_size} contracts = {min_size * quanto} {symbol.upper()})."}
+        if num_contracts <= 0:
+            return {"ok": False,
+                    "reason": f"Quantity rounds to 0 (got {raw:.6f} contracts). Increase qty or leverage."}
 
-        if num_contracts > info["order_size_max"]:
+        if info["order_size_max"] and num_contracts > info["order_size_max"]:
             return {"ok": False, "reason": f"Order size exceeds maximum ({info['order_size_max']} contracts)."}
 
         # Mark price
@@ -279,8 +292,13 @@ class GateAdapter:
         all_contracts = await _contracts()
         info = all_contracts.get(contract) or {}
         quanto = info.get("quanto_multiplier", 1)
+        enable_decimal = info.get("enable_decimal", False)
 
-        num_contracts = int(quantity / quanto) if quanto > 0 else int(quantity)
+        if quanto > 0:
+            raw = quantity / quanto
+            num_contracts = round(raw, 4) if enable_decimal else int(raw)
+        else:
+            num_contracts = quantity if enable_decimal else int(quantity)
         if num_contracts <= 0:
             raise RuntimeError(f"Quantity too small for {contract}.")
 

@@ -57,6 +57,7 @@ type contract struct {
 	QuantoMultiplier float64
 	OrderSizeMin     int64
 	OrderSizeMax     int64
+	EnableDecimal    bool
 }
 
 const contractsTTL = 10 * time.Minute
@@ -203,6 +204,7 @@ func (a *Adapter) loadContracts(ctx context.Context) (map[string]contract, error
 		QuantoMultiplier string `json:"quanto_multiplier"`
 		OrderSizeMin     int64  `json:"order_size_min"`
 		OrderSizeMax     int64  `json:"order_size_max"`
+		EnableDecimal    bool   `json:"enable_decimal"`
 	}
 	if err := json.Unmarshal(raw, &rows); err != nil {
 		return nil, errInternal("parse contracts", err)
@@ -217,6 +219,7 @@ func (a *Adapter) loadContracts(ctx context.Context) (map[string]contract, error
 			QuantoMultiplier: qm,
 			OrderSizeMin:     r.OrderSizeMin,
 			OrderSizeMax:     r.OrderSizeMax,
+			EnableDecimal:    r.EnableDecimal,
 		}
 	}
 	a.contractsMu.Lock()
@@ -305,15 +308,34 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if !ok {
 		return nil, errUser("symbol %s is not listed on Gate.io futures", contract)
 	}
-	num := coinsToContracts(req.Quantity, info.QuantoMultiplier)
-	if num <= 0 || num < info.OrderSizeMin {
-		return nil, errUser("quantity too small for %s (min %d contracts)", contract, info.OrderSizeMin)
+	// Gate supports fractional contracts when EnableDecimal is true
+	// (most USDT-perp pairs on modern Gate). Otherwise force integer.
+	var sizeJSON any
+	if info.EnableDecimal {
+		raw := req.Quantity
+		if info.QuantoMultiplier > 0 {
+			raw = req.Quantity / info.QuantoMultiplier
+		}
+		// Round to 4 decimals — Gate accepts the string representation.
+		raw = math.Floor(raw*1e4) / 1e4
+		if raw <= 0 {
+			return nil, errUser("quantity too small for %s (rounds to 0 contracts)", contract)
+		}
+		if req.Side == trade.SideSell {
+			raw = -raw
+		}
+		sizeJSON = strconv.FormatFloat(raw, 'f', -1, 64)
+	} else {
+		num := coinsToContracts(req.Quantity, info.QuantoMultiplier)
+		if num <= 0 || num < info.OrderSizeMin {
+			return nil, errUser("quantity too small for %s (min %d contracts)", contract, info.OrderSizeMin)
+		}
+		if req.Side == trade.SideSell {
+			num = -num
+		}
+		sizeJSON = num
 	}
-	// Gate: positive size = long, negative = short. No `side` field.
-	size := num
-	if req.Side == trade.SideSell {
-		size = -num
-	}
+	size := sizeJSON
 	var orderBody map[string]any
 	switch req.OrderType {
 	case trade.OrderLimit:
@@ -358,7 +380,7 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 			OrderID:   string(condResp.ID),
 			Symbol:    req.Symbol,
 			Side:      req.Side,
-			Quantity:  float64(num) * info.QuantoMultiplier,
+			Quantity:  req.Quantity,
 			Status:    "PENDING",
 			CreatedAt: time.Now().UTC(),
 			Raw:       condBody2,
@@ -387,7 +409,7 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		OrderID:   string(resp.ID),
 		Symbol:    req.Symbol,
 		Side:      req.Side,
-		Quantity:  float64(num) * info.QuantoMultiplier,
+		Quantity:  req.Quantity,
 		AvgPrice:  fill,
 		Status:    resp.Status,
 		CreatedAt: time.Now().UTC(),
