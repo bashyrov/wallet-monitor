@@ -35,7 +35,10 @@ import (
 
 const futuresWS = "wss://contract.mexc.com/edge"
 const restBase = "https://contract.mexc.com/api/v1/contract/depth"
-const restBackstopInterval = 30 * time.Second
+// REST backstop intentionally disabled — orderbooks are WS-only per
+// architectural decision. The one-shot REST snapshot on fresh subscribe
+// (in Parse) seeds the book; from there it's pure WS push.depth deltas.
+const restBackstopInterval = 0
 
 type Futures struct {
 	store *cache.Store
@@ -56,7 +59,9 @@ func NewFutures(store *cache.Store) *ws.Runner {
 		books: make(map[string]*book),
 		http:  &http.Client{Timeout: 5 * time.Second},
 	}
-	go a.restBackstopLoop()
+	// No periodic REST loop — WS-only steady state. The one-shot REST
+	// snapshot triggered on fresh-subscribe inside Parse() seeds new
+	// symbols and then deltas keep them updated.
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("mexc", snap.Symbol, snap, "ws")
 	})
@@ -70,7 +75,11 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	for _, s := range symbols {
 		f := map[string]any{
 			"method": "sub.depth",
-			"param":  map[string]any{"symbol": strings.ToUpper(s) + "_USDT", "limit": 20},
+			// Subscribe with limit=100 instead of 20 — gives more headroom
+			// before the shrinkage quirk eats the book down to empty.
+			// Combined with 3s REST backstop, the effective lag drops
+			// from ~30s worst-case to <3s.
+			"param":  map[string]any{"symbol": strings.ToUpper(s) + "_USDT", "limit": 100},
 		}
 		b, _ := ws.MarshalJSON(f)
 		frames = append(frames, b)
@@ -102,9 +111,11 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	defer a.mu.Unlock()
 
 	bk, ok := a.books[token]
+	freshSubscribe := false
 	if !ok {
 		bk = &book{bids: make(map[float64]float64), asks: make(map[float64]float64)}
 		a.books[token] = bk
+		freshSubscribe = true
 	}
 
 	if !bk.seeded {
@@ -112,6 +123,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		bk.bids = make(map[float64]float64, len(msg.Data.Bids))
 		bk.asks = make(map[float64]float64, len(msg.Data.Asks))
 		bk.seeded = true
+	}
+
+	// Fresh subscribe → kick off an async REST snapshot in parallel. If
+	// the first WS push happens to be a thin delta (size=0 removals), the
+	// REST snapshot lands ~200ms later and replaces the empty book wholesale.
+	// Without this, depleted books on active symbols (e.g. MEXC LAB) could
+	// sit empty for up to one backstop interval.
+	if freshSubscribe {
+		go a.fetchAndReplace(token)
 	}
 
 	// Apply levels: sz=0 (index 1) means remove; sz>0 means add/update.

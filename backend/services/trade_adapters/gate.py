@@ -411,15 +411,43 @@ class GateAdapter:
         all_contracts = await _contracts()
         positions = []
         for p in data:
-            size = int(p.get("size") or 0)
-            if size == 0:
-                continue
             cname = p.get("contract", "")
             if symbol and cname != _gate_symbol(symbol):
                 continue
             quanto = all_contracts.get(cname, {}).get("quanto_multiplier", 1)
-            qty_coins = abs(size) * quanto
+            # Gate's `size` field is INTEGER. For enable_decimal contracts
+            # (most modern USDT-margined symbols), fractional positions
+            # report size=0 even when the position is live. Derive qty from
+            # `value` ÷ entry_price as a fallback. Hedge-mode (dual_long/
+            # dual_short) is the case that triggered the original bug —
+            # 0.1 SOL was reported as size=0 but value=$9.8.
+            raw_size = int(p.get("size") or 0)
+            entry_px = float(p.get("entry_price") or 0)
+            pos_value = float(p.get("value") or 0)
+            pos_margin = float(p.get("margin") or 0)
+            if raw_size != 0:
+                qty_coins = abs(raw_size) * quanto
+            elif pos_value > 0 and entry_px > 0:
+                qty_coins = pos_value / entry_px
+                # mode signals direction in hedge: dual_long → buy, dual_short → sell
+                m = (p.get("mode") or "").lower()
+                if m == "dual_long":
+                    raw_size = 1
+                elif m == "dual_short":
+                    raw_size = -1
+                else:
+                    # one-way fractional: positive value with no direction
+                    # hint is ambiguous; default to buy (size>0)
+                    raw_size = 1
+            else:
+                # Truly empty (size=0 + value=0 + margin=0) — skip.
+                if pos_margin <= 0:
+                    continue
+                # Edge: margin held but value=0 (pending order/cancellation
+                # residue). Skip to avoid phantom row.
+                continue
             sym = cname.replace("_USDT", "")
+            size = raw_size  # preserve sign for downstream side check
             # Gate: leverage=0 means cross margin; >0 means isolated with
             # that leverage. There's no separate marginMode field.
             lev_val = float(p.get("leverage") or 0)
