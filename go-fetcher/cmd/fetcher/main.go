@@ -63,6 +63,7 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ticks"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade"
 	// Trade-adapter blank imports — each package self-registers in
 	// init() so we never have to mention them outside of import.
@@ -202,6 +203,11 @@ func main() {
 		return dexCompute.Run(gctx)
 	})
 
+	// Trade-stream (tick) hub — populated only when WS broadcaster is up.
+	// Hoisted to outer scope so tick adapter registration below the
+	// broadcaster block can reach OnTick.
+	var tradesCh *wsbroadcast.Trades
+
 	// WS broadcaster for /api/screener/ws/* — drains arbitrage.json,
 	// computes diff vs last broadcast, fans out to connected clients.
 	// nginx routes the /api/screener/ws/* path family at this port;
@@ -226,11 +232,14 @@ func main() {
 		}()
 		longShort := wsbroadcast.NewLongShort(cfg.CacheDir)
 		bookCh := wsbroadcast.NewBook(bookReader, store, mgr)
+		tickRing := ticks.NewRing(50)
+		tradesCh = wsbroadcast.NewTrades(tickRing, mgr)
 		wsSvc := wsbroadcast.NewService(
 			wsbroadcast.NewJWTValidator(secret),
 			longShort,
 			wsbroadcast.NewFunding(cfg.CacheDir),
 			bookCh,
+			tradesCh,
 		)
 
 		// Unified onUpdate hook: Redis mirror + event-driven book push +
@@ -408,6 +417,23 @@ func main() {
 		runner := e.runner
 		g.Go(func() error {
 			runner.Run(gctx)
+			return nil
+		})
+	}
+
+	// Trade-stream (tick) adapters — Phase 5. Each runs a separate WS
+	// connection per venue to receive every individual fill. Drives the
+	// /ws/trades channel for arbion-level visual liveness. Hooks the
+	// hub's OnTick directly; no polling tick. Only enabled when the
+	// broadcaster Service is up (otherwise we'd be parsing for nothing).
+	if tradesCh != nil {
+		onTick := tradesCh.OnTick
+		// Start with Binance as proof-of-concept. Other venues follow
+		// the same pattern (see LIVE_ORDERBOOK_PLAN.md Phase 5b-5o).
+		binanceTicks := binance.NewTrades(onTick)
+		mgr.RegisterTicks("binance", binanceTicks)
+		g.Go(func() error {
+			binanceTicks.Run(gctx)
 			return nil
 		})
 	}

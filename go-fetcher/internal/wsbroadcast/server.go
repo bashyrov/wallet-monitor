@@ -40,15 +40,17 @@ type Service struct {
 	longShort *LongShort
 	funding   *Funding
 	book      *Book
+	trades    *Trades
 	upgrader  websocket.Upgrader
 }
 
-func NewService(jwt *JWTValidator, longShort *LongShort, funding *Funding, book *Book) *Service {
+func NewService(jwt *JWTValidator, longShort *LongShort, funding *Funding, book *Book, trades *Trades) *Service {
 	return &Service{
 		jwt:       jwt,
 		longShort: longShort,
 		funding:   funding,
 		book:      book,
+		trades:    trades,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4 * 1024,
 			WriteBufferSize: 16 * 1024,
@@ -67,6 +69,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/screener/ws/arb", s.handleLongShort) // legacy alias
 	mux.HandleFunc("/api/screener/ws/funding", s.handleFunding)
 	mux.HandleFunc("/api/screener/ws/book", s.handleBook)
+	if s.trades != nil {
+		mux.HandleFunc("/api/screener/ws/trades", s.handleTrades)
+	}
 }
 
 // Run starts the broadcast loops. Should be launched in its own
@@ -75,7 +80,31 @@ func (s *Service) Run(ctx context.Context) {
 	go s.longShort.Run(ctx)
 	go s.funding.Run(ctx)
 	go s.book.Run(ctx)
+	// trades is push-driven (OnTick), no Run loop.
 	<-ctx.Done()
+}
+
+// handleTrades upgrades and registers the client on the trades hub.
+// Auth REQUIRED — same policy as /ws/book (trade flow is a paid feature).
+func (s *Service) handleTrades(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.L().Debug().Err(err).Msg("ws upgrade failed")
+		return
+	}
+	uid, ok := s.handshakeAuth(conn, authRequired)
+	if !ok {
+		return
+	}
+	c := &client{
+		uid:    uid,
+		conn:   conn,
+		outbox: make(chan []byte, clientOutboxSize),
+		done:   make(chan struct{}),
+	}
+	s.trades.register(c)
+	go s.trades.hub.runWriter(c)
+	go s.trades.runReader(c)
 }
 
 // handleLongShort upgrades and registers the client on the long-short

@@ -30,6 +30,7 @@ import (
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ticks"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
@@ -46,6 +47,7 @@ type Manager struct {
 
 	obRunners       map[string]*ws.Runner
 	fundingRunners  map[string]*funding.Runner
+	tickRunners     map[string]*ticks.Runner
 
 	current map[string]map[string]struct{} // venue -> last-applied set
 }
@@ -56,6 +58,7 @@ func New() *Manager {
 		userSubs:       make(map[string]map[string]time.Time),
 		obRunners:      make(map[string]*ws.Runner),
 		fundingRunners: make(map[string]*funding.Runner),
+		tickRunners:    make(map[string]*ticks.Runner),
 		current:        make(map[string]map[string]struct{}),
 	}
 }
@@ -73,6 +76,15 @@ func (m *Manager) RegisterOrderbook(venue string, r *ws.Runner) {
 func (m *Manager) RegisterFunding(venue string, r *funding.Runner) {
 	m.mu.Lock()
 	m.fundingRunners[venue] = r
+	m.mu.Unlock()
+}
+
+// RegisterTicks attaches a trade-stream runner. Shares the venue
+// keyspace with orderbook + funding — same symbol set is applied to all
+// three runners on every reconcile tick.
+func (m *Manager) RegisterTicks(venue string, r *ticks.Runner) {
+	m.mu.Lock()
+	m.tickRunners[venue] = r
 	m.mu.Unlock()
 }
 
@@ -105,6 +117,9 @@ func (m *Manager) PrewarmAll(syms []string) {
 		m.prewarm[venue] = copySet(bucket)
 	}
 	for venue := range m.fundingRunners {
+		m.prewarm[venue] = copySet(bucket)
+	}
+	for venue := range m.tickRunners {
 		m.prewarm[venue] = copySet(bucket)
 	}
 }
@@ -188,6 +203,49 @@ func (m *Manager) PrewarmFromArbFiles(cacheDir string, fallback []string) {
 			add(o.ShortExchange, o.Symbol)
 		}
 	}
+	// Funding-feed bridge — every symbol with a live funding tick gets
+	// its orderbook prewarmed on that venue. Otherwise users opening /arb
+	// on a mid-cap symbol (LAB, etc.) see empty books because Manager
+	// only subscribed via arbitrage.json's top-1000. Cap per venue so
+	// we don't pile up symbols beyond what rate limits allow.
+	{
+		type fundRow struct {
+			Exchange  string  `json:"exchange"`
+			Symbol    string  `json:"symbol"`
+			VolumeUsd float64 `json:"volume_usd"`
+		}
+		var doc struct{ Rows []fundRow `json:"rows"` }
+		tryRead(filepath.Join(cacheDir, "funding.json"), &doc)
+		byVenue := map[string][]fundRow{}
+		for _, r := range doc.Rows {
+			if r.Exchange == "" || r.Symbol == "" {
+				continue
+			}
+			byVenue[r.Exchange] = append(byVenue[r.Exchange], r)
+		}
+		for venue, rows := range byVenue {
+			// Sort by volume desc (selection — small N per venue).
+			for i := 0; i < len(rows); i++ {
+				best := i
+				for j := i + 1; j < len(rows); j++ {
+					if rows[j].VolumeUsd > rows[best].VolumeUsd {
+						best = j
+					}
+				}
+				if best != i {
+					rows[i], rows[best] = rows[best], rows[i]
+				}
+			}
+			limit := 250
+			if len(rows) < limit {
+				limit = len(rows)
+			}
+			for k := 0; k < limit; k++ {
+				add(venue, rows[k].Symbol)
+			}
+		}
+	}
+
 	// Watchlist subscription bridge — Python web role dumps
 	// /tmp/avalant_cache/watchlist_subscribe.json every 30s with the
 	// union of (sym, long_ex, short_ex) across all users' watchlists.
@@ -223,11 +281,14 @@ func (m *Manager) PrewarmFromArbFiles(cacheDir string, fallback []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	totalSyms := 0
-	venues := make(map[string]struct{}, len(m.obRunners)+len(m.fundingRunners))
+	venues := make(map[string]struct{}, len(m.obRunners)+len(m.fundingRunners)+len(m.tickRunners))
 	for v := range m.obRunners {
 		venues[v] = struct{}{}
 	}
 	for v := range m.fundingRunners {
+		venues[v] = struct{}{}
+	}
+	for v := range m.tickRunners {
 		venues[v] = struct{}{}
 	}
 	for v := range venues {
@@ -386,11 +447,14 @@ func (m *Manager) reconcile() {
 	defer m.mu.Unlock()
 
 	// Build per-venue union of prewarm + fresh user-subs.
-	venues := make(map[string]struct{}, len(m.obRunners)+len(m.fundingRunners))
+	venues := make(map[string]struct{}, len(m.obRunners)+len(m.fundingRunners)+len(m.tickRunners))
 	for v := range m.obRunners {
 		venues[v] = struct{}{}
 	}
 	for v := range m.fundingRunners {
+		venues[v] = struct{}{}
+	}
+	for v := range m.tickRunners {
 		venues[v] = struct{}{}
 	}
 
@@ -426,6 +490,9 @@ func (m *Manager) reconcile() {
 			r.SetSymbols(flat)
 		}
 		if r, ok := m.fundingRunners[venue]; ok {
+			r.SetSymbols(flat)
+		}
+		if r, ok := m.tickRunners[venue]; ok {
 			r.SetSymbols(flat)
 		}
 		log.L().Debug().
