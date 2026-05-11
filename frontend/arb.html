@@ -1108,6 +1108,36 @@ const DEX_ADDR=(_p.get('addr')||'').toLowerCase();    // only meaningful for typ
 const DEX_PAIR=(_p.get('pair')||'').toLowerCase();    // only meaningful for type=dex
 if(!SYM||!LONG||!SHORT) document.body.innerHTML='<div style="padding:40px;color:var(--text3);font-family:Inter,sans-serif">Missing params. <a href="/screener" style="color:var(--green)">Back</a></div>';
 
+// Render the Balance cell for a /trade/balances row:
+// total prominently, with spot / fut breakdown underneath when both are
+// non-null. If this row matches the current pair's leg, highlight the slice
+// that's actually usable for THIS pair/mode:
+//   long-short (TYPE=futures): both legs use futures
+//   spot-short (TYPE=spot):    long leg uses spot, short leg uses futures
+//   dex-short  (TYPE=dex):     long leg has no balance (DEX), short uses futures
+// Venues not in the current pair just show the breakdown un-highlighted.
+function _renderBalCell(w) {
+  if (w.error) {
+    return `<span style="color:var(--red);font-size:10.5px" title="${_walletBalErrAttr(w.error)}">${_walletBalErrLabel(w.error)}</span>`;
+  }
+  const fmt = v => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
+  const total = w.balance_usdt;
+  const sp = w.spot_usdt, fu = w.futures_usdt;
+  if (total == null) return '<span style="color:var(--text3)">—</span>';
+  // Which slice highlights for THIS row?
+  let hi = null;  // 'spot' | 'fut' | null
+  if (w.exchange === LONG)  hi = (TYPE === 'spot') ? 'spot' : 'fut';
+  if (w.exchange === SHORT) hi = 'fut';
+  const breakdown = (sp != null && fu != null && (sp > 0 || fu > 0))
+    ? `<div style="font-size:9.5px;color:var(--text3);margin-top:1px;line-height:1.2">
+         <span style="${hi==='spot'?'color:var(--green);font-weight:600':''}">sp ${fmt(sp)}</span>
+         <span style="opacity:0.5">·</span>
+         <span style="${hi==='fut' ?'color:var(--green);font-weight:600':''}">fu ${fmt(fu)}</span>
+       </div>`
+    : '';
+  return `<div style="font-weight:600">${fmt(total)}</div>${breakdown}`;
+}
+
 // Type-gate: full futures terminal only makes sense for type=futures.
 // Spot/Short and DEX/Short need their own detail layouts (coming in next
 // iteration). For now show a clean placeholder card so the button
@@ -2523,9 +2553,6 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   }
   async function _ptLoadBalances() {
     try {
-      // /trade/balances already filters to purpose in ('screener','both')
-      // server-side, so we don't have to second-guess what's a "trading
-      // key" here — every row is.
       const r = await Auth.apiFetch('/trade/balances');
       if (!r.ok) return;
       const rows = await r.json();
@@ -2539,19 +2566,15 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         return;
       }
       if (em) em.style.display = 'none';
-      const fmt = (v) => v == null ? '<span style="color:var(--text3)">—</span>' : `$${Number(v).toFixed(2)}`;
       if (tb) tb.innerHTML = rows.map(w => {
         const keyType = w.can_trade
           ? '<span class="pill tr" style="font-size:10px"><span class="pill-dot"></span>Trade</span>'
           : '<span class="pill ro" style="font-size:10px"><span class="pill-dot"></span>Read-only</span>';
-        const bal = w.error
-          ? `<span style="color:var(--red);font-size:10.5px" title="${_walletBalErrAttr(w.error)}">${_walletBalErrLabel(w.error)}</span>`
-          : fmt(w.balance_usdt);
         return `<tr>
           <td>${EX_LABEL[w.exchange]||w.exchange}</td>
           <td>${w.name||''}</td>
           <td>${keyType}</td>
-          <td class="num">${bal}</td>
+          <td class="num">${_renderBalCell(w)}</td>
         </tr>`;
       }).join('');
     } catch (e) { console.error('[pair-acc] balances:', e); }
@@ -5250,28 +5273,20 @@ async function _tradeClosePair(longWid, shortWid, sym){
 async function accLoadBalances(){
   const tbody = document.getElementById('acc-balances-body');
   const empty = document.getElementById('acc-balances-empty');
-  // /trade/balances filters to screener-purpose wallets server-side and
-  // returns USDT free balance per key (null when the read fails).
   try {
     const r = await Auth.apiFetch('/trade/balances');
     if (!r.ok) throw new Error();
     const rows = await r.json();
     if (!rows.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
     empty.style.display = 'none';
-    const fmt = (v) => v == null
-      ? '<span style="color:var(--text3)">—</span>'
-      : `$${Number(v).toFixed(2)}`;
     tbody.innerHTML = rows.map(w => {
-      const bal = w.error
-        ? `<span style="color:var(--red);font-size:10.5px" title="${_walletBalErrAttr(w.error)}">${_walletBalErrLabel(w.error)}</span>`
-        : fmt(w.balance_usdt);
       return `<tr>
         <td><span class="ex-pill">${(EX_LABEL[w.exchange]||w.exchange)}</span></td>
         <td><span class="sym" style="font-family:Inter,sans-serif;font-weight:600;font-size:11.5px;color:var(--text)">${w.name}</span></td>
         <td>${w.can_trade
             ? '<span style="color:var(--yellow);font-weight:600;font-size:10.5px">TRADE</span>'
             : '<span style="color:var(--teal);font-weight:600;font-size:10.5px">READ</span>'}</td>
-        <td class="num">${bal}</td>
+        <td class="num">${_renderBalCell(w)}</td>
         <td class="num" style="color:var(--text3)">—</td>
         <td class="num" style="color:var(--text3)">—</td>
       </tr>`;

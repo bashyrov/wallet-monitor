@@ -1438,6 +1438,8 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
             "can_trade":       bool(getattr(w, "can_trade", False)) or w.purpose in ("screener", "both"),
             "is_main":         bool(getattr(w, "is_main", False)),
             "balance_usdt":    None,
+            "spot_usdt":       None,
+            "futures_usdt":    None,
             "error":           None,
         }
         if ex not in ADAPTERS:
@@ -1450,12 +1452,15 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
             out["error"] = str(exc)[:80]
             logger.info("list_balances failed wallet=%s ex=%s: %s", w.id, ex, exc)
             return out
-        # Trade adapters return {"usdt": <float>, ...} (flat). Wallet
-        # providers return {"USDT": {"free": ..., "total": ...}, ...} via
-        # _build_result. Accept both. The `or`-chain trick is unsafe here
-        # — a literal 0.0 is falsy and would skip a real-but-zero balance —
-        # so we test each key with explicit `is not None`.
+        # Trade adapters return {"usdt": float, "spot_usd": float,
+        # "futures_usd": float} (flat). Older adapter shapes may return
+        # just {"usdt": float} or wallet-provider style {"USDT": {free,total}}.
+        # The `or`-chain trick is unsafe here — a literal 0.0 is falsy and
+        # would skip a real-but-zero balance — so we test each key with
+        # explicit `is not None`.
         usdt = None
+        spot_v = None
+        fut_v = None
         if isinstance(bal, dict):
             for key in ("USDT", "usdt", "usdt_balance"):
                 if key in bal and bal[key] is not None:
@@ -1469,18 +1474,26 @@ async def list_user_balances(db: Session, user_id: int) -> list[dict]:
                         except (TypeError, ValueError): usdt = None
                     if usdt is not None:
                         break
-            # Adapter that returns flat {"available": .., "equity": ..} (no
-            # USDT key) — accept too. Used by some early adapter shapes.
             if usdt is None:
                 v = bal.get("available")
                 if v is None: v = bal.get("free")
                 if v is None: v = bal.get("equity")
                 try: usdt = float(v) if v is not None else None
                 except (TypeError, ValueError): usdt = None
+            try:
+                if bal.get("spot_usd") is not None:
+                    spot_v = float(bal["spot_usd"])
+            except (TypeError, ValueError): pass
+            try:
+                if bal.get("futures_usd") is not None:
+                    fut_v = float(bal["futures_usd"])
+            except (TypeError, ValueError): pass
         try:
             out["balance_usdt"] = round(float(usdt), 2) if usdt is not None else None
         except (TypeError, ValueError):
             out["balance_usdt"] = None
+        out["spot_usdt"]    = round(spot_v, 2) if spot_v is not None else None
+        out["futures_usdt"] = round(fut_v,  2) if fut_v  is not None else None
         return out
 
     results = await asyncio.gather(*(_one(w) for w in wallets), return_exceptions=True)
