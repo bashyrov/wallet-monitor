@@ -244,13 +244,13 @@ func (a *Adapter) SetLeverage(ctx context.Context, creds trade.Creds, req trade.
 	}
 	// marginType returns -4046 ("No need to change margin type") if
 	// already set — same as Binance. Treat as success.
-	if _, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v1/marginType",
+	if _, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v3/marginType",
 		map[string]string{"symbol": sym, "marginType": mode}); err != nil {
 		if !isAlreadySet(err) {
 			return err
 		}
 	}
-	if _, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v1/leverage",
+	if _, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v3/leverage",
 		map[string]string{"symbol": sym, "leverage": strconv.Itoa(req.Leverage)}); err != nil {
 		return err
 	}
@@ -291,7 +291,7 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	default:
 		orderParams["type"] = "MARKET"
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v1/order", orderParams)
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v3/order", orderParams)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +331,7 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 		reduceSide = "BUY"
 		closeSide = trade.SideBuy
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v1/order",
+	body, err := a.signedRequest(ctx, creds, http.MethodPost, "/fapi/v3/order",
 		map[string]string{
 			"symbol":       toAsterSymbol(req.Symbol),
 			"side":         reduceSide,

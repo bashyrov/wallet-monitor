@@ -293,7 +293,7 @@ class AsterAdapter:
     @classmethod
     async def list_positions(cls, creds: dict, symbol: str | None = None) -> list[dict]:
         params = {"symbol": cls._symbol(symbol)} if symbol else {}
-        data = await cls._signed(creds, "GET", "/fapi/v2/positionRisk", params or None)
+        data = await cls._signed(creds, "GET", "/fapi/v3/positionRisk", params or None)
         positions = []
         for p in (data if isinstance(data, list) else []):
             amt = float(p.get("positionAmt", 0) or 0)
