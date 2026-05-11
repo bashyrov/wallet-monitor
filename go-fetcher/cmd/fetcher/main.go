@@ -436,6 +436,12 @@ func main() {
 			binanceTicks.Run(gctx)
 			return nil
 		})
+		mexcTicks := mexc.NewTrades(onTick)
+		mgr.RegisterTicks("mexc", mexcTicks)
+		g.Go(func() error {
+			mexcTicks.Run(gctx)
+			return nil
+		})
 	}
 
 	// Initial prewarm. During shadow-mode rollout we want Go's hot-list
