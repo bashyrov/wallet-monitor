@@ -111,14 +111,14 @@ hyperliquid   ✓         ·      ·        ✓        ✓ full       ✓
 ethereal      ✓         ·      ·        ✓        ✓ full       ·
 lighter       ✓         ·      ·        ✓        RO Go        ·
 paradex       ✓         ✓      ✓        ✓        ✓ full       ·
-extended      ✓         ·      ✓        ✓        ·            ·
+extended      ✓         ·      ✓        ✓        ✓ full       ·
 ```
 
 Legend: `✓ full` open/close/leverage all in Go · `RO Go` reads in Go, writes return errZK · `·` not implemented.
 
 **Blocked / partial:**
 - **Lighter trading** — ZK signing requires the CGO-bundled `lighter-sdk` native lib (per-arch builds). Reads work in Go (`/api/v1/account` REST), writes return `KindUser` errors directing the dispatcher to the Python adapter. Keep `lighter` out of `GO_TRADE_VENUES`.
-- **Extended trading** — `x10-python-trading` pins pydantic 2.5.3 / eth-account 0.11 / websockets 12 — would downgrade and break Hyperliquid + Ethereal adapters. Read-only.
+- **Extended trading** — implemented natively in Go (`go-fetcher/internal/trade/extended/extended.go`) using StarkEx Poseidon signing via `starknet.go`. Avoids x10-python-trading SDK dependency conflicts (which would downgrade pydantic / eth-account / websockets). Credentials = api_key + Stark privkey + Stark pubkey + vault (collateral_position_id). Signing has NO live cross-vector vs the x10 Python SDK — first real testnet order is the truth check; keep `extended` out of `GO_TRADE_VENUES` until verified.
 - **Ethereal orderbook + user-stream** — public WS uses Socket.IO and SDK stream types (L2Book/Ticker/OrderFill) are rejected as "Invalid stream subscription type". REST API has no orderbook endpoint. Trade works.
 
 ---

@@ -231,6 +231,17 @@ def _normalize_for_venue(exchange: str, creds: dict) -> dict:
         if not out.get("api_key") and out.get("address"):
             out["api_key"] = out["address"]
         return out
+    if ex == "extended":
+        # Extended needs 4 fields: api_key + Stark privkey + Stark pubkey + vault.
+        # User-side schema:    api_key + private_key + address + api_passphrase
+        # Go-side Creds slots: api_key + api_secret + wallet  + passphrase
+        out = dict(creds)
+        if not out.get("api_secret") and out.get("private_key"):
+            out["api_secret"] = out["private_key"]
+        if not out.get("wallet") and out.get("address"):
+            out["wallet"] = out["address"]
+        # api_passphrase → passphrase happens in _strip_creds already
+        return out
     return creds
 
 

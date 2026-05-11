@@ -35,8 +35,8 @@ TRADE_SUPPORTED: set[str] = {
     "kraken",
     # BingX + WhiteBIT
     "bingx", "whitebit",
-    # Perp DEX (5) — require private key / API wallet / ZK key / Stark key
-    "hyperliquid", "aster", "ethereal", "lighter", "paradex",
+    # Perp DEX (6) — require private key / API wallet / ZK key / Stark key
+    "hyperliquid", "aster", "ethereal", "lighter", "paradex", "extended",
     # Spot-only — futures NOT implemented, leverage/close_position raise
     "htx",
 }
@@ -63,8 +63,11 @@ ADAPTERS: dict[str, type] = {
     "paradex":      ParadexAdapter,
 }
 
-# Stays for venues we still proxy as wallet-only (none right now).
-_READONLY: dict[str, str] = {}
+# Extended is implemented in Go only (StarkEx Poseidon signing — no Python
+# port). The dispatcher routes via trade_proxy when "extended" is in
+# GO_TRADE_VENUES; this readonly stub satisfies the ADAPTERS registry +
+# validate_key flow so users can add Extended keys from the wallet form.
+_READONLY: dict[str, str] = {"extended": "Extended"}
 for _key, _label in _READONLY.items():
     ADAPTERS[_key] = make_readonly_adapter(_key, _label)
 

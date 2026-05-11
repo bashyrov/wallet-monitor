@@ -82,6 +82,7 @@ import (
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/mexc"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/okx"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/paradex"
+	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/extended"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/whitebit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/wsbroadcast"
