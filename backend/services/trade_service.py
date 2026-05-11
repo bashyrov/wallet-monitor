@@ -613,10 +613,11 @@ _POSITIONS_LASTGOOD: dict[tuple[int, int, str], tuple[float, list[dict]]] = {}
 _POSITIONS_LASTGOOD_TTL_S = 300.0
 
 
-async def list_user_positions(db: Session, user_id: int, symbol: str | None = None) -> list[dict]:
+async def list_user_positions(db: Session, user_id: int, symbol: str | None = None,
+                              *, authoritative: bool = False) -> list[dict]:
     """Aggregate open positions across all the user's trade-enabled wallets.
 
-    Two latency optimisations:
+    Two latency optimisations (UI path):
       - Stale-while-revalidate: if we have ANY cache (even past TTL),
         return it immediately and kick off a background refresh. Cold
         page load still has to wait, but refreshes never block the UI.
@@ -624,7 +625,15 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
         _POSITIONS_PER_WALLET_TIMEOUT_S. A misbehaving venue (MEXC with
         an IP-whitelist 60s hang, etc.) doesn't drag the whole call out
         — that wallet's last-good (if any) covers the gap.
+
+    authoritative=True (reconcile path): skip cache + lastgood, return
+    only fresh per-wallet data. Venues that timeout return [] for that
+    wallet rather than resurrecting stale rows. Prevents phantom-open
+    positions from sticking when an exchange's REST is unreachable.
     """
+    if authoritative:
+        return await _list_user_positions_inner(db, user_id, symbol,
+                                                 fresh_only=True)
     import time as _time
     cache_key = (user_id, (symbol or "").upper())
     cached = _POSITIONS_CACHE.get(cache_key)
@@ -633,9 +642,6 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
         age = now - cached[0]
         if age < _POSITIONS_CACHE_TTL_S:
             return cached[1]
-        # Stale cache: serve immediately, refresh in background. Per-user
-        # dedup so a fast-polling /arb doesn't queue overlapping bg
-        # refreshes against the same wallets.
         if age < _POSITIONS_STALE_MAX_S and not _POSITIONS_REFRESH_INFLIGHT.get(cache_key):
             _POSITIONS_REFRESH_INFLIGHT[cache_key] = True
             async def _bg():
@@ -658,7 +664,8 @@ _POSITIONS_REFRESH_INFLIGHT: dict[tuple[int, str], bool] = {}
 _POSITIONS_PER_WALLET_TIMEOUT_S = 10.0  # gate/kucoin/binance occasionally take 6-9s under concurrent fan-out
 
 
-async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | None) -> list[dict]:
+async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | None,
+                                      *, fresh_only: bool = False) -> list[dict]:
     import time as _time
     cache_key = (user_id, (symbol or "").upper())
     wallets = (
@@ -691,34 +698,25 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
         if symbol and symbol_supported and not symbol_supported.get(w.type_value):
             return []
 
-        # WS user-stream short-circuit: if a live stream exists for this
-        # wallet, return its in-memory snapshot instead of hitting the
-        # exchange REST API. Status TTL is 60s on Redis — stale = stream
-        # broken/down → fall through to REST.
-        #
-        # SAFETY NET: if the snapshot is LIVE but reports ZERO positions,
-        # also fall through to REST. WS adapters sometimes connect
-        # successfully but miss the initial position snapshot (positions
-        # opened before WS connection are silently absent — observed on
-        # MEXC). REST is authoritative; trust WS only when it AGREES with
-        # REST or has non-zero positions.
-        try:
-            from backend.services.user_streams import _snapshot as _us_snapshot
-            if _us_snapshot.get_status(user_id, w.id) == "LIVE":
-                rows = _us_snapshot.get_positions(user_id, w.id) or []
-                if symbol:
-                    sym_norm = symbol.upper().strip()
-                    rows = [r for r in rows if (r.get("symbol") or "").upper() == sym_norm]
-                if rows:
-                    for r in rows:
-                        r["wallet_id"] = w.id
-                    _POSITIONS_LASTGOOD[lg_key] = (_time.time(), rows)
-                    return rows
-                # Empty snapshot — could be "truly zero" or "WS missed an
-                # existing position". Fall through to REST so the user
-                # never sees a phantom-empty wallet.
-        except Exception as exc:
-            logger.debug("userstream snapshot read failed: %s", exc)
+        # WS user-stream short-circuit (UI path only). For reconcile
+        # (fresh_only=True) we always hit REST so a stale WS snapshot
+        # doesn't resurrect a closed position.
+        if not fresh_only:
+            try:
+                from backend.services.user_streams import _snapshot as _us_snapshot
+                if _us_snapshot.get_status(user_id, w.id) == "LIVE":
+                    rows = _us_snapshot.get_positions(user_id, w.id) or []
+                    if symbol:
+                        sym_norm = symbol.upper().strip()
+                        rows = [r for r in rows if (r.get("symbol") or "").upper() == sym_norm]
+                    if rows:
+                        for r in rows:
+                            r["wallet_id"] = w.id
+                        _POSITIONS_LASTGOOD[lg_key] = (_time.time(), rows)
+                        return rows
+                    # Empty snapshot — fall through to REST.
+            except Exception as exc:
+                logger.debug("userstream snapshot read failed: %s", exc)
 
         try:
             creds = decrypt_credentials(w.credentials or {})
@@ -729,13 +727,17 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
             return rows
         except Exception as exc:
             msg = str(exc)
-            # "Symbol not on this venue" errors are real empties, not blips —
-            # don't fall back to last-good for them.
             symbol_not_on_venue = any(s in msg for s in ("51001", "-1121", "Instrument ID", "Invalid symbol"))
             if symbol_not_on_venue:
                 logger.debug("list_positions skipped wallet=%s ex=%s: %s", w.id, w.type_value, msg)
                 return []
             logger.info("list_positions failed wallet=%s ex=%s: %s", w.id, w.type_value, exc)
+            # Authoritative path: do NOT serve lastgood — reconcile must
+            # not keep a phantom position open just because the venue is
+            # unreachable. Empty result lets reconcile decide what to do
+            # (after N misses, force-close).
+            if fresh_only:
+                return []
             lg = _POSITIONS_LASTGOOD.get(lg_key)
             if lg and (_time.time() - lg[0]) < _POSITIONS_LASTGOOD_TTL_S:
                 return lg[1]
@@ -743,14 +745,18 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
 
     async def _one_capped(w: Wallet) -> list[dict]:
         # Per-wallet hard timeout. A slow exchange (MEXC w/ IP-whitelist
-        # hang, etc.) gets dropped from this snapshot; the user's last-
-        # good for that wallet (if any) covers the gap.
+        # hang, etc.) gets dropped from this snapshot.
         try:
             return await asyncio.wait_for(
                 _one(w), timeout=_POSITIONS_PER_WALLET_TIMEOUT_S,
             )
         except asyncio.TimeoutError:
             lg_key = (user_id, w.id, (symbol or "").upper())
+            # Authoritative path bypasses lastgood entirely.
+            if fresh_only:
+                logger.info("list_positions wallet=%s ex=%s timed out (%.1fs) — fresh_only=[]",
+                            w.id, w.type_value, _POSITIONS_PER_WALLET_TIMEOUT_S)
+                return []
             lg = _POSITIONS_LASTGOOD.get(lg_key)
             if lg and (_time.time() - lg[0]) < _POSITIONS_LASTGOOD_TTL_S:
                 return lg[1]

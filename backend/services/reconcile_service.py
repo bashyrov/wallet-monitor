@@ -127,7 +127,11 @@ async def _reconcile_user(user_id: int) -> tuple[int, int, int]:
     db = SessionLocal()
     try:
         try:
-            live = await trade_service.list_user_positions(db, user_id)
+            # Reconcile uses authoritative path: fresh REST data only,
+            # no cache + no lastgood. A venue timing out returns [] for
+            # that wallet, not stale rows — so phantom positions can't
+            # survive past a few cycles of unreachable exchange.
+            live = await trade_service.list_user_positions(db, user_id, authoritative=True)
         except Exception as exc:
             logger.info("reconcile: list_user_positions failed user=%s: %s", user_id, exc)
             return (0, 0, 0)
