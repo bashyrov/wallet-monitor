@@ -26,6 +26,7 @@ from .htx import HtxAdapter
 from .lighter import LighterAdapter
 from .kraken import KrakenAdapter
 from .paradex import ParadexAdapter
+from .extended import ExtendedAdapter
 from .readonly import make_readonly_adapter
 
 # ── All exchanges/DEXes with full trade adapters ────────────────────────────
@@ -61,13 +62,14 @@ ADAPTERS: dict[str, type] = {
     "lighter":      LighterAdapter,
     "kraken":       KrakenAdapter,
     "paradex":      ParadexAdapter,
+    "extended":     ExtendedAdapter,
 }
 
 # Extended is implemented in Go only (StarkEx Poseidon signing — no Python
-# port). The dispatcher routes via trade_proxy when "extended" is in
-# GO_TRADE_VENUES; this readonly stub satisfies the ADAPTERS registry +
-# validate_key flow so users can add Extended keys from the wallet form.
-_READONLY: dict[str, str] = {"extended": "Extended"}
+# port). The Python-side ExtendedAdapter above is a thin validate_key /
+# fetch_balance proxy to the Go endpoint via trade_proxy. Real order
+# placement routes through trade_proxy when "extended" is in GO_TRADE_VENUES.
+_READONLY: dict[str, str] = {}
 for _key, _label in _READONLY.items():
     ADAPTERS[_key] = make_readonly_adapter(_key, _label)
 

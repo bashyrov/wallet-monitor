@@ -34,7 +34,9 @@ class ExtendedProvider(BaseWalletProvider):
     label = "Extended"
     enabled = True
     soon = False             # trading shipped; balance fetch via Go proxy
-    needs_api_key = True     # full credential bundle required
+    needs_api_key = True     # Extended UI API key (HTTP auth on GETs)
+    needs_l2_private_key = True   # Stark L2 private key (for signing orders)
+    needs_vault = True       # collateral_position_id — int subaccount id
 
     async def fetch_balance(self, wallet) -> BalanceResult:
         """Balance fetch is delegated to the Go-fetcher /internal/trade/balance

@@ -63,7 +63,20 @@ def _build_perpdex_creds(body: WalletCreate) -> dict:
         # CEX-style schemas.
         if body.private_key:
             creds["api_secret"] = body.private_key.strip()
-    # extended: read-only, address only.
+    elif tv == "extended":
+        # Extended (StarkEx perpetuals) — 4 fields:
+        #   address         = Stark L2 public key (stored above)
+        #   api_key         = API key from Extended UI (HTTP auth on GETs)
+        #   private_key     = Stark L2 private key (signs orders)
+        #   api_passphrase  = vault / collateral_position_id (decimal int)
+        if body.api_key:
+            creds["api_key"] = body.api_key.strip()
+        if body.l2_private_key:
+            creds["private_key"] = body.l2_private_key.strip()
+        elif body.private_key:
+            creds["private_key"] = body.private_key.strip()
+        if body.api_passphrase:
+            creds["api_passphrase"] = body.api_passphrase.strip()
     return creds
 
 

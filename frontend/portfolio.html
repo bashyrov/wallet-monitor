@@ -2277,6 +2277,17 @@ async function evSendVerify() {
                   </div>
                   <div class="field-err" id="err-perpdex_api_key_index"></div>
                 </div>
+                <!-- Extended vault (collateral_position_id) — integer subaccount id -->
+                <div class="form-group" id="perpdex-vault-group" style="display:none">
+                  <label class="form-label">Vault (Collateral Position ID)</label>
+                  <input class="form-input" name="perpdex_vault"
+                         placeholder="numeric e.g. 12345" spellcheck="false" autocomplete="off"
+                         inputmode="numeric">
+                  <div class="form-hint" style="margin-top:4px;font-size:12px;color:var(--text3)">
+                    Integer ID of your Extended sub-account. Visible in API Management → Vault on extended.exchange.
+                  </div>
+                  <div class="field-err" id="err-perpdex_vault"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -4052,8 +4063,19 @@ function _onExchangeSelect(opt) {
 function _onPerpdexSelect(opt) {
   const needsKey = opt.needs_api_key;
   const needsToken = opt.needs_api_token || opt.value === 'paradex';
-  document.getElementById('perpdex-address-group').style.display = needsKey ? 'none' : '';
+  // Extended is special: needs BOTH the Extended UI api_key AND a Stark
+  // L2 public key (address) AND a Stark L2 private key AND a vault. So
+  // we keep the address panel visible even though needs_api_key=true.
+  const isExtended = opt.value === 'extended';
+  document.getElementById('perpdex-address-group').style.display = (needsKey && !isExtended) ? 'none' : '';
   document.getElementById('perpdex-apikey-group').style.display = needsKey ? '' : 'none';
+  // For Extended, the apikey-group's api_secret field is irrelevant
+  // (Extended uses ONLY api_key for HTTP auth — no api_secret). Hide it.
+  const apiSecretField = document.querySelector('#perpdex-apikey-group input[name="perpdex_api_secret"]');
+  if (apiSecretField) {
+    const wrap = apiSecretField.closest('.form-group');
+    if (wrap) wrap.style.display = isExtended ? 'none' : '';
+  }
   // Paradex-only: additional JWT token field alongside the Starknet address.
   const tokenGroup = document.getElementById('perpdex-apitoken-group');
   if (tokenGroup) tokenGroup.style.display = (!needsKey && needsToken) ? '' : 'none';
@@ -4068,6 +4090,21 @@ function _onPerpdexSelect(opt) {
   showIf('perpdex-subkey-pubkey-group',   opt.value === 'paradex');
   showIf('perpdex-account-index-group',   !!opt.needs_account_index);
   showIf('perpdex-api-key-index-group',   !!opt.needs_api_key_index);
+  showIf('perpdex-vault-group',            !!opt.needs_vault);
+  // Extended uses the address slot for the Stark L2 public key and the
+  // l2_private_key slot for the Stark private key. Tweak labels so the
+  // user sees domain-appropriate copy instead of "EVM Address" /
+  // "L2 Stark Private Key (Paradex subkey hint)".
+  if (opt.value === 'extended') {
+    const addr = document.querySelector('#perpdex-address-group .form-label');
+    if (addr) addr.textContent = 'Stark L2 Public Key';
+    const addrInp = document.querySelector('#perpdex-address-group input');
+    if (addrInp) addrInp.placeholder = '0x… Stark L2 public key';
+    const l2 = document.querySelector('#perpdex-l2-key-group .form-label');
+    if (l2) l2.textContent = 'Stark L2 Private Key';
+    const l2Hint = document.querySelector('#perpdex-l2-key-group .form-hint');
+    if (l2Hint) l2Hint.innerHTML = 'From your Extended API Management page. Stored encrypted (Fernet/AES-128).';
+  }
 }
 function _resetProtoChips() {
   [
@@ -4192,7 +4229,17 @@ async function submitAddWallet(e) {
     const pdOpt = S.options.perpdex_types.find(o => o.value === body.type_value);
     if (pdOpt && pdOpt.needs_api_key) {
       body.api_key = form.perpdex_api_key.value.trim();
-      body.api_secret = form.perpdex_api_secret.value.trim();
+      // Extended uses only api_key for HTTP auth (no api_secret); it
+      // also needs address + l2 privkey + vault below.
+      if (body.type_value === 'extended') {
+        body.address = form.perpdex_address.value.trim();
+        const l2 = (form.perpdex_l2_private_key?.value || '').trim();
+        if (l2) body.l2_private_key = l2;
+        const vault = (form.perpdex_vault?.value || '').trim();
+        if (vault) body.api_passphrase = vault;
+      } else {
+        body.api_secret = form.perpdex_api_secret.value.trim();
+      }
       body.purpose = form.elements['perpdex_purpose']?.value || 'portfolio';
     } else {
       body.address = form.perpdex_address.value.trim();

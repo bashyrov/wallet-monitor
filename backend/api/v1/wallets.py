@@ -44,6 +44,7 @@ def _build_wallet_options() -> dict:
             "needs_l2_private_key":  getattr(p, "needs_l2_private_key",  False),
             "needs_account_index":   getattr(p, "needs_account_index",   False),
             "needs_api_key_index":   getattr(p, "needs_api_key_index",   False),
+            "needs_vault":           getattr(p, "needs_vault",           False),
             "trade_supported":       value.lower() in _TS,
             **( {"soon": True} if getattr(p, "soon", False) else {} ),
         }
