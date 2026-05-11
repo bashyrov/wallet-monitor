@@ -170,6 +170,10 @@ class AsterAdapter:
 
         spot_usd = 0.0
         try:
+            # Note: requires the API agent to have `canSpotTrade=True` (set
+            # via /fapi/v3/approveAgent or /fapi/v3/updateAgent). Agents
+            # created perp-only return 500 here — we silently skip and the
+            # futures balance is still reported correctly.
             data = await cls._signed(creds, "GET", "/api/v3/account",
                                      host="https://sapi.asterdex.com")
             for b in (data or {}).get("balances", []):
