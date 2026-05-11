@@ -203,49 +203,6 @@ func (m *Manager) PrewarmFromArbFiles(cacheDir string, fallback []string) {
 			add(o.ShortExchange, o.Symbol)
 		}
 	}
-	// Funding-feed bridge — every symbol with a live funding tick gets
-	// its orderbook prewarmed on that venue. Otherwise users opening /arb
-	// on a mid-cap symbol (LAB, etc.) see empty books because Manager
-	// only subscribed via arbitrage.json's top-1000. Cap per venue so
-	// we don't pile up symbols beyond what rate limits allow.
-	{
-		type fundRow struct {
-			Exchange  string  `json:"exchange"`
-			Symbol    string  `json:"symbol"`
-			VolumeUsd float64 `json:"volume_usd"`
-		}
-		var doc struct{ Rows []fundRow `json:"rows"` }
-		tryRead(filepath.Join(cacheDir, "funding.json"), &doc)
-		byVenue := map[string][]fundRow{}
-		for _, r := range doc.Rows {
-			if r.Exchange == "" || r.Symbol == "" {
-				continue
-			}
-			byVenue[r.Exchange] = append(byVenue[r.Exchange], r)
-		}
-		for venue, rows := range byVenue {
-			// Sort by volume desc (selection — small N per venue).
-			for i := 0; i < len(rows); i++ {
-				best := i
-				for j := i + 1; j < len(rows); j++ {
-					if rows[j].VolumeUsd > rows[best].VolumeUsd {
-						best = j
-					}
-				}
-				if best != i {
-					rows[i], rows[best] = rows[best], rows[i]
-				}
-			}
-			limit := 250
-			if len(rows) < limit {
-				limit = len(rows)
-			}
-			for k := 0; k < limit; k++ {
-				add(venue, rows[k].Symbol)
-			}
-		}
-	}
-
 	// Watchlist subscription bridge — Python web role dumps
 	// /tmp/avalant_cache/watchlist_subscribe.json every 30s with the
 	// union of (sym, long_ex, short_ex) across all users' watchlists.
