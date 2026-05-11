@@ -40,9 +40,13 @@ async def _contracts() -> dict[str, dict]:
             return _CONTRACT_CACHE["data"] or {}
         for it in items:
             name = it.get("name", "")
+            # NB: Gate returns order_size_min=0 for fractional-contract
+            # symbols. `or 1` would clobber that to 1, defeating
+            # enable_decimal. Use is-None guard.
+            osm_raw = it.get("order_size_min")
             out[name] = {
                 "quanto_multiplier": float(it.get("quanto_multiplier") or 1),
-                "order_size_min": int(it.get("order_size_min") or 1),
+                "order_size_min": int(osm_raw) if osm_raw is not None else 1,
                 "order_size_max": int(it.get("order_size_max") or 1000000),
                 "leverage_min": int(it.get("leverage_min") or 1),
                 "leverage_max": int(it.get("leverage_max") or 100),

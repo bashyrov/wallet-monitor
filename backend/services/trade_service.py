@@ -497,6 +497,7 @@ async def place_open_order(
 
 async def close_position(
     db: Session, user_id: int, wallet_id: int, symbol: str, side: str | None = None,
+    *, market_type: str = "futures",
 ) -> dict:
     w = db.query(Wallet).filter(Wallet.id == wallet_id, Wallet.user_id == user_id).first()
     if not w:
@@ -534,8 +535,10 @@ async def close_position(
         from backend.services import trade_proxy
         if trade_proxy.is_enabled(ex):
             try:
-                result = await trade_proxy.close_position(ex, creds, symbol, side or "")
-                logger.info("Position closed via go-fetcher: ex=%s sym=%s", ex, symbol)
+                result = await trade_proxy.close_position(ex, creds, symbol, side or "",
+                                                          market_type=market_type)
+                logger.info("Position closed via go-fetcher: ex=%s sym=%s market=%s",
+                            ex, symbol, market_type)
             except trade_proxy.GoTradeError as gerr:
                 if gerr.kind in ("user", "exchange"):
                     _finalize_order(db, order_row, status="failed",

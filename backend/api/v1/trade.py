@@ -435,6 +435,7 @@ class CloseIn(BaseModel):
     wallet_id: int
     symbol: str
     side: str | None = Field(None, pattern="^(buy|sell)$")
+    market_type: str = Field("futures", pattern="^(futures|spot)$")
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -448,7 +449,8 @@ async def close_order(
     db: Session = Depends(get_db),
 ):
     try:
-        return await trade_service.close_position(db, user.id, body.wallet_id, body.symbol, body.side)
+        return await trade_service.close_position(db, user.id, body.wallet_id, body.symbol, body.side,
+                                                  market_type=body.market_type)
     except trade_service.TradeError as e:
         msg = "Unexpected error — see Order History" if e.kind == "internal" else str(e)
         raise HTTPException(400, msg)
