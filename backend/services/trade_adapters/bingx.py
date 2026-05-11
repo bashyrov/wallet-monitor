@@ -416,13 +416,16 @@ class BingxAdapter:
                                  market: str = "futures") -> list[dict]:
         """BingX swap fills + funding since `since_ts`.
 
-        Futures: /openApi/swap/v2/trade/allFillOrders requires symbol param,
-        so we sweep symbols seen in /openApi/swap/v2/user/income (which gives
-        FUNDING_FEE + REALIZED_PNL with symbol). Spot returns []."""
+        Futures: /openApi/swap/v2/trade/allOrders returns FILLED orders
+        with executedQty / avgPrice / commission / profit — everything we
+        need. The older allFillOrders endpoint silently returns empty
+        even when allOrders has the same trades. Funding via
+        /openApi/swap/v2/user/income type=FUNDING_FEE."""
         from datetime import datetime as _dt
         if market != "futures":
             return []
         start_ms = int(since_ts.timestamp() * 1000)
+        end_ms = int(_dt.utcnow().timestamp() * 1000)
         out: list[dict] = []
         try:
             income = await cls._req(creds, "GET",
@@ -458,42 +461,59 @@ class BingxAdapter:
         for sym in symbols:
             try:
                 rows = await cls._req(creds, "GET",
-                                      "/openApi/swap/v2/trade/allFillOrders", {
+                                      "/openApi/swap/v2/trade/allOrders", {
                                           "symbol": sym,
                                           "startTime": start_ms,
+                                          "endTime": end_ms,
                                           "limit": 1000,
                                       })
             except Exception:
                 continue
-            data = (rows or {}).get("fill_orders") or rows or []
+            data = (rows or {}).get("orders") or []
             if not isinstance(data, list):
                 continue
             for r in data:
                 try:
+                    if str(r.get("status") or "").upper() != "FILLED":
+                        continue
                     side = "buy" if str(r.get("side") or "").upper() == "BUY" else "sell"
-                    qty = float(r.get("filledTm") or r.get("qty") or 0)
+                    qty = float(r.get("executedQty") or r.get("origQty") or 0)
                     if qty <= 0:
                         continue
-                    ts_ms = int(r.get("filledTime") or r.get("time") or 0)
+                    ts_ms = int(r.get("updateTime") or r.get("time") or 0)
                     if ts_ms <= 0:
                         continue
-                    rpnl_raw = r.get("realisedPNL") or r.get("profit")
+                    rpnl_raw = r.get("profit")
                     rpnl = float(rpnl_raw) if rpnl_raw not in (None, "") else None
+                    fee = abs(float(r.get("commission") or 0)) or None
                     out.append({
                         "symbol": sym.replace("-USDT", "").replace("USDT", "").upper(),
                         "side": side,
                         "qty": qty,
-                        "price": float(r.get("price") or 0),
-                        "fee_usd": float(r.get("commission") or 0),
+                        "price": float(r.get("avgPrice") or 0),
+                        "fee_usd": fee,
                         "realized_pnl_usd": rpnl,
                         "ts": _dt.utcfromtimestamp(ts_ms / 1000),
-                        "ext_trade_id": str(r.get("tradeId") or r.get("id") or ""),
+                        "ext_trade_id": str(r.get("orderId") or r.get("tradeId") or ""),
                         "ext_order_id": str(r.get("orderId") or "") or None,
                         "kind": "trade",
+                        # allOrders returns one row per order (already merged
+                        # partials). orderId is unique enough as ext_trade_id.
                     })
                 except Exception:
                     continue
-        return out
+        # Dedupe by ext_trade_id (orderId can repeat across pages).
+        seen = set()
+        deduped = []
+        for r in out:
+            ext = r.get("ext_trade_id")
+            if not ext:
+                continue
+            if ext in seen:
+                continue
+            seen.add(ext)
+            deduped.append(r)
+        return deduped
 
 
 def _split_code(exc: Exception) -> tuple[str | None, str]:

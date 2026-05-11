@@ -264,7 +264,7 @@ class AsterAdapter:
 
     @classmethod
     async def _funding_pnl_bulk(cls, creds: dict, since_ms: int) -> dict[str, float]:
-        """Aster is a Binance fork — single /fapi/v1/income call returns
+        """Aster is a Binance fork — single /fapi/v3/income call returns
         all FUNDING_FEE events for the account. Bucketed per-symbol in
         memory so list_positions can dispatch with zero extra API calls."""
         import time as _t
@@ -273,7 +273,7 @@ class AsterAdapter:
         if cached and (_t.time() - cached[0]) < cls._FUNDING_CACHE_TTL_S:
             return cached[1]
         try:
-            data = await cls._signed(creds, "GET", "/fapi/v1/income", {
+            data = await cls._signed(creds, "GET", "/fapi/v3/income", {
                 "incomeType": "FUNDING_FEE",
                 "startTime": since_ms,
                 "limit": 1000,
@@ -405,7 +405,7 @@ class AsterAdapter:
     @classmethod
     async def fetch_recent_fills(cls, creds: dict, since_ts, *,
                                  market: str = "futures") -> list[dict]:
-        """Aster is a Binance-API fork — same /fapi/v1/userTrades + income.
+        """Aster is a Binance-API fork — same /fapi/v3/userTrades + income.
         Spot returns []."""
         from datetime import datetime as _dt
         if market != "futures":
@@ -413,7 +413,7 @@ class AsterAdapter:
         start_ms = int(since_ts.timestamp() * 1000)
         out: list[dict] = []
         try:
-            income = await cls._signed(creds, "GET", "/fapi/v1/income", {
+            income = await cls._signed(creds, "GET", "/fapi/v3/income", {
                 "startTime": start_ms, "limit": 1000,
             }) or []
         except Exception:
@@ -442,7 +442,7 @@ class AsterAdapter:
                 continue
         for sym in symbols:
             try:
-                rows = await cls._signed(creds, "GET", "/fapi/v1/userTrades", {
+                rows = await cls._signed(creds, "GET", "/fapi/v3/userTrades", {
                     "symbol": sym, "startTime": start_ms, "limit": 1000,
                 }) or []
             except Exception:

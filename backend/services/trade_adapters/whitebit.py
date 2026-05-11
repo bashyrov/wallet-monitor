@@ -325,29 +325,42 @@ class WhitebitAdapter:
         from datetime import datetime as _dt
         if market not in ("futures", "spot"):
             return []
-        since_ts_unix = int(since_ts.timestamp())
+        since_ts_unix = float(since_ts.timestamp())
         out: list[dict] = []
         offset = 0
         limit = 100
+        # WhiteBIT's executed-history returns
+        # { "<MARKET>": [ {id, time, side, amount, price, deal, fee, orderId}, ... ] }
+        # — a dict keyed by market, NOT a flat list. Per-market arrays are
+        # already in time-DESC order. The market suffix indicates the
+        # product: _PERP for futures, _USDT for spot.
         for _ in range(20):
             try:
                 body: dict = {"limit": limit, "offset": offset}
                 data = await cls._req(creds, "/api/v4/trade-account/executed-history", body)
-                rows = (data or {}).get("records") or data if isinstance(data, list) else []
-                if not rows:
-                    break
-                for r in rows:
+            except Exception as exc:
+                logger.info("whitebit fills fetch failed: %s", exc)
+                break
+            if not isinstance(data, dict) or not data:
+                break
+            new_rows = 0
+            for market_name, market_rows in data.items():
+                if market == "futures" and not market_name.endswith("_PERP"):
+                    continue
+                if market == "spot" and (market_name.endswith("_PERP") or not market_name.endswith("_USDT")):
+                    continue
+                if not isinstance(market_rows, list):
+                    continue
+                base = market_name.replace("_PERP", "").replace("_USDT", "")
+                for r in market_rows:
                     try:
-                        ts = int(r.get("time") or r.get("timestamp") or 0)
+                        ts_raw = r.get("time") or r.get("timestamp") or 0
+                        ts = float(ts_raw)
                         if ts < since_ts_unix:
                             continue
-                        market_name = str(r.get("market") or "")
-                        if market == "futures" and not market_name.endswith("_PERP"):
-                            continue
-                        if market == "spot" and not market_name.endswith("_USDT"):
-                            continue
-                        base = market_name.replace("_PERP", "").replace("_USDT", "")
                         qty = float(r.get("amount") or r.get("quantity") or 0)
+                        if qty <= 0:
+                            continue
                         price = float(r.get("price") or 0)
                         fee = float(r.get("fee") or 0)
                         side_raw = (r.get("side") or "").lower()
@@ -364,12 +377,13 @@ class WhitebitAdapter:
                             "ext_order_id": str(r.get("orderId") or "") or None,
                             "kind": "trade",
                         })
+                        new_rows += 1
                     except Exception:
                         continue
-                if len(rows) < limit:
-                    break
-                offset += limit
-            except Exception as exc:
-                logger.info("whitebit fills fetch failed: %s", exc)
+            # If no rows were added (all older than since_ts, or no matching
+            # market), stop paginating. Pagination doesn't carry per-market
+            # cursors in this endpoint.
+            if new_rows == 0:
                 break
+            offset += limit
         return out
