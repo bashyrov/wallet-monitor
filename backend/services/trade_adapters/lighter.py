@@ -37,11 +37,39 @@ _META_TTL_S = 3600.0
 _meta_lock = asyncio.Lock()
 
 
+def _resolve_account_index_from_address(addr: str) -> str | None:
+    """Look up Lighter account_index via /api/v1/account?by=l1_address.
+    Lighter's API-keys popup only shows the keypair + index; the numeric
+    account_index has to be derived from the L1 wallet address."""
+    import httpx
+    try:
+        with httpx.Client(timeout=8.0) as c:
+            r = c.get(f"{BASE_URL}/api/v1/account",
+                      params={"by": "l1_address", "value": addr.strip()})
+        if r.status_code != 200:
+            return None
+        accs = (r.json() or {}).get("accounts") or []
+        if not accs:
+            return None
+        idx = accs[0].get("index")
+        return str(idx) if idx is not None else None
+    except Exception:
+        return None
+
+
 def _creds_to_signer_args(creds: dict) -> tuple[int, int, str]:
-    """Pull (account_index, api_key_index, api_private_key) out of creds."""
+    """Pull (account_index, api_key_index, api_private_key) out of creds.
+    If api_key (account_index) is empty but `address` is set, auto-derive
+    the index from Lighter's public account-lookup endpoint."""
     raw_acc = (creds.get("api_key") or "").strip()
     raw_key = (creds.get("api_secret") or "").strip()
     raw_idx = (creds.get("api_passphrase") or "").strip()
+    if not raw_acc:
+        addr = (creds.get("address") or creds.get("wallet") or "").strip()
+        if addr:
+            resolved = _resolve_account_index_from_address(addr)
+            if resolved:
+                raw_acc = resolved
     if not raw_acc or not raw_key:
         raise RuntimeError("Lighter requires account_index (api_key) and api_private_key (api_secret)")
     try:

@@ -1,4 +1,6 @@
 """CRUD operations for wallet and tag records."""
+import logging
+
 from sqlalchemy.orm import Session
 
 from backend.crypto import encrypt_credentials, decrypt_credentials
@@ -6,6 +8,36 @@ from backend.db.models import Wallet, Tag, WalletAddress, User
 from backend.domain.errors import WalletNotFound, TagNotFound, TagAlreadyExists, TagLimitReached
 from backend.services import plan_service
 from backend.schemas.common import WalletCreate, WalletUpdate, WalletOut, TagCreate, TagUpdate, TagOut, WalletAddressCreate, WalletAddressOut
+
+logger = logging.getLogger("avalant.wallet_service")
+
+
+def _lighter_resolve_account_index(l1_address: str) -> str | None:
+    """Look up Lighter account_index by L1 (EVM) address via their public
+    REST. Lighter's API-keys popup only shows the keypair + key index, so
+    the user often doesn't know their numeric account_index — but it's
+    derivable from the connected wallet address. Sync httpx so the wallet
+    create path stays sync-friendly. Returns the index as a decimal string,
+    or None if not found / network error."""
+    import httpx
+    url = "https://mainnet.zklighter.elliot.ai/api/v1/account"
+    try:
+        with httpx.Client(timeout=8.0) as c:
+            r = c.get(url, params={"by": "l1_address", "value": l1_address.strip()})
+        if r.status_code != 200:
+            logger.info("lighter: account-lookup HTTP %s for %s", r.status_code, l1_address[:10])
+            return None
+        data = r.json() or {}
+        accs = data.get("accounts") or []
+        if not accs:
+            return None
+        idx = accs[0].get("index")
+        if idx is None:
+            return None
+        return str(idx)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("lighter: account-lookup failed for %s: %s", l1_address[:10], exc)
+        return None
 
 
 def _build_perpdex_creds(body: WalletCreate) -> dict:
@@ -32,6 +64,13 @@ def _build_perpdex_creds(body: WalletCreate) -> dict:
         # api_key_index (default "255"). hex private key in api_secret.
         if body.account_index:
             creds["api_key"] = body.account_index.strip()
+        elif body.address:
+            # User often only has the keys-popup info (private_key + api_key_index)
+            # — Lighter's UI doesn't expose the account_index there. Auto-derive
+            # it from the user's L1 EVM address via Lighter's public REST.
+            idx = _lighter_resolve_account_index(body.address.strip())
+            if idx:
+                creds["api_key"] = idx
         if body.private_key:
             creds["api_secret"] = body.private_key.strip()
         # api_key_index defaults to "255" if user leaves it blank but supplied
