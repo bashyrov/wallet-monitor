@@ -87,8 +87,10 @@ class EtherealAdapter:
             items = (r2.json() or {}).get("data") or []
             total = 0.0
             for it in items:
+                # Ethereal labels their stable as "USD" (not USDT/USDC).
+                # Accept all common stable token names.
                 token = (it.get("tokenName") or "").upper()
-                if token not in ("USDT", "USDC"):
+                if token not in ("USDT", "USDC", "USD", "USDE", "BUSD"):
                     continue
                 try:
                     avail = float(it.get("available") or 0)
