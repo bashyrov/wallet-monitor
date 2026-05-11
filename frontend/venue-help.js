@@ -23,12 +23,12 @@ window.VENUE_HELP = {
     ],
   },
   okx: {
-    where: 'okx.com → API → Create V5 API Key',
-    perms: '✅ Read + Trade · ❌ Withdraw',
+    where: 'okx.com → User Center → API → Create V5 API Key',
+    perms: '✅ Read + Trade · ❌ Withdraw · pin IP 37.60.252.32 if possible',
     fields: [
-      ['API Key',    'OKX API key'],
-      ['API Secret', 'OKX secret'],
-      ['Passphrase', 'The passphrase you set when creating the key'],
+      ['API Key',    'OKX API key (shown after Create)'],
+      ['API Secret', 'OKX secret (shown ONCE at Create — copy immediately)'],
+      ['Passphrase', 'The passphrase you typed when creating the key — case-sensitive'],
     ],
   },
   gate: {
@@ -82,11 +82,11 @@ window.VENUE_HELP = {
     ],
   },
   kraken: {
-    where: 'kraken.com → Futures → Settings → API → Generate Key (Futures API!)',
+    where: 'futures.kraken.com → Settings → API → Generate Key (Futures API — NOT regular Kraken Spot API!)',
     perms: '✅ Read + Place / Cancel / Modify Orders · ❌ Withdraw',
     fields: [
       ['API Key',    'Kraken Futures key'],
-      ['API Secret', 'Kraken Futures secret (base64)'],
+      ['API Secret', 'Kraken Futures secret (base64-encoded — copy AS IS, do not decode)'],
     ],
   },
   htx: {
@@ -98,11 +98,11 @@ window.VENUE_HELP = {
     ],
   },
   backpack: {
-    where: 'backpack.exchange → Settings → API Keys → Generate',
-    perms: '✅ All trade actions (Backpack splits perms by instruction, no global toggle)',
+    where: 'backpack.exchange → Settings → API Keys → Generate (NOT EVM-style — Ed25519)',
+    perms: 'Backpack permissions per-instruction (no global Read/Trade toggle); pin your IP if possible',
     fields: [
-      ['API Key',    'Base64-encoded Ed25519 public key'],
-      ['API Secret', 'Base64-encoded Ed25519 seed (32 bytes)'],
+      ['API Key',    'Base64 Ed25519 PUBLIC key (looks like "AbC..." 44 chars, ends with "=")'],
+      ['API Secret', 'Base64 Ed25519 PRIVATE key seed (32 bytes encoded — shown ONCE at Generate)'],
     ],
   },
 
@@ -124,40 +124,40 @@ window.VENUE_HELP = {
     ],
   },
   ethereal: {
-    where: 'ethereal.trade → API → Generate Linked Signer',
-    perms: 'Linked signer trades on your subaccount — no withdrawal capability',
+    where: 'ethereal.trade → log in with your wallet → Settings → API → Generate Linked Signer',
+    perms: 'Linked signer trades your subaccount; CANNOT withdraw or transfer funds',
     fields: [
-      ['Wallet Address', 'Subaccount address 0x…'],
-      ['Private Key',    'Linked signer private key (EVM hex)'],
+      ['Wallet Address', 'Your EVM wallet 0x… connected to Ethereal (the one with funds — subaccount auto-derived)'],
+      ['Private Key',    'OPTIONAL for Portfolio. REQUIRED for Screener: linked-signer private key from the Generate popup (NOT your main wallet privkey).'],
     ],
   },
   lighter: {
-    where: 'app.lighter.xyz → Settings → API → Generate API Key',
-    perms: 'API keys only authorize trade actions; withdrawals require main wallet sig',
+    where: 'app.lighter.xyz → Account → API Management → Generate API Key (shows API Key Index + Public Key + Private Key, popup ONE TIME)',
+    perms: 'API keys only authorize trade actions; withdrawals require main wallet signature',
     fields: [
-      ['Wallet Address',  'Your EVM wallet 0x… connected to Lighter'],
-      ['Private Key',     'ZK signing key from the "Generate" popup (NOT EVM privkey)'],
-      ['Account Index',   'OPTIONAL — we auto-derive from your wallet address'],
-      ['API Key Index',   'Number from the popup (e.g. 4) — defaults to 255 if blank'],
+      ['Wallet Address',  'Your EVM L1 wallet 0x… connected to Lighter (where you deposited)'],
+      ['Private Key',     'OPTIONAL for Portfolio. REQUIRED for Screener: ZK signing key from the "Generate API Key" popup (NOT your EVM privkey).'],
+      ['Account Index',   'Leave blank — we auto-derive the numeric account_index from your L1 address via Lighter\'s public REST.'],
+      ['API Key Index',   'OPTIONAL for Portfolio. For Screener: the integer shown in the popup (e.g. 4); defaults to 255 if blank.'],
     ],
   },
   paradex: {
-    where: 'paradex.trade → Account Security → Key Management → Generate Subkey',
+    where: 'paradex.trade → Account Security → Key Management → Generate Subkey (recommended — Subkey can\'t withdraw)',
     perms: 'Subkeys can trade but CANNOT withdraw or transfer funds',
     fields: [
-      ['Starknet L2 Address', 'Your Paradex L2 address'],
-      ['L2 Private Key',      'Subkey private key (much safer than main key)'],
-      ['Subkey Public Key',   'OPTIONAL — only if you used a subkey above'],
+      ['Starknet L2 Address', 'Your Paradex L2 address (starts with 0x… as a felt — longer than a regular EVM hex)'],
+      ['L2 Private Key',      'OPTIONAL for Portfolio (read-only via JWT). REQUIRED for Screener: Subkey L2 private key. Avoid using your main L2 key — Subkey is the safe option.'],
+      ['Subkey Public Key',   'OPTIONAL — only fill if you pasted a Subkey private key above. Leave blank if you used the main L2 key.'],
     ],
   },
   extended: {
-    where: 'extended.exchange → API Management → Create API Key',
+    where: 'extended.exchange → API Management → Create API Key (gives you api_key + Stark L2 pubkey + Stark L2 privkey + vault id)',
     perms: '✅ Read + Trade. No-withdrawal by default on API keys',
     fields: [
-      ['API Key',             'String from Extended UI'],
-      ['Stark L2 Public Key', 'Stark L2 pubkey (also from API Management) — only for trading'],
-      ['Stark L2 Private Key','Stark L2 privkey (shown once) — only for trading'],
-      ['Vault',               'collateral_position_id — int subaccount id — only for trading'],
+      ['API Key',             'String from Extended UI (the only field needed for Portfolio).'],
+      ['Stark L2 Public Key', 'Hex Stark L2 pubkey from API Management. ONLY for Screener — Portfolio works without it.'],
+      ['Stark L2 Private Key','Hex Stark L2 privkey (shown ONCE at create). ONLY for Screener — used to sign orders.'],
+      ['Vault',               'Numeric collateral_position_id (your subaccount id on Extended). ONLY for Screener.'],
     ],
   },
 
