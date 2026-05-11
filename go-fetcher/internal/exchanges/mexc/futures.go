@@ -99,7 +99,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if msg.Channel != "push.depth" {
+	// sub.depth.full pushes arrive on channel `push.depth.full`; the
+	// legacy `push.depth` (delta) channel we still accept in case MEXC
+	// ever changes the naming.
+	if msg.Channel != "push.depth.full" && msg.Channel != "push.depth" {
 		return nil, nil
 	}
 	if !strings.HasSuffix(msg.Symbol, "_USDT") {
