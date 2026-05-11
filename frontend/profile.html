@@ -1435,30 +1435,61 @@ function _injectTotpAlt(emailInp, prefix){
   emailInp.parentNode.insertBefore(wrap, emailInp.nextSibling);
 }
 
+const _RESEND_COOLDOWN_SEC = 30;
+const _resendTimers = new WeakMap();
+
 async function requestEmailCode(linkEl, evt){
   if (evt) evt.preventDefault();
+  // If the link is in cooldown — ignore the click entirely.
+  if (linkEl.dataset.cooling === '1') return;
   const status = linkEl.parentElement.querySelector('.ec-status');
+  const originalLabel = linkEl.dataset.originalLabel || linkEl.textContent.trim() || 'Send code';
+  linkEl.dataset.originalLabel = originalLabel;
+  linkEl.textContent = 'Sending…';
   linkEl.style.pointerEvents = 'none';
   linkEl.style.opacity = '0.6';
-  if (status) status.textContent = 'Sending…';
+  if (status) status.textContent = '';
   try {
     const r = await Auth.apiFetch('/auth/me/email-confirm/request', { method: 'POST' });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'Send failed');
     if (status) {
       if (j.dev_code) status.textContent = `dev code: ${j.dev_code}`;
-      else status.textContent = j.delivered ? 'Sent. Check your email (10 min).' : 'Sent (mail backend not configured — ask ops).';
+      else status.textContent = j.delivered ? 'Sent. Check your email (10 min).' : 'Sent — mailer not configured.';
     }
-    // Re-enable Send link after 30s for retry
-    setTimeout(() => {
-      linkEl.style.pointerEvents = '';
-      linkEl.style.opacity = '';
-    }, 30000);
+    _startResendCountdown(linkEl, _RESEND_COOLDOWN_SEC);
   } catch (e) {
     if (status) status.textContent = 'Failed: ' + (e.message || 'try again');
+    linkEl.textContent = originalLabel;
     linkEl.style.pointerEvents = '';
     linkEl.style.opacity = '';
   }
+}
+
+function _startResendCountdown(linkEl, seconds){
+  // Stop any existing countdown on this link before starting a new one.
+  const prev = _resendTimers.get(linkEl);
+  if (prev) clearInterval(prev);
+  linkEl.dataset.cooling = '1';
+  let remaining = seconds;
+  const baseLabel = linkEl.dataset.originalLabel || 'Send code';
+  const tick = () => {
+    if (remaining <= 0) {
+      const t = _resendTimers.get(linkEl);
+      if (t) clearInterval(t);
+      _resendTimers.delete(linkEl);
+      linkEl.dataset.cooling = '';
+      linkEl.textContent = 'Resend code';
+      linkEl.style.pointerEvents = '';
+      linkEl.style.opacity = '';
+      return;
+    }
+    linkEl.textContent = `Resend in ${remaining}s`;
+    remaining -= 1;
+  };
+  tick();
+  const id = setInterval(tick, 1000);
+  _resendTimers.set(linkEl, id);
 }
 
 // Build the body for sensitive ops. `prefix` selects which form's
