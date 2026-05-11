@@ -94,7 +94,12 @@ class WhiteBITProvider(BaseWalletProvider):
         return out
 
     async def _get_collateral(self, wallet: ExchangeWallet) -> tuple[dict[str, Decimal], Decimal]:
-        """Collateral (futures) account balance + unrealised PnL."""
+        """Collateral (futures) account balance + unrealised PnL.
+
+        Response shape per WhiteBit docs is the flat map `{asset: amount}`
+        (e.g. `{"BTC": 1, "USDT": 1000}`), NOT the trade-account
+        `{asset: {available, freeze}}` shape. Be tolerant to both because
+        WhiteBit isn't always consistent across endpoint versions."""
         try:
             r = await self._signed_request(wallet, "/api/v4/collateral-account/balance")
             r.raise_for_status()
@@ -104,9 +109,13 @@ class WhiteBITProvider(BaseWalletProvider):
             for asset, info in (data if isinstance(data, dict) else {}).items():
                 if asset in ("success", "message"):
                     continue
-                available = Decimal(str(info.get("available") or "0"))
-                freeze = Decimal(str(info.get("freeze") or "0"))
-                val = available + freeze
+                if isinstance(info, dict):
+                    val = Decimal(str(info.get("available") or "0")) + Decimal(str(info.get("freeze") or "0"))
+                else:
+                    try:
+                        val = Decimal(str(info))
+                    except Exception:
+                        val = Decimal("0")
                 if val > 0:
                     out[asset.upper()] = val
             # Try to get unrealised PnL from open positions summary
