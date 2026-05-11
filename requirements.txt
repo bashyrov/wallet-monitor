@@ -19,6 +19,7 @@ eth-account>=0.11.0
 msgpack>=1.0.7
 python-binance
 pyotp>=2.9.0
+segno>=1.6.0                # pure-Python QR generator (SVG output) for 2FA setup — no PIL, no CDN dep
 
 # Pydantic / settings
 pydantic==2.12.5

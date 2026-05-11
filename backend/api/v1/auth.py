@@ -403,7 +403,8 @@ async def me_2fa_setup(body: dict, request: Request,
     current_user.totp_verified_at = None
     db.commit()
     uri = _totp.provisioning_uri(secret, account=current_user.email or current_user.username)
-    return {"otpauth_uri": uri, "secret": secret}
+    qr = _totp.qr_data_uri(uri)
+    return {"otpauth_uri": uri, "secret": secret, "qr_svg": qr}
 
 
 @router.post("/me/2fa/verify")

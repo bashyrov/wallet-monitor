@@ -820,9 +820,10 @@
             <div class="cf-icon">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1l6 3v4c0 4-2.7 7-6 7s-6-3-6-7V4l6-3z"/></svg>
             </div>
-            <div class="cf-title" id="cf-enable-title">Enable 2FA</div>
+            <div class="cf-title" id="cf-enable-title">Confirm by email</div>
+            <div style="margin-left:auto;font-size:10.5px;color:var(--text3);font-weight:600;letter-spacing:0.06em;text-transform:uppercase">Step 1 / 3</div>
           </div>
-          <p class="cf-sub">Confirm with a one-time email code, then scan the QR with your authenticator.</p>
+          <p class="cf-sub">First we verify your email. Next you'll scan a QR with your authenticator, then save recovery codes.</p>
           <div class="cf-helper">
             <span>We'll send a 6-digit code to your email.</span>
             <a href="#" onclick="requestEmailCode(this,event);return false">Send code</a>
@@ -837,39 +838,58 @@
         </div>
       </div>
 
-      <div id="tfa-setup-view" style="display:none;margin-top:12px">
-        <div style="font-size:12.5px;color:var(--text);margin-bottom:8px;font-weight:600">Step 1 — scan the QR code</div>
-        <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
-          <div id="tfa-qr" style="background:#fff;padding:8px;border-radius:8px;min-width:180px;min-height:180px;display:flex;align-items:center;justify-content:center"></div>
-          <div style="flex:1;min-width:200px">
-            <div style="font-size:11.5px;color:var(--text3);margin-bottom:5px">Or enter this secret manually:</div>
-            <code id="tfa-secret" class="mono" style="display:block;padding:8px 10px;background:var(--surface3);border-radius:6px;font-size:12px;word-break:break-all;user-select:all"></code>
-          </div>
-        </div>
-        <div style="font-size:12.5px;color:var(--text);margin:14px 0 6px;font-weight:600">Step 2 — enter the 6-digit code</div>
-        <div style="display:flex;gap:8px">
-          <input id="tfa-verify-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123 456" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.15em">
-          <button onclick="tfaVerify()" id="tfa-verify-btn" style="padding:9px 16px;border-radius:7px;background:var(--green);color:#001a0d;border:0;cursor:pointer;font-weight:700;font-size:12.5px">Confirm</button>
-        </div>
-        <div id="tfa-setup-err" style="display:none;font-size:11.5px;color:var(--red);margin-top:8px"></div>
-      </div>
-
       <div id="tfa-msg" style="display:none;font-size:12px;margin-top:10px;padding:8px 10px;border-radius:6px"></div>
 
-      <!-- Recovery codes display — shown once after verify or after regenerate.
-           Hashed in DB; this is the only time the plain values are visible. -->
-      <div id="tfa-recovery-wrap" style="display:none;margin-top:16px;padding:14px;border:1px solid rgba(229,192,123,0.32);border-radius:8px;background:rgba(229,192,123,0.05)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#E5C07B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1l6 3v4c0 4-2.7 7-6 7s-6-3-6-7V4l6-3z"/></svg>
-          <span style="font-weight:700;font-size:13px;color:#E5C07B">Recovery codes — save these now</span>
+      <!-- Modal: Step 2 — Scan QR + verify TOTP code -->
+      <div id="tfa-setup-view" class="cf-modal" onclick="if(event.target===this)tfaSetupHide()">
+        <div class="cf-card" style="position:relative;max-width:460px" role="dialog" aria-modal="true" aria-labelledby="cf-setup-title">
+          <button class="cf-close" onclick="tfaSetupHide()" aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l8 8M11 3l-8 8"/></svg>
+          </button>
+          <div class="cf-head">
+            <div class="cf-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="4" height="4"/><rect x="10" y="2" width="4" height="4"/><rect x="2" y="10" width="4" height="4"/><path d="M10 10h2v2M14 12v2M12 14h-2"/></svg>
+            </div>
+            <div class="cf-title" id="cf-setup-title">Scan QR code</div>
+            <div style="margin-left:auto;font-size:10.5px;color:var(--text3);font-weight:600;letter-spacing:0.06em;text-transform:uppercase">Step 2 / 3</div>
+          </div>
+          <p class="cf-sub">Open Google Authenticator / Authy / 1Password and scan this QR. Or paste the secret manually.</p>
+          <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin:10px 0 12px">
+            <div id="tfa-qr" style="background:#fff;padding:10px;border-radius:10px;width:170px;height:170px;display:flex;align-items:center;justify-content:center;flex-shrink:0"></div>
+            <div style="flex:1;min-width:160px">
+              <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Manual key</div>
+              <code id="tfa-secret" class="mono" style="display:block;padding:9px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:12px;word-break:break-all;user-select:all;line-height:1.45;color:var(--text)"></code>
+            </div>
+          </div>
+          <div class="cf-divider">enter the 6-digit code from your app</div>
+          <input id="tfa-verify-code" class="cf-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123 456" autocomplete="one-time-code">
+          <div class="cf-actions">
+            <button class="cf-btn cf-btn-secondary" onclick="tfaSetupHide()">Cancel</button>
+            <button class="cf-btn cf-btn-primary" id="tfa-verify-btn" onclick="tfaVerify()">Verify</button>
+          </div>
+          <div class="cf-err" id="tfa-setup-err" style="display:none"></div>
         </div>
-        <div style="font-size:11.5px;color:var(--text2);line-height:1.55;margin-bottom:10px">
-          Each code works <strong>once</strong> to sign in if you lose your authenticator. We hash them — once you close this panel they're gone from the screen forever. Store them in a password manager.
-        </div>
-        <div id="tfa-recovery-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px"></div>
-        <div style="display:flex;gap:8px">
-          <button onclick="tfaRecoveryCopy()" style="flex:1;padding:7px;border-radius:6px;background:var(--surface3);border:1px solid var(--border2);color:var(--text);cursor:pointer;font-family:inherit;font-size:12px">Copy all</button>
-          <button onclick="_hideRecoveryCodes()" style="padding:7px 14px;border-radius:6px;background:#E5C07B;color:#0B0B0E;border:0;cursor:pointer;font-weight:600;font-size:12px">I saved them</button>
+      </div>
+
+      <!-- Modal: Step 3 — Recovery codes (shown once after verify or after regen) -->
+      <div id="tfa-recovery-wrap" class="cf-modal" onclick="if(event.target===this)_hideRecoveryCodes()">
+        <div class="cf-card" style="position:relative;max-width:460px" role="dialog" aria-modal="true" aria-labelledby="cf-recovery-title">
+          <button class="cf-close" onclick="_hideRecoveryCodes()" aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l8 8M11 3l-8 8"/></svg>
+          </button>
+          <div class="cf-head">
+            <div class="cf-icon is-warn">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1l6 3v4c0 4-2.7 7-6 7s-6-3-6-7V4l6-3z"/></svg>
+            </div>
+            <div class="cf-title" id="cf-recovery-title">Save your recovery codes</div>
+            <div id="tfa-recovery-step" style="margin-left:auto;font-size:10.5px;color:var(--text3);font-weight:600;letter-spacing:0.06em;text-transform:uppercase">Step 3 / 3</div>
+          </div>
+          <p class="cf-sub">Each code works <strong>once</strong> if you lose your authenticator. We hash them — close this panel and they're gone from the screen forever.</p>
+          <div id="tfa-recovery-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin:6px 0 14px"></div>
+          <div class="cf-actions">
+            <button class="cf-btn cf-btn-secondary" onclick="tfaRecoveryCopy()">Copy all</button>
+            <button class="cf-btn cf-btn-primary" style="background:#E5C07B;color:#0B0B0E" onclick="_hideRecoveryCodes()">I saved them</button>
+          </div>
         </div>
       </div>
 
@@ -1361,7 +1381,8 @@ function _adaptTfaInputs(){
   // children of .section-card their position:fixed gets confined to
   // the card's containing block (the card has an `animation: fade-up`
   // with transform — transforms create a fixed-positioning anchor).
-  ['tfa-enable-form', 'tfa-disable-form', 'tfa-regen-form'].forEach(id => {
+  ['tfa-enable-form', 'tfa-disable-form', 'tfa-regen-form',
+   'tfa-setup-view', 'tfa-recovery-wrap'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.parentElement !== document.body) {
       document.body.appendChild(el);
@@ -1377,13 +1398,16 @@ function _adaptTfaInputs(){
   if (!window._cfEscBound) {
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      ['tfa-enable-form', 'tfa-disable-form', 'tfa-regen-form'].forEach(id => {
+      const closers = {
+        'tfa-enable-form':   tfaEnableHide,
+        'tfa-disable-form':  tfaDisableHide,
+        'tfa-regen-form':    tfaRegenHide,
+        'tfa-setup-view':    tfaSetupHide,
+        'tfa-recovery-wrap': _hideRecoveryCodes,
+      };
+      Object.entries(closers).forEach(([id, hide]) => {
         const el = document.getElementById(id);
-        if (el && el.classList.contains('is-open')) {
-          if (id === 'tfa-enable-form') tfaEnableHide();
-          else if (id === 'tfa-disable-form') tfaDisableHide();
-          else tfaRegenHide();
-        }
+        if (el && el.classList.contains('is-open')) hide();
       });
     });
     window._cfEscBound = true;
@@ -1454,20 +1478,6 @@ function _updateTfaStatus(enabled) {
   if (!enabled) _hideRecoveryCodes();
 }
 
-let _qrLibPromise = null;
-function _loadQRLib() {
-  if (window.QRCode) return Promise.resolve(window.QRCode);
-  if (_qrLibPromise) return _qrLibPromise;
-  _qrLibPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js';
-    s.onload  = () => resolve(window.QRCode);
-    s.onerror = () => reject(new Error('Could not load QR library'));
-    document.head.appendChild(s);
-  });
-  return _qrLibPromise;
-}
-
 function tfaEnableShow() {
   document.getElementById('tfa-enable-form').classList.add('is-open');
   setTimeout(() => document.getElementById('tfa-enable-pwd').focus(), 50);
@@ -1480,12 +1490,25 @@ function tfaEnableHide() {
   document.body.style.overflow = '';
 }
 
+function tfaSetupShow(){
+  document.getElementById('tfa-setup-view').classList.add('is-open');
+  setTimeout(() => document.getElementById('tfa-verify-code').focus(), 80);
+  document.body.style.overflow = 'hidden';
+}
+function tfaSetupHide(){
+  document.getElementById('tfa-setup-view').classList.remove('is-open');
+  const code = document.getElementById('tfa-verify-code');
+  if (code) code.value = '';
+  const err = document.getElementById('tfa-setup-err');
+  if (err) err.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
 async function tfaSetup() {
-  const setupErr = document.getElementById('tfa-setup-err');
+  // Step 1 → Step 2: submit email code, get back QR + secret, transition modals
   const enableErr = document.getElementById('tfa-enable-err');
   const submit = document.getElementById('tfa-enable-submit');
-  const code = document.getElementById('tfa-enable-pwd').value || '';
-  setupErr.style.display = 'none';
+  const code = (document.getElementById('tfa-enable-pwd').value || '').trim();
   enableErr.style.display = 'none';
   if (!code) {
     enableErr.textContent = 'Enter the email code (use Send code above)';
@@ -1501,17 +1524,17 @@ async function tfaSetup() {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'setup failed');
     document.getElementById('tfa-secret').textContent = j.secret;
-    document.getElementById('tfa-off-view').style.display   = 'none';
-    document.getElementById('tfa-setup-view').style.display = 'block';
-    document.getElementById('tfa-enable-pwd').value = '';
-    const QR = await _loadQRLib();
-    QR.toCanvas(j.otpauth_uri, { width: 180, margin: 1 }, (err, canvas) => {
-      const wrap = document.getElementById('tfa-qr');
-      wrap.innerHTML = '';
-      if (err) { wrap.textContent = 'QR failed'; return; }
-      wrap.appendChild(canvas);
-    });
-    document.getElementById('tfa-verify-code').focus();
+    // Server-rendered SVG QR (segno) — no CDN dependency
+    const qrWrap = document.getElementById('tfa-qr');
+    qrWrap.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = j.qr_svg;
+    img.alt = 'Scan with your authenticator app';
+    img.style.cssText = 'width:100%;height:100%;display:block';
+    qrWrap.appendChild(img);
+    // Transition modals: close Step 1, open Step 2
+    tfaEnableHide();
+    tfaSetupShow();
   } catch (e) {
     enableErr.textContent = e.message || 'Setup failed';
     enableErr.style.display = 'block';
@@ -1521,6 +1544,7 @@ async function tfaSetup() {
 }
 
 async function tfaVerify() {
+  // Step 2 → Step 3: verify TOTP code, transition to recovery codes modal
   const code  = (document.getElementById('tfa-verify-code').value || '').trim();
   const errEl = document.getElementById('tfa-setup-err');
   const btn   = document.getElementById('tfa-verify-btn');
@@ -1530,7 +1554,7 @@ async function tfaVerify() {
     errEl.style.display = 'block';
     return;
   }
-  btn.disabled = true; btn.textContent = 'Confirming…';
+  btn.disabled = true; btn.textContent = 'Verifying…';
   try {
     const r = await Auth.apiFetch('/auth/me/2fa/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1539,15 +1563,16 @@ async function tfaVerify() {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'invalid code');
     _updateTfaStatus(true);
+    tfaSetupHide();
     if (j.recovery_codes && Array.isArray(j.recovery_codes)) {
-      _showRecoveryCodes(j.recovery_codes);
+      _showRecoveryCodes(j.recovery_codes, '3 / 3');
     }
     if (typeof toast === 'function') toast('2FA enabled. Save your recovery codes.', 'success');
   } catch (e) {
     errEl.textContent = e.message || 'Invalid code';
     errEl.style.display = 'block';
   } finally {
-    btn.disabled = false; btn.textContent = 'Confirm';
+    btn.disabled = false; btn.textContent = 'Verify';
   }
 }
 
@@ -1595,20 +1620,23 @@ async function tfaDisable() {
   }
 }
 
-function _showRecoveryCodes(codes){
+function _showRecoveryCodes(codes, stepLabel){
   const wrap = document.getElementById('tfa-recovery-wrap');
   const list = document.getElementById('tfa-recovery-list');
+  const step = document.getElementById('tfa-recovery-step');
   if (!wrap || !list) return;
-  list.innerHTML = codes.map(c => `<code class="mono" style="display:block;padding:6px 8px;background:var(--surface3);border-radius:4px;font-size:12.5px;letter-spacing:0.08em">${c}</code>`).join('');
-  wrap.style.display = 'block';
-  wrap.scrollIntoView({behavior:'smooth', block:'center'});
+  list.innerHTML = codes.map(c => `<code class="mono" style="display:block;padding:9px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:13px;letter-spacing:0.1em;text-align:center;color:var(--text)">${c}</code>`).join('');
+  if (step) step.textContent = stepLabel || 'Save now';
+  wrap.classList.add('is-open');
+  document.body.style.overflow = 'hidden';
 }
 
 function _hideRecoveryCodes(){
   const wrap = document.getElementById('tfa-recovery-wrap');
-  if (wrap) wrap.style.display = 'none';
+  if (wrap) wrap.classList.remove('is-open');
   const list = document.getElementById('tfa-recovery-list');
   if (list) list.innerHTML = '';
+  document.body.style.overflow = '';
 }
 
 function tfaRecoveryCopy(){
@@ -1652,7 +1680,8 @@ async function tfaRegen(){
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'failed');
-    _showRecoveryCodes(j.recovery_codes || []);
+    tfaRegenHide();
+    _showRecoveryCodes(j.recovery_codes || [], 'New codes');
     tfaRegenHide();
     if (typeof toast === 'function') toast('New recovery codes generated. Old codes invalidated.', 'success');
   } catch (e) {

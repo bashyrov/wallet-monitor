@@ -59,6 +59,24 @@ def provisioning_uri(secret: str, *, account: str, issuer: str = "Avalant") -> s
     return pyotp.TOTP(secret).provisioning_uri(name=account, issuer_name=issuer)
 
 
+def qr_data_uri(otpauth_uri: str, *, scale: int = 1) -> str:
+    """Render the otpauth URI as an SVG QR and return a data: URI ready
+    for an <img src="..."> tag. Avoids any client-side library / CDN
+    dependency. Server-side render is ~3 ms / ~1 KB output."""
+    import io
+    import base64
+    import segno
+    qr = segno.make(otpauth_uri, error="m")
+    buf = io.BytesIO()
+    # SVG output — vector, scales cleanly to any container size client-side.
+    # `xmldecl=False` strips the <?xml ...?> header so the data URI stays
+    # short and renders inline reliably across browsers.
+    qr.save(buf, kind="svg", scale=scale, border=2, dark="#0B0B0E", light="#FFFFFF",
+            xmldecl=False, svgns=True, omitsize=False)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
 def verify_code(secret: str, code: str, *, valid_window: int = 1) -> bool:
     """Verify a 6-digit code with `valid_window` steps tolerance on
     each side (default ±30 s)."""
