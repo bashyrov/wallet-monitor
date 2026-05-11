@@ -67,6 +67,14 @@ const IS_AUTHED = Auth.isLoggedIn();
 
 /* ── Skeleton loader — while _opp is null on first paint ── */
 @keyframes avShimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+
+/* ── Trade-tick pulse — fired on /ws/trades event to highlight the
+   price level row that just got hit. Buys flash green, sells red.
+   400ms cycle so multiple trades within rAF still chain visibly. ── */
+@keyframes tradePulseBuy  { 0%{background-color:rgba(26,255,171,0.42)} 100%{background-color:transparent} }
+@keyframes tradePulseSell { 0%{background-color:rgba(248,113,113,0.42)} 100%{background-color:transparent} }
+.book-row.tp-buy  { animation: tradePulseBuy  400ms ease-out; }
+.book-row.tp-sell { animation: tradePulseSell 400ms ease-out; }
 body.arb-loading .val,
 body.arb-loading .hero-sym,
 body.arb-loading #tb-net-val,
@@ -3510,12 +3518,92 @@ function startBooks(){
   // WS channel has gone silent (disconnect / proxy timeout).
   fetchBook(LONG,'long'); fetchBook(SHORT,'short');
   _openBookWs();
+  _openTradesWs();
   _bookInterval=setInterval(()=>{
     const silentMs=Date.now()-_bookWsLastMsgTs;
     if(!_bookWs || _bookWs.readyState!==1 || silentMs>3000){
       fetchBook(LONG,'long'); fetchBook(SHORT,'short');
     }
   }, 2000);
+}
+
+// ── /ws/trades — per-fill stream that pulses matching price-level rows in
+// the depth book. This is the layer that gives the UI "arbion-style" tick
+// frequency (20-100+/sec on hot pairs) — depth alone caps at the venue's
+// 100-500ms snapshot/diff cadence. ──────────────────────────────────────
+let _tradesWs=null, _tradesWsBackoff=1000;
+function _tradesPairFor(side){ return (side==='long'?LONG:SHORT).toLowerCase()+':'+SYM.toUpperCase(); }
+
+function _flashTradeRow(side, price, taker){
+  // Find the .book-row whose visible price text matches; cheaper than
+  // walking each row's data attr. The renderer formats price with
+  // fmtBookP which preserves enough digits to make exact-string match
+  // reliable for the top-50 levels we render.
+  const sideKey = (taker === 'B') ? 'bids' : 'asks';
+  // Buys hit asks (taker bought from ask); sells hit bids (taker sold into bid).
+  // Render-wise: buy → ask row pulse green; sell → bid row pulse red.
+  const targetSide = (taker === 'B') ? 'asks' : 'bids';
+  const container = document.getElementById(`${targetSide}-${side}`);
+  if (!container) return;
+  const sel = (taker === 'B') ? '.ask-price' : '.bid-price';
+  const cls = (taker === 'B') ? 'tp-buy' : 'tp-sell';
+  // Strip formatting (commas) for fuzzy match — we render with thousands sep.
+  const px = +price;
+  const rows = container.querySelectorAll('.book-row');
+  let best = null, bestDelta = Infinity;
+  for (const r of rows) {
+    const p = parseFloat((r.querySelector(sel)?.textContent || '').replace(/[,\s]/g,''));
+    if (!isFinite(p)) continue;
+    const d = Math.abs(p - px);
+    if (d < bestDelta) { bestDelta = d; best = r; }
+  }
+  if (!best) return;
+  // Retrigger animation by removing then re-adding the class on next frame.
+  best.classList.remove('tp-buy','tp-sell');
+  // eslint-disable-next-line no-unused-expressions
+  best.offsetWidth;
+  best.classList.add(cls);
+  // Auto-clean so repeated triggers in <400ms don't pile up.
+  setTimeout(() => best.classList.remove(cls), 420);
+  // Optional: useful for sideKey-aware debugging; suppress lint.
+  void sideKey;
+}
+
+function _openTradesWs(){
+  if(_tradesWs && (_tradesWs.readyState===0 || _tradesWs.readyState===1)) return;
+  const proto=location.protocol==='https:'?'wss':'ws';
+  const url=`${proto}://${location.host}/api/screener/ws/trades`;
+  const token=Auth.getToken();
+  if(!token) return;
+  let ws;
+  try{ ws=new WebSocket(url); }catch(_){ return; }
+  _tradesWs=ws;
+  ws.onopen=()=>{
+    _tradesWsBackoff=1000;
+    try{
+      ws.send(JSON.stringify({auth:token}));
+      ws.send(JSON.stringify({action:'subscribe', pairs:[_tradesPairFor('long'),_tradesPairFor('short')]}));
+    }catch(_){}
+  };
+  const longPair=_tradesPairFor('long'), shortPair=_tradesPairFor('short');
+  ws.onmessage=(e)=>{
+    let msg; try{ msg=JSON.parse(e.data); }catch(_){ return; }
+    const arr = msg && msg.trades;
+    if (!Array.isArray(arr)) return;
+    for (const t of arr) {
+      // t = {e:exchange,s:symbol,p:price,q:size,d:'B'|'S',t:ts}
+      const pair = (t.e||'').toLowerCase() + ':' + (t.s||'').toUpperCase();
+      const side = (pair === longPair) ? 'long' : (pair === shortPair ? 'short' : null);
+      if (!side) continue;
+      _flashTradeRow(side, t.p, t.d);
+    }
+  };
+  ws.onclose=()=>{
+    _tradesWs=null;
+    setTimeout(_openTradesWs, Math.min(_tradesWsBackoff, 10000));
+    _tradesWsBackoff=Math.min(_tradesWsBackoff*2, 10000);
+  };
+  ws.onerror=()=>{ try{ ws.close(); }catch(_){} };
 }
 
 // ── Funding history table ─────────────────────────────────────────────────────
