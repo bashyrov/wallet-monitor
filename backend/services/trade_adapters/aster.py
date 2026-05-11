@@ -63,8 +63,13 @@ class AsterAdapter:
         """
         try:
             from eth_account import Account
-            from eth_account.messages import encode_structured_data
             import urllib.parse
+            # eth_account renamed encode_structured_data → encode_typed_data
+            # somewhere in the 0.10 line. Support both.
+            try:
+                from eth_account.messages import encode_typed_data as _encode
+            except ImportError:
+                from eth_account.messages import encode_structured_data as _encode
         except ImportError:
             raise RuntimeError("eth_account package required for Aster V3")
 
@@ -103,7 +108,12 @@ class AsterAdapter:
             },
             "message": {"msg": msg},
         }
-        em = encode_structured_data(typed_data)
+        # encode_typed_data() in newer eth_account takes the same nested dict
+        # but may expect it as `full_message=typed_data` kwarg in some versions.
+        try:
+            em = _encode(typed_data)
+        except TypeError:
+            em = _encode(full_message=typed_data)
         signed = Account.sign_message(em, private_key=priv if priv.startswith("0x") else "0x" + priv)
         sig_hex = signed.signature.hex()
 
