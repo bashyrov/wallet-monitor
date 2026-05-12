@@ -94,24 +94,31 @@ func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
 
 func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
 	// /ws endpoint returns events directly (no `{stream, data}` wrapper).
-	// Subscribe-ack: {"result":null,"id":N}. Data: {"e":"trade",...}.
+	// Subscribe-ack: {"result":null,"id":N}. Trade: {"e":"trade","E":..,"T":..,"s":..,"t":..,"p":..,"q":..,"m":..}.
+	//
+	// Tricky JSON shape: keys "e"/"E" and "t"/"T" both exist. Go's json
+	// (and sonic) only fall back to case-insensitive when there's no
+	// exact tag match. Bind both casings explicitly so neither side
+	// triggers the fallback that would type-mismatch.
 	var ev struct {
 		Result *any   `json:"result"`
-		E      string `json:"e"` // event type — "trade"
-		T      int64  `json:"T"` // trade time (ms)
-		S      string `json:"s"` // symbol
-		P      string `json:"p"` // price
-		Q      string `json:"q"` // qty
-		Tid    int64  `json:"t"` // trade id
-		M      bool   `json:"m"` // is buyer maker
+		EvType string `json:"e"`  // "trade"
+		EvTime int64  `json:"E"`  // event time (parsed but unused — needed so the wire's "E" doesn't get misrouted into the string "e" field)
+		TT     int64  `json:"T"`  // trade time (ms)
+		S      string `json:"s"`  // symbol
+		P      string `json:"p"`  // price
+		Q      string `json:"q"`  // qty
+		Tid    int64  `json:"t"`  // trade id (lowercase)
+		M      bool   `json:"m"`  // is buyer maker
 	}
+	_ = ev.EvTime // silence the unused-field hint
 	if err := ticks.UnmarshalJSON(frame, &ev); err != nil {
 		return nil, err
 	}
-	if ev.Result != nil || ev.E == "" {
+	if ev.Result != nil || ev.EvType == "" {
 		return nil, nil
 	}
-	if ev.E != "trade" {
+	if ev.EvType != "trade" {
 		return nil, nil
 	}
 	if !strings.HasSuffix(ev.S, "USDT") {
@@ -134,7 +141,7 @@ func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
 		Price:    price,
 		Size:     size,
 		Side:     side,
-		TsMS:     ev.T,
+		TsMS:     ev.TT,
 		ID:       strconv.FormatInt(ev.Tid, 10),
 	}}, nil
 }
