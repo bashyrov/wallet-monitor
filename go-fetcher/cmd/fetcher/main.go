@@ -30,6 +30,7 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bingx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bitget"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bybit"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/ethereal"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/extended"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/gate"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/htx"
@@ -525,6 +526,18 @@ func main() {
 		mgr.RegisterTicks("extended", extendedTicks)
 		g.Go(func() error {
 			extendedTicks.Run(gctx)
+			return nil
+		})
+		etherealTicks := ethereal.NewTrades(onTick)
+		mgr.RegisterTicks("ethereal", etherealTicks)
+		g.Go(func() error {
+			etherealTicks.Run(gctx)
+			return nil
+		})
+		lighterTicks := lighter.NewTrades(onTick)
+		mgr.RegisterTicks("lighter", lighterTicks)
+		g.Go(func() error {
+			lighterTicks.Run(gctx)
 			return nil
 		})
 	}
