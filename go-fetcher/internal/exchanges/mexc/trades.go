@@ -55,44 +55,54 @@ func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
 }
 
 func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
-	// Two-step parse: outer carries channel+symbol; data shape varies a
-	// bit on MEXC (price sometimes float, sometimes string). Use any-typed
-	// decode for the inner so we tolerate both wire variants.
+	// Live wire shape (per prod logs 2026-05-12):
+	//   {"symbol":"BTC_USDT","data":[{"p":80587.8,"v":87,"T":1,"O":3,"M":2,"t":...}]}
+	// `data` is an ARRAY (one element typically, but always wrapped).
+	// First struct attempt expected a map and 100% of frames failed.
 	var msg struct {
-		Channel string         `json:"channel"`
-		Symbol  string         `json:"symbol"`
-		Data    map[string]any `json:"data"`
+		Channel string `json:"channel"`
+		Symbol  string `json:"symbol"`
+		Data    []struct {
+			P float64 `json:"p"` // price
+			V float64 `json:"v"` // volume (contracts)
+			T int     `json:"T"` // taker dir: 1=buy, 2=sell
+			Tm int64  `json:"t"` // trade time (ms)
+		} `json:"data"`
 	}
 	if err := ticks.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if msg.Channel != "push.deal" {
+	// MEXC sometimes omits the `channel` field for sub.deal pushes;
+	// presence of `symbol` + `data[]` is the discriminator.
+	if msg.Channel != "" && msg.Channel != "push.deal" {
 		return nil, nil
 	}
-	if !strings.HasSuffix(msg.Symbol, "_USDT") {
+	if !strings.HasSuffix(msg.Symbol, "_USDT") || len(msg.Data) == 0 {
 		return nil, nil
 	}
 	token := strings.TrimSuffix(msg.Symbol, "_USDT")
-
-	price := asFloat(msg.Data["p"])
-	size := asFloat(msg.Data["v"])
-	if price <= 0 || size <= 0 {
+	out := make([]ticks.Tick, 0, len(msg.Data))
+	for _, d := range msg.Data {
+		if d.P <= 0 || d.V <= 0 {
+			continue
+		}
+		side := ticks.Buy
+		if d.T == 2 {
+			side = ticks.Sell
+		}
+		out = append(out, ticks.Tick{
+			Exchange: "mexc",
+			Symbol:   token,
+			Price:    d.P,
+			Size:     d.V,
+			Side:     side,
+			TsMS:     d.Tm,
+		})
+	}
+	if len(out) == 0 {
 		return nil, nil
 	}
-	dir := asInt(msg.Data["T"])
-	side := ticks.Buy
-	if dir == 2 {
-		side = ticks.Sell
-	}
-	ts := asInt64(msg.Data["t"])
-	return []ticks.Tick{{
-		Exchange: "mexc",
-		Symbol:   token,
-		Price:    price,
-		Size:     size,
-		Side:     side,
-		TsMS:     ts,
-	}}, nil
+	return out, nil
 }
 
 // MEXC requires {"method":"ping"} every ~20s — same heartbeat as the
