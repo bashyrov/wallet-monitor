@@ -466,6 +466,24 @@ func main() {
 			asterTicks.Run(gctx)
 			return nil
 		})
+		kucoinTicks := kucoin.NewTrades(onTick)
+		mgr.RegisterTicks("kucoin", kucoinTicks)
+		g.Go(func() error {
+			kucoinTicks.Run(gctx)
+			return nil
+		})
+		bitgetTicks := bitget.NewTrades(onTick)
+		mgr.RegisterTicks("bitget", bitgetTicks)
+		g.Go(func() error {
+			bitgetTicks.Run(gctx)
+			return nil
+		})
+		bingxTicks := bingx.NewTrades(onTick)
+		mgr.RegisterTicks("bingx", bingxTicks)
+		g.Go(func() error {
+			bingxTicks.Run(gctx)
+			return nil
+		})
 	}
 
 	// Initial prewarm. During shadow-mode rollout we want Go's hot-list
