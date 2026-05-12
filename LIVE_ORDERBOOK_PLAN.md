@@ -392,6 +392,22 @@ mexc:LAB         6.7 ticks/s
 
 For the LAB MEXC pair the user explicitly complained about: 6.7 trade events/sec via /ws/trades + 5 depth pushes/sec via /ws/book = **~12 visual events/sec on /arb** — matches arbion's "10-20 updates/sec" claim.
 
+### Phase 5c-5l — 11/13 venues live
+
+After completing Binance + MEXC, extended to 11 more venues with the proven pattern. Live measurement on /ws/trades:
+
+```
+binance     3042 / 15s   bybit      1581 / 15s   okx     1106 / 15s
+bitget       888 / 15s   gate        462 / 15s   mexc     448 / 15s
+bingx        337 / 15s   htx         273 / 15s   kraken   149 / 15s
+aster        128 / 15s   kucoin       19 / 15s
+whitebit       0 / 15s   backpack      0 / 15s   ← needs debug
+```
+
+WhiteBIT and Backpack: subscribed successfully but receive 0 trade events. Likely wrong stream name format or market form. Debug on next pass — both Pareto-2 venues so low priority.
+
+Remaining: Phase 5m (Paradex), 5n (Hyperliquid), 5o (Extended) — all custom WS protocols (Stark JSON-RPC / l2book / x10 SDK style), need bespoke adapters not pattern-copied.
+
 ### Decisions: keep stretching to other venues?
 
 Now that the architecture is proven, Phase 5c-5o is mechanical:
