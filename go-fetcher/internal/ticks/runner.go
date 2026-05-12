@@ -181,13 +181,18 @@ func (r *Runner) session(ctx context.Context) error {
 	r.log.Info().Int("symbols", len(wantedSnap)).Msg("ticks WS connected")
 
 	frameCount := 0
+	rawFrameSeen := 0
 	for {
 		mt, raw, err := conn.ReadMessage()
 		if err != nil {
-			r.log.Info().Err(err).Int("frames", frameCount).Msg("ticks ws read failed")
+			r.log.Info().Err(err).Int("frames", frameCount).Int("raw_seen", rawFrameSeen).Msg("ticks ws read failed")
 			return err
 		}
 		r.lastMsg.Store(time.Now())
+		if rawFrameSeen < 5 {
+			r.log.Info().Int("mt", mt).Int("len", len(raw)).Str("preview", string(raw[:min(120, len(raw))])).Msg("ticks recv frame")
+		}
+		rawFrameSeen++
 
 		if r.a.DecompressGzip() && len(raw) > 0 {
 			if dec, derr := gunzip(raw); derr == nil {
