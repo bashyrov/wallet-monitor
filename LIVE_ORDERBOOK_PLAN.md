@@ -215,6 +215,101 @@ Live данные идут через WS, файлы нужны только Pyt
 
 ---
 
+## Phase 5 — Trade streams (arbion-level visual liveness) — PENDING
+
+**Корень "почему мы выглядим медленнее arbion"**: мы упёрлись в физический ceiling MEXC публичного API для depth-канала — **5 pushes/сек** (`sub.depth` incremental). Этот предел нельзя побить ни прокси, ни архитектурой, только институциональный feed (платный).
+
+**Что делает arbion**: подписан на **trade-stream** (каждая сделка отдельным событием) **поверх** depth-канала. Hot пары (LAB) генерят 20-50 сделок/сек. UI рисует тик на каждое событие = 25-55 визуальных обновлений/сек.
+
+**Цель Phase 5**: добавить subscribe на trade-stream для каждой биржи + новый broadcast-канал `/ws/trades` (или дополнить `/ws/book` событиями типа `"trade"`).
+
+### Per-venue trade WS channels
+
+| Venue | Trade channel | Wire format | Rate (active pair) |
+|---|---|---|---|
+| **Binance** fapi | `<sym>@aggTrade` | `{e:"aggTrade",E,T,s,p,q,m,a}` | 10-100/сек |
+| **Aster** | `<sym>@aggTrade` (Binance fork) | same | 10-100/сек |
+| **Bybit** linear | `publicTrade.<sym>` | `{topic,ts,data:[{T,s,S,v,p,L,...}]}` | 5-50/сек |
+| **OKX** SWAP | `trades` (`instType:SWAP`) | `{arg,data:[{instId,tradeId,px,sz,side,ts}]}` | 5-30/сек |
+| **Gate** futures | `futures.trades` | `[contract]` → `{result:[{id,price,size,side,...}]}` | 5-30/сек |
+| **MEXC** contract | `sub.deal` | `{channel:"push.deal",data:{p,v,T,t,O}}` | 10-50/сек |
+| **KuCoin** futures | `/contractMarket/execution:<sym>USDTM` | matchData stream | 5-30/сек |
+| **Bitget** mix-v2 | `trade` channel | `{action:"snapshot"\|"update",data:[[ts,p,sz,side]]}` | 5-30/сек |
+| **BingX** swap | `<sym>@trade` (Binance-style) | similar | 5-30/сек |
+| **HTX** swap | `market.<sym>.trade.detail` | `{tick:{data:[{amount,direction,price,ts}]}}` | 5-30/сек |
+| **Kraken** futures | `trade` feed | `{feed:"trade",product_id,price,qty,side,time}` | 1-10/сек |
+| **WhiteBIT** | `deals_subscribe` | `[market,deals[]]` | 1-10/сек |
+| **Backpack** | `trade.<sym>` | `{e:"trade",E,s,p,q,b,a,t,T,m}` | 1-10/сек |
+| **Paradex** | `trades.{MARKET}` | JSON-RPC pub | 1-10/сек |
+| **Hyperliquid** | `{type:"trades",coin}` | `[{coin,side,px,sz,hash,time,tid}]` | 1-50/сек |
+| **Extended** | `/v1/trades/{market}` WS | similar | 1-10/сек |
+| Ethereal | skip (broken) | — | — |
+| Lighter | skip (no public) | — | — |
+
+### Architecture
+
+```
+venue trade WS → trade adapter.Parse(frame) → {ex, sym, price, size, side, ts}
+              → cache.TradeRing (small per-symbol ring buffer, last 50 trades)
+              → broadcaster.OnTrade(ex, sym, trade) → Hub clients on /ws/trades
+```
+
+- Дублирует существующий orderbook flow (push-through, без 25ms tick)
+- TradeRing — небольшой ring buffer (50 трейдов) per symbol для подписчиков-после-фaкта
+- Hub фильтрует per-symbol (как `/ws/book`)
+- Frontend `/arb` пейдж рендерит каждое trade event как "тик" в UI (мигание соответствующего price level)
+
+### Файлы (новые)
+
+- `go-fetcher/internal/exchanges/<venue>/trades.go` — отдельный Runner на trade-channel per venue
+- `go-fetcher/internal/cache/trade_ring.go` — per-symbol ring buffer
+- `go-fetcher/internal/wsbroadcast/trades.go` — новый Hub-channel `/ws/trades`
+- `frontend/arb.html` — handler trade events для подсветки price levels
+
+### Ожидаемый эффект
+
+| Метрика | До (только depth) | С trade stream |
+|---|---|---|
+| Визуальных тиков/сек на LAB | 5 | **25-55** |
+| Визуальных тиков/сек на BTC binance | 5 | **50-150** |
+| Латенси trade event → UI | n/a | **<100ms** |
+| go-fetcher CPU | +N venue trade adapters = ~+2-3 ядер |
+| Поведение vs arbion | заметно отстаёт | **сравнимо или быстрее** |
+
+### Риски
+
+| Риск | Митигация |
+|---|---|
+| Trade WS грузит CPU/память (50/сек × 18 venues × N symbols) | Per-symbol ring buffer, no DB store. Только push-через-Hub без перcистенс. |
+| Frontend перерисовка 100/сек тормозит браузер | requestAnimationFrame coalescing на стороне UI (макс 60 fps), не 100+ |
+| Some venues используют trade channel для агрегации | Прозрачно — мы получаем то что биржа отдаёт |
+| Удвоение количества WS-соединений на go-fetcher | OnReconnect handling уже есть; CPU оверхед оценочно +2-3 ядра |
+
+### Фазы реализации
+
+- **5a**: Binance + Aster trade stream (Binance fork) — `@aggTrade`, простейший wire format
+- **5b**: MEXC `sub.deal` — то же что depth, но другой канал
+- **5c**: Bybit `publicTrade` — V5 standard
+- **5d**: OKX `trades` — стандарт V5
+- **5e**: Gate `futures.trades`
+- **5f**: KuCoin `/contractMarket/execution:`
+- **5g**: Bitget `trade`
+- **5h**: BingX `@trade`
+- **5i**: HTX `market.<sym>.trade.detail` (gzip)
+- **5j**: Kraken `trade`
+- **5k**: WhiteBIT `deals_subscribe`
+- **5l**: Backpack `trade.<sym>`
+- **5m**: Paradex `trades.{MARKET}` — Stark-JSON-RPC
+- **5n**: Hyperliquid `{type:"trades",coin}` — custom WS
+- **5o**: Extended `/v1/trades/{market}`
+- **5p**: Frontend wiring — handler в `arb.html` + screener Live ticks indicator
+
+### Acceptance
+
+Открыть прод `/arb` для LAB MEXC рядом с arbion на той же паре. Визуально частота тиков **сравнима или выше**. CPU go-fetcher не превысил 12 ядер (capacity).
+
+---
+
 ## Decisions made
 
 - **OKX L2-tbt не входит в scope** — требует VIP4/5 trading volume. `bbo-tbt` 10ms public покрывает top-of-book.
@@ -243,15 +338,53 @@ Live данные идут через WS, файлы нужны только Pyt
 - **2026-05-12 22:30 UTC** — Phase 0 завершён. Доки 14 венчурсов прочитаны через WebFetch агентов. Сводная таблица составлена.
 - **2026-05-12 22:35 UTC** — Plan file создан (этот файл). Phase 1 starting.
 - **2026-05-12 22:55 UTC** — Phase 1 ✅. Обнаружено что push-through уже в коде; bottleneck был не там — safety-net 25ms тик гонял MGET. Снижен до 1s + env-var override. Tests pass. Готов к deploy.
+- **2026-05-12 23:00 UTC** — Phase 1 deployed (commit `93deefc`). CPU go-fetcher 2129% → 1368% (-7 ядер). MEXC max age 113s → 11s. slow-client drops: 0.
+- **2026-05-12 23:08 UTC** — MEXC sub.depth.full → sub.depth (commit `8cc7079`). Live measurement: 2.97/s → 5.0/s pushes. **Откатили**: вылез old quirk — деltы только внутри top-20, цена ушла за окно, локальная книга дрейфует ($0.023 от MEXC live REST). Revert commit `652c9cd`.
+- **2026-05-12 23:20 UTC** — Анализ "почему arbion выглядит live": MEXC depth ceiling 5/сек = физический потолок public API. arbion подписан на **trade-stream** (20-50 сделок/сек на hot паре) → 25-55 визуальных тиков/сек. Phase 5 добавлен в план.
+- **2026-05-12 23:30-01:00 UTC** — Phase 5 backend инфраструктура построена и задеплоена:
+  - `internal/ticks/` пакет (Tick + Adapter + Runner + Ring buffer)
+  - `wsbroadcast/trades.go` /ws/trades hub
+  - `wsbroadcast/server.go` route + handler
+  - `symbols/Manager.RegisterTicks` — единая prewarm для ob/funding/ticks
+  - `binance/trades.go` — adapter (commits `c6b033c`, `c6b8247`, `f6efa79`)
+  - `mexc/trades.go` — adapter (commit `33110bc`)
+  - nginx route — добавлен
+  - frontend `arb.html` — /ws/trades подписка + pulse animation (commit `cda59d9`)
+  - Phase 5 SetSymbols-no-reconnect (commit `21f6195`)
+- **Open bug**: на проде Binance ticks WS connect успешен, subscribe отправляется, но **0 data frames** receive (manual test от Python с тем же URL даёт frames мгновенно). Issue isolated to Go runner — orderbook on same endpoint works fine. Под подозрением: `User-Agent` / WS-level subtle gorilla vs python-websockets difference, или per-IP concurrent-conn limit. Phase 5p (frontend) задеплоена но не показывает ticks потому что backend не получает.
+- **Discovered**: `@aggTrade` на Binance USDT-M futures выдаёт TIMEOUT с любого клиента, `@trade` работает. Stream был переименован (docs устарели).
+- **Reverted**: funding-feed bridge в `symbols/manager.go` (commit `bdb435b`) — раздул prewarm до 1000 syms/venue → Binance combined-stream URL too long → 1008 policy violation.
+
+## Phase 5 status (active)
+
+| Componente | Status |
+|---|---|
+| Ticks Go infrastructure | ✅ deployed |
+| Binance @trade adapter | ✅ deployed, 0 frames receiving (debug ongoing) |
+| MEXC sub.deal adapter | ✅ deployed, 0 frames receiving |
+| /ws/trades broadcaster | ✅ deployed |
+| Frontend /arb pulse | ✅ deployed |
+| nginx route | ✅ |
+| Live end-to-end | ⚠️ blocked by frames=0 bug |
+
+**Next debug steps**:
+1. Try with default User-Agent (no override) — gorilla vs custom UA
+2. Check if Binance per-IP conn cap throttling 2+ conns to same IP
+3. Look at gorilla SetReadDeadline / pingHandler default behavior
+4. Try /ws/<stream> single-symbol endpoint instead of /stream?streams= combined
 
 ## Next up
 
-**Не делать Phase 2b (Bybit BBO)** — 20ms→10ms marginal. Bybit `orderbook.1` имеет независимый `u` seq от `orderbook.50`; смержить state нельзя, нужно держать 2 параллельных стейта что усложняет код ради 10ms.
+**Phase 5 (trade streams) — приоритет #1** для достижения arbion-level визуальной liveness. Без него мы упёрты в depth ceiling и **никаким способом не догоним arbion**.
 
-**Не делать Phase 2c (OKX BBO)** — требует merge logic с `books`, сложно для среднего выигрыша.
+Phase 2 миграции остаются полезными для уменьшения **latency** (event→ui), но не для **frequency** (тиков/сек). Phase 5 решает frequency.
 
-**Делать Phase 3 cheap CPU wins сначала** — bump file dumper interval до 1-2s. После этого freed CPU будет хватать для Phase 2 миграций без oversub.
+**Порядок работ:**
+1. Phase 5a (Binance + Aster trade stream) — самый простой wire format, проверка концепта
+2. Phase 5b (MEXC `sub.deal`) — тот венчурс по которому пользователь сравнивает с arbion
+3. Frontend Phase 5p — wire trade events в `/arb` HTML, подсветка price levels
+4. Live A/B vs arbion на LAB MEXC и BTC Binance
+5. Если победили — расширить на остальные 13 venues
+6. Параллельно: Phase 2d (Gate 20ms book_update), Phase 2n (HL `l2Book` WS) для latency
 
-**Затем Phase 2d (Gate)** — самый большой простой выигрыш (5x ускорение для тех пар где Gate действительно активный, но channel migration требует REST snapshot bootstrap).
-
-**Затем Phase 2n (Hyperliquid)** — реализовать `l2Book` WS + `bbo`. Это новый код но без legacy interference.
+**MEXC drift fix** (актуально прямо сейчас — sub.depth.full deployed после revert): мы на 3/сек, корректно. Если нужно ускорить — нужно subscribe limit:200 тест ИЛИ REST backstop. Phase 5 это не решает — только частота визуальных событий.
