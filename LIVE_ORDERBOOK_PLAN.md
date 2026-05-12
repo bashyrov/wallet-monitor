@@ -341,6 +341,7 @@ venue trade WS → trade adapter.Parse(frame) → {ex, sym, price, size, side, t
 - **2026-05-12 23:00 UTC** — Phase 1 deployed (commit `93deefc`). CPU go-fetcher 2129% → 1368% (-7 ядер). MEXC max age 113s → 11s. slow-client drops: 0.
 - **2026-05-12 23:08 UTC** — MEXC sub.depth.full → sub.depth (commit `8cc7079`). Live measurement: 2.97/s → 5.0/s pushes. **Откатили**: вылез old quirk — деltы только внутри top-20, цена ушла за окно, локальная книга дрейфует ($0.023 от MEXC live REST). Revert commit `652c9cd`.
 - **2026-05-12 23:20 UTC** — Анализ "почему arbion выглядит live": MEXC depth ceiling 5/сек = физический потолок public API. arbion подписан на **trade-stream** (20-50 сделок/сек на hot паре) → 25-55 визуальных тиков/сек. Phase 5 добавлен в план.
+- **2026-05-12 13:50 UTC** — Phase 5 **READY** end-to-end. Binance 100-278 ticks/s, MEXC 6-17 ticks/s on hot pairs. /arb on prod now flashes per-level pulses arbion-style. 6 bugs found + fixed in trade-stream parser layer (see Phase 5 status section above).
 - **2026-05-12 23:30-01:00 UTC** — Phase 5 backend инфраструктура построена и задеплоена:
   - `internal/ticks/` пакет (Tick + Adapter + Runner + Ring buffer)
   - `wsbroadcast/trades.go` /ws/trades hub
@@ -355,23 +356,50 @@ venue trade WS → trade adapter.Parse(frame) → {ex, sym, price, size, side, t
 - **Discovered**: `@aggTrade` на Binance USDT-M futures выдаёт TIMEOUT с любого клиента, `@trade` работает. Stream был переименован (docs устарели).
 - **Reverted**: funding-feed bridge в `symbols/manager.go` (commit `bdb435b`) — раздул prewarm до 1000 syms/venue → Binance combined-stream URL too long → 1008 policy violation.
 
-## Phase 5 status (active)
+## Phase 5 status (DONE for Binance + MEXC)
 
 | Componente | Status |
 |---|---|
 | Ticks Go infrastructure | ✅ deployed |
-| Binance @trade adapter | ✅ deployed, 0 frames receiving (debug ongoing) |
-| MEXC sub.deal adapter | ✅ deployed, 0 frames receiving |
+| Binance @trade adapter | ✅ **278 ticks/sec ETH, 103/sec BTC live** |
+| MEXC sub.deal adapter | ✅ **17/sec BTC, 7/sec LAB live** |
 | /ws/trades broadcaster | ✅ deployed |
 | Frontend /arb pulse | ✅ deployed |
 | nginx route | ✅ |
-| Live end-to-end | ⚠️ blocked by frames=0 bug |
+| Live end-to-end | ✅ **A/B validated on prod 2026-05-12** |
 
-**Next debug steps**:
-1. Try with default User-Agent (no override) — gorilla vs custom UA
-2. Check if Binance per-IP conn cap throttling 2+ conns to same IP
-3. Look at gorilla SetReadDeadline / pingHandler default behavior
-4. Try /ws/<stream> single-symbol endpoint instead of /stream?streams= combined
+### Bugs found + fixed during debug
+
+1. **`@aggTrade` retired on fapi**: Binance docs still list it but `wss://fstream.binance.com/stream?streams=...@aggTrade` returns 0 frames. Switched to `@trade` which provides per-fill events (commit `f6efa79`).
+2. **Combined-stream + @trade broken**: `/stream?streams=btcusdt@trade` triggers close 1006 (EOF) within seconds. `/ws` + SUBSCRIBE method works flawlessly. Switched (commit `61030bf`).
+3. **MEXC `data` is array not map**: prod logs revealed `{"channel":"push.deal","symbol":"X_USDT","data":[{...}]}` — my struct expected a map and 100% of frames failed parse. Switched to `[]struct` (commit `e4fcc21`).
+4. **MEXC parse error on subscribe-ack**: `rs.sub.deal` and `rs.error` frames have `data: "string"`. Added two-step parse: channel gate first, then data decode (commit `80ffbbe`).
+5. **Binance JSON case-insensitive collision**: Wire has both `"e"` (event type string) and `"E"` (event time number). Go's json/sonic falls back to case-insensitive matching when there's no exact tag — `"E":1778...` was being routed into the `E string json:"e"` field and failing with type mismatch. Added explicit `EvTime int64 json:"E"` field so the exact match takes priority (commit `26eb283`).
+6. **SetSymbols force-reconnect on hasRemoved**: ws.Runner closes conn when symbols are removed (necessary for combined-stream URL update). For ticks the same logic killed sessions every 5s (reconcile cycle) before any data could flow. Dropped the force-close for ticks runner; it's fine to keep receiving events for unwanted symbols until next natural reconnect (commit `21f6195`).
+
+### Live measurement (2026-05-12 ~13:50 UTC)
+
+```
+binance:ETH    278.8 ticks/s
+binance:BTC    103.1 ticks/s
+binance:TON     26.0 ticks/s
+binance:DOGS    11.7 ticks/s
+mexc:BTC        17.1 ticks/s
+mexc:ETH        12.8 ticks/s
+mexc:SOL         8.4 ticks/s
+mexc:LAB         6.7 ticks/s
+```
+
+For the LAB MEXC pair the user explicitly complained about: 6.7 trade events/sec via /ws/trades + 5 depth pushes/sec via /ws/book = **~12 visual events/sec on /arb** — matches arbion's "10-20 updates/sec" claim.
+
+### Decisions: keep stretching to other venues?
+
+Now that the architecture is proven, Phase 5c-5o is mechanical:
+- One adapter per venue (Bybit `publicTrade`, OKX `trades`, Gate `futures.trades`, KuCoin `/contractMarket/execution:`, Bitget `trade`, BingX `@trade`, HTX `market.<sym>.trade.detail`, Kraken `trade`, WhiteBIT `deals_subscribe`, Backpack `trade.<sym>`, Paradex `trades.{MARKET}`, Hyperliquid `{type:"trades",coin}`, Extended `/v1/trades/{market}`)
+- Pattern: each implements `ticks.Adapter` interface, registers via `mgr.RegisterTicks(venue, runner)` in main.go.
+- Frontend already filters by `<exchange>:<symbol>` so no changes needed when new venues come online.
+
+**Lesson learned from debug**: ALWAYS write explicit json tags for both lowercase + uppercase variants of the same letter when wire schema has them. Sonic + encoding/json case-fold fallback is sneaky.
 
 ## Next up
 
