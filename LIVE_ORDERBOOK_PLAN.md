@@ -342,6 +342,10 @@ venue trade WS → trade adapter.Parse(frame) → {ex, sym, price, size, side, t
 - **2026-05-12 23:08 UTC** — MEXC sub.depth.full → sub.depth (commit `8cc7079`). Live measurement: 2.97/s → 5.0/s pushes. **Откатили**: вылез old quirk — деltы только внутри top-20, цена ушла за окно, локальная книга дрейфует ($0.023 от MEXC live REST). Revert commit `652c9cd`.
 - **2026-05-12 23:20 UTC** — Анализ "почему arbion выглядит live": MEXC depth ceiling 5/сек = физический потолок public API. arbion подписан на **trade-stream** (20-50 сделок/сек на hot паре) → 25-55 визуальных тиков/сек. Phase 5 добавлен в план.
 - **2026-05-12 13:50 UTC** — Phase 5 **READY** end-to-end. Binance 100-278 ticks/s, MEXC 6-17 ticks/s on hot pairs. /arb on prod now flashes per-level pulses arbion-style. 6 bugs found + fixed in trade-stream parser layer (see Phase 5 status section above).
+- **2026-05-12 16:00 UTC** — Phase 5c-l extended to 9 more venues (Bybit, OKX, Gate, Aster, KuCoin, Bitget, BingX, HTX, Kraken). 11/13 standard venues live; WhiteBIT (needs auth) + Backpack (market format quirk) deprioritized.
+- **2026-05-12 17:00 UTC** — Phase 5n: Hyperliquid trades live (BTC 6.4/s, ETH 5.3/s, SOL 7.4/s). 12 venues total on /ws/trades.
+- **2026-05-12 18:30 UTC** — Frontend entry/exit speedup: sampleEntryExit() throttle 120ms→20ms, /ws/trades onmessage triggers immediate spread/entry/exit refresh + pulls top-of-book forward from trade price. Effectively makes entry/exit indicator update at trade rate (100+ /s on hot pairs) instead of depth rate (20-100ms).
+- **2026-05-12 18:35 UTC** — Phase 3 partial: `AVALANT_FILE_DUMP_INTERVAL=1s` (was 250ms default). go-fetcher CPU 1685% → 1560% (-1.25 cores).
 - **2026-05-12 23:30-01:00 UTC** — Phase 5 backend инфраструктура построена и задеплоена:
   - `internal/ticks/` пакет (Tick + Adapter + Runner + Ring buffer)
   - `wsbroadcast/trades.go` /ws/trades hub
