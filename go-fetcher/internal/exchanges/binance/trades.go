@@ -158,7 +158,10 @@ func (a *Trades) HeartbeatInterval() time.Duration { return 0 }
 func (a *Trades) PongFor(_ []byte) []byte          { return nil }
 func (a *Trades) UseLibPings() bool                { return true }
 func (a *Trades) SubscribeDelay() time.Duration    { return 0 }
-func (a *Trades) MaxSymbols() int                  { return 1000 }
+// 200 matches the orderbook cap on the same /stream endpoint — combined-
+// stream URL length blows past Binance's hidden limit beyond that and
+// triggers 1008 policy violation on connect.
+func (a *Trades) MaxSymbols() int                  { return 200 }
 func (a *Trades) DecompressGzip() bool             { return false }
 
 func (a *Trades) OnReconnect() {
