@@ -346,6 +346,8 @@ venue trade WS → trade adapter.Parse(frame) → {ex, sym, price, size, side, t
 - **2026-05-12 17:00 UTC** — Phase 5n: Hyperliquid trades live (BTC 6.4/s, ETH 5.3/s, SOL 7.4/s). 12 venues total on /ws/trades.
 - **2026-05-12 18:30 UTC** — Frontend entry/exit speedup: sampleEntryExit() throttle 120ms→20ms, /ws/trades onmessage triggers immediate spread/entry/exit refresh + pulls top-of-book forward from trade price. Effectively makes entry/exit indicator update at trade rate (100+ /s on hot pairs) instead of depth rate (20-100ms).
 - **2026-05-12 18:35 UTC** — Phase 3 partial: `AVALANT_FILE_DUMP_INTERVAL=1s` (was 250ms default). go-fetcher CPU 1685% → 1560% (-1.25 cores).
+- **2026-05-12 19:30 UTC** — Frontend staleness watchdog: toast "Нет данных по {SYM} на {venue}" if 12s after page load no /ws/book frame for that side; toast "Задержка данных {venue}" if >15s since last frame; persistent ⚠ badge on venue card while stale.
+- **2026-05-12 20:35 UTC** — Phase 5 closeout: WhiteBIT (deals_ → trades_subscribe method rename), Paradex (trades.{MKT}-USD-PERP JSON-RPC), Extended (new package, path-based publicTrades). All three deployed and live-verified parsing trades. Now **16/18 venues** publishing to /ws/trades. Remaining: Ethereal (broken public WS — Phase 0 skip), Lighter (no public trade stream).
 - **2026-05-12 23:30-01:00 UTC** — Phase 5 backend инфраструктура построена и задеплоена:
   - `internal/ticks/` пакет (Tick + Adapter + Runner + Ring buffer)
   - `wsbroadcast/trades.go` /ws/trades hub
