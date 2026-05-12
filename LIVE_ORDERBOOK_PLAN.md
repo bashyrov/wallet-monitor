@@ -353,6 +353,13 @@ venue trade WS → trade adapter.Parse(frame) → {ex, sym, price, size, side, t
   - **Ethereal**: subscribed but rate-limited (HTTP 429) — runner's backoff retries; will recover when IP cools. URL `wss://ws2.ethereal.trade/v1/stream` with `{event:subscribe,data:{type:TradeFill,symbol:BTCUSD}}` (raw WS, NOT Socket.IO — old finding was wrong transport).
   - Stronger pulse animation deployed (alpha 0.75 + 700ms + inset shadow) + per-venue activity dot indicator.
   - **18/18 venues registered**; 15+ actively streaming.
+- **2026-05-13 01:00 UTC** — Final fixup: REST-cached market filter for Backpack (`/api/v1/markets`) + WhiteBIT (`/api/v4/public/futures`) — only valid PERP bases get SUBSCRIBE frames. Eliminates flood of "Invalid market" errors that drowned subscribe queues. **17/18 venues now actively streaming** post-deploy:
+  ```
+  binance 1526, bybit 818, bingx 479, okx 459, bitget 450, lighter 392,
+  mexc 331, gate 302, hyperliquid 193, aster 168, htx 159, whitebit 150,
+  paradex 50, kraken 56, kucoin 60, extended 18, backpack 19  (per 25s window)
+  ```
+- **Ethereal** persistently 429 from Cloudflare on `ws2.ethereal.trade` from our prod IP — no SDK / no-UA / Origin-header workaround helped. Best-effort: adapter remains registered, runner backoff retries; when IP cooldown completes (usually hours-to-day), it'll go live automatically. Low-volume DEX so impact minimal.
 - **2026-05-12 23:30-01:00 UTC** — Phase 5 backend инфраструктура построена и задеплоена:
   - `internal/ticks/` пакет (Tick + Adapter + Runner + Ring buffer)
   - `wsbroadcast/trades.go` /ws/trades hub
