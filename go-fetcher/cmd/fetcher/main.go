@@ -442,6 +442,30 @@ func main() {
 			mexcTicks.Run(gctx)
 			return nil
 		})
+		bybitTicks := bybit.NewTrades(onTick)
+		mgr.RegisterTicks("bybit", bybitTicks)
+		g.Go(func() error {
+			bybitTicks.Run(gctx)
+			return nil
+		})
+		okxTicks := okx.NewTrades(onTick)
+		mgr.RegisterTicks("okx", okxTicks)
+		g.Go(func() error {
+			okxTicks.Run(gctx)
+			return nil
+		})
+		gateTicks := gate.NewTrades(onTick)
+		mgr.RegisterTicks("gate", gateTicks)
+		g.Go(func() error {
+			gateTicks.Run(gctx)
+			return nil
+		})
+		asterTicks := aster.NewTrades(onTick)
+		mgr.RegisterTicks("aster", asterTicks)
+		g.Go(func() error {
+			asterTicks.Run(gctx)
+			return nil
+		})
 	}
 
 	// Initial prewarm. During shadow-mode rollout we want Go's hot-list

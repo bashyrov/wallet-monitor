@@ -1,11 +1,11 @@
 // Package kucoin — KuCoin futures (USDT-M perp).
 //
 // URL: dynamically fetched (see auth.go bullet-public flow).
-// Subscribe: {"id":1,"type":"subscribe","topic":"/contractMarket/level2Depth5:XBTUSDTM","privateChannel":false,"response":true}
+// Subscribe: {"id":1,"type":"subscribe","topic":"/contractMarket/level2Depth50:XBTUSDTM","privateChannel":false,"response":true}
 //
 // QUIRKS:
 //   - URL needs token + connectId fetched via POST (auth.go) — bug #17
-//   - level2Depth5 pushes every 100ms guaranteed (vs level2Depth50 which only
+//   - level2Depth50 pushes every 100ms guaranteed (vs level2Depth500 which only
 //     pushes on change — caused 45-55s stale for inactive symbols). One symbol
 //     per subscribe frame: KuCoin futures depth topics don't aggregate results
 //     for comma-separated lists the way spot does, so batching silently dropped
@@ -61,7 +61,7 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 		f := map[string]any{
 			"id":             time.Now().UnixNano() + int64(i),
 			"type":           "subscribe",
-			"topic":          "/contractMarket/level2Depth5:" + token + "USDTM",
+			"topic":          "/contractMarket/level2Depth50:" + token + "USDTM",
 			"privateChannel": false,
 			"response":       true,
 		}
@@ -84,10 +84,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if msg.Type != "message" || !strings.HasPrefix(msg.Topic, "/contractMarket/level2Depth5:") {
+	if msg.Type != "message" || !strings.HasPrefix(msg.Topic, "/contractMarket/level2Depth50:") {
 		return nil, nil
 	}
-	contract := strings.TrimPrefix(msg.Topic, "/contractMarket/level2Depth5:")
+	contract := strings.TrimPrefix(msg.Topic, "/contractMarket/level2Depth50:")
 	if !strings.HasSuffix(contract, "USDTM") {
 		return nil, nil
 	}
