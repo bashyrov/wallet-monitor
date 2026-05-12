@@ -1,13 +1,16 @@
 // trades.go — WhiteBIT public trade stream.
 //
-// Method: deals_subscribe — per-deal events on perp markets.
-// Subscribe: {"id":1,"method":"deals_subscribe","params":["BTC_PERP"]}
+// Method: trades_subscribe (NOT deals_subscribe — deals_* requires auth
+// and silently rejects with code 6). Public on api.whitebit.com/ws.
+//
+// Subscribe: {"id":1,"method":"trades_subscribe","params":["BTC_PERP"]}
 //
 // Event wire:
 //
-//	{"method":"deals_update",
-//	 "params":["BTC_PERP",[{"id":...,"time":...,"price":"63125.5",
-//	                       "amount":"0.001","type":"buy"|"sell"}]]}
+//	{"method":"trades_update",
+//	 "params":["BTC_PERP",[{"id":...,"time":<unix-float-sec>,
+//	                       "price":"63125.5","amount":"0.001",
+//	                       "type":"buy"|"sell"}]]}
 package whitebit
 
 import (
@@ -35,7 +38,7 @@ func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
 	for i, s := range symbols {
 		f := map[string]any{
 			"id":     i + 1,
-			"method": "deals_subscribe",
+			"method": "trades_subscribe",
 			"params": []string{strings.ToUpper(s) + "_PERP"},
 		}
 		b, _ := ticks.MarshalJSON(f)
@@ -52,7 +55,7 @@ func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
 	if err := ticks.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if msg.Method != "deals_update" || len(msg.Params) < 2 {
+	if msg.Method != "trades_update" || len(msg.Params) < 2 {
 		return nil, nil
 	}
 	market, _ := msg.Params[0].(string)

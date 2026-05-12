@@ -30,6 +30,7 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bingx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bitget"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/bybit"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/extended"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/gate"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/htx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/hyperliquid"
@@ -512,6 +513,18 @@ func main() {
 		mgr.RegisterTicks("hyperliquid", hlTicks)
 		g.Go(func() error {
 			hlTicks.Run(gctx)
+			return nil
+		})
+		paradexTicks := paradex.NewTrades(onTick)
+		mgr.RegisterTicks("paradex", paradexTicks)
+		g.Go(func() error {
+			paradexTicks.Run(gctx)
+			return nil
+		})
+		extendedTicks := extended.NewTrades(onTick)
+		mgr.RegisterTicks("extended", extendedTicks)
+		g.Go(func() error {
+			extendedTicks.Run(gctx)
 			return nil
 		})
 	}
