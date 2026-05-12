@@ -3711,8 +3711,8 @@ function _openTradesWs(){
   if(_tradesWs && (_tradesWs.readyState===0 || _tradesWs.readyState===1)) return;
   const proto=location.protocol==='https:'?'wss':'ws';
   const url=`${proto}://${location.host}/api/screener/ws/trades`;
-  const token=Auth.getToken();
-  if(!token) return;
+  // Public feed — auth optional; pass token if logged in for uid tagging.
+  const token=Auth.getToken() || '';
   let ws;
   try{ ws=new WebSocket(url); }catch(_){ return; }
   _tradesWs=ws;

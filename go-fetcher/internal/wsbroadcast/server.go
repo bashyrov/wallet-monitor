@@ -85,14 +85,16 @@ func (s *Service) Run(ctx context.Context) {
 }
 
 // handleTrades upgrades and registers the client on the trades hub.
-// Auth REQUIRED — same policy as /ws/book (trade flow is a paid feature).
+// Auth OPTIONAL — public trade data (same policy as /ws/long-short).
+// Anonymous visitors get uid=0, paid users get their uid. Useful for
+// the screener/arb pages to flash trade pulses without forcing login.
 func (s *Service) handleTrades(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.L().Debug().Err(err).Msg("ws upgrade failed")
 		return
 	}
-	uid, ok := s.handshakeAuth(conn, authRequired)
+	uid, ok := s.handshakeAuth(conn, authOptional)
 	if !ok {
 		return
 	}
