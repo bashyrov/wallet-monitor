@@ -3446,6 +3446,99 @@ function renderEntryExitChart(){
 let _bookInterval=null;
 let _bookWs=null;
 let _bookWsLastMsgTs=0;
+// Per-side last update timestamps — used by the staleness check below.
+// `0` means "no data yet"; updated each /ws/book frame.
+let _lastBookSideTs={long:0,short:0};
+// Toast cooldown — don't re-fire warning more than once per minute per side.
+let _staleToastLast={long:0,short:0};
+let _staleNoticeShown={long:false,short:false};
+
+// ── Data-freshness watchdog (per side) ────────────────────────────────────
+// Two distinct issues we surface to the user:
+//
+//   1) "No data at all yet" — page loaded, /ws/book connected, but
+//      <venue>:<symbol> never appeared in any frame. Either the venue
+//      doesn't list this symbol (e.g. low-cap meme on Backpack), the
+//      go-fetcher is still warming up the subscription, or there's a
+//      live outage. We give 12 s of grace, then toast once.
+//
+//   2) "Data is now stale" — used to get fresh frames, now we haven't
+//      seen one in >15 s. Could be a venue WS hiccup or a market that
+//      just stopped trading. Quieter cooldown (60 s) so the user isn't
+//      spammed if multiple symbols go quiet in sequence.
+//
+// Banner-style indicator on the venue card is the long-term home; toast
+// is the catch-the-eye signal at first-arrival.
+function _checkBookStaleness(){
+  const now = Date.now();
+  // grace period: time since page boot
+  if (!window._arbBootTs) window._arbBootTs = now;
+  const sincePageBoot = now - window._arbBootTs;
+  const exName = (s)=> EX_LABEL[s==='long'?LONG:SHORT] || (s==='long'?LONG:SHORT);
+  ['long','short'].forEach(side => {
+    const lastTs = _lastBookSideTs[side];
+    const venue  = exName(side);
+    // (1) no data at all
+    if (!lastTs) {
+      if (sincePageBoot > 12000 && !_staleNoticeShown[side]) {
+        _staleNoticeShown[side] = true;
+        try {
+          toast({
+            title: `Нет данных по ${SYM} на ${venue}`,
+            sub:   'Возможно символ не торгуется на этой бирже или фид прогревается',
+            type:  'warn',
+            duration: 6000,
+          });
+        } catch (_) {}
+        _setStaleBadge(side, true, 'no data');
+      }
+      return;
+    }
+    // (2) data going stale
+    const ageMs = now - lastTs;
+    if (ageMs > 15000) {
+      _setStaleBadge(side, true, `${Math.round(ageMs/1000)}s ago`);
+      if (now - _staleToastLast[side] > 60000) {
+        _staleToastLast[side] = now;
+        try {
+          toast({
+            title: `Задержка данных ${venue}`,
+            sub:   `Последнее обновление ${Math.round(ageMs/1000)}s назад`,
+            type:  'warn',
+            duration: 5000,
+          });
+        } catch (_) {}
+      }
+    } else {
+      _setStaleBadge(side, false);
+    }
+  });
+}
+
+function _setStaleBadge(side, stale, label){
+  // Mark the venue card itself with a CSS class — styling defined inline
+  // below so this works without touching design.css.
+  const card = document.querySelector(`.ob-card-${side}`) || document.getElementById(`${side}-card`) || document.querySelector(`[data-side="${side}"]`);
+  if (!card) return;
+  let badge = card.querySelector('.stale-badge');
+  if (stale) {
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'stale-badge';
+      badge.style.cssText = 'position:absolute;top:6px;right:6px;padding:2px 6px;border-radius:6px;background:#3a1f1f;color:#fca5a5;font-size:10px;font-weight:600;z-index:5;border:1px solid #5b2a2a';
+      const cs = getComputedStyle(card);
+      if (cs.position === 'static') card.style.position = 'relative';
+      card.appendChild(badge);
+    }
+    badge.textContent = label ? `⚠ ${label}` : '⚠ stale';
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+// Kick the watchdog every 3s after the page boots.
+setTimeout(() => setInterval(_checkBookStaleness, 3000), 3000);
+
 let _bookWsBackoff=1000;
 
 function _bookPairFor(side){
@@ -3479,6 +3572,7 @@ function _openBookWs(){
     if(!books) return;
     const longPair=_bookPairFor('long'), shortPair=_bookPairFor('short');
     if(books[longPair]){
+      _lastBookSideTs.long=Date.now();
       const d=books[longPair];
       _lastBookData.long=d;
       // Instant fast path: update top-of-book vars + in/out on every frame.
@@ -3492,6 +3586,7 @@ function _openBookWs(){
       }
     }
     if(books[shortPair]){
+      _lastBookSideTs.short=Date.now();
       const d=books[shortPair];
       _lastBookData.short=d;
       // Instant fast path: update top-of-book vars + in/out on every frame.
