@@ -3290,7 +3290,10 @@ function sampleEntryExit(){
   const outPct=(bidL-askS)/askS*100;
   const ts=Date.now()/1000;
   const last=_eeHist[_eeHist.length-1];
-  if(last && ts-last.ts<0.12 && last.inPct===inPct && last.outPct===outPct) return;
+  // 20ms (was 120ms) so entry/exit redraws at full underlying data rate.
+  // The == check still filters duplicate samples — only changed values
+  // hit the chart/numeric update path.
+  if(last && ts-last.ts<0.02 && last.inPct===inPct && last.outPct===outPct) return;
   _eeHist.push({ts,inPct,outPct});
   if(_eeHist.length>EE_MAX) _eeHist.shift();
   _eeScheduleSave();
@@ -3590,12 +3593,27 @@ function _openTradesWs(){
     let msg; try{ msg=JSON.parse(e.data); }catch(_){ return; }
     const arr = msg && msg.trades;
     if (!Array.isArray(arr)) return;
+    let touchedEntry = false;
     for (const t of arr) {
       // t = {e:exchange,s:symbol,p:price,q:size,d:'B'|'S',t:ts}
       const pair = (t.e||'').toLowerCase() + ':' + (t.s||'').toUpperCase();
       const side = (pair === longPair) ? 'long' : (pair === shortPair ? 'short' : null);
       if (!side) continue;
       _flashTradeRow(side, t.p, t.d);
+      // Trade price is the freshest signal the BBO has moved. Pull the
+      // matching top-of-book field forward so /arb's spread/entry/exit
+      // indicators update instantly (next /ws/book frame is at the
+      // venue's depth cadence — 20-100ms — too slow for an arb panel).
+      const px = +t.p;
+      if (px > 0) {
+        if (side === 'long')  { _liveMidLong  = px; if (t.d === 'B') _liveAskLong  = px; }
+        if (side === 'short') { _liveMidShort = px; if (t.d === 'S') _liveBidShort = px; }
+      }
+      touchedEntry = true;
+    }
+    if (touchedEntry && typeof sampleEntryExit === 'function') {
+      sampleEntryExit();
+      if (typeof updateLiveSpread === 'function') updateLiveSpread();
     }
   };
   ws.onclose=()=>{
