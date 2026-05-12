@@ -66,20 +66,20 @@ func (r *Runner) safeSend(conn *websocket.Conn, payload []byte) error {
 	return ws.SendText(conn, payload)
 }
 
-// SetSymbols mirrors ws.Runner.SetSymbols semantics. Removed symbols
-// force a reconnect; added symbols get a delta-subscribe.
+// SetSymbols updates the wanted symbol set. Unlike ws.Runner, removed
+// symbols are NOT considered fatal — we simply stop tracking them in
+// r.subscribed but keep receiving events for them (small waste,
+// acceptable because per-pair filtering happens downstream in the
+// /ws/trades hub). This means trade-stream WS sessions stay long-lived
+// across symbol churn, vs orderbook where reconnect-on-shrink is
+// necessary because the combined-stream URL changes meaningfully.
+//
+// Added symbols get a delta-subscribe on the existing conn.
 func (r *Runner) SetSymbols(syms []string) {
 	r.symMu.Lock()
 	wanted := make(map[string]struct{}, len(syms))
 	for _, s := range syms {
 		wanted[s] = struct{}{}
-	}
-	hasRemoved := false
-	for s := range r.symbols {
-		if _, ok := wanted[s]; !ok {
-			hasRemoved = true
-			break
-		}
 	}
 	r.symbols = wanted
 	added := make([]string, 0)
@@ -91,10 +91,6 @@ func (r *Runner) SetSymbols(syms []string) {
 	conn := r.conn
 	r.symMu.Unlock()
 
-	if hasRemoved && conn != nil {
-		_ = conn.Close()
-		return
-	}
 	if conn != nil && len(added) > 0 {
 		go func() {
 			if err := r.subscribe(conn, added); err != nil {
