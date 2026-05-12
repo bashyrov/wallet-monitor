@@ -3447,8 +3447,9 @@ let _bookInterval=null;
 let _bookWs=null;
 let _bookWsLastMsgTs=0;
 // Per-side last update timestamps — used by the staleness check below.
-// `0` means "no data yet"; updated each /ws/book frame.
+// `0` means "no data yet"; updated each /ws/book frame / /ws/trades event.
 let _lastBookSideTs={long:0,short:0};
+let _lastTradeSideTs={long:0,short:0};
 // Toast cooldown — don't re-fire warning more than once per minute per side.
 let _staleToastLast={long:0,short:0};
 let _staleNoticeShown={long:false,short:false};
@@ -3694,6 +3695,7 @@ function _openTradesWs(){
       const pair = (t.e||'').toLowerCase() + ':' + (t.s||'').toUpperCase();
       const side = (pair === longPair) ? 'long' : (pair === shortPair ? 'short' : null);
       if (!side) continue;
+      _lastTradeSideTs[side] = Date.now();
       _flashTradeRow(side, t.p, t.d);
       // Trade price is the freshest signal the BBO has moved. Pull the
       // matching top-of-book field forward so /arb's spread/entry/exit
