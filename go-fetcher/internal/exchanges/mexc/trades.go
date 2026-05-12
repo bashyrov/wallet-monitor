@@ -19,6 +19,7 @@ package mexc
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -55,34 +56,42 @@ func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
 }
 
 func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
-	// Live wire shape (per prod logs 2026-05-12):
-	//   {"symbol":"BTC_USDT","data":[{"p":80587.8,"v":87,"T":1,"O":3,"M":2,"t":...}]}
-	// `data` is an ARRAY (one element typically, but always wrapped).
-	// First struct attempt expected a map and 100% of frames failed.
-	var msg struct {
-		Channel string `json:"channel"`
-		Symbol  string `json:"symbol"`
-		Data    []struct {
-			P float64 `json:"p"` // price
-			V float64 `json:"v"` // volume (contracts)
-			T int     `json:"T"` // taker dir: 1=buy, 2=sell
-			Tm int64  `json:"t"` // trade time (ms)
-		} `json:"data"`
+	// Two-step parse: outer first to inspect `channel` and gate data type.
+	// MEXC sends string-typed `data` for subscribe-ack (`rs.sub.deal`) and
+	// error (`rs.error`) frames; only `push.deal` carries the trade array.
+	//
+	// Wire shape for push.deal (per prod logs 2026-05-12):
+	//   {"channel":"push.deal","symbol":"BTC_USDT","data":[{"p":..,"v":..,"T":1|2,"t":..}]}
+	var head struct {
+		Channel string          `json:"channel"`
+		Symbol  string          `json:"symbol"`
+		Data    json.RawMessage `json:"data"`
 	}
-	if err := ticks.UnmarshalJSON(frame, &msg); err != nil {
+	if err := ticks.UnmarshalJSON(frame, &head); err != nil {
 		return nil, err
 	}
-	// MEXC sometimes omits the `channel` field for sub.deal pushes;
-	// presence of `symbol` + `data[]` is the discriminator.
-	if msg.Channel != "" && msg.Channel != "push.deal" {
+	if head.Channel != "push.deal" {
+		// rs.sub.deal, rs.error, pong, …  — not a trade frame.
 		return nil, nil
 	}
-	if !strings.HasSuffix(msg.Symbol, "_USDT") || len(msg.Data) == 0 {
+	if !strings.HasSuffix(head.Symbol, "_USDT") || len(head.Data) == 0 {
 		return nil, nil
 	}
-	token := strings.TrimSuffix(msg.Symbol, "_USDT")
-	out := make([]ticks.Tick, 0, len(msg.Data))
-	for _, d := range msg.Data {
+	var rows []struct {
+		P float64 `json:"p"`
+		V float64 `json:"v"`
+		T int     `json:"T"`
+		Tm int64  `json:"t"`
+	}
+	if err := ticks.UnmarshalJSON(head.Data, &rows); err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	token := strings.TrimSuffix(head.Symbol, "_USDT")
+	out := make([]ticks.Tick, 0, len(rows))
+	for _, d := range rows {
 		if d.P <= 0 || d.V <= 0 {
 			continue
 		}
