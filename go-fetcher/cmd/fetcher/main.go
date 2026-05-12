@@ -484,6 +484,30 @@ func main() {
 			bingxTicks.Run(gctx)
 			return nil
 		})
+		htxTicks := htx.NewTrades(onTick)
+		mgr.RegisterTicks("htx", htxTicks)
+		g.Go(func() error {
+			htxTicks.Run(gctx)
+			return nil
+		})
+		krakenTicks := kraken.NewTrades(onTick)
+		mgr.RegisterTicks("kraken", krakenTicks)
+		g.Go(func() error {
+			krakenTicks.Run(gctx)
+			return nil
+		})
+		whitebitTicks := whitebit.NewTrades(onTick)
+		mgr.RegisterTicks("whitebit", whitebitTicks)
+		g.Go(func() error {
+			whitebitTicks.Run(gctx)
+			return nil
+		})
+		backpackTicks := backpack.NewTrades(onTick)
+		mgr.RegisterTicks("backpack", backpackTicks)
+		g.Go(func() error {
+			backpackTicks.Run(gctx)
+			return nil
+		})
 	}
 
 	// Initial prewarm. During shadow-mode rollout we want Go's hot-list
