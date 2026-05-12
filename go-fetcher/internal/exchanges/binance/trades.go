@@ -5,15 +5,16 @@
 // but returns no frames on fstream.binance.com — appears retired for
 // fapi; spot still has it). Hot pairs BTC/ETH emit 50-200 events/sec.
 //
-// Combined-stream URL: same shape as futures.go but with @trade instead
-// of @depth20@100ms. Mounted as a separate ws.Runner — one TCP
-// connection per stream type per venue keeps the two feeds independent.
+// Endpoint: bare `/ws` + SUBSCRIBE method. NOT combined-stream `/stream?streams=`
+// — Binance closes the latter with 1006 EOF for @trade specifically
+// (tested empirically; @depth20@100ms works on /stream though). The /ws
+// endpoint returns events without the `{stream, data}` wrapper —
+// straight `{"e":"trade",...}` payloads.
 //
-// Event wire (inside the combined-stream wrapper):
+// Event wire (direct, no wrapper):
 //
-//	{"stream":"btcusdt@trade",
-//	 "data": {"e":"trade","E":..,"T":..,"s":"BTCUSDT",
-//	          "t":12345,"p":"0.001","q":"100","b":..,"a":..,"m":true}}
+//	{"e":"trade","E":..,"T":..,"s":"BTCUSDT",
+//	 "t":12345,"p":"0.001","q":"100","b":..,"a":..,"m":true}
 //
 // m=true  → buyer was maker → taker SOLD into book → Sell tick
 // m=false → buyer was taker → taker BOUGHT from book → Buy tick
@@ -21,7 +22,6 @@ package binance
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +30,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ticks"
 )
 
-const tradesCombinedBase = "wss://fstream.binance.com/stream"
+// Bare /ws endpoint — see header. SUBSCRIBE-driven, no per-stream URL.
+const tradesWSBase = "wss://fstream.binance.com/ws"
 
 // Trades is the ticks.Adapter for Binance @trade.
 type Trades struct {
@@ -47,18 +48,9 @@ func NewTrades(onTick ticks.UpdateFunc) *ticks.Runner {
 
 func (a *Trades) Name() string { return "binance" }
 
+// URL — bare /ws endpoint. SUBSCRIBE-driven; no streams in URL.
 func (a *Trades) URL(_ context.Context) (string, error) {
-	a.mu.Lock()
-	syms := a.syms
-	a.mu.Unlock()
-	if len(syms) == 0 {
-		return tradesCombinedBase + "?streams=btcusdt@trade", nil
-	}
-	parts := make([]string, len(syms))
-	for i, s := range syms {
-		parts[i] = strings.ToLower(s) + "usdt@trade"
-	}
-	return tradesCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
+	return tradesWSBase, nil
 }
 
 func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
@@ -101,29 +93,23 @@ func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
 }
 
 func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
-	var wrap struct {
-		Stream string          `json:"stream"`
-		Data   json.RawMessage `json:"data"`
-		Result *any            `json:"result"`
-	}
-	if err := ticks.UnmarshalJSON(frame, &wrap); err != nil {
-		return nil, err
-	}
-	if wrap.Result != nil || len(wrap.Data) == 0 {
-		return nil, nil
-	}
-
+	// /ws endpoint returns events directly (no `{stream, data}` wrapper).
+	// Subscribe-ack: {"result":null,"id":N}. Data: {"e":"trade",...}.
 	var ev struct {
-		E string `json:"e"` // event type — "trade"
-		T int64  `json:"T"` // trade time (ms)
-		S string `json:"s"` // symbol
-		P string `json:"p"` // price
-		Q string `json:"q"` // qty
-		Tid int64 `json:"t"` // trade id
-		M bool   `json:"m"` // is buyer maker
+		Result *any   `json:"result"`
+		E      string `json:"e"` // event type — "trade"
+		T      int64  `json:"T"` // trade time (ms)
+		S      string `json:"s"` // symbol
+		P      string `json:"p"` // price
+		Q      string `json:"q"` // qty
+		Tid    int64  `json:"t"` // trade id
+		M      bool   `json:"m"` // is buyer maker
 	}
-	if err := ticks.UnmarshalJSON(wrap.Data, &ev); err != nil {
+	if err := ticks.UnmarshalJSON(frame, &ev); err != nil {
 		return nil, err
+	}
+	if ev.Result != nil || ev.E == "" {
+		return nil, nil
 	}
 	if ev.E != "trade" {
 		return nil, nil
