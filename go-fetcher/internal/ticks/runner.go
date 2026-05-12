@@ -138,7 +138,7 @@ func (r *Runner) session(ctx context.Context) error {
 	dialer.EnableCompression = false
 
 	conn, _, err := dialer.DialContext(ctx, url, http.Header{
-		"User-Agent": []string{"Mozilla/5.0 avalant-fetcher/go-ticks"},
+		"User-Agent": []string{"Mozilla/5.0 avalant-fetcher/go"},
 	})
 	if err != nil {
 		return err
