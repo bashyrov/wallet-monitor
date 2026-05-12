@@ -508,6 +508,12 @@ func main() {
 			backpackTicks.Run(gctx)
 			return nil
 		})
+		hlTicks := hyperliquid.NewTrades(onTick)
+		mgr.RegisterTicks("hyperliquid", hlTicks)
+		g.Go(func() error {
+			hlTicks.Run(gctx)
+			return nil
+		})
 	}
 
 	// Initial prewarm. During shadow-mode rollout we want Go's hot-list
