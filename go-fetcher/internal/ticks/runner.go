@@ -227,13 +227,17 @@ func (r *Runner) session(ctx context.Context) error {
 
 		ticks, perr := r.a.Parse(raw)
 		if perr != nil {
-			r.log.Debug().Err(perr).Msg("parse error")
+			r.log.Warn().Err(perr).Str("preview", string(raw[:min(80, len(raw))])).Msg("ticks parse error")
 			continue
 		}
 		if len(ticks) == 0 {
+			if rawFrameSeen < 8 {
+				r.log.Info().Str("preview", string(raw[:min(80, len(raw))])).Msg("ticks parse returned empty")
+			}
 			continue
 		}
 		if frameCount == 0 {
+			r.log.Info().Int("ticks", len(ticks)).Str("sym", ticks[0].Symbol).Msg("ticks first parsed")
 			r.bo.ResetPolicy()
 		}
 		frameCount++
