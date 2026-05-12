@@ -15,14 +15,68 @@ package whitebit
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/bytedance/sonic"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ticks"
 )
 
 const tradesWS = "wss://api.whitebit.com/ws"
+const wbMarketsURL = "https://whitebit.com/api/v4/public/futures"
+
+// Cache of valid PERP base symbols on WhiteBIT, refreshed hourly.
+// Prevents the prewarm flood of "market does not exist" subscribe errors
+// (any of which can rate-limit the conn and lose the valid subs).
+var (
+	wbValidMu     sync.RWMutex
+	wbValidBases  map[string]struct{}
+	wbValidAt     time.Time
+	wbValidClient = &http.Client{Timeout: 6 * time.Second}
+)
+
+func wbRefreshValid(ctx context.Context) {
+	wbValidMu.RLock()
+	fresh := time.Since(wbValidAt) < time.Hour && len(wbValidBases) > 0
+	wbValidMu.RUnlock()
+	if fresh {
+		return
+	}
+	req, _ := http.NewRequestWithContext(ctx, "GET", wbMarketsURL, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 avalant-fetcher/go")
+	resp, err := wbValidClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var doc struct {
+		Result []struct {
+			TickerID string `json:"ticker_id"`
+		} `json:"result"`
+	}
+	if err := sonic.Unmarshal(body, &doc); err != nil {
+		return
+	}
+	out := make(map[string]struct{}, len(doc.Result))
+	for _, m := range doc.Result {
+		if base := strings.TrimSuffix(m.TickerID, "_PERP"); base != m.TickerID {
+			out[strings.ToUpper(base)] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return
+	}
+	wbValidMu.Lock()
+	wbValidBases = out
+	wbValidAt = time.Now()
+	wbValidMu.Unlock()
+}
 
 type Trades struct{}
 
@@ -34,12 +88,31 @@ func (a *Trades) Name() string                          { return "whitebit" }
 func (a *Trades) URL(_ context.Context) (string, error) { return tradesWS, nil }
 
 func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
-	frames := make([][]byte, 0, len(symbols))
-	for i, s := range symbols {
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	wbRefreshValid(ctx)
+	wbValidMu.RLock()
+	known := wbValidBases
+	wbValidMu.RUnlock()
+	filtered := make([]string, 0, len(symbols))
+	for _, s := range symbols {
+		base := strings.ToUpper(s)
+		if known != nil {
+			if _, ok := known[base]; !ok {
+				continue
+			}
+		}
+		filtered = append(filtered, base)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	frames := make([][]byte, 0, len(filtered))
+	for i, s := range filtered {
 		f := map[string]any{
 			"id":     i + 1,
 			"method": "trades_subscribe",
-			"params": []string{strings.ToUpper(s) + "_PERP"},
+			"params": []string{s + "_PERP"},
 		}
 		b, _ := ticks.MarshalJSON(f)
 		frames = append(frames, b)

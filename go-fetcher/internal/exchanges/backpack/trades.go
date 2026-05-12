@@ -14,14 +14,72 @@ package backpack
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/bytedance/sonic"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ticks"
 )
 
 const tradesWS = "wss://ws.backpack.exchange"
+const marketsURL = "https://api.backpack.exchange/api/v1/markets"
+
+// Cached valid PERP base-symbols, refreshed every hour. Without this,
+// prewarm sends ~1000 random tokens at the WS, gets a flood of
+// "Invalid market" errors, and may rate-limit the connection so the
+// few valid SUBSCRIBE frames (BTC, ETH, SOL) never resolve.
+var (
+	validMu     sync.RWMutex
+	validBases  map[string]struct{}
+	validAt     time.Time
+	validClient = &http.Client{Timeout: 6 * time.Second}
+)
+
+func refreshValidMarkets(ctx context.Context) {
+	validMu.RLock()
+	fresh := time.Since(validAt) < time.Hour && len(validBases) > 0
+	validMu.RUnlock()
+	if fresh {
+		return
+	}
+	req, _ := http.NewRequestWithContext(ctx, "GET", marketsURL, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 avalant-fetcher/go")
+	resp, err := validClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var doc []struct {
+		Symbol     string `json:"symbol"`
+		MarketType string `json:"marketType"`
+	}
+	if err := sonic.Unmarshal(body, &doc); err != nil {
+		return
+	}
+	out := make(map[string]struct{}, 100)
+	for _, m := range doc {
+		if m.MarketType != "PERP" {
+			continue
+		}
+		// Strip _USDC_PERP to leave bare base ("BTC", "SOL", ...).
+		if base := strings.TrimSuffix(m.Symbol, "_USDC_PERP"); base != m.Symbol {
+			out[strings.ToUpper(base)] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return
+	}
+	validMu.Lock()
+	validBases = out
+	validAt = time.Now()
+	validMu.Unlock()
+}
 
 type Trades struct{}
 
@@ -33,9 +91,31 @@ func (a *Trades) Name() string                          { return "backpack" }
 func (a *Trades) URL(_ context.Context) (string, error) { return tradesWS, nil }
 
 func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
-	params := make([]string, len(symbols))
-	for i, s := range symbols {
-		params[i] = "trade." + strings.ToUpper(s) + "_USDC_PERP"
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	refreshValidMarkets(ctx)
+	validMu.RLock()
+	known := validBases
+	validMu.RUnlock()
+	// Filter to only valid PERP bases. If REST refresh failed (empty
+	// `known`), let everything through — better than zero subs on a
+	// transient REST error.
+	filtered := make([]string, 0, len(symbols))
+	for _, s := range symbols {
+		base := strings.ToUpper(s)
+		if known != nil {
+			if _, ok := known[base]; !ok {
+				continue
+			}
+		}
+		filtered = append(filtered, base)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	params := make([]string, len(filtered))
+	for i, s := range filtered {
+		params[i] = "trade." + s + "_USDC_PERP"
 	}
 	frame := map[string]any{"method": "SUBSCRIBE", "params": params}
 	b, _ := ticks.MarshalJSON(frame)
