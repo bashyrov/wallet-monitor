@@ -139,9 +139,20 @@ func main() {
 	// This is the cutover-critical path: Python web's /orderbook reads
 	// Redis first, file second. Mirroring makes the cutover instant —
 	// once Go is writing to Redis, stopping Python fetcher is safe.
-	writer, werr := redisbus.NewWriter(cfg.RedisURL, cfg.RedisWriteThrottle)
-	if werr != nil {
-		l.Warn().Err(werr).Msg("redis writer disabled")
+	//
+	// Toggle via AVALANT_REDIS_BOOK_WRITE — Python REST callers have
+	// a file-cache fallback in orderbook_cache.py (line 900+), so the
+	// Writer is opt-out without breaking the API. Saves an estimated
+	// 2-3 cores when disabled in prod.
+	var writer *redisbus.Writer
+	if cfg.RedisBookWriteEnabled {
+		var werr error
+		writer, werr = redisbus.NewWriter(cfg.RedisURL, cfg.RedisWriteThrottle)
+		if werr != nil {
+			l.Warn().Err(werr).Msg("redis writer disabled")
+		}
+	} else {
+		l.Info().Msg("redis book-write disabled by AVALANT_REDIS_BOOK_WRITE=false")
 	}
 	defer func() {
 		if writer != nil {
