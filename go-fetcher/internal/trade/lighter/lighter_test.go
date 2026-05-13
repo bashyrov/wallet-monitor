@@ -3,6 +3,7 @@ package lighter
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade"
@@ -49,5 +50,49 @@ func TestRegisteredViaInit(t *testing.T) {
 	a := trade.Lookup("lighter")
 	if a == nil {
 		t.Fatal("lighter adapter not registered")
+	}
+}
+
+func TestErrZK_IsUserKind(t *testing.T) {
+	// Sentinel must be KindUser so dispatcher routes to Python adapter
+	// rather than treating as transient/retry.
+	if errZK.Kind != trade.KindUser {
+		t.Errorf("errZK kind: want User got %q", errZK.Kind)
+	}
+}
+
+func TestErrZK_MessageMentionsZKAndPython(t *testing.T) {
+	// The message guides the operator. Pin the key tokens.
+	msg := errZK.Message
+	for _, want := range []string{"ZK", "lighter-sdk", "Python adapter", "GO_TRADE_VENUES"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("errZK message missing %q hint: %s", want, msg)
+		}
+	}
+}
+
+func TestAbs(t *testing.T) {
+	if abs(-3.14) != 3.14 || abs(3.14) != 3.14 || abs(0) != 0 {
+		t.Errorf("abs broken")
+	}
+}
+
+func TestAccountIndex_WhitespaceTrimmed(t *testing.T) {
+	// Adapter strings.TrimSpace pasted creds before parsing — common UX
+	// fix for users who copy-paste with trailing whitespace.
+	a := New()
+	got, err := a.accountIndex(trade.Creds{APIKey: "  123  "})
+	if err != nil {
+		t.Errorf("trimmed whitespace should pass: %v", err)
+	}
+	if got != "123" {
+		t.Errorf("trimmed value: want \"123\" got %q", got)
+	}
+}
+
+func TestAccountIndex_NonNumericWithSpaceRejected(t *testing.T) {
+	a := New()
+	if _, err := a.accountIndex(trade.Creds{APIKey: "  abc  "}); err == nil {
+		t.Errorf("non-numeric (even trimmed) should error")
 	}
 }

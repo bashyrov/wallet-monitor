@@ -76,3 +76,48 @@ func TestRegisteredViaInit(t *testing.T) {
 		t.Fatal("ethereal adapter not registered")
 	}
 }
+
+func TestUnquoteOrNumber_StringDequotes(t *testing.T) {
+	if got := unquoteOrNumber([]byte(`"hello"`)); got != "hello" {
+		t.Errorf("string dequote: got %q", got)
+	}
+}
+
+func TestUnquoteOrNumber_NumberAsIs(t *testing.T) {
+	if got := unquoteOrNumber([]byte(`42`)); got != "42" {
+		t.Errorf("number: got %q", got)
+	}
+}
+
+func TestUnquoteOrNumber_NullEmpty(t *testing.T) {
+	if got := unquoteOrNumber([]byte(`null`)); got != "" {
+		t.Errorf("null should be empty, got %q", got)
+	}
+	if got := unquoteOrNumber([]byte(``)); got != "" {
+		t.Errorf("empty: got %q", got)
+	}
+}
+
+func TestQtyString_TrimsTrailingZeros(t *testing.T) {
+	cases := map[float64]string{
+		1.5: "1.5", 1.0: "1", 0.0: "0", 0.00000001: "0.00000001",
+	}
+	for in, want := range cases {
+		if got := qtyString(in); got != want {
+			t.Errorf("qtyString(%v): want %q got %q", in, want, got)
+		}
+	}
+}
+
+func TestAbs(t *testing.T) {
+	if abs(-1.5) != 1.5 || abs(1.5) != 1.5 || abs(0) != 0 {
+		t.Errorf("abs broken")
+	}
+}
+
+func TestParseError_4xxMapsToExchange(t *testing.T) {
+	err := parseError(400, []byte(`{"error":"bad signature"}`))
+	if err.Kind != trade.KindExchange {
+		t.Errorf("4xx → Exchange, got %q", err.Kind)
+	}
+}

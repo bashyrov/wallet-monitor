@@ -94,3 +94,68 @@ func TestRegisteredViaInit(t *testing.T) {
 		t.Fatal("bingx adapter not registered")
 	}
 }
+
+func TestRoundQty_StepFloor(t *testing.T) {
+	cases := []struct {
+		qty, step float64
+		prec      int
+		want      float64
+	}{
+		{1.234, 0.001, 3, 1.234},
+		{0.0007, 0.001, 3, 0},  // below step → 0
+		{1.999, 0.01, 2, 1.99},
+		{10, 1, 0, 10},
+	}
+	for _, c := range cases {
+		if got := roundQty(c.qty, c.step, c.prec); got != c.want {
+			t.Errorf("roundQty(%v,%v,%v): want %v got %v", c.qty, c.step, c.prec, c.want, got)
+		}
+	}
+}
+
+func TestQtyString_PrecisionTrim(t *testing.T) {
+	cases := []struct {
+		q    float64
+		prec int
+		want string
+	}{
+		{1.5, 3, "1.5"},
+		{1.0, 3, "1"},
+		{0.001, 3, "0.001"},
+		{1.234567, 2, "1.23"},
+		{0, 2, "0"},
+	}
+	for _, c := range cases {
+		if got := qtyString(c.q, c.prec); got != c.want {
+			t.Errorf("qtyString(%v,%v): want %q got %q", c.q, c.prec, c.want, got)
+		}
+	}
+}
+
+func TestFriendly_KnownCodeOverridesMessage(t *testing.T) {
+	// 103009 → "Order qty below contract minimum."
+	if got := friendly("103009", "raw bingx text"); got != "Order qty below contract minimum." {
+		t.Errorf("known code should override raw msg, got %q", got)
+	}
+}
+
+func TestFriendly_UnknownCodePassesThroughMessage(t *testing.T) {
+	if got := friendly("999999", "raw error text"); got != "raw error text" {
+		t.Errorf("unknown code should pass raw msg, got %q", got)
+	}
+}
+
+func TestFriendly_UnknownCodeNoMessageReturnsDefault(t *testing.T) {
+	got := friendly("99999", "")
+	if got == "" {
+		t.Errorf("default message should never be empty")
+	}
+}
+
+func TestSignedQuery_DeterministicKeyOrder(t *testing.T) {
+	q1 := signedQuery(map[string]string{"z": "1", "a": "2", "m": "3", "timestamp": "100"}, "k")
+	q2 := signedQuery(map[string]string{"a": "2", "m": "3", "z": "1", "timestamp": "100"}, "k")
+	if q1 != q2 {
+		t.Errorf("query should be deterministic regardless of map iteration order:\n  %s\n  %s", q1, q2)
+	}
+}

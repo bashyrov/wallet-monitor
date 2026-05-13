@@ -99,3 +99,53 @@ func TestRegisteredViaInit(t *testing.T) {
 		t.Fatal("htx adapter not registered")
 	}
 }
+
+func TestHtxTimestamp_FormatYYYYMMDDTHHMMSS(t *testing.T) {
+	got := htxTimestamp()
+	if len(got) != 19 || got[4] != '-' || got[7] != '-' || got[10] != 'T' || got[13] != ':' || got[16] != ':' {
+		t.Errorf("htxTimestamp shape: want 2006-01-02T15:04:05 got %q", got)
+	}
+}
+
+func TestCanonicalQuery_SortedAlphabetically(t *testing.T) {
+	got := canonicalQuery(map[string]string{"z": "1", "a": "2", "m": "3"})
+	if got != "a=2&m=3&z=1" {
+		t.Errorf("sorted: want a=2&m=3&z=1 got %q", got)
+	}
+}
+
+func TestSignPayload_FormatMatchesHTX(t *testing.T) {
+	// HTX wants: METHOD\nhost\npath\ncanonical_query
+	params := map[string]string{"k": "v"}
+	got := signPayload("post", "api.hbdm.com", "/some/path", params)
+	want := "POST\napi.hbdm.com\n/some/path\nk=v"
+	if got != want {
+		t.Errorf("signPayload: want %q got %q", want, got)
+	}
+}
+
+func TestParseError_429MapsToRateLimit(t *testing.T) {
+	err := parseError(429, []byte(`{"err_msg":"too many"}`))
+	if err.Kind != trade.KindRateLimit {
+		t.Errorf("429: want RateLimit got %q", err.Kind)
+	}
+}
+
+func TestFriendly_DefaultWhenNoCode(t *testing.T) {
+	got := friendly("", "raw msg")
+	if got != "raw msg" {
+		t.Errorf("no code: want raw msg got %q", got)
+	}
+}
+
+func TestParseFloat_Helper(t *testing.T) {
+	if v := parseFloat("3.14"); v != 3.14 {
+		t.Errorf("valid: %v", v)
+	}
+	if v := parseFloat("nope"); v != 0 {
+		t.Errorf("garbage: %v", v)
+	}
+	if v := parseFloat(""); v != 0 {
+		t.Errorf("empty: %v", v)
+	}
+}
