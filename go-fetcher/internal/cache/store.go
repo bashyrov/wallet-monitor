@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/metrics"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
@@ -86,6 +87,8 @@ func (s *Store) Store(exchange, symbol string, snap ws.Snapshot, source string) 
 	s.versions[exchange]++
 	hook := s.onUpdate
 	s.mu.Unlock()
+
+	metrics.Pipeline{}.RecordBookStore(exchange, source)
 
 	if hook != nil {
 		hook(exchange, symbol, snap.Bids, snap.Asks)

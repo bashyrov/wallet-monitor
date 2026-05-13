@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/metrics"
 )
 
 const authReadTimeout = 5 * time.Second
@@ -72,6 +73,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	if s.trades != nil {
 		mux.HandleFunc("/api/screener/ws/trades", s.handleTrades)
 	}
+	mux.Handle("/metrics", metrics.HTTPHandler())
 }
 
 // Run starts the broadcast loops. Should be launched in its own
