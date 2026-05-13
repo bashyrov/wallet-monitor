@@ -57,28 +57,31 @@ func (a *Spot) Name() string                          { return "binance_spot" }
 func (a *Spot) URL(_ context.Context) (string, error) { return spotCombinedBase, nil }
 
 // BuildSubscribe emits depth20@100ms + bookTicker streams per symbol.
-// Chunks at 200 PARAMS (not symbols), since each symbol contributes two
-// stream subscriptions.
+// HOTFIX 2026-05-13: drop @bookTicker subscription. Doubling streams
+// per symbol (200 syms × 2 = 400) triggered intermittent 1008 policy
+// closes on Binance spot too. The bookTicker on spot doesn't carry the
+// `E` event-time field anyway (see Parse comment), so dropping it
+// loses only the BBO splice — which depth20 already provides as
+// top-of-book.
 func (a *Spot) BuildSubscribe(symbols []string) [][]byte {
 	if len(symbols) == 0 {
 		return nil
 	}
-	params := make([]string, 0, 2*len(symbols))
-	for _, s := range symbols {
-		low := strings.ToLower(s) + "usdt"
-		params = append(params, low+"@depth20@100ms", low+"@bookTicker")
-	}
 	const chunkSize = 200
-	frames := make([][]byte, 0, (len(params)+chunkSize-1)/chunkSize)
+	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()
-	for i := 0; i < len(params); i += chunkSize {
+	for i := 0; i < len(symbols); i += chunkSize {
 		end := i + chunkSize
-		if end > len(params) {
-			end = len(params)
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		params := make([]string, end-i)
+		for j, s := range symbols[i:end] {
+			params[j] = strings.ToLower(s) + "usdt@depth20@100ms"
 		}
 		frame := map[string]any{
 			"method": "SUBSCRIBE",
-			"params": params[i:end],
+			"params": params,
 			"id":     id + int64(i),
 		}
 		b, _ := ws.MarshalJSON(frame)
