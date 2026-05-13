@@ -156,6 +156,60 @@ func TestPlaceOrder_RequiresPassphrase(t *testing.T) {
 	}
 }
 
+func TestGetBalance_SeparatesTotalAvailableMargin(t *testing.T) {
+	a, cleanup := newAdapterWithServer(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/api/v5/account/balance") {
+			http.Error(w, "?", http.StatusNotFound)
+			return
+		}
+		io.WriteString(w, `{"code":"0","data":[{
+			"details":[{
+				"ccy":"USDT",
+				"eq":"1000",
+				"cashBal":"1000",
+				"availBal":"750",
+				"frozenBal":"250"
+			}]
+		}]}`)
+	})
+	defer cleanup()
+
+	bal, err := a.GetBalance(context.Background(),
+		trade.Creds{APIKey: "k", APISecret: "s", Passphrase: "p"})
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if bal.TotalUSD != 1000 {
+		t.Errorf("TotalUSD: want 1000, got %v", bal.TotalUSD)
+	}
+	if bal.AvailableUSD != 750 {
+		t.Errorf("AvailableUSD: want 750 (availBal), got %v", bal.AvailableUSD)
+	}
+	if bal.MarginUSD != 250 {
+		t.Errorf("MarginUSD: want 250 (frozenBal), got %v", bal.MarginUSD)
+	}
+}
+
+func TestGetBalance_FallsBackToCashBalWhenEqMissing(t *testing.T) {
+	a, cleanup := newAdapterWithServer(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/api/v5/account/balance") {
+			http.Error(w, "?", http.StatusNotFound)
+			return
+		}
+		// `eq` absent — cashBal is the next-best total.
+		io.WriteString(w, `{"code":"0","data":[{
+			"details":[{"ccy":"USDT","cashBal":"500","availBal":"500","frozenBal":"0"}]
+		}]}`)
+	})
+	defer cleanup()
+
+	bal, _ := a.GetBalance(context.Background(),
+		trade.Creds{APIKey: "k", APISecret: "s", Passphrase: "p"})
+	if bal.TotalUSD != 500 {
+		t.Errorf("TotalUSD fallback to cashBal: want 500, got %v", bal.TotalUSD)
+	}
+}
+
 func TestRegisteredViaInit(t *testing.T) {
 	a := trade.Lookup("okx")
 	if a == nil {
