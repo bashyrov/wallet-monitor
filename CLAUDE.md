@@ -172,9 +172,9 @@ aster         ✓         ✓      ✓        ✓        ✓ full       ✓
 kraken        ✓         ✓      ✓        ✓        ✓ full       ✓
 backpack      ✓         ✓      ✓        ✓        ✓ full       ·
 whitebit      ✓         ✓      ✓        ✓        ✓ full       ·
-hyperliquid   ✓         ·      ·        ✓        ✓ full       ✓
+hyperliquid   ✓         ✓      ·        ✓        ✓ full       ✓
 ethereal      ✓         ·      ·        ✓        ✓ full       ·
-lighter       ✓         ·      ·        ✓        RO Go        ·
+lighter       ✓         ✓      ·        ✓        RO Go        ·
 paradex       ✓         ✓      ✓        ✓        ✓ full       ·
 extended      ✓         ·      ✓        ✓        ✓ full       ·
 ```
