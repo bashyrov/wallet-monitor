@@ -15,7 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
+	wmlog "github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
@@ -24,15 +27,21 @@ const futuresWS = "wss://api.hbdm.com/linear-swap-ws"
 type Futures struct {
 	store *cache.Store
 	books map[string]*book
+	log   zerolog.Logger
 }
 
 type book struct {
-	bids map[float64]float64
-	asks map[float64]float64
+	bids        map[float64]float64
+	asks        map[float64]float64
+	lastVersion int64 // 0 = no version seen yet; HTX version is monotonic per symbol
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, books: make(map[string]*book)}
+	a := &Futures{
+		store: store,
+		books: make(map[string]*book),
+		log:   wmlog.L().With().Str("exchange", "htx").Str("layer", "depth-version").Logger(),
+	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("htx", snap.Symbol, snap, "ws")
 	})
@@ -59,9 +68,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Ch   string `json:"ch"`
 		Tick struct {
-			Bids  [][]float64 `json:"bids"`
-			Asks  [][]float64 `json:"asks"`
-			Event string      `json:"event"` // "snapshot" or "update"
+			Bids    [][]float64 `json:"bids"`
+			Asks    [][]float64 `json:"asks"`
+			Event   string      `json:"event"` // "snapshot" or "update"
+			Version int64       `json:"version"`
 		} `json:"tick"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -89,6 +99,22 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if msg.Tick.Event == "snapshot" {
 		bk.bids = make(map[float64]float64)
 		bk.asks = make(map[float64]float64)
+		bk.lastVersion = msg.Tick.Version
+	} else if msg.Tick.Event == "update" {
+		// HTX version is monotonic and incremental on high_freq depth.
+		// A gap means the local book has a hole — log and continue
+		// (best-effort). The runner's stale-data watchdog reconnects
+		// after 90s of no frames; a single missed update auto-heals on
+		// next snapshot post-reconnect.
+		if bk.lastVersion != 0 && msg.Tick.Version != bk.lastVersion+1 {
+			a.log.Warn().
+				Str("symbol", token).
+				Int64("expected", bk.lastVersion+1).
+				Int64("got", msg.Tick.Version).
+				Int64("skipped", msg.Tick.Version-bk.lastVersion-1).
+				Msg("htx version gap")
+		}
+		bk.lastVersion = msg.Tick.Version
 	}
 	apply := func(side map[float64]float64, rows [][]float64) {
 		for _, r := range rows {

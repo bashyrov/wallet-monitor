@@ -353,6 +353,7 @@ venue trade WS → trade adapter.Parse(frame) → {ex, sym, price, size, side, t
   - **Ethereal**: subscribed but rate-limited (HTTP 429) — runner's backoff retries; will recover when IP cools. URL `wss://ws2.ethereal.trade/v1/stream` with `{event:subscribe,data:{type:TradeFill,symbol:BTCUSD}}` (raw WS, NOT Socket.IO — old finding was wrong transport).
   - Stronger pulse animation deployed (alpha 0.75 + 700ms + inset shadow) + per-venue activity dot indicator.
   - **18/18 venues registered**; 15+ actively streaming.
+- **2026-05-13 02:15 UTC** — Phase 2i + 2j shipped on `perf/orderbook-seq-tracking` branch (per "perf changes go to branch" policy). Kraken futures: track `seq` per product → log warn on gap. HTX futures: track `tick.version` per symbol → log warn on gap. Best-effort: lastSeq/lastVersion advances on gap so we don't get stuck repeating warnings; local book has a hole until the runner's 90s stale-data watchdog forces a reconnect (which triggers a fresh `book_snapshot`). 11 new unit tests cover snapshot/in-order/gap/first-delta-before-snapshot edge cases. `go test ./...` green. Not merged to main yet — needs prod soak on the branch.
 - **2026-05-13 01:00 UTC** — Final fixup: REST-cached market filter for Backpack (`/api/v1/markets`) + WhiteBIT (`/api/v4/public/futures`) — only valid PERP bases get SUBSCRIBE frames. Eliminates flood of "Invalid market" errors that drowned subscribe queues. **17/18 venues now actively streaming** post-deploy:
   ```
   binance 1526, bybit 818, bingx 479, okx 459, bitget 450, lighter 392,
