@@ -18,10 +18,10 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-const (
-	wsURL   = "wss://stream.bybit.com/v5/public/linear"
-	restURL = "https://api.bybit.com/v5/market/tickers?category=linear"
-)
+const wsURL = "wss://stream.bybit.com/v5/public/linear"
+
+// restURL — var (not const) so package tests can override.
+var restURL = "https://api.bybit.com/v5/market/tickers?category=linear"
 
 type Adapter struct{}
 

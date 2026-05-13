@@ -30,7 +30,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const baseURL = "https://api.ethereal.trade"
+// baseURL — var (not const) so package tests can override.
+var baseURL = "https://api.ethereal.trade"
 
 type Adapter struct{}
 

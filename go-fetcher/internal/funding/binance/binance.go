@@ -21,13 +21,14 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-const (
-	// Combined-stream with BOTH markPrice and ticker — matches Python's
-	// funding_ws adapter exactly. Single-stream with just markPrice
-	// silently times out from Singapore IP; the dual-stream form works.
-	wsURL   = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
-	restURL = "https://fapi.binance.com/fapi/v1/premiumIndex"
-)
+// Combined-stream with BOTH markPrice and ticker — matches Python's
+// funding_ws adapter exactly. Single-stream with just markPrice
+// silently times out from Singapore IP; the dual-stream form works.
+const wsURL = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
+
+// restURL — exposed as var (not const) so package tests can override
+// to point at an httptest.Server. Production behavior unchanged.
+var restURL = "https://fapi.binance.com/fapi/v1/premiumIndex"
 
 type Adapter struct{}
 

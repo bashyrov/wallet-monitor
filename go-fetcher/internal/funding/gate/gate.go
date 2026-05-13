@@ -16,8 +16,10 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-const (
-	wsURL        = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+const wsURL = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+
+// URLs — vars (not const) so package tests can override.
+var (
 	contractsURL = "https://api.gateio.ws/api/v4/futures/usdt/contracts"
 	tickersURL   = "https://api.gateio.ws/api/v4/futures/usdt/tickers"
 )

@@ -14,10 +14,10 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-const (
-	wsURL   = "wss://fstream.asterdex.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
-	restURL = "https://fapi.asterdex.com/fapi/v1/premiumIndex"
-)
+const wsURL = "wss://fstream.asterdex.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
+
+// restURL — var (not const) so package tests can override.
+var restURL = "https://fapi.asterdex.com/fapi/v1/premiumIndex"
 
 type Adapter struct{}
 

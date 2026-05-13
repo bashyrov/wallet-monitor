@@ -22,7 +22,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const restURL = "https://futures.kraken.com/derivatives/api/v3/tickers"
+// restURL — var (not const) so package tests can override.
+var restURL = "https://futures.kraken.com/derivatives/api/v3/tickers"
 
 type Adapter struct{}
 

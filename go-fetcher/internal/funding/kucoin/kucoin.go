@@ -16,7 +16,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const restURL = "https://api-futures.kucoin.com/api/v1/contracts/active"
+// restURL — var (not const) so package tests can override.
+var restURL = "https://api-futures.kucoin.com/api/v1/contracts/active"
 
 type Adapter struct{}
 

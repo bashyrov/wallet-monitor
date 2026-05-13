@@ -27,7 +27,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const (
+// URLs — vars (not const) so package tests can override.
+var (
 	marketsURL    = "https://api.backpack.exchange/api/v1/markets"
 	markPricesURL = "https://api.backpack.exchange/api/v1/markPrices"
 	tickersURL    = "https://api.backpack.exchange/api/v1/tickers"

@@ -15,9 +15,10 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const (
+// URLs — vars (not const) so package tests can override.
+// batch_merged returns 24h vol+price for every USDT-margined contract.
+var (
 	restURL   = "https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate"
-	// batch_merged returns 24h vol+price for every USDT-margined contract.
 	tickerURL = "https://api.hbdm.com/linear-swap-ex/market/detail/batch_merged?business_type=swap"
 )
 

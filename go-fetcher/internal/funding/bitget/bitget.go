@@ -22,9 +22,11 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-const (
-	wsURL          = "wss://ws.bitget.com/v2/ws/public"
-	restURL        = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
+const wsURL = "wss://ws.bitget.com/v2/ws/public"
+
+// URLs — vars (not const) so package tests can override.
+var (
+	restURL         = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
 	restFundRateURL = "https://api.bitget.com/api/v2/mix/market/current-fund-rate?productType=USDT-FUTURES&symbol="
 )
 

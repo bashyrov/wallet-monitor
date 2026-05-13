@@ -26,7 +26,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
 
-const (
+// URLs — vars (not const) so package tests can override.
+var (
 	restURL    = "https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex"
 	tickerURL  = "https://open-api.bingx.com/openApi/swap/v2/quote/ticker"
 	fundingURL = "https://open-api.bingx.com/openApi/swap/v2/quote/fundingRate"

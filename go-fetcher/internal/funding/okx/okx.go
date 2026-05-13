@@ -25,8 +25,10 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-const (
-	wsURL              = "wss://ws.okx.com:8443/ws/v5/public"
+const wsURL = "wss://ws.okx.com:8443/ws/v5/public"
+
+// URLs — vars (not const) so package tests can override.
+var (
 	restTickersURL     = "https://www.okx.com/api/v5/market/tickers?instType=SWAP"
 	restFundingRateURL = "https://www.okx.com/api/v5/public/funding-rate?instId="
 )

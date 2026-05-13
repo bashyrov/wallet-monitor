@@ -25,7 +25,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const restURL = "https://api.hyperliquid.xyz/info"
+// restURL — var (not const) so package tests can override.
+var restURL = "https://api.hyperliquid.xyz/info"
 
 type Adapter struct{}
 

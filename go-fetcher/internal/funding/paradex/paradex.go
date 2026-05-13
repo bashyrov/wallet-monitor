@@ -24,7 +24,8 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const restURL = "https://api.prod.paradex.trade/v1/markets/summary?market=ALL"
+// restURL — var (not const) so package tests can override.
+var restURL = "https://api.prod.paradex.trade/v1/markets/summary?market=ALL"
 
 type Adapter struct{}
 

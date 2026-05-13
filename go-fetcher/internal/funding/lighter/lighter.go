@@ -28,8 +28,9 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 )
 
-const (
-	fundingRatesURL = "https://mainnet.zklighter.elliot.ai/api/v1/funding-rates"
+// URLs — vars (not const) so package tests can override.
+var (
+	fundingRatesURL  = "https://mainnet.zklighter.elliot.ai/api/v1/funding-rates"
 	exchangeStatsURL = "https://mainnet.zklighter.elliot.ai/api/v1/exchangeStats"
 )
 
