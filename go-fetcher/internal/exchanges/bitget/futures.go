@@ -40,11 +40,20 @@ type Adapter struct {
 	cacheKey string // "bitget" or "bitget_spot"
 	instType string // "USDT-FUTURES" or "SPOT"
 	books    map[string]*book
+	// Phase 2g — Bitget V2 `books1` channel is a separate event-driven
+	// top-of-book stream. Subscribed on the futures venue only; spot
+	// keeps books15-only.
+	bbo map[string]*bboLevel
 }
 
 type book struct {
 	bids map[float64]float64
 	asks map[float64]float64
+}
+
+type bboLevel struct {
+	bidPx, bidSz float64
+	askPx, askSz float64
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
@@ -53,6 +62,7 @@ func NewFutures(store *cache.Store) *ws.Runner {
 		cacheKey: "bitget",
 		instType: "USDT-FUTURES",
 		books:    make(map[string]*book),
+		bbo:      make(map[string]*bboLevel),
 	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("bitget", snap.Symbol, snap, "ws")
@@ -65,6 +75,7 @@ func NewSpot(store *cache.Store) *ws.Runner {
 		cacheKey: "bitget_spot",
 		instType: "SPOT",
 		books:    make(map[string]*book),
+		bbo:      make(map[string]*bboLevel),
 	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("bitget_spot", snap.Symbol, snap, "ws")
@@ -81,19 +92,28 @@ func (a *Adapter) BuildSubscribe(symbols []string) [][]byte {
 	// Bitget V2: 200-symbol frames trigger error 30002 "Unrecognized request"
 	// with the actual prewarm symbol set (stock tokens, special names).
 	// Reducing to 50 per frame + 200ms SubscribeDelay avoids the burst.
+	//
+	// Phase 2g — futures venue ALSO subscribes to `books1` (event-driven
+	// top-of-book). Spot keeps books15-only.
 	const chunkSize = 50
+	channels := []string{"books15"}
+	if a.instType == "USDT-FUTURES" {
+		channels = []string{"books15", "books1"}
+	}
 	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
 	for i := 0; i < len(symbols); i += chunkSize {
 		end := i + chunkSize
 		if end > len(symbols) {
 			end = len(symbols)
 		}
-		args := make([]map[string]string, end-i)
-		for j, s := range symbols[i:end] {
-			args[j] = map[string]string{
-				"instType": a.instType,
-				"channel":  "books15",
-				"instId":   strings.ToUpper(s) + "USDT",
+		args := make([]map[string]string, 0, (end-i)*len(channels))
+		for _, s := range symbols[i:end] {
+			for _, ch := range channels {
+				args = append(args, map[string]string{
+					"instType": a.instType,
+					"channel":  ch,
+					"instId":   strings.ToUpper(s) + "USDT",
+				})
 			}
 		}
 		frame := map[string]any{"op": "subscribe", "args": args}
@@ -126,7 +146,9 @@ func (a *Adapter) Parse(frame []byte) (*ws.Snapshot, error) {
 	if msg.Event != "" {
 		return nil, nil
 	}
-	if msg.Arg.Channel != "books15" {
+	isDepth := msg.Arg.Channel == "books15"
+	isBBO := msg.Arg.Channel == "books1"
+	if !isDepth && !isBBO {
 		return nil, nil
 	}
 	if msg.Arg.InstType != a.instType {
@@ -142,6 +164,10 @@ func (a *Adapter) Parse(frame []byte) (*ws.Snapshot, error) {
 		return nil, nil
 	}
 	d := msg.Data[0]
+
+	if isBBO {
+		return a.applyBBO(token, d.Bids, d.Asks), nil
+	}
 
 	bk, ok := a.books[token]
 	if !ok {
@@ -168,11 +194,94 @@ func (a *Adapter) Parse(frame []byte) (*ws.Snapshot, error) {
 	}
 	apply(bk.bids, d.Bids)
 	apply(bk.asks, d.Asks)
-	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
-	}, nil
+	return a.mergedSnapshot(token), nil
+}
+
+func (a *Adapter) applyBBO(token string, bidRows, askRows [][]string) *ws.Snapshot {
+	b, ok := a.bbo[token]
+	if !ok {
+		b = &bboLevel{}
+		a.bbo[token] = b
+	}
+	parseLvl := func(rows [][]string) (px, sz float64, ok bool) {
+		if len(rows) == 0 || len(rows[0]) < 2 {
+			return 0, 0, false
+		}
+		px, perr := strconv.ParseFloat(rows[0][0], 64)
+		sz, serr := strconv.ParseFloat(rows[0][1], 64)
+		if perr != nil || serr != nil {
+			return 0, 0, false
+		}
+		return px, sz, true
+	}
+	if px, sz, ok := parseLvl(bidRows); ok {
+		if sz == 0 {
+			b.bidPx, b.bidSz = 0, 0
+		} else {
+			b.bidPx, b.bidSz = px, sz
+		}
+	} else {
+		b.bidPx, b.bidSz = 0, 0
+	}
+	if px, sz, ok := parseLvl(askRows); ok {
+		if sz == 0 {
+			b.askPx, b.askSz = 0, 0
+		} else {
+			b.askPx, b.askSz = px, sz
+		}
+	} else {
+		b.askPx, b.askSz = 0, 0
+	}
+	return a.mergedSnapshot(token)
+}
+
+func (a *Adapter) mergedSnapshot(token string) *ws.Snapshot {
+	bk := a.books[token]
+	var bids, asks []ws.Level
+	if bk != nil {
+		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
+		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
+	}
+	if b := a.bbo[token]; b != nil {
+		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	}
+	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
+}
+
+// spliceBBOBid / spliceBBOAsk — same semantics as bybit/okx:
+// BBO at strictly better price prepends; same price refreshes size;
+// worse no-ops; zero BBO no-ops.
+func spliceBBOBid(bids []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return bids
+	}
+	if len(bids) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx > bids[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, bids...)
+	}
+	if bboPx == bids[0][0] {
+		bids[0][1] = bboSz
+	}
+	return bids
+}
+
+func spliceBBOAsk(asks []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return asks
+	}
+	if len(asks) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx < asks[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, asks...)
+	}
+	if bboPx == asks[0][0] {
+		asks[0][1] = bboSz
+	}
+	return asks
 }
 
 // Heartbeat — Bug #4 from today: Bitget V2 needs literal "ping" text frame
@@ -190,4 +299,5 @@ func (a *Adapter) DecompressGzip() bool           { return false }
 
 func (a *Adapter) OnReconnect() {
 	a.books = make(map[string]*book)
+	a.bbo = make(map[string]*bboLevel)
 }
