@@ -17,25 +17,36 @@ func newTestFuturesBBO() *Futures {
 
 // ── URL + BuildSubscribe ───────────────────────────────────────────────
 
-func TestURL_IncludesBothStreams(t *testing.T) {
+// HOTFIX 2026-05-13: bookTicker dropped from URL+SUBSCRIBE because
+// the combined-stream URL with 2 streams per symbol pushed Binance
+// past its 1008 policy-violation threshold for prod prewarm sizes.
+// URL carries @depth20 only; parser keeps the bookTicker route in
+// case the stream is ever re-added.
+
+func TestURL_DepthOnly(t *testing.T) {
 	a := newTestFuturesBBO()
 	a.syms = []string{"BTC", "ETH"}
 	u, _ := a.URL(nil)
 	for _, want := range []string{
-		"btcusdt@depth20@100ms", "btcusdt@bookTicker",
-		"ethusdt@depth20@100ms", "ethusdt@bookTicker",
+		"btcusdt@depth20@100ms", "ethusdt@depth20@100ms",
 	} {
 		if !strings.Contains(u, want) {
 			t.Errorf("URL missing %q: %s", want, u)
 		}
+	}
+	if strings.Contains(u, "@bookTicker") {
+		t.Errorf("URL must NOT include @bookTicker post-hotfix: %s", u)
 	}
 }
 
 func TestURL_FallbackBTCWhenNoSymbols(t *testing.T) {
 	a := newTestFuturesBBO()
 	u, _ := a.URL(nil)
-	if !strings.Contains(u, "btcusdt@depth20") || !strings.Contains(u, "btcusdt@bookTicker") {
-		t.Errorf("fallback URL must include both: %s", u)
+	if !strings.Contains(u, "btcusdt@depth20") {
+		t.Errorf("fallback URL must include btcusdt@depth20: %s", u)
+	}
+	if strings.Contains(u, "@bookTicker") {
+		t.Errorf("fallback URL must NOT include @bookTicker post-hotfix: %s", u)
 	}
 }
 

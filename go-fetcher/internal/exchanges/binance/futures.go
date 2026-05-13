@@ -94,16 +94,18 @@ func (a *Futures) URL(_ context.Context) (string, error) {
 	// First dial happens before BuildSubscribe — fall back to BTC so the
 	// dial succeeds. Symbol manager then re-URLs on the next reconcile.
 	//
-	// Phase 2a — combined-stream URL also includes @bookTicker per
-	// symbol (event-driven BBO ~10-50ms cadence). Each symbol thus
-	// produces 2 streams in the URL.
+	// HOTFIX 2026-05-13: Phase 2a put @bookTicker in URL too (2 streams
+	// per symbol). With 200 prewarm symbols → 400 URL streams → Binance
+	// closes with 1008 policy violation in a tight loop. Reverted to
+	// @depth20-only in URL; bookTicker is no longer subscribed.
+	// Latency-histogram on Binance loses its event-time source as a
+	// side-effect (depth20 has no `E` we can rely on for diff frames).
 	if len(syms) == 0 {
-		return futuresCombinedBase + "?streams=btcusdt@depth20@100ms/btcusdt@bookTicker", nil
+		return futuresCombinedBase + "?streams=btcusdt@depth20@100ms", nil
 	}
-	parts := make([]string, 0, 2*len(syms))
+	parts := make([]string, 0, len(syms))
 	for _, s := range syms {
-		low := strings.ToLower(s)
-		parts = append(parts, low+"usdt@depth20@100ms", low+"usdt@bookTicker")
+		parts = append(parts, strings.ToLower(s)+"usdt@depth20@100ms")
 	}
 	return futuresCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
 }
@@ -129,23 +131,23 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(listed) == 0 {
 		return nil
 	}
-	// Phase 2a — each symbol emits 2 stream params: @depth20 + @bookTicker.
-	// Keep chunkSize 200 — params count, not symbol count.
+	// HOTFIX 2026-05-13: drop @bookTicker from subscribe set too —
+	// keeping it on the SUBSCRIBE side while the URL only carries
+	// @depth20 created an asymmetric subscribe whose total stream count
+	// still pushed past Binance's 1008 threshold. Subscribe only
+	// @depth20 to match the URL.
 	const chunkSize = 200
-	allParams := make([]string, 0, 2*len(listed))
-	for _, s := range listed {
-		low := strings.ToLower(s)
-		allParams = append(allParams, low+"usdt@depth20@100ms", low+"usdt@bookTicker")
-	}
-	frames := make([][]byte, 0, (len(allParams)+chunkSize-1)/chunkSize)
+	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()
-	for i := 0; i < len(allParams); i += chunkSize {
+	for i := 0; i < len(listed); i += chunkSize {
 		end := i + chunkSize
-		if end > len(allParams) {
-			end = len(allParams)
+		if end > len(listed) {
+			end = len(listed)
 		}
 		chunk := make([]string, end-i)
-		copy(chunk, allParams[i:end])
+		for j, s := range listed[i:end] {
+			chunk[j] = strings.ToLower(s) + "usdt@depth20@100ms"
+		}
 		frame := map[string]any{
 			"method": "SUBSCRIBE",
 			"params": chunk,
