@@ -261,7 +261,11 @@ async def pair_opp(
             "symbol": sym, "long_exchange": long_ex, "short_exchange": short_ex,
             "long_rate": round(rate_l * 100, 6), "short_rate": round(rate_s * 100, 6),
             "long_price": p_l, "short_price": p_s,
-            "long_volume": 0, "short_volume": 0,
+            # /pair was hardcoded to 0 for both volume sides — front-end
+            # accordingly showed "$0" Vol on every direct-pair lookup
+            # even when the underlying rate cache had the real number.
+            "long_volume": float(r_long.get("volume_usd") or 0),
+            "short_volume": float(r_short.get("volume_usd") or 0),
             "long_interval_h": r_long.get("interval_h", 8),
             "short_interval_h": r_short.get("interval_h", 8),
             "gross_funding": round(gross * 100, 6),
