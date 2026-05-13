@@ -665,6 +665,7 @@ func orderbookRegistry(cfg config.Config, store *cache.Store) []orderbookEntry {
 		{name: "paradex", factory: func() *ws.Runner { return paradex.NewFutures(store) }},
 		{name: "lighter", factory: func() *ws.Runner { return lighter.NewFutures(store) }},
 		{name: "backpack", factory: func() *ws.Runner { return backpack.NewFutures(store) }},
+		{name: "extended", factory: func() *ws.Runner { return extended.NewFutures(store) }},
 	}
 
 	want := func(name string) bool {

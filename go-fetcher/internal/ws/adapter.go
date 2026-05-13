@@ -34,10 +34,17 @@ type Level [2]float64
 
 // Snapshot is what every Adapter.Parse() returns — already sorted (bids
 // best→worst, asks best→worst), capped to ~200 levels per side.
+//
+// EventTime is the venue-side timestamp of the event when the adapter
+// could extract one (zero when unavailable). Used by the metrics layer
+// to histogram per-venue end-to-end latency: `time.Since(EventTime)`
+// at the broadcast point. Adapters set it from the frame's `T`/`ts`/
+// `time` field (units vary per venue — see adapter for conversion).
 type Snapshot struct {
-	Symbol string
-	Bids   []Level
-	Asks   []Level
+	Symbol    string
+	Bids      []Level
+	Asks      []Level
+	EventTime time.Time
 }
 
 // UpdateFunc is called by the runner on every parsed snapshot.

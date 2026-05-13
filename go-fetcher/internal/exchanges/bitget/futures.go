@@ -118,7 +118,9 @@ func (a *Adapter) Parse(frame []byte) (*ws.Snapshot, error) {
 		Data []struct {
 			Bids [][]string `json:"bids"`
 			Asks [][]string `json:"asks"`
+			Ts   string     `json:"ts"` // matching-engine ts (string ms)
 		} `json:"data"`
+		Ts int64 `json:"ts"` // envelope server send ts ms
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
@@ -168,10 +170,17 @@ func (a *Adapter) Parse(frame []byte) (*ws.Snapshot, error) {
 	}
 	apply(bk.bids, d.Bids)
 	apply(bk.asks, d.Asks)
+	var evt time.Time
+	if ms, err := strconv.ParseInt(d.Ts, 10, 64); err == nil && ms > 0 {
+		evt = time.UnixMilli(ms)
+	} else if msg.Ts > 0 {
+		evt = time.UnixMilli(msg.Ts)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

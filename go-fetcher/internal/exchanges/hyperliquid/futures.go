@@ -59,6 +59,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Channel string `json:"channel"`
 		Data    struct {
 			Coin   string `json:"coin"`
+			Time   int64  `json:"time"` // ms event time
 			Levels [2][]struct {
 				Px string  `json:"px"`
 				Sz string  `json:"sz"`
@@ -87,10 +88,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		}
 		return out
 	}
+	var evt time.Time
+	if msg.Data.Time > 0 {
+		evt = time.UnixMilli(msg.Data.Time)
+	}
 	return &ws.Snapshot{
-		Symbol: strings.ToUpper(msg.Data.Coin),
-		Bids:   parseSide(msg.Data.Levels[0]),
-		Asks:   parseSide(msg.Data.Levels[1]),
+		Symbol:    strings.ToUpper(msg.Data.Coin),
+		Bids:      parseSide(msg.Data.Levels[0]),
+		Asks:      parseSide(msg.Data.Levels[1]),
+		EventTime: evt,
 	}, nil
 }
 

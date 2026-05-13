@@ -217,11 +217,14 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 
 func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error) {
 	var inner struct {
-		Symbol string     `json:"s"`
-		B      [][]string `json:"b"`
-		A      [][]string `json:"a"`
-		Bids   [][]string `json:"bids"`
-		Asks   [][]string `json:"asks"`
+		Event   string     `json:"e"` // decoy: absorbs the string event-type field so case-insensitive sonic doesn't route it to EvTime
+		Symbol  string     `json:"s"`
+		EvTime  int64      `json:"E"` // event time ms (depth + bookTicker)
+		TradeTs int64      `json:"T"` // transaction time ms (depth has both)
+		B       [][]string `json:"b"`
+		A       [][]string `json:"a"`
+		Bids    [][]string `json:"bids"`
+		Asks    [][]string `json:"asks"`
 	}
 	if err := ws.UnmarshalJSON(dataBytes, &inner); err != nil {
 		return nil, err
@@ -260,17 +263,26 @@ func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error)
 	}
 	snap := a.mergedSnapshotLocked(token)
 	a.stateMu.Unlock()
+	switch {
+	case inner.TradeTs > 0:
+		snap.EventTime = time.UnixMilli(inner.TradeTs)
+	case inner.EvTime > 0:
+		snap.EventTime = time.UnixMilli(inner.EvTime)
+	}
 	return snap, nil
 }
 
 func (a *Futures) parseBookTicker(sym string, dataBytes []byte) (*ws.Snapshot, error) {
 	// Scalar shape: {e:"bookTicker",u,s,b,B,a,A,T,E}
 	var inner struct {
-		Symbol string `json:"s"`
-		B      string `json:"b"` // best bid price
-		Bq     string `json:"B"` // best bid qty
-		A      string `json:"a"` // best ask price
-		Aq     string `json:"A"` // best ask qty
+		Event   string `json:"e"` // decoy: absorb string event-type before case-insensitive routing to EvTime
+		Symbol  string `json:"s"`
+		B       string `json:"b"` // best bid price
+		Bq      string `json:"B"` // best bid qty
+		A       string `json:"a"` // best ask price
+		Aq      string `json:"A"` // best ask qty
+		EvTime  int64  `json:"E"` // event time ms
+		TradeTs int64  `json:"T"` // transaction time ms (matching engine)
 	}
 	if err := ws.UnmarshalJSON(dataBytes, &inner); err != nil {
 		return nil, err
@@ -304,6 +316,12 @@ func (a *Futures) parseBookTicker(sym string, dataBytes []byte) (*ws.Snapshot, e
 	b.askPx, b.askSz = askPx, askSz
 	snap := a.mergedSnapshotLocked(token)
 	a.stateMu.Unlock()
+	switch {
+	case inner.TradeTs > 0:
+		snap.EventTime = time.UnixMilli(inner.TradeTs)
+	case inner.EvTime > 0:
+		snap.EventTime = time.UnixMilli(inner.EvTime)
+	}
 	return snap, nil
 }
 

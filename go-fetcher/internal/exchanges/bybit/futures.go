@@ -73,6 +73,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Topic string `json:"topic"`
 		Type  string `json:"type"`
+		Ts    int64  `json:"ts"` // server send ts in ms
 		Data  struct {
 			Symbol string     `json:"s"`
 			Bids   [][]string `json:"b"`
@@ -126,10 +127,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	apply(bk.bids, msg.Data.Bids)
 	apply(bk.asks, msg.Data.Asks)
 
+	var evt time.Time
+	if msg.Ts > 0 {
+		evt = time.UnixMilli(msg.Ts)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

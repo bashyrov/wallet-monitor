@@ -91,6 +91,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Channel string `json:"channel"`
 		Symbol  string `json:"symbol"`
+		Ts      int64  `json:"ts"` // ms-since-epoch event time
 		Data    struct {
 			Bids [][]float64 `json:"bids"`
 			Asks [][]float64 `json:"asks"`
@@ -136,10 +137,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		}
 	}
 
+	var evt time.Time
+	if msg.Ts > 0 {
+		evt = time.UnixMilli(msg.Ts)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

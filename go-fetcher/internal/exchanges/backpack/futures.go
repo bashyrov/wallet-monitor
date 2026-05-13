@@ -135,6 +135,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 			Symbol string     `json:"s"`
 			Bids   [][]string `json:"b"`
 			Asks   [][]string `json:"a"`
+			E      int64      `json:"E"` // event time μs (Backpack uses microseconds)
 		} `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -175,7 +176,12 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	asks := ws.SortedLevels(bk.asks, ws.Asks, 200)
 	a.mu.Unlock()
 
-	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}, nil
+	var evt time.Time
+	if msg.Data.E > 0 {
+		// Backpack uses microseconds, not milliseconds.
+		evt = time.UnixMicro(msg.Data.E)
+	}
+	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks, EventTime: evt}, nil
 }
 
 func (a *Futures) Heartbeat() []byte                { return nil }

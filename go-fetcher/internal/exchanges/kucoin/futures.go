@@ -331,10 +331,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		bk.lastSeq = seq
 	}
 
+	var evt time.Time
+	if msg.Data.Timestamp > 0 {
+		evt = time.UnixMilli(msg.Data.Timestamp)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

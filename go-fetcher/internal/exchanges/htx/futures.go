@@ -58,10 +58,12 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Ch   string `json:"ch"`
+		Ts   int64  `json:"ts"` // envelope ms
 		Tick struct {
 			Bids  [][]float64 `json:"bids"`
 			Asks  [][]float64 `json:"asks"`
 			Event string      `json:"event"` // "snapshot" or "update"
+			Ts    int64       `json:"ts"`    // tick ms (matching engine)
 		} `json:"tick"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -105,10 +107,18 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	apply(bk.bids, msg.Tick.Bids)
 	apply(bk.asks, msg.Tick.Asks)
 
+	var evt time.Time
+	switch {
+	case msg.Tick.Ts > 0:
+		evt = time.UnixMilli(msg.Tick.Ts)
+	case msg.Ts > 0:
+		evt = time.UnixMilli(msg.Ts)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

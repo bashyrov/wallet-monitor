@@ -93,11 +93,12 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Params struct {
 			Channel string `json:"channel"`
 			Data    struct {
-				Market     string    `json:"market"`
-				UpdateType string    `json:"update_type"`
-				Inserts    []levelOp `json:"inserts"`
-				Updates    []levelOp `json:"updates"`
-				Deletes    []levelOp `json:"deletes"`
+				Market      string    `json:"market"`
+				UpdateType  string    `json:"update_type"`
+				LastUpdated int64     `json:"last_updated_at"` // ms
+				Inserts     []levelOp `json:"inserts"`
+				Updates     []levelOp `json:"updates"`
+				Deletes     []levelOp `json:"deletes"`
 			} `json:"data"`
 		} `json:"params"`
 	}
@@ -154,10 +155,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	apply(msg.Params.Data.Updates, false)
 	apply(msg.Params.Data.Deletes, true)
 
+	var evt time.Time
+	if msg.Params.Data.LastUpdated > 0 {
+		evt = time.UnixMilli(msg.Params.Data.LastUpdated)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

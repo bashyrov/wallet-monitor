@@ -75,6 +75,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Side      string `json:"side"`
 		Price     float64 `json:"price"`
 		Qty       float64 `json:"qty"`
+		Timestamp int64   `json:"timestamp"` // ms-since-epoch
 		Bids      []struct {
 			Price float64 `json:"price"`
 			Qty   float64 `json:"qty"`
@@ -140,10 +141,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		return nil, nil
 	}
 
+	var evt time.Time
+	if msg.Timestamp > 0 {
+		evt = time.UnixMilli(msg.Timestamp)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

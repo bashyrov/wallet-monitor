@@ -95,11 +95,13 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}
 
 	var inner struct {
-		Symbol string     `json:"s"`
-		B      [][]string `json:"b"`
-		A      [][]string `json:"a"`
-		Bids   [][]string `json:"bids"`
-		Asks   [][]string `json:"asks"`
+		Symbol  string     `json:"s"`
+		EvTime  int64      `json:"E"` // event time ms
+		TradeTs int64      `json:"T"` // transaction time ms
+		B       [][]string `json:"b"`
+		A       [][]string `json:"a"`
+		Bids    [][]string `json:"bids"`
+		Asks    [][]string `json:"asks"`
 	}
 	// Bare /ws frames have e/E/T/s/b/a at top level (no `data` wrapper) —
 	// fall back to parsing the whole frame when wrap.Data is empty.
@@ -141,6 +143,12 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		if sz > 0 {
 			snap.Asks = append(snap.Asks, ws.Level{px, sz})
 		}
+	}
+	switch {
+	case inner.TradeTs > 0:
+		snap.EventTime = time.UnixMilli(inner.TradeTs)
+	case inner.EvTime > 0:
+		snap.EventTime = time.UnixMilli(inner.EvTime)
 	}
 	return snap, nil
 }
