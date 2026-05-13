@@ -1,6 +1,7 @@
 package funding
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -286,22 +287,12 @@ func (r *Runner) heartbeat(ctx context.Context, conn *websocket.Conn, frame []by
 }
 
 func gunzip(data []byte) ([]byte, error) {
-	rdr, err := gzip.NewReader(byteReader(data))
+	rdr, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
 	defer rdr.Close()
 	return io.ReadAll(rdr)
-}
-
-type byteReader []byte
-
-func (b byteReader) Read(p []byte) (int, error) {
-	n := copy(p, b)
-	if n == 0 {
-		return 0, io.EOF
-	}
-	return n, nil
 }
 
 func isPolicyClose(err error) bool {
