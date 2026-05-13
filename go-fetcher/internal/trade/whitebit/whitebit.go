@@ -186,16 +186,26 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		return nil, err
 	}
 	var resp struct {
-		OrderID json.Number `json:"orderId"`
-		ID      json.Number `json:"id"`
-		DealMoney string    `json:"dealMoney"`
+		OrderID   json.Number `json:"orderId"`
+		ID        json.Number `json:"id"`
+		DealMoney string      `json:"dealMoney"` // quote-currency cash spent
+		DealStock string      `json:"dealStock"` // base-currency size filled
 	}
 	_ = json.Unmarshal(body, &resp)
 	id := string(resp.OrderID)
 	if id == "" {
 		id = string(resp.ID)
 	}
-	avg, _ := strconv.ParseFloat(resp.DealMoney, 64)
+	// AvgPrice = dealMoney / dealStock. Earlier code returned dealMoney
+	// itself (the quote-currency cash spent), which is the order's
+	// notional and NOT the average fill price — UI then showed e.g.
+	// "$5000 avg" for a market buy of 0.1 BTC at $50k rather than $50k.
+	money, _ := strconv.ParseFloat(resp.DealMoney, 64)
+	stock, _ := strconv.ParseFloat(resp.DealStock, 64)
+	var avg float64
+	if stock > 0 {
+		avg = money / stock
+	}
 	return &trade.Result{
 		OrderID:   id,
 		Symbol:    req.Symbol,
