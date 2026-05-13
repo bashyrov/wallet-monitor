@@ -177,6 +177,9 @@ class StreamTask:
                 "missing api key",
                 "missing private key",
                 "missing l2 key",
+                "invalid address",     # HL invalid wallet shape
+                "missing l1 address",  # paradex
+                "missing stark",       # paradex / extended stark key absent
             )):
                 logger.warning(
                     "userstream %s: AUTH/RATE-LIMIT FAILED for user=%s wallet=%s — "
