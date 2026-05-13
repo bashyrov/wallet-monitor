@@ -48,6 +48,7 @@ type LongShort struct {
 	lastTS           any
 	lastBroadcastAt  time.Time
 	lastSnapshotJSON []byte // most recent full snapshot, sent to new clients
+	lastFileMtime    int64  // ns precision; ticks where mtime unchanged skip decode entirely
 }
 
 func NewLongShort(cacheDir string) *LongShort {
@@ -69,8 +70,9 @@ func (l *LongShort) SnapshotForNewClient() []byte {
 	if l.lastSnapshotJSON != nil {
 		return l.lastSnapshotJSON
 	}
-	// Cold start — read whatever's in the file right now.
-	data := l.readArbFile()
+	// Cold start — pre-tick. Force-read the file (ignoring mtime cache)
+	// so the very first connecting client gets a populated table.
+	data := l.forceReadArbFile()
 	if data == nil {
 		return nil
 	}
@@ -88,6 +90,9 @@ func (l *LongShort) SnapshotForNewClient() []byte {
 		snap["full_count"] = v
 	}
 	b, _ := json.Marshal(snap)
+	// Cache so subsequent cold-start clients don't re-decode the file
+	// before the first tick has run.
+	l.lastSnapshotJSON = b
 	return b
 }
 
@@ -217,11 +222,44 @@ func (l *LongShort) tick() {
 	}
 }
 
-// readArbFile returns the latest arbitrage.json contents or nil on
-// missing/corrupt file. We re-decode the whole file each tick — at
-// 250 ms / 228 KB / N=2 workers that's well under 1 MB/s of read I/O,
-// fine on tmpfs.
+// readArbFile returns the latest arbitrage.json contents or nil if
+// missing/corrupt OR unchanged since the previous read (mtime-skip).
+//
+// The arb compute writes the file every 500 ms but the broadcaster
+// ticks every 100 ms — 4 of every 5 ticks see the same file. Stat'ing
+// before decode short-circuits the wasted JSON parse (the file is
+// 200-500 KB of map[string]any — non-trivial unmarshal cost).
+//
+// MUST hold l.mu when calling.
 func (l *LongShort) readArbFile() map[string]any {
+	path := filepath.Join(l.cacheDir, "arbitrage.json")
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	mtime := info.ModTime().UnixNano()
+	if mtime != 0 && mtime == l.lastFileMtime {
+		return nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil
+	}
+	l.lastFileMtime = mtime
+	return doc
+}
+
+// forceReadArbFile bypasses the mtime cache. Used by SnapshotForNewClient
+// on cold start when no tick has yet populated lastSnapshotJSON — we want
+// the first connecting client to see whatever's currently on disk, even
+// if a prior call established the mtime baseline.
+//
+// MUST hold l.mu when calling.
+func (l *LongShort) forceReadArbFile() map[string]any {
 	path := filepath.Join(l.cacheDir, "arbitrage.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -230,6 +268,9 @@ func (l *LongShort) readArbFile() map[string]any {
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil
+	}
+	if info, err := os.Stat(path); err == nil {
+		l.lastFileMtime = info.ModTime().UnixNano()
 	}
 	return doc
 }
