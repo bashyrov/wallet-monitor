@@ -51,11 +51,35 @@ type Futures struct {
 	filter *tradingFilter
 	mu     sync.Mutex
 	syms   []string
+
+	// Phase 2a — adapter is now stateful so the @bookTicker BBO frames
+	// (event-driven, scalar b/B/a/A) can splice over the 20-level
+	// @depth20@100ms state between depth pushes. Each depth frame
+	// REPLACES books[sym] wholesale (depth20 is a full-snapshot stream,
+	// not delta); BBO only ever touches bbo[sym].
+	stateMu sync.Mutex
+	books   map[string]*book
+	bbo     map[string]*bboLevel
+}
+
+type book struct {
+	bids map[float64]float64
+	asks map[float64]float64
+}
+
+type bboLevel struct {
+	bidPx, bidSz float64
+	askPx, askSz float64
 }
 
 // NewFutures returns a Runner ready to call .Run(ctx) on.
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, filter: NewFuturesTradingFilter()}
+	a := &Futures{
+		store:  store,
+		filter: NewFuturesTradingFilter(),
+		books:  make(map[string]*book),
+		bbo:    make(map[string]*bboLevel),
+	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("binance", snap.Symbol, snap, "ws")
 	})
@@ -69,12 +93,17 @@ func (a *Futures) URL(_ context.Context) (string, error) {
 	a.mu.Unlock()
 	// First dial happens before BuildSubscribe — fall back to BTC so the
 	// dial succeeds. Symbol manager then re-URLs on the next reconcile.
+	//
+	// Phase 2a — combined-stream URL also includes @bookTicker per
+	// symbol (event-driven BBO ~10-50ms cadence). Each symbol thus
+	// produces 2 streams in the URL.
 	if len(syms) == 0 {
-		return futuresCombinedBase + "?streams=btcusdt@depth20@100ms", nil
+		return futuresCombinedBase + "?streams=btcusdt@depth20@100ms/btcusdt@bookTicker", nil
 	}
-	parts := make([]string, len(syms))
-	for i, s := range syms {
-		parts[i] = strings.ToLower(s) + "usdt@depth20@100ms"
+	parts := make([]string, 0, 2*len(syms))
+	for _, s := range syms {
+		low := strings.ToLower(s)
+		parts = append(parts, low+"usdt@depth20@100ms", low+"usdt@bookTicker")
 	}
 	return futuresCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
 }
@@ -100,21 +129,26 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(listed) == 0 {
 		return nil
 	}
+	// Phase 2a — each symbol emits 2 stream params: @depth20 + @bookTicker.
+	// Keep chunkSize 200 — params count, not symbol count.
 	const chunkSize = 200
-	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
+	allParams := make([]string, 0, 2*len(listed))
+	for _, s := range listed {
+		low := strings.ToLower(s)
+		allParams = append(allParams, low+"usdt@depth20@100ms", low+"usdt@bookTicker")
+	}
+	frames := make([][]byte, 0, (len(allParams)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()
-	for i := 0; i < len(listed); i += chunkSize {
+	for i := 0; i < len(allParams); i += chunkSize {
 		end := i + chunkSize
-		if end > len(listed) {
-			end = len(listed)
+		if end > len(allParams) {
+			end = len(allParams)
 		}
-		params := make([]string, end-i)
-		for j, s := range listed[i:end] {
-			params[j] = strings.ToLower(s) + "usdt@depth20@100ms"
-		}
+		chunk := make([]string, end-i)
+		copy(chunk, allParams[i:end])
 		frame := map[string]any{
 			"method": "SUBSCRIBE",
-			"params": params,
+			"params": chunk,
 			"id":     id + int64(i),
 		}
 		b, _ := ws.MarshalJSON(frame)
@@ -125,20 +159,19 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 
 // Parse one frame.
 //
-// Combined-stream wrapper for the diff-book stream that @depth20@100ms
-// actually serves (despite docs implying snapshot):
+// Two stream types now routed (Phase 2a):
 //
-//	{"stream": "btcusdt@depth20@100ms",
-//	 "data":   {"e":"depthUpdate","E":...,"T":...,"s":"BTCUSDT","U":...,"u":...,
-//	            "pu":...,"b":[["px","sz"], ...],"a":[...]}}
+//	@depth20@100ms — combined-stream wrapper with `b`/`a` as arrays:
+//	  {"stream":"btcusdt@depth20@100ms",
+//	   "data":{"e":"depthUpdate","s":"BTCUSDT","b":[["px","sz"],...],"a":[...]}}
 //
-// Note: live probing showed @depth20 returns full snapshots-as-diffs (every
-// 100ms, capped at 20 levels per side). We don't try to validate the U/u
-// continuity — just trust each frame's b/a as the current top-of-book.
+//	@bookTicker — scalar `b`/`B`/`a`/`A` (top bid/ask px+qty):
+//	  {"stream":"btcusdt@bookTicker",
+//	   "data":{"e":"bookTicker","u":N,"s":"BTCUSDT","b":"px","B":"qty","a":"px","A":"qty"}}
 //
-// Two-pass parse: sonic gets confused when outer/inner structs have
-// colliding json tags ("s" present at multiple levels), so we decode the
-// wrapper first, then re-decode the inner `data` only if needed.
+// Both feed SEPARATE state stores (books vs bbo); mergedSnapshot
+// splices BBO over depth top at emit time. depth20 is full-replace
+// (every 100ms it's the current top-20 — not a delta).
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var wrap struct {
 		Stream string          `json:"stream"`
@@ -150,26 +183,39 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}
 
 	if wrap.Result != nil {
-		// Subscribe-ack: {"result":null,"id":...}
 		return nil, nil
 	}
 
-	// Pull symbol out of the stream prefix (e.g. "btcusdt@depth20@100ms" →
-	// "BTCUSDT"). Live data confirmed the wrapper always has stream set;
-	// fallback to bare-stream parsing only if absent.
-	dataBytes := []byte(wrap.Data)
+	// Route by stream suffix.
+	isBookTicker := strings.HasSuffix(wrap.Stream, "@bookTicker")
+	isDepth := strings.Contains(wrap.Stream, "@depth")
+
+	// Extract symbol from the stream prefix.
 	var sym string
-	switch {
-	case wrap.Stream != "":
+	if wrap.Stream != "" {
 		s := wrap.Stream
 		if i := strings.IndexByte(s, '@'); i > 0 {
 			sym = strings.ToUpper(s[:i])
 		}
-	default:
-		// bare stream (rare) — try the frame itself for s
+	}
+
+	dataBytes := []byte(wrap.Data)
+	if len(dataBytes) == 0 {
+		// Bare stream form — try parsing the whole frame.
 		dataBytes = frame
 	}
 
+	if isBookTicker {
+		return a.parseBookTicker(sym, dataBytes)
+	}
+	if isDepth {
+		return a.parseDepth(sym, dataBytes)
+	}
+	// Fall back to old detection when stream prefix is absent (rare).
+	return a.parseDepth(sym, dataBytes)
+}
+
+func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error) {
 	var inner struct {
 		Symbol string     `json:"s"`
 		B      [][]string `json:"b"`
@@ -177,13 +223,18 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Bids   [][]string `json:"bids"`
 		Asks   [][]string `json:"asks"`
 	}
-	if len(dataBytes) > 0 {
-		if err := ws.UnmarshalJSON(dataBytes, &inner); err != nil {
-			return nil, err
-		}
+	if err := ws.UnmarshalJSON(dataBytes, &inner); err != nil {
+		return nil, err
 	}
 	if sym == "" {
 		sym = strings.ToUpper(inner.Symbol)
+	}
+	if !strings.HasSuffix(sym, "USDT") {
+		return nil, nil
+	}
+	token := strings.TrimSuffix(sym, "USDT")
+	if !a.filter.IsTrading(context.Background(), sym) {
+		return nil, nil
 	}
 
 	bids := inner.B
@@ -192,20 +243,117 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		bids, asks = inner.Bids, inner.Asks
 	}
 
+	// Full-replace from depth20 — every 100ms it's the top-20 snapshot.
+	a.stateMu.Lock()
+	bk, ok := a.books[token]
+	if !ok {
+		bk = &book{bids: map[float64]float64{}, asks: map[float64]float64{}}
+		a.books[token] = bk
+	}
+	bk.bids = make(map[float64]float64, len(bids))
+	bk.asks = make(map[float64]float64, len(asks))
+	for _, lv := range parseLevels(bids) {
+		bk.bids[lv[0]] = lv[1]
+	}
+	for _, lv := range parseLevels(asks) {
+		bk.asks[lv[0]] = lv[1]
+	}
+	snap := a.mergedSnapshotLocked(token)
+	a.stateMu.Unlock()
+	return snap, nil
+}
+
+func (a *Futures) parseBookTicker(sym string, dataBytes []byte) (*ws.Snapshot, error) {
+	// Scalar shape: {e:"bookTicker",u,s,b,B,a,A,T,E}
+	var inner struct {
+		Symbol string `json:"s"`
+		B      string `json:"b"` // best bid price
+		Bq     string `json:"B"` // best bid qty
+		A      string `json:"a"` // best ask price
+		Aq     string `json:"A"` // best ask qty
+	}
+	if err := ws.UnmarshalJSON(dataBytes, &inner); err != nil {
+		return nil, err
+	}
+	if sym == "" {
+		sym = strings.ToUpper(inner.Symbol)
+	}
 	if !strings.HasSuffix(sym, "USDT") {
 		return nil, nil
 	}
 	token := strings.TrimSuffix(sym, "USDT")
-
-	// Bug #8 — drop delisted symbols. cheap (in-memory map lookup).
 	if !a.filter.IsTrading(context.Background(), sym) {
 		return nil, nil
 	}
 
-	snap := &ws.Snapshot{Symbol: token}
-	snap.Bids = parseLevels(bids)
-	snap.Asks = parseLevels(asks)
+	bidPx, _ := strconv.ParseFloat(inner.B, 64)
+	bidSz, _ := strconv.ParseFloat(inner.Bq, 64)
+	askPx, _ := strconv.ParseFloat(inner.A, 64)
+	askSz, _ := strconv.ParseFloat(inner.Aq, 64)
+
+	a.stateMu.Lock()
+	b, ok := a.bbo[token]
+	if !ok {
+		b = &bboLevel{}
+		a.bbo[token] = b
+	}
+	// Binance @bookTicker always reports the current top — never sends
+	// zero-size as a "remove" signal (the top always exists on a live
+	// pair). Cache verbatim.
+	b.bidPx, b.bidSz = bidPx, bidSz
+	b.askPx, b.askSz = askPx, askSz
+	snap := a.mergedSnapshotLocked(token)
+	a.stateMu.Unlock()
 	return snap, nil
+}
+
+// mergedSnapshotLocked — must hold stateMu. Same splice semantics as
+// Bybit / OKX / Bitget: BBO at strictly better px prepends; same px
+// refreshes size; worse no-ops.
+func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
+	bk := a.books[token]
+	var bids, asks []ws.Level
+	if bk != nil {
+		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
+		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
+	}
+	if b := a.bbo[token]; b != nil {
+		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	}
+	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
+}
+
+func spliceBBOBid(bids []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return bids
+	}
+	if len(bids) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx > bids[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, bids...)
+	}
+	if bboPx == bids[0][0] {
+		bids[0][1] = bboSz
+	}
+	return bids
+}
+
+func spliceBBOAsk(asks []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return asks
+	}
+	if len(asks) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx < asks[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, asks...)
+	}
+	if bboPx == asks[0][0] {
+		asks[0][1] = bboSz
+	}
+	return asks
 }
 
 func parseLevels(rows [][]string) []ws.Level {
@@ -247,4 +395,9 @@ func (a *Futures) UseLibPings() bool { return true }
 func (a *Futures) SubscribeDelay() time.Duration { return 250 * time.Millisecond }
 func (a *Futures) MaxSymbols() int               { return 200 }
 func (a *Futures) DecompressGzip() bool          { return false }
-func (a *Futures) OnReconnect()                  {}
+func (a *Futures) OnReconnect() {
+	a.stateMu.Lock()
+	a.books = make(map[string]*book)
+	a.bbo = make(map[string]*bboLevel)
+	a.stateMu.Unlock()
+}
