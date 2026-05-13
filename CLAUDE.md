@@ -2,6 +2,71 @@
 
 ## Recent work — TL;DR for new sessions
 
+**Live trade-stream layer + 18-venue feed** (shipped 2026-05-12/13).
+
+New `/ws/trades` channel pushes individual trade events (per-fill) from every venue. This is the data layer that delivers arbion-style "live tick" visuals: 100-300 trades/sec on hot Binance pairs, 7-17/sec on MEXC LAB. Lives next to the existing `/ws/book` orderbook channel — they're independent streams. See `LIVE_ORDERBOOK_PLAN.md` for the full backstory; high points:
+
+- **18/18 venues** have trade-stream adapters in `go-fetcher/internal/exchanges/<venue>/trades.go`. 17 actively streaming; Ethereal is HTTP-429'd from its Cloudflare front (out of our control, will auto-recover when our prod IP cools).
+- **New package** `internal/ticks/` — Tick struct, Adapter interface, Runner (mirrors `internal/ws.Runner` but Parse returns `[]Tick`). Per-symbol Ring buffer (cap 50) for new-subscriber backfill.
+- **Hub** `internal/wsbroadcast/Trades` — per-client per-pair subscribe model identical to `/ws/book`. Auth optional (public market data).
+- **Manager.RegisterTicks** + symbol-set reconcile so prewarm symbols subscribe across ob+funding+ticks runners.
+
+**Frontend `/arb` page:**
+- Per-trade pulse animation on the matching price-level row (CSS `tradePulseBuy/Sell` 700ms, alpha 0.75 + inset shadow).
+- Per-venue activity dot (`.trade-activity-dot`) — small flash on each trade, gives "venue is alive" signal even when nothing visible changes.
+- Entry/exit refresh throttle dropped 120ms → 20ms; `/ws/trades` onmessage also triggers `sampleEntryExit()` + `updateLiveSpread()` and pulls top-of-book forward (`_liveAskLong`/`_liveBidShort = trade.price`). Net: entry/exit indicator updates at trade rate not depth rate.
+- Per-side staleness watchdog: toast "Нет данных по {SYM} на {venue}" if 12s after page load no `/ws/book` frame for that side; toast "Задержка данных" if >15s since last frame; persistent ⚠ badge on venue card while stale, auto-clears.
+
+**Per-venue trade-channel matrix:**
+
+| Venue | Channel | Wire shape | Side semantics |
+|---|---|---|---|
+| binance / aster | `/ws` + SUBSCRIBE `<sym>usdt@trade` | `{e:"trade",T,s,t,p,q,m}` direct (no `{stream,data}` wrapper) | `m=true` → taker SELL |
+| bybit | `publicTrade.<sym>USDT` | `{topic,data:[{T,s,S,v,p,i}]}` | `S:"Buy"|"Sell"` |
+| okx | `channel:"trades"` + `instId:"<base>-USDT-SWAP"` | `{arg,data:[{px,sz,side,tradeId,ts}]}` | `side:"buy"|"sell"` |
+| gate | `channel:"futures.trades"` payload `[contract]` | `result:[{id,size,price,contract,create_time_ms}]` | signed `size` (+/-) |
+| mexc | `sub.deal` symbol `BTC_USDT` | `{channel:"push.deal",symbol,data:[{p,v,T,t}]}` | `T:1|2` (1=buy) |
+| kucoin | `/contractMarket/execution:<TOKEN>USDTM` (with bullet token) | `{type:"message",subject:"match",data:{price,size,side,ts,tradeId}}` | `side:"buy"|"sell"` |
+| bitget | `instType:USDT-FUTURES`, `channel:"trade"`, chunked 50/frame | `{arg,data:[{ts,price,size,side,tradeId}]}` | `side:"buy"|"sell"` |
+| bingx | `<sym>-USDT@trade` (gzip) | `{dataType,data:[{T,s,p,q,m}]}` | `m=true` → taker SELL |
+| htx | `market.<sym>-USDT.trade.detail` (gzip, JSON ping/pong) | `{ch,tick:{data:[{price,amount,direction,ts,id}]}}` | `direction:"buy"|"sell"` |
+| kraken | `feed:"trade"` + `product_ids:["PF_<sym>USD"]` (XBT alias for BTC) | `{feed,product_id,side,qty,price,time,uid}` | `side:"buy"|"sell"` |
+| whitebit | `trades_subscribe` (NOT `deals_*` — that requires auth) | `params:["BTC_PERP",[{id,time(s-float),price,amount,type}]]` | `type:"buy"|"sell"` |
+| backpack | `SUBSCRIBE`, `trade.<sym>_USDC_PERP` | `{stream,data:{e:"trade",E,T,s,p,q,t,m}}` (μs ts!) | `m=true` → taker SELL |
+| hyperliquid | `{type:"trades",coin:"BTC"}` | `{channel:"trades",data:[{coin,side,px,sz,time,tid}]}` | `side:"A"=sell, "B"=buy` |
+| paradex | JSON-RPC `subscribe` `channel:"trades.<MKT>-USD-PERP"` | `{method:"subscription",params:{data:{created_at,id,market,price,side,size,trade_type}}}` | `side:"BUY"|"SELL"` |
+| extended | path-based `/v1/publicTrades` (omit market = all-markets fan-out) | `{ts,data:[{m,S,tT,T,p,q,i}],seq}` | `S:"BUY"|"SELL"` |
+| lighter | `trade/<market_id>` (numeric id, REST-resolved via shared idMap) | `{channel:"trade:N",type:"update/trade",trades:[{trade_id,market_id,size,price,is_maker_ask,timestamp}]}` | `is_maker_ask=true` → taker BUY |
+| ethereal | `wss://ws2.ethereal.trade/v1/stream` raw WS (NOT Socket.IO), `{event:"subscribe",data:{type:"TradeFill",symbol:"BTCUSD"}}` | `{e:"TradeFill",data:{s,t,d:[{id,px,sz,sd,t}]}}` | `sd:0=buy, 1=sell` (uncertain — verify live) |
+
+**Both Backpack and WhiteBIT have REST-cached market filters** (refresh hourly) — prewarm sends ~1000 random tokens at the WS adapter, the filter narrows to known-good PERP bases before SUBSCRIBE. Without this, both venues drowned in "Invalid market"/"market does not exist" errors that effectively rate-limited their feed.
+
+**6 wire-format bugs found during Phase 5 rollout (referenced if you debug a trade adapter):**
+
+1. Binance `@aggTrade` retired on `fstream.binance.com` (still works on spot). Use `@trade` for fapi.
+2. Binance `/stream?streams=...@trade` closes with 1006 within seconds — use bare `/ws` + SUBSCRIBE method.
+3. Go's `encoding/json` (and sonic) falls back to **case-insensitive** matching when no exact-tag match — Binance wire has both `"e"` (event type string) and `"E"` (event time number); without an explicit `EvTime int64 json:"E"` decoy field, the number gets routed into the string field and unmarshal fails silently.
+4. MEXC `push.deal` has `data: [{...}]` (array), but `rs.sub.deal` / `rs.error` frames have `data: "string"`. Two-step parse: gate on `channel == "push.deal"` first, then decode `RawMessage` data.
+5. WhiteBIT `deals_subscribe` requires auth (silently fails with code 6). Use `trades_subscribe`.
+6. SetSymbols force-reconnect on `hasRemoved` (necessary for orderbook combined-stream URL) kills tick sessions every 5s before any data flows. The tick `Runner` drops the force-close — receiving events for an unwanted symbol for one reconcile window is trivially cheap; reconnect-per-cycle is not.
+
+**Backend perf knob added:** `AVALANT_FILE_DUMP_INTERVAL=1s` (was default 250ms). File dump is for Python screener REST only; orderbook hot path is push-through. -1.25 cores on go-fetcher CPU.
+
+**Outstanding work** (deferred; not blocking the user-visible feature):
+
+| What | Why deferred | Impact estimate |
+|---|---|---|
+| Phase 2 depth-channel migrations (Bybit `orderbook.1` 10ms, OKX `bbo-tbt` 10ms, Gate 20ms `book_update`, KuCoin `level2:` tick, Bitget `books1`, Binance `@bookTicker`, HTX/Kraken seq tracking) | Phase 5 trade streams now deliver the visual liveness — orderbook depth cadence is less critical | 10-50ms top-of-book latency reduction per venue |
+| Redis `ob:<ex>:<sym>` SETEX removal | Python web read path no longer needs it after go-fetcher cutover | -2-3 cores on go-fetcher (every Store call spawns a goroutine for SETEX) |
+| `wsbroadcast.LongShort` diff incremental vs full-table | Current implementation is simple but reads/marshals full arb.json on every tick | -1-2 cores |
+| Ethereal HTTP 429 | Our prod IP is blocked at Cloudflare; will recover eventually | Adapter ready, no code change needed |
+| Go-tests for `internal/ticks/*` adapters | Live-prod verification covers the happy path; venue wire formats change rarely | Defensive |
+| Frontend visual A/B vs arbion on `/arb LAB MEXC` | Only the user can do this (requires their machine + browser session) | Pending user |
+
+See `LIVE_ORDERBOOK_PLAN.md` (root) for the full session log + every commit hash + measured tick rates per venue.
+
+---
+
 **PnL backfill from venue fills** (shipped 2026-05-09).
 
 The reconcile worker was wired into web-role startup (was dormant since the Go-fetcher cutover — last `trade_positions` write was 2026-04-29). Going forward, externally-opened positions now flow into our DB.
