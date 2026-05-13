@@ -68,8 +68,15 @@ func (Pipeline) SetLastUpdateAge(venue string, since time.Duration) {
 // ObserveVenueLatency records venue_event_ts → now() at the Store()
 // call site. Caller passes the venue and the duration; zero or
 // negative durations are dropped (clock skew or missing EventTime).
+//
+// Sanity clamp: durations > 5 minutes are dropped. Any legitimate
+// orderbook-WS hop is bounded by the venue keepalive timeout (~30s);
+// observations > 5min indicate a bad timestamp source — wrong unit
+// (seconds vs ms), wrong field, or a stale snapshot loop. Better to
+// drop the sample than poison the histogram with garbage that swamps
+// the real distribution.
 func (Pipeline) ObserveVenueLatency(venue string, d time.Duration) {
-	if d <= 0 {
+	if d <= 0 || d > 5*time.Minute {
 		return
 	}
 	venueLatencySec.Observe(d.Seconds(), venue)

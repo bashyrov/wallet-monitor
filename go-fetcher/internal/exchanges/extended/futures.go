@@ -72,18 +72,37 @@ func (a *Futures) URL(_ context.Context) (string, error) { return orderbookBase,
 func (a *Futures) BuildSubscribe(_ []string) [][]byte { return nil }
 
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
+	// Wire format verified live 2026-05-13: data.b/data.a are arrays of
+	// {q, p} objects (quantity, price as strings), NOT [px, sz] arrays.
+	// Top-level `type` mirrors `data.t` ("SNAPSHOT" | "DELTA"). `ts` is
+	// top-level ms-since-epoch. Delta `q` may be NEGATIVE (size delta) —
+	// we treat any non-zero q as the new size of the price level; q=0
+	// deletes. Use of relative deltas vs absolute is unverified — first
+	// pass uses absolute-replace semantics.
+	type level struct {
+		Q string `json:"q"`
+		P string `json:"p"`
+	}
 	var msg struct {
-		Ts   int64 `json:"ts"`
-		Seq  int64 `json:"seq"`
+		Ts   int64  `json:"ts"`
+		Seq  int64  `json:"seq"`
+		Type string `json:"type"` // "SNAPSHOT" | "DELTA" mirrored at top level
 		Data struct {
-			Market string     `json:"m"`
-			Type   string     `json:"type"`
-			Bids   [][]string `json:"b"`
-			Asks   [][]string `json:"a"`
+			Type   string  `json:"t"`
+			Market string  `json:"m"`
+			Bids   []level `json:"b"`
+			Asks   []level `json:"a"`
 		} `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
+	}
+	frameType := msg.Data.Type
+	if frameType == "" {
+		frameType = msg.Type
+	}
+	if frameType != "SNAPSHOT" && frameType != "DELTA" {
+		return nil, nil
 	}
 	if !strings.HasSuffix(msg.Data.Market, "-USD") {
 		return nil, nil
@@ -95,8 +114,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 
 	// Gap detection: monotone seq per market. SNAPSHOT resets.
 	prev := a.lastSeq[token]
-	if msg.Data.Type != "SNAPSHOT" && prev != 0 && msg.Seq != prev+1 {
-		// gap → drop state and wait for the next SNAPSHOT
+	if frameType != "SNAPSHOT" && prev != 0 && msg.Seq != prev+1 {
 		delete(a.books, token)
 		delete(a.lastSeq, token)
 		return nil, nil
@@ -108,17 +126,20 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		bk = &book{bids: make(map[float64]float64), asks: make(map[float64]float64)}
 		a.books[token] = bk
 	}
-	if msg.Data.Type == "SNAPSHOT" {
+	if frameType == "SNAPSHOT" {
 		bk.bids = make(map[float64]float64, len(msg.Data.Bids))
 		bk.asks = make(map[float64]float64, len(msg.Data.Asks))
 	}
-	apply := func(side map[float64]float64, rows [][]string) {
+	apply := func(side map[float64]float64, rows []level) {
 		for _, r := range rows {
-			if len(r) < 2 {
+			px, perr := strconv.ParseFloat(r.P, 64)
+			if perr != nil {
 				continue
 			}
-			px, _ := strconv.ParseFloat(r[0], 64)
-			sz, _ := strconv.ParseFloat(r[1], 64)
+			sz, serr := strconv.ParseFloat(r.Q, 64)
+			if serr != nil {
+				continue
+			}
 			if sz == 0 {
 				delete(side, px)
 			} else {
