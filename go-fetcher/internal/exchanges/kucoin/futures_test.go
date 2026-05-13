@@ -104,6 +104,37 @@ func TestSeedREST_DrainsBufferContiguous(t *testing.T) {
 	}
 }
 
+// ── Multi-event buffer drain (regression for the seeded-loop bug
+//     that gave 0 stores in prod after the first deploy of this
+//     migration) ────────────────────────────────────────────────────
+
+func TestSeedREST_MultipleEventsDrainCorrectly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"data":{"sequence":"100","bids":[["60000","1"]],"asks":[]}}`)
+	}))
+	defer srv.Close()
+	saved := restSnapshot
+	restSnapshot = srv.URL + "/?symbol=%s"
+	defer func() { restSnapshot = saved }()
+
+	a := newTestFutures()
+	// Buffer three consecutive deltas 101, 102, 103. Old two-loop drainBuffer
+	// would apply 101 OK, then check 102 against baseSeq+1=101 → fail → gap
+	// reset. New single-loop applies all three.
+	_, _ = a.Parse([]byte(`{"type":"message","topic":"/contractMarket/level2:XBTUSDTM","subject":"level2","data":{"sequence":101,"change":"60001,buy,5","timestamp":1}}`))
+	_, _ = a.Parse([]byte(`{"type":"message","topic":"/contractMarket/level2:XBTUSDTM","subject":"level2","data":{"sequence":102,"change":"60002,buy,6","timestamp":2}}`))
+	_, _ = a.Parse([]byte(`{"type":"message","topic":"/contractMarket/level2:XBTUSDTM","subject":"level2","data":{"sequence":103,"change":"60003,buy,7","timestamp":3}}`))
+	a.seedREST("BTC")
+
+	bk := a.books["BTC"]
+	if !bk.seeded || bk.lastSeq != 103 {
+		t.Fatalf("all three deltas should apply, got seeded=%v lastSeq=%d", bk.seeded, bk.lastSeq)
+	}
+	if bk.bids[60001] != 5 || bk.bids[60002] != 6 || bk.bids[60003] != 7 {
+		t.Errorf("bids after multi-drain: %+v", bk.bids)
+	}
+}
+
 // ── Stale buffered events dropped ────────────────────────────────────
 
 func TestSeedREST_DropsStaleBufferedEvents(t *testing.T) {

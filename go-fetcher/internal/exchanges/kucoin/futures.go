@@ -187,14 +187,23 @@ func (a *Futures) seedREST(symbol string) {
 }
 
 // drainBuffer applies buffered deltas after a successful REST seed.
-// Events with seq <= baseSeq are stale (already in snapshot) → drop.
-// First applied event must satisfy seq == baseSeq+1 (strict contiguity);
-// otherwise gap at bootstrap edge → reset to await a new seed.
+// Single pass: each event is either stale (drop), the first valid
+// bootstrap event (must satisfy seq == baseSeq+1), or a steady-state
+// event (must satisfy seq == lastSeq+1). Any gap at either stage
+// resets state so the caller can re-seed.
+//
+// Earlier two-loop form had a bug: after the first loop marked
+// seeded=true on the bootstrap event, it kept iterating the same loop
+// (`if !bk.seeded` is checked once at entry, not per-iteration in Go)
+// — so subsequent events were checked against `baseSeq+1` instead of
+// `lastSeq+1` and always tripped the gap reset. Result: 0 stores from
+// KuCoin futures in prod.
 func (a *Futures) drainBuffer(bk *book) {
-	if !bk.seeded {
-		for _, ev := range bk.buffer {
+	for _, ev := range bk.buffer {
+		switch {
+		case !bk.seeded:
 			if ev.seq <= bk.baseSeq {
-				continue
+				continue // stale — covered by snapshot
 			}
 			if ev.seq != bk.baseSeq+1 {
 				bk.buffer = nil
@@ -204,10 +213,7 @@ func (a *Futures) drainBuffer(bk *book) {
 			a.applyChange(bk, ev.px, ev.side, ev.sz)
 			bk.lastSeq = ev.seq
 			bk.seeded = true
-		}
-	}
-	if bk.seeded {
-		for _, ev := range bk.buffer {
+		default:
 			if ev.seq <= bk.lastSeq {
 				continue
 			}
