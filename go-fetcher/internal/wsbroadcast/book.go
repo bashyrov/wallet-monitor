@@ -69,52 +69,53 @@ const (
 type Book struct {
 	hub    *Hub
 	reader *redisbus.Reader
-	store  *cache.Store    // fallback when Redis is unavailable
+	store  *cache.Store     // fallback when Redis is unavailable
 	mgr    *symbols.Manager // for Touch on subscribe — keeps the WS alive
 
 	mu   sync.Mutex
 	subs map[*client]map[string]float64 // client → pair → last-ts-sent
+
+	// Per-pair pending update buffer. Hot venues fire OnBookUpdate at
+	// 50-100/sec; pushing each as its own WS frame floods the browser
+	// (same class of problem as /ws/trades pre-aggregation). Book is
+	// stateful, so the buffer stores only the LATEST snapshot per pair
+	// — older snapshots within a flush window are invisible anyway.
+	pendMu  sync.Mutex
+	pending map[string]bookPending
+}
+
+type bookPending struct {
+	ts   float64
+	bids []ws.Level
+	asks []ws.Level
 }
 
 func NewBook(reader *redisbus.Reader, store *cache.Store, mgr *symbols.Manager) *Book {
 	return &Book{
-		hub:    NewHub("book"),
-		reader: reader,
-		store:  store,
-		mgr:    mgr,
-		subs:   make(map[*client]map[string]float64, 64),
+		hub:     NewHub("book"),
+		reader:  reader,
+		store:   store,
+		mgr:     mgr,
+		subs:    make(map[*client]map[string]float64, 64),
+		pending: make(map[string]bookPending, 256),
 	}
 }
 
 func (b *Book) Hub() *Hub { return b.hub }
 
-// OnBookUpdate is called from cache.Store's onUpdate hook on every OB snapshot.
-// It bypasses the 25ms Redis-poll cycle and pushes directly to clients
-// subscribed to this pair — eliminating the polling lag entirely.
-// The tick() safety-net still runs; it skips pairs whose TS has already
-// been sent by this path (lastTS updated here before releasing the lock).
+// OnBookUpdate is called from cache.Store's onUpdate hook on every OB
+// snapshot. Instead of pushing directly (50-100/sec on hot venues —
+// floods browser clients), the snapshot lands in a per-pair buffer
+// that overwrites any previous pending snapshot. The book Run-loop
+// flushes the buffer once per bookBroadcastInterval (1s default) and
+// fans out one frame per pair.
+//
+// Net wire rate: O(1) frame per pair per flush, regardless of how
+// fast the underlying venue pushes.
 func (b *Book) OnBookUpdate(exchange, symbol string, bids, asks []ws.Level) {
 	pairKey := exchange + ":" + symbol
-
-	b.mu.Lock()
-	if len(b.subs) == 0 {
-		b.mu.Unlock()
-		return
-	}
-	now := float64(time.Now().UnixMilli()) / 1000.0
-	var targets []*client
-	for c, subs := range b.subs {
-		if _, ok := subs[pairKey]; ok {
-			subs[pairKey] = now // mark sent so tick() skips the duplicate
-			targets = append(targets, c)
-		}
-	}
-	b.mu.Unlock()
-
-	if len(targets) == 0 {
-		return
-	}
-
+	// Trim levels HERE before storing — keeps the buffer small and the
+	// marshal step at flush time trivial.
 	nb := bids
 	if len(nb) > bookBroadcastLevels {
 		nb = nb[:bookBroadcastLevels]
@@ -123,45 +124,104 @@ func (b *Book) OnBookUpdate(exchange, symbol string, bids, asks []ws.Level) {
 	if len(na) > bookBroadcastLevels {
 		na = na[:bookBroadcastLevels]
 	}
-	bidSlice := make([][]float64, len(nb))
-	for i, lv := range nb {
-		bidSlice[i] = []float64{lv[0], lv[1]}
-	}
-	askSlice := make([][]float64, len(na))
-	for i, lv := range na {
-		askSlice[i] = []float64{lv[0], lv[1]}
-	}
-	body, err := json.Marshal(map[string]any{
-		"books": map[string]any{
-			pairKey: map[string]any{
-				"ts":   now,
-				"bids": bidSlice,
-				"asks": askSlice,
-			},
-		},
-	})
-	if err != nil {
-		return
-	}
-	for _, c := range targets {
-		select {
-		case c.outbox <- body:
-		default:
-		}
-	}
-	log.L().Trace().Str("pair", pairKey).Int("clients", len(targets)).Msg("book realtime push")
+	now := float64(time.Now().UnixMilli()) / 1000.0
+	b.pendMu.Lock()
+	b.pending[pairKey] = bookPending{ts: now, bids: nb, asks: na}
+	b.pendMu.Unlock()
 }
 
-// Run drives the periodic broadcast tick. One MGET per tick across the
-// union of all subscribed pairs (fixed cost regardless of client count).
+// flushPending drains the per-pair buffer and pushes one frame per
+// pair to its subscribers. Called from Run on every tick.
+func (b *Book) flushPending() {
+	b.pendMu.Lock()
+	if len(b.pending) == 0 {
+		b.pendMu.Unlock()
+		return
+	}
+	pending := b.pending
+	b.pending = make(map[string]bookPending, len(pending))
+	b.pendMu.Unlock()
+
+	b.mu.Lock()
+	if len(b.subs) == 0 {
+		b.mu.Unlock()
+		return
+	}
+	subsSnap := make(map[*client]map[string]float64, len(b.subs))
+	for c, set := range b.subs {
+		subsSnap[c] = set
+	}
+	b.mu.Unlock()
+
+	for pairKey, snap := range pending {
+		// Skip pairs no client wants.
+		anyWants := false
+		for _, set := range subsSnap {
+			if _, ok := set[pairKey]; ok {
+				anyWants = true
+				break
+			}
+		}
+		if !anyWants {
+			continue
+		}
+		bidSlice := make([][]float64, len(snap.bids))
+		for i, lv := range snap.bids {
+			bidSlice[i] = []float64{lv[0], lv[1]}
+		}
+		askSlice := make([][]float64, len(snap.asks))
+		for i, lv := range snap.asks {
+			askSlice[i] = []float64{lv[0], lv[1]}
+		}
+		body, err := json.Marshal(map[string]any{
+			"books": map[string]any{
+				pairKey: map[string]any{
+					"ts":   snap.ts,
+					"bids": bidSlice,
+					"asks": askSlice,
+				},
+			},
+		})
+		if err != nil {
+			continue
+		}
+		// Update last-ts-sent under the subs mutex so tick() doesn't
+		// re-emit the same snapshot from its MGET fallback.
+		b.mu.Lock()
+		for c, set := range b.subs {
+			if _, ok := set[pairKey]; !ok {
+				continue
+			}
+			set[pairKey] = snap.ts
+			select {
+			case c.outbox <- body:
+			default:
+			}
+		}
+		b.mu.Unlock()
+	}
+}
+
+// Run drives two periodic ticks:
+//   - flushPending every 200ms — drains the per-pair OB buffer populated
+//     by OnBookUpdate. 200ms is the "feels live" threshold: fine enough
+//     for orderbook visualization, coarse enough to prevent 50-100/sec
+//     flood per pair on hot venues.
+//   - tick every bookBroadcastInterval (1s default) — MGET fallback
+//     for pairs whose direct push didn't fire (Redis blip).
 func (b *Book) Run(ctx context.Context) {
+	flushT := time.NewTicker(200 * time.Millisecond)
+	defer flushT.Stop()
 	t := time.NewTicker(bookBroadcastInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-flushT.C:
+			b.flushPending()
 		case <-t.C:
+			b.flushPending()
 			b.tick(ctx)
 		}
 	}
