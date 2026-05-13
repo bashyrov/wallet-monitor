@@ -68,6 +68,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Event   string `json:"event"`
 		Result  struct {
 			Contract string `json:"contract"`
+			T        int64  `json:"t"` // ms-since-epoch event time
 			Bids     []struct {
 				P string  `json:"p"`
 				S float64 `json:"s"`
@@ -118,10 +119,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 			bk.asks[px] = lvl.S
 		}
 	}
+	var evt time.Time
+	if msg.Result.T > 0 {
+		evt = time.UnixMilli(msg.Result.T)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

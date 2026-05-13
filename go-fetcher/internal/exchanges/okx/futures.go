@@ -106,6 +106,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Data   []struct {
 			Bids [][]string `json:"bids"`
 			Asks [][]string `json:"asks"`
+			Ts   string     `json:"ts"` // ms-since-epoch as a string per OKX wire format
 		} `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -157,10 +158,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	apply(bk.bids, msg.Data[0].Bids)
 	apply(bk.asks, msg.Data[0].Asks)
 
+	var evt time.Time
+	if ms, err := strconv.ParseInt(msg.Data[0].Ts, 10, 64); err == nil && ms > 0 {
+		evt = time.UnixMilli(ms)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

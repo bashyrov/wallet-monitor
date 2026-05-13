@@ -33,12 +33,14 @@ type Registry struct {
 	mu         sync.RWMutex
 	counters   map[string]*Counter
 	gauges     map[string]*Gauge
+	histograms map[string]*Histogram
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		counters: make(map[string]*Counter),
-		gauges:   make(map[string]*Gauge),
+		counters:   make(map[string]*Counter),
+		gauges:     make(map[string]*Gauge),
+		histograms: make(map[string]*Histogram),
 	}
 }
 

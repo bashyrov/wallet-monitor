@@ -31,6 +31,15 @@ var (
 		"open WebSocket clients connected to the broadcaster, per channel",
 		"channel",
 	)
+
+	// Phase 4 plan acceptance: p50 <= 100ms, p99 <= 300ms top-of-book delta.
+	// Buckets cover that range with finer granularity below 100ms.
+	venueLatencySec = NewHistogram(
+		"avalant_venue_to_store_latency_seconds",
+		"seconds between the venue event timestamp and the cache Store() call (per venue)",
+		[]float64{0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.5},
+		"venue",
+	)
 )
 
 // Pipeline groups the typed call helpers so they're easy to wire into
@@ -54,4 +63,14 @@ func (Pipeline) SetClientsOpen(channel string, n int) {
 // this periodically (e.g. every 5s) — no hot-path overhead.
 func (Pipeline) SetLastUpdateAge(venue string, since time.Duration) {
 	lastUpdateAgeSec.Set(since.Seconds(), venue)
+}
+
+// ObserveVenueLatency records venue_event_ts → now() at the Store()
+// call site. Caller passes the venue and the duration; zero or
+// negative durations are dropped (clock skew or missing EventTime).
+func (Pipeline) ObserveVenueLatency(venue string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	venueLatencySec.Observe(d.Seconds(), venue)
 }

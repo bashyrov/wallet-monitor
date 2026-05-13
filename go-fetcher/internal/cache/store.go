@@ -89,6 +89,9 @@ func (s *Store) Store(exchange, symbol string, snap ws.Snapshot, source string) 
 	s.mu.Unlock()
 
 	metrics.Pipeline{}.RecordBookStore(exchange, source)
+	if !snap.EventTime.IsZero() {
+		metrics.Pipeline{}.ObserveVenueLatency(exchange, time.Since(snap.EventTime))
+	}
 
 	if hook != nil {
 		hook(exchange, symbol, snap.Bids, snap.Asks)

@@ -39,6 +39,26 @@ func (r *Registry) RenderProm() []byte {
 			writeSample(&b, g.name, g.keys, splitLabels(e.key), e.v)
 		}
 	}
+	for _, h := range r.snapshotHistograms() {
+		if h.help != "" {
+			b.WriteString("# HELP " + h.name + " " + h.help + "\n")
+		}
+		b.WriteString("# TYPE " + h.name + " histogram\n")
+		for _, e := range h.entries {
+			// One sample per bucket boundary, then _sum and _count.
+			for i, ub := range h.buckets {
+				ubStr := strconv.FormatFloat(ub, 'g', -1, 64)
+				labels := append(append([]string{}, e.labels...), ubStr)
+				keys := append(append([]string{}, h.keys...), "le")
+				writeSample(&b, h.name+"_bucket", keys, labels, float64(e.counts[i]))
+			}
+			labelsInf := append(append([]string{}, e.labels...), "+Inf")
+			keysInf := append(append([]string{}, h.keys...), "le")
+			writeSample(&b, h.name+"_bucket", keysInf, labelsInf, float64(e.counts[len(h.buckets)]))
+			writeSample(&b, h.name+"_sum", h.keys, e.labels, e.sum)
+			writeSample(&b, h.name+"_count", h.keys, e.labels, float64(e.counts[len(h.buckets)]))
+		}
+	}
 	return b.Bytes()
 }
 

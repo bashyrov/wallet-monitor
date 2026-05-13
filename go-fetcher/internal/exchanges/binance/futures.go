@@ -171,11 +171,13 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}
 
 	var inner struct {
-		Symbol string     `json:"s"`
-		B      [][]string `json:"b"`
-		A      [][]string `json:"a"`
-		Bids   [][]string `json:"bids"`
-		Asks   [][]string `json:"asks"`
+		Symbol  string     `json:"s"`
+		EvTime  int64      `json:"E"` // event time ms (depth + bookTicker)
+		TradeTs int64      `json:"T"` // transaction time ms (depth has both)
+		B       [][]string `json:"b"`
+		A       [][]string `json:"a"`
+		Bids    [][]string `json:"bids"`
+		Asks    [][]string `json:"asks"`
 	}
 	if len(dataBytes) > 0 {
 		if err := ws.UnmarshalJSON(dataBytes, &inner); err != nil {
@@ -205,6 +207,14 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	snap := &ws.Snapshot{Symbol: token}
 	snap.Bids = parseLevels(bids)
 	snap.Asks = parseLevels(asks)
+	// Prefer transaction time (T) when present (more accurate matching-engine
+	// time); fall back to event time (E). bookTicker has only E.
+	switch {
+	case inner.TradeTs > 0:
+		snap.EventTime = time.UnixMilli(inner.TradeTs)
+	case inner.EvTime > 0:
+		snap.EventTime = time.UnixMilli(inner.EvTime)
+	}
 	return snap, nil
 }
 
