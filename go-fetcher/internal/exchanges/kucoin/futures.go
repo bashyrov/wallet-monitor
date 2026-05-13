@@ -77,8 +77,9 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		Topic   string `json:"topic"`
 		Subject string `json:"subject"`
 		Data    struct {
-			Bids [][]any `json:"bids"`
-			Asks [][]any `json:"asks"`
+			Bids      [][]any `json:"bids"`
+			Asks      [][]any `json:"asks"`
+			Timestamp int64   `json:"timestamp"` // ms
 		} `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -121,10 +122,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		}
 		return out
 	}
+	var evt time.Time
+	if msg.Data.Timestamp > 0 {
+		evt = time.UnixMilli(msg.Data.Timestamp)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   parseSide(msg.Data.Bids),
-		Asks:   parseSide(msg.Data.Asks),
+		Symbol:    token,
+		Bids:      parseSide(msg.Data.Bids),
+		Asks:      parseSide(msg.Data.Asks),
+		EventTime: evt,
 	}, nil
 }
 

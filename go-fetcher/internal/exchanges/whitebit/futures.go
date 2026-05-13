@@ -118,10 +118,16 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	apply(bk.bids, "bids")
 	apply(bk.asks, "asks")
 
+	// WhiteBIT `timestamp` is fractional seconds since epoch; convert to ms.
+	var evt time.Time
+	if ts, ok := body["timestamp"].(float64); ok && ts > 0 {
+		evt = time.UnixMilli(int64(ts * 1000))
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 

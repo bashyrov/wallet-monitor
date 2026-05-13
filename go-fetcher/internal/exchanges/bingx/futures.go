@@ -55,9 +55,11 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		DataType string `json:"dataType"`
+		Ts       int64  `json:"ts"` // envelope ms; some shapes carry it here
 		Data     struct {
 			Bids [][]string `json:"bids"`
 			Asks [][]string `json:"asks"`
+			Ts   int64      `json:"T"` // depth wire carries depth-snapshot ts in T
 		} `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -92,6 +94,12 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		if sz > 0 {
 			snap.Asks = append(snap.Asks, ws.Level{px, sz})
 		}
+	}
+	switch {
+	case msg.Data.Ts > 0:
+		snap.EventTime = time.UnixMilli(msg.Data.Ts)
+	case msg.Ts > 0:
+		snap.EventTime = time.UnixMilli(msg.Ts)
 	}
 	return snap, nil
 }
