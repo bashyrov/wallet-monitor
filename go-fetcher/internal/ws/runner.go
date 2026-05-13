@@ -222,12 +222,25 @@ func (r *Runner) session(ctx context.Context) error {
 	r.subscribedAt.Store(time.Time{}) // reset per-session subscribe tracker
 	r.bo.ResetTransient()
 
-	// Disable lib pings if the adapter says so. gorilla doesn't expose a
-	// "ping interval" — it sends pings only when we tell it to via
-	// SetPongHandler / WriteControl. Default behaviour is no auto-pings,
-	// so we DON'T need to do anything here for UseLibPings()==false.
-	// For UseLibPings()==true we leave the default — adapters that want
-	// lib pings can rely on the heartbeat goroutine below.
+	// gorilla auto-responds to server-sent WS-PingMessage with a pong via
+	// the default PingHandler — but the default handler does NOT surface
+	// the ping to our ReadMessage loop, so our `lastMsg` tracker never
+	// observes server keepalives. On low-volume venues (paradex ticks
+	// BTC: 1-2 fills/min), this trips the stale-watchdog at 90s even
+	// while the connection is fully healthy. Override the handler so
+	// it updates lastMsg AND still pongs back.
+	prevPing := conn.PingHandler()
+	conn.SetPingHandler(func(data string) error {
+		r.lastMsg.Store(time.Now())
+		return prevPing(data)
+	})
+	// Pongs land via SetPongHandler — if we ever send our own client
+	// pings, mark the response as activity too.
+	prevPong := conn.PongHandler()
+	conn.SetPongHandler(func(data string) error {
+		r.lastMsg.Store(time.Now())
+		return prevPong(data)
+	})
 
 	if len(wantedSnap) > 0 {
 		if err := r.subscribe(conn, wantedSnap); err != nil {
@@ -239,6 +252,17 @@ func (r *Runner) session(ctx context.Context) error {
 	defer cancelHB()
 	if frame := r.a.Heartbeat(); frame != nil {
 		go r.heartbeatLoop(heartbeatCtx, conn, frame, r.a.HeartbeatInterval())
+	}
+	// Optional client-ping interface: adapters implementing
+	// ClientPingInterval() get periodic WS-frame Ping (gorilla
+	// PingMessage) sent client→server. Required by Extended OB whose
+	// server closes us with 1011 "Ping timeout" otherwise — the venue
+	// expects keepalive driven from the client side.
+	type clientPinger interface{ ClientPingInterval() time.Duration }
+	if cp, ok := r.a.(clientPinger); ok {
+		if d := cp.ClientPingInterval(); d > 0 {
+			go r.clientPingLoop(heartbeatCtx, conn, d)
+		}
 	}
 
 	// Watchdog: closes the connection if we go silent for >staleThreshold.
@@ -373,6 +397,29 @@ func (r *Runner) subscribe(conn *websocket.Conn, syms []string) error {
 	}
 	r.symMu.Unlock()
 	return nil
+}
+
+// clientPingLoop periodically sends a WS-PingMessage to the server.
+// Used by adapters whose server enforces client-driven keepalive (e.g.
+// Extended OB, which closes with 1011 "Ping timeout" if the client
+// stays quiet on the control plane).
+func (r *Runner) clientPingLoop(ctx context.Context, conn *websocket.Conn, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := conn.WriteControl(
+				websocket.PingMessage,
+				nil,
+				time.Now().Add(2*time.Second),
+			); err != nil {
+				return
+			}
+		}
+	}
 }
 
 func (r *Runner) heartbeatLoop(ctx context.Context, conn *websocket.Conn, frame []byte, interval time.Duration) {

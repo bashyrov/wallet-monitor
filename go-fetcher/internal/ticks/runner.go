@@ -162,6 +162,22 @@ func (r *Runner) session(ctx context.Context) error {
 	r.lastMsg.Store(time.Now())
 	r.bo.ResetTransient()
 
+	// gorilla's default ping handler pongs back but doesn't surface the
+	// ping frame to ReadMessage, so our `lastMsg` tracker misses server
+	// keepalives. On low-volume venues (paradex BTC trades: 1-2/min),
+	// this trips the stale-watchdog at 90s even on a healthy connection.
+	// Wrap so the handler updates lastMsg first.
+	prevPing := conn.PingHandler()
+	conn.SetPingHandler(func(data string) error {
+		r.lastMsg.Store(time.Now())
+		return prevPing(data)
+	})
+	prevPong := conn.PongHandler()
+	conn.SetPongHandler(func(data string) error {
+		r.lastMsg.Store(time.Now())
+		return prevPong(data)
+	})
+
 	if len(wantedSnap) > 0 {
 		if err := r.subscribe(conn, wantedSnap); err != nil {
 			return err
