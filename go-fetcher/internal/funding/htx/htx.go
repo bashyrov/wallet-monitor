@@ -96,22 +96,33 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		}
 		token := strings.TrimSuffix(r.ContractCode, "-USDT")
 		rate, _ := strconv.ParseFloat(r.FundingRate, 64)
-		nextMs, _ := strconv.ParseInt(r.NextFundingTime, 10, 64)
 		intH := float64(r.FundingPeriod)
 		if intH <= 0 {
 			intH = 8
 		}
-		t := funding.Tick{
-			Symbol:    token,
-			Rate:      rate,
-			MarkPrice: markBySymbol[token],
-			Volume24h: volBySymbol[token],
-			IntervalH: intH,
+		// HTX returns `next_funding_time: null` for many rows and stores
+		// the upcoming settlement in `funding_time` (which is documented
+		// as "this funding's settlement time"). Prefer next_funding_time
+		// when present, fall back to funding_time, then UTC 8h boundary.
+		nextMs, _ := strconv.ParseInt(r.NextFundingTime, 10, 64)
+		if nextMs <= 0 {
+			nextMs, _ = strconv.ParseInt(r.FundingTime, 10, 64)
 		}
+		var nextT time.Time
 		if nextMs > 0 {
-			t.NextFunding = time.UnixMilli(nextMs)
+			nextT = time.UnixMilli(nextMs)
+		} else {
+			cycle := time.Duration(intH) * time.Hour
+			nextT = time.Now().UTC().Truncate(cycle).Add(cycle)
 		}
-		out = append(out, t)
+		out = append(out, funding.Tick{
+			Symbol:      token,
+			Rate:        rate,
+			MarkPrice:   markBySymbol[token],
+			Volume24h:   volBySymbol[token],
+			IntervalH:   intH,
+			NextFunding: nextT,
+		})
 	}
 	return out, nil
 }
