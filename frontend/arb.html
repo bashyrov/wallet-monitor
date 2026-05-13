@@ -2006,9 +2006,12 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     } catch (e) { console.error('[pair] refresh error:', e); }
   }
   _refreshPair();
-  // Live cadence after the 12-core VPS upgrade: pair metadata refreshes
-  // every 1 s.
-  setInterval(_refreshPair, 1000);
+  // Per-pair metadata refresh. DEX needs polling (no WS feed for
+  // DexScreener pools); futures L/S has /ws/long-short feeding live
+  // opp diffs every ~200ms server-side, so the 1s REST poll is
+  // strictly redundant data — 5s on the WS-covered path saves 4×
+  // the HTTP traffic over a session (each call hits 2 endpoints).
+  setInterval(_refreshPair, IS_DEX ? 1000 : 5000);
 
   // ── Order-book polling (futures-style .book-row rendering) ────────────────
   let _obTicks = { long: 0, short: 0 };
