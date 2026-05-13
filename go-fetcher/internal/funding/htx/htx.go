@@ -52,16 +52,19 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		return nil, err
 	}
 
-	// Volume + mark from batch_merged (USDT vol + close price).
+	// Volume + mark from batch_merged. HTX wire returns those fields as
+	// STRINGS in JSON ("close": "84.81", "vol": "23544", "trade_turnover":
+	// "20095.391") — declaring them as float64 silently fails to decode
+	// and every symbol ends up with 0 volume in funding.json (227/227
+	// observed in prod 2026-05-13). Decode as string + ParseFloat to fix.
 	volBySymbol := make(map[string]float64, len(doc.Data))
 	markBySymbol := make(map[string]float64, len(doc.Data))
 	var tdoc struct {
 		Ticks []struct {
-			ContractCode string  `json:"contract_code"`
-			Close        float64 `json:"close"`
-			Vol          float64 `json:"vol"`
-			Amount       float64 `json:"amount"` // base units
-			TradeTurnover float64 `json:"trade_turnover"` // USDT turnover
+			ContractCode  string `json:"contract_code"`
+			Close         string `json:"close"`
+			Amount        string `json:"amount"`         // base units
+			TradeTurnover string `json:"trade_turnover"` // USDT turnover
 		} `json:"ticks"`
 	}
 	if err := funding.HTTPGet(ctx, tickerURL, &tdoc); err == nil {
@@ -70,16 +73,18 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 				continue
 			}
 			token := strings.TrimSuffix(r.ContractCode, "-USDT")
-			turnover := r.TradeTurnover
+			closePx, _ := strconv.ParseFloat(r.Close, 64)
+			turnover, _ := strconv.ParseFloat(r.TradeTurnover, 64)
 			if turnover <= 0 {
 				// Fallback: amount × close (USDT) as approximation.
-				turnover = r.Amount * r.Close
+				amt, _ := strconv.ParseFloat(r.Amount, 64)
+				turnover = amt * closePx
 			}
 			if turnover > 0 {
 				volBySymbol[token] = turnover
 			}
-			if r.Close > 0 {
-				markBySymbol[token] = r.Close
+			if closePx > 0 {
+				markBySymbol[token] = closePx
 			}
 		}
 	}
