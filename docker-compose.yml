@@ -273,6 +273,12 @@ services:
       # real-time updates; this tick covers pairs that didn't fire a Store
       # callback. 1s default — was 25ms, redundant on the hot path.
       AVALANT_BOOK_TICK_INTERVAL: ${AVALANT_BOOK_TICK_INTERVAL:-1s}
+      # Toggle for the Redis orderbook mirror (`ob:<ex>:<sym>` SETEX on
+      # every cache update). Python REST callers fall through to the
+      # file cache (orderbook_cache.py:900+), so this is safely
+      # opt-out. Default true preserves current behaviour; flip to
+      # false to save ~2-3 cores on go-fetcher.
+      AVALANT_REDIS_BOOK_WRITE: ${AVALANT_REDIS_BOOK_WRITE:-true}
       # Override LOG_LEVEL specifically for go-fetcher: WARN silences the
       # per-frame "subscribe frame sent" / "recv frame" diagnostics that
       # added measurable CPU + log I/O on prod (~10% of one core).

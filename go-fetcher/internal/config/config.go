@@ -27,6 +27,16 @@ type Config struct {
 	// slower client-side latency.
 	RedisWriteThrottle time.Duration
 
+	// Toggle for the Redis orderbook mirror (`ob:<ex>:<sym>` SETEX
+	// on every cache update). Default true preserves current prod
+	// behaviour. Set false once Python REST callers have been
+	// verified to fall through cleanly to the file cache — the
+	// Writer accounts for an estimated 2-3 cores on go-fetcher under
+	// load (every Store call spawns a goroutine for SETEX). Path to
+	// removal: flip to false on prod → soak → change default →
+	// delete code.
+	RedisBookWriteEnabled bool
+
 	// File-dump cadence. Python merger runs at 100ms; we match.
 	FileDumpInterval time.Duration
 
@@ -57,9 +67,10 @@ type Config struct {
 // vars use sensible defaults so the dev workflow is `go run` with no env.
 func Load() Config {
 	return Config{
-		CacheDir:           getenv("AVALANT_FETCHER_CACHE_DIR", "/tmp/avalant_cache"),
-		RedisURL:           getenv("REDIS_URL", ""),
-		RedisWriteThrottle: getenvDur("AVALANT_REDIS_WRITE_THROTTLE", 50*time.Millisecond),
+		CacheDir:              getenv("AVALANT_FETCHER_CACHE_DIR", "/tmp/avalant_cache"),
+		RedisURL:              getenv("REDIS_URL", ""),
+		RedisWriteThrottle:    getenvDur("AVALANT_REDIS_WRITE_THROTTLE", 50*time.Millisecond),
+		RedisBookWriteEnabled: getenvBool("AVALANT_REDIS_BOOK_WRITE", true),
 		FileDumpInterval:   getenvDur("AVALANT_FILE_DUMP_INTERVAL", 100*time.Millisecond),
 		PrewarmTopN:        getenvInt("AVALANT_PREWARM_TOP_N", 20),
 		IdleTimeout:        getenvDur("AVALANT_ORDERBOOK_IDLE_TIMEOUT", 60*time.Second),
@@ -99,6 +110,20 @@ func getenvDur(k string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+func getenvBool(k string, def bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(k)))
+	switch v {
+	case "":
+		return def
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
 }
 
 func splitCSV(s string) []string {
