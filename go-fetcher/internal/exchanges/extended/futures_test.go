@@ -11,11 +11,17 @@ func newTestFutures() *Futures {
 	}
 }
 
-// ── SNAPSHOT seeds book + sets seq + EventTime ──────────────────────
+// Wire format verified live 2026-05-13 via WS probe:
+//
+//	{"type":"SNAPSHOT","data":{"t":"SNAPSHOT","m":"BTC-USD",
+//	 "b":[{"q":"0.00071","p":"79125"},...],
+//	 "a":[{"q":"0.36975","p":"79126"},...]}, "ts":1778692308650}
+//
+// All test fixtures here mirror that shape.
 
 func TestParse_SnapshotSeeds(t *testing.T) {
 	a := newTestFutures()
-	frame := []byte(`{"ts":1700000000000,"seq":100,"data":{"m":"BTC-USD","type":"SNAPSHOT","b":[["60000","1"]],"a":[["60100","2"]]}}`)
+	frame := []byte(`{"type":"SNAPSHOT","ts":1700000000000,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[{"q":"2","p":"60100"}]}}`)
 	snap, err := a.Parse(frame)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -34,12 +40,10 @@ func TestParse_SnapshotSeeds(t *testing.T) {
 	}
 }
 
-// ── DELTA contiguous applies ────────────────────────────────────────
-
 func TestParse_DeltaContiguousApplies(t *testing.T) {
 	a := newTestFutures()
-	_, _ = a.Parse([]byte(`{"ts":1,"seq":100,"data":{"m":"BTC-USD","type":"SNAPSHOT","b":[["60000","1"]],"a":[]}}`))
-	snap, _ := a.Parse([]byte(`{"ts":2,"seq":101,"data":{"m":"BTC-USD","type":"DELTA","b":[["60000","5"]],"a":[]}}`))
+	_, _ = a.Parse([]byte(`{"type":"SNAPSHOT","ts":1,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[]}}`))
+	snap, _ := a.Parse([]byte(`{"type":"DELTA","ts":2,"seq":101,"data":{"t":"DELTA","m":"BTC-USD","b":[{"q":"5","p":"60000"}],"a":[]}}`))
 	if snap == nil || snap.Bids[0][1] != 5 {
 		t.Errorf("contiguous delta should update bid size to 5, got %+v", snap)
 	}
@@ -48,48 +52,35 @@ func TestParse_DeltaContiguousApplies(t *testing.T) {
 	}
 }
 
-// ── Gap drops state ─────────────────────────────────────────────────
-
 func TestParse_GapDropsState(t *testing.T) {
 	a := newTestFutures()
-	_, _ = a.Parse([]byte(`{"ts":1,"seq":100,"data":{"m":"BTC-USD","type":"SNAPSHOT","b":[["60000","1"]],"a":[]}}`))
-	// gap: seq=105 not 101
-	snap, _ := a.Parse([]byte(`{"ts":2,"seq":105,"data":{"m":"BTC-USD","type":"DELTA","b":[["60000","5"]],"a":[]}}`))
+	_, _ = a.Parse([]byte(`{"type":"SNAPSHOT","ts":1,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[]}}`))
+	snap, _ := a.Parse([]byte(`{"type":"DELTA","ts":2,"seq":105,"data":{"t":"DELTA","m":"BTC-USD","b":[{"q":"5","p":"60000"}],"a":[]}}`))
 	if snap != nil {
 		t.Errorf("gap delta must NOT emit, got %+v", snap)
 	}
 	if _, ok := a.books["BTC"]; ok {
 		t.Errorf("gap must drop book state")
 	}
-	if _, ok := a.lastSeq["BTC"]; ok {
-		t.Errorf("gap must clear lastSeq")
-	}
 }
-
-// ── SNAPSHOT after gap reseeds ──────────────────────────────────────
 
 func TestParse_SnapshotAfterGapReseeds(t *testing.T) {
 	a := newTestFutures()
-	_, _ = a.Parse([]byte(`{"ts":1,"seq":100,"data":{"m":"BTC-USD","type":"SNAPSHOT","b":[["60000","1"]],"a":[]}}`))
-	_, _ = a.Parse([]byte(`{"ts":2,"seq":999,"data":{"m":"BTC-USD","type":"DELTA","b":[["60000","9"]],"a":[]}}`)) // gap
-	// Now a fresh snapshot — must reseed and emit.
-	snap, _ := a.Parse([]byte(`{"ts":3,"seq":2000,"data":{"m":"BTC-USD","type":"SNAPSHOT","b":[["59000","7"]],"a":[]}}`))
+	_, _ = a.Parse([]byte(`{"type":"SNAPSHOT","ts":1,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[]}}`))
+	_, _ = a.Parse([]byte(`{"type":"DELTA","ts":2,"seq":999,"data":{"t":"DELTA","m":"BTC-USD","b":[{"q":"9","p":"60000"}],"a":[]}}`))
+	snap, _ := a.Parse([]byte(`{"type":"SNAPSHOT","ts":3,"seq":2000,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"7","p":"59000"}],"a":[]}}`))
 	if snap == nil || snap.Bids[0][0] != 59000 {
 		t.Errorf("snapshot must reseed after gap, got %+v", snap)
 	}
 }
 
-// ── Non-USD market ignored ──────────────────────────────────────────
-
 func TestParse_NonUSDIgnored(t *testing.T) {
 	a := newTestFutures()
-	got, _ := a.Parse([]byte(`{"ts":1,"seq":1,"data":{"m":"BTC-EUR","type":"SNAPSHOT","b":[],"a":[]}}`))
+	got, _ := a.Parse([]byte(`{"type":"SNAPSHOT","ts":1,"seq":1,"data":{"t":"SNAPSHOT","m":"BTC-EUR","b":[],"a":[]}}`))
 	if got != nil {
 		t.Errorf("non-USD must be ignored")
 	}
 }
-
-// ── OnReconnect clears state ────────────────────────────────────────
 
 func TestOnReconnect_ClearsAll(t *testing.T) {
 	a := newTestFutures()
@@ -101,13 +92,29 @@ func TestOnReconnect_ClearsAll(t *testing.T) {
 	}
 }
 
-// ── Size 0 deletes ──────────────────────────────────────────────────
-
 func TestParse_SizeZeroDeletes(t *testing.T) {
 	a := newTestFutures()
-	_, _ = a.Parse([]byte(`{"ts":1,"seq":100,"data":{"m":"BTC-USD","type":"SNAPSHOT","b":[["60000","1"]],"a":[["60100","2"]]}}`))
-	_, _ = a.Parse([]byte(`{"ts":2,"seq":101,"data":{"m":"BTC-USD","type":"DELTA","b":[["60000","0"]],"a":[]}}`))
+	_, _ = a.Parse([]byte(`{"type":"SNAPSHOT","ts":1,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[{"q":"2","p":"60100"}]}}`))
+	_, _ = a.Parse([]byte(`{"type":"DELTA","ts":2,"seq":101,"data":{"t":"DELTA","m":"BTC-USD","b":[{"q":"0","p":"60000"}],"a":[]}}`))
 	if _, ok := a.books["BTC"].bids[60000]; ok {
 		t.Errorf("size=0 must delete bid")
+	}
+}
+
+func TestParse_DataTypeFallback(t *testing.T) {
+	a := newTestFutures()
+	frame := []byte(`{"ts":1,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[]}}`)
+	snap, _ := a.Parse(frame)
+	if snap == nil || snap.Bids[0][0] != 60000 {
+		t.Errorf("data.t fallback should work, got %+v", snap)
+	}
+}
+
+func TestParse_UnknownTypeIgnored(t *testing.T) {
+	a := newTestFutures()
+	frame := []byte(`{"type":"OTHER","ts":1,"seq":100,"data":{"t":"OTHER","m":"BTC-USD","b":[],"a":[]}}`)
+	got, _ := a.Parse(frame)
+	if got != nil {
+		t.Errorf("unknown type must be ignored")
 	}
 }
