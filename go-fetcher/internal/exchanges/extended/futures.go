@@ -170,6 +170,13 @@ func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
 func (a *Futures) MaxSymbols() int                  { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
 
+// ClientPingInterval — Extended OB enforces client-driven keepalive.
+// Verified live 2026-05-13: 90-second hold with WS-frame client pings
+// every 10s vs immediate "Ping timeout" 1011 close without them.
+// Runner detects this method via type-assertion and starts a
+// WS-PingMessage loop on top of the default lib-ping handler.
+func (a *Futures) ClientPingInterval() time.Duration { return 10 * time.Second }
+
 func (a *Futures) OnReconnect() {
 	a.mu.Lock()
 	a.books = make(map[string]*book)
