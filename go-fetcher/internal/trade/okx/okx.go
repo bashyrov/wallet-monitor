@@ -290,11 +290,21 @@ func (a *Adapter) GetBalance(ctx context.Context, creds trade.Creds) (*trade.Bal
 	if err != nil {
 		return nil, err
 	}
+	// OKX V5 /account/balance details fields (USDT row):
+	//   cashBal   — total cash balance (incl. margin locked)
+	//   availBal  — available for new orders
+	//   frozenBal — locked by open orders / positions
+	//   eq        — equity (cashBal + unrealized PnL)
+	// Earlier this adapter returned `availBal` for BOTH total and
+	// available, hiding margin in use. Use cashBal/eq for total,
+	// availBal for available, frozenBal for the margin breakdown.
 	var data []struct {
 		Details []struct {
-			Ccy     string `json:"ccy"`
-			AvailBal string `json:"availBal"`
-			CashBal  string `json:"cashBal"`
+			Ccy       string `json:"ccy"`
+			AvailBal  string `json:"availBal"`
+			CashBal   string `json:"cashBal"`
+			FrozenBal string `json:"frozenBal"`
+			Eq        string `json:"eq"`
 		} `json:"details"`
 	}
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -306,10 +316,20 @@ func (a *Adapter) GetBalance(ctx context.Context, creds trade.Creds) (*trade.Bal
 				continue
 			}
 			avail := parseFloat(d.AvailBal)
-			if avail == 0 {
-				avail = parseFloat(d.CashBal)
+			frozen := parseFloat(d.FrozenBal)
+			total := parseFloat(d.Eq)
+			if total == 0 {
+				total = parseFloat(d.CashBal)
 			}
-			return &trade.Balance{TotalUSD: avail, AvailableUSD: avail}, nil
+			if total == 0 {
+				// Worst-case fallback: derive from avail + frozen.
+				total = avail + frozen
+			}
+			return &trade.Balance{
+				TotalUSD:     total,
+				AvailableUSD: avail,
+				MarginUSD:    frozen,
+			}, nil
 		}
 	}
 	return &trade.Balance{}, nil
