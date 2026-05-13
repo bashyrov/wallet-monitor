@@ -83,6 +83,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Type      string `json:"type"`
 		Channel   string `json:"channel"`
+		Timestamp int64  `json:"timestamp"` // ms — present on trade frames, speculative for OB
 		OrderBook struct {
 			Asks []struct {
 				Price string `json:"price"`
@@ -92,6 +93,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 				Price string `json:"price"`
 				Size  string `json:"size"`
 			} `json:"bids"`
+			Timestamp int64 `json:"timestamp"` // ms inside the order_book payload (if present)
 		} `json:"order_book"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -156,10 +158,18 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	apply(bk.bids, msg.OrderBook.Bids)
 	apply(bk.asks, msg.OrderBook.Asks)
 
+	var evt time.Time
+	switch {
+	case msg.OrderBook.Timestamp > 0:
+		evt = time.UnixMilli(msg.OrderBook.Timestamp)
+	case msg.Timestamp > 0:
+		evt = time.UnixMilli(msg.Timestamp)
+	}
 	return &ws.Snapshot{
-		Symbol: sym,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    sym,
+		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
+		EventTime: evt,
 	}, nil
 }
 
