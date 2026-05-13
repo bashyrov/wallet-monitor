@@ -16,6 +16,55 @@
 
 ---
 
+## Plan status — 2026-05-13 (closeout snapshot)
+
+After Phase 5 trade-streams shipped (the visual-liveness win), the marginal value of remaining Phase 2 work dropped significantly — the user-visible bottleneck the plan was originally targeting is now solved. This section pins the current state of each Phase against reality + reason for any deferrals so the next session doesn't redo the analysis.
+
+| Phase | Status | Notes |
+|---|---|---|
+| Phase 0 | ✅ DONE | Reconnaissance complete |
+| Phase 1 | ✅ DONE & DEPLOYED | Push-through hot path; 25ms→1s safety-net tick |
+| Phase 2a (Binance @bookTicker BBO) | ⏸ DEFERRED | Current `@depth20` is stateless 100ms snapshot. Adding BBO requires making adapter stateful (BBO updates top-of-book between depth frames). Post-Phase-5 the trade stream already drives top-of-book updates at trade-rate. Marginal value vs medium complexity. |
+| Phase 2b (Bybit `orderbook.1` BBO) | ⏸ DEFERRED | Same state-coordination problem as 2a; Bybit delta book would mis-merge if BBO inserts top level that depth never visits. |
+| Phase 2c (OKX `bbo-tbt`) | ⏸ DEFERRED | Same as 2b. |
+| Phase 2d (Gate `futures.order_book_update` migrate) | ⏸ DEFERRED | 5× cadence gain (100ms→20ms) but requires snapshot+delta state machine with REST bootstrap. State-machine risk; post-trade-streams the latency improvement is not user-visible. |
+| Phase 2e (MEXC) | — | Keep as-is per plan |
+| Phase 2f (KuCoin `level2:` raw migrate) | ⏸ DEFERRED | tick-by-tick gain but bigger state-machine refactor than 2d (sequence tracking + snapshot bootstrap + KuCoin's per-conn MaxSymbols cap). |
+| Phase 2g (Bitget `books1` BBO) | ⏸ DEFERRED | Same state-coordination problem as 2b. |
+| Phase 2h (BingX) | — | Keep as-is per plan |
+| Phase 2i (HTX `version` tracking) | ✅ DONE | Branch `perf/orderbook-seq-tracking`; commit `687605f`. Best-effort observability; gap → warn-log; runner's 90s stale-data watchdog handles recovery. |
+| Phase 2j (Kraken `seq` tracking) | ✅ DONE | Same branch + commit as 2i. |
+| Phase 2k (WhiteBIT) | — | Keep as-is per plan |
+| Phase 2l (Backpack verify) | ✅ VERIFIED CORRECT | `internal/exchanges/backpack/futures.go` already subscribes to unaggregated `depth.<BASE>_USDC_PERP` (single-level deltas at ~50-100ms). No migration needed. |
+| Phase 2m (Paradex new OB WS) | ✅ ALREADY DONE | `internal/exchanges/paradex/futures.go` exists with JSON-RPC subscribe + delta state machine (`order_book.X.deltas`). Wired in `cmd/fetcher/main.go:665`. Plan TL;DR table marking Paradex as "REST-only" is stale. |
+| Phase 2n (Hyperliquid new OB WS) | ✅ ALREADY DONE | `internal/exchanges/hyperliquid/futures.go` exists with `l2Book` subscribe. Plan TL;DR table marking HL as "REST-only" is stale. |
+| Phase 2o (Extended new OB WS) | ⛔ BLOCKED | Wire format for `/stream.extended.exchange/v1/orderbooks/{market}` not documented (extended.exchange docs cover trades but not orderbook WS). Cannot implement without either: (a) real docs (b) live wire capture to reverse-engineer. Python uses REST polling at `/api/v1/info/markets/{X}-USD/orderbook`. |
+| Phase 3a (file dumper 250ms→2s) | ⚠️ PARTIAL | Deployed at `AVALANT_FILE_DUMP_INTERVAL=1s` (not 2s; safer). -1.25 cores measured. |
+| Phase 3b (Redis `ob:*` SETEX removal) | ⛔ BLOCKED | Python `backend/services/orderbook_redis.py` is still actively read by 3 callers ([screener.py:575/1821](backend/api/v1/screener.py), [orderbook_cache.py:890](backend/services/orderbook_cache.py)). Removing the Writer breaks `/api/screener/orderbooks` REST batch endpoint. Plan note "Python больше не читает этот ключ" is stale. Requires Python-side migration first. |
+| Phase 3c (broadcaster diff incremental) | ⚠️ PARTIAL | LongShort broadcaster was ALREADY computing diffs (added/updated/removed). Real waste was re-decoding arb.json every 100ms when file writes every 500ms. mtime-skip implemented on branch `perf/longshort-mtime-skip` commit `f305719`; estimated -1-2 cores. The original "per-symbol push" rewrite was already done by Phase 1 push-through arch — separate item. |
+| Phase 4 (verify) | ⏸ DEFERRED | Requires production instrumentation (per-symbol event-to-broadcast latency probe). No measurement code exists in repo; doing this properly needs a separate observability commit. CLAUDE.md MONITORING.md tick #28 confirms 18/18 venues healthy + 0 organic 5xx; user-visible acceptance is met. |
+| Phase 5 (trade streams) | ✅ DONE & DEPLOYED | 17/18 venues actively streaming. Ethereal IP-banned from Cloudflare (passive recovery). |
+| Phase 5 tests | ✅ DONE | Branch `test/ticks-coverage` commit `8aaf556`: 9 Ring tests + ≥6 tests per adapter × 18 adapters = ~120 tests total. Pins all 6 wire-format regression bugs found during Phase 5 rollout. |
+
+### Outstanding work by impact
+
+| Item | Impact (est.) | Risk | Status |
+|---|---|---|---|
+| Phase 3b Redis SETEX removal | -2-3 cores | Medium (data path change) | Blocked on Python migration |
+| Phase 3c mtime-skip merge to main | -1-2 cores | Low | On branch, awaiting prod soak |
+| Phase 2i/2j seq tracking merge to main | Observability only | Very low | On branch, awaiting prod soak |
+| Phase 2o Extended OB WS | -100ms vs REST | High (no docs) | Blocked on wire format |
+| Phase 2a/b/c/g BBO adds | <50ms top-of-book | Medium | Deferred — marginal value post-Phase-5 |
+| Phase 2d/f channel migrations | 100ms→20ms cadence | High (state machine) | Deferred — marginal value post-Phase-5 |
+| Phase 4 instrumented measurement | Verification only | Low | Deferred until needed |
+
+### Branches to review before merge
+- `perf/orderbook-seq-tracking` (Phase 2i+2j) — kraken/htx gap-log
+- `test/ticks-coverage` — defensive coverage for Phase 5 prod code
+- `perf/longshort-mtime-skip` — Phase 3c partial
+
+---
+
 ## Phase 0 — Reconnaissance — ✅ ЗАВЕРШЕНО (2026-05-12)
 
 Прочитаны официальные доки 14 активных венчурсов. Сводная таблица каналов:
