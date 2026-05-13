@@ -40,7 +40,7 @@ After Phase 5 trade-streams shipped (the visual-liveness win), the marginal valu
 | Phase 2n (Hyperliquid new OB WS) | ✅ ALREADY DONE | `internal/exchanges/hyperliquid/futures.go` exists with `l2Book` subscribe. Plan TL;DR table marking HL as "REST-only" is stale. |
 | Phase 2o (Extended new OB WS) | ⛔ BLOCKED | Wire format for `/stream.extended.exchange/v1/orderbooks/{market}` not documented (extended.exchange docs cover trades but not orderbook WS). Cannot implement without either: (a) real docs (b) live wire capture to reverse-engineer. Python uses REST polling at `/api/v1/info/markets/{X}-USD/orderbook`. |
 | Phase 3a (file dumper 250ms→2s) | ⚠️ PARTIAL | Deployed at `AVALANT_FILE_DUMP_INTERVAL=1s` (not 2s; safer). -1.25 cores measured. |
-| Phase 3b (Redis `ob:*` SETEX removal) | ⛔ BLOCKED | Python `backend/services/orderbook_redis.py` is still actively read by 3 callers ([screener.py:575/1821](backend/api/v1/screener.py), [orderbook_cache.py:890](backend/services/orderbook_cache.py)). Removing the Writer breaks `/api/screener/orderbooks` REST batch endpoint. Plan note "Python больше не читает этот ключ" is stale. Requires Python-side migration first. |
+| Phase 3b (Redis `ob:*` SETEX removal) | ⚠️ TOGGLE-READY | Branch `perf/redis-book-write-toggle` commit `a4a87f3` adds `AVALANT_REDIS_BOOK_WRITE` env (default true preserves current behaviour). Python `orderbook_cache.py:900` already has file-cache fallback — Writer can be flipped off in prod to save -2-3 cores. Path forward: deploy → flip env → soak → change default → delete. |
 | Phase 3c (broadcaster diff incremental) | ⚠️ PARTIAL | LongShort broadcaster was ALREADY computing diffs (added/updated/removed). Real waste was re-decoding arb.json every 100ms when file writes every 500ms. mtime-skip implemented on branch `perf/longshort-mtime-skip` commit `f305719`; estimated -1-2 cores. The original "per-symbol push" rewrite was already done by Phase 1 push-through arch — separate item. |
 | Phase 4 (verify) | ⏸ DEFERRED | Requires production instrumentation (per-symbol event-to-broadcast latency probe). No measurement code exists in repo; doing this properly needs a separate observability commit. CLAUDE.md MONITORING.md tick #28 confirms 18/18 venues healthy + 0 organic 5xx; user-visible acceptance is met. |
 | Phase 5 (trade streams) | ✅ DONE & DEPLOYED | 17/18 venues actively streaming. Ethereal IP-banned from Cloudflare (passive recovery). |
@@ -50,7 +50,7 @@ After Phase 5 trade-streams shipped (the visual-liveness win), the marginal valu
 
 | Item | Impact (est.) | Risk | Status |
 |---|---|---|---|
-| Phase 3b Redis SETEX removal | -2-3 cores | Medium (data path change) | Blocked on Python migration |
+| Phase 3b Redis SETEX removal | -2-3 cores | Medium (data path change) | Toggle ready on branch; needs prod flip + soak |
 | Phase 3c mtime-skip merge to main | -1-2 cores | Low | On branch, awaiting prod soak |
 | Phase 2i/2j seq tracking merge to main | Observability only | Very low | On branch, awaiting prod soak |
 | Phase 2o Extended OB WS | -100ms vs REST | High (no docs) | Blocked on wire format |
@@ -59,9 +59,12 @@ After Phase 5 trade-streams shipped (the visual-liveness win), the marginal valu
 | Phase 4 instrumented measurement | Verification only | Low | Deferred until needed |
 
 ### Branches to review before merge
-- `perf/orderbook-seq-tracking` (Phase 2i+2j) — kraken/htx gap-log
-- `test/ticks-coverage` — defensive coverage for Phase 5 prod code
-- `perf/longshort-mtime-skip` — Phase 3c partial
+- `perf/orderbook-seq-tracking` (Phase 2i+2j) — kraken/htx gap-log + 11 unit tests
+- `test/ticks-coverage` — Ring + 18 trade adapter parsers (~120 tests)
+- `perf/longshort-mtime-skip` — Phase 3c partial (mtime-skip + 11 tests)
+- `perf/redis-book-write-toggle` — Phase 3b unblock (toggle env + 6 tests)
+- `test/orderbook-coverage` — 6 state-machine OB adapter tests (gate/bybit/okx/mexc/hyperliquid/paradex, 44 tests)
+- `docs/plan-closeout` — this snapshot
 
 ---
 
