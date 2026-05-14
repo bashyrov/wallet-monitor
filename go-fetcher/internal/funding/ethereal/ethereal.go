@@ -9,7 +9,8 @@
 //     → [{productId, oraclePrice, bestBidPrice, bestAskPrice}]
 //
 // Only ACTIVE products are kept. Funding rate is 1h (field fundingRate1h).
-// Oracle price is used as mark price. Volume is not exposed publicly — 0.
+// Oracle price is used as mark price. 24h volume comes from product.volume24h
+// (BASE-currency units) — multiplied by oracle price for USD-normalised vol.
 // Interval: 1h; next-funding boundary = top of next hour UTC.
 //
 // The Python fetcher uses the proprietary ethereal-sdk which is just an
@@ -52,6 +53,7 @@ type productItem struct {
 	FundingRate1h interface{} `json:"fundingRate1h"` // API returns string
 	Status        string      `json:"status"`
 	OpenInterest  interface{} `json:"openInterest"` // API returns string
+	Volume24h     interface{} `json:"volume24h"`    // base-coin units; ×price → USD
 }
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
@@ -111,10 +113,12 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			continue
 		}
 		oi := funding.ParseFloat(p.OpenInterest)
+		vol24Base := funding.ParseFloat(p.Volume24h) // base-coin units
 		out = append(out, funding.Tick{
 			Symbol:      strings.ToUpper(p.BaseTokenName),
 			Rate:        rate,
 			MarkPrice:   price,
+			Volume24h:   vol24Base * price, // USD-normalised
 			OpenIntUSD:  oi * price,
 			NextFunding: nextFunding,
 			IntervalH:   1.0,

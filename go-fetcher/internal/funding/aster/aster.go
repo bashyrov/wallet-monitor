@@ -2,12 +2,18 @@
 //
 // Same protocol as Binance but on aster hosts. WS path/REST endpoint
 // differ; everything else identical.
+//
+// /fapi/v1/premiumIndex returns 475+ symbols including tokenized equities
+// (SHIELDXXX, BRKB, NFLX, AMD, ORCL, HKD…) that lack /ticker/24hr volume
+// — 72 symbols on 2026-05-14. Mirrors the Binance fix: filter via
+// exchangeInfo status=TRADING, refreshed every 10 min.
 package aster
 
 import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
@@ -21,8 +27,55 @@ const (
 	// the long tail of symbols (~30% of Aster rows had volume_usd=0 in
 	// prod 2026-05-13 with WS only); REST sweep fills the gap, same as
 	// the binance funding adapter.
-	restTickerURL = "https://fapi.asterdex.com/fapi/v1/ticker/24hr"
+	restTickerURL    = "https://fapi.asterdex.com/fapi/v1/ticker/24hr"
+	restExchangeInfo = "https://fapi.asterdex.com/fapi/v1/exchangeInfo"
 )
+
+var (
+	_tradingMu     sync.RWMutex
+	_tradingSet    map[string]struct{}
+	_tradingExpiry time.Time
+)
+
+const _tradingTTL = 10 * time.Minute
+
+func _tradingAllowed(token string) bool {
+	_tradingMu.RLock()
+	defer _tradingMu.RUnlock()
+	if _tradingSet == nil {
+		return true // cold start — fail open
+	}
+	_, ok := _tradingSet[token]
+	return ok
+}
+
+func _refreshTradingSet(ctx context.Context) {
+	_tradingMu.RLock()
+	fresh := _tradingSet != nil && time.Now().Before(_tradingExpiry)
+	_tradingMu.RUnlock()
+	if fresh {
+		return
+	}
+	var info struct {
+		Symbols []struct {
+			Symbol string `json:"symbol"`
+			Status string `json:"status"`
+		} `json:"symbols"`
+	}
+	if err := funding.HTTPGet(ctx, restExchangeInfo, &info); err != nil {
+		return
+	}
+	set := make(map[string]struct{}, len(info.Symbols))
+	for _, s := range info.Symbols {
+		if s.Status == "TRADING" && strings.HasSuffix(s.Symbol, "USDT") {
+			set[strings.TrimSuffix(s.Symbol, "USDT")] = struct{}{}
+		}
+	}
+	_tradingMu.Lock()
+	_tradingSet = set
+	_tradingExpiry = time.Now().Add(_tradingTTL)
+	_tradingMu.Unlock()
+}
 
 type Adapter struct{}
 
@@ -58,10 +111,14 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			if !strings.HasSuffix(r.Symbol, "USDT") {
 				continue
 			}
+			token := strings.TrimSuffix(r.Symbol, "USDT")
+			if !_tradingAllowed(token) {
+				continue
+			}
 			vol, _ := strconv.ParseFloat(r.Quote, 64)
 			if vol > 0 {
 				out = append(out, funding.Tick{
-					Symbol:    strings.TrimSuffix(r.Symbol, "USDT"),
+					Symbol:    token,
 					Volume24h: vol,
 					IntervalH: 8,
 				})
@@ -91,6 +148,9 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			continue
 		}
 		token := strings.TrimSuffix(r.Symbol, "USDT")
+		if !_tradingAllowed(token) {
+			continue
+		}
 		mark, _ := strconv.ParseFloat(r.MarkPrice, 64)
 		idx, _ := strconv.ParseFloat(r.IndexPrice, 64)
 		rate, _ := strconv.ParseFloat(r.Rate, 64)
@@ -140,12 +200,16 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			}
 		}
 	}
+	_refreshTradingSet(ctx)
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Symbol, "USDT") {
 			continue
 		}
 		token := strings.TrimSuffix(r.Symbol, "USDT")
+		if !_tradingAllowed(token) {
+			continue
+		}
 		mark, _ := strconv.ParseFloat(r.MarkPrice, 64)
 		idx, _ := strconv.ParseFloat(r.IndexPrice, 64)
 		rate, _ := strconv.ParseFloat(r.LastFundRate, 64)

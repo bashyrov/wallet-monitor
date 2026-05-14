@@ -89,6 +89,13 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		if vol == 0 {
 			vol = t.Vol24h
 		}
+		// Kraken keeps inactive (not-suspended-but-never-traded) PF_ perps
+		// in the tickers list with volume=0 AND last=null. They have a
+		// mark price + funding rate but zero trade activity. Skip them so
+		// the screener doesn't show ghost rows.
+		if vol == 0 && t.Last == 0 {
+			continue
+		}
 		out = append(out, funding.Tick{
 			Symbol:      token,
 			Rate:        t.FundingRate,
