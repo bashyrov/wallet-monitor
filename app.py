@@ -836,7 +836,18 @@ async def serve_page(page: str, request: Request):
             # they never change for a given URL, so we serve them as
             # immutable. Saves ~12 RTT/min of revalidation per page.
             ext = page.rsplit(".", 1)[-1].lower()
-            if page.startswith(("vendor/", "dist/")):
+            if page == "sw.js":
+                # Service Worker file MUST revalidate aggressively. Otherwise
+                # CF + browser cache delay SW updates by hours and users get
+                # stuck on a stale offline cache. Spec actually mandates this:
+                # browsers ignore HTTP cache for SW, but the underlying fetch
+                # still goes through CF, so we hint there too.
+                headers = {"Cache-Control": "no-cache, must-revalidate"}
+            elif page.startswith(("vendor/", "dist/")):
+                # /vendor/* and /dist/* have version/hash in filename
+                # (html2canvas-1.4.1, lightweight-charts-4.1.3, dist/*.min) —
+                # they never change for a given URL, so we serve them as
+                # immutable. Saves ~12 RTT/min of revalidation per page.
                 headers = {"Cache-Control": "public, max-age=31536000, immutable"}
             elif ext in ("js", "css", "html"):
                 # 60 s on unversioned text assets so deploy-fixes propagate
