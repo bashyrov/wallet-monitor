@@ -151,21 +151,50 @@ func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]fundin
 		}
 	}
 
-	// Per-symbol funding-rate fetch for subscribed symbols.
-	// OKX's WS funding-rate channel is event-driven — it only pushes when
-	// the rate changes (near settlement), so it cannot populate the initial
-	// rate on startup. REST fill is the only reliable source.
-	if len(symbols) > 0 {
+	// Per-symbol funding-rate fetch. OKX's WS funding-rate channel is
+	// event-driven (only pushes near settlement), and the REST funding-rate
+	// endpoint accepts only one instId at a time. We fetch for EVERY swap
+	// instrument that has a ticker (~319 USDT-SWAPs as of 2026-05).
+	//
+	// Previously we only fetched for the `symbols` argument (subscribed
+	// set, typically ~40 names from the symbols Manager). The other 280
+	// rows came back with rate=0, which downstream get_funding_data filters
+	// dropped — leaving the screener with only 39 OKX rows when ~319 were
+	// available. Fetching all is fine: sem=16 caps concurrency, OKX docs
+	// allow 20 req/s on this endpoint, and the BackstopInterval is 60s so
+	// the spike is bounded.
+	//
+	// We use the byToken map keys as the authoritative symbol list so we
+	// don't miss anything the tickers call surfaced.
+	allSyms := make([]string, 0, len(byToken))
+	for tok := range byToken {
+		allSyms = append(allSyms, tok)
+	}
+	// Merge subscribed symbols too (idempotent if already present) so the
+	// caller's contract — these symbols MUST have rate populated — stays
+	// satisfied even if a sym isn't in the tickers feed for some reason.
+	seen := make(map[string]struct{}, len(allSyms))
+	for _, s := range allSyms {
+		seen[strings.ToUpper(s)] = struct{}{}
+	}
+	for _, s := range symbols {
+		u := strings.ToUpper(s)
+		if _, ok := seen[u]; !ok {
+			allSyms = append(allSyms, u)
+			seen[u] = struct{}{}
+		}
+	}
+	if len(allSyms) > 0 {
 		type rateEntry struct {
 			token       string
 			rate        float64
 			nextFunding time.Time
 			intervalH   float64
 		}
-		entries := make(chan rateEntry, len(symbols))
-		sem := make(chan struct{}, 8) // max 8 parallel HTTP calls
+		entries := make(chan rateEntry, len(allSyms))
+		sem := make(chan struct{}, 16) // 16 parallel; OKX allows 20 req/s
 		var wg sync.WaitGroup
-		for _, sym := range symbols {
+		for _, sym := range allSyms {
 			sym := sym
 			wg.Add(1)
 			go func() {

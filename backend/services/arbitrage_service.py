@@ -1591,12 +1591,25 @@ async def get_funding_data() -> dict:
     enabled_ex = [ex for ex in FETCHERS if ex not in disabled_ex]
 
     def _keep(row: dict) -> bool:
-        """Row passes into the merged cache only if the venue actually
-        reports a 24h USD volume that clears the floor AND a non-zero
-        funding rate. Missing / zero volume → dropped. Rate exactly 0 →
-        dropped too (no venue reports a truly-zero funding; 0 means the
-        value is uninitialised / hasn't been received from the WS / REST
-        feed yet, and letting it through creates fake 'free' arb pairs)."""
+        """Row passes the funding-view filter when:
+          - symbol is not admin-hidden
+          - volume_usd is reported and clears the min-volume floor
+          - rate is reported (may be 0 — see below)
+
+        Previously rows with `rate == 0` were dropped on the assumption
+        that no venue truly reports a zero funding rate. That turned out
+        to be too aggressive: several adapters (OKX, Aster, Kraken,
+        Paradex, Lighter) only fetch funding rates for the *subscribed*
+        subset, leaving 30-85% of their instruments with rate=0 (rate
+        simply hasn't been polled yet). Dropping them hid 25% of the
+        screener inventory. Showing them with rate=0 in the Funding tab
+        is the correct behaviour — the user sees the instrument exists,
+        with a placeholder rate, instead of it being silently absent.
+
+        Arb compute (long-short / spot-short / dex-short) reads from a
+        separate cache (`_cache` per-exchange), not from get_funding_data
+        — so the rate=0 noise here does NOT produce fake arb pairs.
+        """
         if hidden_sym and row["symbol"] in hidden_sym:
             return False
         v = row.get("volume_usd")
@@ -1606,8 +1619,6 @@ async def get_funding_data() -> dict:
         if rate is None:
             return False
         try:
-            if float(rate) == 0.0:
-                return False
             return float(v) >= min_volume
         except (TypeError, ValueError):
             return False
