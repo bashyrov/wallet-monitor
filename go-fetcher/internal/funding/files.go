@@ -102,18 +102,35 @@ func (d *Dumper) dump() error {
 		}
 	}
 
-	// Merged rows file — top-level shape: {ts, exchanges, rows[]}.
-	// Python emits ts as INT seconds (epoch) and exchanges as the
-	// list of enabled venues; matching exactly.
+	// Merged rows file — top-level shape: {ts, exchanges, rows[], ts_by_ex}.
+	// Python emits ts as INT seconds (epoch) and exchanges as the list of
+	// enabled venues; we match exactly + add ts_by_ex so the Python health
+	// endpoint can show real per-venue freshness (replaces the dormant
+	// Python funding_ws_manager that used to write funding_ws.json).
 	rows := buildRows(byEx)
 	exchanges := make([]string, 0, len(byEx))
-	for ex := range byEx {
+	tsByEx := make(map[string]float64, len(byEx))
+	for ex, bucket := range byEx {
 		exchanges = append(exchanges, ex)
+		// Per-venue freshness = max UpdatedAt across all that venue's ticks.
+		// Reads as "last time we got any signal from this venue" (WS push
+		// or REST sweep). Frontend status dots colour this.
+		var maxTs int64
+		for _, t := range bucket {
+			ut := t.UpdatedAt.UnixMilli()
+			if ut > maxTs {
+				maxTs = ut
+			}
+		}
+		if maxTs > 0 {
+			tsByEx[ex] = float64(maxTs) / 1000.0
+		}
 	}
 	merged := map[string]any{
 		"ts":        time.Now().Unix(),
 		"exchanges": exchanges,
 		"rows":      rows,
+		"ts_by_ex":  tsByEx,
 	}
 	if err := writeAtomic(filepath.Join(d.cacheDir, "funding.json"), merged); err != nil {
 		return err

@@ -2170,18 +2170,21 @@ def get_exchange_health() -> dict[str, dict]:
         ws_supported = is_ws_funding_supported(ex)
 
         # ── WS side ──
+        # Web role: read per-venue ts from go-fetcher's funding.json
+        # `ts_by_ex` (max UpdatedAt across that venue's ticks). Sub-second
+        # age = WS push is alive; 2-15s = REST backstop only; >15s = stale.
+        # We replaced the dormant Python funding_ws_manager (no longer
+        # writes funding_ws.json after the Go cutover) with this signal.
         ws_row_count = 0
         ws_age: float | None = None
         if is_web:
-            if ws_dump is not None:
-                rows = (ws_dump.get("rows") or {}).get(ex) or []
-                ws_row_count = len(rows)
-                ts_by_ex = ws_dump.get("ts_by_ex") or {}
-                per_ex_ts = ts_by_ex.get(ex)
-                if per_ex_ts:
-                    ws_age = max(0.0, now_t - per_ex_ts)
-                elif ws_dump.get("ts"):
-                    ws_age = max(0.0, now_t - ws_dump["ts"])
+            per_ex_t = merged_ts_by_ex.get(ex)
+            if per_ex_t:
+                derived_age = max(0.0, time.time() - per_ex_t)
+                if derived_age < 2.0:
+                    # Treat as WS-driven. Row count taken from the merged
+                    # file once we know it (filled in below post-REST).
+                    ws_age = derived_age
         else:
             # On fetcher/monolith: _cache holds rows from EITHER source
             # (WS writes via _get_rows). The ws_info from manager tells us
@@ -2208,6 +2211,11 @@ def get_exchange_health() -> dict[str, dict]:
             cached_rows, cached_at = _cache.get(ex, ([], 0.0))
             rest_row_count = len(cached_rows)
             rest_age = (now_m - cached_at) if cached_at else None
+
+        # If we derived ws_age (sub-second freshness on web role), borrow
+        # the row count from the merged file so UI displays consistently.
+        if is_web and ws_age is not None and ws_row_count == 0:
+            ws_row_count = rest_row_count
 
         # ── Pick the freshest healthy source ──
         ws_fresh = ws_row_count > 0 and ws_age is not None and ws_age <= WS_FRESH
