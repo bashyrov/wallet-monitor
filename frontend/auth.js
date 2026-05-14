@@ -3,6 +3,21 @@
  * Usage: <script src="/auth.js"></script>
  */
 
+// Service Worker registration — caches HTML / JS / CSS / fonts so repeat
+// visits are instant and offline-tolerant. Bypasses /api/* and /ws/*
+// (real-time data); HTML uses network-first with cache fallback. See
+// frontend/sw.js for the cache strategy. Wrapped in capability check
+// + try/catch so SW unsupported / blocked never breaks the page.
+(function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+  try {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  } catch (_) {}
+})();
+
 // Capture ?ref=XYZ on any landing page so the register form can prefill
 // it even if the user navigates through home/pricing/login first.
 (function captureReferral(){
