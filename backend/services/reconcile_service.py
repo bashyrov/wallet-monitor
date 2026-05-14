@@ -454,20 +454,147 @@ async def _reconcile_pass() -> None:
     )
 
 
+# ── Redis leader election ────────────────────────────────────────────────────
+# Without this, every uvicorn worker (4 procs × 2 replicas = 8 instances)
+# starts an independent reconcile thread → 8 parallel passes hammer venue
+# APIs every cycle, get rate-limited, generate timeouts/429s, and pile on
+# CPU on each worker (the asyncio.run on every cycle creates a fresh event
+# loop + HTTP pool). Only the leader actually runs reconcile_pass; the rest
+# sleep + retry.
+_LOCK_KEY = "reconcile_service:leader"
+_LOCK_TTL_S = 60
+_LOCK_RENEW_S = 15
+_LOCK_RETRY_S = 5
+
+import uuid as _uuid
+_INSTANCE_ID = _uuid.uuid4().hex[:12]
+_redis_client = None
+
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    import os as _os
+    url = _os.environ.get("REDIS_URL") or ""
+    if not url:
+        return None
+    try:
+        import redis
+        _redis_client = redis.from_url(
+            url,
+            socket_connect_timeout=1.0,
+            socket_timeout=1.5,
+            health_check_interval=30,
+        )
+        _redis_client.ping()
+        return _redis_client
+    except Exception as exc:
+        logger.warning("reconcile: redis unavailable (%s) — running in single-leader fallback", exc)
+        _redis_client = None
+        return None
+
+
+def _try_acquire_lock() -> bool:
+    """SET key value EX ttl NX — atomic acquire. Returns True if we got it."""
+    r = _get_redis()
+    if r is None:
+        # No Redis: single-replica deploys — every worker thinks it's leader.
+        # In practice docker-compose dev has 1 worker so this is fine.
+        return True
+    try:
+        return bool(r.set(_LOCK_KEY, _INSTANCE_ID, ex=_LOCK_TTL_S, nx=True))
+    except Exception as exc:
+        logger.debug("reconcile lock acquire: %s", exc)
+        return False
+
+
+def _renew_lock() -> bool:
+    """Renew only if WE still own the lock — guards against takeover races.
+    Atomic via Lua: GET, compare, EXPIRE (same pattern as tg_bot_service)."""
+    r = _get_redis()
+    if r is None:
+        return True
+    lua = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('expire', KEYS[1], ARGV[2])
+    else
+        return 0
+    end
+    """
+    try:
+        return bool(r.eval(lua, 1, _LOCK_KEY, _INSTANCE_ID, _LOCK_TTL_S))
+    except Exception:
+        return False
+
+
+def _release_lock() -> None:
+    r = _get_redis()
+    if r is None:
+        return
+    lua = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+    else
+        return 0
+    end
+    """
+    try:
+        r.eval(lua, 1, _LOCK_KEY, _INSTANCE_ID)
+    except Exception:
+        pass
+
+
 def _runner() -> None:
-    logger.info("reconcile worker started (cycle=%ss)", _LOOP_INTERVAL_S)
+    logger.info("reconcile worker started (cycle=%ss, instance=%s)", _LOOP_INTERVAL_S, _INSTANCE_ID)
+    is_leader = False
+    last_renew = 0.0
     while not _stop.is_set():
+        now = time.time()
+        if not is_leader:
+            if _try_acquire_lock():
+                is_leader = True
+                last_renew = now
+                logger.info("reconcile: became leader (%s)", _INSTANCE_ID)
+            else:
+                # Sleep + retry. Other replica is doing the work.
+                end = now + _LOCK_RETRY_S
+                while time.time() < end and not _stop.is_set():
+                    time.sleep(min(1.0, end - time.time()))
+                continue
+
+        # We're the leader — run a pass.
         t0 = time.time()
         try:
             asyncio.run(_reconcile_pass())
         except Exception as exc:
             logger.exception("reconcile pass failed: %s", exc)
         elapsed = time.time() - t0
+
+        # Renew the lock periodically. We re-renew during sleep too so a
+        # long pass (>TTL/2) doesn't lose leadership.
+        if time.time() - last_renew >= _LOCK_RENEW_S:
+            if _renew_lock():
+                last_renew = time.time()
+            else:
+                logger.warning("reconcile: lost leadership during pass — stepping down")
+                is_leader = False
+                continue
+
         sleep_for = max(5.0, _LOOP_INTERVAL_S - elapsed)
-        # Don't busy-sleep through stop; check the event regularly.
         end = time.time() + sleep_for
         while time.time() < end and not _stop.is_set():
             time.sleep(min(2.0, end - time.time()))
+            if time.time() - last_renew >= _LOCK_RENEW_S:
+                if _renew_lock():
+                    last_renew = time.time()
+                else:
+                    logger.warning("reconcile: lost leadership during sleep — stepping down")
+                    is_leader = False
+                    break
+
+    if is_leader:
+        _release_lock()
     logger.info("reconcile worker stopped")
 
 
