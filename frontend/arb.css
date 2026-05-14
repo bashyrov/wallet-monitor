@@ -1471,3 +1471,22 @@ body{padding-bottom:44px;}
 .al-any-ex-row input{width:15px;height:15px;accent-color:var(--green);cursor:pointer;flex-shrink:0;margin-top:1px;}
 .al-any-ex-row b{color:var(--text);font-weight:600;}
 .al-any-ex-row .mono{font-family:var(--mono);color:var(--text);}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   content-visibility: auto on the long history rows.
+   - Funding-history list (`.hist-row`): 200 rows, ~16px each.
+   - Order History rendered as DOM rows under #order-list / etc.
+   Skipping off-screen paint cuts scroll cost on hot pairs where the
+   history list grows fast. 2026-05-15.
+   ═══════════════════════════════════════════════════════════════════════ */
+.hist-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 16px;
+}
+/* Orderbook depth rows — same idea. 50 ask + 50 bid per side, ~16px
+   each. content-visibility skips off-screen paint while preserving
+   textContent updates from the row-pool JS path (renderBook). */
+.book-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 16px;
+}

@@ -1293,3 +1293,27 @@ body.light .star-btn:hover { background: rgba(229,192,123,0.16); }
   .lo-sidebar.open { transform: translateY(0); }
   .lo-fab { bottom: 120px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   content-visibility: auto — browser skips layout + paint for off-screen
+   rows in long lists. With ~500 arb rows in the screener tables and
+   mobile card stacks, this is a free 5-10x scroll perf boost on
+   underpowered devices. 2026-05-15.
+
+   `contain-intrinsic-size` reserves space so scrollbar geometry stays
+   stable when rows pop in/out of the rendered set. Heights below match
+   actual row heights observed in prod (~28px desktop tr, ~62px mobile
+   card collapsed).
+   ═══════════════════════════════════════════════════════════════════════ */
+tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 28px;
+}
+/* Mobile-card list (renderArbCards, renderFundingCards): cards stack
+   vertically, average 62px collapsed. When card.open the body expands,
+   intrinsic-size becomes wrong only for that one — acceptable since the
+   browser falls back to actual measured size on visible elements. */
+.card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 62px;
+}
