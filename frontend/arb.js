@@ -9,6 +9,59 @@
 // IS_AUTHED is kept for downstream JS that gates UI on it.
 const IS_AUTHED = Auth.isLoggedIn();
 
+// ── WS idle-disconnect ──────────────────────────────────────────────
+// Если юзер открыл /arb и забыл вкладку, WS соединения продолжают
+// получать данные → жжём CPU + растёт memory от accumulated message
+// buffers. После 5 мин неактивности закрываем все WS, при возврате
+// (любое событие mouse/scroll/keyboard/touch + visibilitychange) —
+// реконнект. Server-side тоже выигрывает — меньше broadcast'ов
+// клиентам которые не смотрят.
+const _Idle = (() => {
+  const IDLE_MS = 5 * 60 * 1000;  // 5 минут
+  let _lastActivity = Date.now();
+  let _closed = false;
+  const _wakers = [];
+
+  function track() { _lastActivity = Date.now(); if (_closed) wakeUp(); }
+  function isIdle() { return Date.now() - _lastActivity > IDLE_MS; }
+  function shouldStayClosed() { return _closed; }
+  function onWake(fn) { _wakers.push(fn); }
+  function closeAll() {
+    _closed = true;
+    // Trigger registered close-fns (each WS owner provides one).
+    // Owners typically just call `try { ws.close(4000, 'idle'); }`
+    // Their onClose listener bails on reconnect because _closed=true.
+    for (const w of _wakers) {
+      try { w.close && w.close(); } catch (_) {}
+    }
+  }
+  function wakeUp() {
+    if (!_closed) return;
+    _closed = false;
+    for (const w of _wakers) {
+      try { w.open && w.open(); } catch (_) {}
+    }
+  }
+
+  // Track activity — passive listeners to avoid scroll-perf penalty.
+  ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'wheel']
+    .forEach(ev => document.addEventListener(ev, track, { passive: true }));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) track();
+  });
+
+  // Periodic check — once per minute is enough.
+  setInterval(() => {
+    if (document.hidden) return;
+    if (isIdle() && !_closed) {
+      try { console.debug('[idle] closing WS — no activity for 5 min'); } catch (_) {}
+      closeAll();
+    }
+  }, 60_000);
+
+  return { track, isIdle, shouldStayClosed, onWake, closeAll, wakeUp };
+})();
+
 // ── Prefetch helper for pair-switching links ─────────────────────────
 // When the user hovers a "switch pair" UI element (search popover, swap
 // button, pair-card link) we eagerly prefetch the next /arb HTML +
@@ -2674,12 +2727,18 @@ function _openBookWs(){
   };
   ws.onclose=()=>{
     _bookWs=null;
+    if (_Idle.shouldStayClosed()) return;  // idle-killed → stay closed
     // Exponential backoff reconnect, capped at 10s.
     setTimeout(_openBookWs, Math.min(_bookWsBackoff, 10000));
     _bookWsBackoff=Math.min(_bookWsBackoff*2, 10000);
   };
   ws.onerror=()=>{ try{ ws.close(); }catch(_){} };
 }
+// Register with the idle tracker so we close on idle and reopen on activity.
+_Idle.onWake({
+  close: () => { if (_bookWs && _bookWs.readyState <= 1) try { _bookWs.close(4000, 'idle'); } catch (_) {} },
+  open:  () => _openBookWs(),
+});
 
 function startBooks(){
   // 1) One HTTP fetch per side for fast first paint. 2) Live WS subscription
@@ -2826,6 +2885,7 @@ function _openTradesWs(){
   };
   ws.onclose=()=>{
     _tradesWs=null;
+    if (_Idle.shouldStayClosed()) return;
     setTimeout(_openTradesWs, Math.min(_tradesWsBackoff, 10000));
     _tradesWsBackoff=Math.min(_tradesWsBackoff*2, 10000);
   };
@@ -2899,10 +2959,22 @@ function connectWs(){
       _prevLongRate=opp.long_rate; _prevShortRate=opp.short_rate;
     }catch{}
   };
-  _ws.onclose=()=>setTimeout(connectWs,3000);
+  _ws.onclose=()=>{
+    if (_Idle.shouldStayClosed()) return;
+    setTimeout(connectWs,3000);
+  };
   _ws.onerror=()=>_ws.close();
   setInterval(()=>{if(_ws?.readyState===WebSocket.OPEN)_ws.send('ping');},20000);
 }
+// Register trades + long-short WS with idle tracker.
+_Idle.onWake({
+  close: () => { if (_tradesWs && _tradesWs.readyState <= 1) try { _tradesWs.close(4000, 'idle'); } catch (_) {} },
+  open:  () => _openTradesWs(),
+});
+_Idle.onWake({
+  close: () => { if (_ws && _ws.readyState <= 1) try { _ws.close(4000, 'idle'); } catch (_) {} },
+  open:  () => connectWs(),
+});
 
 // ── Live spread = In (orderbook entry basis) ──────────────────────────────────
 // Per-user spec: Live Spread MUST equal In. Mark-based basis (price_spread)

@@ -6,6 +6,46 @@
 // when Auth.isLoggedIn() is false.
 const IS_AUTHED = Auth.isLoggedIn();
 
+// ── WS idle-disconnect ──────────────────────────────────────────────
+// После 5 минут неактивности закрываем WS — экономим клиентский CPU
+// (нет парсинга incoming frames) и server-side load (нет broadcast'а
+// клиенту который не смотрит). Re-open при любом mouse/scroll/key
+// событии или возврате на вкладку (visibilitychange).
+const _Idle = (() => {
+  const IDLE_MS = 5 * 60 * 1000;
+  let _lastActivity = Date.now();
+  let _closed = false;
+  const _wakers = [];
+
+  function track() { _lastActivity = Date.now(); if (_closed) wakeUp(); }
+  function isIdle() { return Date.now() - _lastActivity > IDLE_MS; }
+  function shouldStayClosed() { return _closed; }
+  function onWake(fn) { _wakers.push(fn); }
+  function closeAll() {
+    _closed = true;
+    for (const w of _wakers) { try { w.close && w.close(); } catch (_) {} }
+  }
+  function wakeUp() {
+    if (!_closed) return;
+    _closed = false;
+    for (const w of _wakers) { try { w.open && w.open(); } catch (_) {} }
+  }
+
+  ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'wheel']
+    .forEach(ev => document.addEventListener(ev, track, { passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) track(); });
+
+  setInterval(() => {
+    if (document.hidden) return;
+    if (isIdle() && !_closed) {
+      try { console.debug('[idle] closing WS — no activity for 5 min'); } catch (_) {}
+      closeAll();
+    }
+  }, 60_000);
+
+  return { track, isIdle, shouldStayClosed, onWake, closeAll, wakeUp };
+})();
+
 // ── constants ──────────────────────────────────────────────────────────────────
 // EXCHANGES is sourced from /api/meta/venues via exchanges.js. We keep a
 // hard-coded fallback so the dropdown still renders if the meta call
@@ -1407,6 +1447,7 @@ function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) 
     ws.onclose = (ev) => {
       clearInterval(pingRef.val);
       if (ev.code === 4001) { return; }
+      if (_Idle.shouldStayClosed()) return;  // idle-killed → stay closed
       const delay = Math.min(2000 * Math.pow(2, retryRef.val), 30000);
       retryRef.val++;
       clearTimeout(retryTimerRef.val);
@@ -1636,6 +1677,20 @@ const _connectArb = _makeWs({
   onMessage: (data) => {
     _pendingArb = data;
     if (_throttle === 'live') flushPending();
+  },
+});
+
+// Register the arb WS + funding poller with the idle tracker so they
+// pause when the tab is left unattended. Re-open hooks call connectWs()
+// + _startFundingPoll() respectively when user returns.
+_Idle.onWake({
+  close: () => {
+    if (_wsArb && _wsArb.readyState <= 1) try { _wsArb.close(4000, 'idle'); } catch (_) {}
+    _stopFundingPoll();
+  },
+  open: () => {
+    if (!_wsArb || _wsArb.readyState === WebSocket.CLOSED) _wsArb = _connectArb();
+    if (_mode === 'funding') _startFundingPoll();
   },
 });
 
