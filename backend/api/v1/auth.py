@@ -487,8 +487,25 @@ def logout(
     return {"ok": True}
 
 
+# Per-user /me response cache. /me hits on EVERY page navigation +
+# expiry-banner.js polls it every 30s. Without cache that's 2-3 DB
+# queries per hit (user, wallets, plan, payment). At 344-1043ms server
+# time it was the hottest user-bound DB caller. 30s TTL is fine —
+# plan changes propagate via webhook callbacks anyway.
+import time as _time
+_ME_CACHE: dict[int, tuple[dict, float]] = {}
+_ME_CACHE_TTL = 30.0
+
+
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    now = _time.monotonic()
+    cached = _ME_CACHE.get(current_user.id)
+    if cached and (now - cached[1]) < _ME_CACHE_TTL:
+        # Re-validate UserOut model from cached dict so response_model
+        # serialisation works the same as the cold path.
+        return UserOut.model_validate(cached[0])
+
     out = UserOut.model_validate(current_user)
     out.tg_linked = bool(current_user.tg_chat_id)
     out.totp_enabled = bool(getattr(current_user, "totp_verified_at", None))
@@ -518,7 +535,18 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         out.wallet_limit = out.portfolio_limit
     except Exception:
         pass
+    # Stash result for the next 30s of /me hits on this worker.
+    try:
+        _ME_CACHE[current_user.id] = (out.model_dump(mode="python"), now)
+    except Exception:
+        pass
     return out
+
+
+def _invalidate_me_cache(user_id: int) -> None:
+    """Drop the /me cache entry for a user — call when plan/subscription
+    /wallet limits change so the user sees the new values immediately."""
+    _ME_CACHE.pop(user_id, None)
 
 
 from pydantic import BaseModel as _BM

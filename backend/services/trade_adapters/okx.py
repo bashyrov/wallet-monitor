@@ -327,17 +327,12 @@ class OKXAdapter:
         except RuntimeError as e:
             raise RuntimeError(_friendly_okx(*_split_code(e)))
         order_id = r[0].get("ordId", "") if r else ""
-        # Fetch fill price
-        avg_price = 0.0
-        if order_id:
-            try:
-                await asyncio.sleep(0.3)
-                fills = await cls._req(creds, "GET", f"/api/v5/trade/order?instId={inst_id}&ordId={order_id}")
-                if fills:
-                    avg_price = float(fills[0].get("avgPx") or 0)
-            except Exception:
-                pass
-        return {"order_id": str(order_id), "avg_price": avg_price}
+        # Fast path: return immediately with order_id; avg_price=0 → the
+        # user-stream WS supervisor + reconcile worker fill it in within
+        # seconds. Previously we slept 300ms + made a second HTTP call
+        # (~500ms total added to the user-visible latency) just to grab
+        # avgPx — wasteful when WS already pushes that data.
+        return {"order_id": str(order_id), "avg_price": 0.0}
 
     # ── Close position ──
     @classmethod

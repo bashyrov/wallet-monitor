@@ -3863,6 +3863,53 @@ async function checkBalance() {
   }
 }
 
+// ── Background balance auto-refresh ─────────────────────────────────────────
+// Юзер часто открывает /portfolio и оставляет вкладку на час. Без авто-
+// refresh цифры устаревают неявно (нет таймстампа на каждую цифру), и
+// "freshly fetched" balance вчерашний. Триггерим обновление каждые 60с
+// если: (1) уже есть отрендеренные результаты (init load случился), и
+// (2) вкладка foreground (не жжём API в фоне), и (3) юзер не нажал кнопку
+// "Check Balance" в последние 30с (избегаем перекрытий).
+const _BG_REFRESH_INTERVAL_MS = 60_000;
+const _BG_REFRESH_MIN_GAP_MS = 30_000;
+let _lastBalanceFetchAt = 0;
+
+function _wrapCheckBalance() {
+  const orig = window.checkBalance;
+  if (!orig || orig._wrapped) return;
+  window.checkBalance = async function() {
+    _lastBalanceFetchAt = Date.now();
+    return orig.apply(this, arguments);
+  };
+  window.checkBalance._wrapped = true;
+}
+_wrapCheckBalance();
+
+function _startBalanceAutoRefresh() {
+  setInterval(async () => {
+    if (document.hidden) return;
+    if (!S.results) return;  // нет данных — нечего обновлять
+    if (S.loadingBalance) return;
+    const sinceLast = Date.now() - _lastBalanceFetchAt;
+    if (sinceLast < _BG_REFRESH_MIN_GAP_MS) return;
+    try { await checkBalance(); } catch (_) {}
+  }, _BG_REFRESH_INTERVAL_MS);
+
+  // Сразу при возврате на вкладку — refresh если данные стали старше 90с
+  document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) return;
+    if (!S.results || S.loadingBalance) return;
+    const sinceLast = Date.now() - _lastBalanceFetchAt;
+    if (sinceLast < 90_000) return;
+    try { await checkBalance(); } catch (_) {}
+  });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _startBalanceAutoRefresh);
+} else {
+  _startBalanceAutoRefresh();
+}
+
 // ── Check All Transactions (sequential — real %) ────────────────────────────
 async function fetchAllTransactions() {
   const ids = S.selected.size > 0 ? [...S.selected] : S.wallets.filter(w => !w.is_archived).map(w => w.id);
