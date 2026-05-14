@@ -9,9 +9,15 @@
      minified file. ~20 KB vs ~32 KB across 6 separate fetches. Preloaded
      so it's ready by the time inline <script> blocks below need
      Auth.apiFetch / EX / toast. -->
-<link rel="preload" as="style" href="/arb.css?v=20260514a">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Preload critical assets so the browser fetches them in parallel with
+     HTML parse, instead of waiting until the parser reaches each tag.
+     fetchpriority="high" tells the browser to schedule these ahead of
+     other low-priority discoveries (e.g. images far down the page). -->
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260514a" fetchpriority="high">
+<link rel="preload" as="script" href="/arb.js?v=20260514a" fetchpriority="high">
+<link rel="preload" as="style"  href="/arb.css?v=20260514a"      fetchpriority="high">
+<link rel="preload" as="style"  href="/design.css">
+<link rel="preload" as="style"  href="/fonts/fonts.css">
 <!-- Pre-establish TCP+TLS to exchange API origins so the first orderbook /
      position fetch doesn't pay handshake cost. Cheap (browser opens
      idle conns) and on /arb we hit nearly all of these within 2s. -->
@@ -27,7 +33,7 @@
 <link rel="dns-prefetch" href="//open-api.bingx.com">
 <link rel="dns-prefetch" href="//whitebit.com">
 <link rel="dns-prefetch" href="//api.prod.paradex.trade">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/fonts/fonts.css">
 <!-- html2canvas (200KB) loaded lazily via _loadHtml2Canvas() when the
      share modal opens — ~95% of /arb sessions never click Share. -->
 
