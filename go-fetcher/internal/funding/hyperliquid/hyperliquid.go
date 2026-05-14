@@ -80,6 +80,9 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		return nil, errors.New("hyperliquid: meta/ctxs len mismatch")
 	}
 
+	// HL settles every hour, at top of hour UTC. Compute once per call.
+	nextHourly := time.Now().UTC().Truncate(time.Hour).Add(time.Hour)
+
 	out := make([]funding.Tick, 0, len(ctxs))
 	for i, c := range ctxs {
 		token := meta.Universe[i].Name
@@ -99,14 +102,19 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		oracle, _ := strconv.ParseFloat(c.OraclePx, 64)
 		vol, _ := strconv.ParseFloat(c.DayNtlVlm, 64)
 		oi, _ := strconv.ParseFloat(c.OpenInterest, 64)
+		// HL's /metaAndAssetCtxs response has no nextSettle field; HL
+		// settles at every hour top (UTC). Without this every HL row
+		// shipped with next_ts=0 (178/178 prod observations) and the
+		// screener's "next funding" column was blank on every HL pair.
 		out = append(out, funding.Tick{
-			Symbol:     token,
-			Rate:       rate,
-			MarkPrice:  mark,
-			IndexPrice: oracle,
-			Volume24h:  vol,
-			OpenIntUSD: oi * mark,
-			IntervalH:  1,
+			Symbol:      token,
+			Rate:        rate,
+			MarkPrice:   mark,
+			IndexPrice:  oracle,
+			Volume24h:   vol,
+			OpenIntUSD:  oi * mark,
+			IntervalH:   1,
+			NextFunding: nextHourly,
 		})
 	}
 	return out, nil

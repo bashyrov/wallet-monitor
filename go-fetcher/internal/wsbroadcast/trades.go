@@ -20,6 +20,7 @@
 package wsbroadcast
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -30,7 +31,21 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ticks"
 )
 
-const tradesMaxPairsPerClient = 100
+const (
+	tradesMaxPairsPerClient = 100
+
+	// Server-side trade aggregation: instead of pushing a WS frame per
+	// raw tick (hot Binance pairs run 100-300/sec, which overwhelmed
+	// browser clients enough that Chrome flagged tabs as memory hogs),
+	// buffer trades per pair and flush at this cadence. 100 ms matches
+	// the human-perception threshold for "tick liveness" — anything
+	// finer is invisible to the eye anyway.
+	tradesFlushInterval = 100 * time.Millisecond
+	// Hard cap on the per-pair flush batch — beyond this we drop the
+	// oldest. Real hot pairs run ~30 trades/100ms, so 200 is a generous
+	// safety net; the cap is there so a burst can't blow the WS message.
+	tradesFlushBatchMax = 200
+)
 
 // Trades is the /ws/trades channel state.
 type Trades struct {
@@ -40,58 +55,112 @@ type Trades struct {
 
 	mu   sync.Mutex
 	subs map[*client]map[string]struct{} // client → pair set
+
+	// Per-pair pending buffer drained by the flush loop. Keeps trade
+	// frames at ~10/sec on the wire regardless of how many raw ticks
+	// the adapter pushed. See tradesFlushInterval.
+	pendMu  sync.Mutex
+	pending map[string][]ticks.Tick // pairKey → queued ticks
 }
 
 func NewTrades(ring *ticks.Ring, mgr *symbols.Manager) *Trades {
 	return &Trades{
-		hub:  NewHub("trades"),
-		ring: ring,
-		mgr:  mgr,
-		subs: make(map[*client]map[string]struct{}, 64),
+		hub:     NewHub("trades"),
+		ring:    ring,
+		mgr:     mgr,
+		subs:    make(map[*client]map[string]struct{}, 64),
+		pending: make(map[string][]ticks.Tick, 256),
 	}
 }
 
 func (t *Trades) Hub() *Hub { return t.hub }
 
+// Run starts the periodic flush. cmd/fetcher/main.go must call this in
+// a goroutine for trade aggregation to actually fire.
+func (t *Trades) Run(ctx context.Context) {
+	ticker := time.NewTicker(tradesFlushInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			t.flush()
+		}
+	}
+}
+
 // OnTick is called from a tick-stream adapter goroutine for every
-// parsed trade. Pushes to all clients subscribed to (exchange, symbol).
+// parsed trade. The tick lands in the per-pair pending buffer; the
+// flush loop fans out to subscribers at tradesFlushInterval cadence.
 func (t *Trades) OnTick(tk ticks.Tick) {
 	// Push to ring first so backfill on new subscriber has the freshest data.
 	t.ring.Push(tk)
 
 	pairKey := tk.Exchange + ":" + tk.Symbol
 
-	t.mu.Lock()
-	if len(t.subs) == 0 {
-		t.mu.Unlock()
+	t.pendMu.Lock()
+	buf := t.pending[pairKey]
+	if len(buf) >= tradesFlushBatchMax {
+		// Burst overflow — drop oldest. Single contiguous trim instead
+		// of growing unboundedly.
+		buf = buf[len(buf)-tradesFlushBatchMax+1:]
+	}
+	t.pending[pairKey] = append(buf, tk)
+	t.pendMu.Unlock()
+}
+
+// flush drains the pending buffer once. Marshals one frame per pair
+// holding ALL ticks accumulated since the previous flush, fans out to
+// every client subscribed to that pair.
+func (t *Trades) flush() {
+	t.pendMu.Lock()
+	if len(t.pending) == 0 {
+		t.pendMu.Unlock()
 		return
 	}
-	var targets []*client
-	for c, set := range t.subs {
-		if _, ok := set[pairKey]; ok {
-			targets = append(targets, c)
+	pending := t.pending
+	t.pending = make(map[string][]ticks.Tick, len(pending))
+	t.pendMu.Unlock()
+
+	t.mu.Lock()
+	hasSubs := len(t.subs) > 0
+	// Snapshot subs into a local for the rest of the work — keeps the
+	// fan-out off the mutex so OnTick doesn't queue behind it.
+	subsSnap := make(map[*client]map[string]struct{}, len(t.subs))
+	if hasSubs {
+		for c, set := range t.subs {
+			subsSnap[c] = set
 		}
 	}
 	t.mu.Unlock()
 
-	if len(targets) == 0 {
+	if !hasSubs {
 		return
 	}
 
-	body, err := json.Marshal(map[string]any{
-		"trades": []ticks.Tick{tk},
-	})
-	if err != nil {
-		return
-	}
-	for _, c := range targets {
-		select {
-		case c.outbox <- body:
-		default:
-			// outbox full — Broadcast drops, but we deliberately don't
-			// kill the client here. /ws/trades is fire-and-forget; a
-			// brief stall is fine. The hub.Broadcast path remains the
-			// canonical slow-client reaper.
+	for pairKey, batch := range pending {
+		if len(batch) == 0 {
+			continue
+		}
+		var body []byte
+		for c, set := range subsSnap {
+			if _, ok := set[pairKey]; !ok {
+				continue
+			}
+			if body == nil {
+				b, err := json.Marshal(map[string]any{"trades": batch})
+				if err != nil {
+					break
+				}
+				body = b
+			}
+			select {
+			case c.outbox <- body:
+			default:
+				// Slow client — drop this flush for them. /ws/trades is
+				// fire-and-forget per the original design note.
+			}
 		}
 	}
 }

@@ -161,6 +161,20 @@ func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]fundin
 			nextFunding time.Time
 			intervalH   float64
 		}
+		// Fallback for symbols the per-symbol sweep doesn't cover within
+		// the budget — populate with the next 8h UTC boundary (most
+		// bitget symbols pay 8h; a small subset pay 4h but those land
+		// on the same wall-clock cycle anyway). Without this, the long
+		// tail of bitget rows shipped with next_ts=0 (77/488 in prod).
+		const cyclehrs = 8
+		nextFallback := time.Now().UTC().Truncate(time.Duration(cyclehrs) * time.Hour).Add(time.Duration(cyclehrs) * time.Hour)
+		for token, t := range byToken {
+			if t.NextFunding.IsZero() {
+				t.NextFunding = nextFallback
+				byToken[token] = t
+			}
+		}
+
 		entries := make(chan rateEntry, len(symbols))
 		sem := make(chan struct{}, 8)
 		var wg sync.WaitGroup

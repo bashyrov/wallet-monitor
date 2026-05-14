@@ -14,20 +14,23 @@ func newTestSpot() *Spot {
 	}
 }
 
-func TestSpot_BuildSubscribe_BothStreams(t *testing.T) {
+func TestSpot_BuildSubscribe_DepthOnly(t *testing.T) {
+	// HOTFIX 2026-05-13: bookTicker dropped from spot subscribe set
+	// for the same reason it was dropped from futures: 2 streams per
+	// symbol pushes Binance over its per-conn cap and trips 1008.
 	a := newTestSpot()
 	frames := a.BuildSubscribe([]string{"BTC", "ETH"})
 	if len(frames) == 0 {
 		t.Fatal("no frames")
 	}
 	s := string(frames[0])
-	for _, want := range []string{
-		"btcusdt@depth20@100ms", "btcusdt@bookTicker",
-		"ethusdt@depth20@100ms", "ethusdt@bookTicker",
-	} {
+	for _, want := range []string{"btcusdt@depth20@100ms", "ethusdt@depth20@100ms"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("frame missing %q: %s", want, s)
 		}
+	}
+	if strings.Contains(s, "@bookTicker") {
+		t.Errorf("frame must NOT include @bookTicker post-hotfix: %s", s)
 	}
 }
 

@@ -25,8 +25,15 @@ const (
 	// Combined-stream with BOTH markPrice and ticker — matches Python's
 	// funding_ws adapter exactly. Single-stream with just markPrice
 	// silently times out from Singapore IP; the dual-stream form works.
-	wsURL   = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
+	wsURL = "wss://fstream.binance.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
+	// /premiumIndex — funding rate + mark price + nextFundingTime. No volume.
 	restURL = "https://fapi.binance.com/fapi/v1/premiumIndex"
+	// /ticker/24hr — quote volume for the volume column. Required because
+	// the `!ticker@arr` WS stream proved unreliable in prod (all 681
+	// symbols stuck at volume_24h=0 in funding.binance.json snapshot)
+	// and /premiumIndex doesn't carry volume. Without this the screener
+	// volume-floor filter dropped Binance rows or reported "$0" volume.
+	restTickerURL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
 )
 
 type Adapter struct{}
@@ -143,6 +150,25 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	if err := funding.HTTPGet(ctx, restURL, &rows); err != nil {
 		return nil, err
 	}
+	// Parallel ticker fetch for 24h quote volume. Best-effort: if it
+	// fails, vol stays at zero — the store preserves last non-zero per
+	// symbol so a single transient ticker failure doesn't wipe volume.
+	var tickers []struct {
+		Symbol      string `json:"symbol"`
+		QuoteVolume string `json:"quoteVolume"`
+	}
+	volBySymbol := make(map[string]float64, len(rows))
+	if err := funding.HTTPGet(ctx, restTickerURL, &tickers); err == nil {
+		for _, t := range tickers {
+			if !strings.HasSuffix(t.Symbol, "USDT") {
+				continue
+			}
+			v, _ := strconv.ParseFloat(t.QuoteVolume, 64)
+			if v > 0 {
+				volBySymbol[strings.TrimSuffix(t.Symbol, "USDT")] = v
+			}
+		}
+	}
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Symbol, "USDT") {
@@ -157,6 +183,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			Rate:        rate,
 			MarkPrice:   mark,
 			IndexPrice:  idx,
+			Volume24h:   volBySymbol[token],
 			NextFunding: time.UnixMilli(r.NextFundingTs),
 			IntervalH:   8,
 		})

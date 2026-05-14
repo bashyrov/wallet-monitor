@@ -82,7 +82,12 @@ func (s *Service) Run(ctx context.Context) {
 	go s.longShort.Run(ctx)
 	go s.funding.Run(ctx)
 	go s.book.Run(ctx)
-	// trades is push-driven (OnTick), no Run loop.
+	// trades is push-driven (OnTick) but now uses a per-pair pending
+	// buffer drained on a tick — see Trades.flush. Without this Run,
+	// OnTick still appends but nothing ever flushes to clients.
+	if s.trades != nil {
+		go s.trades.Run(ctx)
+	}
 	<-ctx.Done()
 }
 
