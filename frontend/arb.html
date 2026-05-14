@@ -9,7 +9,7 @@
      minified file. ~20 KB vs ~32 KB across 6 separate fetches. Preloaded
      so it's ready by the time inline <script> blocks below need
      Auth.apiFetch / EX / toast. -->
-<link rel="preload" as="style" href="/arb.css">
+<link rel="preload" as="style" href="/arb.css?v=20260514a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Pre-establish TCP+TLS to exchange API origins so the first orderbook /
@@ -40,14 +40,14 @@
      Loaded with defer so it runs after DOM parse completes — equivalent
      to the previous mid-body execution since the trailing init() call
      anyway waited on DOMContentLoaded for most code paths. -->
-<script src="/arb.js" defer></script>
+<script src="/arb.js?v=20260514a" defer></script>
 <link rel="stylesheet" href="/design.css">
 <link rel="stylesheet" href="/navbar.css">
 <!-- lightweight-charts (161KB) loaded lazily via _loadLightweightCharts()
      in an idle callback after init — chart sits below the fold on most
      viewports and orderbook rendering takes priority. -->
 
-<link rel="stylesheet" href="/arb.css">
+<link rel="stylesheet" href="/arb.css?v=20260514a">
 </head>
 <body>
 
