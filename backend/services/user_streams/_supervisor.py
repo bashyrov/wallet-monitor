@@ -164,22 +164,6 @@ class StreamTask:
                 "trusted ip", "ip whitelist",
                 "400002",  # kucoin invalid timestamp / ip
                 "400006",  # kucoin invalid ip
-                # Adapter-side credential validation failures — these are
-                # permanent (the wallet row literally doesn't carry a
-                # field the adapter needs) until the user updates the
-                # wallet. Without this, supervisor reconnects every ~2s
-                # forever, e.g.:
-                #   HL  : "missing wallet address"
-                #   Lighter: "missing account_index (api_key)"
-                "missing wallet address",
-                "missing account_index",
-                "missing api_key",
-                "missing api key",
-                "missing private key",
-                "missing l2 key",
-                "invalid address",     # HL invalid wallet shape
-                "missing l1 address",  # paradex
-                "missing stark",       # paradex / extended stark key absent
             )):
                 logger.warning(
                     "userstream %s: AUTH/RATE-LIMIT FAILED for user=%s wallet=%s — "
@@ -215,26 +199,7 @@ class StreamTask:
                     await adapter.subscribe(ws, self.creds)
                 except Exception as exc:
                     logger.warning("userstream %s: subscribe failed: %s", self.exchange, exc)
-                    # Permanent-credential signals: same list as get_ws_url
-                    # path. Without this guard the supervisor reconnects
-                    # every ~2s forever for wallets missing a required
-                    # field (HL: wallet address, Lighter: account_index).
-                    msg = str(exc).lower()
-                    if any(s in msg for s in (
-                        "missing wallet address",
-                        "missing account_index",
-                        "missing api_key",
-                        "missing api key",
-                        "missing private key",
-                        "missing l2 key",
-                        "401", "403", "unauthorized", "signature",
-                    )):
-                        self.auth_failed = True
-                        self._reconnect_attempt = len(_RECONNECT_BACKOFF_S)
-                        self._set_state("DEAD")
-                        return False
                     self._set_state("DEGRADED")
-                    self._reconnect_attempt += 1
                     return False
 
                 # Seed the snapshot from REST so a stable position visible

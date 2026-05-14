@@ -252,20 +252,7 @@ func (r *Runner) restLoop(ctx context.Context) {
 
 func (r *Runner) runBackstopOnce(ctx context.Context) {
 	syms := r.symbols()
-	// Per-call deadline. 10s is fine for venues with bulk endpoints
-	// (binance, bitget, gate — single REST call), but OKX needs
-	// per-symbol funding-rate fetches (no bulk equivalent in V5),
-	// and 318 symbols × 8 parallel × ~500ms hits the cap.
-	// Stretch the deadline up to the BackstopInterval — 1s so the
-	// next tick still has room to start — with a 5-60s clamp.
-	timeout := r.a.BackstopInterval() - time.Second
-	if timeout < 10*time.Second {
-		timeout = 10 * time.Second
-	}
-	if timeout > 60*time.Second {
-		timeout = 60 * time.Second
-	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	ticks, err := r.a.BackstopFetch(cctx, syms)
 	if err != nil {

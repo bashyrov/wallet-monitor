@@ -51,16 +51,6 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	if err := funding.HTTPGet(ctx, restURL, &doc); err != nil {
 		return nil, err
 	}
-	// MEXC's bulk ticker endpoint omits `nextSettleTime` (only the per-
-	// symbol /contract/funding_rate/<symbol> route carries it). 885
-	// per-symbol fetches don't fit the per-call budget, so compute the
-	// next 8h boundary in UTC — MEXC settles at 00:00/08:00/16:00 UTC
-	// for all USDT-perp contracts. Without this every MEXC row had
-	// next_ts=0 and the screener "next funding" column was empty.
-	const cyclehrs = 8
-	cycle := time.Duration(cyclehrs) * time.Hour
-	nextSettle := time.Now().UTC().Truncate(cycle).Add(cycle)
-
 	out := make([]funding.Tick, 0, len(doc.Data))
 	for _, r := range doc.Data {
 		if !strings.HasSuffix(r.Symbol, "_USDT") {
@@ -72,13 +62,12 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			mark = r.LastPrice
 		}
 		t := funding.Tick{
-			Symbol:      token,
-			Rate:        r.FundingRate,
-			MarkPrice:   mark,
-			IndexPrice:  r.IndexPrice,
-			Volume24h:   r.Amount24,
-			IntervalH:   cyclehrs,
-			NextFunding: nextSettle,
+			Symbol:    token,
+			Rate:      r.FundingRate,
+			MarkPrice: mark,
+			IndexPrice: r.IndexPrice,
+			Volume24h: r.Amount24,
+			IntervalH: 8,
 		}
 		if r.NextSettleTime > 0 {
 			t.NextFunding = time.UnixMilli(r.NextSettleTime)

@@ -169,14 +169,7 @@ func (c *SpotCompute) tick(ctx context.Context) {
 				rate8h := pd.Rate * (8.0 / intH) * 100.0
 				shortFunding := rate8h
 				basisPct := (pd.MarkPrice - sd.Price) / sd.Price * 100.0
-				// Ticker-collision filter: same listed symbol on two venues
-				// often refers to different tokens (e.g. MEXC "META" vs
-				// KuCoin "META"). Legitimate spot/perp basis is sub-1%
-				// for the same asset — anything past 5% is essentially
-				// always a collision. CLAUDE.md spec called for 5% but
-				// the code had drifted to 100%, letting through obvious
-				// nonsense like BEAM at -97% basis. Tighten back.
-				if basisPct > 5.0 || basisPct < -5.0 {
+				if basisPct > 100.0 || basisPct < -100.0 {
 					continue
 				}
 				feeSpotRT := spotFeeOf(spotEx) * 100.0 * 2.0

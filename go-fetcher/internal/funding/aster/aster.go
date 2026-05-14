@@ -17,11 +17,6 @@ import (
 const (
 	wsURL   = "wss://fstream.asterdex.com/stream?streams=!markPrice@arr@1s/!ticker@arr"
 	restURL = "https://fapi.asterdex.com/fapi/v1/premiumIndex"
-	// /ticker/24hr — quote volume. WS ticker stream is unreliable for
-	// the long tail of symbols (~30% of Aster rows had volume_usd=0 in
-	// prod 2026-05-13 with WS only); REST sweep fills the gap, same as
-	// the binance funding adapter.
-	restTickerURL = "https://fapi.asterdex.com/fapi/v1/ticker/24hr"
 )
 
 type Adapter struct{}
@@ -123,23 +118,6 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	if err := funding.HTTPGet(ctx, restURL, &rows); err != nil {
 		return nil, err
 	}
-	// Volume fill — best-effort, same shape as binance funding adapter.
-	var tickers []struct {
-		Symbol      string `json:"symbol"`
-		QuoteVolume string `json:"quoteVolume"`
-	}
-	volBySymbol := make(map[string]float64, len(rows))
-	if err := funding.HTTPGet(ctx, restTickerURL, &tickers); err == nil {
-		for _, t := range tickers {
-			if !strings.HasSuffix(t.Symbol, "USDT") {
-				continue
-			}
-			v, _ := strconv.ParseFloat(t.QuoteVolume, 64)
-			if v > 0 {
-				volBySymbol[strings.TrimSuffix(t.Symbol, "USDT")] = v
-			}
-		}
-	}
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Symbol, "USDT") {
@@ -154,7 +132,6 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			Rate:        rate,
 			MarkPrice:   mark,
 			IndexPrice:  idx,
-			Volume24h:   volBySymbol[token],
 			NextFunding: time.UnixMilli(r.NextFundingTs),
 			IntervalH:   8,
 		})

@@ -417,7 +417,6 @@ func (m *Manager) reconcile() {
 
 	for venue := range venues {
 		union := make(map[string]struct{}, 32)
-		userSet := make(map[string]struct{}, 8)
 		for s := range m.prewarm[venue] {
 			union[s] = struct{}{}
 		}
@@ -429,7 +428,6 @@ func (m *Manager) reconcile() {
 					continue
 				}
 				union[s] = struct{}{}
-				userSet[s] = struct{}{}
 			}
 		}
 
@@ -440,18 +438,9 @@ func (m *Manager) reconcile() {
 		}
 		m.current[venue] = union
 
-		// Order matters: when runners enforce MaxSymbols cap (KuCoin 30,
-		// BingX 100, Binance 200) they truncate from the tail. Put
-		// user-touched symbols first so /arb pair pages always get
-		// subscribed even when prewarm overflows.
 		flat := make([]string, 0, len(union))
-		for s := range userSet {
-			flat = append(flat, s)
-		}
 		for s := range union {
-			if _, isUser := userSet[s]; !isUser {
-				flat = append(flat, s)
-			}
+			flat = append(flat, s)
 		}
 
 		if r, ok := m.obRunners[venue]; ok {

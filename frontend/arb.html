@@ -2006,12 +2006,9 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     } catch (e) { console.error('[pair] refresh error:', e); }
   }
   _refreshPair();
-  // Per-pair metadata refresh. DEX needs polling (no WS feed for
-  // DexScreener pools); futures L/S has /ws/long-short feeding live
-  // opp diffs every ~200ms server-side, so the 1s REST poll is
-  // strictly redundant data — 5s on the WS-covered path saves 4×
-  // the HTTP traffic over a session (each call hits 2 endpoints).
-  setInterval(_refreshPair, IS_DEX ? 1000 : 5000);
+  // Live cadence after the 12-core VPS upgrade: pair metadata refreshes
+  // every 1 s.
+  setInterval(_refreshPair, 1000);
 
   // ── Order-book polling (futures-style .book-row rendering) ────────────────
   let _obTicks = { long: 0, short: 0 };
@@ -3727,50 +3724,32 @@ function _openTradesWs(){
     }catch(_){}
   };
   const longPair=_tradesPairFor('long'), shortPair=_tradesPairFor('short');
-  // rAF-coalesced trade-drain. Hot Binance pairs hit 100-300 trades/sec;
-  // doing flash + entry-resample on every trade is what made /arb burn
-  // CPU and grow memory (the per-trade setTimeout(720) backlog alone
-  // could pile up to thousands of pending timers on busy pairs).
-  // Drain queue once per frame: only flash the LAST trade per side
-  // (older flashes would be invisible inside one frame anyway),
-  // single sampleEntryExit + updateLiveSpread per frame.
-  let _tradeQ = [];
-  let _tradeRaf = null;
-  function _drainTradeQ(){
-    _tradeRaf = null;
-    if (!_tradeQ.length) return;
-    const q = _tradeQ; _tradeQ = [];
-    let touched = false;
-    const lastFlash = new Map(); // side -> last trade for that side
-    for (const t of q) {
-      const px = +t.p;
-      if (px > 0) {
-        if (t.side === 'long')  { _liveMidLong  = px; if (t.d === 'B') _liveAskLong  = px; }
-        if (t.side === 'short') { _liveMidShort = px; if (t.d === 'S') _liveBidShort = px; }
-      }
-      lastFlash.set(t.side, t);
-      touched = true;
-    }
-    for (const [, t] of lastFlash) _flashTradeRow(t.side, t.p, t.d);
-    if (touched && typeof sampleEntryExit === 'function') {
-      sampleEntryExit();
-      if (typeof updateLiveSpread === 'function') updateLiveSpread();
-    }
-  }
   ws.onmessage=(e)=>{
     let msg; try{ msg=JSON.parse(e.data); }catch(_){ return; }
     const arr = msg && msg.trades;
     if (!Array.isArray(arr)) return;
+    let touchedEntry = false;
     for (const t of arr) {
       // t = {e:exchange,s:symbol,p:price,q:size,d:'B'|'S',t:ts}
       const pair = (t.e||'').toLowerCase() + ':' + (t.s||'').toUpperCase();
       const side = (pair === longPair) ? 'long' : (pair === shortPair ? 'short' : null);
       if (!side) continue;
       _lastTradeSideTs[side] = Date.now();
-      _tradeQ.push({side, p: t.p, d: t.d});
+      _flashTradeRow(side, t.p, t.d);
+      // Trade price is the freshest signal the BBO has moved. Pull the
+      // matching top-of-book field forward so /arb's spread/entry/exit
+      // indicators update instantly (next /ws/book frame is at the
+      // venue's depth cadence — 20-100ms — too slow for an arb panel).
+      const px = +t.p;
+      if (px > 0) {
+        if (side === 'long')  { _liveMidLong  = px; if (t.d === 'B') _liveAskLong  = px; }
+        if (side === 'short') { _liveMidShort = px; if (t.d === 'S') _liveBidShort = px; }
+      }
+      touchedEntry = true;
     }
-    if (_tradeQ.length && _tradeRaf === null) {
-      _tradeRaf = requestAnimationFrame(_drainTradeQ);
+    if (touchedEntry && typeof sampleEntryExit === 'function') {
+      sampleEntryExit();
+      if (typeof updateLiveSpread === 'function') updateLiveSpread();
     }
   };
   ws.onclose=()=>{

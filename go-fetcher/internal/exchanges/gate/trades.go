@@ -17,7 +17,6 @@ package gate
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"strconv"
 	"strings"
@@ -53,37 +52,25 @@ func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
 }
 
 func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
-	// Two-pass parse: Gate's subscribe-ack uses `result: {status: ...}`
-	// (object) but data frames use `result: [...]` (array). Sonic
-	// strict-typing throws on either if we declare the wrong shape,
-	// generating ~200 warn lines per 5min of noise. Stash result as
-	// RawMessage, gate on event=="update", then decode the array.
-	var env struct {
-		Channel string          `json:"channel"`
-		Event   string          `json:"event"`
-		Result  json.RawMessage `json:"result"`
+	var msg struct {
+		Channel string `json:"channel"`
+		Event   string `json:"event"`
+		Result  []struct {
+			ID       int64   `json:"id"`
+			Size     float64 `json:"size"`     // Gate signed: + = buy, - = sell
+			Price    string  `json:"price"`
+			Contract string  `json:"contract"`
+			TsMs     int64   `json:"create_time_ms"`
+		} `json:"result"`
 	}
-	if err := ticks.UnmarshalJSON(frame, &env); err != nil {
+	if err := ticks.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if env.Channel != "futures.trades" || env.Event != "update" || len(env.Result) == 0 {
+	if msg.Channel != "futures.trades" || msg.Event != "update" || len(msg.Result) == 0 {
 		return nil, nil
 	}
-	var rows []struct {
-		ID       int64   `json:"id"`
-		Size     float64 `json:"size"` // Gate signed: + = buy, - = sell
-		Price    string  `json:"price"`
-		Contract string  `json:"contract"`
-		TsMs     int64   `json:"create_time_ms"`
-	}
-	if err := ticks.UnmarshalJSON(env.Result, &rows); err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, nil
-	}
-	out := make([]ticks.Tick, 0, len(rows))
-	for _, d := range rows {
+	out := make([]ticks.Tick, 0, len(msg.Result))
+	for _, d := range msg.Result {
 		if !strings.HasSuffix(d.Contract, "_USDT") {
 			continue
 		}

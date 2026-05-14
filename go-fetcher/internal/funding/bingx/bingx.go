@@ -161,16 +161,8 @@ func (a *Adapter) lookupInterval(token string) float64 {
 // Picks the top-N symbols by volume that don't yet have a cached
 // interval AND aren't already in flight, fires a goroutine to fetch
 // each one's funding history.
-//
-// IMPORTANT: ctx is IGNORED for the goroutine HTTP calls. The caller
-// is BackstopFetch which wraps a `context.WithTimeout(parent, 10s)` and
-// cancels it via defer on return. Reusing that ctx in the goroutines
-// means every fetch races the cancel and returns context.Canceled,
-// so the cache never populates and the merged funding.json falls back
-// to the blanket 8h interval — WRONG for the ~5% of BingX pairs that
-// pay 4h funding (APR understated by 2× for those rows).
 func (a *Adapter) maybeStartIntervalSweep(
-	_ctx context.Context,
+	ctx context.Context,
 	rows []struct {
 		Symbol          string `json:"symbol"`
 		MarkPrice       string `json:"markPrice"`
@@ -225,14 +217,7 @@ func (a *Adapter) maybeStartIntervalSweep(
 				delete(a.pending, c.token)
 				a.pendingMu.Unlock()
 			}()
-			// Use a fresh background context with our own timeout —
-			// see big-comment above on maybeStartIntervalSweep. The
-			// caller's ctx is canceled the moment BackstopFetch
-			// returns, which races us to the cancel and turns every
-			// fetch into context.Canceled.
-			bctx, bcancel := context.WithTimeout(context.Background(), 8*time.Second)
-			defer bcancel()
-			ih := fetchFundingInterval(bctx, c.token)
+			ih := fetchFundingInterval(ctx, c.token)
 			if ih > 0 {
 				a.intervalMu.Lock()
 				a.interval[c.token] = ih

@@ -14,7 +14,6 @@ package hyperliquid
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -47,35 +46,25 @@ func (a *Trades) BuildSubscribe(symbols []string) [][]byte {
 }
 
 func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
-	// Two-pass: HL's subscriptionResponse uses `data: {method,...}`
-	// (object), trades use `data: [...]` (array). Stash as RawMessage
-	// and gate on channel before decoding — same fix as gate trades.
-	var env struct {
-		Channel string          `json:"channel"`
-		Data    json.RawMessage `json:"data"`
+	var msg struct {
+		Channel string `json:"channel"`
+		Data    []struct {
+			Coin string `json:"coin"`
+			Side string `json:"side"` // "A" | "B"
+			Px   string `json:"px"`
+			Sz   string `json:"sz"`
+			Time int64  `json:"time"`
+			Tid  int64  `json:"tid"`
+		} `json:"data"`
 	}
-	if err := ticks.UnmarshalJSON(frame, &env); err != nil {
+	if err := ticks.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if env.Channel != "trades" || len(env.Data) == 0 {
+	if msg.Channel != "trades" || len(msg.Data) == 0 {
 		return nil, nil
 	}
-	var rows []struct {
-		Coin string `json:"coin"`
-		Side string `json:"side"` // "A" | "B"
-		Px   string `json:"px"`
-		Sz   string `json:"sz"`
-		Time int64  `json:"time"`
-		Tid  int64  `json:"tid"`
-	}
-	if err := ticks.UnmarshalJSON(env.Data, &rows); err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, nil
-	}
-	out := make([]ticks.Tick, 0, len(rows))
-	for _, d := range rows {
+	out := make([]ticks.Tick, 0, len(msg.Data))
+	for _, d := range msg.Data {
 		price, _ := strconv.ParseFloat(d.Px, 64)
 		size, _ := strconv.ParseFloat(d.Sz, 64)
 		if price <= 0 || size <= 0 {
