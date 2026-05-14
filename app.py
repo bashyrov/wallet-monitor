@@ -733,12 +733,16 @@ async def serve_page(page: str, request: Request, db: Session = Depends(get_db))
     if "." in page.split("/")[-1]:
         filepath = _safe_frontend_path(page)
         if filepath and os.path.isfile(filepath):
-            # Cache-bust window: 60 s on text assets so a deploy-fix
-            # propagates within a minute even to clients that didn't
-            # hard-reload. Images / fonts get the longer default since
-            # they rarely change.
+            # /vendor/* and /dist/* have version/hash in filename
+            # (html2canvas-1.4.1, lightweight-charts-4.1.3, dist/*.min) —
+            # they never change for a given URL, so we serve them as
+            # immutable. Saves ~12 RTT/min of revalidation per page.
             ext = page.rsplit(".", 1)[-1].lower()
-            if ext in ("js", "css", "html"):
+            if page.startswith(("vendor/", "dist/")):
+                headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+            elif ext in ("js", "css", "html"):
+                # 60 s on unversioned text assets so deploy-fixes propagate
+                # within a minute to clients that didn't hard-reload.
                 headers = {"Cache-Control": "public, max-age=60"}
             else:
                 headers = {"Cache-Control": "public, max-age=86400"}

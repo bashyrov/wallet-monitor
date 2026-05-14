@@ -606,13 +606,8 @@
   </a>
 </nav>
 
-<script src="/exchanges.js"></script>
-<script src="/navbar.js"></script>
-<script src="/banner.js" defer></script>
-<script src="/auth.js"></script>
-<script src="/theme.js"></script>
-<script src="/toast.js"></script>
-<script src="/popup.js" defer></script>
+<!-- Shared modules bundled — see frontend/build.mjs. -->
+<script src="/dist/core.min.js"></script>
 <script>
 // ─── Pricing model — driven from /api/plans + /api/billing-periods ───
 const BASE = { full: 0, screener: 0 };

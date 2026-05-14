@@ -489,17 +489,8 @@
   </a>
 </nav>
 
-<script src="/auth.js"></script>
-<script src="/toast.js"></script>
-<script src="/confirm.js"></script>
-<script src="/theme.js"></script>
-<script src="/exchanges.js"></script>
-<script src="/formatters.js"></script>
-<script src="/banner.js" defer></script>
-<script src="/popup.js" defer></script>
-<script src="/expiry-banner.js" defer></script>
-<script src="/navbar.js" defer></script>
-<script src="/anon-gate.js" defer></script>
+<!-- Shared modules bundled — see frontend/build.mjs. One RTT vs 11. -->
+<script src="/dist/core.min.js"></script>
 <script>
 // Screener is public; user-specific features (watchlist, alerts) auto-disable
 // when Auth.isLoggedIn() is false.
@@ -803,7 +794,7 @@ async function refreshExchangeHealth() {
 function startExchangeHealthPoll() {
   if (_exHealthTimer) return;
   refreshExchangeHealth();
-  _exHealthTimer = setInterval(refreshExchangeHealth, 3000);
+  _exHealthTimer = setInterval(() => { if (document.hidden) return; refreshExchangeHealth(); }, 3000);
 }
 
 function _updateExCount(){
@@ -1070,7 +1061,7 @@ async function loadDex() {
   }
   clearInterval(_dexTimer);
   // 30 s — matches fetcher's dex refresh cadence (DexScreener rate-limited)
-  _dexTimer = setInterval(() => { if (_mode === 'dex') loadDex(); }, 30000);
+  _dexTimer = setInterval(() => { if (document.hidden) return; if (_mode === 'dex') loadDex(); }, 30000);
 }
 
 function sortDex(col) {
@@ -1285,7 +1276,7 @@ async function loadSpot() {
   // Post-upgrade (VPS 40, 12 cores): cycle shortened to 1 s so the Spot/Short
   // tab feels as live as Long/Short. Backend spot-arb cycle was also dropped
   // to 1 s, so each poll sees freshly-written data.
-  _spotTimer = setInterval(() => { if (_mode === 'spot') loadSpot(); }, 1000);
+  _spotTimer = setInterval(() => { if (document.hidden) return; if (_mode === 'spot') loadSpot(); }, 1000);
 }
 
 function sortSpot(col) {
@@ -1483,6 +1474,7 @@ async function loadFundingArb() {
   applyFA();
   clearInterval(_faTimer);
   _faTimer = setInterval(() => {
+    if (document.hidden) return;
     if (_mode === 'funding-arb') { loadSpot().then(applyFA); }
   }, 1000);
 }
@@ -1646,7 +1638,7 @@ async function loadAll() {
     }
   }
   clearInterval(_allTimer);
-  _allTimer = setInterval(() => { if (_mode === 'all') loadAll(); }, 2000);
+  _allTimer = setInterval(() => { if (document.hidden) return; if (_mode === 'all') loadAll(); }, 2000);
 }
 
 let _allTypeFilter = 'all';
@@ -1923,9 +1915,13 @@ function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) 
 // mode-set trim get auto-migrated to their nearest neighbour so users don't
 // end up stuck on a removed option.
 let _throttle = (() => {
-  const saved = localStorage.getItem('screener-throttle') || 'live';
+  // Default 3s — "live" mode re-sorted 1000 rows on every WS tick (~500ms),
+  // pegging a CPU core in screener even when the user wasn't watching.
+  // 3s feels real-time and drops sort cost ~5x. Users who want raw can
+  // still pick Live from the menu.
+  const saved = localStorage.getItem('screener-throttle') || '3';
   const valid = new Set(['live', '3', '10', '15', '30']);
-  return valid.has(saved) ? saved : (saved === 'pause' ? '30' : saved === '60' ? '30' : 'live');
+  return valid.has(saved) ? saved : (saved === 'pause' ? '30' : saved === '60' ? '30' : '3');
 })();
 let _pendingFunding = null;  // latest unrendered funding payload
 let _pendingArb = null;      // latest unrendered arb payload
@@ -2004,7 +2000,7 @@ function setThrottle(mode) {
     return;
   }
   const ms = parseInt(mode) * 1000;
-  _throttleTimer = setInterval(flushPending, ms);
+  _throttleTimer = setInterval(() => { if (document.hidden) return; flushPending(); }, ms);
 }
 
 // Map-keyed source of truth for funding rows — mirrors _arbRowsByKey so we
@@ -2063,6 +2059,13 @@ function flushPending() {
 
 // Apply pending on load (in case user reloaded with a saved throttle pref)
 window.addEventListener('load', () => setThrottle(_throttle));
+
+// Wake-up flush: when the tab becomes visible again, drain whatever WS frames
+// accumulated while hidden. Without this the user sees stale numbers until
+// the next throttle tick (up to 30s on the slowest throttle setting).
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) try { flushPending(); } catch (_) {}
+});
 
 // ── Funding REST poller ────────────────────────────────────────────────────────
 // Replaced /ws/funding (which pushed a ~90 KB gzip full snapshot every 200 ms,
@@ -3223,9 +3226,9 @@ async function refreshLeaderboard() {
 function startLiveOpsPollers() {
   // prime once so sidebar shows fresh data on first open
   refreshHealth();
-  _loTimers.health = setInterval(refreshHealth, 30000);
-  _loTimers.anom = setInterval(refreshAnomalies, 60000);
-  _loTimers.lb = setInterval(refreshLeaderboard, 60000);
+  _loTimers.health = setInterval(() => { if (document.hidden) return; refreshHealth(); }, 30000);
+  _loTimers.anom = setInterval(() => { if (document.hidden) return; refreshAnomalies(); }, 60000);
+  _loTimers.lb = setInterval(() => { if (document.hidden) return; refreshLeaderboard(); }, 60000);
 }
 
 // Prefetch arb detail page + warm per-pair backend caches on row hover

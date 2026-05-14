@@ -225,14 +225,8 @@
   </a>
 </nav>
 
-<script src="/auth.js"></script>
-<script src="/toast.js"></script>
-<script src="/confirm.js"></script>
-<script src="/theme.js"></script>
-<script src="/exchanges.js"></script>
-<script src="/formatters.js"></script>
-<script src="/navbar.js" defer></script>
-<script src="/banner.js" defer></script>
+<!-- Shared modules bundled — see frontend/build.mjs. -->
+<script src="/dist/core.min.js"></script>
 <script>
 Auth.redirectIfAuthed('/screener');
 

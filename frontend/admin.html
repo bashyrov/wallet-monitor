@@ -1404,11 +1404,8 @@ input[type="checkbox"] { accent-color: var(--green); width: 14px; height: 14px; 
 }
 </style>
 
-<script src="/banner.js" defer></script>
-<script src="/auth.js"></script>
-<script src="/toast.js"></script>
-<script src="/confirm.js"></script>
-<script src="/theme.js"></script>
+<!-- Shared modules bundled — see frontend/build.mjs. -->
+<script src="/dist/core.min.js"></script>
 <script>
 Auth.requireAdmin('/portfolio');
 
