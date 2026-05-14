@@ -35,7 +35,7 @@
      Replaces 11 individual <script> tags (1 RTT vs 11 — huge win on HTTP/1.1
      and still measurable on HTTP/2). Loaded synchronously so inline page
      scripts below have Auth / Formatters / EX available at parse time. -->
-<script src="/dist/core.min.js"></script>
+<script src="/dist/core.min.js?v=20260514a"></script>
 <!-- Page-specific code (was ~7000 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes — equivalent
      to the previous mid-body execution since the trailing init() call
