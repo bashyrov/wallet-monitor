@@ -152,10 +152,38 @@ def _find_any_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
     )
 
 
+_PAIR_STATUS_CACHE: dict[tuple, tuple[dict, float]] = {}
+_PAIR_STATUS_TTL = 15.0  # seconds
+
+
+def invalidate_pair_status_cache(user_id: int, exchange: str | None = None) -> None:
+    """Drop cached pair-status for a user. Called after place_order / close
+    so the next /trade/status call shows fresh balance. If exchange is
+    given, only entries touching that exchange are dropped."""
+    if exchange is None:
+        # Drop all entries for this user.
+        to_del = [k for k in _PAIR_STATUS_CACHE if k[0] == user_id]
+    else:
+        to_del = [k for k in _PAIR_STATUS_CACHE if k[0] == user_id and exchange in (k[2], k[3])]
+    for k in to_del:
+        _PAIR_STATUS_CACHE.pop(k, None)
+
+
 async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, short_ex: str) -> dict:
     """Per-leg trading readiness for an arb pair.
     Returns: { long: {wallet_id, status, balance_usdt}, short: {...} }
+
+    Cached 15s per (user_id, symbol, long_ex, short_ex). Без кеша делает
+    2 live HTTP-вызова к venue API (fetch_balance × 2) которые суммарно
+    дают 200-3000ms задержки. Invalidated в place_open_order/close после
+    каждого ордера так что balance отражает свежее состояние.
     """
+    cache_key = (user_id, symbol, long_ex, short_ex)
+    now_m = _mono()
+    cached = _PAIR_STATUS_CACHE.get(cache_key)
+    if cached and (now_m - cached[1]) < _PAIR_STATUS_TTL:
+        return cached[0]
+
     from backend.services import admin_settings
     trade_blocked = admin_settings.get_trade_disabled_exchanges()
     out = {"symbol": symbol, "long": {}, "short": {}}
@@ -258,6 +286,10 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
             bal = out[leg].get("balance_usdt")
             out[leg].setdefault("reserved_usdt", 0.0)
             out[leg].setdefault("available_usdt", bal)
+    # Cache + return — capped at ~1000 entries (purged in invalidate when
+    # the user trades). For a typical web worker with hundreds of users
+    # this is well under MB-scale memory.
+    _PAIR_STATUS_CACHE[cache_key] = (out, now_m)
     return out
 
 
@@ -485,6 +517,12 @@ async def place_open_order(
         avg_fill_price=float(fill_price) if fill_price else None,
         raw_response=result if isinstance(result, dict) else None,
     )
+    # Balance changed — drop any cached /trade/status for this user/venue
+    # so the next status call reflects the fill.
+    try:
+        invalidate_pair_status_cache(user_id, ex)
+    except Exception:
+        pass
     logger.info(
         "Order PLACED: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s lev=%sx mode=%s order_db_id=%s ex_order_id=%s",
         user_id, wallet_id, ex, symbol, side, quantity, leverage, margin_mode,
@@ -583,6 +621,10 @@ async def close_position(
         user_id, wallet_id, ex, symbol, order_row.id, (result or {}).get("order_id"),
     )
     invalidate_positions_cache(user_id)
+    try:
+        invalidate_pair_status_cache(user_id, ex)
+    except Exception:
+        pass
     return result
 
 
