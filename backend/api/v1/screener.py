@@ -85,7 +85,18 @@ _OI_TTL  = 60.0     # open-interest: 60s
 
 @router.get("/funding", dependencies=[Depends(_enforce_screener_rl)])
 async def funding_rates():
-    """Funding rates across perpetual futures exchanges. Cached 30s per exchange."""
+    """Funding rates across perpetual futures exchanges. Cached 30s per exchange.
+
+    Fast path: when the snapshot cache has a pre-serialised byte buffer,
+    return it via Response() directly — skips FastAPI's auto-JSON
+    serialisation (~80ms saved on 900KB payload). Falls back to dict if
+    miss, where the service builds + caches both forms.
+    """
+    from fastapi.responses import Response
+    from backend.services.arbitrage_service import get_funding_data_bytes
+    body = await get_funding_data_bytes()
+    if body is not None:
+        return Response(content=body, media_type="application/json")
     return await get_funding_data()
 
 

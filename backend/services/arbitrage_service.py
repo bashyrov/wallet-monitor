@@ -44,7 +44,23 @@ _FAST_PATH_LAST_WRITE: float = 0.0  # throttle funding.json writes to once per 2
 # ~700ms server time. Caching the processed result for 1s drops that to <5ms
 # on cache hits — see #1 in AUDIT_PLAN.md.
 _FUNDING_VIEW_CACHE: dict | None = None
+_FUNDING_VIEW_BYTES: bytes | None = None  # pre-serialised payload — saves ~80ms vs FastAPI re-serialize on hit
 _FUNDING_VIEW_TTL: float = 1.0  # seconds — funding.json itself is rewritten every ~250ms by fetcher
+
+
+async def get_funding_data_bytes() -> bytes | None:
+    """Fast-path: return pre-serialised funding payload if cache is warm.
+
+    Returns None on miss — caller falls back to get_funding_data() which
+    builds the dict and re-populates both forms of the cache.
+    """
+    global _FUNDING_VIEW_BYTES
+    cv = _FUNDING_VIEW_CACHE
+    if cv is None or _FUNDING_VIEW_BYTES is None:
+        return None
+    if (_mono() - cv["m_ts"]) >= _FUNDING_VIEW_TTL:
+        return None
+    return _FUNDING_VIEW_BYTES
 
 # ── Interval cache ─────────────────────────────────────────────────────────────
 _ivl_cache: dict[str, tuple[dict[str, float], float]] = {}
@@ -1663,6 +1679,14 @@ async def get_funding_data() -> dict:
                 "hidden_sym": frozenset(hidden_sym),
                 "min_volume": min_volume,
             }
+            # Pre-serialise via orjson — Response(content=bytes) on the endpoint
+            # then skips FastAPI's jsonify (~80ms saved on 900KB payloads).
+            global _FUNDING_VIEW_BYTES
+            try:
+                import orjson
+                _FUNDING_VIEW_BYTES = orjson.dumps(result)
+            except Exception:
+                _FUNDING_VIEW_BYTES = None
             return result
         # No file yet / stale — fall through; first request after startup only.
 
