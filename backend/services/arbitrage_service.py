@@ -62,6 +62,32 @@ async def get_funding_data_bytes() -> bytes | None:
         return None
     return _FUNDING_VIEW_BYTES
 
+
+async def warmer_loop(interval_s: float = 0.8) -> None:
+    """Per-worker background task that keeps the funding view cache hot.
+
+    Without this, /api/screener/funding bounces between cache hit (~250ms)
+    and miss (~1700ms) because nginx round-robins app↔app2 and each worker
+    holds its own in-process cache. Refreshing in the background every
+    800ms ensures every user request finds a warm cache (TTL is 1s).
+
+    Also refreshes get_exchange_health() snapshot for the same reason.
+    """
+    import logging as _l
+    log = _l.getLogger("avalant.cache_warmer")
+    while True:
+        try:
+            await get_funding_data()
+        except Exception as exc:
+            log.debug("funding warmer: %s", exc)
+        try:
+            # exchange_health is sync; run in default executor
+            import asyncio as _aio
+            await _aio.to_thread(get_exchange_health)
+        except Exception as exc:
+            log.debug("health warmer: %s", exc)
+        await __import__("asyncio").sleep(interval_s)
+
 # ── Interval cache ─────────────────────────────────────────────────────────────
 _ivl_cache: dict[str, tuple[dict[str, float], float]] = {}
 IVL_TTL = 3600.0  # 1 hour — intervals change very rarely

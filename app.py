@@ -285,9 +285,24 @@ async def lifespan(app: FastAPI):
         _alpha_tasks = []
         logger.info("Web mode — data plane runs in the fetcher sidecar")
 
+    # ── Cache warmer (web role only) ─────────────────────────────────
+    # Both app1 and app2 hold independent in-process snapshot caches for
+    # /api/screener/funding + /exchange-health. Without this loop, half
+    # the user requests land on the cold worker and pay 1s+ to re-parse
+    # funding.json. The warmer refreshes every 800ms (TTL 1s), keeping
+    # both workers permanently hot.
+    _warmer_task = None
+    if role != "fetcher":
+        import asyncio
+        from backend.services.arbitrage_service import warmer_loop
+        _warmer_task = asyncio.create_task(warmer_loop(interval_s=0.8))
+        logger.info("Cache warmer started for funding + exchange-health snapshots")
+
     try:
         yield
     finally:
+        if _warmer_task is not None:
+            _warmer_task.cancel()
         for t in _alpha_tasks:
             t.cancel()
         for fn in _stop_fns:
