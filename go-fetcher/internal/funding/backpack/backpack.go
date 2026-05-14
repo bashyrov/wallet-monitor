@@ -164,7 +164,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	return out, nil
 }
 
-func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Minute }
+// 5s — bulk endpoint, no per-symbol calls, Backpack rate-limit is loose
+// enough. Was 5min — funding age was hitting 30-300s in the UI status
+// dots which looked broken even though the data was technically valid.
+func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Second }
 
 func getJSON(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

@@ -130,7 +130,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	return out, nil
 }
 
-func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Minute }
+// 10s — Ethereal API hits Cloudflare and we've been rate-limited at
+// fast cadences. 10s is a safe middle ground vs the previous 5min that
+// made status dots show 4-minute-old data.
+func (a *Adapter) BackstopInterval() time.Duration { return 10 * time.Second }
 
 func fetchProducts(ctx context.Context) ([]productItem, error) {
 	// The API is paginated; fetch first page (limit=100). In practice

@@ -111,7 +111,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	return out, nil
 }
 
-func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Minute }
+// 5s — Kraken Futures /tickers is a single bulk call with no per-symbol
+// expansion. Their public rate limit is 200/min which leaves plenty of
+// room. Previous 5min was over-cautious; 5s matches Bybit/Gate cadence.
+func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Second }
 
 func getJSON(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

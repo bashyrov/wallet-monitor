@@ -102,7 +102,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	return out, nil
 }
 
-func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Minute }
+// 5s — Extended has a single-shot bulk markets endpoint; previous 5min
+// was conservative for an undocumented rate limit. 5s gives near-real-
+// time freshness and well below 1 req/s aggregate.
+func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Second }
 
 func getJSON(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
