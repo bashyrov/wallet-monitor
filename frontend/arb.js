@@ -9,6 +9,39 @@
 // IS_AUTHED is kept for downstream JS that gates UI on it.
 const IS_AUTHED = Auth.isLoggedIn();
 
+// ── Prefetch helper for pair-switching links ─────────────────────────
+// When the user hovers a "switch pair" UI element (search popover, swap
+// button, pair-card link) we eagerly prefetch the next /arb HTML +
+// warm backend caches. By the time they click, the page is in browser
+// cache and the per-pair API responses are ready.
+const _arbPrefetchSeen = new Set();
+function _arbPrefetch(url) {
+  if (!url || _arbPrefetchSeen.has(url)) return;
+  _arbPrefetchSeen.add(url);
+  const link = document.createElement('link');
+  link.rel = 'prefetch';
+  link.href = url;
+  link.as = 'document';
+  document.head.appendChild(link);
+  try {
+    const u = new URL(url, location.origin);
+    const sym = u.searchParams.get('symbol');
+    const lng = u.searchParams.get('long');
+    const sht = u.searchParams.get('short');
+    if (sym && lng && sht) {
+      const q = `symbol=${sym}&long_ex=${lng}&short_ex=${sht}`;
+      Auth.apiFetch(`/screener/arb-price-history?${q}`).catch(() => {});
+      Auth.apiFetch(`/screener/open-interest?${q}`).catch(() => {});
+    }
+  } catch (_) {}
+}
+// Delegated mouseover — covers swap-pair buttons, search popover items,
+// any future <a href="/arb?..."> additions without per-element wiring.
+document.addEventListener('mouseover', (e) => {
+  const a = e.target.closest && e.target.closest('a[href^="/arb?"]');
+  if (a && a.href) _arbPrefetch(a.href);
+}, { passive: true });
+
 /* ── arb.html block #2 ─────────────────────────────────────────── */
 // Single source of truth lives in /exchanges.js — the local consts are just
 // thin aliases so existing call sites keep working.

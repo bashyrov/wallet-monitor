@@ -657,13 +657,65 @@ def _static_cache_for(path: str) -> str | None:
     return None
 
 
-# ── Server-Timing middleware (diagnostic) ────────────────────────────────────
+# ── Server-Timing middleware + latency histogram ─────────────────────────────
 # Reports total request handling time as a Server-Timing header. Visible in
 # Chrome DevTools → Network → Timing tab → "Server Timing". Lets us see the
 # per-request cost without needing to ssh + tail logs.
 #
 # The header is emitted on every response. Adds <1µs per request — negligible.
+# Also feeds a per-route latency histogram exposed via /api/metrics — the
+# Prometheus endpoint thus reports p50/p95/p99 across all endpoints without
+# any external instrumentation library.
 import time as _time
+from collections import defaultdict as _defdict
+from threading import Lock as _Lock
+
+_LAT_BUCKETS_MS = (5, 20, 50, 100, 250, 500, 1000, 2500, 5000)
+_lat_counts: dict[tuple[str, str], list[int]] = _defdict(lambda: [0] * (len(_LAT_BUCKETS_MS) + 1))
+_lat_sum_ms: dict[tuple[str, str], float] = _defdict(float)
+_lat_total: dict[tuple[str, str], int] = _defdict(int)
+_lat_lock = _Lock()
+
+
+def _route_label(request: Request) -> str:
+    """Group requests by route pattern so the histogram has bounded cardinality.
+    /api/screener/funding stays grouped; /arb?symbol=X collapses to 'page'."""
+    p = request.url.path
+    if p.startswith("/api/"):
+        # Trim any trailing path component that looks like an ID (digits or
+        # hex) so /api/wallets/123 → /api/wallets/:id.
+        parts = p.split("/")
+        for i, seg in enumerate(parts):
+            if seg.isdigit() or (len(seg) == 36 and seg.count("-") == 4):
+                parts[i] = ":id"
+        return "/".join(parts)
+    return "page"
+
+
+def _record_latency(route: str, status: str, ms: float) -> None:
+    key = (route, status)
+    bucket_idx = len(_LAT_BUCKETS_MS)
+    for i, b in enumerate(_LAT_BUCKETS_MS):
+        if ms <= b:
+            bucket_idx = i
+            break
+    with _lat_lock:
+        _lat_counts[key][bucket_idx] += 1
+        _lat_sum_ms[key] += ms
+        _lat_total[key] += 1
+
+
+def get_latency_snapshot() -> tuple[dict, dict, dict, tuple]:
+    """Return (counts, sum_ms, total, buckets) for the /api/metrics endpoint."""
+    with _lat_lock:
+        return (
+            {k: list(v) for k, v in _lat_counts.items()},
+            dict(_lat_sum_ms),
+            dict(_lat_total),
+            _LAT_BUCKETS_MS,
+        )
+
+
 @app.middleware("http")
 async def server_timing(request: Request, call_next) -> Response:
     t0 = _time.perf_counter()
@@ -675,6 +727,12 @@ async def server_timing(request: Request, call_next) -> Response:
     response.headers["Server-Timing"] = f"{existing}, {new}" if existing else new
     # Also stamp X-Response-Time so curl -w '%{http_header}' can grab it easily.
     response.headers["X-Response-Time"] = f"{dt_ms:.1f}ms"
+    # Feed the histogram. Status code grouped into class to avoid
+    # explosion (200/300/400/500).
+    try:
+        _record_latency(_route_label(request), f"{response.status_code // 100}xx", dt_ms)
+    except Exception:
+        pass
     return response
 
 

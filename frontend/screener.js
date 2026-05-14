@@ -2766,3 +2766,11 @@ function _arbPrefetch(url) {
     }
   } catch (_) {}
 }
+
+// Global hover-prefetch: any <a> pointing to /arb gets pre-warmed when the
+// user hovers it. Single delegated listener — no need to wire onmouseenter
+// on every link. ~100ms head start before click means /arb feels instant.
+document.addEventListener('mouseover', (e) => {
+  const a = e.target.closest && e.target.closest('a[href^="/arb?"]');
+  if (a && a.href) _arbPrefetch(a.href);
+}, { passive: true });

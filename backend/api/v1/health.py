@@ -187,6 +187,38 @@ def metrics():
     except Exception:
         pass
 
+    # HTTP latency histogram — fed by the server_timing middleware in app.py.
+    # Exposes p50/p95/p99 via `histogram_quantile()` in Prometheus / Grafana.
+    try:
+        from app import get_latency_snapshot
+        counts, sum_ms, total, buckets = get_latency_snapshot()
+        lines.append("# HELP avalant_http_request_duration_ms HTTP request latency in milliseconds")
+        lines.append("# TYPE avalant_http_request_duration_ms histogram")
+        for (route, status), bucket_counts in sorted(counts.items()):
+            # Cumulative bucket counts (Prometheus histogram convention).
+            cumulative = 0
+            for i, b in enumerate(buckets):
+                cumulative += bucket_counts[i]
+                lines.append(
+                    f'avalant_http_request_duration_ms_bucket'
+                    f'{{route="{route}",status="{status}",le="{b}"}} {cumulative}'
+                )
+            cumulative += bucket_counts[len(buckets)]
+            lines.append(
+                f'avalant_http_request_duration_ms_bucket'
+                f'{{route="{route}",status="{status}",le="+Inf"}} {cumulative}'
+            )
+            lines.append(
+                f'avalant_http_request_duration_ms_sum'
+                f'{{route="{route}",status="{status}"}} {sum_ms[(route,status)]:.2f}'
+            )
+            lines.append(
+                f'avalant_http_request_duration_ms_count'
+                f'{{route="{route}",status="{status}"}} {total[(route,status)]}'
+            )
+    except Exception:
+        pass
+
     body = "\n".join(lines) + "\n"
     return Response(content=body, media_type="text/plain; version=0.0.4")
 
