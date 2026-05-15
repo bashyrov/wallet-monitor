@@ -2092,6 +2092,9 @@ function renderArb() {
   }
   // Keyed reconciliation — only add/remove/move rows that actually changed position,
   // patch cells in-place for everything else. Eliminates full-tbody innerHTML thrash.
+  // Remove any non-keyed rows first (spinner/empty-state rows from loadArb) so they
+  // don't linger below the newly inserted data rows.
+  for (const tr of [...tbody.querySelectorAll('tr:not([data-row-key])')]) tr.remove();
   const byKey = new Map();
   for (const tr of tbody.querySelectorAll('tr[data-row-key]')) byKey.set(tr.dataset.rowKey, tr);
   const wanted = new Set(page.map(r => _arbKey(r)));
