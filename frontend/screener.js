@@ -1615,7 +1615,7 @@ window.addEventListener('load', () => setThrottle(_throttle));
 // accumulated while hidden. Without this the user sees stale numbers until
 // the next throttle tick (up to 30s on the slowest throttle setting).
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) try { flushPending(); } catch (_) {}
+  if (!document.hidden) requestAnimationFrame(() => { try { flushPending(); } catch (_) {} });
 });
 
 // ── Funding REST poller ────────────────────────────────────────────────────────

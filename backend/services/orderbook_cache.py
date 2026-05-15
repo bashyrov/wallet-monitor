@@ -863,6 +863,16 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
     # straight to REST for those, which returns full-depth snapshots.
     DEEP_LIMIT_THRESHOLD = 30
     if limit > DEEP_LIMIT_THRESHOLD:
+        # Check memory cache first — WS or a recent REST fetch may have
+        # populated it. Serving <10s-old in-memory data costs µs vs 200-400ms
+        # for a REST round-trip, and the WS updates every ~100-500ms anyway.
+        entry = _book_cache.get(key)
+        if entry and now - entry.get("ts", 0) < STALE_FALLBACK:
+            d = entry.get("data") or {}
+            if d.get("bids") or d.get("asks"):
+                entry["last_request"] = now
+                return d
+        # Memory miss → REST fallback.
         rest_data = await _rest_fallback(exchange, symbol, limit)
         if rest_data and (rest_data.get("bids") or rest_data.get("asks")):
             # Trip last_request so the WS poller (if any) keeps the cache
