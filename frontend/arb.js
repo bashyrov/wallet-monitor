@@ -3781,9 +3781,8 @@ function accSwitch(el){
 async function initAccBlock(){
   // One-time migration of legacy localStorage Sync entries → backend.
   // Idempotent on the server side (UNIQUE on user_id+leg_a_key+leg_b_key).
-  await _migrateLegacyManualPairs();
-  await _refreshPairDecisions();
-  await Promise.all([accLoadKeyCounts(), accLoadPositions(), accLoadBalances(), accLoadOrders(), accLoadPnl(), accLoadTriggers()]);
+  _migrateLegacyManualPairs().catch(() => {});
+  await Promise.all([_refreshPairDecisions(), accLoadKeyCounts(), accLoadPositions(), accLoadBalances(), accLoadOrders(), accLoadPnl(), accLoadTriggers()]);
   // Backend is now WS-fed: WS user-streams (11 venues) push position/
   // balance changes the moment they happen on the exchange, the
   // snapshot store is always fresh, and the reconcile worker (60s)
@@ -3797,7 +3796,7 @@ async function initAccBlock(){
   // 5s baseline poll for triggers — kept as a safety net even when the WS
   // is connected, in case a push is dropped (Mobile Safari background tabs
   // throttle WS connections to a degree that we've seen kills events).
-  setInterval(() => { if (document.hidden) return; accLoadTriggers(); }, 5000);
+  setInterval(() => { if (document.hidden) return; accLoadTriggers(); }, 15000);
 
   // Per-user WS for instant position/trigger refresh on mutation.
   // Falls back gracefully to the 5s poll if the WS can't open.

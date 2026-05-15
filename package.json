@@ -8,6 +8,6 @@
     "watch": "node frontend/build.mjs --watch"
   },
   "devDependencies": {
-    "esbuild": "^0.21.0"
+    "esbuild": "^0.21.5"
   }
 }

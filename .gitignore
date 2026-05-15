@@ -8,10 +8,8 @@ dist/
 build/
 
 # ── Frontend ──────────────────────────────────────────
-# esbuild outputs — rebuilt by `npm run build` (or `npm run watch` for dev).
-# Source files in frontend/*.js stay loadable directly so pages can opt-in
-# to the bundle gradually.
-frontend/dist/
+# dist/ is committed — Dockerfile has no Node.js, server can't rebuild.
+# Rebuild locally with `npm run build` after changing shared JS modules.
 node_modules/
 package-lock.json
 
