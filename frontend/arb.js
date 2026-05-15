@@ -3796,7 +3796,7 @@ async function initAccBlock(){
   // 5s baseline poll for triggers — kept as a safety net even when the WS
   // is connected, in case a push is dropped (Mobile Safari background tabs
   // throttle WS connections to a degree that we've seen kills events).
-  setInterval(() => { if (document.hidden) return; accLoadTriggers(); }, 15000);
+  setInterval(() => { if (document.hidden) return; accLoadTriggers(); }, 5000);
 
   // Per-user WS for instant position/trigger refresh on mutation.
   // Falls back gracefully to the 5s poll if the WS can't open.

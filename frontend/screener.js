@@ -344,7 +344,7 @@ async function refreshExchangeHealth() {
 function startExchangeHealthPoll() {
   if (_exHealthTimer) return;
   refreshExchangeHealth();
-  _exHealthTimer = setInterval(() => { if (document.hidden) return; refreshExchangeHealth(); }, 10000);
+  _exHealthTimer = setInterval(() => { if (document.hidden) return; refreshExchangeHealth(); }, 3000);
 }
 
 function _updateExCount(){
@@ -826,7 +826,7 @@ async function loadSpot() {
   // Post-upgrade (VPS 40, 12 cores): cycle shortened to 1 s so the Spot/Short
   // tab feels as live as Long/Short. Backend spot-arb cycle was also dropped
   // to 1 s, so each poll sees freshly-written data.
-  _spotTimer = setInterval(() => { if (document.hidden) return; if (_mode === 'spot') loadSpot(); }, 2000);
+  _spotTimer = setInterval(() => { if (document.hidden) return; if (_mode === 'spot') loadSpot(); }, 1000);
 }
 
 function sortSpot(col) {
