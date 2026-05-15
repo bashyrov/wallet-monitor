@@ -59,16 +59,25 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	// observed in prod 2026-05-13). Decode as string + ParseFloat to fix.
 	volBySymbol := make(map[string]float64, len(doc.Data))
 	markBySymbol := make(map[string]float64, len(doc.Data))
+	// HTX batch_merged response uses either "ticks" or "data" as the root
+	// array key depending on the API version/endpoint. Parse both.
+	type tickItem struct {
+		ContractCode  string `json:"contract_code"`
+		Close         string `json:"close"`
+		Vol           string `json:"vol"`            // base-unit contracts (primary)
+		Amount        string `json:"amount"`         // alias seen in some responses
+		TradeTurnover string `json:"trade_turnover"` // USDT turnover (preferred)
+	}
 	var tdoc struct {
-		Ticks []struct {
-			ContractCode  string `json:"contract_code"`
-			Close         string `json:"close"`
-			Amount        string `json:"amount"`         // base units
-			TradeTurnover string `json:"trade_turnover"` // USDT turnover
-		} `json:"ticks"`
+		Ticks []tickItem `json:"ticks"`
+		Data  []tickItem `json:"data"`
 	}
 	if err := funding.HTTPGet(ctx, tickerURL, &tdoc); err == nil {
-		for _, r := range tdoc.Ticks {
+		items := tdoc.Ticks
+		if len(items) == 0 {
+			items = tdoc.Data
+		}
+		for _, r := range items {
 			if !strings.HasSuffix(r.ContractCode, "-USDT") {
 				continue
 			}
@@ -76,8 +85,12 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			closePx, _ := strconv.ParseFloat(r.Close, 64)
 			turnover, _ := strconv.ParseFloat(r.TradeTurnover, 64)
 			if turnover <= 0 {
-				// Fallback: amount × close (USDT) as approximation.
-				amt, _ := strconv.ParseFloat(r.Amount, 64)
+				// Fallback: vol (or amount) × close as USDT approximation.
+				// API comment shows "vol":"23544" as the base-unit field name.
+				amt, _ := strconv.ParseFloat(r.Vol, 64)
+				if amt == 0 {
+					amt, _ = strconv.ParseFloat(r.Amount, 64)
+				}
 				turnover = amt * closePx
 			}
 			if turnover > 0 {

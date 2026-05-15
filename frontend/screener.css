@@ -16,7 +16,8 @@
   --font:     'Inter', system-ui, -apple-system, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { overflow-x: hidden; max-width: 100%; }
+/* clip instead of hidden — hidden creates a scroll container which breaks position:sticky on .topbar */
+html, body { overflow-x: clip; max-width: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -41,7 +42,7 @@ body::before {
 /* ── LAYOUT (desktop): single-column after topbar ── */
 .screener-layout {
   display: flex; flex-direction: column;
-  height: calc(100vh - 52px);
+  height: calc(100vh - 64px);
   overflow: hidden;
 }
 
