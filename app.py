@@ -917,6 +917,46 @@ async def serve_page(page: str, request: Request):
                     return RedirectResponse("/portfolio", status_code=302)
 
     if os.path.exists(filepath):
+        # Dynamic OG-tag injection for /arb so messengers (Telegram/Discord/
+        # Slack/WhatsApp) show pair-specific previews когда юзер пастит
+        # ссылку с ?symbol=BTC&long=binance&short=bybit. Static fallback
+        # remains in the HTML for cases when query params are absent.
+        if base == "arb":
+            qs = dict(request.query_params)
+            sym = (qs.get("symbol") or "").upper()
+            long_ex = (qs.get("long") or "").upper()
+            short_ex = (qs.get("short") or "").upper()
+            if sym and long_ex and short_ex:
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        html = f.read()
+                    title = f"{sym} arb · {long_ex} ⇄ {short_ex} — Avalant"
+                    desc = (f"Cross-exchange arbitrage on {sym}: long {long_ex}, "
+                            f"short {short_ex}. Live orderbooks, funding rates, "
+                            f"one-click trade execution.")
+                    # Replace canonical + og:title + og:description + twitter:*.
+                    # Markup uses double quotes for content="..."; case-insensitive
+                    # exact replace by full attribute pair is safest.
+                    repls = {
+                        'content="Long/Short · avalant_"': f'content="{title}"',
+                        'content="Avalant Arb — Live Cross-Exchange Pair View"': f'content="{title}"',
+                        'content="Avalant Arb — Live Pair View"': f'content="{title}"',
+                        'content="Live orderbooks, funding rates, entry/exit divergence, one-click trade. 18 venues, sub-second updates."': f'content="{desc}"',
+                        'content="Live orderbooks, funding rates, one-click trade. 18 venues."': f'content="{desc}"',
+                        'content="Cross-exchange arbitrage pair view — live orderbooks, funding rates, entry/exit divergence, one-click trade. 18 venues under one keyboard."': f'content="{desc}"',
+                    }
+                    # Also bump <title> tag itself.
+                    html = html.replace("<title>Long/Short · avalant_</title>",
+                                        f"<title>{title}</title>", 1)
+                    for old, new in repls.items():
+                        html = html.replace(old, new)
+                    from fastapi.responses import HTMLResponse as _HR
+                    return _HR(
+                        content=html,
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+                    )
+                except Exception:
+                    pass  # fall through to FileResponse if anything goes wrong
         return FileResponse(
             filepath,
             media_type="text/html",
