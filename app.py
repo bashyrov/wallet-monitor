@@ -786,11 +786,14 @@ _ADMIN_PAGES = {"admin", "admin-user"}
 # (it's the post-login bridge that consumes the deep-link token).
 _GUEST_PAGES = {"login", "register"}
 
-# Legacy /app → /portfolio. Old bookmarks and existing TG-bot links keep
-# working forever via 301; once browsers cache the redirect, follow-up
-# requests skip the round-trip.
+# Legacy 301-redirects: old bookmarks and TG-bot links keep working,
+# once browsers cache the redirect follow-up requests skip the round-trip.
+#   /app     → /portfolio  (renamed pre-launch)
+#   /landing → /            (the standalone landing page was retired —
+#                            homepage / now serves as the landing)
 _LEGACY_REDIRECTS = {
     "app": "/portfolio",
+    "landing": "/",
 }
 
 _FRONTEND_ROOT = os.path.realpath("frontend")
