@@ -6,6 +6,7 @@ require (
 	github.com/NethermindEth/juno v0.15.11
 	github.com/NethermindEth/starknet.go v0.17.1
 	github.com/bytedance/sonic v1.15.1
+	github.com/elliottech/lighter-go v1.0.6
 	github.com/ethereum/go-ethereum v1.17.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.7.0
@@ -28,6 +29,7 @@ require (
 	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/elliottech/poseidon_crypto v0.0.15 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.6 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
