@@ -23,6 +23,17 @@
  * accessible for SEO + sign-up funnel.
  */
 (function(){
+  // Path guard. anon-gate.js is bundled into core.min.js (loaded on every
+  // page) but the gate must ONLY appear on /screener. Без этого юзер видит
+  // лок и на /index, /landing, /pricing, /portfolio — bug from the bundle
+  // refactor where the script became globally loaded.
+  // Match /screener, /screener?..., /screener/anything. Anything else
+  // short-circuits before localStorage touched.
+  try {
+    const path = (location.pathname || '').replace(/\/+$/, '') || '/';
+    if (path !== '/screener' && !path.startsWith('/screener/')) return;
+  } catch (_) { return; }
+
   const KEY = 'anon_first_seen_at';
   const LIMIT_MS = 120 * 1000;     // 2 minutes
   const POLL_MS = 2000;
