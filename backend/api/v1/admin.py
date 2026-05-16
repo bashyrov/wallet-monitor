@@ -251,6 +251,14 @@ def set_plan(
     # so /me handlers don't serve stale limits from before this update.
     from backend.services.plan_service import invalidate_plan_cache
     invalidate_plan_cache()
+    # Per-user /me cache (auth.py:_ME_CACHE, 30s TTL). Without this the
+    # target user keeps seeing the old plan in their UI for up to 30s
+    # after the admin flip.
+    try:
+        from backend.api.v1.auth import _invalidate_me_cache
+        _invalidate_me_cache(user.id)
+    except Exception:
+        pass
 
     # Auto-archive surplus wallets if the new plan has a smaller portfolio
     # quota — without this, a downgrade leaves the user above the cap until

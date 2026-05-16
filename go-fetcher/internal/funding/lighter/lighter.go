@@ -128,7 +128,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	return out, nil
 }
 
-func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Minute }
+// 5min → 10s: 2 parallel bulk calls (funding-rates + exchangeStats), no
+// per-symbol expansion. mainnet.zklighter.elliot.ai stays well within
+// limits at 6 req/min total. Funding freshness from up-to-5min to <15s.
+func (a *Adapter) BackstopInterval() time.Duration { return 10 * time.Second }
 
 func getJSON(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

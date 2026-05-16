@@ -1466,20 +1466,23 @@ function _makeWs({ path, onMessage, retryRef, pingRef, retryTimerRef, onOpen }) 
 // mode-set trim get auto-migrated to their nearest neighbour so users don't
 // end up stuck on a removed option.
 let _throttle = (() => {
-  // Default 3s — "live" mode re-sorted 1000 rows on every WS tick (~500ms),
-  // pegging a CPU core in screener even when the user wasn't watching.
-  // 3s feels real-time and drops sort cost ~5x. Users who want raw can
-  // still pick Live from the menu.
+  // 3s default + 'live' option удалён из dropdown. Live режим пересортировал
+  // 1000 строк на каждом WS-кадре (~500ms), пегая CPU. 3s feels real-time
+  // и держит cost под контролем. Юзеры с сохранённым 'live' из старой
+  // версии migrate'аются на '3'.
   const saved = localStorage.getItem('screener-throttle') || '3';
-  const valid = new Set(['live', '3', '10', '15', '30']);
-  return valid.has(saved) ? saved : (saved === 'pause' ? '30' : saved === '60' ? '30' : '3');
+  const valid = new Set(['3', '10', '15', '30']);
+  if (valid.has(saved)) return saved;
+  // Legacy migration — 'live'/'pause'/'60' all collapse to '3' or '30'.
+  if (saved === 'live') return '3';
+  if (saved === 'pause' || saved === '60') return '30';
+  return '3';
 })();
 let _pendingFunding = null;  // latest unrendered funding payload
 let _pendingArb = null;      // latest unrendered arb payload
 let _throttleTimer = null;
 
 const THROTTLE_OPTS = [
-  { mode: 'live',  label: 'Live',  sub: '<3s' },
   { mode: '3',     label: '3s',    sub: 'every 3s' },
   { mode: '10',    label: '10s',   sub: 'every 10s' },
   { mode: '15',    label: '15s',   sub: 'every 15s' },
@@ -1541,15 +1544,14 @@ document.addEventListener('click', () => {
 });
 
 function setThrottle(mode) {
+  // 'live' removed from THROTTLE_OPTS. Stale localStorage values fall
+  // through to '3' via the loader at the top of this file.
+  if (mode === 'live') mode = '3';
   _throttle = mode;
   localStorage.setItem('screener-throttle', mode);
   renderThrottle('throttle-desk');
   renderThrottle('throttle-mob');
   clearInterval(_throttleTimer); _throttleTimer = null;
-  if (mode === 'live') {
-    flushPending();
-    return;
-  }
   const ms = parseInt(mode) * 1000;
   _throttleTimer = setInterval(() => { if (document.hidden) return; flushPending(); }, ms);
 }
@@ -1676,7 +1678,7 @@ const _connectArb = _makeWs({
   retryRef: _retryA, pingRef: _pingA, retryTimerRef: _retryTimerA,
   onMessage: (data) => {
     _pendingArb = data;
-    if (_throttle === 'live') flushPending();
+    // Live mode removed; flush always goes through setInterval (3-30s).
   },
 });
 

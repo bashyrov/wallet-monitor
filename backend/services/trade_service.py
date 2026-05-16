@@ -153,7 +153,11 @@ def _find_any_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
 
 
 _PAIR_STATUS_CACHE: dict[tuple, tuple[dict, float]] = {}
-_PAIR_STATUS_TTL = 15.0  # seconds
+# 3s TTL: /arb trade panel polls /trade/status каждые 5s now (was 15s),
+# и юзер должен видеть свежий balance после external moves (deposit/
+# withdraw напрямую на venue без нашей платформы). 15s было слишком
+# консервативно — balance lag в trade panel ощутим.
+_PAIR_STATUS_TTL = 3.0
 
 
 def invalidate_pair_status_cache(user_id: int, exchange: str | None = None) -> None:

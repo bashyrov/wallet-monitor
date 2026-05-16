@@ -254,6 +254,14 @@ def _activate_user(db: Session, payment: Payment) -> None:
         invalidate_plan_cache()
     except Exception:
         pass
+    # /api/auth/me has its own 30s per-user cache (auth.py:_ME_CACHE).
+    # Flush this user's entry — иначе after-payment frontend ещё 30 секунд
+    # видит старый plan limit.
+    try:
+        from backend.api.v1.auth import _invalidate_me_cache
+        _invalidate_me_cache(user.id)
+    except Exception:
+        pass
     # Admin push-notification — fire-and-forget, never blocks the webhook.
     try:
         from backend.services.admin_alert_service import alert_payment

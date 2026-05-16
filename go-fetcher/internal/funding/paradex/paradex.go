@@ -91,7 +91,12 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	return out, nil
 }
 
-func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Minute }
+// 5min → 5s: Paradex `markets/summary?market=ALL` is a single bulk call,
+// no per-symbol expansion. Comment in older revision said "DEX user-base
+// is small" — true но это про rate limit, не про user-perceived
+// freshness. Paradex public limit ~600 req/min; 5s cadence = 12 req/min,
+// well within budget. Funding freshness goes from up-to-5min to under 10s.
+func (a *Adapter) BackstopInterval() time.Duration { return 5 * time.Second }
 
 func getJSON(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

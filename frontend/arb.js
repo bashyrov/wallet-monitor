@@ -1343,7 +1343,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   };
 
   _ptFetchStatus();
-  setInterval(() => { if (document.hidden) return; _ptFetchStatus(); }, 15000);
+  // 15s → 5s: trade status (balance + key status) — trader должен видеть
+  // свежий balance после внешних движений (deposit/withdraw на venue
+  // напрямую). /trade/status server-side кеш дальше cap'ит cost.
+  setInterval(() => { if (document.hidden) return; _ptFetchStatus(); }, 5000);
 
   // Spot/short trade UI is now driven by the unified lt-panel (rendered
   // inside the spot/dex body template). lt-panel auto-detects pair_kind
@@ -1409,7 +1412,9 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     else list.innerHTML = html;
   }
   _ptLoadOpenPositions();
-  setInterval(() => { if (document.hidden) return; _ptLoadOpenPositions(); }, 8000);
+  // 8s → 3s: open positions list — trader следит за PnL/SL в реальном
+  // времени. Server-side positions cache (15s TTL) cap'ит venue load.
+  setInterval(() => { if (document.hidden) return; _ptLoadOpenPositions(); }, 3000);
 
   // ── Account block (Positions / Orders / P&L / Balances) ──────────────────
   window._ptAccSwitch = function (el) {
@@ -1629,7 +1634,9 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   _ptLoadAcc();
   // 30s — backend is WS-fed by 11 user-stream adapters + reconcile worker.
   // 10s polling was needed when REST was authoritative; now it's just load.
-  setInterval(() => { if (document.hidden) return; _ptLoadAcc(); }, 30000);
+  // 30s → 10s: account info (key validity, account name etc) — реже
+  // меняется но 30s было слишком медленно после deposit/key rotation.
+  setInterval(() => { if (document.hidden) return; _ptLoadAcc(); }, 10000);
   // Tighter cadence on triggers — new fires need to surface within seconds
   if (typeof accLoadTriggers === 'function') setInterval(() => { if (document.hidden) return; accLoadTriggers(); }, 5000);
   // Per-user push channel: instant refresh on trigger/position state change
@@ -3791,8 +3798,15 @@ async function initAccBlock(){
   // real-time UX (events are usually visible within 1s of an exchange
   // push because /ws/long-short funding ticks push price changes that
   // trigger a re-render with current snapshot data).
-  setInterval(() => { if (document.hidden) return; _refreshPairDecisions(); accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 30000);
-  setInterval(() => { if (document.hidden) return; accLoadPnl(); }, 60000);
+  // 30s → 10s: pair decisions + positions + balances + orders batch.
+  // /arb is the trader's primary screen; 30s ощутимо медленно после
+  // close/open. Each underlying endpoint has server-side cache so
+  // the venue API load is bounded.
+  setInterval(() => { if (document.hidden) return; _refreshPairDecisions(); accLoadPositions(); accLoadBalances(); accLoadOrders(); }, 10000);
+  // 60s → 15s: PnL refresh. Includes cumulative funding paid which only
+  // changes per funding interval (1-8h) but unrealized PnL moves with
+  // mark price every second.
+  setInterval(() => { if (document.hidden) return; accLoadPnl(); }, 15000);
   // 5s baseline poll for triggers — kept as a safety net even when the WS
   // is connected, in case a push is dropped (Mobile Safari background tabs
   // throttle WS connections to a degree that we've seen kills events).
@@ -4777,7 +4791,9 @@ async function initTradePanel(){
   } catch {}
 
   refreshTradePositions();
-  _tradePosTimer = setInterval(() => { if (document.hidden) return; refreshTradePositions(); }, 8000);
+  // 8s → 3s: trade positions list under the trade card. Same logic as
+  // _ptLoadOpenPositions — trader wants live PnL/SL state.
+  _tradePosTimer = setInterval(() => { if (document.hidden) return; refreshTradePositions(); }, 3000);
 }
 
 function _applyTradeStatus(s){

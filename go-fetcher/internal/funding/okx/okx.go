@@ -250,4 +250,8 @@ func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]fundin
 // 60s backstop: WS tickers channel streams mark/vol in real-time;
 // WS funding-rate only fires at settlement. REST fills rate on startup
 // and catches any WS gaps. Rate changes at most 3x/day so 60s is plenty.
-func (a *Adapter) BackstopInterval() time.Duration { return 60 * time.Second }
+// 60s → 30s: full-sweep cycle ~3s with sem=16 × ~150ms per per-symbol
+// call. At 30s cadence we're at ~10 req/s sustained against OKX 20 req/s
+// public limit — safe margin. Halves funding age from up-to-60s to
+// up-to-30s in the screener status dots.
+func (a *Adapter) BackstopInterval() time.Duration { return 30 * time.Second }
