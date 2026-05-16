@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security — Avalant</title>
+  <meta name="description" content="How Avalant protects API keys, what we never store, and how to report a vulnerability.">
+  <link rel="canonical" href="https://avalant.xyz/security">
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/navbar.css">
+  <script src="/dist/core.min.js?v=20260517b"></script>
+  <style>
+    body { padding: 0; position: relative; overflow-x: hidden; min-height: 100vh; display: flex; flex-direction: column; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(26,255,171,0.04), transparent 70%);
+    }
+    .shell { position: relative; z-index: 1; max-width: 820px; margin: 0 auto; padding: 88px 24px 80px; flex: 1; width: 100%; box-sizing: border-box; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 52px 52px; box-shadow: var(--shadow-lg); }
+    h1.title { font-family: 'Fraunces', Georgia, serif; font-size: 42px; font-weight: 400; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .sub { color: var(--text3); font-size: 13px; margin: 0 0 36px; }
+    h2 { font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 500; letter-spacing: -0.01em; margin: 36px 0 12px; }
+    h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: var(--text); }
+    p, li { color: var(--text2); font-size: 14px; line-height: 1.72; }
+    ul { padding-left: 22px; }
+    li { margin-bottom: 6px; }
+    strong { color: var(--text); font-weight: 600; }
+    code { font-family: var(--mono); font-size: 13px; background: var(--surface2); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .cta { background: var(--green-soft); border: 1px solid var(--green-edge); border-radius: var(--r); padding: 18px 22px; margin: 28px 0; }
+    .cta-title { font-weight: 600; color: var(--green); margin-bottom: 6px; }
+    @media (max-width: 760px) {
+      .shell { padding: 56px 16px 60px; }
+      .card { padding: 32px 22px; }
+      h1.title { font-size: 30px; }
+    }
+  </style>
+</head>
+<body>
+<app-navbar></app-navbar>
+
+<div class="shell">
+  <div class="card">
+    <h1 class="title">Security</h1>
+    <p class="sub">Last reviewed 2026-05-17.</p>
+
+    <h2>What we never store</h2>
+    <ul>
+      <li><strong>Wallet private keys</strong>. Avalant never asks for or holds your on-chain private keys. Portfolio addresses are read-only — we look up balances and transactions via public RPCs and exchange APIs.</li>
+      <li><strong>Exchange withdrawal permissions</strong>. We only ever use API keys with <em>read</em> + <em>trade</em> permissions. If your key grants withdrawal, that's on the venue side — we don't call those endpoints.</li>
+      <li><strong>Plaintext passwords</strong>. Account passwords are bcrypt-hashed (work factor tuned per process budget). Reset tokens are SHA-256 hashed and TTL-capped at 1 hour.</li>
+    </ul>
+
+    <h2>How API keys are protected</h2>
+    <ul>
+      <li><strong>Fernet encryption at rest</strong>. Every exchange API key/secret is encrypted with a per-deployment <code>ENCRYPTION_KEY</code> (PBKDF2-SHA256, 260k iterations) before the DB row is committed. The key never appears in plaintext on disk.</li>
+      <li><strong>Key rotation</strong>. Rotating the encryption key is a one-command operation (<code>scripts/rotate_encryption_key.py</code>) that re-encrypts every row safely — partial failures are idempotent.</li>
+      <li><strong>Same protection for 2FA TOTP secrets</strong>. Stored Fernet-encrypted in <code>users.totp_secret_enc</code>; tear-down on disable.</li>
+    </ul>
+
+    <h2>Auth + sessions</h2>
+    <ul>
+      <li><strong>JWT bearer auth</strong> (HS256), 30-day rolling lifetime. Revocation list backed by Redis (<code>jti</code> blacklist) so a leaked token can be killed immediately.</li>
+      <li><strong>HttpOnly + Secure session cookie</strong> in production. Cross-origin XHR uses Authorization header; cookies never carry the trade-API token.</li>
+      <li><strong>Per-account login throttle</strong>. 5 failed attempts → lock; the counter is stored on the user row and clears on a successful login.</li>
+      <li><strong>Admin requires TOTP</strong>. Admin sessions are gated on a second factor; failed TOTP triggers a TG alert to the admin channel.</li>
+      <li><strong>Admin promotion is SQL-only</strong>. There is no API path, no env var, no registration flow that grants admin. The only way is a direct UPDATE on the host.</li>
+    </ul>
+
+    <h2>Network + headers</h2>
+    <ul>
+      <li>HSTS (1 year, includeSubDomains), X-Frame-Options DENY, X-Content-Type-Options nosniff, restricted Permissions-Policy.</li>
+      <li>CSP with <code>frame-ancestors 'none'</code>, narrowly-scoped <code>connect-src</code>, no third-party script CDNs except telegram.org (Login Widget) and self-hosted vendor bundles.</li>
+      <li>Cloudflare in front of origin for rate limiting and TLS termination. nginx adds per-zone request limits for <code>/api/auth/*</code>, <code>/api/portfolio/balance</code>, and generic <code>/api/*</code>.</li>
+    </ul>
+
+    <h2>Reporting a vulnerability</h2>
+    <p>If you find a bug that affects account safety, key handling, or anything that looks like privilege escalation — please tell us before disclosing publicly. We respond quickly.</p>
+
+    <div class="cta">
+      <div class="cta-title">Disclosure contact</div>
+      <p>Email <a href="mailto:security@avalant.xyz">security@avalant.xyz</a> with a short repro. Please don't post details in public channels until we've had a chance to fix and ship.</p>
+    </div>
+
+    <h2>What's not security-critical</h2>
+    <p>We don't run a paid bug bounty yet, but we do credit responsible disclosure on a future hall-of-fame page. Reports about missing CSRF tokens on the JSON API (we use Bearer auth, not cookie form-post) or about <code>'unsafe-inline'</code> in our CSP (intentional until inline-script removal lands) are known and not eligible.</p>
+  </div>
+</div>
+
+<app-footer></app-footer>
+</body>
+</html>

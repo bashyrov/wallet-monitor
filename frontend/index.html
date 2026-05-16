@@ -928,7 +928,7 @@ img, svg { display: block; max-width: 100%; }
 }
 </style>
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260517a"></script>
+<script src="/dist/core.min.js?v=20260517b"></script>
 </head>
 <body>
 
@@ -1767,64 +1767,9 @@ img, svg { display: block; max-width: 100%; }
 </section>
 
 <!-- ─── FOOTER ─── -->
-<footer class="footer">
-  <div class="wrap">
-    <div class="footer-cols">
-      <div class="footer-col footer-brand-col">
-        <a href="/" class="brand">avalant<span class="cursor">_</span></a>
-        <p>Funding arbitrage, without the spreadsheet tax. <span data-meta-sum="screener_cex+screener_perp_dex">15</span> venues, sub-second data, one workbench.</p>
-      </div>
-      <div class="footer-col">
-        <h5>Product</h5>
-        <ul>
-          <li><a href="/screener">Screener</a></li>
-          <li><a href="/portfolio">Portfolio</a></li>
-          <li><a href="/arb">Arb terminal</a></li>
-          <li><a href="/pricing">Pricing</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h5>Resources</h5>
-        <ul>
-          <li><a href="/changelog">Changelog</a></li>
-          <li><a href="/status">Status</a></li>
-          <li><a href="/docs">API docs</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h5>Company</h5>
-        <ul>
-          <li><a href="mailto:hi@avalant.xyz">Contact</a></li>
-          <li><a href="/privacy">Privacy</a></li>
-          <li><a href="/terms">Terms</a></li>
-          <li><a href="/security">Security</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h5>Connect</h5>
-        <ul>
-          <li><a href="https://t.me/avalant" target="_blank" rel="noopener">Telegram</a></li>
-          <li><a href="https://twitter.com/avalant_xyz" target="_blank" rel="noopener">X / Twitter</a></li>
-          <li><a href="https://github.com/avalant" target="_blank" rel="noopener">GitHub</a></li>
-        </ul>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <div>© 2026 Avalant. Not investment advice. Trading is risky.</div>
-      <div class="socials">
-        <a href="https://t.me/avalant" target="_blank" rel="noopener" aria-label="Telegram">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm4.6 6.9l-1.65 7.8c-.12.55-.45.69-.92.43l-2.53-1.86-1.22 1.17c-.14.14-.25.25-.5.25l.18-2.55 4.65-4.2c.2-.18-.04-.28-.32-.1l-5.75 3.62-2.47-.77c-.54-.17-.55-.54.11-.8l9.66-3.73c.44-.17.83.1.7.78z"/></svg>
-        </a>
-        <a href="https://twitter.com/avalant_xyz" target="_blank" rel="noopener" aria-label="Twitter">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.24 2.25h3.37l-7.36 8.41 8.66 11.45h-6.78l-5.31-6.94-6.08 6.94H1.36l7.88-9L.92 2.25h6.96l4.8 6.34zm-1.18 17.85h1.87L7.04 4.15H5.05z"/></svg>
-        </a>
-        <a href="https://github.com/avalant" target="_blank" rel="noopener" aria-label="GitHub">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 00-3.16 19.5c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.1-1.47-1.1-1.47-.9-.61.07-.6.07-.6 1 .07 1.52 1.03 1.52 1.03.89 1.52 2.34 1.08 2.9.82.1-.64.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.1.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.58 9.58 0 015 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.69 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0012 2z"/></svg>
-        </a>
-      </div>
-    </div>
-  </div>
-</footer>
+<!-- Shared footer — single source of truth in frontend/footer.js
+     (bundled into dist/core.min.js, registered as <app-footer>). -->
+<app-footer></app-footer>
 
 <script>
 // ─── auth-aware nav: hide Sign-in / Get-started when logged in ───

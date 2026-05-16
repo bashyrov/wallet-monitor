@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Status — Avalant</title>
+  <meta name="description" content="Live status of Avalant feeds, trade engine, and data plane.">
+  <link rel="canonical" href="https://avalant.xyz/status">
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/navbar.css">
+  <script src="/dist/core.min.js?v=20260517b"></script>
+  <style>
+    body { padding: 0; position: relative; overflow-x: hidden; min-height: 100vh; display: flex; flex-direction: column; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(26,255,171,0.04), transparent 70%);
+    }
+    .shell { position: relative; z-index: 1; max-width: 880px; margin: 0 auto; padding: 88px 24px 80px; flex: 1; width: 100%; box-sizing: border-box; }
+    h1.title { font-family: 'Fraunces', Georgia, serif; font-size: 42px; font-weight: 400; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .sub { color: var(--text3); font-size: 13px; margin: 0 0 28px; }
+
+    .overall {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+      padding: 22px 28px; margin-bottom: 24px;
+    }
+    .overall .light { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 14px currentColor; }
+    .overall.ok .light { background: var(--green); color: var(--green); }
+    .overall.warn .light { background: var(--yellow, #E5C07B); color: var(--yellow, #E5C07B); }
+    .overall.err .light { background: var(--red); color: var(--red); }
+    .overall .label { font-weight: 600; }
+    .overall .meta { color: var(--text3); margin-left: auto; font-size: 12px; font-family: var(--mono); }
+
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .venue {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 12px 14px;
+      font-size: 13px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.warn { background: var(--yellow, #E5C07B); }
+    .dot.err { background: var(--red); }
+    .dot.none { background: var(--text4, #2A2A36); }
+    .venue .name { font-weight: 600; flex: 1; }
+    .venue .age { color: var(--text3); font-family: var(--mono); font-size: 11px; }
+
+    .section-h { font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 500; margin: 36px 0 14px; }
+    .api {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 16px 18px; font-size: 13px; display: flex; gap: 10px; align-items: center;
+    }
+    .ts { color: var(--text3); font-size: 11px; text-align: right; margin-top: 14px; font-family: var(--mono); }
+
+    @media (max-width: 760px) {
+      .shell { padding: 56px 16px 60px; }
+      h1.title { font-size: 30px; }
+    }
+  </style>
+</head>
+<body>
+<app-navbar></app-navbar>
+
+<div class="shell">
+  <h1 class="title">System Status</h1>
+  <p class="sub">Live readings from <code>/api/health/feeds</code> — refresh every 10 s.</p>
+
+  <div id="overall" class="overall">
+    <span class="light"></span>
+    <span class="label" id="overall-label">Loading…</span>
+    <span class="meta" id="overall-meta"></span>
+  </div>
+
+  <div class="section-h">Funding feeds</div>
+  <div id="venues" class="grid"><div class="venue"><span class="dot none"></span><span class="name">Loading…</span></div></div>
+
+  <div class="section-h">API</div>
+  <div id="api" class="api"><span class="dot none"></span><span>Probing…</span></div>
+
+  <div class="ts" id="ts"></div>
+</div>
+
+<app-footer></app-footer>
+
+<script>
+async function refresh() {
+  try {
+    const [healthResp, feedsResp] = await Promise.all([
+      fetch('/api/health'),
+      fetch('/api/health/feeds'),
+    ]);
+
+    // API
+    const apiOk = healthResp.ok;
+    document.getElementById('api').innerHTML = apiOk
+      ? `<span class="dot ok"></span><span><b>/api/health</b> &mdash; 200 OK</span>`
+      : `<span class="dot err"></span><span><b>/api/health</b> &mdash; ${healthResp.status}</span>`;
+
+    // Feeds
+    if (!feedsResp.ok) throw new Error('feeds http ' + feedsResp.status);
+    const d = await feedsResp.json();
+    const exs = d.exchanges || {};
+    const names = Object.keys(exs).sort();
+    let ok = 0, warn = 0, err = 0;
+    const html = names.map(n => {
+      const v = exs[n] || {};
+      const age = v.age_s;
+      let cls = 'none', txt = '—';
+      if (age == null) { cls = 'err'; err++; txt = 'no data'; }
+      else if (age < 5) { cls = 'ok'; ok++; txt = age.toFixed(1) + 's'; }
+      else if (age < 15) { cls = 'warn'; warn++; txt = age.toFixed(1) + 's'; }
+      else { cls = 'err'; err++; txt = age.toFixed(0) + 's'; }
+      return `<div class="venue"><span class="dot ${cls}"></span><span class="name">${n}</span><span class="age">${txt}</span></div>`;
+    }).join('');
+    document.getElementById('venues').innerHTML = html || '<div class="venue"><span class="dot none"></span><span class="name">no venues reporting</span></div>';
+
+    // Overall
+    const overall = document.getElementById('overall');
+    const lbl = document.getElementById('overall-label');
+    const meta = document.getElementById('overall-meta');
+    overall.classList.remove('ok','warn','err');
+    if (err > 3 || !apiOk) {
+      overall.classList.add('err');
+      lbl.textContent = 'Degraded service';
+    } else if (warn + err > 0) {
+      overall.classList.add('warn');
+      lbl.textContent = 'Minor delays';
+    } else {
+      overall.classList.add('ok');
+      lbl.textContent = 'All systems operational';
+    }
+    meta.textContent = `${ok} fresh · ${warn} delayed · ${err} stale`;
+    document.getElementById('ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('overall').className = 'overall err';
+    document.getElementById('overall-label').textContent = 'Status page error';
+    document.getElementById('overall-meta').textContent = e.message || String(e);
+  }
+}
+refresh();
+setInterval(() => { if (document.hidden) return; refresh(); }, 10_000);
+</script>
+</body>
+</html>

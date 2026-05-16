@@ -33,6 +33,7 @@ const SHARED = [
   'banner.js',
   'anon-gate.js',
   'navbar.js',
+  'footer.js',
 ];
 
 mkdirSync(OUT, { recursive: true });

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/avalant_favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Changelog — Avalant</title>
+  <meta name="description" content="Avalant release notes — what shipped, when, and why.">
+  <link rel="canonical" href="https://avalant.xyz/changelog">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://avalant.xyz/changelog">
+  <meta property="og:title" content="Avalant Changelog">
+  <meta property="og:description" content="What shipped, when, and why.">
+  <meta property="og:image" content="https://avalant.xyz/og-image.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://avalant.xyz/og-image.jpg">
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/navbar.css">
+  <script src="/dist/core.min.js?v=20260517b"></script>
+  <style>
+    body { padding: 0; position: relative; overflow-x: hidden; min-height: 100vh; display: flex; flex-direction: column; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(26,255,171,0.04), transparent 70%);
+    }
+    .shell { position: relative; z-index: 1; max-width: 820px; margin: 0 auto; padding: 88px 24px 80px; flex: 1; width: 100%; box-sizing: border-box; }
+    h1.title { font-family: 'Fraunces', Georgia, serif; font-size: 42px; font-weight: 400; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .sub { color: var(--text3); font-size: 13px; margin: 0 0 36px; }
+    .entry {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+      padding: 26px 30px; margin-bottom: 18px;
+    }
+    .entry-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .entry-date { font-family: var(--mono); font-size: 12px; color: var(--text3); }
+    .entry-version { font-size: 12px; padding: 3px 8px; border-radius: 99px; background: var(--green-soft); color: var(--green); font-weight: 600; letter-spacing: 0.02em; }
+    .entry-title { font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 500; margin: 6px 0 0; flex-basis: 100%; }
+    .entry ul { margin: 0; padding-left: 22px; color: var(--text2); font-size: 14px; line-height: 1.72; }
+    .entry li { margin-bottom: 5px; }
+    .entry strong { color: var(--text); font-weight: 600; }
+    @media (max-width: 760px) {
+      .shell { padding: 56px 16px 60px; }
+      .entry { padding: 22px 18px; }
+      h1.title { font-size: 30px; }
+    }
+  </style>
+</head>
+<body>
+<app-navbar></app-navbar>
+
+<div class="shell">
+  <h1 class="title">Changelog</h1>
+  <p class="sub">What we ship, when, why. Newest on top.</p>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-date">2026-05-17</span>
+      <span class="entry-version">v0.6</span>
+      <h2 class="entry-title">Trade engine: Kraken spot + Hyperliquid spot + Lighter</h2>
+    </div>
+    <ul>
+      <li><strong>Kraken spot</strong> + <strong>Hyperliquid spot</strong> adapters — 13 venues now do spot trading.</li>
+      <li><strong>Lighter</strong> trading enabled via official Go SDK (Schnorr + Poseidon over ECgFp5). 18/18 perp venues now trade through Go.</li>
+      <li>Faster funding for slow venues: <strong>OKX 60s → 30s</strong>, <strong>Paradex 5min → 5s</strong>, <strong>Lighter 5min → 10s</strong>.</li>
+      <li>OG link previews for /arb, /screener, /portfolio. Per-pair preview on /arb shows symbol + venues when shared in messengers.</li>
+      <li>/landing retired — homepage IS the landing now (301 from /landing → /).</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-date">2026-05-15</span>
+      <span class="entry-version">v0.5</span>
+      <h2 class="entry-title">Service Worker + scroll perf + WS idle-disconnect</h2>
+    </div>
+    <ul>
+      <li><strong>Service Worker</strong> — repeat visits load in ~50ms instead of ~500ms. Offline-tolerant: HTML shell + last data render even if the network is down.</li>
+      <li><strong>content-visibility: auto</strong> on orderbook + history rows — 5-10× scroll FPS on mobile.</li>
+      <li><strong>WS idle-disconnect</strong> after 5 min of no activity. Tab in background = 0% client CPU. Reconnects on any user input.</li>
+      <li>Trade panel intervals tightened: balance check 15s → 5s, positions 8s → 3s, PnL 60s → 15s.</li>
+      <li>OKX 500ms post-order fill-fetch removed — orders return immediately.</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-date">2026-05-14</span>
+      <span class="entry-version">v0.4</span>
+      <h2 class="entry-title">API latency sprint: snapshot caches everywhere</h2>
+    </div>
+    <ul>
+      <li>/api/screener/funding p50: <strong>702ms → 11ms</strong> (snapshot cache + background warmer).</li>
+      <li>/api/screener/exchange-health: <strong>1440ms → 2.7ms</strong>.</li>
+      <li>/api/auth/me: 344-1043ms → <strong>5-37ms</strong> (per-user 30s cache with invalidate on plan change).</li>
+      <li>Reconcile worker moved to Redis leader-election — 8 parallel workers → 1.</li>
+      <li>Funding feed health metrics now per-venue (<code>ts_by_ex</code>); status dots reflect real WS push freshness.</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-date">2026-05-13</span>
+      <span class="entry-version">v0.3</span>
+      <h2 class="entry-title">Volume coverage 96% → 99.7%</h2>
+    </div>
+    <ul>
+      <li><strong>Ethereal</strong>: adapter ignored <code>volume24h</code> field — fixed, 18/18 instruments now have volume.</li>
+      <li><strong>Binance</strong>: 126 SETTLING/PENDING_TRADING ghost rows filtered via exchangeInfo TRADING set.</li>
+      <li><strong>Aster</strong>: same fix for 72 tokenized-equity rows.</li>
+      <li><strong>Kraken</strong>: skip inactive PF_* perps with vol=0 AND last=null.</li>
+      <li>OKX funding fetch expanded from subscribed-only (~40) to all 319 swaps — screener sees 8× more OKX inventory.</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-date">2026-05-12</span>
+      <span class="entry-version">v0.2</span>
+      <h2 class="entry-title">Live trade-stream layer + 18-venue feed</h2>
+    </div>
+    <ul>
+      <li>New <code>/ws/trades</code> channel pushes individual trade fills from every venue (100-300 trades/sec on hot Binance pairs).</li>
+      <li>Per-trade pulse animation on matching orderbook rows. Per-venue activity dot — "venue is alive" signal even when nothing visible changes.</li>
+      <li>17/18 venues actively streaming. Ethereal degraded due to Cloudflare 429 (out of our control).</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <span class="entry-date">2026-05-09</span>
+      <span class="entry-version">v0.1</span>
+      <h2 class="entry-title">PnL backfill from venue fills</h2>
+    </div>
+    <ul>
+      <li>"Sync" button on the PnL tab pulls 7 days of fills + funding from each venue, materialises closed positions, auto-pairs spot/short basis pairs.</li>
+      <li>New tables: <code>trade_fills</code> (raw venue fills with idempotency), <code>fills_sync_cursor</code> (per-venue high-watermark).</li>
+      <li>Reconcile worker captures externally-opened positions (orders placed via the venue's UI / API directly).</li>
+    </ul>
+  </div>
+</div>
+
+<app-footer></app-footer>
+</body>
+</html>
