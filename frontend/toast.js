@@ -5,6 +5,13 @@
 //   toast('Failed', 'error')                 → error
 //   toast('Title', 'success', 'subtitle')    → with subtitle
 //   toast({title, sub, type, duration})      → object form
+//   toast('Submitting…', 'loading', '…')     → spinning ring, no auto-dismiss
+//
+// Returns a `dismiss` function. Loading toasts can be morphed in place
+// via dismiss.update({title, type, sub, duration}) — typical pattern:
+//   const t = toast('Submitting…', 'loading');
+//   try { ...; t.update({title:'Filled', type:'success'}); }
+//   catch (e) { t.update({title:'Failed', type:'error', sub: e.message}); }
 
 (function(){
   if (window.toast && window.toast._avalant) return;
@@ -28,6 +35,10 @@
 .av-toast.error .av-toast-icon-wrap{background:rgba(248,113,113,.12);color:var(--red,#F87171);}
 .av-toast.warn{border-color:var(--yellow,#E5C07B);}
 .av-toast.warn .av-toast-icon-wrap{background:rgba(229,192,123,.12);color:var(--yellow,#E5C07B);}
+.av-toast.loading{border-color:var(--text3,#55585F);}
+.av-toast.loading .av-toast-icon-wrap{background:rgba(155,159,171,.10);color:var(--text2,#9B9FAB);}
+.av-toast-ring{width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:avToastSpin .8s linear infinite;}
+@keyframes avToastSpin{to{transform:rotate(360deg);}}
 body.light .av-toast{background:#FFFFFF;box-shadow:0 10px 28px rgba(0,0,0,.14);}
 body.light .av-toast.success .av-toast-icon-wrap{background:#F0F7F3;}
 body.light .av-toast.error .av-toast-icon-wrap{background:#FBECEC;}
@@ -55,7 +66,14 @@ body.light .av-toast.warn .av-toast-icon-wrap{background:#FBF5E7;}
     error:   '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v4M8 11v.5"/></svg>',
     warn:    '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l6.5 11.5h-13L8 2z"/><path d="M8 7v3M8 11.5v.5"/></svg>',
     info:    '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5v.5"/></svg>',
+    loading: '<span class="av-toast-ring"></span>',
   };
+
+  function defaultDuration(type){
+    if (type === 'loading') return 0;       // sticky until update() or manual dismiss
+    if (type === 'success') return 4000;
+    return 3200;
+  }
 
   function show(a, b, c){
     let opts;
@@ -64,32 +82,54 @@ body.light .av-toast.warn .av-toast-icon-wrap{background:#FBF5E7;}
     } else {
       opts = { title: a, type: b || 'info', sub: c || '' };
     }
-    const type = opts.type || 'info';
+    let type = opts.type || 'info';
     const title = opts.title || '';
     const sub = opts.sub || '';
-    const duration = opts.duration != null ? opts.duration : (type === 'success' ? 4000 : 3200);
+    const duration = opts.duration != null ? opts.duration : defaultDuration(type);
 
     const host = ensureHost();
     const el = document.createElement('div');
     el.className = 'av-toast ' + type;
-    el.innerHTML = `
-      <div class="av-toast-icon-wrap">${ICONS[type] || ICONS.info}</div>
-      <div class="av-toast-body">
-        <div class="av-toast-title">${escape(title)}</div>
-        ${sub ? `<div class="av-toast-sub">${sub}</div>` : ''}
-      </div>
-      <button class="av-toast-close" aria-label="Close">×</button>
-    `;
+    const render = (t, ttl, sb) => {
+      el.innerHTML = `
+        <div class="av-toast-icon-wrap">${ICONS[t] || ICONS.info}</div>
+        <div class="av-toast-body">
+          <div class="av-toast-title">${escape(ttl)}</div>
+          ${sb ? `<div class="av-toast-sub">${sb}</div>` : ''}
+        </div>
+        <button class="av-toast-close" aria-label="Close">×</button>
+      `;
+      el.querySelector('.av-toast-close').addEventListener('click', dismiss);
+    };
+    render(type, title, sub);
     host.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
 
-    const dismiss = () => {
+    let dismissTimer = null;
+    function dismiss(){
+      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
       el.classList.add('hide');
       el.classList.remove('show');
       setTimeout(() => el.remove(), 300);
+    }
+    if (duration > 0) dismissTimer = setTimeout(dismiss, duration);
+
+    // Morph the toast in place (loading → success/error). Resets auto-dismiss
+    // timer based on the new type so a "loading" toast that becomes "success"
+    // gets the 4s auto-dismiss.
+    dismiss.update = function(next){
+      if (!next || typeof next !== 'object') return;
+      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
+      const newType = next.type || type;
+      const newTitle = next.title != null ? next.title : title;
+      const newSub = next.sub != null ? next.sub : sub;
+      type = newType;
+      el.className = 'av-toast show ' + newType;
+      render(newType, newTitle, newSub);
+      const dur = next.duration != null ? next.duration : defaultDuration(newType);
+      if (dur > 0) dismissTimer = setTimeout(dismiss, dur);
     };
-    el.querySelector('.av-toast-close').addEventListener('click', dismiss);
-    if (duration > 0) setTimeout(dismiss, duration);
+
     return dismiss;
   }
 

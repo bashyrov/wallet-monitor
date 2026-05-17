@@ -4659,21 +4659,25 @@ async function _tradeClosePair(longWid, shortWid, sym){
     danger: true,
   });
   if (!ok) return;
+  const pending = window.toast && window.toast(
+    'Closing pair…', 'loading',
+    `<span class="mono">${sym}</span> · both legs`,
+  );
   try {
     const [lr, sr] = await Promise.allSettled([
       Auth.apiFetch('/trade/close', {method:'POST', body: JSON.stringify({wallet_id: longWid,  symbol: sym})}),
       Auth.apiFetch('/trade/close', {method:'POST', body: JSON.stringify({wallet_id: shortWid, symbol: sym})}),
     ]);
     const okCount = [lr, sr].filter(r => r.status === 'fulfilled' && r.value.ok).length;
-    if (okCount === 2)      _toast('Pair closed', 'success');
-    else if (okCount === 1) _toast('One leg closed — the other failed; see Order History', 'warn');
-    else                    _toast('Close pair failed — see Order History for details', 'error');
+    if (okCount === 2)      pending && pending.update({title:'Pair closed', type:'success'});
+    else if (okCount === 1) pending && pending.update({title:'One leg closed', type:'warn', sub:'The other failed — see Order History'});
+    else                    pending && pending.update({title:'Close pair failed', type:'error', sub:'see Order History'});
     refreshTradePositions();
     _reloadTradeStatus();
     if (typeof accLoadPositions === 'function') accLoadPositions();
     if (typeof accLoadOrders === 'function') accLoadOrders();
   } catch (e) {
-    _toast('Close pair failed — see Order History for details', 'error');
+    pending && pending.update({title:'Close pair failed', type:'error', sub:(e.message || 'see Order History').slice(0,200)});
     if (typeof accLoadOrders === 'function') accLoadOrders();
   }
 }
@@ -5081,6 +5085,10 @@ async function tradeOpenArb(){
   const txt = document.getElementById('trade-arb-text');
   const prev = txt.textContent;
   btn.disabled = true; txt.innerHTML = '<span class="trade-busy-ring"></span>Submitting both legs…';
+  const pending = window.toast && window.toast(
+    'Opening pair…', 'loading',
+    `<span class="mono">${SYM}</span> · LONG ${EX_LABEL[LONG]||LONG} · SHORT ${EX_LABEL[SHORT]||SHORT}`,
+  );
   try {
     const r = await Auth.apiFetch('/trade/open-arb', {
       method: 'POST',
@@ -5093,7 +5101,7 @@ async function tradeOpenArb(){
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.detail || 'Request failed');
     if (body.fully_filled) {
-      _toast('Both legs filled ✓', 'success');
+      pending && pending.update({title:'Both legs filled ✓', type:'success'});
       document.getElementById('trade-size-long').value = '';
       document.getElementById('trade-size-short').value = '';
       _trade.long.qty = 0; _trade.short.qty = 0;
@@ -5101,13 +5109,14 @@ async function tradeOpenArb(){
     } else {
       if (body.long?.ok && !body.short?.ok) {
         _showLegErr('short', 'SHORT failed: ' + (body.short.error || 'unknown'));
-        _toast('Long filled, SHORT failed', 'error');
+        pending && pending.update({title:'Long filled, SHORT failed', type:'error', sub: body.short?.error || ''});
       } else if (body.short?.ok && !body.long?.ok) {
         _showLegErr('long',  'LONG failed: '  + (body.long.error  || 'unknown'));
-        _toast('Short filled, LONG failed', 'error');
+        pending && pending.update({title:'Short filled, LONG failed', type:'error', sub: body.long?.error || ''});
       } else {
         _showLegErr('long',  body.long?.error  || 'Both legs failed');
         _showLegErr('short', body.short?.error || 'Both legs failed');
+        pending && pending.update({title:'Both legs failed', type:'error'});
       }
     }
     refreshTradePositions();
@@ -5115,6 +5124,7 @@ async function tradeOpenArb(){
     if (typeof accLoadPositions === 'function') accLoadPositions();
     if (typeof accLoadOrders === 'function') accLoadOrders();
   } catch (e) {
+    pending && pending.update({title:'Open failed', type:'error', sub: e.message || ''});
     _showLegErr('long', e.message || 'Order failed');
     _showLegErr('short', e.message || 'Order failed');
     if (typeof accLoadOrders === 'function') accLoadOrders();
@@ -5160,6 +5170,11 @@ async function tradeOpen(leg){
   btn.disabled = true;
   const prev = btn.textContent;
   btn.innerHTML = '<span class="trade-busy-ring"></span>Submitting…';
+  const venueLabel = EX_LABEL[leg === 'long' ? LONG : SHORT] || '';
+  const pending = window.toast && window.toast(
+    `Opening ${sideText}…`, 'loading',
+    `<span class="mono">${SYM}</span> · ${venueLabel} · ${t.qty} ${SYM}`,
+  );
   try {
     const _orderBody = {
       wallet_id: t.walletId, symbol: SYM,
@@ -5181,7 +5196,10 @@ async function tradeOpen(leg){
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.detail || 'Order failed');
-    _toast(`${sideText} order placed · ${body.order_id || 'OK'}`, 'success');
+    pending && pending.update({
+      title: `${sideText} filled ✓`, type:'success',
+      sub: body.avg_price ? `@ <span class="mono">${body.avg_price}</span>` : (body.order_id ? `id ${body.order_id}` : ''),
+    });
     // Immediate refresh, balance, positions everywhere
     refreshTradePositions();
     _reloadTradeStatus();
@@ -5191,6 +5209,7 @@ async function tradeOpen(leg){
     document.getElementById('trade-size-' + leg).value = '';
     _trade[leg].qty = 0; tradeRecalc(leg);
   } catch (e) {
+    pending && pending.update({title: `${sideText} failed`, type:'error', sub: e.message || ''});
     _showLegErr(leg, e.message || 'Order failed');
     if (typeof accLoadOrders === 'function') accLoadOrders();
   } finally {
@@ -5214,6 +5233,10 @@ async function tradeClose(wid, posId){
     danger: true,
   });
   if (!ok) return;
+  const pending = window.toast && window.toast(
+    'Closing position…', 'loading',
+    `<span class="mono">${SYM}</span>`,
+  );
   try {
     const r = await Auth.apiFetch('/trade/close', {
       method: 'POST',
@@ -5221,13 +5244,16 @@ async function tradeClose(wid, posId){
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.detail || 'Close failed');
-    _toast('Position closed', 'success');
+    pending && pending.update({
+      title: 'Position closed', type:'success',
+      sub: body.avg_price ? `@ <span class="mono">${body.avg_price}</span>` : '',
+    });
     refreshTradePositions();
     _reloadTradeStatus();
     if (typeof accLoadPositions === 'function') accLoadPositions();
     if (typeof accLoadOrders === 'function') accLoadOrders();
   } catch (e) {
-    _toast('Close failed — see Order History for details', 'error');
+    pending && pending.update({title:'Close failed', type:'error', sub: (e.message || 'see Order History').slice(0, 200)});
     if (typeof accLoadOrders === 'function') accLoadOrders();
   }
 }
