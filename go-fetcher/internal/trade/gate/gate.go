@@ -456,6 +456,12 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 					"reduce_only": true,
 				})
 			if err != nil {
+				// Retry might fail with POSITION_EMPTY / POSITION_NOT_OPEN
+				// (no leg on that side). Still idempotent → FLAT.
+				if te2, ok := err.(*trade.Error); ok &&
+					(strings.HasPrefix(te2.Code, "POSITION_") || te2.Code == "ORDER_REDUCE_ONLY") {
+					return &trade.Result{Symbol: req.Symbol, Status: "FLAT", Raw: []byte(te2.Code)}, nil
+				}
 				return nil, err
 			}
 		} else if strings.HasPrefix(te.Code, "POSITION_") || te.Code == "ORDER_REDUCE_ONLY" {
