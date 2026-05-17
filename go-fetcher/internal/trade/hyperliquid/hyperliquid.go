@@ -574,12 +574,23 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 		return nil, err
 	}
 	closeIsBuy := p.Side == trade.SideSell
+	// Reduce-only IOC limit still needs an aggressive slippage price; P="0"
+	// is rejected by HL same as on the open path.
+	mid, mErr := a.midPrice(ctx, req.Symbol)
+	if mErr != nil || mid <= 0 {
+		return nil, errInternal("get mid price for close slippage padding", mErr)
+	}
+	pad := 1.08
+	if !closeIsBuy {
+		pad = 0.92
+	}
+	closePx := hlPriceFormat(mid*pad, req.Symbol)
 	action := orderAction{
 		Type: "order",
 		Orders: []orderLeg{{
 			A: idx,
 			B: closeIsBuy,
-			P: "0",
+			P: closePx,
 			S: qtyString(p.Quantity),
 			R: true,
 			T: orderTypeBox{Limit: orderLimit{Tif: "Ioc"}},
