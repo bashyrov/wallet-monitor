@@ -278,32 +278,51 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 	if req.Symbol == "" {
 		return nil, errUser("symbol required")
 	}
-	// Backpack spot close: sell the full base-asset balance.
+	// Backpack perp close: look up the open perp position, place a reduce-only
+	// market order on the opposite side. /api/v1/position is the perp endpoint
+	// (NOT /api/v1/capital — that's spot balances and won't see perp PnL).
+	symPerp := toBPSymbol(req.Symbol)
 	body, err := a.signedRequest(ctx, creds, http.MethodGet,
-		"/api/v1/capital", "balanceQuery", nil, nil)
+		"/api/v1/position", "positionQuery", nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	var data map[string]struct {
-		Available string `json:"available"`
+	var posRows []struct {
+		Symbol               string `json:"symbol"`
+		NetExposureQuantity  string `json:"netExposureQuantity"`
+		NetExposureNotional  string `json:"netExposureNotional"`
 	}
-	_ = json.Unmarshal(body, &data)
-	bal := data[strings.ToUpper(req.Symbol)]
-	amt, _ := strconv.ParseFloat(bal.Available, 64)
-	if amt <= 0 {
+	_ = json.Unmarshal(body, &posRows)
+	var qty float64
+	for _, p := range posRows {
+		if !strings.EqualFold(p.Symbol, symPerp) {
+			continue
+		}
+		v, _ := strconv.ParseFloat(p.NetExposureQuantity, 64)
+		qty = v
+		break
+	}
+	if qty == 0 {
 		return &trade.Result{Symbol: req.Symbol, Status: "FLAT"}, nil
 	}
-	side := "Ask" // sell base asset
-	if req.Side == trade.SideSell {
+	// netExposureQuantity is signed: positive = long, negative = short.
+	// Close = opposite side.
+	side := "Ask" // close long with sell
+	closeSide := trade.SideSell
+	absQty := qty
+	if qty < 0 {
 		side = "Bid"
+		closeSide = trade.SideBuy
+		absQty = -qty
 	}
-	body, err = a.signedRequest(ctx, creds, http.MethodPost,
+	orderBody, err := a.signedRequest(ctx, creds, http.MethodPost,
 		"/api/v1/order", "orderExecute", nil,
 		map[string]string{
-			"symbol":    toBPSymbol(req.Symbol),
-			"side":      side,
-			"orderType": "Market",
-			"quantity":  qtyString(amt),
+			"symbol":      symPerp,
+			"side":        side,
+			"orderType":   "Market",
+			"quantity":    qtyString(absQty),
+			"reduceOnly":  "true",
 		})
 	if err != nil {
 		return nil, err
@@ -311,55 +330,62 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 	var resp struct {
 		ID string `json:"id"`
 	}
-	_ = json.Unmarshal(body, &resp)
-	closeSide := trade.SideSell
-	if side == "Bid" {
-		closeSide = trade.SideBuy
-	}
+	_ = json.Unmarshal(orderBody, &resp)
 	return &trade.Result{
 		OrderID:   resp.ID,
 		Symbol:    req.Symbol,
 		Side:      closeSide,
-		Quantity:  amt,
+		Quantity:  absQty,
 		Status:    "NEW",
 		CreatedAt: time.Now().UTC(),
-		Raw:       body,
+		Raw:       orderBody,
 	}, nil
 }
 
 func (a *Adapter) ListPositions(ctx context.Context, creds trade.Creds, symbol string) ([]trade.Position, error) {
 	body, err := a.signedRequest(ctx, creds, http.MethodGet,
-		"/api/v1/capital", "balanceQuery", nil, nil)
+		"/api/v1/position", "positionQuery", nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	var data map[string]struct {
-		Available string `json:"available"`
-		Locked    string `json:"locked"`
+	var rows []struct {
+		Symbol              string `json:"symbol"` // SOL_USDC_PERP
+		NetExposureQuantity string `json:"netExposureQuantity"`
+		EntryPrice          string `json:"entryPrice"`
+		MarkPrice           string `json:"markPrice"`
+		PnlUnrealized       string `json:"pnlUnrealized"`
 	}
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, errInternal("parse balances", err)
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, errInternal("parse positions", err)
 	}
 	wantSym := strings.ToUpper(symbol)
-	out := make([]trade.Position, 0, len(data))
-	for asset, e := range data {
-		if asset == "USDT" || asset == "USDC" {
+	out := make([]trade.Position, 0, len(rows))
+	for _, r := range rows {
+		base := strings.TrimSuffix(strings.ToUpper(r.Symbol), "_USDC_PERP")
+		if wantSym != "" && base != wantSym {
 			continue
 		}
-		avail, _ := strconv.ParseFloat(e.Available, 64)
-		locked, _ := strconv.ParseFloat(e.Locked, 64)
-		total := avail + locked
-		if total <= 0 {
+		qty, _ := strconv.ParseFloat(r.NetExposureQuantity, 64)
+		if qty == 0 {
 			continue
 		}
-		if wantSym != "" && strings.ToUpper(asset) != wantSym {
-			continue
+		side := trade.SideBuy
+		if qty < 0 {
+			side = trade.SideSell
+			qty = -qty
 		}
+		entry, _ := strconv.ParseFloat(r.EntryPrice, 64)
+		mark, _ := strconv.ParseFloat(r.MarkPrice, 64)
+		upl, _ := strconv.ParseFloat(r.PnlUnrealized, 64)
 		out = append(out, trade.Position{
-			Symbol:   asset,
-			Side:     trade.SideBuy, // spot holdings = "long"
-			Quantity: total,
-			Leverage: 1,
+			Symbol:        base,
+			Side:          side,
+			Quantity:      qty,
+			EntryPrice:    entry,
+			MarkPrice:     mark,
+			UnrealizedPnL: upl,
+			Notional:      qty * mark,
+			MarginMode:    trade.MarginCross,
 		})
 	}
 	return out, nil

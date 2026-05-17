@@ -26,6 +26,10 @@ import httpx
 
 logger = logging.getLogger("avalant.trade.proxy")
 
+# Per-process cache of resolved Lighter account_index by L1 address.
+# Set once at first trade after wallet create, persists for process lifetime.
+_LIGHTER_IDX_CACHE: dict[str, str] = {}
+
 _DEFAULT_URL = "http://go-fetcher:8090"
 # connect=2s was too tight when Portfolio refresh concurrently pinged
 # the proxy for every screener-eligible wallet — DNS + 3-way handshake
@@ -230,6 +234,29 @@ def _normalize_for_venue(exchange: str, creds: dict) -> dict:
         out = dict(creds)
         if not out.get("api_key") and out.get("address"):
             out["api_key"] = out["address"]
+        return out
+    if ex == "lighter":
+        # Lighter wallet may have api_key (account_index) unset if the user
+        # created the wallet from the keys-popup info only. Open path works
+        # without it (signing uses api_secret only), but close/list go through
+        # /api/v1/account?by=index&value=<idx> and fail with
+        # "lighter requires the numeric account_index". Resolve once from the
+        # L1 address and cache in-process so we don't HTTP per trade.
+        out = dict(creds)
+        if not out.get("api_key") and out.get("address"):
+            addr = out["address"].strip().lower()
+            cached = _LIGHTER_IDX_CACHE.get(addr)
+            if cached:
+                out["api_key"] = cached
+            else:
+                try:
+                    from backend.services.wallet_service import _lighter_resolve_account_index
+                    idx = _lighter_resolve_account_index(addr)
+                    if idx:
+                        out["api_key"] = idx
+                        _LIGHTER_IDX_CACHE[addr] = idx
+                except Exception as exc:  # noqa: BLE001
+                    logger.info("lighter idx resolve failed for %s: %s", addr[:10], exc)
         return out
     if ex == "extended":
         # Extended needs 4 fields: api_key + Stark privkey + Stark pubkey + vault.

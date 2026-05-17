@@ -436,22 +436,10 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 		return nil, errUser("symbol required")
 	}
 	sym := toBitgetSymbol(req.Symbol)
-	positions, err := a.ListPositions(ctx, creds, req.Symbol)
-	if err != nil {
-		return nil, err
-	}
-	if len(positions) == 0 {
-		return &trade.Result{Symbol: req.Symbol, Status: "FLAT"}, nil
-	}
-	p := positions[0]
-	if req.Side != "" {
-		for _, q := range positions {
-			if q.Side == req.Side {
-				p = q
-				break
-			}
-		}
-	}
+	// Skip the ListPositions precheck — /api/v2/mix/position/all-position
+	// can lag behind freshly-opened positions (observed: 30s+ after a market
+	// fill, position still missing). /close-positions is venue-idempotent: if
+	// no position exists, successList is empty and no order is placed.
 	body, err := a.signedRequest(ctx, creds, http.MethodPost,
 		"/api/v2/mix/order/close-positions", nil, map[string]any{
 			"symbol":      sym,
@@ -462,23 +450,23 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 	}
 	var resp struct {
 		SuccessList []struct {
-			OrderID string `json:"orderId"`
+			OrderID  string `json:"orderId"`
+			HoldSide string `json:"holdSide"`
 		} `json:"successList"`
 	}
 	_ = json.Unmarshal(body, &resp)
-	orderID := ""
-	if len(resp.SuccessList) > 0 {
-		orderID = resp.SuccessList[0].OrderID
+	if len(resp.SuccessList) == 0 {
+		return &trade.Result{Symbol: req.Symbol, Status: "FLAT", Raw: body}, nil
 	}
+	orderID := resp.SuccessList[0].OrderID
 	closeSide := trade.SideSell
-	if p.Side == trade.SideSell {
+	if strings.EqualFold(resp.SuccessList[0].HoldSide, "short") {
 		closeSide = trade.SideBuy
 	}
 	return &trade.Result{
 		OrderID:   orderID,
 		Symbol:    req.Symbol,
 		Side:      closeSide,
-		Quantity:  p.Quantity,
 		Status:    "NEW",
 		CreatedAt: time.Now().UTC(),
 		Raw:       body,
