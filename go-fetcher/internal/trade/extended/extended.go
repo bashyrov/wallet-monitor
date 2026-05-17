@@ -107,12 +107,12 @@ func encodeShortString(s string) *felt.Felt {
 
 type marketMeta struct {
 	Name string
-	// Synthetic = base asset (BTC, ETH, …) — precision is asset_precision from /info/markets
+	// Synthetic = base asset (BTC, ETH, …) — IDs + resolutions come from
+	// l2Config (NOT assetPrecision, which is just UI decimals).
 	SyntheticAssetID     *felt.Felt
-	SyntheticPrecision   int
-	// Collateral = USDC for everything currently — collateral_asset_precision=6
+	SyntheticResolution  int64 // e.g. 1000 for SOL → qty × 1000 = StarkEx fixed-point
 	CollateralAssetID    *felt.Felt
-	CollateralPrecision  int
+	CollateralResolution int64 // e.g. 1000000 for USDC → qty*price × 1e6
 	// Default taker fee from the market (decimal as string, e.g. "0.00045")
 	TakerFee             float64
 	// Tick rules from tradingConfig — required to avoid "Invalid price/qty precision"
@@ -240,15 +240,12 @@ func (a *Adapter) loadMarkets(ctx context.Context) error {
 			Name              string `json:"name"`
 			Active            bool   `json:"active"`
 			Status            string `json:"status"`
-			AssetPrecision    int    `json:"assetPrecision"`
-			CollateralAssetName       string `json:"collateralAssetName"`
-			CollateralAssetPrecision  int    `json:"collateralAssetPrecision"`
-			SyntheticAsset    struct {
-				SettlementExternalID string `json:"settlement_external_id"`
-			} `json:"synthetic_asset"`
-			CollateralAsset struct {
-				SettlementExternalID string `json:"settlement_external_id"`
-			} `json:"collateral_asset"`
+			L2Config struct {
+				CollateralID         string `json:"collateralId"`
+				SyntheticID          string `json:"syntheticId"`
+				SyntheticResolution  int64  `json:"syntheticResolution"`
+				CollateralResolution int64  `json:"collateralResolution"`
+			} `json:"l2Config"`
 			TradingConfig struct {
 				TakerFee           string `json:"takerFee"`
 				MinPriceChange     string `json:"minPriceChange"`
@@ -281,10 +278,10 @@ func (a *Adapter) loadMarkets(ctx context.Context) error {
 		minSzChg, _ := strconv.ParseFloat(m.TradingConfig.MinOrderSizeChange, 64)
 		out[m.Name] = marketMeta{
 			Name:                 m.Name,
-			SyntheticAssetID:     parseFelt(m.SyntheticAsset.SettlementExternalID),
-			SyntheticPrecision:   m.AssetPrecision,
-			CollateralAssetID:    parseFelt(m.CollateralAsset.SettlementExternalID),
-			CollateralPrecision:  m.CollateralAssetPrecision,
+			SyntheticAssetID:     parseFelt(m.L2Config.SyntheticID),
+			SyntheticResolution:  m.L2Config.SyntheticResolution,
+			CollateralAssetID:    parseFelt(m.L2Config.CollateralID),
+			CollateralResolution: m.L2Config.CollateralResolution,
 			TakerFee:             fee,
 			MinPriceChange:       minPx,
 			MinOrderSize:         minSz,
@@ -478,9 +475,9 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	// SELLING synthetic; quote is negative when BUYING synthetic.
 	qty := req.Quantity
 	price, _ := strconv.ParseFloat(priceStr, 64)
-	baseAmountAbs := mulPow10(qty, mm.SyntheticPrecision)
-	quoteAmountAbs := mulPow10(qty*price, mm.CollateralPrecision)
-	feeAmount := mulPow10(qty*price*mm.TakerFee, mm.CollateralPrecision)
+	baseAmountAbs := mulResolution(qty, mm.SyntheticResolution)
+	quoteAmountAbs := mulResolution(qty*price, mm.CollateralResolution)
+	feeAmount := mulResolution(qty*price*mm.TakerFee, mm.CollateralResolution)
 	if feeAmount.Sign() == 0 {
 		feeAmount.SetInt64(1) // never sign with zero fee
 	}
@@ -740,16 +737,16 @@ func (a *Adapter) SetLeverage(ctx context.Context, creds trade.Creds, req trade.
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-func mulPow10(v float64, precision int) *big.Int {
-	if precision < 0 {
+// mulResolution scales a float quantity by the StarkEx fixed-point
+// resolution from /info/markets l2Config (e.g. SOL syntheticResolution=1000,
+// USDC collateralResolution=1000000). Output is the big.Int the venue
+// recomputes and verifies the signature against.
+func mulResolution(v float64, resolution int64) *big.Int {
+	if resolution <= 0 {
 		return new(big.Int)
 	}
-	mult := new(big.Float).SetFloat64(1)
-	for i := 0; i < precision; i++ {
-		mult.Mul(mult, big.NewFloat(10))
-	}
 	r := new(big.Float).SetFloat64(v)
-	r.Mul(r, mult)
+	r.Mul(r, new(big.Float).SetInt64(resolution))
 	out, _ := r.Int(nil)
 	if out == nil {
 		out = new(big.Int)

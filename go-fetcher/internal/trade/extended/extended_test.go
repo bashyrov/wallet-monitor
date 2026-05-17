@@ -87,21 +87,23 @@ func TestSignOrder_DeterministicShape(t *testing.T) {
 	}
 }
 
-func TestMulPow10(t *testing.T) {
+func TestMulResolution(t *testing.T) {
 	cases := []struct {
-		v    float64
-		prec int
-		want string
+		v          float64
+		resolution int64
+		want       string
 	}{
-		{1.5, 6, "1500000"},
-		{0.001, 6, "1000"},
-		{100, 0, "100"},
-		{0.123456789, 6, "123456"},
+		{1.5, 1_000_000, "1500000"},
+		{0.001, 1_000_000, "1000"},
+		{100, 1, "100"},
+		{0.123456789, 1_000_000, "123456"},
+		{0.2, 1000, "200"},     // SOL syntheticResolution=1000
+		{17.30, 1_000_000, "17300000"}, // USDC collateralResolution=1e6
 	}
 	for _, c := range cases {
-		got := mulPow10(c.v, c.prec).String()
+		got := mulResolution(c.v, c.resolution).String()
 		if got != c.want {
-			t.Errorf("mulPow10(%v, %d) = %s, want %s", c.v, c.prec, got, c.want)
+			t.Errorf("mulResolution(%v, %d) = %s, want %s", c.v, c.resolution, got, c.want)
 		}
 	}
 }
