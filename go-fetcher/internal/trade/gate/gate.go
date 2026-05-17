@@ -423,29 +423,10 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 		return nil, errUser("symbol required")
 	}
 	contract := toGateSymbol(req.Symbol)
-	positions, err := a.ListPositions(ctx, creds, req.Symbol)
-	if err != nil {
-		return nil, err
-	}
-	if len(positions) == 0 {
-		return &trade.Result{Symbol: req.Symbol, Status: "FLAT"}, nil
-	}
-	// Pick the matching leg in dual-mode. In single-mode there's only one.
-	var p trade.Position
-	if req.Side != "" {
-		for _, q := range positions {
-			if q.Side == req.Side {
-				p = q
-				break
-			}
-		}
-		if p.Symbol == "" {
-			p = positions[0]
-		}
-	} else {
-		p = positions[0]
-	}
-	// Single-mode close: size=0 + close=true auto-flattens.
+	// Skip the ListPositions precheck — /futures/usdt/positions has been
+	// observed lagging behind fresh fills (close returns FLAT for actually-open
+	// positions). The /orders endpoint with close=true is venue-idempotent:
+	// if no position, returns POSITION_EMPTY and we can return FLAT cleanly.
 	body, err := a.signedRequest(ctx, creds, http.MethodPost,
 		"/api/v4/futures/usdt/orders", nil, map[string]any{
 			"contract": contract,
@@ -456,42 +437,58 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 		})
 	if err != nil {
 		te, ok := err.(*trade.Error)
-		if !ok || te.Code != "POSITION_DUAL_MODE" {
+		if !ok {
 			return nil, err
 		}
-		// Dual-mode: explicit auto_size telling Gate which leg to close.
-		autoSize := "close_long"
-		if p.Side == trade.SideSell {
-			autoSize = "close_short"
-		}
-		body, err = a.signedRequest(ctx, creds, http.MethodPost,
-			"/api/v4/futures/usdt/orders", nil, map[string]any{
-				"contract":    contract,
-				"size":        0,
-				"price":       "0",
-				"tif":         "ioc",
-				"auto_size":   autoSize,
-				"reduce_only": true,
-			})
-		if err != nil {
+		switch te.Code {
+		case "POSITION_EMPTY", "ORDER_REDUCE_ONLY", "POSITION_NOT_FOUND":
+			return &trade.Result{Symbol: req.Symbol, Status: "FLAT"}, nil
+		case "POSITION_DUAL_MODE":
+			// Dual-mode: explicit auto_size telling Gate which leg to close.
+			// Trust caller-supplied side; default to close_long when omitted.
+			autoSize := "close_long"
+			if req.Side == trade.SideSell {
+				autoSize = "close_short"
+			}
+			body, err = a.signedRequest(ctx, creds, http.MethodPost,
+				"/api/v4/futures/usdt/orders", nil, map[string]any{
+					"contract":    contract,
+					"size":        0,
+					"price":       "0",
+					"tif":         "ioc",
+					"auto_size":   autoSize,
+					"reduce_only": true,
+				})
+			if err != nil {
+				return nil, err
+			}
+		default:
 			return nil, err
 		}
 	}
 	var resp struct {
 		ID        json.Number `json:"id"`
 		FillPrice string      `json:"fill_price"`
+		Size      json.Number `json:"size"`
 	}
 	_ = json.Unmarshal(body, &resp)
 	closeSide := trade.SideSell
-	if p.Side == trade.SideSell {
+	if req.Side == trade.SideSell {
 		closeSide = trade.SideBuy
 	}
 	fill, _ := strconv.ParseFloat(resp.FillPrice, 64)
+	var qty float64
+	if n, ok := resp.Size.Float64(); ok == nil {
+		qty = n
+		if qty < 0 {
+			qty = -qty
+		}
+	}
 	return &trade.Result{
 		OrderID:   string(resp.ID),
 		Symbol:    req.Symbol,
 		Side:      closeSide,
-		Quantity:  p.Quantity,
+		Quantity:  qty,
 		AvgPrice:  fill,
 		Status:    "NEW",
 		CreatedAt: time.Now().UTC(),
