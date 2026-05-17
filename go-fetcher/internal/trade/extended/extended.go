@@ -112,8 +112,19 @@ func init() {
 	domainVersion = encodeShortString("v0")
 	domainChainID = encodeShortString("SN_MAIN")
 	domainRevision = mustFelt("0x1")
-	orderSelector = mustFelt("0x36da8d51815527cabfaa9c982f564c80fa7429616739306036f1f9b608dd112")
-	domainSelector = mustFelt("0x1ff2f602e42168014d405a94f75e8a93d640751d71d16311266e140d8b0a210")
+	// Type-string selectors (SNIP-12 v1). Computed dynamically via
+	// starknet_keccak rather than hardcoded so they can never drift from
+	// the upstream x10 Rust SDK if the type schema changes.
+	orderSelector = curve.StarknetKeccak([]byte(
+		`"Order"("position_id":"felt","base_asset_id":"AssetId","base_amount":"i64",` +
+			`"quote_asset_id":"AssetId","quote_amount":"i64","fee_asset_id":"AssetId",` +
+			`"fee_amount":"u64","expiration":"Timestamp","salt":"felt")` +
+			`"PositionId"("value":"u32")"AssetId"("value":"felt")"Timestamp"("seconds":"u64")`,
+	))
+	domainSelector = curve.StarknetKeccak([]byte(
+		`"StarknetDomain"("name":"shortstring","version":"shortstring",` +
+			`"chainId":"shortstring","revision":"shortstring")`,
+	))
 	starkNetMsgFelt = encodeShortString("StarkNet Message")
 	domainHashCached = curve.PoseidonArray(
 		domainSelector, domainName, domainVersion, domainChainID, domainRevision,
