@@ -1211,10 +1211,42 @@ async def _fetch_bingx() -> list[dict]:
 
 # ── HTX (Huobi) Perp Futures (public) ─────────────────────────────────────────
 # USDT-M Linear swap: funding is typically 8h across the board.
+#
+# HTX keeps delisted + pre-launch contracts in swap_batch_funding_rate (e.g.
+# SAHARA, PIXEL on 2026-05-17, both vol=0). Cross-check against
+# swap_contract_info where contract_status=1 means "allow trade".
+_htx_trading_cache: tuple[set[str], float] = (set(), 0.0)
+_HTX_INFO_TTL = 600.0
+
+
+async def _htx_trading_set() -> set[str]:
+    global _htx_trading_cache
+    syms, ts = _htx_trading_cache
+    if syms and (time.time() - ts) < _HTX_INFO_TTL:
+        return syms
+    try:
+        r = await _http.get("https://api.hbdm.com/linear-swap-api/v1/swap_contract_info")
+        if r.status_code != 200:
+            return syms
+        fresh = {
+            (it.get("contract_code") or "")[:-5]
+            for it in (r.json().get("data") or [])
+            if it.get("contract_status") == 1 and (it.get("contract_code") or "").endswith("-USDT")
+        }
+        fresh.discard("")
+        if fresh:
+            _htx_trading_cache = (fresh, time.time())
+            return fresh
+    except Exception as exc:
+        logger.debug("htx swap_contract_info failed: %s", exc)
+    return syms
+
+
 async def _fetch_htx() -> list[dict]:
-    fund_r, tick_r = await asyncio.gather(
+    fund_r, tick_r, trading = await asyncio.gather(
         _http.get("https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate"),
         _http.get("https://api.hbdm.com/linear-swap-ex/market/detail/batch_merged"),
+        _htx_trading_set(),
     )
     fund_r.raise_for_status()
     rates: dict[str, dict] = {}
@@ -1223,6 +1255,8 @@ async def _fetch_htx() -> list[dict]:
         if not cc.endswith("-USDT"):
             continue
         token = cc[:-5]
+        if trading and token not in trading:
+            continue
         try:
             rate = float(it.get("funding_rate") or 0)
         except (TypeError, ValueError):
@@ -1239,6 +1273,8 @@ async def _fetch_htx() -> list[dict]:
         if not cc.endswith("-USDT"):
             continue
         token = cc[:-5]
+        if trading and token not in trading:
+            continue
         try:
             price = float(t.get("close") or 0)
             vol_usd = float(t.get("trade_turnover") or 0)

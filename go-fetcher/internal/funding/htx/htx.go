@@ -10,6 +10,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
@@ -19,7 +20,64 @@ const (
 	restURL   = "https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate"
 	// batch_merged returns 24h vol+price for every USDT-margined contract.
 	tickerURL = "https://api.hbdm.com/linear-swap-ex/market/detail/batch_merged?business_type=swap"
+	// swap_contract_info → contract_status: 1=allow-trade. Other values
+	// (delisted / pre-launch / suspended) keep returning rows from the
+	// funding endpoint with vol=0, e.g. SAHARA + PIXEL on 2026-05-17.
+	infoURL = "https://api.hbdm.com/linear-swap-api/v1/swap_contract_info"
 )
+
+var (
+	_tradingMu     sync.RWMutex
+	_tradingSet    map[string]struct{}
+	_tradingExpiry time.Time
+)
+
+const _tradingTTL = 10 * time.Minute
+
+func _tradingAllowed(token string) bool {
+	_tradingMu.RLock()
+	defer _tradingMu.RUnlock()
+	if _tradingSet == nil {
+		return true
+	}
+	_, ok := _tradingSet[token]
+	return ok
+}
+
+func _refreshTradingSet(ctx context.Context) {
+	_tradingMu.RLock()
+	fresh := _tradingSet != nil && time.Now().Before(_tradingExpiry)
+	_tradingMu.RUnlock()
+	if fresh {
+		return
+	}
+	var info struct {
+		Data []struct {
+			ContractCode   string `json:"contract_code"`
+			ContractStatus int    `json:"contract_status"`
+		} `json:"data"`
+	}
+	if err := funding.HTTPGet(ctx, infoURL, &info); err != nil {
+		return
+	}
+	set := make(map[string]struct{}, len(info.Data))
+	for _, it := range info.Data {
+		if it.ContractStatus != 1 {
+			continue
+		}
+		if !strings.HasSuffix(it.ContractCode, "-USDT") {
+			continue
+		}
+		set[strings.TrimSuffix(it.ContractCode, "-USDT")] = struct{}{}
+	}
+	if len(set) == 0 {
+		return
+	}
+	_tradingMu.Lock()
+	_tradingSet = set
+	_tradingExpiry = time.Now().Add(_tradingTTL)
+	_tradingMu.Unlock()
+}
 
 type Adapter struct{}
 
@@ -52,6 +110,11 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		return nil, err
 	}
 
+	// Refresh contract_status allow-set (cached 10 min). Filters out delisted +
+	// pre-launch contracts that HTX keeps pinging through the funding endpoint
+	// with vol=0 (SAHARA, PIXEL, etc).
+	_refreshTradingSet(ctx)
+
 	// Volume + mark from batch_merged. HTX wire returns those fields as
 	// STRINGS in JSON ("close": "84.81", "vol": "23544", "trade_turnover":
 	// "20095.391") — declaring them as float64 silently fails to decode
@@ -82,6 +145,9 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 				continue
 			}
 			token := strings.TrimSuffix(r.ContractCode, "-USDT")
+			if !_tradingAllowed(token) {
+				continue
+			}
 			closePx, _ := strconv.ParseFloat(r.Close, 64)
 			turnover, _ := strconv.ParseFloat(r.TradeTurnover, 64)
 			if turnover <= 0 {
@@ -108,6 +174,9 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			continue
 		}
 		token := strings.TrimSuffix(r.ContractCode, "-USDT")
+		if !_tradingAllowed(token) {
+			continue
+		}
 		rate, _ := strconv.ParseFloat(r.FundingRate, 64)
 		intH := float64(r.FundingPeriod)
 		if intH <= 0 {
