@@ -438,7 +438,7 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 	if err != nil {
 		te, ok := err.(*trade.Error)
 		if !ok {
-			return nil, err
+			return nil, fmt.Errorf("non-trade.Error in gate close path: %T %v", err, err)
 		}
 		// Dual position-mode requires an auto_size hint.
 		if te.Code == "POSITION_DUAL_MODE" {
@@ -463,7 +463,12 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 			// POSITION_EMPTY / ORDER_REDUCE_ONLY. Idempotent close.
 			return &trade.Result{Symbol: req.Symbol, Status: "FLAT", Raw: []byte(te.Code)}, nil
 		} else {
-			return nil, err
+			// Surface the venue code in the error so we know what to map next time.
+			return nil, &trade.Error{
+				Kind:    te.Kind,
+				Code:    te.Code,
+				Message: fmt.Sprintf("gate close: unmapped code=%q msg=%s", te.Code, te.Message),
+			}
 		}
 	}
 	var resp struct {
