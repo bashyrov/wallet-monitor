@@ -49,6 +49,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -377,6 +378,38 @@ func (a *Adapter) assetIndex(ctx context.Context, symbol string) (int, error) {
 	return idx, nil
 }
 
+// midPrice fetches the current mid price for the given coin. Used to
+// compute aggressive slippage prices for market orders (HL rejects P="0").
+func (a *Adapter) midPrice(ctx context.Context, symbol string) (float64, error) {
+	body, err := a.postInfo(ctx, map[string]any{"type": "allMids"})
+	if err != nil {
+		return 0, err
+	}
+	var mids map[string]string
+	if err := json.Unmarshal(body, &mids); err != nil {
+		return 0, errInternal("parse allMids", err)
+	}
+	s, ok := mids[strings.ToUpper(symbol)]
+	if !ok {
+		return 0, errUser("hyperliquid: no mid price for %s", symbol)
+	}
+	return strconv.ParseFloat(s, 64)
+}
+
+// hlPriceFormat formats a price to HL's constraints: ≤5 significant digits
+// AND ≤6 decimal places (perps). 4 decimal places is safe for the asset set
+// we trade (BTC/ETH/SOL etc — all > $1, so 5 sig digits dominates).
+func hlPriceFormat(px float64, _ string) string {
+	// Round to 5 sig digits.
+	if px <= 0 {
+		return "0"
+	}
+	mag := math.Pow10(int(math.Floor(math.Log10(px))) - 4)
+	rounded := math.Round(px/mag) * mag
+	s := strconv.FormatFloat(rounded, 'f', -1, 64)
+	return s
+}
+
 // ── Adapter methods ──────────────────────────────────────────────────────
 
 func (a *Adapter) GetBalance(ctx context.Context, creds trade.Creds) (*trade.Balance, error) {
@@ -472,11 +505,25 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		}, nil
 	}
 
-	px := "0"
 	tif := "Ioc"
+	var px string
 	if req.OrderType.IsLimit() {
 		px = strconv.FormatFloat(req.LimitPrice, 'f', -1, 64)
 		tif = "Gtc"
+	} else {
+		// Market order on HL = IOC limit with aggressive slippage. P="0" is
+		// rejected ("Order has invalid price"); HL needs an actual price the
+		// order can fill against. The official SDK pads ±8% from mid. We
+		// follow the same convention.
+		mid, mErr := a.midPrice(ctx, req.Symbol)
+		if mErr != nil || mid <= 0 {
+			return nil, errInternal("get mid price for slippage padding", mErr)
+		}
+		pad := 1.08
+		if req.Side == trade.SideSell {
+			pad = 0.92
+		}
+		px = hlPriceFormat(mid*pad, req.Symbol)
 	}
 	action := orderAction{
 		Type: "order",
