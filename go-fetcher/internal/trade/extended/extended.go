@@ -186,7 +186,18 @@ func (a *Adapter) doPOST(ctx context.Context, creds trade.Creds, path string, bo
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		return nil, parseError(resp.StatusCode, raw)
+		te := parseError(resp.StatusCode, raw)
+		// Surface what we sent so 5xx without venue context is debuggable.
+		// (venue often returns body=`"Internal Server Error"` which gives
+		// no signal about which order field mis-signed.)
+		if resp.StatusCode >= 500 {
+			snippet := string(bodyBytes)
+			if len(snippet) > 800 {
+				snippet = snippet[:800] + "...(truncated)"
+			}
+			te.Message = fmt.Sprintf("HTTP %d %s | sent: %s", resp.StatusCode, te.Message, snippet)
+		}
+		return nil, te
 	}
 	return raw, nil
 }

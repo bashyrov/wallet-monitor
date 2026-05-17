@@ -215,7 +215,7 @@ func TestSignPhantomAgent_PythonParity(t *testing.T) {
 
 func TestExtractOrderResult_Resting(t *testing.T) {
 	body := []byte(`{"status":"ok","response":{"data":{"statuses":[{"resting":{"oid":12345}}]}}}`)
-	oid, avg := extractOrderResult(body)
+	oid, avg, _ := extractOrderResult(body)
 	if oid != "12345" {
 		t.Errorf("oid got %q", oid)
 	}
@@ -226,7 +226,7 @@ func TestExtractOrderResult_Resting(t *testing.T) {
 
 func TestExtractOrderResult_Filled(t *testing.T) {
 	body := []byte(`{"status":"ok","response":{"data":{"statuses":[{"filled":{"oid":7,"avgPx":"43000.5"}}]}}}`)
-	oid, avg := extractOrderResult(body)
+	oid, avg, _ := extractOrderResult(body)
 	if oid != "7" {
 		t.Errorf("oid got %q", oid)
 	}

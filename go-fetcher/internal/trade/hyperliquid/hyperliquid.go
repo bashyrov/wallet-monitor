@@ -457,7 +457,10 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 		if err != nil {
 			return nil, err
 		}
-		oid, _ := extractOrderResult(body)
+		oid, _, perr := extractOrderResult(body)
+		if perr != nil {
+			return nil, perr
+		}
 		return &trade.Result{
 			OrderID:   oid,
 			Symbol:    req.Symbol,
@@ -491,7 +494,10 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	if err != nil {
 		return nil, err
 	}
-	oid, avgPx := extractOrderResult(body)
+	oid, avgPx, perr := extractOrderResult(body)
+	if perr != nil {
+		return nil, perr
+	}
 	return &trade.Result{
 		OrderID:   oid,
 		Symbol:    req.Symbol,
@@ -537,7 +543,10 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 	if err != nil {
 		return nil, err
 	}
-	oid, avgPx := extractOrderResult(body)
+	oid, avgPx, perr := extractOrderResult(body)
+	if perr != nil {
+		return nil, perr
+	}
 	closeSide := trade.SideSell
 	if closeIsBuy {
 		closeSide = trade.SideBuy
@@ -556,23 +565,43 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 
 // extractOrderResult parses oid and avgPx from HL's response envelope:
 //
-//	{"status":"ok","response":{"data":{"statuses":[{"resting":{"oid":...}}|{"filled":{"oid":...,"avgPx":"..."}}]}}}
-func extractOrderResult(body []byte) (oid string, avgPx float64) {
+//	{"status":"ok","response":{"data":{"statuses":[{"resting":{"oid":...}}|{"filled":{"oid":...,"avgPx":"..."}}|{"error":"..."}]}}}
+//
+// Returns a non-nil error when HL set status="error" so the caller can
+// surface the rejection (without this the dispatcher reported a clean
+// "NEW" status with empty order_id whenever HL rejected the order).
+func extractOrderResult(body []byte) (oid string, avgPx float64, err error) {
 	var env struct {
+		Status   string `json:"status"`
 		Response struct {
 			Data struct {
 				Statuses []map[string]json.RawMessage `json:"statuses"`
 			} `json:"data"`
 		} `json:"response"`
 	}
-	if err := json.Unmarshal(body, &env); err != nil {
+	if e := json.Unmarshal(body, &env); e != nil {
+		err = e
+		return
+	}
+	if env.Status != "" && env.Status != "ok" {
+		err = &trade.Error{Kind: trade.KindExchange,
+			Message: fmt.Sprintf("hyperliquid status=%s body=%s", env.Status, string(body))}
 		return
 	}
 	if len(env.Response.Data.Statuses) == 0 {
 		return
 	}
+	first := env.Response.Data.Statuses[0]
+	if raw, ok := first["error"]; ok {
+		var msg string
+		if e := json.Unmarshal(raw, &msg); e != nil {
+			msg = string(raw)
+		}
+		err = &trade.Error{Kind: trade.KindExchange, Message: "hyperliquid rejected: " + msg}
+		return
+	}
 	for _, key := range []string{"resting", "filled"} {
-		raw, ok := env.Response.Data.Statuses[0][key]
+		raw, ok := first[key]
 		if !ok {
 			continue
 		}
@@ -580,7 +609,7 @@ func extractOrderResult(body []byte) (oid string, avgPx float64) {
 			Oid   json.Number `json:"oid"`
 			AvgPx json.Number `json:"avgPx"`
 		}
-		if err := json.Unmarshal(raw, &inner); err == nil {
+		if e := json.Unmarshal(raw, &inner); e == nil {
 			oid = inner.Oid.String()
 			avgPx, _ = inner.AvgPx.Float64()
 			return

@@ -440,12 +440,8 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 		if !ok {
 			return nil, err
 		}
-		switch te.Code {
-		case "POSITION_EMPTY", "ORDER_REDUCE_ONLY", "POSITION_NOT_FOUND":
-			return &trade.Result{Symbol: req.Symbol, Status: "FLAT"}, nil
-		case "POSITION_DUAL_MODE":
-			// Dual-mode: explicit auto_size telling Gate which leg to close.
-			// Trust caller-supplied side; default to close_long when omitted.
+		// Dual position-mode requires an auto_size hint.
+		if te.Code == "POSITION_DUAL_MODE" {
 			autoSize := "close_long"
 			if req.Side == trade.SideSell {
 				autoSize = "close_short"
@@ -462,7 +458,11 @@ func (a *Adapter) ClosePosition(ctx context.Context, creds trade.Creds, req trad
 			if err != nil {
 				return nil, err
 			}
-		default:
+		} else if strings.HasPrefix(te.Code, "POSITION_") || te.Code == "ORDER_REDUCE_ONLY" {
+			// Any "no position" variant: POSITION_NOT_OPEN / POSITION_NOT_FOUND /
+			// POSITION_EMPTY / ORDER_REDUCE_ONLY. Idempotent close.
+			return &trade.Result{Symbol: req.Symbol, Status: "FLAT", Raw: []byte(te.Code)}, nil
+		} else {
 			return nil, err
 		}
 	}

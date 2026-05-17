@@ -168,7 +168,10 @@ func (a *Adapter) PlaceSpotOrder(ctx context.Context, creds trade.Creds, req tra
 	if err != nil {
 		return nil, err
 	}
-	oid, avgPx := extractOrderResult(body)
+	oid, avgPx, perr := extractOrderResult(body)
+	if perr != nil {
+		return nil, perr
+	}
 	return &trade.Result{
 		OrderID:   oid,
 		Symbol:    req.Symbol,
@@ -252,7 +255,10 @@ func (a *Adapter) CloseSpotPosition(ctx context.Context, creds trade.Creds, req 
 	if err != nil {
 		return nil, err
 	}
-	oid, avgPx := extractOrderResult(body)
+	oid, avgPx, perr := extractOrderResult(body)
+	if perr != nil {
+		return nil, perr
+	}
 	return &trade.Result{
 		OrderID:   oid,
 		Symbol:    req.Symbol,
