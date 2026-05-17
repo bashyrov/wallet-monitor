@@ -256,7 +256,7 @@ func parseError(status int, body []byte) *trade.Error {
 // ── Adapter methods ──────────────────────────────────────────────────────
 
 func (a *Adapter) GetBalance(ctx context.Context, creds trade.Creds) (*trade.Balance, error) {
-	body, err := a.signedRequest(ctx, creds, http.MethodGet, "/fapi/v2/balance", nil)
+	body, err := a.signedRequest(ctx, creds, http.MethodGet, "/fapi/v3/balance", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +410,7 @@ func (a *Adapter) ListPositions(ctx context.Context, creds trade.Creds, symbol s
 	if symbol != "" {
 		params["symbol"] = toAsterSymbol(symbol)
 	}
-	body, err := a.signedRequest(ctx, creds, http.MethodGet, "/fapi/v2/positionRisk", params)
+	body, err := a.signedRequest(ctx, creds, http.MethodGet, "/fapi/v3/positionRisk", params)
 	if err != nil {
 		return nil, err
 	}
