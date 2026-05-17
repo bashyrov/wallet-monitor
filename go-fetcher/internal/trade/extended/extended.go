@@ -73,12 +73,31 @@ const (
 	signBufferDays = 14
 )
 
-// Stark domain felts — encoded once at init from short-string literals.
+// Stark domain felts + selectors — encoded once at init.
+//
+// Reference (matched byte-for-byte against the x10 official Rust SDK at
+// github.com/x10xchange/rust-crypto-lib-base, file src/starknet_messages.rs):
+//
+//   ORDER selector       — Poseidon-bucket tag for Order(...) struct
+//   DOMAIN selector      — Poseidon-bucket tag for StarknetDomain(...) struct
+//   MESSAGE_FELT         — cairo_short_string_to_felt("StarkNet Message")
+//   domain               — {name:"Perpetuals", version:"v0", chain_id:"SN_MAIN", revision:1}
+//
+// Signing flow:
+//   orderHash   = Poseidon(ORDER_SEL, position_id, base_id, base_amt, quote_id,
+//                          quote_amt, fee_id, fee_amt, expiry, salt)
+//   domainHash  = Poseidon(DOMAIN_SEL, name, version, chain_id, revision)
+//   messageHash = Poseidon(MESSAGE_FELT, domainHash, pubkey, orderHash)
+//   (r, s)      = StarkSign(messageHash, privKey)
 var (
-	domainName     *felt.Felt
-	domainVersion  *felt.Felt
-	domainChainID  *felt.Felt
-	domainRevision *felt.Felt
+	domainName       *felt.Felt
+	domainVersion    *felt.Felt
+	domainChainID    *felt.Felt
+	domainRevision   *felt.Felt
+	orderSelector    *felt.Felt
+	domainSelector   *felt.Felt
+	starkNetMsgFelt  *felt.Felt
+	domainHashCached *felt.Felt
 )
 
 func init() {
@@ -93,6 +112,12 @@ func init() {
 	domainVersion = encodeShortString("v0")
 	domainChainID = encodeShortString("SN_MAIN")
 	domainRevision = mustFelt("0x1")
+	orderSelector = mustFelt("0x36da8d51815527cabfaa9c982f564c80fa7429616739306036f1f9b608dd112")
+	domainSelector = mustFelt("0x1ff2f602e42168014d405a94f75e8a93d640751d71d16311266e140d8b0a210")
+	starkNetMsgFelt = encodeShortString("StarkNet Message")
+	domainHashCached = curve.PoseidonArray(
+		domainSelector, domainName, domainVersion, domainChainID, domainRevision,
+	)
 	trade.Register("extended", New())
 }
 
@@ -340,21 +365,27 @@ func signOrder(
 	if err != nil {
 		return "", "", fmt.Errorf("parse public key: %w", err)
 	}
-	hash := curve.PoseidonArray(
+	// Layer 1: Order struct hash. Selector first, then fields in struct order
+	// (position_id, base_id, base_amt, quote_id, quote_amt, fee_id, fee_amt,
+	// expiration, salt) per x10 Rust reference.
+	orderHash := curve.PoseidonArray(
+		orderSelector,
 		uintFelt(positionID),
 		syntheticAssetID,
 		signedFelt(baseAmount),
 		collateralAssetID,
 		signedFelt(quoteAmount),
-		uintFelt(feeAmount),
 		feeAssetID,
+		uintFelt(feeAmount),
 		uintFelt(expirationSec),
 		uintFelt(salt),
+	)
+	// Layer 2: outer message hash composes domain + pubkey + order.
+	messageHash := curve.PoseidonArray(
+		starkNetMsgFelt,
+		domainHashCached,
 		pubFelt,
-		domainName,
-		domainVersion,
-		domainChainID,
-		domainRevision,
+		orderHash,
 	)
 
 	priv, ok := new(big.Int).SetString(strings.TrimPrefix(privKeyHex, "0x"), 16)
@@ -362,7 +393,7 @@ func signOrder(
 		return "", "", fmt.Errorf("parse private key")
 	}
 	privFelt := new(felt.Felt).SetBigInt(priv)
-	r, s, err := curve.SignFelts(hash, privFelt)
+	r, s, err := curve.SignFelts(messageHash, privFelt)
 	if err != nil {
 		return "", "", fmt.Errorf("stark sign: %w", err)
 	}
