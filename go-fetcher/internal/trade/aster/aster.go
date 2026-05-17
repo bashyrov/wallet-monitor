@@ -116,26 +116,35 @@ func buildQueryString(params map[string]string) string {
 	return strings.Join(parts, "&")
 }
 
-// signEIP712 returns the 0x-prefixed signature hex for Aster's
-// AsterSignTransaction(string params) typed data.
+// signEIP712 returns the 0x-prefixed signature hex for Aster's V3
+// Message(string msg) typed data.
+//
+// Domain must match Python's aster.py exactly (version + verifyingContract
+// fields are required by the venue's verifier; older 2-field domain triggers
+// "Signature check failed"). The signed `msg` is the URL-encoded body
+// including the nonce/user/signer triplet.
 func signEIP712(qs, privKeyHex string) (string, error) {
 	td := apitypes.TypedData{
 		Types: apitypes.Types{
 			"EIP712Domain": []apitypes.Type{
 				{Name: "name", Type: "string"},
+				{Name: "version", Type: "string"},
 				{Name: "chainId", Type: "uint256"},
+				{Name: "verifyingContract", Type: "address"},
 			},
-			"AsterSignTransaction": []apitypes.Type{
-				{Name: "params", Type: "string"},
+			"Message": []apitypes.Type{
+				{Name: "msg", Type: "string"},
 			},
 		},
-		PrimaryType: "AsterSignTransaction",
+		PrimaryType: "Message",
 		Domain: apitypes.TypedDataDomain{
-			Name:    "AsterSignTransaction",
-			ChainId: math.NewHexOrDecimal256(chainID),
+			Name:              "AsterSignTransaction",
+			Version:           "1",
+			ChainId:           math.NewHexOrDecimal256(chainID),
+			VerifyingContract: "0x0000000000000000000000000000000000000000",
 		},
 		Message: apitypes.TypedDataMessage{
-			"params": qs,
+			"msg": qs,
 		},
 	}
 
@@ -209,7 +218,9 @@ func (a *Adapter) signedRequest(
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("X-AB-APIKEY", creds.APIKey)
+	// V3 API doesn't accept X-AB-APIKEY (V1 only); the venue identifies the
+	// account from the `user` field in the signed msg. Setting the header
+	// triggers "API-key format invalid" on the V3 endpoints.
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
