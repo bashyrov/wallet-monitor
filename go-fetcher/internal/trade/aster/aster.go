@@ -35,6 +35,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/math"
@@ -43,6 +44,28 @@ import (
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade"
 )
+
+// Nonce counter — monotonic-by-second + per-second counter. Matches the
+// Python adapter's _next_nonce() so signatures stay consistent if both
+// signers run in parallel against the same account.
+var (
+	_nonceMu      sync.Mutex
+	_nonceLast    int64
+	_nonceCounter int64
+)
+
+func nextNonce() int64 {
+	_nonceMu.Lock()
+	defer _nonceMu.Unlock()
+	now := time.Now().Unix()
+	if now == _nonceLast {
+		_nonceCounter++
+	} else {
+		_nonceLast = now
+		_nonceCounter = 0
+	}
+	return now*1_000_000 + _nonceCounter
+}
 
 const (
 	baseURL = "https://fapi.asterdex.com"
@@ -150,15 +173,29 @@ func signEIP712(qs, privKeyHex string) (string, error) {
 
 // signedRequest signs `params` via EIP-712 and dispatches the request.
 // Body is always empty on Aster — params ride in the URL like Binance.
+//
+// Aster V3 EIP-712 signing requires three additional fields beyond the user
+// params: nonce (monotonic counter), user (master wallet address = APIKey),
+// signer (address derived from APISecret = API-wallet private key). The
+// signed message is the urlencoded sorted query string including all of these.
 func (a *Adapter) signedRequest(
 	ctx context.Context, creds trade.Creds, method, path string, params map[string]string,
 ) (json.RawMessage, error) {
+	if creds.APIKey == "" || creds.APISecret == "" {
+		return nil, errUser("aster requires both api_key (master address) and api_secret (api-wallet private key)")
+	}
+	priv, err := crypto.HexToECDSA(strings.TrimPrefix(creds.APISecret, "0x"))
+	if err != nil {
+		return nil, errUser("aster api_secret invalid hex: %v", err)
+	}
+	signerAddr := crypto.PubkeyToAddress(priv.PublicKey).Hex()
+
 	if params == nil {
 		params = map[string]string{}
 	}
-	// Aster expects microseconds.
-	params["timestamp"] = strconv.FormatInt(time.Now().UnixMicro(), 10)
-	params["recvWindow"] = "5000"
+	params["nonce"] = strconv.FormatInt(nextNonce(), 10)
+	params["user"] = creds.APIKey
+	params["signer"] = signerAddr
 
 	qs := buildQueryString(params)
 	sig, err := signEIP712(qs, creds.APISecret)

@@ -96,18 +96,24 @@ class ExtendedAdapter:
                           order_type: str = "market",
                           limit_price: float | None = None,
                           stop_price: float | None = None) -> dict:
-        raise NotImplementedError(
-            "Extended trading is implemented in Go only. Add 'extended' to "
-            "GO_TRADE_VENUES on the web role to route orders via go-fetcher."
+        # The dispatcher only reaches us if the proxy errored with a
+        # transient/internal fault. Delegate to trade_proxy regardless —
+        # the user's intent is to trade extended, and the only sign path
+        # lives in Go. If proxy is unreachable we surface a clean error.
+        from backend.services import trade_proxy
+        return await trade_proxy.place_order(
+            "extended", creds, symbol, side, quantity,
+            leverage=leverage, margin_mode=margin_mode,
+            market_type=market_type, order_type=order_type,
+            limit_price=limit_price, stop_price=stop_price,
         )
 
     @classmethod
     async def close_position(cls, creds: dict, symbol: str, side: str | None = None,
                              market_type: str = "futures") -> dict:
-        raise NotImplementedError(
-            "Extended trading is implemented in Go only. Add 'extended' to "
-            "GO_TRADE_VENUES on the web role."
-        )
+        from backend.services import trade_proxy
+        return await trade_proxy.close_position("extended", creds, symbol, side or "",
+                                                 market_type=market_type)
 
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int,
