@@ -408,7 +408,11 @@ func signOrder(
 	if err != nil {
 		return "", "", fmt.Errorf("stark sign: %w", err)
 	}
-	return r.BigInt(new(big.Int)).String(), s.BigInt(new(big.Int)).String(), nil
+	// Venue expects hex-encoded signatures ("0x...") per x10's HexValue
+	// type. Decimal strings produce HTTP 500 "Internal Server Error" with
+	// no body — easy to mistake for a signing failure (it's parsing).
+	return "0x" + r.BigInt(new(big.Int)).Text(16),
+		"0x" + s.BigInt(new(big.Int)).Text(16), nil
 }
 
 // ── Trade interface ──────────────────────────────────────────────────
@@ -570,7 +574,8 @@ func (a *Adapter) PlaceOrder(ctx context.Context, creds trade.Creds, req trade.O
 	}
 	body.Settlement.Signature.R = rDec
 	body.Settlement.Signature.S = sDec
-	body.Settlement.StarkKey = strings.TrimPrefix(creds.Wallet, "0x")
+	// stark_key is HexValue too — must include the "0x" prefix.
+	body.Settlement.StarkKey = "0x" + strings.TrimPrefix(creds.Wallet, "0x")
 	body.Settlement.CollateralPosition = creds.Passphrase
 	body.DebuggingAmounts.CollateralAmount = quoteAmountAbs.String()
 	body.DebuggingAmounts.FeeAmount = feeAmount.String()
