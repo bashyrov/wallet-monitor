@@ -76,3 +76,7 @@ Pipfile.lock
 # ── Local-only scratchpads (personal notes, scaffolds) ─
 TODO.md
 frontend-next/
+*.log
+*.err
+__pycache__/
+.env.local

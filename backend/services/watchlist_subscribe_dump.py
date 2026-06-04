@@ -122,7 +122,11 @@ def _write_atomic(payload: list[dict[str, Any]]) -> None:
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(body, f)
-        os.rename(tmp_path, _OUT_FILE)
+        try:
+            os.rename(tmp_path, _OUT_FILE)
+        except OSError:
+            # Windows: rename fails if destination exists — replace explicitly
+            os.replace(tmp_path, _OUT_FILE)
     except Exception:
         try:
             os.unlink(tmp_path)
