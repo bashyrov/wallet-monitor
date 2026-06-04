@@ -284,6 +284,21 @@ func (m *Manager) Touch(venue, symbol string) {
 	m.mu.Unlock()
 }
 
+// HasUserSub reports whether (venue, symbol) currently has an
+// active user-touch entry. Exported for cross-package tests that
+// verify routing (e.g. redisbus.Subscriber → mgr.Touch). Cheap
+// snapshot — caller may race with concurrent Touch/Untouch.
+func (m *Manager) HasUserSub(venue, symbol string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	bucket, ok := m.userSubs[venue]
+	if !ok {
+		return false
+	}
+	_, ok = bucket[symbol]
+	return ok
+}
+
 // Untouch removes the user-sub immediately (called on book:unsubscribe).
 func (m *Manager) Untouch(venue, symbol string) {
 	m.mu.Lock()
