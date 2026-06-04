@@ -130,7 +130,7 @@ const Auth = (() => {
       clearSession();
       const p = window.location.pathname;
       if (p !== '/login' && p !== '/register') {
-        window.location.replace('/register');
+        window.location.replace('/login');
       }
       throw new Error('Session expired');
     }
