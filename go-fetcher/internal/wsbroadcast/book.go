@@ -54,6 +54,20 @@ var bookBroadcastInterval = func() time.Duration {
 	return bookBroadcastIntervalDefault
 }()
 
+// bookFlushInterval — how often the per-pair pending buffer is flushed
+// to subscribers. This is the hard ceiling on update frequency visible
+// to the client (updates/sec = 1000 / bookFlushInterval_ms).
+// Controlled by env AVALANT_BOOK_FLUSH_INTERVAL (e.g. "50ms", "33ms").
+// Default: 50ms = 20 updates/sec. Was hardcoded 200ms = 5 updates/sec.
+var bookFlushInterval = func() time.Duration {
+	if v := os.Getenv("AVALANT_BOOK_FLUSH_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 10*time.Millisecond {
+			return d
+		}
+	}
+	return 50 * time.Millisecond
+}()
+
 const (
 	// Per-client cap. /arb pair-page needs 2 (long + short side); the
 	// screener live-In/Out feature needs ~80 for the top-40 rows. 100 is
@@ -203,14 +217,14 @@ func (b *Book) flushPending() {
 }
 
 // Run drives two periodic ticks:
-//   - flushPending every 200ms — drains the per-pair OB buffer populated
-//     by OnBookUpdate. 200ms is the "feels live" threshold: fine enough
-//     for orderbook visualization, coarse enough to prevent 50-100/sec
-//     flood per pair on hot venues.
+//   - flushPending every bookFlushInterval (default 50ms = 20/sec) —
+//     drains the per-pair OB buffer populated by OnBookUpdate.
+//     Controlled by env AVALANT_BOOK_FLUSH_INTERVAL. Was hardcoded
+//     200ms (5/sec) — the binding ceiling for client update frequency.
 //   - tick every bookBroadcastInterval (1s default) — MGET fallback
 //     for pairs whose direct push didn't fire (Redis blip).
 func (b *Book) Run(ctx context.Context) {
-	flushT := time.NewTicker(200 * time.Millisecond)
+	flushT := time.NewTicker(bookFlushInterval)
 	defer flushT.Stop()
 	t := time.NewTicker(bookBroadcastInterval)
 	defer t.Stop()
