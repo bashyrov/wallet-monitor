@@ -16,7 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
+	wmlog "github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
@@ -25,15 +28,21 @@ const futuresWS = "wss://futures.kraken.com/ws/v1"
 type Futures struct {
 	store *cache.Store
 	books map[string]*book
+	log   zerolog.Logger
 }
 
 type book struct {
-	bids map[float64]float64
-	asks map[float64]float64
+	bids    map[float64]float64
+	asks    map[float64]float64
+	lastSeq int64 // 0 = no seq seen yet; Kraken seq is monotonic per product
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, books: make(map[string]*book)}
+	a := &Futures{
+		store: store,
+		books: make(map[string]*book),
+		log:   wmlog.L().With().Str("exchange", "kraken").Str("layer", "depth-seq").Logger(),
+	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("kraken", snap.Symbol, snap, "ws")
 	})
@@ -69,13 +78,13 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 // Both share product_id.
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
-		Feed      string `json:"feed"`
-		Event     string `json:"event"`
-		ProductID string `json:"product_id"`
-		Side      string `json:"side"`
+		Feed      string  `json:"feed"`
+		Event     string  `json:"event"`
+		ProductID string  `json:"product_id"`
+		Side      string  `json:"side"`
 		Price     float64 `json:"price"`
 		Qty       float64 `json:"qty"`
-		Timestamp int64   `json:"timestamp"` // ms-since-epoch
+		Seq       int64   `json:"seq"`
 		Bids      []struct {
 			Price float64 `json:"price"`
 			Qty   float64 `json:"qty"`
@@ -121,8 +130,23 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 				bk.asks[a.Price] = a.Qty
 			}
 		}
+		bk.lastSeq = msg.Seq
 	case "book":
-		// per-level delta
+		// Per-product seq is monotonic and incremental on Kraken futures.
+		// A gap means the local book has a hole — log and continue
+		// (best-effort). The runner's stale-data watchdog will reconnect
+		// to obtain a fresh book_snapshot when the gap is wider than the
+		// 90s threshold; a single missed delta auto-heals on next
+		// reconnect cycle.
+		if bk.lastSeq != 0 && msg.Seq != bk.lastSeq+1 {
+			a.log.Warn().
+				Str("symbol", token).
+				Int64("expected", bk.lastSeq+1).
+				Int64("got", msg.Seq).
+				Int64("skipped", msg.Seq-bk.lastSeq-1).
+				Msg("kraken seq gap")
+		}
+		bk.lastSeq = msg.Seq
 		var side map[float64]float64
 		switch msg.Side {
 		case "buy":
@@ -141,15 +165,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		return nil, nil
 	}
 
-	var evt time.Time
-	if msg.Timestamp > 0 {
-		evt = time.UnixMilli(msg.Timestamp)
-	}
 	return &ws.Snapshot{
-		Symbol:    token,
-		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
-		EventTime: evt,
+		Symbol: token,
+		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
+		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
 	}, nil
 }
 
