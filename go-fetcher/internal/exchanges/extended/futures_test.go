@@ -6,8 +6,7 @@ import (
 
 func newTestFutures() *Futures {
 	return &Futures{
-		books:   make(map[string]*book),
-		lastSeq: make(map[string]int64),
+		books: make(map[string]*book),
 	}
 }
 
@@ -29,9 +28,6 @@ func TestParse_SnapshotSeeds(t *testing.T) {
 	if snap == nil || snap.Symbol != "BTC" {
 		t.Fatalf("snap: %+v", snap)
 	}
-	if a.lastSeq["BTC"] != 100 {
-		t.Errorf("seq not tracked")
-	}
 	if snap.EventTime.IsZero() {
 		t.Errorf("ts should populate EventTime")
 	}
@@ -40,37 +36,23 @@ func TestParse_SnapshotSeeds(t *testing.T) {
 	}
 }
 
-func TestParse_DeltaContiguousApplies(t *testing.T) {
+func TestParse_DeltaApplies(t *testing.T) {
 	a := newTestFutures()
 	_, _ = a.Parse([]byte(`{"type":"SNAPSHOT","ts":1,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[]}}`))
-	snap, _ := a.Parse([]byte(`{"type":"DELTA","ts":2,"seq":101,"data":{"t":"DELTA","m":"BTC-USD","b":[{"q":"5","p":"60000"}],"a":[]}}`))
+	// seq gap is no longer enforced — all deltas apply regardless of seq jump
+	snap, _ := a.Parse([]byte(`{"type":"DELTA","ts":2,"seq":999,"data":{"t":"DELTA","m":"BTC-USD","b":[{"q":"5","p":"60000"}],"a":[]}}`))
 	if snap == nil || snap.Bids[0][1] != 5 {
-		t.Errorf("contiguous delta should update bid size to 5, got %+v", snap)
-	}
-	if a.lastSeq["BTC"] != 101 {
-		t.Errorf("seq not advanced")
+		t.Errorf("delta should update bid size to 5, got %+v", snap)
 	}
 }
 
-func TestParse_GapDropsState(t *testing.T) {
-	a := newTestFutures()
-	_, _ = a.Parse([]byte(`{"type":"SNAPSHOT","ts":1,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[]}}`))
-	snap, _ := a.Parse([]byte(`{"type":"DELTA","ts":2,"seq":105,"data":{"t":"DELTA","m":"BTC-USD","b":[{"q":"5","p":"60000"}],"a":[]}}`))
-	if snap != nil {
-		t.Errorf("gap delta must NOT emit, got %+v", snap)
-	}
-	if _, ok := a.books["BTC"]; ok {
-		t.Errorf("gap must drop book state")
-	}
-}
-
-func TestParse_SnapshotAfterGapReseeds(t *testing.T) {
+func TestParse_SnapshotReseeds(t *testing.T) {
 	a := newTestFutures()
 	_, _ = a.Parse([]byte(`{"type":"SNAPSHOT","ts":1,"seq":100,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"1","p":"60000"}],"a":[]}}`))
 	_, _ = a.Parse([]byte(`{"type":"DELTA","ts":2,"seq":999,"data":{"t":"DELTA","m":"BTC-USD","b":[{"q":"9","p":"60000"}],"a":[]}}`))
 	snap, _ := a.Parse([]byte(`{"type":"SNAPSHOT","ts":3,"seq":2000,"data":{"t":"SNAPSHOT","m":"BTC-USD","b":[{"q":"7","p":"59000"}],"a":[]}}`))
 	if snap == nil || snap.Bids[0][0] != 59000 {
-		t.Errorf("snapshot must reseed after gap, got %+v", snap)
+		t.Errorf("snapshot must reseed, got %+v", snap)
 	}
 }
 
@@ -85,10 +67,9 @@ func TestParse_NonUSDIgnored(t *testing.T) {
 func TestOnReconnect_ClearsAll(t *testing.T) {
 	a := newTestFutures()
 	a.books["BTC"] = &book{bids: map[float64]float64{60000: 1}, asks: map[float64]float64{60100: 2}}
-	a.lastSeq["BTC"] = 100
 	a.OnReconnect()
-	if len(a.books) != 0 || len(a.lastSeq) != 0 {
-		t.Errorf("OnReconnect must clear books + lastSeq")
+	if len(a.books) != 0 {
+		t.Errorf("OnReconnect must clear books, got %d entries", len(a.books))
 	}
 }
 

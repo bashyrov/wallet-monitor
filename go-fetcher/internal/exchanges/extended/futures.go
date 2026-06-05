@@ -44,7 +44,6 @@ type Futures struct {
 
 	mu    sync.Mutex
 	books map[string]*book
-	lastSeq map[string]int64
 }
 
 type book struct {
@@ -54,9 +53,8 @@ type book struct {
 
 func NewFutures(store *cache.Store) *ws.Runner {
 	a := &Futures{
-		store:   store,
-		books:   make(map[string]*book),
-		lastSeq: make(map[string]int64),
+		store: store,
+		books: make(map[string]*book),
 	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("extended", snap.Symbol, snap, "ws")
@@ -112,14 +110,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Gap detection: monotone seq per market. SNAPSHOT resets.
-	prev := a.lastSeq[token]
-	if frameType != "SNAPSHOT" && prev != 0 && msg.Seq != prev+1 {
-		delete(a.books, token)
-		delete(a.lastSeq, token)
-		return nil, nil
-	}
-	a.lastSeq[token] = msg.Seq
+	// No seq gap detection: extended's seq is GLOBAL across all markets.
+	// Other markets' events increment seq between BTC-USD DELTAs, so
+	// contiguity checks would spuriously reset the book on every frame.
+	// Extended sends SNAPSHOTs every ~4ms so the book self-heals instantly.
 
 	bk, ok := a.books[token]
 	if !ok {
@@ -180,6 +174,5 @@ func (a *Futures) ClientPingInterval() time.Duration { return 10 * time.Second }
 func (a *Futures) OnReconnect() {
 	a.mu.Lock()
 	a.books = make(map[string]*book)
-	a.lastSeq = make(map[string]int64)
 	a.mu.Unlock()
 }
