@@ -130,8 +130,14 @@ func (r *Runner) SetSymbols(syms []string) {
 		}
 	}
 	r.symbols = wanted
+	// Build added in syms order (not wanted-map random order) so that
+	// user-touched symbols — which the manager places first in syms —
+	// survive the MaxSymbols cap in subscribe(). Without this, a 300-symbol
+	// prewarm with cap=50 left user-requested symbols (e.g. kucoin:BTC)
+	// un-subscribed because they happened to be beyond position 50 in the
+	// random map iteration.
 	added := make([]string, 0)
-	for s := range wanted {
+	for _, s := range syms {
 		if _, ok := r.subscribed[s]; !ok {
 			added = append(added, s)
 		}
