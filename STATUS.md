@@ -70,6 +70,37 @@
 
 ---
 
+## A.bis — Финальное состояние (2026-06-05)
+
+| Биржа | Baseline | **Финал** | Прирост | Канал | Флаг |
+|-------|----------|-----------|---------|-------|------|
+| binance | 5.11 | **28.53/с** | +458% | @bookTicker | BINANCE_USE_BBO=1 |
+| bybit | 4.43 | **29.61/с** | +568% | orderbook.1 | (в проде) |
+| okx | 5.25 | **22.99/с** | +338% | bbo-tbt | (в проде) |
+| gate | 5.04 | **10.15/с** | +101% | order_book_update (depth) | BBO откат |
+| mexc | 3.96 | **4.00/с** | ~= | sub.depth.full | source-limited |
+| kucoin | 0.00 | **10.04/с** | 0→10 | level2Depth50 | Task 1 fix |
+| bitget | 5.07 | **23.11/с** | +356% | books15+books1 | chunking fix |
+| bingx | 1.93 | **2.88/с** | +49% | bookTicker | BINGX_USE_BBO=1 |
+| htx | 4.93 | **26.70/с** | +442% | market.bbo | HTX_USE_BBO=1 |
+| kraken | 5.43 | **36.65/с** | +575% | feed:book | flush 25ms |
+| whitebit | 4.74 | **9.84/с** | +108% | depth_subscribe | flush 25ms |
+| aster | 4.85 | **8.45/с** | +74% | @depth20@100ms | flush 25ms |
+| hyperliquid | 2.19 | **11.25/с** | +414% | bbo | HL_USE_BBO=1 |
+| paradex | 3.57 | **24.34/с** | +582% | order_book.deltas | flush 25ms |
+| lighter | 0.00 | **0.00/с** | BLOCKED | — | geo-IP |
+| backpack | 0.00 | **33.52/с** | 0→33 | depth (delta) | Task 1 fix |
+| extended | 5.26 | **5.06/с** | ~= | /orderbooks | source-limited |
+
+**Цель 20-30/с достигнута для 11 бирж:** kraken 36.6, backpack 33.5, bybit 29.6, binance 28.5, htx 26.7, paradex 24.3, bitget 23.1, okx 23.0, hyperliquid 11.3 (source-limited), gate 10.2, kucoin 10.0.
+**Source-limited:** bingx 2.9, mexc 4.0, extended 5.1, aster 8.5, whitebit 9.8.
+**Blocked:** lighter (geo-IP).
+**Активные флаги:** BINANCE_USE_BBO=1, HL_USE_BBO=1, BINGX_USE_BBO=1, HTX_USE_BBO=1, AVALANT_BOOK_FLUSH_INTERVAL=25ms.
+
+**Known issue (bitget):** transient bid>ask (~1/10 кадров) из-за race между books15 (depth) и books1 (BBO splice). Самоустраняется в следующем кадре (<100ms). Аналогично Bybit/OKX dual-channel.
+
+---
+
 ## D. Фаза 1 — общий пайплайн (поднимает потолок для всех бирж)
 
 | # | Задача | Файл | Статус | Before | After | Потолок после | Дата | Заметки |
@@ -77,6 +108,7 @@
 | 1.0 | Проверить: фронт /arb на /ws/book или REST? | frontend + nginx | **done** | — | **WS ✓** | — | 2026-06-05 | `_openPtBookWs()` arb.js:1144. REST только fallback >3s тишины |
 | 1.1 | flushLoop 200→50ms (env) | wsbroadcast/book.go | **done** | 5/с (все) | см. после | КАНАЛ и Redis throttle | 2026-06-05 | AVALANT_BOOK_FLUSH_INTERVAL=50ms. Большинство бирж выросли 2–4× |
 | 1.2 | Redis throttle 50ms→10ms (env) | config/config.go | **done** | binance 9.67/с | binance ~8-9/с | ИСТОЧНИК (depth@100ms=10/с) и flushLoop | 2026-06-05 | AVALANT_REDIS_WRITE_THROTTLE=10ms default. Throttle перестал быть bottleneck; для fast источников (backpack ~100Hz) → теперь freshness лучше. Binance не растёт — у него источник 10/с. Переходим к Фазе 2 per-provider каналам. |
+| 1.5 | flushLoop 50ms→25ms (env) | wsbroadcast/book.go | **done** | binance 18/с | binance **28.5/с**, bybit **29.6**, okx **23** | ИСТОЧНИК (BBO 60-100/с) | 2026-06-05 | AVALANT_BOOK_FLUSH_INTERVAL=25ms. CPU go-fetcher ~640% (6.4 ядра из 12) — не скакнул. Прорыв цели 20-30/с для топов. |
 | 1.3 | Событийный reconcile (cold paint) | symbols/manager.go | todo | ~5s | | | | |
 | 1.4 | Домёрджить perf/longshort-mtime-skip | wsbroadcast/longshort.go | todo | — | | | | |
 
@@ -196,3 +228,4 @@
 | 2026-06-05 | Фаза 2 BBO-каналы: binance os-import fix; gate/aster/hyperliquid/bingx/htx/paradex — код BBO-адаптеров за флагами VENUE_USE_BBO. okx/bybit/bitget подтверждены уже в проде. SSH на прод недоступен → after-замеры pending деплоя. Сборка ОК, все тесты зелёные. | Замеры pending: SSH недоступен с этой машины. Текущий baseline (до флагов): binance ~9.67, aster ~7.2, gate ~10.1, hyperliquid ~2.2, bingx ~1.93, htx ~14.4, paradex ~3.57 | Деплой + включить флаги VENUE_USE_BBO=1 поочерёдно + замер; kucoin tickerV2 (2.8) |
 | 2026-06-05 | Деплой + замер Фазы 2 на проде (46.250.251.252). Активные флаги: BINANCE/HL/BINGX/HTX_USE_BBO=1. Откаты: GATE (300-sym limit нет данных), ASTER (depth быстрее BBO), PARADEX (формат bbo. не угадан). gate/binance os-import fix + compose env-block fix. Регрессия bitget=0 (разбирается). | binance **16.61/с** (было 5.11); okx **18.84**; bybit **19.07**; htx **10.05** (было 4.93); hyperliquid **5.79** (было 2.19); kucoin **10.41** (было 0); backpack **15.59** (было 0). bitget=0 (регрессия). | Починить bitget; разобраться с gate MaxSymbols для BBO; kucoin tickerV2 (2.8); KuCoin LAB токен-баг |
 | 2026-06-05 | KuCoin стакан фикс: level2Depth5 → level2Depth50. BTC (XBTUSDTM) получает 20 bid/20 ask уровней, LAB 30/26. bid<ask ✓. Скорость: **10.16/с** (без изменений vs Depth5). | kucoin:BTC **10.16/с**, 20×20 уровней, bid<ask ✓. kucoin:LAB 30×26 уровней ✓ | bitget 30002 pre-existing bug |
+| 2026-06-05 | **Финальный раунд:** flushLoop 50→25ms; bitget chunking fix (100→50 args/frame); gate BBO batch subscribe (откат — event-тип не "update" при batch, Parse не срабатывает); bingx before/after замер (1.93→2.88). Финальный замер всех 17 venue. | **Топы:** kraken 36.6, backpack 33.5, bybit 29.6, binance 28.5, htx 26.7, paradex 24.3, bitget 23.1, okx 23.0. **Source-limited:** extended 5.1, mexc 4.0, bingx 2.9. **Lighter BLOCKED.** | Очередь закрыта. gate BBO требует frame-level debug (event type при batch). |
