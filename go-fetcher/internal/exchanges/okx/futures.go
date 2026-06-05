@@ -297,6 +297,34 @@ func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
 func (a *Futures) MaxSymbols() int                  { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
 
+// BuildUnsubscribe implements ws.Unsubscriber. Sends op:unsubscribe for both
+// books and bbo-tbt channels (futures only). Clears local state.
+func (a *Futures) BuildUnsubscribe(symbols []string) [][]byte {
+	if a.cacheKey != "okx" {
+		// Spot adapter doesn't have bbo-tbt; simpler unsubscribe.
+		args := make([]map[string]string, 0, len(symbols))
+		for _, s := range symbols {
+			args = append(args, map[string]string{"channel": "books", "instId": strings.ToUpper(s) + a.instSuffix})
+			delete(a.books, strings.ToUpper(s))
+			delete(a.bbo, strings.ToUpper(s))
+		}
+		b, _ := ws.MarshalJSON(map[string]any{"op": "unsubscribe", "args": args})
+		return [][]byte{b}
+	}
+	channels := []string{"books", "bbo-tbt"}
+	args := make([]map[string]string, 0, len(symbols)*len(channels))
+	for _, s := range symbols {
+		token := strings.ToUpper(s)
+		for _, ch := range channels {
+			args = append(args, map[string]string{"channel": ch, "instId": token + a.instSuffix})
+		}
+		delete(a.books, token)
+		delete(a.bbo, token)
+	}
+	b, _ := ws.MarshalJSON(map[string]any{"op": "unsubscribe", "args": args})
+	return [][]byte{b}
+}
+
 func (a *Futures) OnReconnect() {
 	a.books = make(map[string]*book)
 	a.bbo = make(map[string]*bboLevel)

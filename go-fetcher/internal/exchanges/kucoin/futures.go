@@ -157,6 +157,28 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}, nil
 }
 
+// BuildUnsubscribe — send one unsubscribe frame per removed symbol.
+// Same rate-limit constraints as subscribe (350ms handled by runner's
+// SubscribeDelay; we rely on the runner NOT applying that delay to
+// unsubscribe, which is fine — unsubscribing is lighter than subscribing).
+// Implements ws.Unsubscriber: prevents full reconnect on symbol removal.
+func (a *Futures) BuildUnsubscribe(symbols []string) [][]byte {
+	frames := make([][]byte, 0, len(symbols))
+	for i, s := range symbols {
+		contract := tokenToContract(s)
+		f := map[string]any{
+			"id":             time.Now().UnixNano() + int64(i),
+			"type":           "unsubscribe",
+			"topic":          "/contractMarket/level2Depth50:" + contract,
+			"privateChannel": false,
+			"response":       true,
+		}
+		b, _ := ws.MarshalJSON(f)
+		frames = append(frames, b)
+	}
+	return frames
+}
+
 func (a *Futures) Heartbeat() []byte {
 	frame, _ := ws.MarshalJSON(map[string]any{"id": time.Now().UnixNano(), "type": "ping"})
 	return frame

@@ -122,21 +122,26 @@ func NewRunner(a Adapter, onUpdate UpdateFunc) *Runner {
 	}
 }
 
-// SetSymbols replaces the wanted set. Removed symbols force a reconnect (most
-// venues have no reliable unsubscribe for batched topics — reconnecting with
-// the new set is simpler than per-adapter unsub logic).
+// SetSymbols replaces the wanted set.
+//
+// When symbols are removed: if the adapter implements Unsubscriber, send
+// unsubscribe frames for the removed symbols WITHOUT closing the connection
+// (delta-unsubscribe). This eliminates reconnect storms on slow-subscribe
+// venues like KuCoin (350ms/sym) and Bitget (200ms/frame).
+//
+// When the adapter does NOT implement Unsubscriber, fall back to the old
+// behaviour: close and reconnect with the new symbol set.
 func (r *Runner) SetSymbols(syms []string) {
 	r.symMu.Lock()
 	wanted := make(map[string]struct{}, len(syms))
 	for _, s := range syms {
 		wanted[s] = struct{}{}
 	}
-	// detect removals
-	hasRemoved := false
+	// Collect removed symbols (need ordered slice before we update r.symbols).
+	var removed []string
 	for s := range r.symbols {
 		if _, ok := wanted[s]; !ok {
-			hasRemoved = true
-			break
+			removed = append(removed, s)
 		}
 	}
 	r.symbols = wanted
@@ -155,10 +160,39 @@ func (r *Runner) SetSymbols(syms []string) {
 	conn := r.conn
 	r.symMu.Unlock()
 
-	if hasRemoved && conn != nil {
-		// Force reconnect — recv loop returns when conn closes, _run picks up new symbols.
-		_ = conn.Close()
-		return
+	if len(removed) > 0 {
+		if unsub, ok := r.a.(Unsubscriber); ok {
+			// Delta-unsubscribe. BuildUnsubscribe always runs (clears adapter-
+			// internal state even when disconnected). Frames are sent only when
+			// there is an active connection.
+			frames := unsub.BuildUnsubscribe(removed)
+			if conn != nil {
+				go func() {
+					for i, f := range frames {
+						if err := r.safeSend(conn, f); err != nil {
+							r.log.Warn().Err(err).Int("frame", i).Msg("unsubscribe send failed")
+							return
+						}
+					}
+					r.symMu.Lock()
+					for _, s := range removed {
+						delete(r.subscribed, s)
+					}
+					r.symMu.Unlock()
+				}()
+			} else {
+				r.symMu.Lock()
+				for _, s := range removed {
+					delete(r.subscribed, s)
+				}
+				r.symMu.Unlock()
+			}
+			// Fall through — also subscribe any newly added symbols below.
+		} else if conn != nil {
+			// No Unsubscriber: force reconnect (old behaviour).
+			_ = conn.Close()
+			return
+		}
 	}
 	if conn != nil && len(added) > 0 {
 		go func() {

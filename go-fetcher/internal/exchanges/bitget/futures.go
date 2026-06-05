@@ -323,6 +323,36 @@ func (a *Adapter) SubscribeDelay() time.Duration { return 200 * time.Millisecond
 func (a *Adapter) MaxSymbols() int                { return 0 }
 func (a *Adapter) DecompressGzip() bool           { return false }
 
+// BuildUnsubscribe implements ws.Unsubscriber. Bitget V2: op:unsubscribe with
+// args per channel (books15, books1 for futures). One frame per channel to
+// stay within 50-args/frame limit. Clears local state.
+func (a *Adapter) BuildUnsubscribe(symbols []string) [][]byte {
+	channels := []string{"books15"}
+	if a.instType == "USDT-FUTURES" {
+		channels = []string{"books15", "books1"}
+	}
+	frames := make([][]byte, 0, len(channels))
+	for _, ch := range channels {
+		args := make([]map[string]string, 0, len(symbols))
+		for _, s := range symbols {
+			args = append(args, map[string]string{
+				"instType": a.instType,
+				"channel":  ch,
+				"instId":   strings.ToUpper(s) + "USDT",
+			})
+		}
+		b, _ := ws.MarshalJSON(map[string]any{"op": "unsubscribe", "args": args})
+		frames = append(frames, b)
+	}
+	// Clear local state for removed symbols.
+	for _, s := range symbols {
+		token := strings.ToUpper(s)
+		delete(a.books, token)
+		delete(a.bbo, token)
+	}
+	return frames
+}
+
 func (a *Adapter) OnReconnect() {
 	a.books = make(map[string]*book)
 	a.bbo = make(map[string]*bboLevel)

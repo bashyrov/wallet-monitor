@@ -128,3 +128,17 @@ type Adapter interface {
 	// stream.
 	OnReconnect()
 }
+
+// Unsubscriber is an optional extension for Adapter. When an adapter
+// implements it, the runner calls BuildUnsubscribe instead of closing the
+// connection when symbols are removed from the wanted set (SetSymbols).
+//
+// Delta-unsubscribe eliminates reconnect storms on slow-subscribe venues
+// (KuCoin 350ms/sym, Bitget 200ms/frame): a single removed symbol no longer
+// triggers a full reconnect + re-subscribe cycle.
+//
+// BuildUnsubscribe must also clear the adapter's internal state for the
+// removed symbols so stale levels don't persist after the symbol is gone.
+type Unsubscriber interface {
+	BuildUnsubscribe(symbols []string) [][]byte
+}
