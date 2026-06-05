@@ -76,7 +76,7 @@
 |---|--------|------|--------|--------|-------|----------------|------|---------|
 | 1.0 | Проверить: фронт /arb на /ws/book или REST? | frontend + nginx | **done** | — | **WS ✓** | — | 2026-06-05 | `_openPtBookWs()` arb.js:1144. REST только fallback >3s тишины |
 | 1.1 | flushLoop 200→50ms (env) | wsbroadcast/book.go | **done** | 5/с (все) | см. после | КАНАЛ и Redis throttle | 2026-06-05 | AVALANT_BOOK_FLUSH_INTERVAL=50ms. Большинство бирж выросли 2–4× |
-| 1.2 | Redis throttle 50→≤33ms/байпас (env) | redisbus/writer.go | todo | 20/с | | | | после замера 1.1 |
+| 1.2 | Redis throttle 50ms→10ms (env) | config/config.go | **done** | binance 9.67/с | binance ~8-9/с | ИСТОЧНИК (depth@100ms=10/с) и flushLoop | 2026-06-05 | AVALANT_REDIS_WRITE_THROTTLE=10ms default. Throttle перестал быть bottleneck; для fast источников (backpack ~100Hz) → теперь freshness лучше. Binance не растёт — у него источник 10/с. Переходим к Фазе 2 per-provider каналам. |
 | 1.3 | Событийный reconcile (cold paint) | symbols/manager.go | todo | ~5s | | | | |
 | 1.4 | Домёрджить perf/longshort-mtime-skip | wsbroadcast/longshort.go | todo | — | | | | |
 
