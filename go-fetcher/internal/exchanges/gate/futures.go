@@ -2,33 +2,34 @@
 //
 // URL: wss://fx-ws.gateio.ws/v4/ws/usdt
 //
-// Channel: `futures.order_book_update` (incremental diff, Binance-style
-// U/u semantics) replacing the older `futures.order_book` full-push.
+// Default channel: `futures.order_book_update` (incremental diff).
+// BBO channel (GATE_USE_BBO=1): `futures.book_ticker` — real-time best
+// bid/ask, event-driven, ~10ms cadence (significantly faster than the
+// 100ms incremental channel).
 //
-// Subscribe payload: [contract, interval, level]
-//   {"time":N, "channel":"futures.order_book_update", "event":"subscribe",
-//    "payload":["BTC_USDT","100ms","20"]}
+// Subscribe (order_book_update):
 //
-// Inbound delta:
-//   {"channel":"futures.order_book_update", "event":"update",
-//    "result":{"t":1605630238094,"s":"BTC_USDT","U":N,"u":N+5,
-//              "b":[{"p":"...","s":0}],"a":[{"p":"...","s":N}]}}
+//	{"time":N, "channel":"futures.order_book_update", "event":"subscribe",
+//	 "payload":["BTC_USDT","100ms","20"]}
 //
-// Bootstrap (per symbol):
-//   1. WS subscribes; deltas start flowing — buffered until snapshot lands.
-//   2. REST GET /api/v4/futures/usdt/order_book?contract=X&limit=20&with_id=true
-//      → {"id":N, "bids":[...], "asks":[...]}
-//   3. Snapshot id = baseID. Apply only buffered events where u > baseID,
-//      AND the first applied event must satisfy U <= baseID+1 <= u.
-//   4. Subsequent events: must have U == prevU+1 (contiguous), else gap
-//      → drop state + re-bootstrap.
+// Subscribe (book_ticker):
+//
+//	{"time":N, "channel":"futures.book_ticker", "event":"subscribe",
+//	 "payload":["BTC_USDT"]}
+//
+// Inbound (book_ticker):
+//
+//	{"channel":"futures.book_ticker","event":"update",
+//	 "result":{"t":N,"u":N,"s":"BTC_USDT","b":"px","B":"sz","a":"px","A":"sz"}}
 package gate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,9 +47,10 @@ const futuresWS = "wss://fx-ws.gateio.ws/v4/ws/usdt"
 var restSnapshot = "https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=%s&limit=20&with_id=true"
 
 type Futures struct {
-	store *cache.Store
-	mu    sync.Mutex
-	books map[string]*book
+	store  *cache.Store
+	mu     sync.Mutex
+	books  map[string]*book
+	useBBO bool // GATE_USE_BBO=1 → futures.book_ticker; false → order_book_update
 }
 
 type bookLevel struct {
@@ -73,7 +75,11 @@ type bufferedEvent struct {
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, books: make(map[string]*book)}
+	a := &Futures{
+		store:  store,
+		books:  make(map[string]*book),
+		useBBO: os.Getenv("GATE_USE_BBO") == "1",
+	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("gate", snap.Symbol, snap, "ws")
 	})
@@ -85,12 +91,23 @@ func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	frames := make([][]byte, 0, len(symbols))
 	for _, s := range symbols {
-		go a.seedREST(s)
-		f := map[string]any{
-			"time":    time.Now().Unix(),
-			"channel": "futures.order_book_update",
-			"event":   "subscribe",
-			"payload": []string{strings.ToUpper(s) + "_USDT", "100ms", "20"},
+		contract := strings.ToUpper(s) + "_USDT"
+		var f map[string]any
+		if a.useBBO {
+			f = map[string]any{
+				"time":    time.Now().Unix(),
+				"channel": "futures.book_ticker",
+				"event":   "subscribe",
+				"payload": []string{contract},
+			}
+		} else {
+			go a.seedREST(s)
+			f = map[string]any{
+				"time":    time.Now().Unix(),
+				"channel": "futures.order_book_update",
+				"event":   "subscribe",
+				"payload": []string{contract, "100ms", "20"},
+			}
 		}
 		b, _ := ws.MarshalJSON(f)
 		frames = append(frames, b)
@@ -220,30 +237,83 @@ func (a *Futures) applyDelta(bk *book, bids, asks []bookLevel) {
 	}
 }
 
+// Parse routes incoming frames to the appropriate handler based on channel.
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
-	var msg struct {
-		Channel string `json:"channel"`
-		Event   string `json:"event"`
-		Result  struct {
-			Symbol string      `json:"s"`
-			T      int64       `json:"t"` // ms-since-epoch event time
-			U      uint64      `json:"U"`
-			U2     uint64      `json:"u"`
-			Bids   []bookLevel `json:"b"`
-			Asks   []bookLevel `json:"a"`
-		} `json:"result"`
+	var envelope struct {
+		Channel string          `json:"channel"`
+		Event   string          `json:"event"`
+		Result  json.RawMessage `json:"result"`
 	}
-	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
+	if err := ws.UnmarshalJSON(frame, &envelope); err != nil {
 		return nil, err
 	}
-	if msg.Channel != "futures.order_book_update" {
+	switch envelope.Channel {
+	case "futures.book_ticker":
+		if envelope.Event != "update" {
+			return nil, nil
+		}
+		return a.parseBookTicker(envelope.Result)
+	case "futures.order_book_update":
+		if envelope.Event != "update" {
+			return nil, nil
+		}
+		return a.parseDepthUpdate(envelope.Result)
+	default:
 		return nil, nil
 	}
-	if msg.Event != "update" {
-		// subscribe ack carries event="subscribe" — ignore
+}
+
+// parseBookTicker handles the futures.book_ticker BBO frame.
+// Wire: {"t":N,"u":N,"s":"BTC_USDT","b":"bidPx","B":"bidSz","a":"askPx","A":"askSz"}
+func (a *Futures) parseBookTicker(raw json.RawMessage) (*ws.Snapshot, error) {
+	var r struct {
+		T  int64  `json:"t"` // ms timestamp
+		S  string `json:"s"` // "BTC_USDT"
+		B  string `json:"b"` // best bid price
+		Bq string `json:"B"` // best bid qty
+		A  string `json:"a"` // best ask price
+		Aq string `json:"A"` // best ask qty
+	}
+	if err := ws.UnmarshalJSON(raw, &r); err != nil {
+		return nil, err
+	}
+	if !strings.HasSuffix(r.S, "_USDT") {
 		return nil, nil
 	}
-	contract := msg.Result.Symbol
+	token := strings.TrimSuffix(r.S, "_USDT")
+	bidPx, _ := strconv.ParseFloat(r.B, 64)
+	bidSz, _ := strconv.ParseFloat(r.Bq, 64)
+	askPx, _ := strconv.ParseFloat(r.A, 64)
+	askSz, _ := strconv.ParseFloat(r.Aq, 64)
+	if bidPx <= 0 || askPx <= 0 {
+		return nil, nil
+	}
+	var evt time.Time
+	if r.T > 0 {
+		evt = time.UnixMilli(r.T)
+	}
+	return &ws.Snapshot{
+		Symbol:    token,
+		Bids:      []ws.Level{{bidPx, bidSz}},
+		Asks:      []ws.Level{{askPx, askSz}},
+		EventTime: evt,
+	}, nil
+}
+
+// parseDepthUpdate handles the futures.order_book_update incremental frame.
+func (a *Futures) parseDepthUpdate(raw json.RawMessage) (*ws.Snapshot, error) {
+	var result struct {
+		Symbol string      `json:"s"`
+		T      int64       `json:"t"` // ms-since-epoch event time
+		U      uint64      `json:"U"`
+		U2     uint64      `json:"u"`
+		Bids   []bookLevel `json:"b"`
+		Asks   []bookLevel `json:"a"`
+	}
+	if err := ws.UnmarshalJSON(raw, &result); err != nil {
+		return nil, err
+	}
+	contract := result.Symbol
 	if !strings.HasSuffix(contract, "_USDT") {
 		return nil, nil
 	}
@@ -256,10 +326,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	// Not seeded yet (REST snapshot still in flight): buffer the event.
 	if bk.baseID == 0 {
 		bk.buffer = append(bk.buffer, bufferedEvent{
-			U:    msg.Result.U,
-			U2:   msg.Result.U2,
-			bids: msg.Result.Bids,
-			asks: msg.Result.Asks,
+			U:    result.U,
+			U2:   result.U2,
+			bids: result.Bids,
+			asks: result.Asks,
 		})
 		return nil, nil
 	}
@@ -267,22 +337,18 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	// Snapshot has landed. If we haven't applied any delta yet, this
 	// event must straddle baseID+1.
 	if !bk.seeded {
-		if msg.Result.U2 <= bk.baseID {
-			// stale — already covered by snapshot
+		if result.U2 <= bk.baseID {
 			return nil, nil
 		}
-		if !(msg.Result.U <= bk.baseID+1 && bk.baseID+1 <= msg.Result.U2) {
-			// gap at bootstrap edge — reset, await new snapshot
+		if !(result.U <= bk.baseID+1 && bk.baseID+1 <= result.U2) {
 			bk.baseID = 0
 			return nil, nil
 		}
-		a.applyDelta(bk, msg.Result.Bids, msg.Result.Asks)
-		bk.lastU = msg.Result.U2
+		a.applyDelta(bk, result.Bids, result.Asks)
+		bk.lastU = result.U2
 		bk.seeded = true
 	} else {
-		// Steady state: must be contiguous.
-		if msg.Result.U != bk.lastU+1 {
-			// gap — reset state, force re-bootstrap
+		if result.U != bk.lastU+1 {
 			bk.bids = make(map[float64]float64)
 			bk.asks = make(map[float64]float64)
 			bk.baseID = 0
@@ -291,13 +357,13 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 			go a.seedREST(token)
 			return nil, nil
 		}
-		a.applyDelta(bk, msg.Result.Bids, msg.Result.Asks)
-		bk.lastU = msg.Result.U2
+		a.applyDelta(bk, result.Bids, result.Asks)
+		bk.lastU = result.U2
 	}
 
 	var evt time.Time
-	if msg.Result.T > 0 {
-		evt = time.UnixMilli(msg.Result.T)
+	if result.T > 0 {
+		evt = time.UnixMilli(result.T)
 	}
 	return &ws.Snapshot{
 		Symbol:    token,

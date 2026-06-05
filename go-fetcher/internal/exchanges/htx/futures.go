@@ -1,7 +1,17 @@
 // Package htx — HTX (formerly Huobi) USDT-margined linear-swap.
 //
 // URL: wss://api.hbdm.com/linear-swap-ws
-// Subscribe: {"sub":"market.<sym>-USDT.depth.size_20.high_freq","data_type":"incremental","id":"X"}
+//
+// Default channel: depth.size_20.high_freq (incremental, event-driven).
+//   Subscribe: {"sub":"market.<sym>-USDT.depth.size_20.high_freq","data_type":"incremental","id":"X"}
+//   Inbound:   {"ch":"market.<sym>-USDT.depth.size_20.high_freq",
+//               "tick":{"event":"snapshot"|"update","version":N,
+//                        "bids":[[px,sz],...],"asks":[[px,sz],...]}}
+//
+// BBO channel (HTX_USE_BBO=1): market.<sym>-USDT.bbo — BBO on change.
+//   Subscribe: {"sub":"market.BTC-USDT.bbo","id":"sub-BTC"}
+//   Inbound:   {"ch":"market.BTC-USDT.bbo","ts":N,
+//               "tick":{"bid":[px,qty],"ask":[px,qty],"version":N,"ts":N}}
 //
 // QUIRKS:
 //   - Frames are gzip-compressed → DecompressGzip() = true
@@ -11,6 +21,7 @@ package htx
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -25,9 +36,10 @@ import (
 const futuresWS = "wss://api.hbdm.com/linear-swap-ws"
 
 type Futures struct {
-	store *cache.Store
-	books map[string]*book
-	log   zerolog.Logger
+	store  *cache.Store
+	books  map[string]*book
+	log    zerolog.Logger
+	useBBO bool // HTX_USE_BBO=1 → market.bbo; false → depth.size_20.high_freq
 }
 
 type book struct {
@@ -38,9 +50,10 @@ type book struct {
 
 func NewFutures(store *cache.Store) *ws.Runner {
 	a := &Futures{
-		store: store,
-		books: make(map[string]*book),
-		log:   wmlog.L().With().Str("exchange", "htx").Str("layer", "depth-version").Logger(),
+		store:  store,
+		books:  make(map[string]*book),
+		log:    wmlog.L().With().Str("exchange", "htx").Str("layer", "depth-version").Logger(),
+		useBBO: os.Getenv("HTX_USE_BBO") == "1",
 	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("htx", snap.Symbol, snap, "ws")
@@ -53,10 +66,19 @@ func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	frames := make([][]byte, 0, len(symbols))
 	for i, s := range symbols {
+		sym := strings.ToUpper(s) + "-USDT"
+		var sub string
+		if a.useBBO {
+			sub = "market." + sym + ".bbo"
+		} else {
+			sub = "market." + sym + ".depth.size_20.high_freq"
+		}
 		f := map[string]any{
-			"sub":       "market." + strings.ToUpper(s) + "-USDT.depth.size_20.high_freq",
-			"data_type": "incremental",
-			"id":        strconv.Itoa(i + 1),
+			"sub": sub,
+			"id":  strconv.Itoa(i + 1),
+		}
+		if !a.useBBO {
+			f["data_type"] = "incremental"
 		}
 		b, _ := ws.MarshalJSON(f)
 		frames = append(frames, b)
@@ -67,21 +89,74 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Ch   string `json:"ch"`
+		Ts   int64  `json:"ts"` // envelope timestamp ms
 		Tick struct {
+			// depth fields
 			Bids    [][]float64 `json:"bids"`
 			Asks    [][]float64 `json:"asks"`
 			Event   string      `json:"event"` // "snapshot" or "update"
 			Version int64       `json:"version"`
+			// bbo fields — 2-element [price, qty] arrays
+			Bid []float64 `json:"bid"` // [bidPx, bidQty]
+			Ask []float64 `json:"ask"` // [askPx, askQty]
 		} `json:"tick"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if !strings.HasPrefix(msg.Ch, "market.") || !strings.Contains(msg.Ch, ".depth.") {
+
+	ch := msg.Ch
+	if !strings.HasPrefix(ch, "market.") {
 		return nil, nil
 	}
-	// "market.BTC-USDT.depth.size_20.high_freq" → "BTC-USDT"
-	parts := strings.SplitN(msg.Ch, ".", 4)
+
+	if strings.Contains(ch, ".bbo") {
+		return a.parseBBO(ch, msg.Tick.Bid, msg.Tick.Ask, msg.Ts)
+	}
+	if strings.Contains(ch, ".depth.") {
+		return a.parseDepth(ch, msg.Tick.Bids, msg.Tick.Asks, msg.Tick.Event, msg.Tick.Version)
+	}
+	return nil, nil
+}
+
+// parseBBO handles market.<sym>-USDT.bbo frames.
+// tick.bid = [price, qty], tick.ask = [price, qty]
+func (a *Futures) parseBBO(ch string, bid, ask []float64, ts int64) (*ws.Snapshot, error) {
+	// ch = "market.BTC-USDT.bbo" → extract "BTC-USDT"
+	parts := strings.SplitN(ch, ".", 4)
+	if len(parts) < 3 {
+		return nil, nil
+	}
+	pair := parts[1]
+	if !strings.HasSuffix(pair, "-USDT") {
+		return nil, nil
+	}
+	token := strings.TrimSuffix(pair, "-USDT")
+
+	if len(bid) < 2 || len(ask) < 2 {
+		return nil, nil
+	}
+	bidPx, bidSz := bid[0], bid[1]
+	askPx, askSz := ask[0], ask[1]
+	if bidPx <= 0 || askPx <= 0 {
+		return nil, nil
+	}
+
+	snap := &ws.Snapshot{
+		Symbol: token,
+		Bids:   []ws.Level{{bidPx, bidSz}},
+		Asks:   []ws.Level{{askPx, askSz}},
+	}
+	if ts > 0 {
+		snap.EventTime = time.UnixMilli(ts)
+	}
+	return snap, nil
+}
+
+// parseDepth handles depth.size_20.high_freq incremental frames.
+func (a *Futures) parseDepth(ch string, bids, asks [][]float64, event string, version int64) (*ws.Snapshot, error) {
+	// ch = "market.BTC-USDT.depth.size_20.high_freq"
+	parts := strings.SplitN(ch, ".", 4)
 	if len(parts) < 2 {
 		return nil, nil
 	}
@@ -96,25 +171,20 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		bk = &book{bids: make(map[float64]float64), asks: make(map[float64]float64)}
 		a.books[token] = bk
 	}
-	if msg.Tick.Event == "snapshot" {
+	if event == "snapshot" {
 		bk.bids = make(map[float64]float64)
 		bk.asks = make(map[float64]float64)
-		bk.lastVersion = msg.Tick.Version
-	} else if msg.Tick.Event == "update" {
-		// HTX version is monotonic and incremental on high_freq depth.
-		// A gap means the local book has a hole — log and continue
-		// (best-effort). The runner's stale-data watchdog reconnects
-		// after 90s of no frames; a single missed update auto-heals on
-		// next snapshot post-reconnect.
-		if bk.lastVersion != 0 && msg.Tick.Version != bk.lastVersion+1 {
+		bk.lastVersion = version
+	} else if event == "update" {
+		if bk.lastVersion != 0 && version != bk.lastVersion+1 {
 			a.log.Warn().
 				Str("symbol", token).
 				Int64("expected", bk.lastVersion+1).
-				Int64("got", msg.Tick.Version).
-				Int64("skipped", msg.Tick.Version-bk.lastVersion-1).
+				Int64("got", version).
+				Int64("skipped", version-bk.lastVersion-1).
 				Msg("htx version gap")
 		}
-		bk.lastVersion = msg.Tick.Version
+		bk.lastVersion = version
 	}
 	apply := func(side map[float64]float64, rows [][]float64) {
 		for _, r := range rows {
@@ -128,8 +198,8 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 			}
 		}
 	}
-	apply(bk.bids, msg.Tick.Bids)
-	apply(bk.asks, msg.Tick.Asks)
+	apply(bk.bids, bids)
+	apply(bk.asks, asks)
 
 	return &ws.Snapshot{
 		Symbol: token,

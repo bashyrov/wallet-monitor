@@ -1,22 +1,29 @@
 // Package hyperliquid — Hyperliquid L1 perp DEX, WS orderbook.
 //
 // URL: wss://api.hyperliquid.xyz/ws
-// Subscribe: {"method":"subscribe","subscription":{"type":"l2Book","coin":"BTC"}}
 //
-// Inbound:
-//   {"channel":"l2Book","data":{"coin":"BTC","time":...,"levels":[
-//      [{"px":"60000","sz":"1.5","n":3}, ...],   // bids
-//      [{"px":"60001","sz":"2.1","n":4}, ...]    // asks
-//    ]}}
+// Default channel: l2Book — snapshot per block update, ≥500ms cadence.
+//   Subscribe: {"method":"subscribe","subscription":{"type":"l2Book","coin":"BTC"}}
+//   Inbound:   {"channel":"l2Book","data":{"coin":"BTC","time":N,
+//               "levels":[[{px,sz,n},...],[{px,sz,n},...]]}}
+//
+// BBO channel (HL_USE_BBO=1): bbo — pushed on every BBO change per block.
+//   Subscribe: {"method":"subscribe","subscription":{"type":"bbo","coin":"BTC"}}
+//   Inbound:   {"channel":"bbo","data":{"coin":"BTC","time":N,
+//               "bbo":[{px,sz,n},{px,sz,n}]}}
+//   where bbo[0] = best bid, bbo[1] = best ask (same level shape as l2Book).
 //
 // QUIRKS:
 //   - levels[0] = bids, levels[1] = asks
 //   - Each level is an OBJECT with px/sz/n, NOT an array — separate parse
 //     path from Binance/Bybit
+//   - HL drops connection with "write: broken pipe" after 4-8 subscribe
+//     frames in succession — 500ms SubscribeDelay is required
 package hyperliquid
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -28,11 +35,15 @@ import (
 const futuresWS = "wss://api.hyperliquid.xyz/ws"
 
 type Futures struct {
-	store *cache.Store
+	store  *cache.Store
+	useBBO bool // HL_USE_BBO=1 → bbo channel; false → l2Book
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store}
+	a := &Futures{
+		store:  store,
+		useBBO: os.Getenv("HL_USE_BBO") == "1",
+	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("hyperliquid", snap.Symbol, snap, "ws")
 	})
@@ -42,11 +53,15 @@ func (a *Futures) Name() string                          { return "hyperliquid" 
 func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
+	chanType := "l2Book"
+	if a.useBBO {
+		chanType = "bbo"
+	}
 	frames := make([][]byte, 0, len(symbols))
 	for _, s := range symbols {
 		f := map[string]any{
 			"method":       "subscribe",
-			"subscription": map[string]any{"type": "l2Book", "coin": strings.ToUpper(s)},
+			"subscription": map[string]any{"type": chanType, "coin": strings.ToUpper(s)},
 		}
 		b, _ := ws.MarshalJSON(f)
 		frames = append(frames, b)
@@ -54,50 +69,76 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	return frames
 }
 
+// hlLevel matches both l2Book levels and bbo elements.
+type hlLevel struct {
+	Px string `json:"px"`
+	Sz string `json:"sz"`
+	N  int    `json:"n"`
+}
+
+func parseHLLevel(r hlLevel) (px, sz float64) {
+	px, _ = strconv.ParseFloat(r.Px, 64)
+	sz, _ = strconv.ParseFloat(r.Sz, 64)
+	return
+}
+
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Channel string `json:"channel"`
 		Data    struct {
-			Coin   string `json:"coin"`
-			Time   int64  `json:"time"` // ms event time
-			Levels [2][]struct {
-				Px string  `json:"px"`
-				Sz string  `json:"sz"`
-				N  int     `json:"n"`
-			} `json:"levels"`
+			Coin   string    `json:"coin"`
+			Time   int64     `json:"time"` // ms event time
+			Levels [2][]hlLevel `json:"levels"` // l2Book: [bids, asks]
+			BBO    [2]hlLevel   `json:"bbo"`    // bbo: [bid, ask]
 		} `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if msg.Channel != "l2Book" {
-		return nil, nil
-	}
-	parseSide := func(rows []struct {
-		Px string `json:"px"`
-		Sz string `json:"sz"`
-		N  int    `json:"n"`
-	}) []ws.Level {
-		out := make([]ws.Level, 0, len(rows))
-		for _, r := range rows {
-			px, _ := strconv.ParseFloat(r.Px, 64)
-			sz, _ := strconv.ParseFloat(r.Sz, 64)
-			if sz > 0 {
-				out = append(out, ws.Level{px, sz})
-			}
-		}
-		return out
-	}
+
 	var evt time.Time
 	if msg.Data.Time > 0 {
 		evt = time.UnixMilli(msg.Data.Time)
 	}
-	return &ws.Snapshot{
-		Symbol:    strings.ToUpper(msg.Data.Coin),
-		Bids:      parseSide(msg.Data.Levels[0]),
-		Asks:      parseSide(msg.Data.Levels[1]),
-		EventTime: evt,
-	}, nil
+	coin := strings.ToUpper(msg.Data.Coin)
+
+	switch msg.Channel {
+	case "bbo":
+		bid := msg.Data.BBO[0]
+		ask := msg.Data.BBO[1]
+		bidPx, bidSz := parseHLLevel(bid)
+		askPx, askSz := parseHLLevel(ask)
+		if bidPx <= 0 || askPx <= 0 {
+			return nil, nil
+		}
+		return &ws.Snapshot{
+			Symbol:    coin,
+			Bids:      []ws.Level{{bidPx, bidSz}},
+			Asks:      []ws.Level{{askPx, askSz}},
+			EventTime: evt,
+		}, nil
+
+	case "l2Book":
+		parseSide := func(rows []hlLevel) []ws.Level {
+			out := make([]ws.Level, 0, len(rows))
+			for _, r := range rows {
+				px, sz := parseHLLevel(r)
+				if sz > 0 {
+					out = append(out, ws.Level{px, sz})
+				}
+			}
+			return out
+		}
+		return &ws.Snapshot{
+			Symbol:    coin,
+			Bids:      parseSide(msg.Data.Levels[0]),
+			Asks:      parseSide(msg.Data.Levels[1]),
+			EventTime: evt,
+		}, nil
+
+	default:
+		return nil, nil
+	}
 }
 
 // Hyperliquid keepalive — server sends ping frames, gorilla auto-replies

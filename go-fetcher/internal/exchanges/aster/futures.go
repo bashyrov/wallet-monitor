@@ -4,6 +4,10 @@
 // directly would force one shared exchangeInfo cache between the two
 // venues, which we don't want (different symbol sets).
 //
+// Default channel: @depth20@100ms (depth snapshot every 100ms).
+// BBO channel (ASTER_USE_BBO=1): @bookTicker — real-time top-of-book,
+// event-driven (same protocol as Binance @bookTicker).
+//
 // Bug-resistance: same as binance — TEXT frames, watchdog, policy backoff,
 // trading-filter (Aster also returns SETTLING/BREAK status on delisted
 // pairs that linger in /fapi/v1/exchangeInfo).
@@ -12,6 +16,7 @@ package aster
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -29,10 +34,15 @@ const futuresWS = "wss://fstream.asterdex.com/ws"
 type Futures struct {
 	store  *cache.Store
 	filter *tradingFilter
+	useBBO bool // ASTER_USE_BBO=1 → @bookTicker; false → @depth20@100ms
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, filter: newTradingFilter()}
+	a := &Futures{
+		store:  store,
+		filter: newTradingFilter(),
+		useBBO: os.Getenv("ASTER_USE_BBO") == "1",
+	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("aster", snap.Symbol, snap, "ws")
 	})
@@ -55,6 +65,10 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(listed) == 0 {
 		return nil
 	}
+	suffix := "usdt@depth20@100ms"
+	if a.useBBO {
+		suffix = "usdt@bookTicker"
+	}
 	const chunkSize = 200
 	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()
@@ -65,7 +79,7 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 		}
 		params := make([]string, end-i)
 		for j, s := range listed[i:end] {
-			params[j] = strings.ToLower(s) + "usdt@depth20@100ms"
+			params[j] = strings.ToLower(s) + suffix
 		}
 		frame := map[string]any{"method": "SUBSCRIBE", "params": params, "id": id + int64(i)}
 		b, _ := ws.MarshalJSON(frame)
@@ -84,8 +98,10 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		return nil, err
 	}
 	if wrap.Result != nil {
-		return nil, nil
+		return nil, nil // SUBSCRIBE ack
 	}
+
+	isBookTicker := strings.HasSuffix(wrap.Stream, "@bookTicker")
 
 	var sym string
 	if wrap.Stream != "" {
@@ -94,6 +110,70 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		}
 	}
 
+	dataBytes := []byte(wrap.Data)
+	if len(dataBytes) == 0 {
+		dataBytes = frame
+	}
+
+	if isBookTicker {
+		return a.parseBookTicker(sym, dataBytes)
+	}
+	return a.parseDepth(sym, dataBytes)
+}
+
+// parseBookTicker handles @bookTicker frames.
+// Wire (via bare /ws): {"stream":"btcusdt@bookTicker","data":{
+//
+//	"e":"bookTicker","u":N,"s":"BTCUSDT","b":"px","B":"qty","a":"px","A":"qty","T":N,"E":N}}
+func (a *Futures) parseBookTicker(sym string, dataBytes []byte) (*ws.Snapshot, error) {
+	var inner struct {
+		Event   string `json:"e"` // decoy: absorb string before case-insensitive routing to EvTime
+		Symbol  string `json:"s"`
+		B       string `json:"b"` // best bid price
+		Bq      string `json:"B"` // best bid qty
+		A       string `json:"a"` // best ask price
+		Aq      string `json:"A"` // best ask qty
+		EvTime  int64  `json:"E"`
+		TradeTs int64  `json:"T"`
+	}
+	if err := ws.UnmarshalJSON(dataBytes, &inner); err != nil {
+		return nil, err
+	}
+	if sym == "" {
+		sym = strings.ToUpper(inner.Symbol)
+	}
+	if !strings.HasSuffix(sym, "USDT") {
+		return nil, nil
+	}
+	token := strings.TrimSuffix(sym, "USDT")
+	if !a.filter.IsTrading(context.Background(), sym) {
+		return nil, nil
+	}
+
+	bidPx, _ := strconv.ParseFloat(inner.B, 64)
+	bidSz, _ := strconv.ParseFloat(inner.Bq, 64)
+	askPx, _ := strconv.ParseFloat(inner.A, 64)
+	askSz, _ := strconv.ParseFloat(inner.Aq, 64)
+	if bidPx <= 0 || askPx <= 0 {
+		return nil, nil
+	}
+
+	snap := &ws.Snapshot{
+		Symbol: token,
+		Bids:   []ws.Level{{bidPx, bidSz}},
+		Asks:   []ws.Level{{askPx, askSz}},
+	}
+	switch {
+	case inner.TradeTs > 0:
+		snap.EventTime = time.UnixMilli(inner.TradeTs)
+	case inner.EvTime > 0:
+		snap.EventTime = time.UnixMilli(inner.EvTime)
+	}
+	return snap, nil
+}
+
+// parseDepth handles @depth20@100ms snapshot frames.
+func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error) {
 	var inner struct {
 		Symbol  string     `json:"s"`
 		EvTime  int64      `json:"E"` // event time ms
@@ -102,12 +182,6 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		A       [][]string `json:"a"`
 		Bids    [][]string `json:"bids"`
 		Asks    [][]string `json:"asks"`
-	}
-	// Bare /ws frames have e/E/T/s/b/a at top level (no `data` wrapper) —
-	// fall back to parsing the whole frame when wrap.Data is empty.
-	dataBytes := []byte(wrap.Data)
-	if len(dataBytes) == 0 {
-		dataBytes = frame
 	}
 	_ = ws.UnmarshalJSON(dataBytes, &inner)
 	if sym == "" {
@@ -162,5 +236,5 @@ func (a *Futures) UseLibPings() bool                { return true }
 // chunked SUBSCRIBE frames, a 250ms delay keeps us under that ceiling.
 func (a *Futures) SubscribeDelay() time.Duration { return 250 * time.Millisecond }
 func (a *Futures) MaxSymbols() int               { return 200 }
-func (a *Futures) DecompressGzip() bool             { return false }
-func (a *Futures) OnReconnect()                     {}
+func (a *Futures) DecompressGzip() bool          { return false }
+func (a *Futures) OnReconnect()                  {}
