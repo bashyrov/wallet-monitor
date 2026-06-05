@@ -296,6 +296,16 @@ services:
       # disables the trade endpoints entirely (returns 403 to every
       # request). Same value lives on app + app2 via x-app-env.
       AVALANT_INTERNAL_SECRET: ${AVALANT_INTERNAL_SECRET:-}
+      # Phase 2 BBO channel flags — each switches the WS channel for that
+      # venue to the fastest top-of-book stream. Set =1 in .env to enable.
+      # Default empty = off (keeps existing depth channel).
+      BINANCE_USE_BBO: ${BINANCE_USE_BBO:-}
+      GATE_USE_BBO: ${GATE_USE_BBO:-}
+      ASTER_USE_BBO: ${ASTER_USE_BBO:-}
+      HL_USE_BBO: ${HL_USE_BBO:-}
+      BINGX_USE_BBO: ${BINGX_USE_BBO:-}
+      HTX_USE_BBO: ${HTX_USE_BBO:-}
+      PARADEX_USE_BBO: ${PARADEX_USE_BBO:-}
     volumes:
       - avalant_cache:/tmp/avalant_cache         # mounted RW so we can
                                                   # bootstrap top-N from
