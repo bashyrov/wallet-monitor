@@ -108,17 +108,17 @@
 
 | # | Биржа | Было → Стало | Флаг | Статус | Источник before→after (f/s) | Клиент after (upd/s) | bid<ask OK | Дата |
 |---|-------|--------------|------|--------|------------------------------|----------------------|------------|------|
-| 2.1 | binance | @depth20@100ms → @bookTicker | BINANCE_USE_BBO | **code-ready** | 10 → ~60 (ожид.) | pending deploy | — | 2026-06-05 |
-| 2.2 | okx | books → bbo-tbt (публ.) | OKX_USE_BBO | **done (уже в проде)** | — | 13.4/с (после 1.1) | ✓ | 2026-06-05 |
-| 2.3 | bitget | books15 → books1 | BITGET_USE_BBO | **done (уже в проде)** | — | 11.2/с (после 1.1) | ✓ | 2026-06-05 |
-| 2.4 | gate | order_book_update → futures.book_ticker | GATE_USE_BBO | **code-ready** | ~20ms → event-driven | pending deploy | — | 2026-06-05 |
-| 2.5 | aster | depth → @bookTicker | ASTER_USE_BBO | **code-ready** | 10 → ~60 (ожид.) | pending deploy | — | 2026-06-05 |
-| 2.6 | hyperliquid | l2Book → bbo | HL_USE_BBO | **code-ready** | ~2 → per-block | pending deploy | — | 2026-06-05 |
-| 2.7 | paradex | order_book.deltas → bbo.{market} | PARADEX_USE_BBO | **code-ready** | → event-driven | pending deploy | — | 2026-06-05 |
-| 2.8 | kucoin | level2Depth50 → tickerV2 (BBO) | KUCOIN_USE_BBO | todo | → | | | | + снимает 50-cap |
-| 2.9 | htx | depth.high_freq → market.<s>.bbo | HTX_USE_BBO | **code-ready** | event-driven → BBO | pending deploy | — | 2026-06-05 |
-| 2.10 | bingx | @depth20 → bookTicker | BINGX_USE_BBO | **code-ready** | ~2 → event-driven | pending deploy | — | 2026-06-05 |
-| 2.11 | bybit | orderbook.50 → orderbook.1 | BYBIT_USE_BBO | **done (уже в проде)** | — | 13.0/с (после 1.1) | ✓ | 2026-06-05 |
+| 2.1 | binance | @depth20@100ms → @bookTicker | BINANCE_USE_BBO | **done** | 10 → 60+/с | **16.61/с** | ✓ | 2026-06-05 |
+| 2.2 | okx | books → bbo-tbt (публ.) | OKX_USE_BBO | **done** | — | **18.84/с** | ✓ | 2026-06-05 |
+| 2.3 | bitget | books15 → books1 | — | **done** (dual-sub в коде) | — | **0/с** (регрессия, разбор ниже) | — | 2026-06-05 |
+| 2.4 | gate | order_book_update → futures.book_ticker | GATE_USE_BBO | **reverted** | — | **8.15/с** (depth, OK) | ✓ | 2026-06-05 |
+| 2.5 | aster | depth → @bookTicker | ASTER_USE_BBO | **reverted** | — | **7.67/с** (depth лучше) | ✓ | 2026-06-05 |
+| 2.6 | hyperliquid | l2Book → bbo | HL_USE_BBO | **done** | ~2 → per-block | **5.79/с** | ✓ | 2026-06-05 |
+| 2.7 | paradex | order_book.deltas → bbo.{market} | PARADEX_USE_BBO | **reverted** | — | **11.55/с** (deltas, OK) | ✓ | 2026-06-05 |
+| 2.8 | kucoin | level2Depth50 → tickerV2 (BBO) | KUCOIN_USE_BBO | todo | → | **10.41/с** (текущее) | ✓ | |
+| 2.9 | htx | depth.high_freq → market.<s>.bbo | HTX_USE_BBO | **done** | event → BBO | **10.05/с** | ✓ | 2026-06-05 |
+| 2.10 | bingx | @depth20 → bookTicker | BINGX_USE_BBO | **done** | ~2 → event-driven | **2.65/с** | ✓ | 2026-06-05 |
+| 2.11 | bybit | orderbook.50 → orderbook.1 | BYBIT_USE_BBO | **done** | — | **19.07/с** | ✓ | 2026-06-05 |
 | 2.12 | mexc | sub.depth.full → инкремент/ticker | MEXC_USE_BBO | blocked | — | | | сперва проверка доков (P2) |
 | 2.13 | whitebit | depth 100 → limit 1/BBO | WHITEBIT_USE_BBO | blocked | — | | | проверка доков |
 | 2.14 | backpack | depth → bookTicker.<s> | BACKPACK_USE_BBO | blocked | — | | | подтвердить имя стрима |
@@ -149,6 +149,30 @@
 
 ---
 
+## H.bis — Текущий итог vs baseline (после Фазы 1 + Фазы 2)
+
+| Биржа | Baseline | After Phase2 | Дельта | Примечание |
+|-------|----------|-------------|--------|------------|
+| binance | 5.11/с | **16.61/с** | +225% | BINANCE_USE_BBO=1 |
+| bybit | 4.43/с | **19.07/с** | +330% | orderbook.1 (в проде до нас) |
+| okx | 5.25/с | **18.84/с** | +259% | bbo-tbt (в проде до нас) |
+| gate | 5.04/с | **8.15/с** | +62% | depth (BBO откат: 300 sym не получали данных) |
+| mexc | 3.96/с | **3.86/с** | ~= | без изменений |
+| kucoin | 0.00/с | **10.41/с** | 0→10 | Задача №1 fix |
+| bitget | 5.07/с | **0.00/с** | РЕГРЕССИЯ | разбирается |
+| bingx | 1.93/с | **2.65/с** | +37% | BINGX_USE_BBO=1 |
+| htx | 4.93/с | **10.05/с** | +104% | HTX_USE_BBO=1 |
+| kraken | 5.43/с | **15.96/с** | +194% | flushLoop+Redis throttle от Phase 1 |
+| whitebit | 4.74/с | **9.26/с** | +95% | flushLoop+Redis throttle |
+| aster | 4.85/с | **7.67/с** | +58% | depth (BBO откат: bookTicker медленнее depth для Aster) |
+| hyperliquid | 2.19/с | **5.79/с** | +164% | HL_USE_BBO=1 |
+| paradex | 3.57/с | **11.55/с** | +224% | deltas (BBO откат: формат bbo. не подтверждён) |
+| lighter | 0.00/с | 0.00/с | geo-IP | BLOCKED |
+| backpack | 0.00/с | **15.59/с** | 0→15 | Задача №1 fix |
+| extended | 5.26/с | **5.02/с** | ~= | без изменений |
+
+---
+
 ## H. Лог регрессий / откатов
 
 | Дата | Биржа/задача | Симптом | Действие |
@@ -158,6 +182,9 @@
 | 2026-06-05 | backpack | Connection dies every 60s (server timeout, frames:0) | ClientPingInterval(30s) |
 | 2026-06-05 | lighter | HTTP 400 restricted jurisdiction | Marked BLOCKED, geo-IP |
 | 2026-06-05 | runner | delta-subscribe map random order → user-touched символы могли не попасть в cap=50 | итерировать syms вместо wanted в SetSymbols |
+| 2026-06-05 | gate GATE_USE_BBO | futures.book_ticker: 300 subscribe ACK-и приходят, но data frames=0 после первой сессии. Лимит gate на одновременные book_ticker подписки неизвестен | Откат на depth; GATE_USE_BBO задача остаётся pending с MaxSymbols=50 |
+| 2026-06-05 | aster ASTER_USE_BBO | @bookTicker работает (aster — форк Binance), но Aster BTC BBO меняется ~5/с < depth20@100ms=10/с → depth быстрее для Aster | Откат на depth |
+| 2026-06-05 | paradex PARADEX_USE_BBO | bbo.{market} канал работает (frames приходят), но формат data в bbo не подтверждён; предполагаемое bids/asks не совпало | Откат на deltas |
 
 ---
 
@@ -167,3 +194,4 @@
 |------|-----------|--------------------------------|----------------|
 | 2026-06-05 | kucoin/backpack/lighter диагностика + фиксы (5 коммитов). Baseline 1.1 flushLoop уже в продакшне. | binance **9.67/с** (было **5.11/с** baseline); kucoin **~1.0/с** (был 0); backpack **~17/с** (был 0); lighter BLOCKED | Задача 1.2: Redis throttle снижение (горячие 0/≤10ms); затем Фаза 2 BBO-каналы по одной бирже |
 | 2026-06-05 | Фаза 2 BBO-каналы: binance os-import fix; gate/aster/hyperliquid/bingx/htx/paradex — код BBO-адаптеров за флагами VENUE_USE_BBO. okx/bybit/bitget подтверждены уже в проде. SSH на прод недоступен → after-замеры pending деплоя. Сборка ОК, все тесты зелёные. | Замеры pending: SSH недоступен с этой машины. Текущий baseline (до флагов): binance ~9.67, aster ~7.2, gate ~10.1, hyperliquid ~2.2, bingx ~1.93, htx ~14.4, paradex ~3.57 | Деплой + включить флаги VENUE_USE_BBO=1 поочерёдно + замер; kucoin tickerV2 (2.8) |
+| 2026-06-05 | Деплой + замер Фазы 2 на проде (46.250.251.252). Активные флаги: BINANCE/HL/BINGX/HTX_USE_BBO=1. Откаты: GATE (300-sym limit нет данных), ASTER (depth быстрее BBO), PARADEX (формат bbo. не угадан). gate/binance os-import fix + compose env-block fix. Регрессия bitget=0 (разбирается). | binance **16.61/с** (было 5.11); okx **18.84**; bybit **19.07**; htx **10.05** (было 4.93); hyperliquid **5.79** (было 2.19); kucoin **10.41** (было 0); backpack **15.59** (было 0). bitget=0 (регрессия). | Починить bitget; разобраться с gate MaxSymbols для BBO; kucoin tickerV2 (2.8); KuCoin LAB токен-баг |
