@@ -99,19 +99,25 @@ func (a *Futures) URL(_ context.Context) (string, error) {
 	// First dial happens before BuildSubscribe — fall back to BTC so the
 	// dial succeeds. Symbol manager then re-URLs on the next reconcile.
 	//
-	// BINANCE_USE_BBO=1: switch to @bookTicker — 1 stream per symbol
-	// (vs the HOTFIX 2026-05-13 that tried depth20+bookTicker = 2×400
-	// and hit 1008). With only bookTicker, 200 syms = 200 streams = OK.
-	suffix := "@depth20@100ms"
-	if a.useBBO {
-		suffix = "@bookTicker"
-	}
+	// BINANCE_USE_BBO=1: hybrid dual-track, same as Bybit/OKX/Bitget.
+	// URL includes BOTH @depth20@100ms AND @bookTicker per symbol.
+	// MaxSymbols=100 in BBO mode → 100 × 2 = 200 streams — safely below
+	// the ~400-stream threshold that caused 1008 in the 2026-05-13 hotfix
+	// (which used 200 sym × 2 = 400 streams).
 	if len(syms) == 0 {
-		return futuresCombinedBase + "?streams=btcusdt" + suffix, nil
+		base := futuresCombinedBase + "?streams=btcusdt@depth20@100ms"
+		if a.useBBO {
+			base += "/btcusdt@bookTicker"
+		}
+		return base, nil
 	}
-	parts := make([]string, 0, len(syms))
+	var parts []string
 	for _, s := range syms {
-		parts = append(parts, strings.ToLower(s)+"usdt"+suffix)
+		lower := strings.ToLower(s) + "usdt"
+		parts = append(parts, lower+"@depth20@100ms")
+		if a.useBBO {
+			parts = append(parts, lower+"@bookTicker")
+		}
 	}
 	return futuresCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
 }
@@ -137,34 +143,35 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(listed) == 0 {
 		return nil
 	}
-	// Subscribe must match the URL channel. When BINANCE_USE_BBO is set
-	// use @bookTicker; otherwise @depth20@100ms (default). One stream
-	// type per symbol — the 2026-05-13 hotfix that reverted Phase 2a
-	// was caused by subscribing BOTH streams (depth+bbo = 400 streams
-	// for 200 syms). Single-type avoids that.
-	suffix := "usdt@depth20@100ms"
+	// Dual-track when BINANCE_USE_BBO=1: one SUBSCRIBE frame per channel
+	// (depth first, then bookTicker), 100 symbols per frame = 100 streams
+	// per frame. This mirrors how Bitget/OKX chunk their dual subs and
+	// avoids exceeding Binance's undocumented per-frame stream limit.
+	channels := []string{"usdt@depth20@100ms"}
 	if a.useBBO {
-		suffix = "usdt@bookTicker"
+		channels = append(channels, "usdt@bookTicker")
 	}
-	const chunkSize = 200
-	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
+	const chunkSize = 100
 	id := time.Now().UnixNano()
-	for i := 0; i < len(listed); i += chunkSize {
-		end := i + chunkSize
-		if end > len(listed) {
-			end = len(listed)
+	frames := make([][]byte, 0, len(channels)*((len(listed)+chunkSize-1)/chunkSize))
+	for ci, ch := range channels {
+		for i := 0; i < len(listed); i += chunkSize {
+			end := i + chunkSize
+			if end > len(listed) {
+				end = len(listed)
+			}
+			chunk := make([]string, end-i)
+			for j, s := range listed[i:end] {
+				chunk[j] = strings.ToLower(s) + ch
+			}
+			frame := map[string]any{
+				"method": "SUBSCRIBE",
+				"params": chunk,
+				"id":     id + int64(ci*1000+i),
+			}
+			b, _ := ws.MarshalJSON(frame)
+			frames = append(frames, b)
 		}
-		chunk := make([]string, end-i)
-		for j, s := range listed[i:end] {
-			chunk[j] = strings.ToLower(s) + suffix
-		}
-		frame := map[string]any{
-			"method": "SUBSCRIBE",
-			"params": chunk,
-			"id":     id + int64(i),
-		}
-		b, _ := ws.MarshalJSON(frame)
-		frames = append(frames, b)
 	}
 	return frames
 }
@@ -418,13 +425,20 @@ func (a *Futures) PongFor(_ []byte) []byte { return nil }
 func (a *Futures) UseLibPings() bool { return true }
 
 // Binance public WS allows 5 messages/sec. Each SUBSCRIBE chunk counts
-// as one. With 1000-stream prewarm split into 5 chunks of 200, sending
-// them back-to-back hits 70+ msg/s and the server returns 1008 policy
-// violation. 250 ms = 4 msg/s, comfortably under the 5/s ceiling with
-// margin for any other client noise on the same connection.
+// as one. In BBO mode we send 2 SUBSCRIBE frames (depth + bookTicker)
+// for each 100-symbol chunk; 250ms gap = 4 msg/s, well under the 5/s
+// ceiling. In depth-only mode we send 1 frame per 100-symbol chunk.
 func (a *Futures) SubscribeDelay() time.Duration { return 250 * time.Millisecond }
-func (a *Futures) MaxSymbols() int               { return 200 }
-func (a *Futures) DecompressGzip() bool          { return false }
+func (a *Futures) MaxSymbols() int {
+	if a.useBBO {
+		// 100 sym × 2 streams (depth20 + bookTicker) = 200 streams in URL.
+		// Safely below the ~400-stream threshold that caused 1008 when we
+		// last tried dual-track at 200 syms (2026-05-13 hotfix).
+		return 100
+	}
+	return 200
+}
+func (a *Futures) DecompressGzip() bool { return false }
 func (a *Futures) OnReconnect() {
 	a.stateMu.Lock()
 	a.books = make(map[string]*book)

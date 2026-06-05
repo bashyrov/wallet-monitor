@@ -17,14 +17,13 @@ func newTestFuturesBBO() *Futures {
 
 // ── URL + BuildSubscribe ───────────────────────────────────────────────
 
-// HOTFIX 2026-05-13: bookTicker dropped from URL+SUBSCRIBE because
-// the combined-stream URL with 2 streams per symbol pushed Binance
-// past its 1008 policy-violation threshold for prod prewarm sizes.
-// URL carries @depth20 only; parser keeps the bookTicker route in
-// case the stream is ever re-added.
+// useBBO=false (default): URL carries @depth20@100ms only.
+// useBBO=true  (hybrid):  URL carries BOTH @depth20@100ms AND @bookTicker
+// per symbol. MaxSymbols is halved (100) so 100×2=200 streams stay below
+// the ~400-stream 1008 threshold seen at 200 syms in 2026-05-13.
 
 func TestURL_DepthOnly(t *testing.T) {
-	a := newTestFuturesBBO()
+	a := newTestFuturesBBO() // useBBO defaults to false
 	a.syms = []string{"BTC", "ETH"}
 	u, _ := a.URL(nil)
 	for _, want := range []string{
@@ -35,7 +34,7 @@ func TestURL_DepthOnly(t *testing.T) {
 		}
 	}
 	if strings.Contains(u, "@bookTicker") {
-		t.Errorf("URL must NOT include @bookTicker post-hotfix: %s", u)
+		t.Errorf("depth-only mode URL must NOT include @bookTicker: %s", u)
 	}
 }
 
@@ -46,7 +45,49 @@ func TestURL_FallbackBTCWhenNoSymbols(t *testing.T) {
 		t.Errorf("fallback URL must include btcusdt@depth20: %s", u)
 	}
 	if strings.Contains(u, "@bookTicker") {
-		t.Errorf("fallback URL must NOT include @bookTicker post-hotfix: %s", u)
+		t.Errorf("depth-only fallback must NOT include @bookTicker: %s", u)
+	}
+}
+
+func TestURL_BBOMode_IncludesBothStreams(t *testing.T) {
+	a := newTestFuturesBBO()
+	a.useBBO = true
+	a.syms = []string{"BTC", "ETH"}
+	u, _ := a.URL(nil)
+	for _, want := range []string{
+		"btcusdt@depth20@100ms", "btcusdt@bookTicker",
+		"ethusdt@depth20@100ms", "ethusdt@bookTicker",
+	} {
+		if !strings.Contains(u, want) {
+			t.Errorf("BBO mode URL missing %q: %s", want, u)
+		}
+	}
+}
+
+func TestURL_BBOMode_FallbackBTCHasBothStreams(t *testing.T) {
+	a := newTestFuturesBBO()
+	a.useBBO = true
+	u, _ := a.URL(nil)
+	if !strings.Contains(u, "btcusdt@depth20@100ms") {
+		t.Errorf("BBO fallback URL must include depth: %s", u)
+	}
+	if !strings.Contains(u, "btcusdt@bookTicker") {
+		t.Errorf("BBO fallback URL must include bookTicker: %s", u)
+	}
+}
+
+func TestMaxSymbols_DepthMode_Returns200(t *testing.T) {
+	a := newTestFuturesBBO()
+	if got := a.MaxSymbols(); got != 200 {
+		t.Errorf("depth mode MaxSymbols = %d, want 200", got)
+	}
+}
+
+func TestMaxSymbols_BBOMode_Returns100(t *testing.T) {
+	a := newTestFuturesBBO()
+	a.useBBO = true
+	if got := a.MaxSymbols(); got != 100 {
+		t.Errorf("BBO mode MaxSymbols = %d, want 100", got)
 	}
 }
 
