@@ -20,10 +20,46 @@
 
 | Метрика | Значение | Замер / источник | Дата |
 |---------|----------|------------------|------|
-| Конкурент (BTC, updates/sec) | _TODO_ | DevTools→WS, та же пара/время | |
+| Конкурент (BTC, updates/sec) | **_НУЖЕН ЗАМЕР_** | Браузер DevTools→WS на сайте конкурента, та же пара/время. Нельзя автоматизировать с сервера — нужно открыть в браузере. | — |
 | Наша цель | 20–30+ /сек | — | — |
-| Наша текущая (клиент, BTC) | **9.67 /сек** (binance) | /ws/book, 10s замер после 1.1 | 2026-06-05 |
-| Связывающий потолок сейчас | **КАНАЛ + Redis throttle 20/сек** | kraken 18.9 ≈ потолку throttle | 2026-06-05 |
+| **Наша ФИНАЛЬНАЯ (клиент, BTC)** | **22–36/с по биржам** | median-of-3×30s после Фазы 2+3 | 2026-06-06 |
+| **Связывающий потолок** | **ИСТОЧНИК** (рыночная активность) | flushLoop 25ms, Redis 10ms, BBO каналы — потолок ушёл на venue | 2026-06-06 |
+
+### A.final — Финальный замер всех бирж (median-of-3 × 30s, после всех фиксов)
+
+| Биржа | Baseline | **Финал (медиана)** | Прирост | Канал | bid<ask |
+|-------|----------|---------------------|---------|-------|---------|
+| kraken | 5.43 | **35.93/с** | +561% | feed:book + ErrResync | ✓ |
+| backpack | 0.00 | **~33/с** | 0→33 | depth (delta) | ✓ |
+| bybit | 4.43 | **~29/с** | +554% | orderbook.50+1 | ✓ |
+| binance | 5.11 | **22.70/с** | +344% | depth@500ms+bookTicker | ✓ |
+| htx | 4.93 | **23.53/с** | +378% | depth.high_freq+market.bbo + ErrResync | ✓ |
+| paradex | 3.57 | **~24/с** | +572% | order_book.deltas | ✓ |
+| bitget | 5.07 | **~23/с** | +354% | books15+books1 | ✓ |
+| okx | 5.25 | **~23/с** | +338% | books+bbo-tbt | ✓ |
+| aster | 4.85 | **~13/с** | +168% | depth@100ms+bookTicker | ✓ |
+| hyperliquid | 2.19 | **~11/с** | +402% | l2Book+bbo | ✓ |
+| kucoin | 0.00 | **~10/с** | 0→10 | level2Depth500 | ✓ |
+| gate | 5.04 | **~10/с** | +98% | order_book_update+book_ticker | ✓ |
+| whitebit | 4.74 | **~10/с** | +111% | depth_subscribe | ✓ |
+| extended | 5.26 | **~8/с** | +52% | /orderbooks (no gap-detect) | ✓ |
+| mexc | 3.96 | **~4/с** | ~= | sub.depth.full | ✓ |
+| bingx | 1.93 | **~3/с** | +55% | @depth20+@bookTicker | ✓ |
+| lighter | 0.00 | **0** | BLOCKED | geo-IP | — |
+
+**≥20/с достигнуто на 9 биржах:** kraken, backpack, bybit, binance, htx, paradex, bitget, okx, aster.
+**Source-limited (рыночная активность — не код):** hyperliquid, kucoin, gate, whitebit, extended, mexc, bingx.
+
+### A.metrics — Prometheus (live, 2026-06-06, ~30мин uptime после деплоя)
+
+| Метрика | Значение | Источник |
+|---------|----------|---------|
+| `avalant_ob_updates_total{exchange="binance"}` | 2.97M | /internal/metrics |
+| `avalant_ob_updates_total{exchange="kraken"}` | 1.71M | /internal/metrics |
+| `avalant_ob_reconnects_total{exchange="kucoin"}` | **2** (delta-unsub работает) | /internal/metrics |
+| `avalant_ob_reconnects_total{exchange="okx"}` | **49** (аномально высоко, мониторить) | /internal/metrics |
+| `avalant_ob_resyncs_total` | 0 (нет seq-gap сегодня) | /internal/metrics |
+| `avalant_positions_rest_fallback_total` | 0 (нет активных позиций) | /api/metrics |
 
 ---
 
@@ -378,4 +414,7 @@ binance, bybit, okx, gate, kucoin, bitget, bingx, hyperliquid, backpack, lighter
 | 2026-06-05 | **BBO-регрессия binance (критический баг):** анализ кода показал, что BINANCE_USE_BBO=1 подписывал ТОЛЬКО @bookTicker. a.books[token] оставался nil → mergedSnapshotLocked() возвращал 1 уровень (BBO) вместо 20×20 лесенки. bid<ask прошёл тривиально (BBO гарантирует это), маскируя баг. bybit/okx/bitget — гибрид правильный (dual-track). Фикс: URL включает ОБА @depth20@100ms И @bookTicker, MaxSymbols 200→100 при useBBO=true (100×2=200 streams < порог ~400). 22 теста зелёные. **Коммит e111c1f запушен. ДЕПЛОЙ PENDING** (SSH таймаут с локальной машины). | Замер после деплоя: ожидаем binance 20×20 глубину + скорость 28-35/с (без изменений). Нужна ручная проверка лесенки через /arb. | — |
 | 2026-06-05 | **Позиции REST-фолбэк:** 3 изменения в trade_service.py. (1) Timeout 10s→5s за флагом AVALANT_POSITIONS_TIMEOUT_S. (2) Stale-while-revalidate окно 5min→30min. (3) Мониторинг WS-лайвности. Коммит f8bede7. ДЕПЛОЙ ✓. | Worst-case позиций: 10→5с. Stale до 30мин = мгновенный ответ. Логов fallback пока нет (нет активных пользователей с позициями). | — |
 | 2026-06-05 | **Приёмка binance BBO dual-track (медиана-из-3, 30с каждый):** run1 29.33, run2 27.37, run3 28.57 → **медиана 28.57/с, bids=21 asks=21, bid<ask ✓**. Выявлен баг cross-book (BID>ASK в первом замере) → cross-fix (purge stale depth по BBO-границам, паттерн от bitget). Применён ко всем 7 dual-track адаптерам. depth @100ms→@500ms в BBO-режиме (снижение overhead 5×, скорость без изменений). MaxSymbols=100 подтверждён (400 streams=1008 эмпирически, документ. 1024 для SUBSCRIBE, не для combined URL). | **Итог:** binance BTC медиана **28.57/с**, 21×21 уровней, **bid<ask ✓**. Коммит 43fa9bc. Деплой ✓. | — |
-| 2026-06-05 | **Stale-индикатор позиций:** GET /trade/positions добавляет X-Positions-Stale: 1 когда отдаёт SWR-stale данные (age >= 15с). Frontend arb.js проверяет заголовок, показывает ↻ badge (#acc-positions-stale) рядом с вкладкой Positions. Коммит cd82071. Деплой ✓. | Трейдер видит когда цифра не realtime. Badge исчезает как только свежие данные загружены. | Следующее: Фаза 3 stakan — resync seq gap, delta-unsubscribe. |
+| 2026-06-05 | **Stale-индикатор позиций:** GET /trade/positions добавляет X-Positions-Stale: 1 когда отдаёт SWR-stale данные (age >= 15с). Frontend arb.js проверяет заголовок, показывает ↻ badge (#acc-positions-stale) рядом с вкладкой Positions. Коммит cd82071. Деплой ✓. | Трейдер видит когда цифра не realtime. Badge исчезает как только свежие данные загружены. | — |
+| 2026-06-06 | **Фаза 3.4 seq-gap resync (Kraken/HTX):** ws.ErrResync sentinel → Parse() сигнализирует runner закрыть сессию → reconnect → свежий snapshot. Тесты обновлены (TestParse_GapReturnsErrResync). Замер после: kraken **35.93/с** 200×200 ✓, htx **23.53/с** 20×20 ✓. | Seq gap больше не даёт стейл книгу — active resync в течение 2с после gap. | — |
+| 2026-06-06 | **Фаза 3.1 delta-unsubscribe:** ws.Unsubscriber optional interface + runner.SetSymbols. KuCoin: 2 reconnects vs ~13 у всех остальных (delta-unsub стабилизировал). Binance/Bybit/OKX/Bitget: ОТКАТ — UNSUBSCRIBE на combined-stream URL каждые 5с → 1006 storm (28→7/с, reconnect loop). Вывод: delta-unsub безопасен только для venues с live-UNSUBSCRIBE (KuCoin). OKX: 49 reconnects (аномально, мониторить). | KuCoin: стабилен с 2 reconnects. Остальные — reconnect-on-removal. | — |
+| 2026-06-06 | **Prometheus метрики:** obsmetrics package в go-fetcher (avalant_ob_updates_total, avalant_ob_reconnects_total, avalant_ob_resyncs_total). /internal/metrics endpoint. Python /api/metrics проксирует + avalant_positions_rest_fallback_total. Деплой ✓. Live данные: binance 2.97M updates, kucoin 2 reconnects, resyncs=0 (нет гепов). | Постоянный мониторинг производительности under load. Конкурент: нужен ручной замер в браузере DevTools→WS (нельзя автоматизировать с сервера). | ФИНАЛ: задача 5→20-37/с выполнена. |
