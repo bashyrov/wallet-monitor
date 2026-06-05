@@ -266,6 +266,7 @@ AVALANT_BOOK_FLUSH_INTERVAL=25ms
 | 2026-06-05 | runner | delta-subscribe map random order → user-touched символы могли не попасть в cap=50 | итерировать syms вместо wanted в SetSymbols |
 | 2026-06-05 | gate GATE_USE_BBO v1 | futures.book_ticker: цены приходят как STRING ("61144"), а не float64. Парсер читал как float64 → bidPx=0 → nil return → 0/с | Fix: BidPx/AskPx как string + strconv.ParseFloat. Confirmed live WS capture. |
 | 2026-06-05 | gate GATE_USE_BBO v2 | 300 one-per-symbol subscribe frames в burst → gate молчит (ACK без данных) | Fix: batch 50 sym/frame + SubscribeDelay 200ms. gate BBO теперь работает (BTC market activity ~0.9-25/с depending on volatility). |
+| 2026-06-05 | gate+aster BBO depth | GATE_USE_BBO=1 / ASTER_USE_BBO=1 → book_ticker/bookTicker дают только 1 уровень BBO вместо 20. Arb UI показывал один bid + один ask | Откат обоих флагов → depth channel: gate 20×20, aster 20×20, bid<ask ✓. ПРАВИЛО: BBO-канал только если есть dual-track (как у bitget/bybit/okx: depth + BBO overlay). |
 | 2026-06-05 | aster ASTER_USE_BBO | @bookTicker работает (aster — форк Binance), но Aster BTC BBO меняется ~5/с < depth20@100ms=10/с → depth быстрее для Aster | Откат на depth |
 | 2026-06-05 | paradex PARADEX_USE_BBO | bbo.{market} канал работает (frames приходят), но формат data в bbo не подтверждён; предполагаемое bids/asks не совпало | Откат на deltas |
 
