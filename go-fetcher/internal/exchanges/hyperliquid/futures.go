@@ -172,17 +172,33 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}
 }
 
-// mergedSnapshotLocked — must hold mu. l2Book depth with BBO spliced on top.
+// mergedSnapshotLocked — must hold mu. l2Book depth with BBO overlay, stale depth purged.
 func (a *Futures) mergedSnapshotLocked(coin string) *ws.Snapshot {
 	var bids, asks []ws.Level
 	if d := a.books[coin]; d != nil {
 		bids = append([]ws.Level(nil), d.bids...)
 		asks = append([]ws.Level(nil), d.asks...)
 	}
-	if b := a.bbo[coin]; b != nil {
-		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
-		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	b := a.bbo[coin]
+	if b == nil || b.bidPx <= 0 || b.askPx <= 0 || b.bidPx >= b.askPx {
+		return &ws.Snapshot{Symbol: coin, Bids: bids, Asks: asks}
 	}
+	cleaned := bids[:0]
+	for _, lvl := range bids {
+		if lvl[0] < b.askPx {
+			cleaned = append(cleaned, lvl)
+		}
+	}
+	bids = cleaned
+	cleanedA := asks[:0]
+	for _, lvl := range asks {
+		if lvl[0] > b.bidPx {
+			cleanedA = append(cleanedA, lvl)
+		}
+	}
+	asks = cleanedA
+	bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+	asks = spliceBBOAsk(asks, b.askPx, b.askSz)
 	return &ws.Snapshot{Symbol: coin, Bids: bids, Asks: asks}
 }
 

@@ -263,8 +263,8 @@ func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error)
 	return snap, nil
 }
 
-// mergedSnapshotLocked — must hold stateMu. Returns depth state with BBO spliced
-// over the top (same pattern as bybit/okx/bitget/binance).
+// mergedSnapshotLocked — must hold stateMu. Depth state with BBO overlay.
+// Purges stale depth levels that cross the BBO before splicing (same as bitget).
 func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
 	bk := a.books[token]
 	var bids, asks []ws.Level
@@ -272,10 +272,26 @@ func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
 		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
 		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
 	}
-	if b := a.bbo[token]; b != nil {
-		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
-		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	b := a.bbo[token]
+	if b == nil || b.bidPx <= 0 || b.askPx <= 0 || b.bidPx >= b.askPx {
+		return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 	}
+	cleaned := bids[:0]
+	for _, lvl := range bids {
+		if lvl[0] < b.askPx {
+			cleaned = append(cleaned, lvl)
+		}
+	}
+	bids = cleaned
+	cleanedA := asks[:0]
+	for _, lvl := range asks {
+		if lvl[0] > b.bidPx {
+			cleanedA = append(cleanedA, lvl)
+		}
+	}
+	asks = cleanedA
+	bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+	asks = spliceBBOAsk(asks, b.askPx, b.askSz)
 	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 }
 

@@ -100,12 +100,20 @@ func (a *Futures) URL(_ context.Context) (string, error) {
 	// dial succeeds. Symbol manager then re-URLs on the next reconcile.
 	//
 	// BINANCE_USE_BBO=1: hybrid dual-track, same as Bybit/OKX/Bitget.
-	// URL includes BOTH @depth20@100ms AND @bookTicker per symbol.
-	// MaxSymbols=100 in BBO mode → 100 × 2 = 200 streams — safely below
-	// the ~400-stream threshold that caused 1008 in the 2026-05-13 hotfix
-	// (which used 200 sym × 2 = 400 streams).
+	// URL includes BOTH depth AND bookTicker per symbol.
+	//
+	// Depth cadence: @depth20@500ms (not @100ms) in BBO mode.
+	// Reason: @100ms × 100 syms = 1000 depth frames/sec saturates the recv
+	// loop and throttles bookTicker throughput from ~28/s to ~13/s. At 500ms
+	// × 100 syms = 200 depth frames/sec: the overhead drops 5× and bookTicker
+	// resumes at 28-35/s, while the depth ladder still refreshes at 2/s
+	// (adequate for visual display — BBO splice handles real-time top-of-book).
+	depthSuffix := "@depth20@100ms"
+	if a.useBBO {
+		depthSuffix = "@depth20@500ms"
+	}
 	if len(syms) == 0 {
-		base := futuresCombinedBase + "?streams=btcusdt@depth20@100ms"
+		base := futuresCombinedBase + "?streams=btcusdt" + depthSuffix
 		if a.useBBO {
 			base += "/btcusdt@bookTicker"
 		}
@@ -114,7 +122,7 @@ func (a *Futures) URL(_ context.Context) (string, error) {
 	var parts []string
 	for _, s := range syms {
 		lower := strings.ToLower(s) + "usdt"
-		parts = append(parts, lower+"@depth20@100ms")
+		parts = append(parts, lower+depthSuffix)
 		if a.useBBO {
 			parts = append(parts, lower+"@bookTicker")
 		}
@@ -147,7 +155,12 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	// (depth first, then bookTicker), 100 symbols per frame = 100 streams
 	// per frame. This mirrors how Bitget/OKX chunk their dual subs and
 	// avoids exceeding Binance's undocumented per-frame stream limit.
-	channels := []string{"usdt@depth20@100ms"}
+	// Depth suffix matches URL (500ms in BBO mode to reduce frame overhead).
+	depthCh := "usdt@depth20@100ms"
+	if a.useBBO {
+		depthCh = "usdt@depth20@500ms"
+	}
+	channels := []string{depthCh}
 	if a.useBBO {
 		channels = append(channels, "usdt@bookTicker")
 	}
@@ -344,9 +357,10 @@ func (a *Futures) parseBookTicker(sym string, dataBytes []byte) (*ws.Snapshot, e
 	return snap, nil
 }
 
-// mergedSnapshotLocked — must hold stateMu. Same splice semantics as
-// Bybit / OKX / Bitget: BBO at strictly better px prepends; same px
-// refreshes size; worse no-ops.
+// mergedSnapshotLocked — must hold stateMu. Depth state from depth20
+// channel, BBO overlay from bookTicker. Same cross-safe merge as Bitget:
+// when BBO arrives faster than depth (which it does), stale depth levels
+// that cross the BBO boundary are purged before splicing.
 func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
 	bk := a.books[token]
 	var bids, asks []ws.Level
@@ -354,10 +368,30 @@ func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
 		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
 		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
 	}
-	if b := a.bbo[token]; b != nil {
-		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
-		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	b := a.bbo[token]
+	if b == nil || b.bidPx <= 0 || b.askPx <= 0 || b.bidPx >= b.askPx {
+		// BBO absent or self-crossed — emit depth only.
+		return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 	}
+	// BBO is internally consistent. Purge stale depth levels that cross BBO:
+	//   - depth asks at or below BBO bid are already filled (stale) → remove
+	//   - depth bids at or above BBO ask are already filled (stale) → remove
+	cleaned := bids[:0]
+	for _, lvl := range bids {
+		if lvl[0] < b.askPx {
+			cleaned = append(cleaned, lvl)
+		}
+	}
+	bids = cleaned
+	cleanedA := asks[:0]
+	for _, lvl := range asks {
+		if lvl[0] > b.bidPx {
+			cleanedA = append(cleanedA, lvl)
+		}
+	}
+	asks = cleanedA
+	bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+	asks = spliceBBOAsk(asks, b.askPx, b.askSz)
 	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 }
 
@@ -431,9 +465,12 @@ func (a *Futures) UseLibPings() bool { return true }
 func (a *Futures) SubscribeDelay() time.Duration { return 250 * time.Millisecond }
 func (a *Futures) MaxSymbols() int {
 	if a.useBBO {
-		// 100 sym × 2 streams (depth20 + bookTicker) = 200 streams in URL.
-		// Safely below the ~400-stream threshold that caused 1008 when we
-		// last tried dual-track at 200 syms (2026-05-13 hotfix).
+		// 100 sym × 2 streams = 200 streams in combined-stream URL.
+		// Binance docs cite 1024 streams as the WS limit, but that
+		// applies to the SUBSCRIBE method. The combined-stream URL has
+		// an undocumented lower threshold: 200 sym × 2 = 400 streams
+		// triggered 1008 policy violation (2026-05-13). 100 × 2 = 200
+		// is confirmed safe. Do NOT raise to 200 without A/B testing.
 		return 100
 	}
 	return 200

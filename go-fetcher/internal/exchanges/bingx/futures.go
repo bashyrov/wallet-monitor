@@ -208,17 +208,34 @@ func (a *Futures) parseDepth(frame []byte) (*ws.Snapshot, error) {
 	return snap, nil
 }
 
-// mergedSnapshotLocked — must hold mu. Depth state with BBO spliced on top.
+// mergedSnapshotLocked — must hold mu. Depth state with BBO overlay.
+// Purges stale depth levels that cross the BBO before splicing.
 func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
 	var bids, asks []ws.Level
 	if d := a.books[token]; d != nil {
 		bids = append([]ws.Level(nil), d.bids...)
 		asks = append([]ws.Level(nil), d.asks...)
 	}
-	if b := a.bbo[token]; b != nil {
-		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
-		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	b := a.bbo[token]
+	if b == nil || b.bidPx <= 0 || b.askPx <= 0 || b.bidPx >= b.askPx {
+		return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 	}
+	cleaned := bids[:0]
+	for _, lvl := range bids {
+		if lvl[0] < b.askPx {
+			cleaned = append(cleaned, lvl)
+		}
+	}
+	bids = cleaned
+	cleanedA := asks[:0]
+	for _, lvl := range asks {
+		if lvl[0] > b.bidPx {
+			cleanedA = append(cleanedA, lvl)
+		}
+	}
+	asks = cleanedA
+	bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+	asks = spliceBBOAsk(asks, b.askPx, b.askSz)
 	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 }
 

@@ -409,7 +409,7 @@ func (a *Futures) parseDepthUpdate(raw json.RawMessage) (*ws.Snapshot, error) {
 	return snap, nil
 }
 
-// mergedSnapshotLocked — must hold mu. Depth state with BBO spliced on top.
+// mergedSnapshotLocked — must hold mu. Depth state with BBO overlay, stale depth purged.
 func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
 	bk := a.books[token]
 	var bids, asks []ws.Level
@@ -417,10 +417,26 @@ func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
 		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
 		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
 	}
-	if b := a.bbo[token]; b != nil {
-		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
-		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	b := a.bbo[token]
+	if b == nil || b.bidPx <= 0 || b.askPx <= 0 || b.bidPx >= b.askPx {
+		return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 	}
+	cleaned := bids[:0]
+	for _, lvl := range bids {
+		if lvl[0] < b.askPx {
+			cleaned = append(cleaned, lvl)
+		}
+	}
+	bids = cleaned
+	cleanedA := asks[:0]
+	for _, lvl := range asks {
+		if lvl[0] > b.bidPx {
+			cleanedA = append(cleanedA, lvl)
+		}
+	}
+	asks = cleanedA
+	bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+	asks = spliceBBOAsk(asks, b.askPx, b.askSz)
 	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 }
 

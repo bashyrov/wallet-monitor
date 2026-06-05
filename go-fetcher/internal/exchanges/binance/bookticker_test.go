@@ -54,9 +54,10 @@ func TestURL_BBOMode_IncludesBothStreams(t *testing.T) {
 	a.useBBO = true
 	a.syms = []string{"BTC", "ETH"}
 	u, _ := a.URL(nil)
+	// BBO mode uses @depth20@500ms (not @100ms) to reduce frame overhead.
 	for _, want := range []string{
-		"btcusdt@depth20@100ms", "btcusdt@bookTicker",
-		"ethusdt@depth20@100ms", "ethusdt@bookTicker",
+		"btcusdt@depth20@500ms", "btcusdt@bookTicker",
+		"ethusdt@depth20@500ms", "ethusdt@bookTicker",
 	} {
 		if !strings.Contains(u, want) {
 			t.Errorf("BBO mode URL missing %q: %s", want, u)
@@ -68,8 +69,8 @@ func TestURL_BBOMode_FallbackBTCHasBothStreams(t *testing.T) {
 	a := newTestFuturesBBO()
 	a.useBBO = true
 	u, _ := a.URL(nil)
-	if !strings.Contains(u, "btcusdt@depth20@100ms") {
-		t.Errorf("BBO fallback URL must include depth: %s", u)
+	if !strings.Contains(u, "btcusdt@depth20@500ms") {
+		t.Errorf("BBO fallback URL must include depth@500ms: %s", u)
 	}
 	if !strings.Contains(u, "btcusdt@bookTicker") {
 		t.Errorf("BBO fallback URL must include bookTicker: %s", u)
