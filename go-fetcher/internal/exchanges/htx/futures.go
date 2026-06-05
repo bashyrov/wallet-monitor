@@ -187,12 +187,18 @@ func (a *Futures) parseDepth(ch string, bids, asks [][]float64, event string, ve
 		bk.lastVersion = version
 	} else if event == "update" {
 		if bk.lastVersion != 0 && version != bk.lastVersion+1 {
+			skipped := version - bk.lastVersion - 1
 			a.log.Warn().
 				Str("symbol", token).
 				Int64("expected", bk.lastVersion+1).
 				Int64("got", version).
-				Int64("skipped", version-bk.lastVersion-1).
-				Msg("htx version gap")
+				Int64("skipped", skipped).
+				Msg("htx version gap — resync")
+			// Clear state and signal runner to reconnect for a fresh snapshot.
+			bk.bids = make(map[float64]float64)
+			bk.asks = make(map[float64]float64)
+			bk.lastVersion = 0
+			return nil, ws.ErrResync
 		}
 		bk.lastVersion = version
 	}

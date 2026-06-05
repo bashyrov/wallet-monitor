@@ -18,6 +18,16 @@ import (
 	wmlog "github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
 
+// ErrResync is returned by Parse() when the adapter detects a sequence-number
+// gap (Kraken, HTX) and the local book state has been cleared. Returning this
+// sentinel tells the runner to close the session immediately and reconnect,
+// which triggers OnReconnect() + a fresh snapshot from the venue.
+//
+// This is intentionally not a "policy" close — the runner uses transient
+// backoff (2s min) so a resync causes a short pause then reconnect, not the
+// longer policy backoff reserved for 1008/1011/authentication errors.
+var ErrResync = errors.New("seq gap detected — resync requested")
+
 // gzipPool reuses gzip.Reader across frames for adapters that use
 // gzip-compressed streams (HTX, BingX). Saves one alloc + header parse
 // per frame on hot paths.
@@ -335,6 +345,13 @@ func (r *Runner) session(ctx context.Context) error {
 
 		snap, perr := r.a.Parse(raw)
 		if perr != nil {
+			// ErrResync: adapter detected a seq gap and cleared its state.
+			// End this session now so the runner reconnects and gets a fresh
+			// snapshot. Treated as transient (not policy) — short backoff.
+			if errors.Is(perr, ErrResync) {
+				r.log.Warn().Msg("adapter requested resync — closing session for reconnect")
+				return perr
+			}
 			r.log.Debug().Err(perr).Msg("parse error — skipping frame")
 			continue
 		}

@@ -295,12 +295,19 @@ binance, bybit, okx, gate, kucoin, bitget, bingx, hyperliquid, backpack, lighter
 
 ## F. Фаза 3 — архитектура
 
+### Known trade-offs (задокументированы, не чинить)
+
+| Trade-off | Описание | Влияние | Статус |
+|-----------|----------|---------|--------|
+| **depth@500ms в BBO-режиме Binance** | Уровни 2+ обновляются 2/с вместо 10/с. BBO (уровень 1) обновляется через bookTicker — быстро. Если где-то считается глубина ликвидности/проскальзывание по уровням 2+ — они слегка stale (до 500ms). | Нормально для отображения; не использовать для точного расчёта проскальзывания. | known, не трогать |
+| **Binance MaxSymbols=100** | Dual-track требует 200 streams (100×2). Combined-stream URL limit ~400 (1008 при 400, эмпирически 2026-05-13). Документированные 1024 для SUBSCRIBE-метода, не для combined URL. Символы 101-200 вне скринера на Binance. | Потеря coverage 100 символов. Расширение = второй Runner (отдельная задача). | known gap, отдельная задача |
+
 | # | Задача | Файл | Статус | Дата | Заметки |
 |---|--------|------|--------|------|---------|
 | 3.1 | Дельта-отписка вместо реконнекта | ws/runner.go | todo | | BuildUnsubscribe |
 | 3.2 | KuCoin split-connections (если нужна глубина) | kucoin/futures.go | todo | | после 2.8 |
 | 3.3 | gRPC/shared-memory вместо файлов | архитектура | todo | | |
-| 3.4 | Resync on seq gap | ws/runner.go | todo | | Kraken/HTX/Extended |
+| 3.4 | Resync on seq gap (Kraken/HTX) | ws/runner.go + kraken + htx | **in-progress** | 2026-06-05 | ErrResync sentinel |
 
 ---
 

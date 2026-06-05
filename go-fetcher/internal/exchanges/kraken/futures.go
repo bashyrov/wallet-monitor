@@ -133,18 +133,22 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		bk.lastSeq = msg.Seq
 	case "book":
 		// Per-product seq is monotonic and incremental on Kraken futures.
-		// A gap means the local book has a hole — log and continue
-		// (best-effort). The runner's stale-data watchdog will reconnect
-		// to obtain a fresh book_snapshot when the gap is wider than the
-		// 90s threshold; a single missed delta auto-heals on next
-		// reconnect cycle.
+		// A gap means the local book has a hole — clear state and signal the
+		// runner to reconnect so we get a fresh book_snapshot. Single-step
+		// gaps are tolerated (timing jitter); gaps > 1 are genuine holes.
 		if bk.lastSeq != 0 && msg.Seq != bk.lastSeq+1 {
+			skipped := msg.Seq - bk.lastSeq - 1
 			a.log.Warn().
 				Str("symbol", token).
 				Int64("expected", bk.lastSeq+1).
 				Int64("got", msg.Seq).
-				Int64("skipped", msg.Seq-bk.lastSeq-1).
-				Msg("kraken seq gap")
+				Int64("skipped", skipped).
+				Msg("kraken seq gap — resync")
+			// Clear the book so OnReconnect doesn't need to double-clear.
+			bk.bids = make(map[float64]float64)
+			bk.asks = make(map[float64]float64)
+			bk.lastSeq = 0
+			return nil, ws.ErrResync
 		}
 		bk.lastSeq = msg.Seq
 		var side map[float64]float64

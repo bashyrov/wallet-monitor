@@ -1,9 +1,12 @@
 package kraken
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/rs/zerolog"
+
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
 func newTestFutures() *Futures {
@@ -45,18 +48,23 @@ func TestParse_InOrderDeltaAdvancesSeq(t *testing.T) {
 	}
 }
 
-func TestParse_GapAdvancesSeqAnyway(t *testing.T) {
-	// On gap we log a warning but still update lastSeq so we don't get
-	// stuck repeating warnings on every subsequent frame.
+func TestParse_GapReturnsErrResync(t *testing.T) {
+	// On seq gap, Parse must return ws.ErrResync and clear the book state
+	// so the runner reconnects for a fresh book_snapshot.
 	a := newTestFutures()
 	_, _ = a.Parse([]byte(`{"feed":"book_snapshot","product_id":"PF_SOLUSD","seq":50,"bids":[{"price":150,"qty":3}],"asks":[]}`))
 	// jump from 50 → 55 (gap of 4 missed)
-	_, err := a.Parse([]byte(`{"feed":"book","product_id":"PF_SOLUSD","seq":55,"side":"sell","price":151,"qty":2}`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+	snap, err := a.Parse([]byte(`{"feed":"book","product_id":"PF_SOLUSD","seq":55,"side":"sell","price":151,"qty":2}`))
+	if !errors.Is(err, ws.ErrResync) {
+		t.Errorf("gap must return ws.ErrResync, got err=%v snap=%v", err, snap)
 	}
-	if got := a.books["SOL"].lastSeq; got != 55 {
-		t.Errorf("lastSeq after gap: want 55 (best-effort advance) got %d", got)
+	// Book state must be cleared so reconnect starts clean.
+	bk := a.books["SOL"]
+	if bk == nil {
+		t.Fatal("book entry should still exist (just cleared)")
+	}
+	if len(bk.bids) != 0 || len(bk.asks) != 0 || bk.lastSeq != 0 {
+		t.Errorf("book not cleared after gap: bids=%d asks=%d seq=%d", len(bk.bids), len(bk.asks), bk.lastSeq)
 	}
 }
 

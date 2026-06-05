@@ -1,14 +1,18 @@
 package htx
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/rs/zerolog"
+
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
 func newTestFutures() *Futures {
 	return &Futures{
 		books: make(map[string]*book),
+		bbo:   make(map[string]*bboLevel),
 		log:   zerolog.Nop(),
 	}
 }
@@ -43,16 +47,22 @@ func TestParse_InOrderUpdateAdvancesVersion(t *testing.T) {
 	}
 }
 
-func TestParse_GapAdvancesVersionAnyway(t *testing.T) {
+func TestParse_GapReturnsErrResync(t *testing.T) {
+	// On version gap, Parse must return ws.ErrResync and clear the book state
+	// so the runner reconnects for a fresh snapshot.
 	a := newTestFutures()
 	_, _ = a.Parse([]byte(`{"ch":"market.SOL-USDT.depth.size_20.high_freq","tick":{"event":"snapshot","version":200,"bids":[[150,3]],"asks":[]}}`))
 	// jump from 200 → 205 (gap of 4)
-	_, err := a.Parse([]byte(`{"ch":"market.SOL-USDT.depth.size_20.high_freq","tick":{"event":"update","version":205,"bids":[[151,2]],"asks":[]}}`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+	snap, err := a.Parse([]byte(`{"ch":"market.SOL-USDT.depth.size_20.high_freq","tick":{"event":"update","version":205,"bids":[[151,2]],"asks":[]}}`))
+	if !errors.Is(err, ws.ErrResync) {
+		t.Errorf("version gap must return ws.ErrResync, got err=%v snap=%v", err, snap)
 	}
-	if got := a.books["SOL"].lastVersion; got != 205 {
-		t.Errorf("lastVersion after gap: want 205 (best-effort advance) got %d", got)
+	bk := a.books["SOL"]
+	if bk == nil {
+		t.Fatal("book entry should still exist (just cleared)")
+	}
+	if len(bk.bids) != 0 || len(bk.asks) != 0 || bk.lastVersion != 0 {
+		t.Errorf("book not cleared after gap: bids=%d asks=%d ver=%d", len(bk.bids), len(bk.asks), bk.lastVersion)
 	}
 }
 
