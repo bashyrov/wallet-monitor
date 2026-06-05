@@ -204,6 +204,34 @@ func TestParse_NonUSDTIgnored(t *testing.T) {
 	}
 }
 
+// ── book_ticker BBO parse (price=string, qty=number — confirmed wire) ──
+
+func TestParse_BookTickerBBO(t *testing.T) {
+	a := &Futures{books: make(map[string]*book), useBBO: true}
+	// Confirmed format from live gate WS capture 2026-06-05:
+	// prices ("b","a") come as JSON strings; quantities ("B","A") as numbers.
+	frame := []byte(`{"channel":"futures.book_ticker","event":"update","result":{"t":1780668602316,"u":114664937364,"s":"BTC_USDT","b":"61144","B":2245,"a":"61145.5","A":1000}}`)
+	snap, err := a.Parse(frame)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if snap.Symbol != "BTC" {
+		t.Errorf("symbol: want BTC, got %s", snap.Symbol)
+	}
+	if len(snap.Bids) != 1 || snap.Bids[0][0] != 61144 {
+		t.Errorf("bid price wrong: %v", snap.Bids)
+	}
+	if len(snap.Asks) != 1 || snap.Asks[0][0] != 61145.5 {
+		t.Errorf("ask price wrong: %v", snap.Asks)
+	}
+	if snap.Bids[0][0] >= snap.Asks[0][0] {
+		t.Errorf("bid >= ask: %v >= %v", snap.Bids[0][0], snap.Asks[0][0])
+	}
+}
+
 // ── Wrong channel ignored ────────────────────────────────────────────
 
 func TestParse_WrongChannelIgnored(t *testing.T) {
