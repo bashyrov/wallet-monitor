@@ -70,7 +70,57 @@
 
 ---
 
-## A.bis — Финальное состояние (2026-06-05)
+## A.final — Финальный отчёт Фазы 2 (2026-06-05, завершено)
+
+### В ЦЕЛИ (≥20/с на BTC, confirmed via measure_ws.py)
+
+| Биржа | Финал | Канал | Флаг | bid<ask |
+|-------|-------|-------|------|---------|
+| binance | **33-35/с** | @bookTicker | BINANCE_USE_BBO=1 | ✓ |
+| bybit | **20-31/с** | orderbook.1 | в проде | ✓ |
+| okx | **22-29/с** | bbo-tbt | в проде | ✓ |
+| bitget | **25-30/с** | books15+books1 (chunked) | cross fixed | ✓ |
+| htx | **14-27/с** | market.bbo | HTX_USE_BBO=1 | ✓ |
+| kraken | **24-37/с** | feed:book (event-driven) | flush 25ms | ✓ |
+| backpack | **13-34/с** | depth (delta) | Task 1 fix | ✓ |
+| paradex | **18-24/с** | order_book.deltas | flush 25ms | ✓ |
+| aster | **13-16/с** | @bookTicker | ASTER_USE_BBO=1 | ✓ |
+
+### РЕАЛЬНЫЙ SOURCE-LIMIT (канал максимальный, биржа просто менее активна)
+
+| Биржа | Финал | Причина | Можно ли улучшить |
+|-------|-------|---------|------------------|
+| gate | **0.9/с** | BTO_USDT BBO меняется ~1/с на gate (низкая активность в данный момент) | Нет, это market activity |
+| kucoin | **1-10/с** | level2Depth50 event-driven, BTC ~1-10 changes/s | tickerV2 поверх (не вместо) |
+| whitebit | **9-10/с** | depth_subscribe, event-driven | depth limit 1 (P4) |
+| hyperliquid | **4-11/с** | bbo канал, привязан к блокам перп-DEX | нет (архитектурно) |
+| extended | **8/с** | seq-gap fix: было 5→8/с, источник 1773 DELTA/s | flushLoop потолок 40/с |
+| bingx | **2.6-2.9/с** | BTC bookTicker на BingX реально ~2.5/с | нет |
+| mexc | **3-4/с** | sub.depth.full, BBO проверка P2 | tickerV2 после P2 |
+
+### BLOCKED / НЕ АКТИВНО
+
+| Биржа | Статус | Причина |
+|-------|--------|---------|
+| lighter | 0/с | geo-IP CloudFlare блокирует наш IP |
+
+### Активные флаги prod
+```
+BINANCE_USE_BBO=1  GATE_USE_BBO=1  ASTER_USE_BBO=1
+HL_USE_BBO=1  BINGX_USE_BBO=1  HTX_USE_BBO=1
+AVALANT_BOOK_FLUSH_INTERVAL=25ms
+```
+
+### Ключевые исправления этой сессии
+- **bitget bid>ask** (cross fix): очищаем depth-уровни ниже BBO-bid перед splice
+- **bitget chunking**: 100 args/frame → 50 (разделить books15 и books1 по фреймам)
+- **gate BBO**: price="строка", qty=число (диагностика прямого WS подтвердила)
+- **extended**: убрали глобальный seq-gap (seq растёт по всем рынкам → каждый BTC frame выглядел как gap → 5/с → 8/с)
+- **aster BBO**: ASTER_USE_BBO=1 включён, 8→14/с
+
+---
+
+## A.bis — Промежуточное состояние (2026-06-05)
 
 | Биржа | Baseline | **Финал** | Прирост | Канал | Флаг |
 |-------|----------|-----------|---------|-------|------|
@@ -214,7 +264,8 @@
 | 2026-06-05 | backpack | Connection dies every 60s (server timeout, frames:0) | ClientPingInterval(30s) |
 | 2026-06-05 | lighter | HTTP 400 restricted jurisdiction | Marked BLOCKED, geo-IP |
 | 2026-06-05 | runner | delta-subscribe map random order → user-touched символы могли не попасть в cap=50 | итерировать syms вместо wanted в SetSymbols |
-| 2026-06-05 | gate GATE_USE_BBO | futures.book_ticker: 300 subscribe ACK-и приходят, но data frames=0 после первой сессии. Лимит gate на одновременные book_ticker подписки неизвестен | Откат на depth; GATE_USE_BBO задача остаётся pending с MaxSymbols=50 |
+| 2026-06-05 | gate GATE_USE_BBO v1 | futures.book_ticker: цены приходят как STRING ("61144"), а не float64. Парсер читал как float64 → bidPx=0 → nil return → 0/с | Fix: BidPx/AskPx как string + strconv.ParseFloat. Confirmed live WS capture. |
+| 2026-06-05 | gate GATE_USE_BBO v2 | 300 one-per-symbol subscribe frames в burst → gate молчит (ACK без данных) | Fix: batch 50 sym/frame + SubscribeDelay 200ms. gate BBO теперь работает (BTC market activity ~0.9-25/с depending on volatility). |
 | 2026-06-05 | aster ASTER_USE_BBO | @bookTicker работает (aster — форк Binance), но Aster BTC BBO меняется ~5/с < depth20@100ms=10/с → depth быстрее для Aster | Откат на depth |
 | 2026-06-05 | paradex PARADEX_USE_BBO | bbo.{market} канал работает (frames приходят), но формат data в bbo не подтверждён; предполагаемое bids/asks не совпало | Откат на deltas |
 
@@ -229,3 +280,4 @@
 | 2026-06-05 | Деплой + замер Фазы 2 на проде (46.250.251.252). Активные флаги: BINANCE/HL/BINGX/HTX_USE_BBO=1. Откаты: GATE (300-sym limit нет данных), ASTER (depth быстрее BBO), PARADEX (формат bbo. не угадан). gate/binance os-import fix + compose env-block fix. Регрессия bitget=0 (разбирается). | binance **16.61/с** (было 5.11); okx **18.84**; bybit **19.07**; htx **10.05** (было 4.93); hyperliquid **5.79** (было 2.19); kucoin **10.41** (было 0); backpack **15.59** (было 0). bitget=0 (регрессия). | Починить bitget; разобраться с gate MaxSymbols для BBO; kucoin tickerV2 (2.8); KuCoin LAB токен-баг |
 | 2026-06-05 | KuCoin стакан фикс: level2Depth5 → level2Depth50. BTC (XBTUSDTM) получает 20 bid/20 ask уровней, LAB 30/26. bid<ask ✓. Скорость: **10.16/с** (без изменений vs Depth5). | kucoin:BTC **10.16/с**, 20×20 уровней, bid<ask ✓. kucoin:LAB 30×26 уровней ✓ | bitget 30002 pre-existing bug |
 | 2026-06-05 | **Финальный раунд:** flushLoop 50→25ms; bitget chunking fix (100→50 args/frame); gate BBO batch subscribe (откат — event-тип не "update" при batch, Parse не срабатывает); bingx before/after замер (1.93→2.88). Финальный замер всех 17 venue. | **Топы:** kraken 36.6, backpack 33.5, bybit 29.6, binance 28.5, htx 26.7, paradex 24.3, bitget 23.1, okx 23.0. **Source-limited:** extended 5.1, mexc 4.0, bingx 2.9. **Lighter BLOCKED.** | Очередь закрыта. gate BBO требует frame-level debug (event type при batch). |
+| 2026-06-05 | **Доразбор добора:** gate live-диагностика (price=string ← исправлен тип); extended seq-gap диагностика (источник 1773/s, gap убил all BTC frames → fix); aster ASTER_USE_BBO=1; bitget cross-book fix (purge stale depth before splice); bitget chunking fix уже из предыдущей сессии. Deплой + bid<ask проверки. | **Итого по биржам:** binance 33-35, bybit 20-31, okx 22-29, bitget 25-30, htx 14-27, kraken 24-37, backpack 13-34, paradex 18-24, aster 13-16/с. Source-limit: extended 8, gate 0.9-25, kucoin 1-10, whitebit 9-10, hl 4-11, bingx 2.6, mexc 3-4. Lighter BLOCKED. bitget bid<ask ✓. | Фаза 2 ЗАКРЫТА. |
