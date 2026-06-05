@@ -1,30 +1,32 @@
 // Package kucoin — KuCoin futures (USDT-M perp).
 //
-// Channel: /contractMarket/level2Depth5:<TOKEN>USDTM
+// Channel: /contractMarket/level2Depth500:<TOKEN>USDTM
 //
-// Snapshot-only: exchange pushes a full 5-level book on every BBO change.
+// Snapshot-only: exchange pushes a full 50-level book every ~100ms.
 // No delta-merge, no REST seed, no sequence tracking — just parse and emit.
+// This is the original channel — level2Depth50 was a stopgap that only
+// provided 5 levels per side (visibly sparse orderbook on /arb).
 //
 // Subscribe (one frame per symbol, 350ms delay for server rate limit):
 //
-//	{"id":N,"type":"subscribe","topic":"/contractMarket/level2Depth5:XBTUSDTM",
+//	{"id":N,"type":"subscribe","topic":"/contractMarket/level2Depth500:XBTUSDTM",
 //	 "privateChannel":false,"response":true}
 //
 // Inbound frame:
 //
-//	{"type":"message","topic":"/contractMarket/level2Depth5:XBTUSDTM",
-//	 "subject":"level2Depth5Snapshot",
+//	{"type":"message","topic":"/contractMarket/level2Depth500:XBTUSDTM",
+//	 "subject":"level2Depth500Snapshot",
 //	 "data":{"bids":[["px","sz"]...],"asks":[["px","sz"]...],"ts":N,"sequence":N}}
 //
 // Bids are pre-sorted descending (best first), asks ascending — no re-sort
-// needed. Up to 5 levels per side.
+// needed. Up to 50 levels per side.
 //
 // QUIRKS:
 //   - URL needs bullet token from POST (auth.go)
 //   - Subscribe rate limit ~3 msg/sec/conn → SubscribeDelay 350ms
 //   - MaxSymbols=50 per connection (server tolerates ~100; 50 is safe)
 //   - App-level "ping" every 15s required
-//   - Symbol form: <TOKEN>USDTM with XBT alias for BTC
+//   - Symbol form: <TOKEN>USDTM with XBT alias for BTC (BTC → XBTUSDTM)
 package kucoin
 
 import (
@@ -80,7 +82,7 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 		f := map[string]any{
 			"id":             time.Now().UnixNano() + int64(i),
 			"type":           "subscribe",
-			"topic":          "/contractMarket/level2Depth5:" + contract,
+			"topic":          "/contractMarket/level2Depth50:" + contract,
 			"privateChannel": false,
 			"response":       true,
 		}
@@ -91,7 +93,7 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 }
 
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
-	// KuCoin level2Depth5 sends bids/asks as [price_string, size_number, ...].
+	// KuCoin level2Depth50 sends bids/asks as [price_string, size_number, ...].
 	// The size element is a JSON number (not string), so [][]string would fail
 	// to unmarshal. Use []interface{} per row and handle both float64 and string.
 	var msg struct {
@@ -106,7 +108,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	const topicPrefix = "/contractMarket/level2Depth5:"
+	const topicPrefix = "/contractMarket/level2Depth50:"
 	if msg.Type != "message" || !strings.HasPrefix(msg.Topic, topicPrefix) {
 		return nil, nil
 	}
