@@ -89,25 +89,49 @@ func (a *Futures) Name() string                          { return "gate" }
 func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
+	if a.useBBO {
+		return a.buildBBOSubscribe(symbols)
+	}
+	return a.buildDepthSubscribe(symbols)
+}
+
+// buildBBOSubscribe batches up to 50 symbols per futures.book_ticker frame.
+// Gate WS accepts an array of contracts in one payload, so 300 symbols →
+// 6 frames instead of 300 one-per-symbol frames that overload the server.
+func (a *Futures) buildBBOSubscribe(symbols []string) [][]byte {
+	const chunkSize = 50
+	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		contracts := make([]string, end-i)
+		for j, s := range symbols[i:end] {
+			contracts[j] = strings.ToUpper(s) + "_USDT"
+		}
+		f := map[string]any{
+			"time":    time.Now().Unix(),
+			"channel": "futures.book_ticker",
+			"event":   "subscribe",
+			"payload": contracts,
+		}
+		b, _ := ws.MarshalJSON(f)
+		frames = append(frames, b)
+	}
+	return frames
+}
+
+func (a *Futures) buildDepthSubscribe(symbols []string) [][]byte {
 	frames := make([][]byte, 0, len(symbols))
 	for _, s := range symbols {
 		contract := strings.ToUpper(s) + "_USDT"
-		var f map[string]any
-		if a.useBBO {
-			f = map[string]any{
-				"time":    time.Now().Unix(),
-				"channel": "futures.book_ticker",
-				"event":   "subscribe",
-				"payload": []string{contract},
-			}
-		} else {
-			go a.seedREST(s)
-			f = map[string]any{
-				"time":    time.Now().Unix(),
-				"channel": "futures.order_book_update",
-				"event":   "subscribe",
-				"payload": []string{contract, "100ms", "20"},
-			}
+		go a.seedREST(s)
+		f := map[string]any{
+			"time":    time.Now().Unix(),
+			"channel": "futures.order_book_update",
+			"event":   "subscribe",
+			"payload": []string{contract, "100ms", "20"},
 		}
 		b, _ := ws.MarshalJSON(f)
 		frames = append(frames, b)
@@ -375,8 +399,16 @@ func (a *Futures) Heartbeat() []byte                { return nil }
 func (a *Futures) HeartbeatInterval() time.Duration { return 0 }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return true }
-func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
-func (a *Futures) MaxSymbols() int                  { return 0 }
+// SubscribeDelay: BBO mode sends batched frames (50 contracts/frame);
+// add 200ms between frames to avoid triggering gate's rate limiter.
+// Depth mode sends one frame per symbol — no delay needed (gate handles it).
+func (a *Futures) SubscribeDelay() time.Duration {
+	if a.useBBO {
+		return 200 * time.Millisecond
+	}
+	return 0
+}
+func (a *Futures) MaxSymbols() int { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
 
 func (a *Futures) OnReconnect() {
