@@ -264,15 +264,16 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 }
 
 // parseBookTicker handles the futures.book_ticker BBO frame.
-// Wire: {"t":N,"u":N,"s":"BTC_USDT","b":"bidPx","B":"bidSz","a":"askPx","A":"askSz"}
+// Gate sends prices/quantities as NUMBERS (float64), not strings.
+// Wire: {"t":N,"u":N,"s":"BTC_USDT","b":bidPx,"B":bidSz,"a":askPx,"A":askSz}
 func (a *Futures) parseBookTicker(raw json.RawMessage) (*ws.Snapshot, error) {
 	var r struct {
-		T  int64  `json:"t"` // ms timestamp
-		S  string `json:"s"` // "BTC_USDT"
-		B  string `json:"b"` // best bid price
-		Bq string `json:"B"` // best bid qty
-		A  string `json:"a"` // best ask price
-		Aq string `json:"A"` // best ask qty
+		T  int64   `json:"t"` // ms timestamp
+		S  string  `json:"s"` // "BTC_USDT"
+		B  float64 `json:"b"` // best bid price
+		Bq float64 `json:"B"` // best bid qty
+		A  float64 `json:"a"` // best ask price
+		Aq float64 `json:"A"` // best ask qty
 	}
 	if err := ws.UnmarshalJSON(raw, &r); err != nil {
 		return nil, err
@@ -281,11 +282,7 @@ func (a *Futures) parseBookTicker(raw json.RawMessage) (*ws.Snapshot, error) {
 		return nil, nil
 	}
 	token := strings.TrimSuffix(r.S, "_USDT")
-	bidPx, _ := strconv.ParseFloat(r.B, 64)
-	bidSz, _ := strconv.ParseFloat(r.Bq, 64)
-	askPx, _ := strconv.ParseFloat(r.A, 64)
-	askSz, _ := strconv.ParseFloat(r.Aq, 64)
-	if bidPx <= 0 || askPx <= 0 {
+	if r.B <= 0 || r.A <= 0 {
 		return nil, nil
 	}
 	var evt time.Time
@@ -294,8 +291,8 @@ func (a *Futures) parseBookTicker(raw json.RawMessage) (*ws.Snapshot, error) {
 	}
 	return &ws.Snapshot{
 		Symbol:    token,
-		Bids:      []ws.Level{{bidPx, bidSz}},
-		Asks:      []ws.Level{{askPx, askSz}},
+		Bids:      []ws.Level{{r.B, r.Bq}},
+		Asks:      []ws.Level{{r.A, r.Aq}},
 		EventTime: evt,
 	}, nil
 }
