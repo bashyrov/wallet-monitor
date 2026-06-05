@@ -16,8 +16,8 @@
 |---------|----------|------------------|------|
 | Конкурент (BTC, updates/sec) | _TODO_ | DevTools→WS, та же пара/время | |
 | Наша цель | 20–30+ /сек | — | — |
-| Наша текущая (клиент, BTC) | **5.11 /сек** | /ws/book, 10s замер | 2026-06-05 |
-| Связывающий потолок сейчас | **flushLoop 200ms = 5/сек ПОДТВЕРЖДЁН** | все биржи в 4–5/сек | 2026-06-05 |
+| Наша текущая (клиент, BTC) | **9.67 /сек** (binance) | /ws/book, 10s замер после 1.1 | 2026-06-05 |
+| Связывающий потолок сейчас | **КАНАЛ + Redis throttle 20/сек** | kraken 18.9 ≈ потолку throttle | 2026-06-05 |
 
 ---
 
@@ -75,7 +75,7 @@
 | # | Задача | Файл | Статус | Before | After | Потолок после | Дата | Заметки |
 |---|--------|------|--------|--------|-------|----------------|------|---------|
 | 1.0 | Проверить: фронт /arb на /ws/book или REST? | frontend + nginx | **done** | — | **WS ✓** | — | 2026-06-05 | `_openPtBookWs()` arb.js:1144. REST только fallback >3s тишины |
-| 1.1 | flushLoop 200→50ms (env) | wsbroadcast/book.go | todo | 5/с | | | | AVALANT_BOOK_FLUSH_INTERVAL |
+| 1.1 | flushLoop 200→50ms (env) | wsbroadcast/book.go | **done** | 5/с (все) | см. после | КАНАЛ и Redis throttle | 2026-06-05 | AVALANT_BOOK_FLUSH_INTERVAL=50ms. Большинство бирж выросли 2–4× |
 | 1.2 | Redis throttle 50→≤33ms/байпас (env) | redisbus/writer.go | todo | 20/с | | | | после замера 1.1 |
 | 1.3 | Событийный reconcile (cold paint) | symbols/manager.go | todo | ~5s | | | | |
 | 1.4 | Домёрджить perf/longshort-mtime-skip | wsbroadcast/longshort.go | todo | — | | | | |
