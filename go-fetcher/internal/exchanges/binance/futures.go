@@ -476,40 +476,6 @@ func (a *Futures) MaxSymbols() int {
 	return 200
 }
 func (a *Futures) DecompressGzip() bool { return false }
-// BuildUnsubscribe — send UNSUBSCRIBE frame(s) for removed symbols.
-// Implements ws.Unsubscriber: prevents full reconnect on symbol removal.
-// Clears the adapter's depth+BBO state for each removed symbol.
-func (a *Futures) BuildUnsubscribe(symbols []string) [][]byte {
-	depthSuffix := "usdt@depth20@100ms"
-	if a.useBBO {
-		depthSuffix = "usdt@depth20@500ms"
-	}
-	// Build stream list for UNSUBSCRIBE frame(s).
-	params := make([]string, 0, len(symbols)*2)
-	for _, s := range symbols {
-		lower := strings.ToLower(s)
-		params = append(params, lower+depthSuffix)
-		if a.useBBO {
-			params = append(params, lower+"usdt@bookTicker")
-		}
-	}
-	frame := map[string]any{
-		"method": "UNSUBSCRIBE",
-		"params": params,
-		"id":     time.Now().UnixNano(),
-	}
-	b, _ := ws.MarshalJSON(frame)
-	// Clear per-symbol depth + BBO state.
-	a.stateMu.Lock()
-	for _, s := range symbols {
-		token := strings.ToUpper(s)
-		delete(a.books, token)
-		delete(a.bbo, token)
-	}
-	a.stateMu.Unlock()
-	return [][]byte{b}
-}
-
 func (a *Futures) OnReconnect() {
 	a.stateMu.Lock()
 	a.books = make(map[string]*book)

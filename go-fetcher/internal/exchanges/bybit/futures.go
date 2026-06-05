@@ -286,24 +286,6 @@ func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
 func (a *Futures) MaxSymbols() int                  { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
 
-// BuildUnsubscribe implements ws.Unsubscriber. Sends op:unsubscribe for both
-// orderbook.50 and orderbook.1 per removed symbol. Clears local state.
-func (a *Futures) BuildUnsubscribe(symbols []string) [][]byte {
-	frames := make([][]byte, 0, len(symbols))
-	for _, s := range symbols {
-		sym := strings.ToUpper(s) + "USDT"
-		args := []string{"orderbook.50." + sym, "orderbook.1." + sym}
-		frame := map[string]any{"op": "unsubscribe", "args": args}
-		b, _ := ws.MarshalJSON(frame)
-		frames = append(frames, b)
-		// Clear local state for this symbol.
-		token := strings.ToUpper(s)
-		delete(a.books, token)
-		delete(a.bbo, token)
-	}
-	return frames
-}
-
 // OnReconnect — clear both local stores so the next snapshots seed cleanly.
 func (a *Futures) OnReconnect() {
 	a.books = make(map[string]*book)
