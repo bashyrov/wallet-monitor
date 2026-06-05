@@ -304,7 +304,7 @@ binance, bybit, okx, gate, kucoin, bitget, bingx, hyperliquid, backpack, lighter
 
 | # | Задача | Файл | Статус | Дата | Заметки |
 |---|--------|------|--------|------|---------|
-| 3.1 | Дельта-отписка вместо реконнекта | ws/runner.go | todo | | BuildUnsubscribe |
+| 3.1 | Дельта-отписка вместо реконнекта | ws/runner.go + adapters | **partial-done** | 2026-06-06 | KuCoin only. Binance/Bybit/OKX/Bitget — reverted (1006 storm). Lesson: combined-stream URL + SUBSCRIBE/UNSUBSCRIBE каждые 5s → rate-limit closes. |
 | 3.2 | KuCoin split-connections (если нужна глубина) | kucoin/futures.go | todo | | после 2.8 |
 | 3.3 | gRPC/shared-memory вместо файлов | архитектура | todo | | |
 | 3.4 | Resync on seq gap (Kraken/HTX) | ws/runner.go + kraken + htx | **done** | 2026-06-06 | ErrResync sentinel. After: kraken **35.93/с** 200×200 bid<ask ✓; htx **23.53/с** 20×20 bid<ask ✓ |
