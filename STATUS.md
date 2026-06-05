@@ -80,6 +80,26 @@
 | 1.3 | Событийный reconcile (cold paint) | symbols/manager.go | todo | ~5s | | | | |
 | 1.4 | Домёрджить perf/longshort-mtime-skip | wsbroadcast/longshort.go | todo | — | | | | |
 
+### D.1 Задача №1 — kucoin/lighter/backpack ненулевые upd/sec (2026-06-05)
+
+**Диагностика и корневые причины (все подтверждены на продакшне):**
+
+| Биржа | Корневая причина | Фикс | Статус |
+|-------|-----------------|------|--------|
+| **KuCoin** | level2: REST seed rate-limited → постоянный buffering loop → 0 снапшотов. Переход на level2Depth5 (snapshot) открыл bug #2: KuCoin шлёт `[price_str, size_num]`, а не `[]string` → unmarshal error → parse nil | Перейти на level2Depth5 + `[][]interface{}` + toFloat() | **done** |
+| **Backpack** | (1) WS разрывается каждые 60с (сервер закрывает без keepalive); (2) case-insensitive коллизия e/E: `"e":"depth"` → записывается в `E int64` → unmarshal error → parse nil для каждого фрейма | ClientPingInterval(30s) + EvType string `json:"e"` decoy | **done** |
+| **Lighter** | HTTP 400 "restricted jurisdiction" — IP сервера геоблокирован Lighter (Cloudflare). Неустранимо кодом | — | **blocked (geo-IP)** |
+| **Runner/SetSymbols** | delta-subscribe для added строил список из `map` (случайный порядок) → user-touched символы (BTC) могли оказаться за позицией cap=50 | итерировать `syms` вместо `wanted` | **done** |
+
+**After-замеры (клиент /ws/book, 2026-06-05):**
+
+| Биржа | Before (клиент) | After (клиент) | bid<ask | Заметки |
+|-------|-----------------|----------------|---------|---------|
+| kucoin:BTC | **0.00/с** | **~1.0/с** | ✓ | После ~30с cold-subscribe warmup; канал level2Depth5, ~1 BBO-change/с |
+| kucoin:ATOM | **0.00/с** | **~10/с** | ✓ (ETH проверен, тот же parser) | Активная пара; в тихий рынок может быть 0 |
+| backpack:BTC | **0.00/с** | **~17/с** | ✓ bid=62704.5 < ask=62704.6 | Высокая частота delta-стрима |
+| lighter | **0.00/с** | BLOCKED | — | Geo-IP блокировка; код готов, адаптер корректен |
+
 ---
 
 ## E. Фаза 2 — per-provider каналы (по ОДНОЙ бирже за флагом, с замером)
@@ -133,7 +153,11 @@
 
 | Дата | Биржа/задача | Симптом | Действие |
 |------|--------------|---------|----------|
-| | | | |
+| 2026-06-05 | kucoin | level2 tick-by-tick REST seed rate-limited → вечный buffering, 0 снапшотов | Откат на level2Depth5 (snapshot channel, без REST seed) |
+| 2026-06-05 | backpack | `"e":"depth"` (string) → case-insensitive в поле `E int64` → unmarshal error → 0 снапшотов | Добавлен decoy EvType string `json:"e"` |
+| 2026-06-05 | backpack | Connection dies every 60s (server timeout, frames:0) | ClientPingInterval(30s) |
+| 2026-06-05 | lighter | HTTP 400 restricted jurisdiction | Marked BLOCKED, geo-IP |
+| 2026-06-05 | runner | delta-subscribe map random order → user-touched символы могли не попасть в cap=50 | итерировать syms вместо wanted в SetSymbols |
 
 ---
 
@@ -141,4 +165,4 @@
 
 | Дата | Что трогал | Итоговая метрика клиента (BTC) | Следующий шаг |
 |------|-----------|--------------------------------|----------------|
-| | | | |
+| 2026-06-05 | kucoin/backpack/lighter диагностика + фиксы (5 коммитов). Baseline 1.1 flushLoop уже в продакшне. | binance **9.67/с** (было **5.11/с** baseline); kucoin **~1.0/с** (был 0); backpack **~17/с** (был 0); lighter BLOCKED | Задача 1.2: Redis throttle снижение (горячие 0/≤10ms); затем Фаза 2 BBO-каналы по одной бирже |
