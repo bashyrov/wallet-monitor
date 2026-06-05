@@ -41,11 +41,12 @@ func TestBuildSubscribe_TargetsDepth5(t *testing.T) {
 	}
 }
 
-// ── Parse happy path ──────────────────────────────────────────────────
+// ── Parse happy path (price string, size number — real KuCoin format) ───
 
 func TestParse_Depth5Snapshot(t *testing.T) {
 	a := &Futures{auth: &authClient{}}
-	frame := []byte(`{"type":"message","topic":"/contractMarket/level2Depth5:XBTUSDTM","subject":"level2Depth5Snapshot","data":{"bids":[["64000.0","1.5"],["63999.0","0.8"]],"asks":[["64001.0","2.1"],["64002.0","0.5"]],"ts":1624963009327,"sequence":123}}`)
+	// Real wire format: price = string, size = number (not string)
+	frame := []byte(`{"type":"message","topic":"/contractMarket/level2Depth5:XBTUSDTM","subject":"level2Depth5Snapshot","data":{"bids":[["64000.0",1.5],["63999.0",0.8]],"asks":[["64001.0",2.1],["64002.0",0.5]],"ts":1624963009327,"sequence":123}}`)
 	snap, err := a.Parse(frame)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -67,11 +68,12 @@ func TestParse_Depth5Snapshot(t *testing.T) {
 	}
 }
 
-// ── 3-element arrays (numOrders) handled gracefully ───────────────────
+// ── Both string and number sizes work ────────────────────────────────────
 
 func TestParse_Depth5With3ElementRows(t *testing.T) {
 	a := &Futures{auth: &authClient{}}
-	frame := []byte(`{"type":"message","topic":"/contractMarket/level2Depth5:XBTUSDTM","data":{"bids":[["64000","2","5"]],"asks":[["64001","1","3"]],"ts":1000}}`)
+	// 3-element rows: [price_str, size_num, numOrders_num]
+	frame := []byte(`{"type":"message","topic":"/contractMarket/level2Depth5:XBTUSDTM","data":{"bids":[["64000",2,5]],"asks":[["64001",1,3]],"ts":1000}}`)
 	snap, err := a.Parse(frame)
 	if err != nil || snap == nil {
 		t.Fatalf("parse failed: err=%v snap=%v", err, snap)
@@ -81,11 +83,25 @@ func TestParse_Depth5With3ElementRows(t *testing.T) {
 	}
 }
 
+// ── Size as string also works (defensive) ────────────────────────────────
+
+func TestParse_Depth5SizeAsString(t *testing.T) {
+	a := &Futures{auth: &authClient{}}
+	frame := []byte(`{"type":"message","topic":"/contractMarket/level2Depth5:ETHUSDTM","data":{"bids":[["2000","3.5"]],"asks":[["2001","1.2"]],"ts":1000}}`)
+	snap, err := a.Parse(frame)
+	if err != nil || snap == nil {
+		t.Fatalf("parse failed: err=%v snap=%v", err, snap)
+	}
+	if snap.Bids[0][1] != 3.5 || snap.Asks[0][1] != 1.2 {
+		t.Errorf("string sizes wrong: bids=%v asks=%v", snap.Bids, snap.Asks)
+	}
+}
+
 // ── Zero-size levels filtered out ─────────────────────────────────────
 
 func TestParse_ZeroSizeLevelsDropped(t *testing.T) {
 	a := &Futures{auth: &authClient{}}
-	frame := []byte(`{"type":"message","topic":"/contractMarket/level2Depth5:ETHUSDTM","data":{"bids":[["2000","0"],["1999","1"]],"asks":[["2001","0.5"]],"ts":1000}}`)
+	frame := []byte(`{"type":"message","topic":"/contractMarket/level2Depth5:ETHUSDTM","data":{"bids":[["2000",0],["1999",1]],"asks":[["2001",0.5]],"ts":1000}}`)
 	snap, err := a.Parse(frame)
 	if err != nil || snap == nil {
 		t.Fatal(err)

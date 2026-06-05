@@ -91,13 +91,16 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 }
 
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
+	// KuCoin level2Depth5 sends bids/asks as [price_string, size_number, ...].
+	// The size element is a JSON number (not string), so [][]string would fail
+	// to unmarshal. Use []interface{} per row and handle both float64 and string.
 	var msg struct {
 		Type  string `json:"type"`
 		Topic string `json:"topic"`
 		Data  struct {
-			Bids [][]string `json:"bids"`
-			Asks [][]string `json:"asks"`
-			Ts   int64      `json:"ts"`
+			Bids [][]interface{} `json:"bids"`
+			Asks [][]interface{} `json:"asks"`
+			Ts   int64           `json:"ts"`
 		} `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
@@ -113,15 +116,26 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}
 	token := contractToToken(contract)
 
-	parseLevels := func(rows [][]string) []ws.Level {
+	toFloat := func(v interface{}) float64 {
+		switch t := v.(type) {
+		case float64:
+			return t
+		case string:
+			f, _ := strconv.ParseFloat(t, 64)
+			return f
+		}
+		return 0
+	}
+
+	parseLevels := func(rows [][]interface{}) []ws.Level {
 		out := make([]ws.Level, 0, len(rows))
 		for _, r := range rows {
 			if len(r) < 2 {
 				continue
 			}
-			px, errP := strconv.ParseFloat(r[0], 64)
-			sz, errS := strconv.ParseFloat(r[1], 64)
-			if errP != nil || errS != nil || sz <= 0 {
+			px := toFloat(r[0])
+			sz := toFloat(r[1])
+			if sz <= 0 {
 				continue
 			}
 			out = append(out, ws.Level{px, sz})
