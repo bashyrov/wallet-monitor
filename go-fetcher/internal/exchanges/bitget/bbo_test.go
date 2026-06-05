@@ -21,7 +21,12 @@ func newTestAdapterBBO() *Adapter {
 func TestBuildSubscribe_FuturesIncludesBooks1(t *testing.T) {
 	a := newTestAdapterBBO()
 	frames := a.BuildSubscribe([]string{"BTC"})
-	all := string(frames[0])
+	// books15 and books1 are now in SEPARATE frames (50 args/frame limit).
+	// Check that across all frames, both channels appear.
+	all := ""
+	for _, f := range frames {
+		all += string(f)
+	}
 	if !strings.Contains(all, `"channel":"books15"`) {
 		t.Errorf("books15 missing: %s", all)
 	}

@@ -89,36 +89,38 @@ func (a *Adapter) BuildSubscribe(symbols []string) [][]byte {
 	if len(symbols) == 0 {
 		return nil
 	}
-	// Bitget V2: 200-symbol frames trigger error 30002 "Unrecognized request"
-	// with the actual prewarm symbol set (stock tokens, special names).
-	// Reducing to 50 per frame + 200ms SubscribeDelay avoids the burst.
+	// Bitget V2: error 30002 "Unrecognized request" fires when a single
+	// subscribe frame has too many args. Safe limit: 50 args per frame.
 	//
-	// Phase 2g — futures venue ALSO subscribes to `books1` (event-driven
-	// top-of-book). Spot keeps books15-only.
+	// Phase 2g bug: futures sends books15 + books1 (2 channels) per symbol.
+	// Old code packed 50 symbols × 2 channels = 100 args/frame → 30002.
+	// Fix: one channel per frame, 50 symbols max → 50 args/frame.
 	const chunkSize = 50
 	channels := []string{"books15"}
 	if a.instType == "USDT-FUTURES" {
 		channels = []string{"books15", "books1"}
 	}
-	frames := make([][]byte, 0, (len(symbols)+chunkSize-1)/chunkSize)
-	for i := 0; i < len(symbols); i += chunkSize {
-		end := i + chunkSize
-		if end > len(symbols) {
-			end = len(symbols)
-		}
-		args := make([]map[string]string, 0, (end-i)*len(channels))
-		for _, s := range symbols[i:end] {
-			for _, ch := range channels {
+	// Estimate: len(symbols)/chunkSize chunks per channel
+	est := ((len(symbols) + chunkSize - 1) / chunkSize) * len(channels)
+	frames := make([][]byte, 0, est)
+	for _, ch := range channels {
+		for i := 0; i < len(symbols); i += chunkSize {
+			end := i + chunkSize
+			if end > len(symbols) {
+				end = len(symbols)
+			}
+			args := make([]map[string]string, 0, end-i)
+			for _, s := range symbols[i:end] {
 				args = append(args, map[string]string{
 					"instType": a.instType,
 					"channel":  ch,
 					"instId":   strings.ToUpper(s) + "USDT",
 				})
 			}
+			frame := map[string]any{"op": "subscribe", "args": args}
+			b, _ := ws.MarshalJSON(frame)
+			frames = append(frames, b)
 		}
-		frame := map[string]any{"op": "subscribe", "args": args}
-		b, _ := ws.MarshalJSON(frame)
-		frames = append(frames, b)
 	}
 	return frames
 }
