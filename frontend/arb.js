@@ -1492,10 +1492,14 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       if (!r.ok) return;
       const j = await r.json();
       const arr = Array.isArray(j) ? j : (j.positions || []);
+      const isStale = r.headers.get('x-positions-stale') === '1';
       const tb = document.getElementById('acc-positions-body');
       const em = document.getElementById('acc-positions-empty');
       const cnt = document.getElementById('acc-cnt-positions');
       const cntPnl = document.getElementById('acc-pos-count');
+      // Show/clear stale badge next to the Positions tab count
+      const staleEl = document.getElementById('acc-positions-stale');
+      if (staleEl) staleEl.style.display = isStale ? '' : 'none';
       if (cnt) cnt.textContent = arr.length;
       if (cntPnl) cntPnl.textContent = arr.length;
       if (!arr.length) {

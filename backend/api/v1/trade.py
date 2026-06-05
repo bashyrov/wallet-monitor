@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import time as _time
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -43,8 +44,19 @@ async def positions(
     symbol: str | None = Query(None, pattern=r"^[A-Za-z0-9]{1,16}$"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    response: Response = None,
 ):
-    return await trade_service.list_user_positions(db, user.id, symbol.upper() if symbol else None)
+    sym = symbol.upper() if symbol else None
+    data = await trade_service.list_user_positions(db, user.id, sym)
+    # Add staleness header when we served from the SWR stale window so the
+    # frontend can show an "updating…" indicator without blocking on REST.
+    cache_key = (user.id, sym or "")
+    cached = trade_service._POSITIONS_CACHE.get(cache_key)
+    if response is not None and cached:
+        age = _time.time() - cached[0]
+        if age >= trade_service._POSITIONS_CACHE_TTL_S:
+            response.headers["X-Positions-Stale"] = "1"
+    return data
 
 
 @router.get("/balances")

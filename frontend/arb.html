@@ -396,7 +396,7 @@
   <!-- ── Account / Positions block (Positions / Orders / P&L / Balances) ── -->
   <section class="acc-block" id="acc-block">
     <div class="acc-tabs" role="tablist">
-      <div class="acc-tab is-active" data-pane="positions" onclick="accSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span></div>
+      <div class="acc-tab is-active" data-pane="positions" onclick="accSwitch(this)" role="tab">Positions <span class="acc-count" id="acc-cnt-positions">0</span><span id="acc-positions-stale" style="display:none;margin-left:4px;font-size:10px;color:var(--yellow,#f5c518);vertical-align:middle" title="Данные обновляются…">↻</span></div>
       <div class="acc-tab" data-pane="triggers" onclick="accSwitch(this)" role="tab">Active Triggers <span class="acc-count" id="acc-cnt-triggers">0</span></div>
       <div class="acc-tab" data-pane="orders"   onclick="accSwitch(this)" role="tab">Order History <span class="acc-count" id="acc-cnt-orders">0</span></div>
       <div class="acc-tab" data-pane="pnl"      onclick="accSwitch(this)" role="tab">P&amp;L</div>
