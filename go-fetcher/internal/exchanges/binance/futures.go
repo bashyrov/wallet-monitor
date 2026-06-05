@@ -28,6 +28,7 @@ package binance
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ type Futures struct {
 	filter *tradingFilter
 	mu     sync.Mutex
 	syms   []string
+	useBBO bool // BINANCE_USE_BBO=1 → @bookTicker channel; false → @depth20@100ms
 
 	// Phase 2a — adapter is now stateful so the @bookTicker BBO frames
 	// (event-driven, scalar b/B/a/A) can splice over the 20-level
@@ -73,12 +75,15 @@ type bboLevel struct {
 }
 
 // NewFutures returns a Runner ready to call .Run(ctx) on.
+// Set env BINANCE_USE_BBO=1 to switch the channel from @depth20@100ms
+// to @bookTicker (real-time BBO, event-driven, ~30-100 updates/sec).
 func NewFutures(store *cache.Store) *ws.Runner {
 	a := &Futures{
 		store:  store,
 		filter: NewFuturesTradingFilter(),
 		books:  make(map[string]*book),
 		bbo:    make(map[string]*bboLevel),
+		useBBO: os.Getenv("BINANCE_USE_BBO") == "1",
 	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("binance", snap.Symbol, snap, "ws")
@@ -94,18 +99,19 @@ func (a *Futures) URL(_ context.Context) (string, error) {
 	// First dial happens before BuildSubscribe — fall back to BTC so the
 	// dial succeeds. Symbol manager then re-URLs on the next reconcile.
 	//
-	// HOTFIX 2026-05-13: Phase 2a put @bookTicker in URL too (2 streams
-	// per symbol). With 200 prewarm symbols → 400 URL streams → Binance
-	// closes with 1008 policy violation in a tight loop. Reverted to
-	// @depth20-only in URL; bookTicker is no longer subscribed.
-	// Latency-histogram on Binance loses its event-time source as a
-	// side-effect (depth20 has no `E` we can rely on for diff frames).
+	// BINANCE_USE_BBO=1: switch to @bookTicker — 1 stream per symbol
+	// (vs the HOTFIX 2026-05-13 that tried depth20+bookTicker = 2×400
+	// and hit 1008). With only bookTicker, 200 syms = 200 streams = OK.
+	suffix := "@depth20@100ms"
+	if a.useBBO {
+		suffix = "@bookTicker"
+	}
 	if len(syms) == 0 {
-		return futuresCombinedBase + "?streams=btcusdt@depth20@100ms", nil
+		return futuresCombinedBase + "?streams=btcusdt" + suffix, nil
 	}
 	parts := make([]string, 0, len(syms))
 	for _, s := range syms {
-		parts = append(parts, strings.ToLower(s)+"usdt@depth20@100ms")
+		parts = append(parts, strings.ToLower(s)+"usdt"+suffix)
 	}
 	return futuresCombinedBase + "?streams=" + strings.Join(parts, "/"), nil
 }
@@ -131,11 +137,15 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(listed) == 0 {
 		return nil
 	}
-	// HOTFIX 2026-05-13: drop @bookTicker from subscribe set too —
-	// keeping it on the SUBSCRIBE side while the URL only carries
-	// @depth20 created an asymmetric subscribe whose total stream count
-	// still pushed past Binance's 1008 threshold. Subscribe only
-	// @depth20 to match the URL.
+	// Subscribe must match the URL channel. When BINANCE_USE_BBO is set
+	// use @bookTicker; otherwise @depth20@100ms (default). One stream
+	// type per symbol — the 2026-05-13 hotfix that reverted Phase 2a
+	// was caused by subscribing BOTH streams (depth+bbo = 400 streams
+	// for 200 syms). Single-type avoids that.
+	suffix := "usdt@depth20@100ms"
+	if a.useBBO {
+		suffix = "usdt@bookTicker"
+	}
 	const chunkSize = 200
 	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()
@@ -146,7 +156,7 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 		}
 		chunk := make([]string, end-i)
 		for j, s := range listed[i:end] {
-			chunk[j] = strings.ToLower(s) + "usdt@depth20@100ms"
+			chunk[j] = strings.ToLower(s) + suffix
 		}
 		frame := map[string]any{
 			"method": "SUBSCRIBE",
