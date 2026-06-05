@@ -87,6 +87,7 @@ import (
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/paradex"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/extended"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/whitebit"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/obsmetrics"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/wsbroadcast"
 	"net/http"
@@ -290,6 +291,9 @@ func main() {
 		// network — nginx never proxies /internal/*. Auth-gated by the
 		// AVALANT_INTERNAL_SECRET shared header.
 		trade.Routes(mux)
+		// Prometheus metrics endpoint — per-exchange ob update/reconnect/resync
+		// counters. Scraped by /api/metrics Python proxy or directly by Prometheus.
+		mux.Handle("/internal/metrics", obsmetrics.Handler())
 		// DNS pre-resolve all venue hostnames in the background. Eliminates
 		// the ~5-30ms first-call DNS lookup tax on every venue after a
 		// fetcher restart. Best-effort; logged on success/failure.

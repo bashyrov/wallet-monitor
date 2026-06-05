@@ -707,6 +707,11 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
 
 _POSITIONS_STALE_MAX_S = 30 * 60.0  # extended from 5m to 30m: "came back after >5min" returns stale+bg-refresh
 _POSITIONS_REFRESH_INFLIGHT: dict[tuple[int, str], bool] = {}
+
+# Prometheus counter: positions REST fallback events per exchange.
+# Incremented whenever a wallet falls through to REST because WS stream is
+# not LIVE. Exposed via /api/metrics for operational alerting.
+_POSITIONS_REST_FALLBACK_COUNT: dict[str, int] = {}
 # Per-wallet REST timeout. Env override: AVALANT_POSITIONS_TIMEOUT_S (float, default 5.0).
 # Reduced from 10s: a misbehaving exchange times out in 5s and serves lastgood; the
 # parallel gather caps total latency at max(per_wallet_times), so this directly bounds
@@ -769,6 +774,9 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
                     # Empty snapshot — fall through to REST.
                 else:
                     # WS not LIVE → positions will come from REST (6-9s path).
+                    _POSITIONS_REST_FALLBACK_COUNT[w.type_value] = (
+                        _POSITIONS_REST_FALLBACK_COUNT.get(w.type_value, 0) + 1
+                    )
                     logger.info(
                         "positions REST fallback: wallet=%s ex=%s ws_status=%s "
                         "(user_id=%s); timeout=%.0fs",

@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 
 	wmlog "github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/obsmetrics"
 )
 
 // ErrResync is returned by Parse() when the adapter detects a sequence-number
@@ -234,6 +235,7 @@ func (r *Runner) Run(ctx context.Context) {
 // connection dies or ctx is cancelled. Returns the close error so Run can
 // decide between transient vs policy backoff.
 func (r *Runner) session(ctx context.Context) error {
+	obsmetrics.Reconnects.Inc(r.a.Name())
 	r.a.OnReconnect()
 
 	url, err := r.a.URL(ctx)
@@ -383,6 +385,7 @@ func (r *Runner) session(ctx context.Context) error {
 			// End this session now so the runner reconnects and gets a fresh
 			// snapshot. Treated as transient (not policy) — short backoff.
 			if errors.Is(perr, ErrResync) {
+				obsmetrics.Resyncs.Inc(r.a.Name())
 				r.log.Warn().Msg("adapter requested resync — closing session for reconnect")
 				return perr
 			}
@@ -410,6 +413,7 @@ func (r *Runner) session(ctx context.Context) error {
 		if len(snap.Asks) > 200 {
 			snap.Asks = snap.Asks[:200]
 		}
+		obsmetrics.Updates.Inc(r.a.Name())
 		r.onUpdate(r.a.Name(), *snap)
 	}
 }

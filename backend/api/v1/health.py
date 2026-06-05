@@ -219,6 +219,30 @@ def metrics():
     except Exception:
         pass
 
+    # Positions REST fallback counter (accumulated since process start).
+    # Non-zero values mean users have wallets with dead WS user-streams.
+    try:
+        from backend.services.trade_service import _POSITIONS_REST_FALLBACK_COUNT
+        if _POSITIONS_REST_FALLBACK_COUNT:
+            lines.append("# HELP avalant_positions_rest_fallback_total Positions REST fallbacks (WS stream not LIVE)")
+            lines.append("# TYPE avalant_positions_rest_fallback_total counter")
+            for ex, cnt in sorted(_POSITIONS_REST_FALLBACK_COUNT.items()):
+                lines.append(f'avalant_positions_rest_fallback_total{{exchange="{ex}"}} {cnt}')
+    except Exception:
+        pass
+
+    # Go-fetcher orderbook pipeline counters — proxy from /internal/metrics.
+    # Provides per-exchange: ob_updates_total, ob_reconnects_total, ob_resyncs_total.
+    try:
+        import httpx as _httpx
+        _resp = _httpx.get("http://go-fetcher:8090/internal/metrics", timeout=1.0)
+        if _resp.status_code == 200:
+            lines.append("")
+            lines.append("# --- go-fetcher ob pipeline metrics ---")
+            lines.append(_resp.text.rstrip())
+    except Exception:
+        pass
+
     body = "\n".join(lines) + "\n"
     return Response(content=body, media_type="text/plain; version=0.0.4")
 
