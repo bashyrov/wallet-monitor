@@ -132,6 +132,11 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Stream string `json:"stream"`
 		Data   struct {
+			// EvType is a decoy field that captures the lowercase "e" field
+			// ("depth") and prevents sonic's case-insensitive fallback from
+			// routing it into E (int64), which would cause an unmarshal error
+			// for every frame and silently drop all snapshots.
+			EvType string     `json:"e"`
 			Symbol string     `json:"s"`
 			Bids   [][]string `json:"b"`
 			Asks   [][]string `json:"a"`
@@ -148,7 +153,7 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	if !strings.HasSuffix(sym, "_USDC_PERP") {
 		return nil, nil
 	}
-	token := strings.TrimSuffix(sym, "_USDC_PERP")
+	token := strings.TrimSuffix(sym, "_USDC_PERP") // e.g. "BTC"
 
 	a.mu.Lock()
 	bk, ok := a.books[token]
