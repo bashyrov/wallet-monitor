@@ -273,6 +273,10 @@ services:
       # real-time updates; this tick covers pairs that didn't fire a Store
       # callback. 1s default — was 25ms, redundant on the hot path.
       AVALANT_BOOK_TICK_INTERVAL: ${AVALANT_BOOK_TICK_INTERVAL:-1s}
+      # Book flushLoop interval — hard ceiling on client update frequency.
+      # Default 50ms = 20/sec. Lower raises throughput; min clamp 10ms.
+      # e.g. "33ms" → ~30/sec, "25ms" → 40/sec.
+      AVALANT_BOOK_FLUSH_INTERVAL: ${AVALANT_BOOK_FLUSH_INTERVAL:-50ms}
       # Toggle for the Redis orderbook mirror (`ob:<ex>:<sym>` SETEX on
       # every cache update). Python REST callers fall through to the
       # file cache (orderbook_cache.py:900+), so this is safely
