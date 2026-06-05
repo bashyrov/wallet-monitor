@@ -192,6 +192,10 @@ func (a *Futures) SubscribeDelay() time.Duration    { return 0 }
 func (a *Futures) MaxSymbols() int                  { return 0 }
 func (a *Futures) DecompressGzip() bool             { return false }
 
+// ClientPingInterval sends WS-frame pings every 30s. Backpack's server
+// closes idle connections after ~60s without a client keepalive.
+func (a *Futures) ClientPingInterval() time.Duration { return 30 * time.Second }
+
 func (a *Futures) OnReconnect() {
 	a.mu.Lock()
 	a.books = make(map[string]*book)
