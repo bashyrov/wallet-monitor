@@ -7,18 +7,19 @@
 //   Inbound:   {"channel":"l2Book","data":{"coin":"BTC","time":N,
 //               "levels":[[{px,sz,n},...],[{px,sz,n},...]]}}
 //
-// BBO channel (HL_USE_BBO=1): bbo — pushed on every BBO change per block.
-//   Subscribe: {"method":"subscribe","subscription":{"type":"bbo","coin":"BTC"}}
-//   Inbound:   {"channel":"bbo","data":{"coin":"BTC","time":N,
-//               "bbo":[{px,sz,n},{px,sz,n}]}}
-//   where bbo[0] = best bid, bbo[1] = best ask (same level shape as l2Book).
+// BBO channel (HL_USE_BBO=1): hybrid dual-track:
+//   - l2Book subscribed → feeds books[coin] (full depth snapshot, per-block)
+//   - bbo    subscribed → feeds bbo[coin]   (BBO overlay, per-block on change)
+//   mergedSnapshot splices BBO over l2Book top → full ladder + fast BBO.
+//   Note: both channels are block-bound so speed gain from BBO is marginal;
+//   the primary benefit is that bbo fires immediately on any BBO change while
+//   l2Book fires when the full snapshot is ready.
 //
 // QUIRKS:
 //   - levels[0] = bids, levels[1] = asks
-//   - Each level is an OBJECT with px/sz/n, NOT an array — separate parse
-//     path from Binance/Bybit
+//   - Each level is an OBJECT with px/sz/n, NOT an array
 //   - HL drops connection with "write: broken pipe" after 4-8 subscribe
-//     frames in succession — 500ms SubscribeDelay is required
+//     frames — 500ms SubscribeDelay is required
 package hyperliquid
 
 import (
@@ -26,6 +27,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
@@ -34,15 +36,31 @@ import (
 
 const futuresWS = "wss://api.hyperliquid.xyz/ws"
 
+type l2Snap struct {
+	bids []ws.Level
+	asks []ws.Level
+}
+
+type bboLevel struct {
+	bidPx, bidSz float64
+	askPx, askSz float64
+}
+
 type Futures struct {
 	store  *cache.Store
-	useBBO bool // HL_USE_BBO=1 → bbo channel; false → l2Book
+	useBBO bool // HL_USE_BBO=1 → dual-track (l2Book + bbo); false → l2Book only
+
+	mu    sync.Mutex
+	books map[string]*l2Snap
+	bbo   map[string]*bboLevel
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
 	a := &Futures{
 		store:  store,
 		useBBO: os.Getenv("HL_USE_BBO") == "1",
+		books:  make(map[string]*l2Snap),
+		bbo:    make(map[string]*bboLevel),
 	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("hyperliquid", snap.Symbol, snap, "ws")
@@ -53,18 +71,22 @@ func (a *Futures) Name() string                          { return "hyperliquid" 
 func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	chanType := "l2Book"
+	// Dual-track when HL_USE_BBO=1: subscribe to BOTH l2Book AND bbo.
+	// HL sends both channels per-block so the combined depth is coherent.
+	chanTypes := []string{"l2Book"}
 	if a.useBBO {
-		chanType = "bbo"
+		chanTypes = append(chanTypes, "bbo")
 	}
-	frames := make([][]byte, 0, len(symbols))
-	for _, s := range symbols {
-		f := map[string]any{
-			"method":       "subscribe",
-			"subscription": map[string]any{"type": chanType, "coin": strings.ToUpper(s)},
+	frames := make([][]byte, 0, len(symbols)*len(chanTypes))
+	for _, ct := range chanTypes {
+		for _, s := range symbols {
+			f := map[string]any{
+				"method":       "subscribe",
+				"subscription": map[string]any{"type": ct, "coin": strings.ToUpper(s)},
+			}
+			b, _ := ws.MarshalJSON(f)
+			frames = append(frames, b)
 		}
-		b, _ := ws.MarshalJSON(f)
-		frames = append(frames, b)
 	}
 	return frames
 }
@@ -86,8 +108,8 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Channel string `json:"channel"`
 		Data    struct {
-			Coin   string    `json:"coin"`
-			Time   int64     `json:"time"` // ms event time
+			Coin   string       `json:"coin"`
+			Time   int64        `json:"time"`
 			Levels [2][]hlLevel `json:"levels"` // l2Book: [bids, asks]
 			BBO    [2]hlLevel   `json:"bbo"`    // bbo: [bid, ask]
 		} `json:"data"`
@@ -111,12 +133,18 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		if bidPx <= 0 || askPx <= 0 {
 			return nil, nil
 		}
-		return &ws.Snapshot{
-			Symbol:    coin,
-			Bids:      []ws.Level{{bidPx, bidSz}},
-			Asks:      []ws.Level{{askPx, askSz}},
-			EventTime: evt,
-		}, nil
+		a.mu.Lock()
+		b, ok := a.bbo[coin]
+		if !ok {
+			b = &bboLevel{}
+			a.bbo[coin] = b
+		}
+		b.bidPx, b.bidSz = bidPx, bidSz
+		b.askPx, b.askSz = askPx, askSz
+		snap := a.mergedSnapshotLocked(coin)
+		a.mu.Unlock()
+		snap.EventTime = evt
+		return snap, nil
 
 	case "l2Book":
 		parseSide := func(rows []hlLevel) []ws.Level {
@@ -129,30 +157,81 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 			}
 			return out
 		}
-		return &ws.Snapshot{
-			Symbol:    coin,
-			Bids:      parseSide(msg.Data.Levels[0]),
-			Asks:      parseSide(msg.Data.Levels[1]),
-			EventTime: evt,
-		}, nil
+		a.mu.Lock()
+		a.books[coin] = &l2Snap{
+			bids: parseSide(msg.Data.Levels[0]),
+			asks: parseSide(msg.Data.Levels[1]),
+		}
+		snap := a.mergedSnapshotLocked(coin)
+		a.mu.Unlock()
+		snap.EventTime = evt
+		return snap, nil
 
 	default:
 		return nil, nil
 	}
 }
 
-// Hyperliquid keepalive — server sends ping frames, gorilla auto-replies
-// with WS-frame pong. No app-level heartbeat required.
+// mergedSnapshotLocked — must hold mu. l2Book depth with BBO spliced on top.
+func (a *Futures) mergedSnapshotLocked(coin string) *ws.Snapshot {
+	var bids, asks []ws.Level
+	if d := a.books[coin]; d != nil {
+		bids = append([]ws.Level(nil), d.bids...)
+		asks = append([]ws.Level(nil), d.asks...)
+	}
+	if b := a.bbo[coin]; b != nil {
+		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	}
+	return &ws.Snapshot{Symbol: coin, Bids: bids, Asks: asks}
+}
+
+func spliceBBOBid(bids []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return bids
+	}
+	if len(bids) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx > bids[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, bids...)
+	}
+	if bboPx == bids[0][0] {
+		bids[0][1] = bboSz
+	}
+	return bids
+}
+
+func spliceBBOAsk(asks []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return asks
+	}
+	if len(asks) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx < asks[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, asks...)
+	}
+	if bboPx == asks[0][0] {
+		asks[0][1] = bboSz
+	}
+	return asks
+}
+
+// Hyperliquid keepalive — server sends ping frames, gorilla auto-replies.
 func (a *Futures) Heartbeat() []byte                { return nil }
 func (a *Futures) HeartbeatInterval() time.Duration { return 0 }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return true }
 
-// HL drops the connection with "write: broken pipe" after 4-8 subscribe
-// frames in succession — confirmed in prod logs after the 100ms test.
-// 500ms gives us 2 subs/s, ~10s subscribe phase for 20 symbols. Subs
-// happen once per connection so the long phase is acceptable.
+// HL drops connection with "write: broken pipe" after 4-8 subscribe frames.
+// 500ms gap keeps us at 2 subs/s.
 func (a *Futures) SubscribeDelay() time.Duration { return 500 * time.Millisecond }
 func (a *Futures) MaxSymbols() int               { return 0 }
 func (a *Futures) DecompressGzip() bool          { return false }
-func (a *Futures) OnReconnect()                  {}
+func (a *Futures) OnReconnect() {
+	a.mu.Lock()
+	a.books = make(map[string]*l2Snap)
+	a.bbo = make(map[string]*bboLevel)
+	a.mu.Unlock()
+}

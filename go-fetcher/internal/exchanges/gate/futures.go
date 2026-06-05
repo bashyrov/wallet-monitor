@@ -3,9 +3,10 @@
 // URL: wss://fx-ws.gateio.ws/v4/ws/usdt
 //
 // Default channel: `futures.order_book_update` (incremental diff).
-// BBO channel (GATE_USE_BBO=1): `futures.book_ticker` — real-time best
-// bid/ask, event-driven, ~10ms cadence (significantly faster than the
-// 100ms incremental channel).
+// BBO channel (GATE_USE_BBO=1): hybrid dual-track:
+//   - futures.order_book_update subscribed → feeds books[token] (depth state)
+//   - futures.book_ticker        subscribed → feeds bbo[token]  (BBO overlay)
+//   mergedSnapshotLocked splices BBO over depth → full ladder + fast BBO.
 //
 // Subscribe (order_book_update):
 //
@@ -46,11 +47,17 @@ const futuresWS = "wss://fx-ws.gateio.ws/v4/ws/usdt"
 // restSnapshot is overridable in tests.
 var restSnapshot = "https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=%s&limit=20&with_id=true"
 
+type bboLevel struct {
+	bidPx, bidSz float64
+	askPx, askSz float64
+}
+
 type Futures struct {
 	store  *cache.Store
 	mu     sync.Mutex
 	books  map[string]*book
-	useBBO bool // GATE_USE_BBO=1 → futures.book_ticker; false → order_book_update
+	bbo    map[string]*bboLevel
+	useBBO bool // GATE_USE_BBO=1 → dual-track (depth + BBO); false → depth only
 }
 
 type bookLevel struct {
@@ -78,6 +85,7 @@ func NewFutures(store *cache.Store) *ws.Runner {
 	a := &Futures{
 		store:  store,
 		books:  make(map[string]*book),
+		bbo:    make(map[string]*bboLevel),
 		useBBO: os.Getenv("GATE_USE_BBO") == "1",
 	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
@@ -90,7 +98,10 @@ func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if a.useBBO {
-		return a.buildBBOSubscribe(symbols)
+		// Dual-track: send both BBO and depth subscriptions.
+		bboFrames := a.buildBBOSubscribe(symbols)
+		depthFrames := a.buildDepthSubscribe(symbols)
+		return append(bboFrames, depthFrames...)
 	}
 	return a.buildDepthSubscribe(symbols)
 }
@@ -287,20 +298,18 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	}
 }
 
-// parseBookTicker handles the futures.book_ticker BBO frame.
-// Confirmed wire format (from live gate WS capture):
-//
-//	{"t":N,"u":N,"s":"BTC_USDT","b":"61144","B":2245,"a":"61144.1","A":1000}
-//
+// parseBookTicker handles futures.book_ticker BBO frames — updates bbo state
+// and emits a merged snapshot (depth + BBO overlay).
+// Confirmed wire format: {"t":N,"u":N,"s":"BTC_USDT","b":"61144","B":2245,"a":"61144.1","A":1000}
 // Prices (b, a) are JSON strings; quantities (B, A) are JSON numbers.
 func (a *Futures) parseBookTicker(raw json.RawMessage) (*ws.Snapshot, error) {
 	var r struct {
-		T     int64   `json:"t"` // ms timestamp
-		S     string  `json:"s"` // "BTC_USDT"
-		BidPx string  `json:"b"` // best bid price — STRING
-		BidSz float64 `json:"B"` // best bid qty   — NUMBER
-		AskPx string  `json:"a"` // best ask price — STRING
-		AskSz float64 `json:"A"` // best ask qty   — NUMBER
+		T     int64   `json:"t"`
+		S     string  `json:"s"`
+		BidPx string  `json:"b"`
+		BidSz float64 `json:"B"`
+		AskPx string  `json:"a"`
+		AskSz float64 `json:"A"`
 	}
 	if err := ws.UnmarshalJSON(raw, &r); err != nil {
 		return nil, err
@@ -314,16 +323,22 @@ func (a *Futures) parseBookTicker(raw json.RawMessage) (*ws.Snapshot, error) {
 	if bidPx <= 0 || askPx <= 0 {
 		return nil, nil
 	}
-	var evt time.Time
-	if r.T > 0 {
-		evt = time.UnixMilli(r.T)
+
+	a.mu.Lock()
+	b, ok := a.bbo[token]
+	if !ok {
+		b = &bboLevel{}
+		a.bbo[token] = b
 	}
-	return &ws.Snapshot{
-		Symbol:    token,
-		Bids:      []ws.Level{{bidPx, r.BidSz}},
-		Asks:      []ws.Level{{askPx, r.AskSz}},
-		EventTime: evt,
-	}, nil
+	b.bidPx, b.bidSz = bidPx, r.BidSz
+	b.askPx, b.askSz = askPx, r.AskSz
+	snap := a.mergedSnapshotLocked(token)
+	a.mu.Unlock()
+
+	if r.T > 0 {
+		snap.EventTime = time.UnixMilli(r.T)
+	}
+	return snap, nil
 }
 
 // parseDepthUpdate handles the futures.order_book_update incremental frame.
@@ -387,16 +402,58 @@ func (a *Futures) parseDepthUpdate(raw json.RawMessage) (*ws.Snapshot, error) {
 		bk.lastU = result.U2
 	}
 
-	var evt time.Time
+	snap := a.mergedSnapshotLocked(token)
 	if result.T > 0 {
-		evt = time.UnixMilli(result.T)
+		snap.EventTime = time.UnixMilli(result.T)
 	}
-	return &ws.Snapshot{
-		Symbol:    token,
-		Bids:      ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:      ws.SortedLevels(bk.asks, ws.Asks, 200),
-		EventTime: evt,
-	}, nil
+	return snap, nil
+}
+
+// mergedSnapshotLocked — must hold mu. Depth state with BBO spliced on top.
+func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
+	bk := a.books[token]
+	var bids, asks []ws.Level
+	if bk != nil && bk.seeded {
+		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
+		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
+	}
+	if b := a.bbo[token]; b != nil {
+		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	}
+	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
+}
+
+func spliceBBOBid(bids []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return bids
+	}
+	if len(bids) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx > bids[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, bids...)
+	}
+	if bboPx == bids[0][0] {
+		bids[0][1] = bboSz
+	}
+	return bids
+}
+
+func spliceBBOAsk(asks []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return asks
+	}
+	if len(asks) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx < asks[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, asks...)
+	}
+	if bboPx == asks[0][0] {
+		asks[0][1] = bboSz
+	}
+	return asks
 }
 
 // Gate uses lib-level WS pings for keepalive. No app-level frame.
@@ -419,5 +476,6 @@ func (a *Futures) DecompressGzip() bool             { return false }
 func (a *Futures) OnReconnect() {
 	a.mu.Lock()
 	a.books = make(map[string]*book)
+	a.bbo = make(map[string]*bboLevel)
 	a.mu.Unlock()
 }

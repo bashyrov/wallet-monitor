@@ -1,12 +1,11 @@
 // Package aster — Aster DEX is a Binance fork. Same protocol on a different
-// host, same partial-book stream format. We embed *binance.Futures
-// behaviourally by copying the parser and swapping the URL — embedding
-// directly would force one shared exchangeInfo cache between the two
-// venues, which we don't want (different symbol sets).
+// host, same partial-book stream format.
 //
 // Default channel: @depth20@100ms (depth snapshot every 100ms).
-// BBO channel (ASTER_USE_BBO=1): @bookTicker — real-time top-of-book,
-// event-driven (same protocol as Binance @bookTicker).
+// BBO channel (ASTER_USE_BBO=1): hybrid dual-track, same as Binance/Bybit/OKX:
+//   - @depth20@100ms subscribed → feeds books[token] (20-level depth state)
+//   - @bookTicker     subscribed → feeds bbo[token]  (BBO overlay, event-driven)
+//   mergedSnapshot splices BBO over depth top at emit time → full ladder + fast BBO.
 //
 // Bug-resistance: same as binance — TEXT frames, watchdog, policy backoff,
 // trading-filter (Aster also returns SETTLING/BREAK status on delisted
@@ -19,6 +18,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
@@ -31,10 +31,24 @@ import (
 // SUBSCRIBE works.
 const futuresWS = "wss://fstream.asterdex.com/ws"
 
+type book struct {
+	bids map[float64]float64
+	asks map[float64]float64
+}
+
+type bboLevel struct {
+	bidPx, bidSz float64
+	askPx, askSz float64
+}
+
 type Futures struct {
 	store  *cache.Store
 	filter *tradingFilter
-	useBBO bool // ASTER_USE_BBO=1 → @bookTicker; false → @depth20@100ms
+	useBBO bool // ASTER_USE_BBO=1 → dual-track (depth + BBO); false → depth only
+
+	stateMu sync.Mutex
+	books   map[string]*book
+	bbo     map[string]*bboLevel
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
@@ -42,6 +56,8 @@ func NewFutures(store *cache.Store) *ws.Runner {
 		store:  store,
 		filter: newTradingFilter(),
 		useBBO: os.Getenv("ASTER_USE_BBO") == "1",
+		books:  make(map[string]*book),
+		bbo:    make(map[string]*bboLevel),
 	}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("aster", snap.Symbol, snap, "ws")
@@ -65,25 +81,29 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	if len(listed) == 0 {
 		return nil
 	}
-	suffix := "usdt@depth20@100ms"
+	// Dual-track when ASTER_USE_BBO=1: send one SUBSCRIBE batch per channel.
+	// Single channel per frame keeps each frame size small.
+	channels := []string{"usdt@depth20@100ms"}
 	if a.useBBO {
-		suffix = "usdt@bookTicker"
+		channels = append(channels, "usdt@bookTicker")
 	}
 	const chunkSize = 200
-	frames := make([][]byte, 0, (len(listed)+chunkSize-1)/chunkSize)
 	id := time.Now().UnixNano()
-	for i := 0; i < len(listed); i += chunkSize {
-		end := i + chunkSize
-		if end > len(listed) {
-			end = len(listed)
+	frames := make([][]byte, 0, len(channels)*((len(listed)+chunkSize-1)/chunkSize))
+	for ci, ch := range channels {
+		for i := 0; i < len(listed); i += chunkSize {
+			end := i + chunkSize
+			if end > len(listed) {
+				end = len(listed)
+			}
+			params := make([]string, end-i)
+			for j, s := range listed[i:end] {
+				params[j] = strings.ToLower(s) + ch
+			}
+			frame := map[string]any{"method": "SUBSCRIBE", "params": params, "id": id + int64(ci*1000+i)}
+			b, _ := ws.MarshalJSON(frame)
+			frames = append(frames, b)
 		}
-		params := make([]string, end-i)
-		for j, s := range listed[i:end] {
-			params[j] = strings.ToLower(s) + suffix
-		}
-		frame := map[string]any{"method": "SUBSCRIBE", "params": params, "id": id + int64(i)}
-		b, _ := ws.MarshalJSON(frame)
-		frames = append(frames, b)
 	}
 	return frames
 }
@@ -121,10 +141,8 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	return a.parseDepth(sym, dataBytes)
 }
 
-// parseBookTicker handles @bookTicker frames.
-// Wire (via bare /ws): {"stream":"btcusdt@bookTicker","data":{
-//
-//	"e":"bookTicker","u":N,"s":"BTCUSDT","b":"px","B":"qty","a":"px","A":"qty","T":N,"E":N}}
+// parseBookTicker handles @bookTicker frames — updates bbo state and emits
+// a merged snapshot (depth + BBO overlay).
 func (a *Futures) parseBookTicker(sym string, dataBytes []byte) (*ws.Snapshot, error) {
 	var inner struct {
 		Event   string `json:"e"` // decoy: absorb string before case-insensitive routing to EvTime
@@ -158,11 +176,17 @@ func (a *Futures) parseBookTicker(sym string, dataBytes []byte) (*ws.Snapshot, e
 		return nil, nil
 	}
 
-	snap := &ws.Snapshot{
-		Symbol: token,
-		Bids:   []ws.Level{{bidPx, bidSz}},
-		Asks:   []ws.Level{{askPx, askSz}},
+	a.stateMu.Lock()
+	b, ok := a.bbo[token]
+	if !ok {
+		b = &bboLevel{}
+		a.bbo[token] = b
 	}
+	b.bidPx, b.bidSz = bidPx, bidSz
+	b.askPx, b.askSz = askPx, askSz
+	snap := a.mergedSnapshotLocked(token)
+	a.stateMu.Unlock()
+
 	switch {
 	case inner.TradeTs > 0:
 		snap.EventTime = time.UnixMilli(inner.TradeTs)
@@ -172,12 +196,13 @@ func (a *Futures) parseBookTicker(sym string, dataBytes []byte) (*ws.Snapshot, e
 	return snap, nil
 }
 
-// parseDepth handles @depth20@100ms snapshot frames.
+// parseDepth handles @depth20@100ms snapshot frames — full-replaces books state
+// and emits a merged snapshot.
 func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error) {
 	var inner struct {
 		Symbol  string     `json:"s"`
-		EvTime  int64      `json:"E"` // event time ms
-		TradeTs int64      `json:"T"` // transaction time ms
+		EvTime  int64      `json:"E"`
+		TradeTs int64      `json:"T"`
 		B       [][]string `json:"b"`
 		A       [][]string `json:"a"`
 		Bids    [][]string `json:"bids"`
@@ -197,7 +222,15 @@ func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error)
 	}
 	token := strings.TrimSuffix(sym, "USDT")
 
-	snap := &ws.Snapshot{Symbol: token}
+	a.stateMu.Lock()
+	bk, ok := a.books[token]
+	if !ok {
+		bk = &book{bids: make(map[float64]float64), asks: make(map[float64]float64)}
+		a.books[token] = bk
+	}
+	// depth20 is a full snapshot — replace wholesale.
+	bk.bids = make(map[float64]float64, len(bids))
+	bk.asks = make(map[float64]float64, len(asks))
 	for _, r := range bids {
 		if len(r) < 2 {
 			continue
@@ -205,7 +238,7 @@ func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error)
 		px, _ := strconv.ParseFloat(r[0], 64)
 		sz, _ := strconv.ParseFloat(r[1], 64)
 		if sz > 0 {
-			snap.Bids = append(snap.Bids, ws.Level{px, sz})
+			bk.bids[px] = sz
 		}
 	}
 	for _, r := range asks {
@@ -215,9 +248,12 @@ func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error)
 		px, _ := strconv.ParseFloat(r[0], 64)
 		sz, _ := strconv.ParseFloat(r[1], 64)
 		if sz > 0 {
-			snap.Asks = append(snap.Asks, ws.Level{px, sz})
+			bk.asks[px] = sz
 		}
 	}
+	snap := a.mergedSnapshotLocked(token)
+	a.stateMu.Unlock()
+
 	switch {
 	case inner.TradeTs > 0:
 		snap.EventTime = time.UnixMilli(inner.TradeTs)
@@ -227,14 +263,66 @@ func (a *Futures) parseDepth(sym string, dataBytes []byte) (*ws.Snapshot, error)
 	return snap, nil
 }
 
+// mergedSnapshotLocked — must hold stateMu. Returns depth state with BBO spliced
+// over the top (same pattern as bybit/okx/bitget/binance).
+func (a *Futures) mergedSnapshotLocked(token string) *ws.Snapshot {
+	bk := a.books[token]
+	var bids, asks []ws.Level
+	if bk != nil {
+		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
+		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
+	}
+	if b := a.bbo[token]; b != nil {
+		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	}
+	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
+}
+
+func spliceBBOBid(bids []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return bids
+	}
+	if len(bids) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx > bids[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, bids...)
+	}
+	if bboPx == bids[0][0] {
+		bids[0][1] = bboSz
+	}
+	return bids
+}
+
+func spliceBBOAsk(asks []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return asks
+	}
+	if len(asks) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx < asks[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, asks...)
+	}
+	if bboPx == asks[0][0] {
+		asks[0][1] = bboSz
+	}
+	return asks
+}
+
 func (a *Futures) Heartbeat() []byte                { return nil }
 func (a *Futures) HeartbeatInterval() time.Duration { return 0 }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return true }
 
-// Aster (Binance fork) inherits the public-WS 5 msg/s rate limit. With
-// chunked SUBSCRIBE frames, a 250ms delay keeps us under that ceiling.
+// Aster (Binance fork) inherits the public-WS 5 msg/s rate limit.
 func (a *Futures) SubscribeDelay() time.Duration { return 250 * time.Millisecond }
 func (a *Futures) MaxSymbols() int               { return 200 }
 func (a *Futures) DecompressGzip() bool          { return false }
-func (a *Futures) OnReconnect()                  {}
+func (a *Futures) OnReconnect() {
+	a.stateMu.Lock()
+	a.books = make(map[string]*book)
+	a.bbo = make(map[string]*bboLevel)
+	a.stateMu.Unlock()
+}

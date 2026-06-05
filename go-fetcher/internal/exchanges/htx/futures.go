@@ -8,10 +8,10 @@
 //               "tick":{"event":"snapshot"|"update","version":N,
 //                        "bids":[[px,sz],...],"asks":[[px,sz],...]}}
 //
-// BBO channel (HTX_USE_BBO=1): market.<sym>-USDT.bbo — BBO on change.
-//   Subscribe: {"sub":"market.BTC-USDT.bbo","id":"sub-BTC"}
-//   Inbound:   {"ch":"market.BTC-USDT.bbo","ts":N,
-//               "tick":{"bid":[px,qty],"ask":[px,qty],"version":N,"ts":N}}
+// BBO channel (HTX_USE_BBO=1): hybrid dual-track:
+//   - depth.size_20.high_freq subscribed → feeds books[token] (depth state)
+//   - market.<sym>-USDT.bbo   subscribed → feeds bbo[token]  (BBO overlay)
+//   mergedSnapshot splices BBO over depth top → full ladder + fast BBO.
 //
 // QUIRKS:
 //   - Frames are gzip-compressed → DecompressGzip() = true
@@ -35,11 +35,17 @@ import (
 
 const futuresWS = "wss://api.hbdm.com/linear-swap-ws"
 
+type bboLevel struct {
+	bidPx, bidSz float64
+	askPx, askSz float64
+}
+
 type Futures struct {
 	store  *cache.Store
 	books  map[string]*book
+	bbo    map[string]*bboLevel
 	log    zerolog.Logger
-	useBBO bool // HTX_USE_BBO=1 → market.bbo; false → depth.size_20.high_freq
+	useBBO bool // HTX_USE_BBO=1 → dual-track (depth + BBO); false → depth only
 }
 
 type book struct {
@@ -52,6 +58,7 @@ func NewFutures(store *cache.Store) *ws.Runner {
 	a := &Futures{
 		store:  store,
 		books:  make(map[string]*book),
+		bbo:    make(map[string]*bboLevel),
 		log:    wmlog.L().With().Str("exchange", "htx").Str("layer", "depth-version").Logger(),
 		useBBO: os.Getenv("HTX_USE_BBO") == "1",
 	}
@@ -64,24 +71,23 @@ func (a *Futures) Name() string                          { return "htx" }
 func (a *Futures) URL(_ context.Context) (string, error) { return futuresWS, nil }
 
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
-	frames := make([][]byte, 0, len(symbols))
+	// Dual-track when HTX_USE_BBO=1: subscribe to BOTH depth AND BBO channels.
+	// One frame per symbol per channel.
+	frames := make([][]byte, 0, len(symbols)*2)
 	for i, s := range symbols {
 		sym := strings.ToUpper(s) + "-USDT"
-		var sub string
+		// Always subscribe to depth for the full ladder.
+		depthSub := "market." + sym + ".depth.size_20.high_freq"
+		df := map[string]any{"sub": depthSub, "id": strconv.Itoa(i+1), "data_type": "incremental"}
+		db, _ := ws.MarshalJSON(df)
+		frames = append(frames, db)
+		// Also subscribe to BBO when flag is set.
 		if a.useBBO {
-			sub = "market." + sym + ".bbo"
-		} else {
-			sub = "market." + sym + ".depth.size_20.high_freq"
+			bboSub := "market." + sym + ".bbo"
+			bf := map[string]any{"sub": bboSub, "id": strconv.Itoa(len(symbols) + i + 1)}
+			bb, _ := ws.MarshalJSON(bf)
+			frames = append(frames, bb)
 		}
-		f := map[string]any{
-			"sub": sub,
-			"id":  strconv.Itoa(i + 1),
-		}
-		if !a.useBBO {
-			f["data_type"] = "incremental"
-		}
-		b, _ := ws.MarshalJSON(f)
-		frames = append(frames, b)
 	}
 	return frames
 }
@@ -119,8 +125,8 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	return nil, nil
 }
 
-// parseBBO handles market.<sym>-USDT.bbo frames.
-// tick.bid = [price, qty], tick.ask = [price, qty]
+// parseBBO handles market.<sym>-USDT.bbo frames — updates bbo state and emits
+// a merged snapshot (depth + BBO overlay).
 func (a *Futures) parseBBO(ch string, bid, ask []float64, ts int64) (*ws.Snapshot, error) {
 	// ch = "market.BTC-USDT.bbo" → extract "BTC-USDT"
 	parts := strings.SplitN(ch, ".", 4)
@@ -142,11 +148,15 @@ func (a *Futures) parseBBO(ch string, bid, ask []float64, ts int64) (*ws.Snapsho
 		return nil, nil
 	}
 
-	snap := &ws.Snapshot{
-		Symbol: token,
-		Bids:   []ws.Level{{bidPx, bidSz}},
-		Asks:   []ws.Level{{askPx, askSz}},
+	b, ok := a.bbo[token]
+	if !ok {
+		b = &bboLevel{}
+		a.bbo[token] = b
 	}
+	b.bidPx, b.bidSz = bidPx, bidSz
+	b.askPx, b.askSz = askPx, askSz
+
+	snap := a.mergedSnapshot(token)
 	if ts > 0 {
 		snap.EventTime = time.UnixMilli(ts)
 	}
@@ -201,11 +211,55 @@ func (a *Futures) parseDepth(ch string, bids, asks [][]float64, event string, ve
 	apply(bk.bids, bids)
 	apply(bk.asks, asks)
 
-	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
-	}, nil
+	return a.mergedSnapshot(token), nil
+}
+
+// mergedSnapshot produces a Snapshot from depth state with BBO spliced on top.
+// Same pattern as bybit/okx/bitget/binance.
+func (a *Futures) mergedSnapshot(token string) *ws.Snapshot {
+	bk := a.books[token]
+	var bids, asks []ws.Level
+	if bk != nil {
+		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
+		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
+	}
+	if b := a.bbo[token]; b != nil {
+		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	}
+	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
+}
+
+func spliceBBOBid(bids []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return bids
+	}
+	if len(bids) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx > bids[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, bids...)
+	}
+	if bboPx == bids[0][0] {
+		bids[0][1] = bboSz
+	}
+	return bids
+}
+
+func spliceBBOAsk(asks []ws.Level, bboPx, bboSz float64) []ws.Level {
+	if bboPx <= 0 {
+		return asks
+	}
+	if len(asks) == 0 {
+		return []ws.Level{{bboPx, bboSz}}
+	}
+	if bboPx < asks[0][0] {
+		return append([]ws.Level{{bboPx, bboSz}}, asks...)
+	}
+	if bboPx == asks[0][0] {
+		asks[0][1] = bboSz
+	}
+	return asks
 }
 
 // HTX sends {"ping": N} every 5s — we reply {"pong": N}. Sonic preserves
@@ -233,4 +287,5 @@ func (a *Futures) DecompressGzip() bool             { return true }
 
 func (a *Futures) OnReconnect() {
 	a.books = make(map[string]*book)
+	a.bbo = make(map[string]*bboLevel)
 }

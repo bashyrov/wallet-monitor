@@ -10,7 +10,7 @@ import (
 )
 
 func newTestFutures() *Futures {
-	return &Futures{books: make(map[string]*book)}
+	return &Futures{books: make(map[string]*book), bbo: make(map[string]*bboLevel)}
 }
 
 // ── Subscribe ─────────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ func TestParse_NonUSDTIgnored(t *testing.T) {
 // ── book_ticker BBO parse (price=string, qty=number — confirmed wire) ──
 
 func TestParse_BookTickerBBO(t *testing.T) {
-	a := &Futures{books: make(map[string]*book), useBBO: true}
+	a := &Futures{books: make(map[string]*book), bbo: make(map[string]*bboLevel), useBBO: true}
 	// Confirmed format from live gate WS capture 2026-06-05:
 	// prices ("b","a") come as JSON strings; quantities ("B","A") as numbers.
 	frame := []byte(`{"channel":"futures.book_ticker","event":"update","result":{"t":1780668602316,"u":114664937364,"s":"BTC_USDT","b":"61144","B":2245,"a":"61145.5","A":1000}}`)
