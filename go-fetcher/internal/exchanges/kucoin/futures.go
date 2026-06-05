@@ -1,83 +1,49 @@
 // Package kucoin — KuCoin futures (USDT-M perp).
 //
-// Phase 2f migration: `level2Depth50` (100ms aggregated snapshot) →
-// `/contractMarket/level2:<TOKEN>USDTM` raw tick-by-tick incremental.
+// Channel: /contractMarket/level2Depth5:<TOKEN>USDTM
 //
-// URL: dynamically fetched (see auth.go bullet-public flow).
-// Subscribe:
-//   {"id":N,"type":"subscribe","topic":"/contractMarket/level2:XBTUSDTM",
-//    "privateChannel":false,"response":true}
+// Snapshot-only: exchange pushes a full 5-level book on every BBO change.
+// No delta-merge, no REST seed, no sequence tracking — just parse and emit.
 //
-// Inbound delta:
-//   {"type":"message","topic":"/contractMarket/level2:XBTUSDTM",
-//    "subject":"level2",
-//    "data":{"sequence":N,"change":"price,side,size","timestamp":T}}
+// Subscribe (one frame per symbol, 350ms delay for server rate limit):
 //
-// `change` is a CSV: "<price>,<side>,<size>" with side ∈ {buy, sell}.
-// size=0 ⇒ delete the level.
+//	{"id":N,"type":"subscribe","topic":"/contractMarket/level2Depth5:XBTUSDTM",
+//	 "privateChannel":false,"response":true}
 //
-// Bootstrap (per symbol):
-//   1. WS subscribes; deltas start arriving and queue in book.buffer.
-//   2. seedREST() runs async — GET /api/v1/level2/snapshot?symbol=…
-//      → {"data":{"sequence":N, "bids":[...], "asks":[...]}}
-//   3. Set baseSeq=N, populate maps. Apply only buffered events where
-//      sequence > baseSeq.
-//   4. Steady state: deltas must be strictly increasing sequence —
-//      gap detected resets state + kicks a re-seed.
+// Inbound frame:
 //
-// QUIRKS (carried over from `level2Depth50` adapter):
-//   - URL needs token + connectId from POST (auth.go) — bug #17
+//	{"type":"message","topic":"/contractMarket/level2Depth5:XBTUSDTM",
+//	 "subject":"level2Depth5Snapshot",
+//	 "data":{"bids":[["px","sz"]...],"asks":[["px","sz"]...],"ts":N,"sequence":N}}
+//
+// Bids are pre-sorted descending (best first), asks ascending — no re-sort
+// needed. Up to 5 levels per side.
+//
+// QUIRKS:
+//   - URL needs bullet token from POST (auth.go)
 //   - Subscribe rate limit ~3 msg/sec/conn → SubscribeDelay 350ms
-//   - 30 symbols per conn (server resets ~99th subscribe; tighter than
-//     advertised 100)
-//   - App-level "ping" every 15s
+//   - MaxSymbols=50 per connection (server tolerates ~100; 50 is safe)
+//   - App-level "ping" every 15s required
 //   - Symbol form: <TOKEN>USDTM with XBT alias for BTC
 package kucoin
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/bytedance/sonic"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
-// Overridable in tests.
-var restSnapshot = "https://api-futures.kucoin.com/api/v1/level2/snapshot?symbol=%s"
-
 type Futures struct {
 	store *cache.Store
 	auth  *authClient
-	mu    sync.Mutex
-	books map[string]*book
-}
-
-type book struct {
-	bids    map[float64]float64
-	asks    map[float64]float64
-	baseSeq uint64
-	lastSeq uint64
-	seeded  bool
-	buffer  []bufferedDelta
-}
-
-type bufferedDelta struct {
-	seq  uint64
-	px   float64
-	side string
-	sz   float64
 }
 
 func NewFutures(store *cache.Store) *ws.Runner {
-	a := &Futures{store: store, auth: &authClient{}, books: make(map[string]*book)}
+	a := &Futures{store: store, auth: &authClient{}}
 	return ws.NewRunner(a, func(_ string, snap ws.Snapshot) {
 		store.Store("kucoin", snap.Symbol, snap, "ws")
 	})
@@ -110,12 +76,11 @@ func contractToToken(c string) string {
 func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	frames := make([][]byte, 0, len(symbols))
 	for i, s := range symbols {
-		go a.seedREST(s)
 		contract := tokenToContract(s)
 		f := map[string]any{
 			"id":             time.Now().UnixNano() + int64(i),
 			"type":           "subscribe",
-			"topic":          "/contractMarket/level2:" + contract,
+			"topic":          "/contractMarket/level2Depth5:" + contract,
 			"privateChannel": false,
 			"response":       true,
 		}
@@ -125,222 +90,54 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	return frames
 }
 
-// seedREST fetches the L2 snapshot for one symbol and merges it into the
-// per-symbol book. Async — does not block subscribe.
-func (a *Futures) seedREST(symbol string) {
-	contract := tokenToContract(symbol)
-	token := contractToToken(contract)
-
-	url := fmt.Sprintf(restSnapshot, contract)
-	cl := &http.Client{Timeout: 6 * time.Second}
-	resp, err := cl.Get(url)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	var doc struct {
-		Data struct {
-			Sequence anyNum     `json:"sequence"`
-			Bids     [][]string `json:"bids"`
-			Asks     [][]string `json:"asks"`
-		} `json:"data"`
-	}
-	if err := sonic.Unmarshal(body, &doc); err != nil {
-		return
-	}
-	seq := doc.Data.Sequence.Uint64()
-	if seq == 0 {
-		return
-	}
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	bk := a.bookFor(token)
-	bk.bids = make(map[float64]float64, len(doc.Data.Bids))
-	bk.asks = make(map[float64]float64, len(doc.Data.Asks))
-	for _, r := range doc.Data.Bids {
-		if len(r) < 2 {
-			continue
-		}
-		px, _ := strconv.ParseFloat(r[0], 64)
-		sz, _ := strconv.ParseFloat(r[1], 64)
-		if sz > 0 {
-			bk.bids[px] = sz
-		}
-	}
-	for _, r := range doc.Data.Asks {
-		if len(r) < 2 {
-			continue
-		}
-		px, _ := strconv.ParseFloat(r[0], 64)
-		sz, _ := strconv.ParseFloat(r[1], 64)
-		if sz > 0 {
-			bk.asks[px] = sz
-		}
-	}
-	bk.baseSeq = seq
-	a.drainBuffer(bk)
-}
-
-// drainBuffer applies buffered deltas after a successful REST seed.
-// Single pass: each event is either stale (drop), the first valid
-// bootstrap event (must satisfy seq == baseSeq+1), or a steady-state
-// event (must satisfy seq == lastSeq+1). Any gap at either stage
-// resets state so the caller can re-seed.
-//
-// Earlier two-loop form had a bug: after the first loop marked
-// seeded=true on the bootstrap event, it kept iterating the same loop
-// (`if !bk.seeded` is checked once at entry, not per-iteration in Go)
-// — so subsequent events were checked against `baseSeq+1` instead of
-// `lastSeq+1` and always tripped the gap reset. Result: 0 stores from
-// KuCoin futures in prod.
-func (a *Futures) drainBuffer(bk *book) {
-	for _, ev := range bk.buffer {
-		switch {
-		case !bk.seeded:
-			if ev.seq <= bk.baseSeq {
-				continue // stale — covered by snapshot
-			}
-			if ev.seq != bk.baseSeq+1 {
-				bk.buffer = nil
-				bk.baseSeq = 0
-				return
-			}
-			a.applyChange(bk, ev.px, ev.side, ev.sz)
-			bk.lastSeq = ev.seq
-			bk.seeded = true
-		default:
-			if ev.seq <= bk.lastSeq {
-				continue
-			}
-			if ev.seq != bk.lastSeq+1 {
-				bk.bids = make(map[float64]float64)
-				bk.asks = make(map[float64]float64)
-				bk.baseSeq = 0
-				bk.lastSeq = 0
-				bk.seeded = false
-				bk.buffer = nil
-				return
-			}
-			a.applyChange(bk, ev.px, ev.side, ev.sz)
-			bk.lastSeq = ev.seq
-		}
-	}
-	bk.buffer = nil
-}
-
-func (a *Futures) bookFor(token string) *book {
-	bk, ok := a.books[token]
-	if !ok {
-		bk = &book{
-			bids: make(map[float64]float64),
-			asks: make(map[float64]float64),
-		}
-		a.books[token] = bk
-	}
-	return bk
-}
-
-func (a *Futures) applyChange(bk *book, px float64, side string, sz float64) {
-	switch side {
-	case "buy":
-		if sz == 0 {
-			delete(bk.bids, px)
-		} else {
-			bk.bids[px] = sz
-		}
-	case "sell":
-		if sz == 0 {
-			delete(bk.asks, px)
-		} else {
-			bk.asks[px] = sz
-		}
-	}
-}
-
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
-		Type    string `json:"type"`
-		Topic   string `json:"topic"`
-		Subject string `json:"subject"`
-		Data    struct {
-			Sequence  anyNum `json:"sequence"`
-			Change    string `json:"change"`
-			Timestamp int64  `json:"timestamp"`
+		Type  string `json:"type"`
+		Topic string `json:"topic"`
+		Data  struct {
+			Bids [][]string `json:"bids"`
+			Asks [][]string `json:"asks"`
+			Ts   int64      `json:"ts"`
 		} `json:"data"`
 	}
 	if err := ws.UnmarshalJSON(frame, &msg); err != nil {
 		return nil, err
 	}
-	if msg.Type != "message" || !strings.HasPrefix(msg.Topic, "/contractMarket/level2:") {
+	const topicPrefix = "/contractMarket/level2Depth5:"
+	if msg.Type != "message" || !strings.HasPrefix(msg.Topic, topicPrefix) {
 		return nil, nil
 	}
-	contract := strings.TrimPrefix(msg.Topic, "/contractMarket/level2:")
+	contract := strings.TrimPrefix(msg.Topic, topicPrefix)
 	if !strings.HasSuffix(contract, "USDTM") {
 		return nil, nil
 	}
 	token := contractToToken(contract)
 
-	parts := strings.Split(msg.Data.Change, ",")
-	if len(parts) != 3 {
-		return nil, nil
-	}
-	px, errP := strconv.ParseFloat(parts[0], 64)
-	side := parts[1]
-	sz, errS := strconv.ParseFloat(parts[2], 64)
-	if errP != nil || errS != nil {
-		return nil, nil
-	}
-	seq := msg.Data.Sequence.Uint64()
-	if seq == 0 {
-		return nil, nil
-	}
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	bk := a.bookFor(token)
-
-	// Pre-snapshot: buffer the delta.
-	if bk.baseSeq == 0 {
-		bk.buffer = append(bk.buffer, bufferedDelta{seq, px, side, sz})
-		return nil, nil
-	}
-
-	// Snapshot landed but no delta applied yet — first must be baseSeq+1.
-	if !bk.seeded {
-		if seq <= bk.baseSeq {
-			return nil, nil
+	parseLevels := func(rows [][]string) []ws.Level {
+		out := make([]ws.Level, 0, len(rows))
+		for _, r := range rows {
+			if len(r) < 2 {
+				continue
+			}
+			px, errP := strconv.ParseFloat(r[0], 64)
+			sz, errS := strconv.ParseFloat(r[1], 64)
+			if errP != nil || errS != nil || sz <= 0 {
+				continue
+			}
+			out = append(out, ws.Level{px, sz})
 		}
-		if seq != bk.baseSeq+1 {
-			bk.baseSeq = 0
-			return nil, nil
-		}
-		a.applyChange(bk, px, side, sz)
-		bk.lastSeq = seq
-		bk.seeded = true
-	} else {
-		// Steady state: strict +1 contiguity.
-		if seq != bk.lastSeq+1 {
-			bk.bids = make(map[float64]float64)
-			bk.asks = make(map[float64]float64)
-			bk.baseSeq = 0
-			bk.lastSeq = 0
-			bk.seeded = false
-			go a.seedREST(token)
-			return nil, nil
-		}
-		a.applyChange(bk, px, side, sz)
-		bk.lastSeq = seq
+		return out
 	}
 
+	var evt time.Time
+	if msg.Data.Ts > 0 {
+		evt = time.UnixMilli(msg.Data.Ts)
+	}
 	return &ws.Snapshot{
-		Symbol: token,
-		Bids:   ws.SortedLevels(bk.bids, ws.Bids, 200),
-		Asks:   ws.SortedLevels(bk.asks, ws.Asks, 200),
+		Symbol:    token,
+		Bids:      parseLevels(msg.Data.Bids),
+		Asks:      parseLevels(msg.Data.Asks),
+		EventTime: evt,
 	}, nil
 }
 
@@ -352,32 +149,6 @@ func (a *Futures) HeartbeatInterval() time.Duration { return 15 * time.Second }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return false }
 func (a *Futures) SubscribeDelay() time.Duration    { return 350 * time.Millisecond }
-func (a *Futures) MaxSymbols() int                  { return 30 }
+func (a *Futures) MaxSymbols() int                  { return 50 }
 func (a *Futures) DecompressGzip() bool             { return false }
-
-func (a *Futures) OnReconnect() {
-	a.mu.Lock()
-	a.books = make(map[string]*book)
-	a.mu.Unlock()
-}
-
-// anyNum accepts uint64 either as a JSON number or as a string —
-// KuCoin's REST returns "sequence":"123" while WS returns "sequence":123.
-type anyNum struct {
-	v uint64
-}
-
-func (n *anyNum) UnmarshalJSON(b []byte) error {
-	s := strings.Trim(string(b), `"`)
-	if s == "" || s == "null" {
-		return nil
-	}
-	u, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return nil // soft-fail — keep zero
-	}
-	n.v = u
-	return nil
-}
-
-func (n anyNum) Uint64() uint64 { return n.v }
+func (a *Futures) OnReconnect()                     {}
