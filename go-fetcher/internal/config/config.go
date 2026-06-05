@@ -22,9 +22,10 @@ type Config struct {
 	// path falls back to file-only.
 	RedisURL string
 
-	// Per-key Redis-write throttle. Default 50ms (20 Hz) — same as
-	// Python's _REDIS_MIN_INTERVAL_S. Higher = less Redis CPU,
-	// slower client-side latency.
+	// Per-key Redis-write throttle. Default 10ms (100 Hz) — lower than
+	// the old 50ms default to allow hot pairs to reach flushLoop's 20 Hz
+	// ceiling. Override via AVALANT_REDIS_WRITE_THROTTLE (e.g. "20ms").
+	// Setting 0 disables throttle entirely (bypass).
 	RedisWriteThrottle time.Duration
 
 	// Toggle for the Redis orderbook mirror (`ob:<ex>:<sym>` SETEX
@@ -69,7 +70,7 @@ func Load() Config {
 	return Config{
 		CacheDir:              getenv("AVALANT_FETCHER_CACHE_DIR", "/tmp/avalant_cache"),
 		RedisURL:              getenv("REDIS_URL", ""),
-		RedisWriteThrottle:    getenvDur("AVALANT_REDIS_WRITE_THROTTLE", 50*time.Millisecond),
+		RedisWriteThrottle:    getenvDur("AVALANT_REDIS_WRITE_THROTTLE", 10*time.Millisecond),
 		RedisBookWriteEnabled: getenvBool("AVALANT_REDIS_BOOK_WRITE", true),
 		FileDumpInterval:   getenvDur("AVALANT_FILE_DUMP_INTERVAL", 100*time.Millisecond),
 		PrewarmTopN:        getenvInt("AVALANT_PREWARM_TOP_N", 20),
