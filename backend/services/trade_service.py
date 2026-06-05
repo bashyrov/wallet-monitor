@@ -705,9 +705,14 @@ async def list_user_positions(db: Session, user_id: int, symbol: str | None = No
     return await _list_user_positions_inner(db, user_id, symbol)
 
 
-_POSITIONS_STALE_MAX_S = 5 * 60.0
+_POSITIONS_STALE_MAX_S = 30 * 60.0  # extended from 5m to 30m: "came back after >5min" returns stale+bg-refresh
 _POSITIONS_REFRESH_INFLIGHT: dict[tuple[int, str], bool] = {}
-_POSITIONS_PER_WALLET_TIMEOUT_S = 10.0  # gate/kucoin/binance occasionally take 6-9s under concurrent fan-out
+# Per-wallet REST timeout. Env override: AVALANT_POSITIONS_TIMEOUT_S (float, default 5.0).
+# Reduced from 10s: a misbehaving exchange times out in 5s and serves lastgood; the
+# parallel gather caps total latency at max(per_wallet_times), so this directly bounds
+# the worst-case response time when WS user-stream is dead.
+import os as _os
+_POSITIONS_PER_WALLET_TIMEOUT_S = float(_os.getenv("AVALANT_POSITIONS_TIMEOUT_S", "5.0"))
 
 
 async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | None,
@@ -750,7 +755,8 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
         if not fresh_only:
             try:
                 from backend.services.user_streams import _snapshot as _us_snapshot
-                if _us_snapshot.get_status(user_id, w.id) == "LIVE":
+                ws_status = _us_snapshot.get_status(user_id, w.id)
+                if ws_status == "LIVE":
                     rows = _us_snapshot.get_positions(user_id, w.id) or []
                     if symbol:
                         sym_norm = symbol.upper().strip()
@@ -761,6 +767,14 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
                         _POSITIONS_LASTGOOD[lg_key] = (_time.time(), rows)
                         return rows
                     # Empty snapshot — fall through to REST.
+                else:
+                    # WS not LIVE → positions will come from REST (6-9s path).
+                    logger.info(
+                        "positions REST fallback: wallet=%s ex=%s ws_status=%s "
+                        "(user_id=%s); timeout=%.0fs",
+                        w.id, w.type_value, ws_status, user_id,
+                        _POSITIONS_PER_WALLET_TIMEOUT_S,
+                    )
             except Exception as exc:
                 logger.debug("userstream snapshot read failed: %s", exc)
 
