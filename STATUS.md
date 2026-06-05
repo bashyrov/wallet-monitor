@@ -2,8 +2,14 @@
 
 > Рабочий журнал прогресса по `ORDERBOOK_OPTIMIZATION.md`. Обновлять после КАЖДОГО изменения.
 > **Правило: задача не done без after-замера. «Сделал» без числа = не сделано.**
-> Метрика — updates/sec на клиенте (цель 20–30+). Как мерить — Раздел 7.2 основного дока.
+> Метрика — updates/sec на клиенте (цель 20–30+). Как мерить — §7.2 ниже.
 > Дата формата YYYY-MM-DD. Статусы: `todo` / `in-progress` / `done` / `blocked` / `reverted`.
+>
+> **СТАНДАРТ ЗАМЕРА (обязателен с Фазы 3):**
+> Фикс-окно 30с, пара BTC, МЕДИАНА из 3 прогонов → итог в STATUS.
+> Скрипт: `python3 measure_median.py <jwt> binance:BTC 3` (3 прогона × 30с).
+> Разовый снимок = только предварительный ориентир, не финальная метрика.
+> Откат считается регрессией только если медиана-из-3 упала ниже before-медианы.
 >
 > Для агента: при старте сессии СНАЧАЛА прочитай этот файл целиком (что сделано, какие числа),
 > работай по протоколу 7.3, в конце допиши «Журнал сессий».
@@ -70,6 +76,37 @@
 
 ---
 
+## A.checks — Быстрые проверки (2026-06-05)
+
+### P1. Binance funding-стрим — ЖИВОЙ (через REST backstop)
+
+| Что | Результат |
+|-----|-----------|
+| WS `!markPrice@arr@1s` | DEAD — silently times out с Singapore IP (задокументировано в коде, строки 101-106 binance.go) |
+| REST backstop `/fapi/v1/premiumIndex` | ALIVE — запускается каждые 2с, независимо от WS |
+| Фандинг Binance BTC | rate=-7.64e-06, price=61018.64, next_ts корректный |
+| Binance строк в API | 606 строк, свежесть 1.1с |
+| Топ-биржи freshness | Все свежие (<2с) — REST backstop работает у всех |
+| Вывод | Скринер получает полный фандинг. Проблема WS известна и скомпенсирована. Миграция /market → /public не нужна — REST backstop закрывает gap. |
+
+### B. Aster vs Binance source rate
+
+| Что | Значение |
+|-----|----------|
+| Binance BTC bookTicker | **1403/с** (прямое WS к fstream.binance.com) |
+| Aster BTC bookTicker | **34/с** (прямое WS к fstream.asterdex.com) |
+| Соотношение | 2.45% — Aster в 40× менее активен |
+| Клиентская метрика aster (BBO) | 13-16/с (depth 8.45/с) |
+| Вывод | Aster 13-16/с — реальный source-limit рынка. Недоподписки нет. BBO выключен (возвращал 1 уровень вместо 20). |
+
+### Depth-регрессия gate+aster (исправлено)
+
+BBO-каналы (`futures.book_ticker`, `@bookTicker`) дают 1 уровень BBO, не глубину.
+Arb UI показывал по 1 bid + 1 ask вместо 20. Откат флагов восстановил 20×20, bid<ask ✓.
+**Правило:** BBO-канал без depth-overlay (как у bitget/bybit/okx) = только 1 уровень.
+
+---
+
 ## A.final — Финальный отчёт Фазы 2 (2026-06-05, завершено)
 
 ### В ЦЕЛИ (≥20/с на BTC, confirmed via measure_ws.py)
@@ -117,6 +154,53 @@ AVALANT_BOOK_FLUSH_INTERVAL=25ms
 - **gate BBO**: price="строка", qty=число (диагностика прямого WS подтвердила)
 - **extended**: убрали глобальный seq-gap (seq растёт по всем рынкам → каждый BTC frame выглядел как gap → 5/с → 8/с)
 - **aster BBO**: ASTER_USE_BBO=1 включён, 8→14/с
+
+---
+
+## J. Диагноз П.2 — Позиции / Балансы (2026-06-05)
+
+### Текущая архитектура
+
+| Параметр | Значение | Файл:строка |
+|----------|----------|-------------|
+| Параллелизация | asyncio.gather по кошелькам (полная) | trade_service.py:813 |
+| Timeout на кошелёк | 10.0с | trade_service.py:710 |
+| Cache TTL позиций | 15с (stale-while-revalidate 300с) | trade_service.py:646,708 |
+| Cache TTL балансов | 30с | trade_service.py:844 |
+| HTTP сессии | Shared persistent pool (20 keepalive, 300с TTL) | trade_adapters/_http.py:31 |
+| WS user-streams | 15/18 бирж (ethereal/extended/paradex = REST-only) | user_streams/__init__.py |
+
+**Биржи с WS user-stream (push on-change):**
+binance, bybit, okx, gate, kucoin, bitget, bingx, hyperliquid, backpack, lighter, mexc, whitebit, kraken, htx, aster
+
+**REST-only:** ethereal, extended, paradex
+
+### Latency breakdown
+
+| Сценарий | Задержка | Условие |
+|----------|----------|---------|
+| WS LIVE (позиции) | **~0-50ms** | Все свежие данные из Redis/memory snapshot |
+| REST (позиции, 5 кошельков) | **~6-9с p50** | parallel gather, exchange 2-6s each |
+| REST (позиции, worst case) | **~10с** | все кошельки падают в timeout |
+| REST (балансы, 5 кошельков) | **~4-8с p50** | spot+futures parallel внутри адаптера |
+| Stale-while-revalidate | **<100ms** | первый запрос возвращает кеш, фон обновляет |
+
+### Узкие места (по убыванию приоритета)
+
+1. **WS stream liveness** — главный вопрос: какой % активных пользователей имеет LIVE WS stream? Если WS умирает → REST fallback → 6-9с. Reconnect supervisor запускается, но gap реальный.
+2. **10с timeout** — при 5 кошельках параллельно worst-case = 10с (ограничен одним самым медленным). Можно снизить до 5с.
+3. **Balances cache 30с** — при активной торговле balance устаревает быстро (позиция открылась, balance изменился, UI показывает старый 30с).
+4. **ethereal/extended/paradex** — нет WS push, всегда REST.
+
+### Предложенный план (не кодим до решения)
+
+| Приоритет | Задача | Ожидаемый эффект |
+|-----------|--------|-----------------|
+| **HIGH** | Мониторинг WS stream liveness — лог/метрика "stream DEAD for user X, wallet Y" с timestamp | Видим когда пользователи падают на REST |
+| **HIGH** | WS snapshot refresh при reconnect — сейчас после WS reconnect snapshot может быть stale 60с до нового push | Уменьшить snapshot TTL или триггерить REST-синхронизацию после reconnect |
+| **MED** | Снизить positions timeout 10с→5с | Worst case 10→5с (параллельно, всё равно fast path) |
+| **MED** | Balances cache 30с→10с (или инвалидация при ордере) | Already есть инвалидация при ордере (trade_service) — проверить покрытие |
+| **LOW** | WS user-stream для paradex/extended (Starkex signing) | Сложно, ROI низкий |
 
 ---
 
