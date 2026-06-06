@@ -80,3 +80,4 @@ frontend-next/
 *.err
 __pycache__/
 .env.local
+wallets-snapshot.md
