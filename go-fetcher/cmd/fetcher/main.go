@@ -261,13 +261,27 @@ func main() {
 		// goroutine — each is fast (non-blocking channel send or in-memory
 		// compute). Replaces the bare Redis-only hook set above.
 		var patcher *wsbroadcast.InOutPatcher
-		if os.Getenv("AVALANT_INOUT_REALTIME") != "0" {
+		// Tiered freshness: Class 1 is "one common stream at 2s tick". The
+		// InOutPatcher fires on every venue book update and would re-establish
+		// a per-pair high-rate stream on /ws/long-short, defeating the
+		// slowdown. Auto-disable it when tiered is on.
+		patcherDefault := "1"
+		if os.Getenv("AVALANT_TIERED_FRESHNESS") == "1" {
+			patcherDefault = "0"
+		}
+		patcherEnv := os.Getenv("AVALANT_INOUT_REALTIME")
+		if patcherEnv == "" {
+			patcherEnv = patcherDefault
+		}
+		if patcherEnv != "0" {
 			patcher = wsbroadcast.NewInOutPatcher(store, longShort.Hub(), cfg.CacheDir)
 			g.Go(func() error {
 				patcher.Run(gctx)
 				return nil
 			})
 			l.Info().Msg("inout realtime patcher enabled")
+		} else {
+			l.Info().Msg("inout realtime patcher disabled (tiered freshness)")
 		}
 		prevHook := writer // may be nil
 		store.SetOnUpdate(func(ex, sym string, bids, asks []ws.Level) {
