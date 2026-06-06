@@ -34,7 +34,28 @@ import (
 // 250ms → 100ms — match the new arb-compute cadence (200ms). Clients
 // merge diffs incrementally so 10×/sec push is fine. Reduces the
 // user-visible "lag" between funding tick and screener row update.
-const broadcastIntervalLongShort = 100 * time.Millisecond
+const broadcastIntervalLongShortDefault = 100 * time.Millisecond
+
+// broadcastIntervalLongShort is the actual push cadence for /ws/long-short
+// (aka the screener table / watchlist tier — CLASS 1). When tiered
+// freshness is on, this slows to 2s — the screener is an aggregate view
+// where the user doesn't notice <2s latency on individual rows, and
+// pushing every 100ms × 500 rows × N clients is wasted bandwidth. The
+// open-pair / alert paths (CLASS 2 & 3) use the per-pair /ws/book
+// channel with event-driven bypass, which is unaffected by this slowdown.
+//
+// Overridable per-deployment via AVALANT_LONGSHORT_BROADCAST_INTERVAL.
+var broadcastIntervalLongShort = func() time.Duration {
+	if v := os.Getenv("AVALANT_LONGSHORT_BROADCAST_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 50*time.Millisecond {
+			return d
+		}
+	}
+	if tieredFreshness {
+		return 2 * time.Second
+	}
+	return broadcastIntervalLongShortDefault
+}()
 
 // LongShort is the channel state. One instance owned by the Service.
 type LongShort struct {

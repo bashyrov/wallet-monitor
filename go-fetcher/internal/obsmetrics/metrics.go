@@ -58,7 +58,33 @@ var (
 	Updates    = newCounterVec("avalant_ob_updates_total", "Total orderbook update frames processed by the runner")
 	Reconnects = newCounterVec("avalant_ob_reconnects_total", "Total WS session reconnects initiated (transient + policy)")
 	Resyncs    = newCounterVec("avalant_ob_resyncs_total", "Total seq-gap resyncs (ErrResync returned by Parse)")
+
+	// Tiered freshness model (AVALANT_TIERED_FRESHNESS=1)
+	//   BookBypassPushes — count of OnBookUpdate frames pushed direct to
+	//     subscribers, bypassing the 50ms pending-flush buffer. Labelled
+	//     by "ex:SYM" pair. Compare with avalant_ob_updates_total to see
+	//     the hot-set bypass rate.
+	//   BookHotFloorDrops — count of OnBookUpdate frames that hit the
+	//     hotPairFloor (10ms per-pair gap) and fell through to the
+	//     pending buffer instead. Should be ~0 on cold pairs, low single
+	//     digits per second on the hottest BTC during volatile moments.
+	BookBypassPushes  = newCounterVec("avalant_book_bypass_pushes_total", "Book frames sent event-driven (bypassing flush) — pair label")
+	BookHotFloorDrops = newCounterVec("avalant_book_hot_floor_drops_total", "OnBookUpdate frames coalesced because they hit the 10ms hot floor")
 )
+
+// HotSetSize is a single-value gauge. Set by Book.report() each time the
+// hot set changes. Read-only via Get(); /internal/metrics serialises this
+// alongside the counter vecs.
+var hotSetSize uint64
+
+func SetHotSetSize(n int) {
+	if n < 0 {
+		n = 0
+	}
+	atomic.StoreUint64(&hotSetSize, uint64(n))
+}
+
+func GetHotSetSize() uint64 { return atomic.LoadUint64(&hotSetSize) }
 
 // Handler returns an http.Handler that emits all counters in Prometheus text
 // format (exposition format 0.0.4, text version 0.0.1).
@@ -78,5 +104,23 @@ func Handler() http.Handler {
 				fmt.Fprintf(w, "%s{exchange=%q} %d\n", cv.name, l, snap[l])
 			}
 		}
+		// Tiered freshness counters use pair labels (ex:SYM) rather than
+		// exchange-only. Different cardinality bucket — render separately.
+		for _, cv := range []*counterVec{BookBypassPushes, BookHotFloorDrops} {
+			fmt.Fprintf(w, "# HELP %s %s\n", cv.name, cv.help)
+			fmt.Fprintf(w, "# TYPE %s counter\n", cv.name)
+			snap := cv.snapshot()
+			labels := make([]string, 0, len(snap))
+			for l := range snap {
+				labels = append(labels, l)
+			}
+			sort.Strings(labels)
+			for _, l := range labels {
+				fmt.Fprintf(w, "%s{pair=%q} %d\n", cv.name, l, snap[l])
+			}
+		}
+		fmt.Fprintf(w, "# HELP avalant_book_hot_set_size Current size of the /ws/book hot symbol set (Class 2 ∪ Class 3)\n")
+		fmt.Fprintf(w, "# TYPE avalant_book_hot_set_size gauge\n")
+		fmt.Fprintf(w, "avalant_book_hot_set_size %d\n", GetHotSetSize())
 	})
 }

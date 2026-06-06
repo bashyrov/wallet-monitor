@@ -303,6 +303,18 @@ func main() {
 			wsSvc.Run(gctx)
 			return nil
 		})
+		// CLASS 3 — alert hot-set sync. Reads /tmp/avalant_cache/active_alerts.json
+		// (written by Python alert_service every 10s) and pushes the symbol
+		// list into Book so /ws/book bypass-pending kicks in for those symbols
+		// even when no client is on /arb?pair=X for them. Cheap: 10s poll,
+		// single file read, single json.Unmarshal, single map swap. No-op
+		// when AVALANT_TIERED_FRESHNESS is not "1".
+		if os.Getenv("AVALANT_TIERED_FRESHNESS") == "1" {
+			g.Go(func() error {
+				wsbroadcast.RunAlertHotSync(gctx, bookCh, "/tmp/avalant_cache/active_alerts.json", 10*time.Second)
+				return nil
+			})
+		}
 		g.Go(func() error {
 			l.Info().Str("addr", srv.Addr).Msg("ws-broadcaster listening")
 			errCh := make(chan error, 1)

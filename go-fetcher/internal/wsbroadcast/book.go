@@ -31,6 +31,7 @@ import (
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/obsmetrics"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
@@ -77,7 +78,23 @@ const (
 	// visible depth without ballooning the JSON payload (200 → 20 = 10×
 	// less serialization work and network bytes per frame).
 	bookBroadcastLevels = 20
+
+	// hotPairFloor — per-pair minimum gap between two event-driven pushes
+	// even when the symbol is "hot" (event-driven bypass). Protects the
+	// frontend from 200+/sec event storms on active BTC during volatile
+	// moments. 10ms = 100 Hz ceiling, well below any rendering bottleneck
+	// but plenty of headroom over the 50ms pending-flush ceiling.
+	hotPairFloor = 10 * time.Millisecond
 )
+
+// tieredFreshness enables the three-class freshness model:
+//
+//	CLASS 1 (cold, screener table + watchlist): 2s aggregate (longshort.go)
+//	CLASS 2 (hot/opened pair): event-driven bypass-pending in book.go
+//	CLASS 3 (hot/alert): same as Class 2, marked via Book.MarkAlertHot
+//
+// Disabled by default — keep existing flush-pending behaviour byte-compatible.
+var tieredFreshness = strings.TrimSpace(os.Getenv("AVALANT_TIERED_FRESHNESS")) == "1"
 
 // Book is the /ws/book channel state.
 type Book struct {
@@ -96,6 +113,16 @@ type Book struct {
 	// — older snapshots within a flush window are invisible anyway.
 	pendMu  sync.Mutex
 	pending map[string]bookPending
+
+	// ── Tiered freshness (Class 2/3) ─────────────────────────────────────
+	// hotMu guards both maps. Refcount of "currently subscribed by N clients"
+	// for symbols a user has opened on /arb (Class 2). alertHot stores
+	// symbols flagged by an active spread alert (Class 3). isHotKey() checks
+	// the union.
+	hotMu          sync.RWMutex
+	hotSubsRefcnt  map[string]int       // symbol → # client subscriptions (Class 2)
+	alertHot       map[string]struct{}  // symbol → present iff active alert (Class 3)
+	lastHotPushAt  map[string]time.Time // pairKey ("ex:SYM") → last bypass-push (floor enforcement)
 }
 
 type bookPending struct {
@@ -106,13 +133,76 @@ type bookPending struct {
 
 func NewBook(reader *redisbus.Reader, store *cache.Store, mgr *symbols.Manager) *Book {
 	return &Book{
-		hub:     NewHub("book"),
-		reader:  reader,
-		store:   store,
-		mgr:     mgr,
-		subs:    make(map[*client]map[string]float64, 64),
-		pending: make(map[string]bookPending, 256),
+		hub:           NewHub("book"),
+		reader:        reader,
+		store:         store,
+		mgr:           mgr,
+		subs:          make(map[*client]map[string]float64, 64),
+		pending:       make(map[string]bookPending, 256),
+		hotSubsRefcnt: make(map[string]int, 64),
+		alertHot:      make(map[string]struct{}, 32),
+		lastHotPushAt: make(map[string]time.Time, 128),
 	}
+}
+
+// isHot returns true if the symbol (extracted from pairKey "ex:SYM") is in
+// the Class 2 ∪ Class 3 hot set. Cheap: RLock + two map lookups.
+func (b *Book) isHot(symbol string) bool {
+	if !tieredFreshness {
+		return false
+	}
+	b.hotMu.RLock()
+	defer b.hotMu.RUnlock()
+	if _, ok := b.alertHot[symbol]; ok {
+		return true
+	}
+	return b.hotSubsRefcnt[symbol] > 0
+}
+
+// MarkAlertHot sets/clears the Class 3 hot flag for a symbol. Called by
+// the alert-sync loop reading active_alerts.json. No-op if tiered off.
+func (b *Book) MarkAlertHot(symbol string, hot bool) {
+	if !tieredFreshness {
+		return
+	}
+	b.hotMu.Lock()
+	if hot {
+		b.alertHot[symbol] = struct{}{}
+	} else {
+		delete(b.alertHot, symbol)
+	}
+	b.hotMu.Unlock()
+}
+
+// ReplaceAlertHot atomically swaps the entire Class 3 set. Used by the
+// dump reader to apply the latest active-alert state in one shot.
+func (b *Book) ReplaceAlertHot(symbols []string) {
+	if !tieredFreshness {
+		return
+	}
+	next := make(map[string]struct{}, len(symbols))
+	for _, s := range symbols {
+		if s != "" {
+			next[strings.ToUpper(strings.TrimSpace(s))] = struct{}{}
+		}
+	}
+	b.hotMu.Lock()
+	b.alertHot = next
+	total := len(b.hotSubsRefcnt) + len(b.alertHot)
+	b.hotMu.Unlock()
+	obsmetrics.SetHotSetSize(total)
+}
+
+// reportHotSize refreshes the hot-set gauge. Called from sub/unsub paths
+// where the refcount map changes. Cheap: single Lock + atomic store.
+func (b *Book) reportHotSize() {
+	if !tieredFreshness {
+		return
+	}
+	b.hotMu.RLock()
+	n := len(b.hotSubsRefcnt) + len(b.alertHot)
+	b.hotMu.RUnlock()
+	obsmetrics.SetHotSetSize(n)
 }
 
 func (b *Book) Hub() *Hub { return b.hub }
@@ -138,10 +228,75 @@ func (b *Book) OnBookUpdate(exchange, symbol string, bids, asks []ws.Level) {
 	if len(na) > bookBroadcastLevels {
 		na = na[:bookBroadcastLevels]
 	}
-	now := float64(time.Now().UnixMilli()) / 1000.0
+	nowMs := time.Now()
+	ts := float64(nowMs.UnixMilli()) / 1000.0
+
+	// Tiered freshness: if this symbol is in the hot set (Class 2 or 3),
+	// bypass the pending buffer and push event-driven straight to subscribed
+	// clients, respecting the hotPairFloor (10ms) per-pair gap. This is
+	// what turns BBO updates from a 50ms-ceiling stream into a 100Hz-cap
+	// event-driven stream on the open pair.
+	if tieredFreshness && b.isHot(symbol) {
+		b.hotMu.Lock()
+		last, ok := b.lastHotPushAt[pairKey]
+		if ok && nowMs.Sub(last) < hotPairFloor {
+			// Below floor: fall through to pending buffer so the flush
+			// path still picks it up — never silently drop a snapshot.
+			b.hotMu.Unlock()
+			obsmetrics.BookHotFloorDrops.Inc(pairKey)
+			b.pendMu.Lock()
+			b.pending[pairKey] = bookPending{ts: ts, bids: nb, asks: na}
+			b.pendMu.Unlock()
+			return
+		}
+		b.lastHotPushAt[pairKey] = nowMs
+		b.hotMu.Unlock()
+		obsmetrics.BookBypassPushes.Inc(pairKey)
+		b.pushBypass(pairKey, ts, nb, na)
+		return
+	}
+
 	b.pendMu.Lock()
-	b.pending[pairKey] = bookPending{ts: now, bids: nb, asks: na}
+	b.pending[pairKey] = bookPending{ts: ts, bids: nb, asks: na}
 	b.pendMu.Unlock()
+}
+
+// pushBypass sends one /ws/book frame for pairKey to every subscribed
+// client immediately, bypassing the per-pair pending buffer. Called from
+// OnBookUpdate when the symbol is in the hot set.
+func (b *Book) pushBypass(pairKey string, ts float64, bids, asks []ws.Level) {
+	bidSlice := make([][]float64, len(bids))
+	for i, lv := range bids {
+		bidSlice[i] = []float64{lv[0], lv[1]}
+	}
+	askSlice := make([][]float64, len(asks))
+	for i, lv := range asks {
+		askSlice[i] = []float64{lv[0], lv[1]}
+	}
+	body, err := json.Marshal(map[string]any{
+		"books": map[string]any{
+			pairKey: map[string]any{
+				"ts":   ts,
+				"bids": bidSlice,
+				"asks": askSlice,
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+	b.mu.Lock()
+	for c, set := range b.subs {
+		if _, ok := set[pairKey]; !ok {
+			continue
+		}
+		set[pairKey] = ts
+		select {
+		case c.outbox <- body:
+		default:
+		}
+	}
+	b.mu.Unlock()
 }
 
 // flushPending drains the per-pair buffer and pushes one frame per
@@ -358,9 +513,32 @@ func (b *Book) register(c *client) {
 // deregister cleans up the client's subs map. The hub's deregister
 // handles the socket close + log; this just nulls the side-table entry.
 func (b *Book) deregister(c *client) {
+	var droppedSyms []string
 	b.mu.Lock()
+	if subs, ok := b.subs[c]; ok && tieredFreshness {
+		droppedSyms = make([]string, 0, len(subs))
+		for p := range subs {
+			if _, sym, ok := splitPair(p); ok {
+				droppedSyms = append(droppedSyms, sym)
+			}
+		}
+	}
 	delete(b.subs, c)
 	b.mu.Unlock()
+
+	if tieredFreshness && len(droppedSyms) > 0 {
+		b.hotMu.Lock()
+		for _, sym := range droppedSyms {
+			if b.hotSubsRefcnt[sym] > 0 {
+				b.hotSubsRefcnt[sym]--
+				if b.hotSubsRefcnt[sym] == 0 {
+					delete(b.hotSubsRefcnt, sym)
+				}
+			}
+		}
+		b.hotMu.Unlock()
+		b.reportHotSize()
+	}
 }
 
 // runReader replaces hub.runReader for /ws/book — same keep-alive +
@@ -449,12 +627,28 @@ func (b *Book) handleSubscribe(c *client, pairs []string) {
 		}
 	}
 
+	// Tiered freshness: each newly-added subscription bumps the per-symbol
+	// hot refcount. Symbol becomes Class-2 hot iff any client is subscribed.
+	if tieredFreshness && len(added) > 0 {
+		b.hotMu.Lock()
+		for _, p := range added {
+			_, sym, ok := splitPair(p)
+			if !ok {
+				continue
+			}
+			b.hotSubsRefcnt[sym]++
+		}
+		b.hotMu.Unlock()
+		b.reportHotSize()
+	}
+
 	if len(added) > 0 {
 		log.L().Debug().Int("uid", c.uid).Strs("pairs", added).Msg("book subscribe")
 	}
 }
 
 func (b *Book) handleUnsubscribe(c *client, pairs []string) {
+	removed := make([]string, 0, len(pairs))
 	b.mu.Lock()
 	subs, ok := b.subs[c]
 	if !ok {
@@ -466,9 +660,30 @@ func (b *Book) handleUnsubscribe(c *client, pairs []string) {
 		if !ok {
 			continue
 		}
-		delete(subs, np)
+		if _, was := subs[np]; was {
+			delete(subs, np)
+			removed = append(removed, np)
+		}
 	}
 	b.mu.Unlock()
+
+	if tieredFreshness && len(removed) > 0 {
+		b.hotMu.Lock()
+		for _, p := range removed {
+			_, sym, ok := splitPair(p)
+			if !ok {
+				continue
+			}
+			if b.hotSubsRefcnt[sym] > 0 {
+				b.hotSubsRefcnt[sym]--
+				if b.hotSubsRefcnt[sym] == 0 {
+					delete(b.hotSubsRefcnt, sym)
+				}
+			}
+		}
+		b.hotMu.Unlock()
+		b.reportHotSize()
+	}
 }
 
 // normalizePair mirrors Python's _normalize_pair: lower-case exchange,

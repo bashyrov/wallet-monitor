@@ -209,7 +209,13 @@ _ALERT_LOCK_TTL = 0   # unused — see leader election below
 
 
 def _load_alerts_from_db() -> list:
-    """Read enabled alerts + their users from DB. Called every _DB_REFRESH_INTERVAL seconds."""
+    """Read enabled alerts + their users from DB. Called every _DB_REFRESH_INTERVAL seconds.
+
+    Also writes /tmp/avalant_cache/active_alerts.json so go-fetcher can
+    mark these symbols as CLASS 3 hot (event-driven /ws/book bypass).
+    Without this, alerts only fire on the 2s aggregate tick — i.e. the
+    same latency as the cold screener table. With this, the alert
+    check sees BBO changes as they happen."""
     from backend.db.base import SessionLocal
     from backend.db.models import ArbAlert, User
     db = SessionLocal()
@@ -220,9 +226,34 @@ def _load_alerts_from_db() -> list:
         users = {u.id: u.tg_chat_id for u in db.query(User).filter(User.id.in_(user_ids)).all()}
         for a in alerts:
             a._tg_chat_id = users.get(a.user_id)
+        _dump_active_alert_symbols(alerts)
         return alerts
     finally:
         db.close()
+
+
+_ACTIVE_ALERTS_PATH = "/tmp/avalant_cache/active_alerts.json"
+
+
+def _dump_active_alert_symbols(alerts: list) -> None:
+    """Write the union of symbols carrying an active alert to a JSON file
+    so go-fetcher can pick them up via its existing prewarm/touch loop.
+
+    Atomic: write to <path>.tmp then rename. Schema kept intentionally
+    small — just `{"symbols": ["BTC", "ETH", ...]}` — so the Go reader is a
+    single json.Unmarshal."""
+    import json as _json
+    import os as _os
+    syms = sorted({(a.symbol or "").strip().upper() for a in alerts if (a.symbol or "").strip()})
+    payload = {"symbols": syms, "ts": int(datetime.utcnow().timestamp())}
+    try:
+        _os.makedirs(_os.path.dirname(_ACTIVE_ALERTS_PATH), exist_ok=True)
+        tmp = _ACTIVE_ALERTS_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            _json.dump(payload, f)
+        _os.replace(tmp, _ACTIVE_ALERTS_PATH)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("active_alerts dump failed: %s", exc)
 
 
 def _claim_alert_for_fire(alert_id: int, ts: datetime) -> bool:
