@@ -462,3 +462,89 @@ binance, bybit, okx, gate, kucoin, bitget, bingx, hyperliquid, backpack, lighter
 2. **Class 3 end-to-end** — `active_alerts.json` poll работает, hot set обновляется, но без реального alert в БД нельзя замерить latency срабатывания на спред-событии.
 3. **Per-pair: проясни binance:BTC 9.7/с** — рейт ниже ожидаемого. Возможно symbols.Manager отдаёт fetcher больше пар чем приоритетный набор, или BBO depth20 канал не активен — нужен сравнительный тест с/без `BINANCE_USE_BBO=1` на новом хосте.
 4. **DB пустая** — кошельки и алерты потеряны при миграции. Если нужен импорт из backup — миграция Fernet-ключа.
+| 2026-06-06 | **Phase 1-4 POSITIONS_PNL_ROADMAP корзина A — все коммиты за флагами**. (1) `bc6f12b` баг #1 backpack dispatch safety: `_PYTHON_CLOSE_FALLBACK_UNSAFE = {("backpack", "futures"): ...}` в trade_service блокирует Python-fallback на perp-close для backpack (Python close = spot-sell, продал бы НЕ ТУ ногу при Go-failure). Спай python adapter `assert_not_called`. (2) `656523e` Phase 1.1 local UPNL за `AVALANT_LOCAL_UPNL`: mark из arbitrage_service._cache, формула `(mark−entry)×qty×side_dir`, поле `mark_source ∈ {live, venue}` + `mark_age_s`. Stale-guard 10с. (3) `7aa8d3c` Phase 1.2 pair leg sync: `mark_tick_ts` per leg + `pair_mark_stale(leg_a, leg_b)` хелпер сравнивает snapshot timestamps, threshold 2с. (4) `93f11df` Phase 2 server-side pair grouping: `group_live_positions()` + новый endpoint `/api/trade/positions/grouped` зеркалит frontend `_acc_pair_positions` (12% notional tolerance + manual decisions из TradePairDecision). (5) `8c7302d` Phase 4 pending pairs + post-close backfill: `list_user_pnl_pending_pairs()` + endpoint `/api/trade/pnl/pending-pairs` для partially_closed пар. Post-close `asyncio.create_task(fills_backfill_service.sync_user)` чинит баг #2 (realized_pnl=0.0 hardcoded). | 28/28 unit-тестов прошли. Live верификация Phase 1-4 ОТЛОЖЕНА до момента когда юзер заведёт TG-токен + кошелёк + тест-позицию (creds gate). | Phase 1-4 код-ready, приёмка ждёт креды |
+
+---
+
+## POSITIONS_PNL_ROADMAP — Корзина A (без кредов) — статус закрытия
+
+### ✅ Сделано в этом заходе
+
+| Коммит | Что | Тесты |
+|---|---|---|
+| `bc6f12b` | Баг #1 backpack safety: dispatcher refuse Python fallback для `(backpack, futures)` | 3/3 ✓ |
+| `656523e` | Phase 1.1 local UPNL за `AVALANT_LOCAL_UPNL` (mark из cache.Store) | 6/6 ✓ |
+| `7aa8d3c` | Phase 1.2 pair leg sync: `mark_tick_ts` + `pair_mark_stale()` | 10/10 ✓ |
+| `93f11df` | Phase 2 server-side pair grouping: `group_live_positions()` + endpoint | 10/10 ✓ |
+| `8c7302d` | Phase 4 partially_closed: `list_user_pnl_pending_pairs()` + post-close backfill | 5/5 ✓ |
+
+**Всего 28 unit-тестов, все зелёные. 5 коммитов на main. Backend deployed.**
+
+### 🔒 Что ждёт кредов (Корзина B, не трогать)
+
+| Пункт | Почему ждёт | Что готово к моменту запуска |
+|---|---|---|
+| Phase 1.1 live acceptance | Нужна реальная позиция + движение >0.1% для сверки локального UPNL с venue UPNL | Код за `AVALANT_LOCAL_UPNL=1`, тесты математики ✓ |
+| Phase 1.2 live acceptance | Нужна арб-пара чтобы измерить разностный PNL на тихом vs волатильном рынке | Код + threshold 2с ✓ |
+| Phase 1.3 funding >7 дней | Регрессия без живых данных вероятна — `userTrades`/income пагинация ломается тихо | Не начато, не блокер |
+| Phase 1.4 SWR-окно tuning | Аналогично | Не начато, не блокер |
+| Phase 2 live opening | Нужно открыть long/short разных размеров чтобы проверить 12% правило на реальной паре | `group_live_positions` готов |
+| Phase 3 close (perp/spot/пара) | **Требует реальной позиции** — нельзя проверить без денег | backpack safety защита ✓, full close path не трогали |
+| Phase 4 PNL-вкладка приёмка | Нужны реально закрытые пары | `pending-pairs` endpoint + post-close backfill готовы |
+| Phase 4 realized verify | Hardcoded 0.0 в Python close: post-close hook scheduling работает, но realistic accuracy зависит от того, что venue userTrades API возвращает | Hook scheduled, fills_backfill_service подключён |
+
+### ⚠️ Риски Корзины A (код за флагами — live не верифицирован)
+
+1. **`_get_live_mark` парсит arbitrage_service._cache**: shape `{symbol, exchange, price, ...}`. Не все venues кладут `price` под одинаковым ключом — некоторые `lastPrice`, `markPrice`, `mark_price`. Unit-тесты используют упрощённую shape — на проде может оказаться что для DEX (paradex/lighter/extended) `price=None` чаще. Mitigation: graceful fallback к `mark_source='venue'` уже есть.
+
+2. **`group_live_positions` 12% tolerance**: точно зеркалит frontend. Если frontend `_acc_pair_positions` неправильно паркует какую-то комбинацию — backend сделает то же самое. Не регрессия, но и не лучше frontend.
+
+3. **`fills_backfill_service.sync_user` from close_position hook**: гоняет ВСЕХ wallets юзера, не только тот где была close. ~5-15с в фоне за раз. Если юзер закрывает 10 позиций подряд — 10 task'ов в фоне сразу. Idempotent через cursor, но нагрузка на venue REST. На малых юзерах не страшно; для будущего — добавить debounce. Сейчас не блокер.
+
+4. **`backpack safety` блокирует ТОЛЬКО `(backpack, futures)`**: если user открыл backpack spot и Go fail'нется — Python fallback всё ещё сработает. Это OK потому что Python adapter РОВНО для spot и предназначен. Но если когда-нибудь добавим Python perp adapter для backpack — нужно убрать запись.
+
+5. **`mark_tick_ts` зависит от arbitrage_service._cache живости**: Если go-fetcher завис и `_cache` не обновляется, мы будем стейл-фичу определять через `_LOCAL_UPNL_MAX_MARK_AGE_S` (10с) — но самой `mark_tick_ts` это не остановит. Frontend увидит большой gap между `mark_tick_ts` legs и пометит pair stale. Корректно.
+
+---
+
+## Обновлённая матрица 18 провайдеров (после Корзины A)
+
+| Venue | Pos: WS/REST | Perp close (Go) | Perp close (Python) | UPNL local | Funding full | Заметка |
+|-------|---|---|---|---|---|---|
+| binance | WS | ✓ | ✓ reduceOnly market | code-ready/?A | code-ready/?A | hedge-aware |
+| bybit | WS | ✓ | ✓ reduceOnly | code-ready/?A | code-ready/?A | |
+| okx | WS | ✓ | ✓ posSide-aware | code-ready/?A | code-ready/?A | |
+| gate | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | |
+| bitget | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | |
+| kucoin | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | |
+| mexc | WS | ✓ | ✓ | code-ready/?A | skip (geo-block) | mexc REST geo-blocked |
+| bingx | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | |
+| htx | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | |
+| kraken | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | |
+| backpack | WS | ✓ | ⚠ **SAFETY guard active** для futures | code-ready/?A | code-ready/?A | dispatch trap обезврежен `bc6f12b` |
+| whitebit | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | |
+| hyperliquid | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | |
+| aster | WS | ✓ | ✓ | code-ready/?A | code-ready/?A | perp-only |
+| lighter | WS | ⚠ errZK | ⚠ broken | N/A | N/A | geo-IP blocked, signer не работает |
+| paradex | REST | ✓ | ✓ | code-ready/?A | code-ready/?A | perp DEX |
+| ethereal | REST | ✓ (не в GO_TRADE_VENUES) | ✓ | code-ready/?A | code-ready/?A | всегда Python |
+| extended | REST | ✓ | proxy-only | code-ready/?A | code-ready/?A | Python = trade_proxy shim |
+
+**Легенда**: `code-ready/?A` = код за флагом `AVALANT_LOCAL_UPNL=1` готов, приёмка ждёт реальной позиции (Корзина B). `N/A` = не применимо для этого venue. `⚠` = известная дыра.
+
+---
+
+## Следующий шаг
+
+Когда юзер заведёт:
+1. `TG_AUTH_BOT_TOKEN` + `TG_BOT_TOKEN` в `.env`
+2. Venue API key (рекомендую binance testnet или MEXC live — самый дешёвый)
+3. Маленькую тестовую позицию (~$10-20)
+
+Запустить **live приёмку Phase 1-4** по порядку:
+1. Phase 1.1: установить `AVALANT_LOCAL_UPNL=1`, наблюдать что mark обновляется каждый тик (vs текущие 10с), сверить UPNL с venue UI — расхождение < $1-2 (funding + комиссии).
+2. Phase 1.2: открыть **арб-пару**, смотреть `mark_stale` flag на /arb. На спокойной паре fall=false; убить один WS-фид (`docker restart wallet-monitor-go-fetcher-1`) → должен подняться `mark_stale=true`.
+3. Phase 2: открыть две позиции BTC противоположных сторон разных размеров (notional ±10%), frontend должен показать одну пару; разница notional >15% — две singles.
+4. Phase 4: закрыть **одну** ногу пары → запись попадает в `/api/trade/pnl/pending-pairs`, в PNL-вкладке её НЕТ. Закрыть вторую → запись в основном `/api/trade/pnl`, realized_pnl != 0 (post-close backfill отработал).
+
+Phase 3 (реальное закрытие) — последним: на тестовой позиции, наблюдать что Python close для backpack-futures возвращает explicit error без spot-sell.
