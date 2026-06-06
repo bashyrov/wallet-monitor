@@ -665,6 +665,22 @@ async def close_position(
         invalidate_pair_status_cache(user_id, ex)
     except Exception:
         pass
+    # Phase 4 — schedule a background fills_backfill sync so the realized
+    # PNL on this position becomes accurate within ~5-15s instead of the
+    # hardcoded 0.0 most Python close adapters return. Non-blocking: the
+    # close response goes out immediately; the backfill polls userTrades /
+    # income for this wallet and emits a corrected trade_positions row
+    # over the top of the close's provisional one.
+    try:
+        from backend.services import fills_backfill_service
+        async def _bg_backfill():
+            try:
+                await fills_backfill_service.sync_user(user_id)
+            except Exception as exc:
+                logger.warning("post-close fills_backfill sync failed: %s", exc)
+        asyncio.create_task(_bg_backfill())
+    except Exception as exc:
+        logger.debug("post-close fills_backfill schedule failed: %s", exc)
     return result
 
 
@@ -1315,6 +1331,88 @@ def group_live_positions(
 
     singles = [t["p"] for t in tagged if t["key"] not in used]
     return {"pairs": pairs, "singles": singles}
+
+
+def list_user_pnl_pending_pairs(db: Session, user_id: int, *, days: int = 30) -> list[dict]:
+    """Phase 4 — return arb pairs in 'partially_closed' state for the PNL
+    tab's Pending section.
+
+    A pair is 'partially_closed' when ONE leg has status='closed' and the
+    counterpart still has status='open'. The realized leg's PNL is real,
+    the open leg's PNL is unrealized → the diff isn't a valid arb result
+    yet. The PNL view filters these out of the realized list (correct);
+    this function surfaces them so the UI shows 'pair pending close: X
+    of 2 legs'.
+
+    Same paring rule as list_user_pnl (_pnl_can_pair with 12% tolerance +
+    5-min window, plus manual paired decisions).
+    """
+    from backend.db.models import TradePosition
+    from datetime import timedelta as _td
+    cutoff = datetime.utcnow() - _td(days=int(days))
+    paired, unpaired = _pnl_pair_decisions(db, user_id)
+
+    closed = (
+        db.query(TradePosition)
+        .filter(
+            TradePosition.user_id == user_id,
+            TradePosition.kind == "single",
+            TradePosition.status == "closed",
+            TradePosition.closed_at >= cutoff,
+        )
+        .all()
+    )
+    open_rows = (
+        db.query(TradePosition)
+        .filter(
+            TradePosition.user_id == user_id,
+            TradePosition.kind == "single",
+            TradePosition.status == "open",
+        )
+        .all()
+    )
+
+    open_by_sym_side: dict[tuple[str, str], list] = {}
+    for r in open_rows:
+        key = ((r.symbol or "").upper(), (r.leg_a_side or "").lower())
+        open_by_sym_side.setdefault(key, []).append(r)
+
+    pending: list[dict] = []
+    seen: set[int] = set()
+    for c in closed:
+        if c.id in seen:
+            continue
+        sym = (c.symbol or "").upper()
+        side = (c.leg_a_side or "").lower()
+        opp_side = "sell" if side == "buy" else "buy"
+        opp_opens = open_by_sym_side.get((sym, opp_side), [])
+        if not opp_opens:
+            continue
+        for op in opp_opens:
+            # Same _pnl_can_pair rule used everywhere else.
+            l_pos, s_pos = (c, op) if side == "buy" else (op, c)
+            if not _pnl_can_pair(l_pos, s_pos, paired, unpaired):
+                continue
+            seen.add(c.id)
+            pending.append({
+                "symbol": sym,
+                "status": "partially_closed",
+                "legs_closed": 1,
+                "legs_total": 2,
+                "closed_leg": {
+                    "exchange": (c.leg_a_exchange or "").lower(),
+                    "side": side,
+                    "realized_pnl_usd": float(c.realized_pnl_usd or 0),
+                    "closed_at": c.closed_at.isoformat() if c.closed_at else None,
+                },
+                "open_leg": {
+                    "exchange": (op.leg_a_exchange or "").lower(),
+                    "side": opp_side,
+                    "opened_at": op.opened_at.isoformat() if op.opened_at else None,
+                },
+            })
+            break
+    return pending
 
 
 async def list_user_arb_pairs(db: Session, user_id: int,

@@ -59,6 +59,18 @@ async def positions(
     return data
 
 
+@router.get("/pnl/pending-pairs")
+async def pnl_pending_pairs(
+    days: int = Query(30, ge=1, le=365),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Phase 4 — pairs in 'partially_closed' state (one leg closed,
+    counterpart still open). Surfaced in the PNL tab's Pending section
+    so the user sees that a position is mid-close, not vanished."""
+    return trade_service.list_user_pnl_pending_pairs(db, user.id, days=days)
+
+
 @router.get("/positions/grouped")
 async def positions_grouped(
     symbol: str | None = Query(None, pattern=r"^[A-Za-z0-9]{1,16}$"),
