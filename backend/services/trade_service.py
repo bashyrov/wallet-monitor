@@ -684,39 +684,67 @@ async def close_position(
 # position (creds gate).
 _LOCAL_UPNL_ENABLED = (_os.getenv("AVALANT_LOCAL_UPNL") or "0").strip() == "1"
 _LOCAL_UPNL_MAX_MARK_AGE_S = float(_os.getenv("AVALANT_LOCAL_UPNL_MAX_AGE_S", "10.0"))
+# Phase 1.2 — pair leg sync. Pair = stale when |leg_a_age − leg_b_age| > this.
+# Frontend uses pair_mark_stale(leg_a, leg_b) to decide whether to grey out the
+# sum-PNL diff. Default 2s: typical arbitrage_service _cache rebuild is
+# ~250ms-2s per venue, so >2s skew almost always means one feed lagging.
+_PAIR_MARK_MAX_DIFF_S = float(_os.getenv("AVALANT_PAIR_MARK_MAX_DIFF_S", "2.0"))
 
 
-def _get_live_mark(exchange: str, symbol: str) -> tuple[float | None, float | None]:
+def _get_live_mark(exchange: str, symbol: str) -> tuple[float | None, float | None, float | None]:
     """Look up live mark price for (exchange, symbol) in arbitrage_service._cache.
 
-    Returns (mark_price, age_seconds) or (None, age_or_None) if not found or
-    stale. Symbol matched case-insensitively against rows[i]['symbol'].
+    Returns (mark_price, age_seconds, cached_at_mono) or (None, ...) on miss.
+    The third tuple element (cached_at_mono) is the monotonic timestamp of
+    the underlying cache snapshot — Phase 1.2 uses it to detect rasync
+    between two legs of a pair.
+    Symbol matched case-insensitively against rows[i]['symbol'].
     """
     try:
         from backend.services.arbitrage_service import _cache, _mono
     except Exception:
-        return None, None
+        return None, None, None
     bucket = _cache.get((exchange or "").lower())
     if not bucket:
-        return None, None
+        return None, None, None
     rows, cached_at_mono = bucket
     if not rows:
-        return None, None
+        return None, None, None
     age_s = _mono() - cached_at_mono
     if age_s > _LOCAL_UPNL_MAX_MARK_AGE_S:
-        return None, age_s
+        return None, age_s, cached_at_mono
     sym_norm = (symbol or "").upper()
     for r in rows:
         rs = (r.get("symbol") or "").upper()
         if rs == sym_norm:
             p = r.get("price")
             if p is None:
-                return None, age_s
+                return None, age_s, cached_at_mono
             try:
-                return float(p), age_s
+                return float(p), age_s, cached_at_mono
             except (TypeError, ValueError):
-                return None, age_s
-    return None, age_s
+                return None, age_s, cached_at_mono
+    return None, age_s, cached_at_mono
+
+
+def pair_mark_stale(leg_a: dict, leg_b: dict) -> bool:
+    """Phase 1.2 — return True when the two legs' marks come from snapshots
+    more than _PAIR_MARK_MAX_DIFF_S apart. Used by frontend (and Phase 2
+    server-side pair grouping) to mark the diff-PNL as `stale` rather than
+    showing a phantom delta from feed rasync.
+
+    Both legs need `mark_tick_ts` (added by _apply_local_upnl when flag on).
+    Without it (flag off / no live mark) returns False — fall back to whatever
+    the venue surfaced.
+    """
+    a_ts = leg_a.get("mark_tick_ts")
+    b_ts = leg_b.get("mark_tick_ts")
+    if a_ts is None or b_ts is None:
+        return False
+    try:
+        return abs(float(a_ts) - float(b_ts)) > _PAIR_MARK_MAX_DIFF_S
+    except (TypeError, ValueError):
+        return False
 
 
 def _apply_local_upnl(rows: list[dict]) -> None:
@@ -743,7 +771,7 @@ def _apply_local_upnl(rows: list[dict]) -> None:
         if entry_f <= 0 or qty_f <= 0 or side not in ("buy", "sell"):
             r["mark_source"] = "venue"
             continue
-        live_mark, age_s = _get_live_mark(ex, sym)
+        live_mark, age_s, tick_ts = _get_live_mark(ex, sym)
         if live_mark is None or live_mark <= 0:
             r["mark_source"] = "venue"
             if age_s is not None:
@@ -756,6 +784,11 @@ def _apply_local_upnl(rows: list[dict]) -> None:
         )
         r["mark_source"] = "live"
         r["mark_age_s"] = round(age_s, 2)
+        # Phase 1.2 — absolute mono-ts of the cache snapshot. Frontend (or
+        # Phase 2 grouping) uses pair_mark_stale(leg_a, leg_b) to detect
+        # |a_ts − b_ts| > threshold and mark the pair diff stale.
+        if tick_ts is not None:
+            r["mark_tick_ts"] = round(tick_ts, 4)
 
 
 # In-memory cache for list_user_positions: collapses repeat hits within

@@ -136,6 +136,46 @@ def test_no_live_mark_for_symbol():
     assert rows[0]["mark_source"] == "venue"
 
 
+# ── Phase 1.2 pair leg sync ────────────────────────────────────────────
+def test_pair_mark_tick_ts_present_on_live():
+    """1.2 requirement — mark_tick_ts must be on every row that got live mark
+    so pair_mark_stale() can compare two legs."""
+    ts = _reload_with_flag("1")
+    _seed_cache([{"exchange": "binance", "symbol": "BTC", "price": 60000.0}])
+    rows = [{
+        "exchange": "binance", "symbol": "BTC", "side": "buy",
+        "quantity": 0.1, "entry_price": 55000.0,
+    }]
+    ts._apply_local_upnl(rows)
+    assert rows[0]["mark_source"] == "live"
+    assert "mark_tick_ts" in rows[0]
+    assert isinstance(rows[0]["mark_tick_ts"], float)
+
+
+def test_pair_mark_stale_in_sync():
+    """Two legs from snapshots within 2s window — pair NOT stale."""
+    ts = _reload_with_flag("1")
+    leg_a = {"mark_tick_ts": 1000.0}
+    leg_b = {"mark_tick_ts": 1001.5}      # 1.5s skew, under default 2s
+    assert ts.pair_mark_stale(leg_a, leg_b) is False
+
+
+def test_pair_mark_stale_out_of_sync():
+    """Two legs from snapshots >2s apart — pair STALE."""
+    ts = _reload_with_flag("1")
+    leg_a = {"mark_tick_ts": 1000.0}
+    leg_b = {"mark_tick_ts": 1010.0}      # 10s skew
+    assert ts.pair_mark_stale(leg_a, leg_b) is True
+
+
+def test_pair_mark_stale_missing_ts_safe():
+    """Either leg without mark_tick_ts (flag off) → never report stale."""
+    ts = _reload_with_flag("1")
+    assert ts.pair_mark_stale({}, {"mark_tick_ts": 1000.0}) is False
+    assert ts.pair_mark_stale({"mark_tick_ts": 1000.0}, {}) is False
+    assert ts.pair_mark_stale({}, {}) is False
+
+
 # ── Skip rows with zero entry_price ────────────────────────────────────
 def test_zero_entry_price_skipped():
     ts = _reload_with_flag("1")
