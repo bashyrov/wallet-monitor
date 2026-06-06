@@ -316,9 +316,19 @@ func (b *Book) flushPending() {
 		b.mu.Unlock()
 		return
 	}
+	// Deep-copy each per-client subs map. A shallow copy of the outer map
+	// shares pointers to the inner maps with b.subs[c], which is mutated
+	// concurrently by handleSubscribe/handleUnsubscribe AND (with tiered
+	// freshness on) by pushBypass writing `set[pairKey] = ts` on every
+	// hot-symbol push. Without the deep copy, the iteration below races
+	// against those writes → "fatal: concurrent map read and map write".
 	subsSnap := make(map[*client]map[string]float64, len(b.subs))
 	for c, set := range b.subs {
-		subsSnap[c] = set
+		clone := make(map[string]float64, len(set))
+		for k, v := range set {
+			clone[k] = v
+		}
+		subsSnap[c] = clone
 	}
 	b.mu.Unlock()
 
