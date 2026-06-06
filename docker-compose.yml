@@ -277,6 +277,16 @@ services:
       # Default 50ms = 20/sec. Lower raises throughput; min clamp 10ms.
       # e.g. "33ms" → ~30/sec, "25ms" → 40/sec.
       AVALANT_BOOK_FLUSH_INTERVAL: ${AVALANT_BOOK_FLUSH_INTERVAL:-50ms}
+      # Tiered freshness model. When "1":
+      #   /ws/long-short broadcast cadence → 2s (Class 1 cold).
+      #   /ws/book bypasses flush for symbols in the hot set — clients
+      #   subscribed to a pair OR with an active spread alert get
+      #   event-driven BBO with a 10ms per-pair floor.
+      # See go-fetcher/internal/wsbroadcast/book.go for the hot-set logic.
+      AVALANT_TIERED_FRESHNESS: ${AVALANT_TIERED_FRESHNESS:-0}
+      # Override the /ws/long-short broadcast interval. With tiered on,
+      # the default is 2s. With tiered off, default 100ms. Min 50ms.
+      AVALANT_LONGSHORT_BROADCAST_INTERVAL: ${AVALANT_LONGSHORT_BROADCAST_INTERVAL:-}
       # Toggle for the Redis orderbook mirror (`ob:<ex>:<sym>` SETEX on
       # every cache update). Python REST callers fall through to the
       # file cache (orderbook_cache.py:900+), so this is safely
