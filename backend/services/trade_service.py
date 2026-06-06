@@ -1166,6 +1166,172 @@ def list_pair_decisions(db: Session, user_id: int, live_positions: list[dict] | 
     return out
 
 
+# ── Live arb-pair grouping (Phase 2) ────────────────────────────────────
+# Server-side equivalent of frontend's _acc_pair_positions. Same 12%
+# tolerance + 5-min window + manual-first ordering, but importantly also
+# evaluates pair_mark_stale() so the pair is tagged with `mark_stale=True`
+# when the two legs' live marks come from desynced screener snapshots.
+#
+# Manual decisions are persisted in TradePairDecision (table
+# trade_pair_decisions) — same source frontend's _loadManualPairs reads
+# from. So a user's Sync ⇆ click on /arb survives a page reload because
+# it routed through /api/trade/pair/sync (set_pair_decision) which writes
+# the DB row.
+_PAIR_NOTIONAL_TOLERANCE_PCT = float(_os.getenv("AVALANT_PAIR_NOTIONAL_TOL_PCT", "12.0"))
+
+
+def _pair_key(symbol: str, exchange: str, side: str) -> tuple[str, str, str]:
+    return (symbol.upper(), exchange.lower(), side.lower())
+
+
+def _load_manual_pairs_for_user(db: Session, user_id: int) -> list[dict]:
+    """Returns 'paired' long_short decisions only (spot/short uses its own
+    table-side handler). Each entry: {symbol, long_exchange, short_exchange}."""
+    from backend.db.models import TradePairDecision
+    rows = (
+        db.query(TradePairDecision)
+        .filter(TradePairDecision.user_id == user_id,
+                TradePairDecision.decision == "paired")
+        .all()
+    )
+    out: list[dict] = []
+    for r in rows:
+        if r.leg_a_key.startswith("spot|") or "|spot|" in r.leg_a_key:
+            continue
+        try:
+            sym, long_ex, _ = r.leg_a_key.split("|")
+            _, short_ex, _ = r.leg_b_key.split("|")
+        except ValueError:
+            continue
+        out.append({
+            "symbol": sym.upper(),
+            "long_exchange": long_ex.lower(),
+            "short_exchange": short_ex.lower(),
+        })
+    return out
+
+
+def group_live_positions(
+    positions: list[dict],
+    manual_pairs: list[dict] | None = None,
+) -> dict:
+    """Group flat list of live positions into {pairs, singles}.
+
+    Same logic as frontend _acc_pair_positions (arb.js:4312):
+      1. Manual pairs first — symbol+long_ex+short_ex matched exactly.
+      2. Auto-detect remaining — same symbol, opposite sides, notional diff%
+         within spread% ± _PAIR_NOTIONAL_TOLERANCE_PCT (default 12%).
+    Best-candidate first per symbol = smallest |diff% − spread%|.
+
+    Each emitted pair also gets `mark_stale=True` if pair_mark_stale()
+    (Phase 1.2) detects rasync between the two legs' live marks.
+
+    Returns {
+        'pairs':  [{symbol, long: <position-dict>, short: <position-dict>,
+                    _manual: bool, mark_stale: bool}],
+        'singles': [<position-dict>, ...],
+    }
+    """
+    manual = manual_pairs or []
+    tagged = []
+    for i, p in enumerate(positions):
+        try:
+            qty = abs(float(p.get("quantity") or 0))
+            mark = float(p.get("mark_price") or 0)
+        except (TypeError, ValueError):
+            qty, mark = 0.0, 0.0
+        key = p.get("position_id") or f"{(p.get('exchange') or '').lower()}:{(p.get('symbol') or '').upper()}:{i}"
+        tagged.append({"p": p, "key": key, "notional": qty * mark})
+
+    by_sym: dict[str, list[dict]] = {}
+    for t in tagged:
+        sym = (t["p"].get("symbol") or "").upper()
+        by_sym.setdefault(sym, []).append(t)
+
+    pairs: list[dict] = []
+    used: set = set()
+
+    # 1. Manual pairs first — exact match on (symbol, long_ex, short_ex).
+    for mp in manual:
+        sym = mp["symbol"].upper()
+        long_ex = mp["long_exchange"].lower()
+        short_ex = mp["short_exchange"].lower()
+        group = by_sym.get(sym)
+        if not group:
+            continue
+        l = next((t for t in group
+                  if (t["p"].get("exchange") or "").lower() == long_ex
+                  and (t["p"].get("side") or "").lower() == "buy"
+                  and t["key"] not in used), None)
+        s = next((t for t in group
+                  if (t["p"].get("exchange") or "").lower() == short_ex
+                  and (t["p"].get("side") or "").lower() == "sell"
+                  and t["key"] not in used), None)
+        if not l or not s:
+            continue
+        used.add(l["key"]); used.add(s["key"])
+        pairs.append({
+            "symbol": sym,
+            "long": l["p"], "short": s["p"],
+            "_manual": True,
+            "mark_stale": pair_mark_stale(l["p"], s["p"]),
+        })
+
+    # 2. Auto-detect for the rest.
+    for sym, group in by_sym.items():
+        longs = [t for t in group
+                 if (t["p"].get("side") or "").lower() == "buy" and t["key"] not in used]
+        shorts = [t for t in group
+                  if (t["p"].get("side") or "").lower() == "sell" and t["key"] not in used]
+        candidates = []
+        for l in longs:
+            for s in shorts:
+                max_n = max(l["notional"], s["notional"])
+                if max_n <= 0:
+                    continue
+                try:
+                    le = float(l["p"].get("entry_price") or 0)
+                    se = float(s["p"].get("entry_price") or 0)
+                except (TypeError, ValueError):
+                    continue
+                spread_pct = (abs((se - le) / le) * 100.0) if le > 0 and se > 0 else 0.0
+                diff_pct = abs(l["notional"] - s["notional"]) / max_n * 100.0
+                if abs(diff_pct - spread_pct) > _PAIR_NOTIONAL_TOLERANCE_PCT:
+                    continue
+                candidates.append({"l": l, "s": s,
+                                   "deviation": abs(diff_pct - spread_pct)})
+        # Best (smallest deviation) first.
+        candidates.sort(key=lambda c: c["deviation"])
+        for c in candidates:
+            if c["l"]["key"] in used or c["s"]["key"] in used:
+                continue
+            used.add(c["l"]["key"]); used.add(c["s"]["key"])
+            pairs.append({
+                "symbol": sym,
+                "long": c["l"]["p"], "short": c["s"]["p"],
+                "_manual": False,
+                "mark_stale": pair_mark_stale(c["l"]["p"], c["s"]["p"]),
+            })
+
+    singles = [t["p"] for t in tagged if t["key"] not in used]
+    return {"pairs": pairs, "singles": singles}
+
+
+async def list_user_arb_pairs(db: Session, user_id: int,
+                              symbol: str | None = None) -> dict:
+    """Public API: fetch live positions + group into pairs server-side.
+
+    Replaces the frontend-only grouping. Frontend can call this endpoint
+    instead of doing the 12%-tolerance matching itself, which (a) reuses
+    the canonical rule (one source of truth, no JS-vs-Python drift) and
+    (b) lets the result feed alerts/triggers/audit that the browser
+    can't reach.
+    """
+    positions = await list_user_positions(db, user_id, symbol)
+    manual = _load_manual_pairs_for_user(db, user_id)
+    return group_live_positions(positions, manual_pairs=manual)
+
+
 def _serialize_order(o: TradeOrder) -> dict:
     """Shape a TradeOrder row for the Order History UI. Internal errors are
     sanitized to a generic message — the user shouldn't see our stack

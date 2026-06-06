@@ -59,6 +59,35 @@ async def positions(
     return data
 
 
+@router.get("/positions/grouped")
+async def positions_grouped(
+    symbol: str | None = Query(None, pattern=r"^[A-Za-z0-9]{1,16}$"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    response: Response = None,
+):
+    """Phase 2 — server-side grouping of live positions into arb pairs.
+
+    Same input as /positions but returns {pairs, singles} using the
+    12%-tolerance auto-detect + manual pair decisions from
+    TradePairDecision. Replaces frontend's _acc_pair_positions when the
+    frontend opts in. Both endpoints remain so the migration is gradual.
+
+    Pairs include `mark_stale: bool` (Phase 1.2) so the UI greys out the
+    sum-PNL when the two legs' marks come from desynced screener feeds.
+    """
+    sym = symbol.upper() if symbol else None
+    data = await trade_service.list_user_arb_pairs(db, user.id, sym)
+    # SWR header matches /positions semantics.
+    cache_key = (user.id, sym or "")
+    cached = trade_service._POSITIONS_CACHE.get(cache_key)
+    if response is not None and cached:
+        age = _time.time() - cached[0]
+        if age >= trade_service._POSITIONS_CACHE_TTL_S:
+            response.headers["X-Positions-Stale"] = "1"
+    return data
+
+
 @router.get("/balances")
 async def balances(
     user: User = Depends(get_current_user),
