@@ -211,7 +211,41 @@ body.light .acc-table thead th{background:#F0F0F0;}
 
 /* Chart tab: spread chart (top 55%) + fund chart (bottom 45%) */
 .spread-section{flex:0 0 55%;display:flex;flex-direction:column;border-bottom:1px solid var(--border);min-height:0;position:relative;}
-.chart-controls{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
+/* Min-height pins the row so the chart-body below it never shifts
+   vertically. Previously, when In/Out values widened ("+0.0123%" →
+   "+1.2345%"), flex-wrap on mobile kicked in and the chart got a smaller
+   height (= jitter). In/Out moved into the chart-body as an overlay
+   (.ee-inout-overlay) so the controls bar carries only fixed-width
+   widgets. */
+.chart-controls{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:32px;}
+
+/* In/Out overlay — top-left of chart-body, doesn't affect layout. Pointer
+   events disabled so the SVG hover/cross-hair below still works through
+   it. Values are monospace + min-width so their internal width changes
+   don't shift sibling rows either. */
+.ee-inout-overlay{
+  position:absolute;top:8px;left:10px;z-index:5;
+  display:flex;flex-direction:column;gap:3px;
+  pointer-events:none;
+  background:rgba(19,18,23,.72);
+  backdrop-filter:blur(4px);
+  -webkit-backdrop-filter:blur(4px);
+  border:1px solid rgba(255,255,255,.05);
+  border-radius:6px;
+  padding:5px 8px;
+}
+.ee-inout-row{display:flex;align-items:center;gap:6px;font-size:10px;line-height:1;}
+.ee-inout-dot{width:8px;height:2px;display:inline-block;border-radius:1px;flex-shrink:0;}
+.ee-inout-lbl{color:var(--text3);font-size:9px;letter-spacing:.04em;text-transform:uppercase;}
+.ee-inout-val{
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  min-width:62px;       /* "+0.0000%" max width — never shrinks */
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+  font-size:10px;
+  font-weight:600;
+}
+body.light .ee-inout-overlay{background:rgba(255,255,255,.78);border-color:rgba(0,0,0,.06);}
 .tf-btn{padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;color:var(--text3);cursor:pointer;transition:background .15s,color .15s;user-select:none;}
 .tf-btn.active,.tf-btn:hover{background:var(--surface3);color:var(--text);}
 .chart-sep{width:1px;height:14px;background:var(--border);}
@@ -693,7 +727,12 @@ body.light .bnav-item.active{color:#000;}
   .metric-block{min-width:100%;padding:10px 16px;border-bottom:1px solid var(--border);}
   .metric-val{font-size:22px;}
   .chart-tab{padding:0 12px;font-size:12px;height:38px;}
-  .chart-controls{flex-wrap:wrap;gap:5px;padding:8px 10px;}
+  /* Mobile: allow the controls to wrap, but keep min-height reserved
+     for two lines so the chart-body below it doesn't shift between
+     1-line and 2-line states as widget widths change. */
+  .chart-controls{flex-wrap:wrap;gap:5px;padding:8px 10px;min-height:68px;align-content:flex-start;}
+  .ee-inout-overlay{top:6px;left:6px;padding:4px 6px;gap:2px;}
+  .ee-inout-val{min-width:58px;font-size:9.5px;}
   /* Tab-scoped TF buttons bigger touch target */
   .tf-btn{padding:5px 10px;font-size:11px;}
   /* Charts a bit shorter */

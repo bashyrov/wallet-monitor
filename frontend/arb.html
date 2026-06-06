@@ -31,9 +31,9 @@
      HTML parse, instead of waiting until the parser reaches each tag.
      fetchpriority="high" tells the browser to schedule these ahead of
      other low-priority discoveries (e.g. images far down the page). -->
-<link rel="preload" as="script" href="/dist/core.min.js?v=20260606a" fetchpriority="high">
-<link rel="preload" as="script" href="/arb.js?v=20260606a" fetchpriority="high">
-<link rel="preload" as="style"  href="/arb.css?v=20260606a"      fetchpriority="high">
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260606b" fetchpriority="high">
+<link rel="preload" as="script" href="/arb.js?v=20260606b" fetchpriority="high">
+<link rel="preload" as="style"  href="/arb.css?v=20260606b"      fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
 <!-- Pre-establish TCP+TLS to exchange API origins so the first orderbook /
@@ -59,19 +59,19 @@
      Replaces 11 individual <script> tags (1 RTT vs 11 — huge win on HTTP/1.1
      and still measurable on HTTP/2). Loaded synchronously so inline page
      scripts below have Auth / Formatters / EX available at parse time. -->
-<script src="/dist/core.min.js?v=20260606a"></script>
+<script src="/dist/core.min.js?v=20260606b"></script>
 <!-- Page-specific code (was ~7000 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes — equivalent
      to the previous mid-body execution since the trailing init() call
      anyway waited on DOMContentLoaded for most code paths. -->
-<script src="/arb.js?v=20260606a" defer></script>
+<script src="/arb.js?v=20260606b" defer></script>
 <link rel="stylesheet" href="/design.css">
 <link rel="stylesheet" href="/navbar.css">
 <!-- lightweight-charts (161KB) loaded lazily via _loadLightweightCharts()
      in an idle callback after init — chart sits below the fold on most
      viewports and orderbook rendering takes priority. -->
 
-<link rel="stylesheet" href="/arb.css?v=20260606a">
+<link rel="stylesheet" href="/arb.css?v=20260606b">
 </head>
 <body>
 
@@ -180,9 +180,6 @@
           <span class="tf-btn" onclick="setEeTf(this,300)">5m</span>
           <span class="tf-btn" onclick="setEeTf(this,900)">15m</span>
           <span class="tf-btn" onclick="setEeTf(this,1200)">20m</span>
-          <span class="chart-sep"></span>
-          <span style="display:flex;align-items:center;gap:4px;font-size:10px"><span style="width:10px;height:2px;background:#1AFFAB;display:inline-block;border-radius:1px"></span><span style="color:var(--text2)">In</span><span class="jbm pos" id="ee-in-val" style="margin-left:4px">—</span></span>
-          <span style="display:flex;align-items:center;gap:4px;font-size:10px"><span style="width:10px;height:2px;background:#F87171;display:inline-block;border-radius:1px"></span><span style="color:var(--text2)">Out</span><span class="jbm neg" id="ee-out-val" style="margin-left:4px">—</span></span>
           <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
             <input id="ee-size" type="number" placeholder="Size" step="any" min="0" oninput="onEeSizeInput()" style="width:76px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:10px;color:var(--text);font-family:JetBrains Mono,monospace" />
             <span style="display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:4px;overflow:hidden">
@@ -193,6 +190,14 @@
           </span>
         </div>
         <div class="chart-body" id="ee-body" style="position:relative">
+          <!-- In/Out overlay — pinned to chart's top-left so width changes
+               (e.g. "+0.0023%" → "+1.2345%") don't reflow chart-controls and
+               make the chart jump. Values updated by the same setT() calls
+               via the same #ee-in-val / #ee-out-val IDs. -->
+          <div class="ee-inout-overlay">
+            <div class="ee-inout-row"><span class="ee-inout-dot" style="background:#1AFFAB"></span><span class="ee-inout-lbl">In</span><span class="jbm pos ee-inout-val" id="ee-in-val">—</span></div>
+            <div class="ee-inout-row"><span class="ee-inout-dot" style="background:#F87171"></span><span class="ee-inout-lbl">Out</span><span class="jbm neg ee-inout-val" id="ee-out-val">—</span></div>
+          </div>
           <div class="empty" id="ee-loading"><span class="spinner"></span> Collecting live orderbook data…</div>
           <div id="ee-chart" style="position:absolute;inset:0;display:none"></div>
         </div>
