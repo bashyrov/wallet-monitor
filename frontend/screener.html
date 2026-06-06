@@ -28,8 +28,8 @@
 <!-- Preload critical assets so browser fetches them in parallel with HTML
      parse. fetchpriority="high" ensures the bundle + CSS jump ahead of
      icons and other low-priority discoveries. -->
-<link rel="preload" as="script" href="/dist/core.min.js?v=20260517c" fetchpriority="high">
-<link rel="preload" as="script" href="/screener.js?v=20260517c"    fetchpriority="high">
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260606a" fetchpriority="high">
+<link rel="preload" as="script" href="/screener.js?v=20260606a"    fetchpriority="high">
 <link rel="preload" as="style"  href="/screener.css"               fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
@@ -269,7 +269,7 @@
               <th onclick="sortBy('next_ts')"    data-col="next_ts"    data-tip="Time until the next funding settlement">Next funding <span class="sort-arrow">↕</span></th>
             </tr>
           </thead>
-          <tbody id="tbody-funding"></tbody>
+          <tbody id="tbody-funding"><tr><td colspan="11" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading funding rates</div><div class="empty-sub">Live rates across 18 perp futures venues.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-funding"></div>
@@ -294,7 +294,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-arb"></tbody>
+          <tbody id="tbody-arb"><tr><td colspan="9" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading Long/Short opportunities</div><div class="empty-sub">Top funding-rate spreads across 18 perp venues.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-arb"></div>
@@ -318,7 +318,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-spot"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading spot-short arbitrage…</td></tr></tbody>
+          <tbody id="tbody-spot"><tr><td colspan="9" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading spot-short opportunities</div><div class="empty-sub">Fetching live spread data from 9 spot venues across 18 perp futures.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-spot"></div>
@@ -342,7 +342,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-dex"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading DEX arbitrage…</td></tr></tbody>
+          <tbody id="tbody-dex"><tr><td colspan="9" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading DEX/Short opportunities</div><div class="empty-sub">DexScreener can take 10-30 seconds for the first scan.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-dex"></div>
@@ -366,7 +366,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-fa"><tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Loading funding arbitrage…</td></tr></tbody>
+          <tbody id="tbody-fa"><tr><td colspan="9" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading funding-rate arbitrage</div><div class="empty-sub">Long/short funding spreads across active funding cycles.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-fa"></div>
@@ -396,7 +396,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-all"><tr><td colspan="8" class="empty-msg"><span class="spinner"></span>Loading combined opportunities…</td></tr></tbody>
+          <tbody id="tbody-all"><tr><td colspan="8" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading combined opportunities</div><div class="empty-sub">Merging Long/Short + Spot/Short + DEX/Short streams.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-all"></div>
@@ -446,7 +446,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-alpha"><tr><td colspan="7" class="empty-msg"><span class="spinner"></span>Loading alpha…</td></tr></tbody>
+          <tbody id="tbody-alpha"><tr><td colspan="7" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading Alpha picks</div><div class="empty-sub">Top-rated opportunities by paper-trade backtest.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-alpha"></div>
@@ -510,10 +510,10 @@
 </nav>
 
 <!-- Shared modules bundled — see frontend/build.mjs. One RTT vs 11. -->
-<script src="/dist/core.min.js?v=20260517c"></script>
+<script src="/dist/core.min.js?v=20260606a"></script>
 <!-- Page-specific code (was 2750 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes. -->
-<script src="/screener.js?v=20260517c" defer></script>
+<script src="/screener.js?v=20260606a" defer></script>
 
 </body>
 </html>

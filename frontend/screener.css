@@ -467,7 +467,16 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
 }
 /* mobile: hide side-nav + legacy left panel */
 @media (max-width: 700px) {
-  .screener-layout { display: block; height: auto; overflow: visible; }
+  .screener-layout {
+    display: block;
+    /* Was height:auto — when data is empty, the layout collapses to ~tab
+       height and the footer rides up. Keep min-height = viewport minus
+       navbar so footer stays pinned to the bottom. The empty-msg rows
+       (height 360px on mobile, 480px desktop) supply the visible filler. */
+    min-height: calc(100vh - 64px);
+    height: auto;
+    overflow: visible;
+  }
   .side-nav { display: none; }
   .panel-wrap { display: none; }
   .main-content { overflow: visible; }
@@ -916,7 +925,85 @@ a.ex-badge:hover { color: var(--green); }
 .arb-detail-btn:hover { background: var(--surface3); color: var(--green); }
 .badge-invalid { background: rgba(248,113,113,.1); color: var(--red); padding: 2px 7px; border-radius: 99px; font-weight: 600; font-size: 10px; }
 
-.empty-msg { text-align: center; padding: 60px 20px; color: var(--text3); }
+/* Empty / loading / error rows. Crucially: each "empty" tbody row reserves
+   real height so the page doesn't collapse — without this, the footer rides
+   up against the navbar on first paint. Same pattern works regardless of
+   which mode tab the user is on. */
+.empty-msg {
+  text-align: center;
+  padding: 0;
+  color: var(--text3);
+  height: 480px;          /* desktop comfortable */
+  vertical-align: middle;
+}
+.empty-msg .empty-inner {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px;
+  height: 100%;
+  padding: 32px 20px;
+}
+.empty-msg .empty-spinner {
+  width: 44px; height: 44px;
+  border: 3px solid var(--border);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+.empty-msg .empty-title {
+  font-size: 14px; font-weight: 600; color: var(--text2);
+  letter-spacing: -.01em;
+}
+.empty-msg .empty-sub {
+  font-size: 12px; color: var(--text3); max-width: 440px;
+}
+.empty-msg.is-error .empty-title { color: var(--red); }
+.empty-msg.is-error .empty-spinner {
+  border: 3px solid rgba(248,113,113,.15);
+  border-top-color: var(--red);
+  animation: none;
+  position: relative;
+}
+.empty-msg.is-error .empty-spinner::before,
+.empty-msg.is-error .empty-spinner::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 22px; height: 2px; background: var(--red); border-radius: 1px;
+  transform-origin: center;
+}
+.empty-msg.is-error .empty-spinner::before { transform: translate(-50%,-50%) rotate(45deg); }
+.empty-msg.is-error .empty-spinner::after  { transform: translate(-50%,-50%) rotate(-45deg); }
+.empty-msg.is-empty .empty-spinner {
+  border: 3px solid var(--border);
+  border-top-color: var(--text3);
+  animation: none;
+  position: relative;
+}
+.empty-msg.is-empty .empty-spinner::before {
+  content: ''; position: absolute; inset: 8px;
+  border: 2px dashed var(--text4, #2A2A36); border-radius: 50%;
+}
+.empty-msg .empty-retry {
+  margin-top: 6px;
+  background: var(--green-soft); color: var(--green);
+  border: 1px solid var(--green-edge);
+  padding: 7px 14px; border-radius: 8px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background .15s;
+}
+.empty-msg .empty-retry:hover { background: var(--green-edge); color: #0a0a0d; }
+
+/* Cards-wrap variant (mobile fallback) */
+.cards-wrap > .empty-msg-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px;
+  min-height: 320px;
+  padding: 32px 20px;
+  color: var(--text3);
+}
+
+@media (max-width: 768px) {
+  .empty-msg { height: auto; min-height: 360px; }
+}
+
 .spinner {
   display: inline-block; width: 18px; height: 18px;
   border: 2px solid var(--border); border-top-color: var(--green);

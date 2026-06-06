@@ -2214,9 +2214,11 @@ function _renderEmptyBook(side){
   _bookKind[side] = 'empty';
 }
 
-function _applyLevelsToPool(rows, levels, max, dir){
+function _applyLevelsToPool(rows, levels, max, dir, sideName){
   // dir: +1 walk top→bottom (bids); for asks we precomputed reverse order.
+  // sideName ∈ {'ask','bid'}. Drives which colour to flash on level change.
   let total = 0;
+  let anyChange = false;
   const n = levels.length;
   for (let i = 0; i < ROW_POOL_SIZE; i++){
     const r = rows[i];
@@ -2230,15 +2232,79 @@ function _applyLevelsToPool(rows, levels, max, dir){
     const widthStr = pct + '%';
     // Touch DOM only when the underlying value actually changed — most
     // rows on a hot pair only flicker the top few levels per frame.
-    if (r._w !== widthStr){ r.bg.style.width = widthStr; r._w = widthStr; }
+    const widthChanged = r._w !== widthStr;
+    if (widthChanged){ r.bg.style.width = widthStr; r._w = widthStr; }
     const ps = fmtBookP(p);
-    if (r._p !== ps){ r.price.textContent = ps; r._p = ps; }
+    const priceChanged = r._p !== ps;
+    if (priceChanged){ r.price.textContent = ps; r._p = ps; }
     const qs = fmtV(q);
-    if (r._q !== qs){ r.amount.textContent = qs; r._q = qs; }
+    const qtyChanged = r._q !== qs;
+    if (qtyChanged){ r.amount.textContent = qs; r._q = qs; }
     const ts = fmtV(total);
     if (r._t !== ts){ r.total.textContent = ts; r._t = ts; }
     if (r.row.style.display === 'none') r.row.style.display = '';
+
+    // Per-level flash. Fires on every render where this row's data shifted.
+    // Skip the very first paint (r._p was undefined before) so we don't
+    // strobe every row on initial render. After that:
+    //   price moved → directional colour (better-for-trader = green)
+    //   size only  → neutral tick
+    if (priceChanged && r._pLast !== undefined && p !== r._pLast){
+      const up = p > r._pLast;
+      // For asks: lower ask = good (buy cheaper) → green. Higher = red.
+      // For bids: higher bid = good (sell higher) → green. Lower = red.
+      const good = (sideName === 'ask') ? !up : up;
+      const cls = good ? 'bk-level-up' : 'bk-level-down';
+      _scheduleBookFlash(r.row, cls);
+      anyChange = true;
+    } else if (qtyChanged && r._qLast !== undefined && r._pLast !== undefined){
+      _scheduleBookFlash(r.row, 'bk-level-tick');
+      anyChange = true;
+    }
+    r._pLast = p; r._qLast = q;
   }
+  return anyChange;
+}
+
+// _scheduleBookFlash adds the class, removes previous flash classes, and
+// uses offsetWidth to force a reflow so consecutive ticks re-trigger the
+// animation. Same pattern the existing _flashTradeRow uses.
+function _scheduleBookFlash(row, cls){
+  row.classList.remove('bk-level-up','bk-level-down','bk-level-tick');
+  // eslint-disable-next-line no-unused-expressions
+  row.offsetWidth;
+  row.classList.add(cls);
+  // Auto-remove via animation 700ms — but also schedule explicit removal
+  // so stale rows from the pool don't keep the class when they go to
+  // display:none.
+  if (row._flashTimer) clearTimeout(row._flashTimer);
+  row._flashTimer = setTimeout(() => row.classList.remove(cls), 720);
+}
+
+// _flashBookDot — neutral cyan pulse on the venue's activity dot for
+// every received book frame. Distinguishes "depth is alive" from
+// "trades coming through" without competing with the green/red trade
+// pulses (which use tp-active-buy/sell on the same element).
+function _flashBookDot(side){
+  const anchor =
+       document.querySelector(`#mid-${side}`)
+    || document.querySelector(`#book-${side}-price`)
+    || document.querySelector(`[data-side="${side}"] .ob-card-header`);
+  if (!anchor || !anchor.parentElement) return;
+  let dot = anchor.parentElement.querySelector(`.trade-activity-dot[data-side="${side}"]`);
+  if (!dot){
+    dot = document.createElement('span');
+    dot.className = 'trade-activity-dot';
+    dot.setAttribute('data-side', side);
+    anchor.parentElement.appendChild(dot);
+  }
+  // Don't compete with an in-flight trade pulse — trades are louder.
+  if (dot.classList.contains('tp-active-buy') || dot.classList.contains('tp-active-sell')) return;
+  dot.classList.remove('bk-active');
+  // eslint-disable-next-line no-unused-expressions
+  dot.offsetWidth;
+  dot.classList.add('bk-active');
+  setTimeout(() => dot.classList.remove('bk-active'), 520);
 }
 
 function renderBook(d,side){
@@ -2266,8 +2332,14 @@ function renderBook(d,side){
   for (let i = 0; i < bids.length; i++) if (bids[i][1] > maxB) maxB = bids[i][1];
 
   const pool = _ensureBookPool(side);
-  _applyLevelsToPool(pool.asks, asks, maxA, -1);
-  _applyLevelsToPool(pool.bids, bids, maxB, +1);
+  // Pass side name so per-level flash colours follow the trader's
+  // perspective (lower-ask = good = green; higher-bid = good = green).
+  const asksDelta = _applyLevelsToPool(pool.asks, asks, maxA, -1, 'ask');
+  const bidsDelta = _applyLevelsToPool(pool.bids, bids, maxB, +1, 'bid');
+  // Pulse the venue dot on ANY book frame that actually moved a level —
+  // works for venues without active /ws/trades feed (was previously the
+  // only path that pulsed the dot).
+  if (asksDelta || bidsDelta) _flashBookDot(side);
 
   const midPrice=asks.length&&bids.length?(asks[asks.length-1][0]+bids[0][0])/2:(asks[0]?.[0]||bids[0]?.[0]||0);
   const prev=_midPrev[side];

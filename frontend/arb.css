@@ -1315,6 +1315,38 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
 }
 .trade-activity-dot.tp-active-buy  { color: #1AFFAB; background: currentColor; animation: tradeDotPulse 700ms ease-out; }
 .trade-activity-dot.tp-active-sell { color: #F87171; background: currentColor; animation: tradeDotPulse 700ms ease-out; }
+
+/* ── Book-update pulse (every venue, every book frame) ──────────────────
+   The trade flashes above (tp-buy/tp-sell) only fire when the user is on a
+   pair with an active /ws/trades adapter. For book-only venues (or when
+   trades silently dies) we still want visual confirmation that depth is
+   updating. These three classes pulse on EVERY level diff or book frame:
+     .bk-level-up    — green tint, fired when ask level price drops (good
+                        for buyers) OR bid level price rises (good for sellers)
+     .bk-level-down  — red tint, fired on the opposite direction
+     .bk-level-tick  — neutral grey tint, fired when only size changed
+                        (no price movement)
+   Same 700ms ease-out so consecutive ticks blend instead of strobing. */
+@keyframes bookLevelUp {
+  0%   { background-color: rgba(26,255,171,0.28); }
+  100% { background-color: transparent; }
+}
+@keyframes bookLevelDown {
+  0%   { background-color: rgba(248,113,113,0.28); }
+  100% { background-color: transparent; }
+}
+@keyframes bookLevelTick {
+  0%   { background-color: rgba(155,159,171,0.18); }
+  100% { background-color: transparent; }
+}
+.book-row.bk-level-up   { animation: bookLevelUp   700ms ease-out; }
+.book-row.bk-level-down { animation: bookLevelDown 700ms ease-out; }
+.book-row.bk-level-tick { animation: bookLevelTick 700ms ease-out; }
+
+/* Book-update activity dot — same physical dot, neutral cyan colour.
+   Pulses on every frame so the user sees depth liveness even when no
+   trades have come through this venue's /ws/trades. */
+.trade-activity-dot.bk-active { color: #7CB9F7; background: currentColor; animation: tradeDotPulse 500ms ease-out; }
 body.arb-loading .val,
 body.arb-loading .hero-sym,
 body.arb-loading #tb-net-val,

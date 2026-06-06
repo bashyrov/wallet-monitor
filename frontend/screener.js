@@ -6,6 +6,28 @@
 // when Auth.isLoggedIn() is false.
 const IS_AUTHED = Auth.isLoggedIn();
 
+// ── Empty/loading/error state renderer ─────────────────────────────────
+// One helper for every screener tab. Always returns the FULL <tr> so we
+// can drop it into a tbody as innerHTML. State `kind` drives icon + colour:
+//   loading — spinning ring (during first paint / refresh)
+//   empty   — dashed ring ("no data yet, will appear when computed")
+//   error   — red X + reason + optional retry button
+//   filtered — empty variant with "no matches" title
+// `colspan` matches the table header (8-11 depending on the tab).
+function _emptyRow(opts){
+  const { kind='loading', title='Loading…', sub='', colspan=9, retryFn=null } = opts || {};
+  const cls = 'empty-msg is-' + kind;
+  const retryBtn = retryFn
+    ? `<button class="empty-retry" onclick="${retryFn}">Retry</button>`
+    : '';
+  return `<tr><td colspan="${colspan}" class="${cls}"><div class="empty-inner">`
+       + `<div class="empty-spinner"></div>`
+       + `<div class="empty-title">${title}</div>`
+       + (sub ? `<div class="empty-sub">${sub}</div>` : '')
+       + retryBtn
+       + `</div></td></tr>`;
+}
+
 // ── WS idle-disconnect ──────────────────────────────────────────────
 // После 5 минут неактивности закрываем WS — экономим клиентский CPU
 // (нет парсинга incoming frames) и server-side load (нет broadcast'а
@@ -606,7 +628,7 @@ async function loadDex() {
     // Network / 5xx — leave the previous table intact, don't stomp on
     // user's view. Only show "Failed" if we have nothing at all.
     if (!_dexRows.length) {
-      document.getElementById('tbody-dex').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-dex').innerHTML = _emptyRow({kind:'error',title:'Failed to load DEX/Short',sub:(e.message||'Network error').slice(0,200),colspan:9,retryFn:'loadDex()'});
     }
   }
   clearInterval(_dexTimer);
@@ -656,8 +678,14 @@ function renderDex() {
   const start = _pageDX * PAGE_SIZE;
   const page = _dexFiltered.slice(start, start + PAGE_SIZE);
   if (!_dexFiltered.length) {
-    const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = _emptyRow({
+      kind: 'empty',
+      title: _dexRows.length ? 'No opportunities match your filter' : 'No DEX/Short data yet',
+      sub: _dexRows.length
+        ? 'Try widening the spread or fee range above.'
+        : 'DEX/Short scan can take 10-30 seconds — DexScreener is rate-limited.',
+      colspan: 9,
+    });
     renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
     renderDexCards();
     return;
@@ -716,8 +744,7 @@ function renderDexCards() {
   const wrap = document.getElementById('cards-dex');
   if (!wrap) return;
   if (!_dexFiltered.length) {
-    const msg = _dexRows.length ? 'No opportunities match your filter' : 'No data yet';
-    wrap.innerHTML = `<div class="empty-msg">${msg}</div>`;
+    wrap.innerHTML = `<div class="empty-msg-card"><div class="empty-spinner"></div><div class="empty-title">${_dexRows.length ? 'No matches' : 'No DEX/Short data yet'}</div><div class="empty-sub">${_dexRows.length ? 'Adjust filters above.' : 'DexScreener can take 10-30s.'}</div></div>`;
     return;
   }
   const start = _pageDX * PAGE_SIZE;
@@ -818,7 +845,7 @@ async function loadSpot() {
     applySpot();
   } catch (e) {
     if (!_spotRows.length) {
-      document.getElementById('tbody-spot').innerHTML = `<tr><td colspan="9" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-spot').innerHTML = _emptyRow({kind:'error',title:'Failed to load Spot/Short',sub:(e.message||'Network error').slice(0,200),colspan:9,retryFn:'loadSpot()'});
     }
   }
   clearInterval(_spotTimer);
@@ -879,8 +906,14 @@ function renderSpot() {
   const start = _pageSP * PAGE_SIZE;
   const page = _spotFiltered.slice(start, start + PAGE_SIZE);
   if (!_spotFiltered.length) {
-    const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = _emptyRow({
+      kind: 'empty',
+      title: _spotRows.length ? 'No opportunities match your filter' : 'No Spot/Short data yet',
+      sub: _spotRows.length
+        ? 'Try widening the spread or fee range above.'
+        : 'Spot/perp basis recomputed every 500ms — first paint usually within ~5s.',
+      colspan: 9,
+    });
     renderPager('pager-spot', _pageSP, _spotFiltered.length, 'goPageSP');
     renderSpotCards();
     return;
@@ -939,8 +972,7 @@ function renderSpotCards() {
   const wrap = document.getElementById('cards-spot');
   if (!wrap) return;
   if (!_spotFiltered.length) {
-    const msg = _spotRows.length ? 'No opportunities match your filter' : 'No data yet';
-    wrap.innerHTML = `<div class="empty-msg">${msg}</div>`;
+    wrap.innerHTML = `<div class="empty-msg-card"><div class="empty-spinner"></div><div class="empty-title">${_spotRows.length ? 'No matches' : 'No Spot/Short data yet'}</div><div class="empty-sub">${_spotRows.length ? 'Adjust filters above.' : 'First paint usually <5s.'}</div></div>`;
     return;
   }
   const start = _pageSP * PAGE_SIZE;
@@ -1080,8 +1112,14 @@ function renderFA() {
   const start = _pageFA * PAGE_SIZE;
   const page = _faFiltered.slice(start, start + PAGE_SIZE);
   if (!_faFiltered.length) {
-    const msg = _spotRows.length ? 'No positive-funding pairs match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = _emptyRow({
+      kind: 'empty',
+      title: _spotRows.length ? 'No positive-funding pairs match' : 'No funding-arb data yet',
+      sub: _spotRows.length
+        ? 'Try lowering the minimum spread or fee floor above.'
+        : 'Funding arb recomputes every 500ms across active funding cycles.',
+      colspan: 9,
+    });
     renderPager('pager-fa', _pageFA, _faFiltered.length, 'goPageFA');
     renderFACards();
     return;
@@ -1128,8 +1166,7 @@ function renderFACards() {
   const wrap = document.getElementById('cards-fa');
   if (!wrap) return;
   if (!_faFiltered.length) {
-    const msg = _spotRows.length ? 'No positive-funding pairs match your filter' : 'No data yet';
-    wrap.innerHTML = `<div class="empty-msg">${msg}</div>`;
+    wrap.innerHTML = `<div class="empty-msg-card"><div class="empty-spinner"></div><div class="empty-title">${_spotRows.length ? 'No matches' : 'No funding-arb data yet'}</div><div class="empty-sub">${_spotRows.length ? 'Lower the spread floor above.' : 'First paint within ~5s.'}</div></div>`;
     return;
   }
   const start = _pageFA * PAGE_SIZE;
@@ -1184,7 +1221,7 @@ async function loadAll() {
     renderAll();
   } catch (e) {
     if (!_allRows.length) {
-      document.getElementById('tbody-all').innerHTML = `<tr><td colspan="8" class="empty-msg">Failed: ${e.message}</td></tr>`;
+      document.getElementById('tbody-all').innerHTML = _emptyRow({kind:'error',title:'Failed to load combined feed',sub:(e.message||'Network error').slice(0,200),colspan:8,retryFn:'loadAll()'});
     }
   }
   clearInterval(_allTimer);
@@ -2086,8 +2123,14 @@ function renderArb() {
   const start = _pageA * PAGE_SIZE;
   const page  = _filteredArb.slice(start, start + PAGE_SIZE);
   if (!_filteredArb.length) {
-    const msg = _arbRows.length ? 'No opportunities match your filter' : 'No data yet';
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-msg">${msg}</td></tr>`;
+    tbody.innerHTML = _emptyRow({
+      kind: 'empty',
+      title: _arbRows.length ? 'No opportunities match your filter' : 'No Long/Short data yet',
+      sub: _arbRows.length
+        ? 'Try widening the spread or fee range above.'
+        : 'Long/Short arb recomputes every 200ms — first paint within seconds.',
+      colspan: 10,
+    });
     renderPager('pager-arb', _pageA, _filteredArb.length, 'goPageA');
     renderArbCards();
     return;
@@ -2276,8 +2319,7 @@ function renderFundingCards() {
 function renderArbCards() {
   const wrap = document.getElementById('cards-arb');
   if (!_filteredArb.length) {
-    const msg = _arbRows.length ? 'No opportunities match your filter' : 'No data yet';
-    wrap.innerHTML = `<div class="empty-msg">${msg}</div>`;
+    wrap.innerHTML = `<div class="empty-msg-card"><div class="empty-spinner"></div><div class="empty-title">${_arbRows.length ? 'No matches' : 'No Long/Short data yet'}</div><div class="empty-sub">${_arbRows.length ? 'Adjust filters above.' : 'First paint within seconds.'}</div></div>`;
     return;
   }
   const start = _pageA * PAGE_SIZE;
