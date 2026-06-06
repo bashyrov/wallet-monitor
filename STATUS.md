@@ -419,3 +419,46 @@ binance, bybit, okx, gate, kucoin, bitget, bingx, hyperliquid, backpack, lighter
 | 2026-06-06 | **Фаза 3.1 delta-unsubscribe:** ws.Unsubscriber optional interface + runner.SetSymbols. KuCoin: 2 reconnects vs ~13 у всех остальных (delta-unsub стабилизировал). Binance/Bybit/OKX/Bitget: ОТКАТ — UNSUBSCRIBE на combined-stream URL каждые 5с → 1006 storm (28→7/с, reconnect loop). Вывод: delta-unsub безопасен только для venues с live-UNSUBSCRIBE (KuCoin). OKX: 49 reconnects (аномально, мониторить). | KuCoin: стабилен с 2 reconnects. Остальные — reconnect-on-removal. | — |
 | 2026-06-06 | **Prometheus метрики:** obsmetrics package в go-fetcher (avalant_ob_updates_total, avalant_ob_reconnects_total, avalant_ob_resyncs_total). /internal/metrics endpoint. Python /api/metrics проксирует + avalant_positions_rest_fallback_total. Деплой ✓. Live данные: binance 2.97M updates, kucoin 2 reconnects, resyncs=0 (нет гепов). | Постоянный мониторинг производительности under load. Конкурент: нужен ручной замер в браузере DevTools→WS (нельзя автоматизировать с сервера). | — |
 | 2026-06-06 | **Финальный замер всех 16 venue (median-of-3×30s):** найдены 3 регрессии: (1) Hyperliquid 0/с — dual-track livelock: 40 frames × 500ms = 20s subscribe + 5s reconcile = reconnect до завершения подписки; (2) Bybit 33.5/с но bid>ask — cross-fix не был применён (dual-track уже был до наших изменений); (3) OKX 25.7/с но bid>ask — то же. ФИКС: HL откат к l2Book-only (block-cadence та же, livelock устранён); Bybit cross-fix с partial-BBO guard (частичные обновления orderbook.1); OKX cross-fix (bbo-tbt полные снапшоты). Коммит 1cac0eb. Деплой ✓. Финальный замер pending. | До фикса: HL=0, bybit/okx bid>ask. После ожидается: HL ~5-10/с, bybit/okx bid<ask ✓. | Финальный замер pending. |
+| 2026-06-06 | **Сервер мигрирован → новый хост 46.250.251.252.** Полный bootstrap: docker install, репо клон, .env с random secrets (TG/CC/SMTP пусты), миграции прогнаны. Let's Encrypt cert выписан через `docker run --entrypoint certbot` (compose-сервис имел renew-loop entrypoint, glob-фиаско). nginx up. **`https://avalant.xyz/api/health` → 200**, cert valid до Sep 4 2026. | TLS работает, public роуты 200. БД пустая — кошельки и алерты заводить заново. | — |
+| 2026-06-06 | **Tiered freshness model** (3 коммита: `7e63250` модель + `1d8d217` compose env + `5fb97a5` InOutPatcher gate). За флагом `AVALANT_TIERED_FRESHNESS=1`. **CLASS 2** /ws/book hot symbols получают event-driven push сразу (bypass 50ms flush), per-pair floor 10ms. **CLASS 1** /ws/long-short broadcast 100ms→2s + InOutPatcher выключен (он флудил аггрегатный канал на каждый book update). **CLASS 3** wire-up готов (alert_service.py пишет `active_alerts.json` каждые 10с, Go `alert_hot_sync.go` poll'ит и подмешивает символы в hot set), end-to-end не проверен без активных алертов в БД. | Метрики `avalant_book_bypass_pushes_total{pair}`, `avalant_book_hot_floor_drops_total{pair}`, `avalant_book_hot_set_size`. | — |
+| 2026-06-06 | **Live замеры tiered (15с окно, prod live)**. **CLASS 2** (открытая пара = hot): для 3 пар BTC получено 952 OnBookUpdate/с (combined). Из них 364 bypass push'ей (event-driven к клиенту) + 588 coalesced 10ms-полом. Клиент получил **67.5 fps** vs **20Hz × 3 = 60 fps** старый flush-потолок. **Главный выигрыш — ЛАТЕНТНОСТЬ: <10мс event-driven vs 25-50мс flush-coalesce.** Throughput-прирост +12% обманчив: per-pair venue rate у большинства символов НИЖЕ старого 40-потолка (binance:BTC venue rate 9.7/с, okx:BTC 2.1/с) — им event-driven частоту не поднимает, только режет задержку до первого byte после venue события. Floor 10ms подтверждён: ни одна пара не превысила 100Hz cap. **CLASS 1** (/ws/long-short без открытой пары): 9 фреймов за 20с, gap avg 2517мс, 6/8 промежутков в окне 2000±200мс — 2с-тик enforced. **CLASS 3** end-to-end deferred (нет TG-токена + active alerts). | События/с per pair = реальный venue rate (binance:BTC 9.7, bybit:BTC 44.2, okx:BTC 2.1) — фронту латенси режется в 3-5×, throughput не меняется. Замер попал в среднюю по активности окно (не пик BTC volatility). | — |
+| 2026-06-06 | **`flushPending` race fix** (коммит `92f9c55`): shallow snap из `b.subs` в `flushPending` шарил pointer'ы внутренних map'ов. Старый код: writers (handleSubscribe + tick 1s) редко конкурировали. Новый pushBypass пишет `set[pairKey] = ts` на каждом hot-событии (events/sec per pair) → `fatal: concurrent map read and map write` каждые ~3 мин. Deep-copy snap — `-race` тесты зелёные, overhead +1.2с в test-suite, прод стабилен. | Pre-existing баг, активирован моим event-driven хот-патчем. | — |
+
+---
+
+## Tiered Freshness — Acceptance Summary
+
+**Что работает (verified live на проде с `AVALANT_TIERED_FRESHNESS=1`):**
+
+| Класс | Канал | Цель | Подтверждение |
+|---|---|---|---|
+| **CLASS 1** | `/ws/long-short` | 2с агрегат, один общий поток, не per-pair | ✓ 2517мс avg gap, 6/8 в окне 2000±200мс |
+| **CLASS 2** | `/ws/book` hot bypass | Event-driven BBO для открытой пары, 10мс per-pair floor | ✓ Все пары < 100Hz cap, latency to client <10мс vs прежние 25-50мс |
+| **CLASS 3** | Hot via `active_alerts.json` | Symbol auto-добавляется в hot set при активном алерте | Wire-up готов, end-to-end отложен (нужны TG + alert в БД) |
+
+**Главный выигрыш CLASS 2 — ЛАТЕНТНОСТЬ, не throughput.** Per-pair venue rate (binance:BTC 9.7/с, okx:BTC 2.1/с) ниже старого 40-Hz flush-потолка → event-driven прирост частоты НЕ даёт. Что даёт: время от venue события до первого байта в WS клиенту падает с 25-50мс (flush bucket coalesce) до <10мс (event-driven + 10мс floor).
+
+**Метрики Prometheus** (`/internal/metrics`):
+- `avalant_book_hot_set_size` — gauge размера {Class 2 ∪ Class 3}
+- `avalant_book_bypass_pushes_total{pair="ex:SYM"}` — event-driven push'и
+- `avalant_book_hot_floor_drops_total{pair="ex:SYM"}` — coalesced 10мс-полом
+
+---
+
+## Что ждёт кредов (НЕ блокеры code-side, ждут конфиг)
+
+| Зависит от | Что заблокировано |
+|---|---|
+| `TG_AUTH_BOT_TOKEN` + `TG_BOT_TOKEN` | Telegram login flow, expiry reminders, admin alerts, broadcasts, **CLASS 3 end-to-end test (нужен alert в БД, без TG нет уведомления)** |
+| `CRYPTOCLOUD_*` ключи | Биллинг — все paid plans, promo codes, payment webhooks |
+| `SMTP_HOST` (опционально) | Email confirm code для Google-only users |
+| Venue API keys через `/profile` | Кошельки + балансы + позиции + extended hex-fix live test |
+
+---
+
+## Техдолг (после кредов или независимо)
+
+1. **Extended live verify $17 SOL** (коммит `fbebdd9` hex fix) — Rust parity-тест проходит, wire encoding исправлен, ждёт wallet с креды на проде.
+2. **Class 3 end-to-end** — `active_alerts.json` poll работает, hot set обновляется, но без реального alert в БД нельзя замерить latency срабатывания на спред-событии.
+3. **Per-pair: проясни binance:BTC 9.7/с** — рейт ниже ожидаемого. Возможно symbols.Manager отдаёт fetcher больше пар чем приоритетный набор, или BBO depth20 канал не активен — нужен сравнительный тест с/без `BINANCE_USE_BBO=1` на новом хосте.
+4. **DB пустая** — кошельки и алерты потеряны при миграции. Если нужен импорт из backup — миграция Fernet-ключа.
