@@ -18,6 +18,30 @@ from backend.services.trade_adapters import ADAPTERS, SUPPORTED_EXCHANGES
 logger = logging.getLogger("avalant.trade")
 
 
+# ── Python-fallback safety guard (close path) ────────────────────────────
+# Some Python adapters implement close_position with a semantics that does
+# NOT match the requested market_type. If we silently fall back from Go to
+# Python here, we can close the WRONG leg of an arb pair.
+#
+# Known traps:
+#   backpack — Python close_position sells the full base-asset SPOT balance
+#              (backpack.py:245). The Go adapter has proper perp close via
+#              /api/v1/position. If a user has a perp position open and Go
+#              fails (network blip, etc.), the Python fallback would dump
+#              their spot balance — wrong leg on a spot/short arb pair.
+#
+# Add a venue to this set ONLY after auditing that adapter's
+# close_position to confirm the same-market trap. The dispatcher refuses
+# fallback and surfaces a clear error instead of routing through Python.
+_PYTHON_CLOSE_FALLBACK_UNSAFE: dict[tuple[str, str], str] = {
+    ("backpack", "futures"): (
+        "Backpack Python close_position is a spot-sell — would close the "
+        "wrong leg of a perp/spot arb. Go close path required. Retry once Go "
+        "engine is reachable; do not close manually via spot in the meantime."
+    ),
+}
+
+
 class TradeError(ValueError):
     """Trade-service error with structured metadata.
 
@@ -590,6 +614,17 @@ async def close_position(
                                gerr.kind, gerr.message)
                 result = None
         if result is None:
+            # Safety guard: refuse Python fallback for venues whose Python
+            # close_position has a different market semantic than requested
+            # (see _PYTHON_CLOSE_FALLBACK_UNSAFE at the top of this module).
+            # Otherwise we'd close the WRONG leg of an arb pair.
+            unsafe_msg = _PYTHON_CLOSE_FALLBACK_UNSAFE.get((ex, market_type))
+            if unsafe_msg:
+                _finalize_order(db, order_row, status="failed",
+                                error_kind="user", error_message=unsafe_msg)
+                logger.error("Python close fallback REFUSED for %s %s: %s",
+                             ex, market_type, unsafe_msg)
+                raise TradeError(unsafe_msg, kind="user")
             result = await ADAPTERS[ex].close_position(creds, symbol, side or "")
     except TradeError:
         raise
