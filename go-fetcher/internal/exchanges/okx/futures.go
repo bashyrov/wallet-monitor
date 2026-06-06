@@ -234,9 +234,8 @@ func (a *Futures) applyBBO(token string, bidRows, askRows [][]string) *ws.Snapsh
 	return a.mergedSnapshot(token)
 }
 
-// mergedSnapshot — produce a Snapshot from the depth state, then splice
-// BBO over the top when BBO has a strictly better price OR refreshes
-// size at the existing top. Same logic as Bybit's mergedSnapshot.
+// mergedSnapshot — depth state from books channel, BBO overlay from bbo-tbt,
+// with stale depth levels purged on BBO boundaries (cross-safe, same as bybit/bitget/binance).
 func (a *Futures) mergedSnapshot(token string) *ws.Snapshot {
 	bk := a.books[token]
 	var bids, asks []ws.Level
@@ -244,10 +243,26 @@ func (a *Futures) mergedSnapshot(token string) *ws.Snapshot {
 		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
 		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
 	}
-	if b := a.bbo[token]; b != nil {
-		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
-		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
+	b := a.bbo[token]
+	if b == nil || b.bidPx <= 0 || b.askPx <= 0 || b.bidPx >= b.askPx {
+		return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 	}
+	cleaned := bids[:0]
+	for _, lvl := range bids {
+		if lvl[0] < b.askPx {
+			cleaned = append(cleaned, lvl)
+		}
+	}
+	bids = cleaned
+	cleanedA := asks[:0]
+	for _, lvl := range asks {
+		if lvl[0] > b.bidPx {
+			cleanedA = append(cleanedA, lvl)
+		}
+	}
+	asks = cleanedA
+	bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+	asks = spliceBBOAsk(asks, b.askPx, b.askSz)
 	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
 }
 

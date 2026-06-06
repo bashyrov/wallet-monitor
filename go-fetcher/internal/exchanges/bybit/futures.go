@@ -216,11 +216,11 @@ func (a *Futures) applyBBO(token, typ string, bidRows, askRows [][]string) *ws.S
 	return a.mergedSnapshot(token)
 }
 
-// mergedSnapshot — produce the emit-time Snapshot: depth state from
-// orderbook.50, with BBO spliced over the top when BBO is strictly
-// better (higher bid / lower ask) or refreshes the size at the same
-// price level. If BBO is worse or stale (zero), depth state is used
-// as-is.
+// mergedSnapshot — depth state from orderbook.50, BBO overlay from orderbook.1.
+//
+// Bybit's orderbook.1 sends PARTIAL deltas — bid or ask can clear independently
+// (size=0). Guard: cross-purge only when BOTH BBO sides are present and
+// consistent (bid < ask). Splice each BBO side independently when present.
 func (a *Futures) mergedSnapshot(token string) *ws.Snapshot {
 	bk := a.books[token]
 	var bids, asks []ws.Level
@@ -228,8 +228,32 @@ func (a *Futures) mergedSnapshot(token string) *ws.Snapshot {
 		bids = ws.SortedLevels(bk.bids, ws.Bids, 200)
 		asks = ws.SortedLevels(bk.asks, ws.Asks, 200)
 	}
-	if b := a.bbo[token]; b != nil {
+	b := a.bbo[token]
+	if b == nil || (b.bidPx <= 0 && b.askPx <= 0) {
+		return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
+	}
+	// Cross-safe purge: only when both BBO sides are valid and internally
+	// consistent (bid < ask). Prevents stale depth from crossing BBO.
+	if b.bidPx > 0 && b.askPx > 0 && b.bidPx < b.askPx {
+		cleaned := bids[:0]
+		for _, lvl := range bids {
+			if lvl[0] < b.askPx {
+				cleaned = append(cleaned, lvl)
+			}
+		}
+		bids = cleaned
+		cleanedA := asks[:0]
+		for _, lvl := range asks {
+			if lvl[0] > b.bidPx {
+				cleanedA = append(cleanedA, lvl)
+			}
+		}
+		asks = cleanedA
+	}
+	if b.bidPx > 0 {
 		bids = spliceBBOBid(bids, b.bidPx, b.bidSz)
+	}
+	if b.askPx > 0 {
 		asks = spliceBBOAsk(asks, b.askPx, b.askSz)
 	}
 	return &ws.Snapshot{Symbol: token, Bids: bids, Asks: asks}
