@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os as _os
 from typing import Any
 
 from datetime import datetime
@@ -667,6 +668,96 @@ async def close_position(
     return result
 
 
+# ── Local UPNL (Phase 1.1) ──────────────────────────────────────────────
+# When AVALANT_LOCAL_UPNL=1 we override the venue-supplied mark_price + UPNL
+# with our local recompute. Source for mark: arbitrage_service._cache (live
+# funding/ticker rows from screener feed, refreshed ~250ms-2s by go-fetcher
+# funding.json + REST backstops). Formula: (mark − entry) × qty × side_dir.
+#
+# Rationale: venue's unrealized_pnl_usd is a snapshot from the last
+# position-event push or REST list_positions call. On a quiet pair between
+# events, mark on screen lags actual market — sometimes for minutes. Reading
+# mark from our own screener-tick feed gives a sub-second freshness boundary.
+#
+# Behind a flag so we can verify against venue's UPNL on a live position
+# before flipping. STATUS: code-ready, awaits Phase 1 acceptance on a real
+# position (creds gate).
+_LOCAL_UPNL_ENABLED = (_os.getenv("AVALANT_LOCAL_UPNL") or "0").strip() == "1"
+_LOCAL_UPNL_MAX_MARK_AGE_S = float(_os.getenv("AVALANT_LOCAL_UPNL_MAX_AGE_S", "10.0"))
+
+
+def _get_live_mark(exchange: str, symbol: str) -> tuple[float | None, float | None]:
+    """Look up live mark price for (exchange, symbol) in arbitrage_service._cache.
+
+    Returns (mark_price, age_seconds) or (None, age_or_None) if not found or
+    stale. Symbol matched case-insensitively against rows[i]['symbol'].
+    """
+    try:
+        from backend.services.arbitrage_service import _cache, _mono
+    except Exception:
+        return None, None
+    bucket = _cache.get((exchange or "").lower())
+    if not bucket:
+        return None, None
+    rows, cached_at_mono = bucket
+    if not rows:
+        return None, None
+    age_s = _mono() - cached_at_mono
+    if age_s > _LOCAL_UPNL_MAX_MARK_AGE_S:
+        return None, age_s
+    sym_norm = (symbol or "").upper()
+    for r in rows:
+        rs = (r.get("symbol") or "").upper()
+        if rs == sym_norm:
+            p = r.get("price")
+            if p is None:
+                return None, age_s
+            try:
+                return float(p), age_s
+            except (TypeError, ValueError):
+                return None, age_s
+    return None, age_s
+
+
+def _apply_local_upnl(rows: list[dict]) -> None:
+    """In-place override of mark + unrealized_pnl_usd per position when
+    AVALANT_LOCAL_UPNL=1 AND we have a fresh live mark. Adds `mark_source`
+    and `mark_age_s` for frontend visibility.
+
+    No-op when flag off, or row has no entry_price, or no fresh live mark.
+    """
+    if not _LOCAL_UPNL_ENABLED:
+        return
+    for r in rows:
+        ex = (r.get("exchange") or "").lower()
+        sym = r.get("symbol") or ""
+        entry = r.get("entry_price")
+        qty = r.get("quantity")
+        side = (r.get("side") or "").lower()
+        try:
+            entry_f = float(entry or 0)
+            qty_f = float(qty or 0)
+        except (TypeError, ValueError):
+            r["mark_source"] = "venue"
+            continue
+        if entry_f <= 0 or qty_f <= 0 or side not in ("buy", "sell"):
+            r["mark_source"] = "venue"
+            continue
+        live_mark, age_s = _get_live_mark(ex, sym)
+        if live_mark is None or live_mark <= 0:
+            r["mark_source"] = "venue"
+            if age_s is not None:
+                r["mark_age_s"] = round(age_s, 2)
+            continue
+        side_dir = 1.0 if side == "buy" else -1.0
+        r["mark_price"] = live_mark
+        r["unrealized_pnl_usd"] = round(
+            (live_mark - entry_f) * qty_f * side_dir, 6
+        )
+        r["mark_source"] = "live"
+        r["mark_age_s"] = round(age_s, 2)
+
+
 # In-memory cache for list_user_positions: collapses repeat hits within
 # the TTL window into a single set of upstream API calls. Eight wallets ×
 # ~500-2000ms per list_positions = noticeable first-load latency on /arb;
@@ -874,6 +965,11 @@ async def _list_user_positions_inner(db: Session, user_id: int, symbol: str | No
     for r in results:
         if isinstance(r, list):
             flat.extend(r)
+    # Phase 1.1 — override mark + UPNL from live screener feed when flag is
+    # on. No-op when AVALANT_LOCAL_UPNL=0 (default). Done BEFORE caching so
+    # the override propagates through the cache TTL the same way it would
+    # propagate live.
+    _apply_local_upnl(flat)
     _POSITIONS_CACHE[cache_key] = (_time.time(), flat)
     return flat
 
