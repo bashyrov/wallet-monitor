@@ -38,6 +38,9 @@ x-app-env: &app-env
   AVALANT_REFRESH_INTERVAL: ${AVALANT_REFRESH_INTERVAL:-0.3}
   AVALANT_BROADCAST_INTERVAL: ${AVALANT_BROADCAST_INTERVAL:-0.2}
   AVALANT_ARB_CACHE_TTL: ${AVALANT_ARB_CACHE_TTL:-0.4}
+  # In/out spread time-series consumer flag — must match go-fetcher.
+  # When ON, web replicas run the XREADGROUP consumer + rollup daemon.
+  AVALANT_SPREAD_HISTORY: ${AVALANT_SPREAD_HISTORY:-0}
   AVALANT_PREWARM_HOTLIST_S: ${AVALANT_PREWARM_HOTLIST_S:-2.0}
   AVALANT_PREWARM_DUMP_S: ${AVALANT_PREWARM_DUMP_S:-0.1}
   # "subprocess" spawns a dedicated arb-compute worker so it stops stealing
@@ -284,6 +287,14 @@ services:
       #   event-driven BBO with a 10ms per-pair floor.
       # See go-fetcher/internal/wsbroadcast/book.go for the hot-set logic.
       AVALANT_TIERED_FRESHNESS: ${AVALANT_TIERED_FRESHNESS:-0}
+      # Toggle for the in/out spread time-series pipeline (chart history).
+      # ON = go-fetcher buckets opps into 5s OHLC + publishes to Redis
+      # stream arb:spread:bucket; Python consumer + rollup + retention
+      # run on web replicas. OFF = no recording, no consumer, frontend
+      # falls back to localStorage-only history (existing behaviour).
+      # Same flag controls both producer + consumer — must match.
+      AVALANT_SPREAD_HISTORY: ${AVALANT_SPREAD_HISTORY:-0}
+      AVALANT_SPREAD_HISTORY_TOPN: ${AVALANT_SPREAD_HISTORY_TOPN:-500}
       # Override the /ws/long-short broadcast interval. With tiered on,
       # the default is 2s. With tiered off, default 100ms. Min 50ms.
       AVALANT_LONGSHORT_BROADCAST_INTERVAL: ${AVALANT_LONGSHORT_BROADCAST_INTERVAL:-}
