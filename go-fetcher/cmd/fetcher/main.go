@@ -197,18 +197,25 @@ func main() {
 	// With orderbook + funding broadcasts now sub-100ms, the arb tick
 	// was the dominant pre-display lag.
 	arbCompute := arb.NewCompute(fundingStore, store, cfg.CacheDir, 200*time.Millisecond)
-	g.Go(func() error {
-		return arbCompute.Run(gctx)
-	})
 
 	// Spread-history recorder — buffers top-N (default 500) arb opps as
 	// 5s OHLC candles and ships them to Redis stream arb:spread:bucket.
 	// Python consumer batch-INSERTs into arb_spread_candles_5s. Behind
 	// AVALANT_SPREAD_HISTORY=1 — recorder is a no-op stub when off, so
 	// arb compute pays zero overhead in the default config.
+	//
+	// IMPORTANT: must be wired BEFORE arbCompute.Run goroutine starts —
+	// otherwise the tick() reader races against the SetSpreadRecorder
+	// write (plain pointer assignment, no memory barrier), and the
+	// reader can permanently see nil.
 	spreadRecorder := spread.New(cfg.RedisURL)
 	if spreadRecorder.Enabled {
 		arbCompute.SetSpreadRecorder(spreadRecorder)
+	}
+	g.Go(func() error {
+		return arbCompute.Run(gctx)
+	})
+	if spreadRecorder.Enabled {
 		g.Go(func() error {
 			return spreadRecorder.Run(gctx)
 		})
