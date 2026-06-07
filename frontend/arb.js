@@ -2600,7 +2600,12 @@ function _eeApplyTheme(){
 // 161KB / 50KB gzip vendor lib used only by the entry/exit candlestick
 // chart (below the fold on most viewports). Load lazily — orderbook
 // rendering on the hot WS path stays uncontended.
-let _lwcPromise=null;
+// `var` (not `let`): the spot/dex IIFE at line 164 calls _eeInit() →
+// _loadLightweightCharts() while this declaration is still in TDZ if it
+// were `let`. `var` is hoisted with `undefined`, no TDZ. Without this
+// the IIFE throws ReferenceError BEFORE reaching _openPtBookWs → spot
+// books never subscribe → blank panels.
+var _lwcPromise=null;
 function _loadLightweightCharts(){
   if(typeof LightweightCharts!=='undefined') return Promise.resolve();
   if(_lwcPromise) return _lwcPromise;
@@ -4138,13 +4143,21 @@ function _renderPnl(rows){
   window._pnlLastRows = rows || [];
   const tbody = document.getElementById('acc-pnl-body');
   const empty = document.getElementById('acc-pnl-empty');
+  // Spot/dex IIFE replaces the futures DOM — these elements don't exist
+  // there. Bail rather than crash with 'null is not an object' on every
+  // setInterval tick that fires before the IIFE's throw stops scheduling.
+  const total = document.getElementById('acc-pnl-total');
+  if (!total) return;
   if (!rows.length){
     if (tbody) tbody.innerHTML = '';
     if (empty) empty.style.display = '';
-    document.getElementById('acc-pnl-total').textContent = '$0.00';
-    document.getElementById('acc-pnl-count').textContent = '0';
-    document.getElementById('acc-pnl-winrate').textContent = '—';
-    document.getElementById('acc-pnl-funding').textContent = '$0.00';
+    total.textContent = '$0.00';
+    const count = document.getElementById('acc-pnl-count');
+    const winrate = document.getElementById('acc-pnl-winrate');
+    const funding = document.getElementById('acc-pnl-funding');
+    if (count) count.textContent = '0';
+    if (winrate) winrate.textContent = '—';
+    if (funding) funding.textContent = '$0.00';
     return;
   }
   if (empty) empty.style.display = 'none';
@@ -5943,8 +5956,13 @@ async function _syncUnpair(idx){
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSyncPairs(); });
 
 // ═══ /ws/positions per-user push channel (Task #4) ══════════════════════
-let _posWS = null;
-let _posWSReconnectMs = 1500;
+// `var` (not `let`): the spot/dex IIFE calls _connectPositionsWS() at
+// line ~1647 before these declarations are reached top-down. TDZ would
+// throw ReferenceError, which is a console-noisy warning but harmless
+// since the IIFE intentionally throws anyway at line 1649. Still,
+// keeping the console clean helps users not panic.
+var _posWS = null;
+var _posWSReconnectMs = 1500;
 function _connectPositionsWS() {
   if (!Auth.isLoggedIn()) return;
   try {
