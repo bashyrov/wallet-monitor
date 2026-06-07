@@ -1414,20 +1414,65 @@ body.ob-no-flash .trade-activity-dot.bk-active {
   box-shadow: none !important;
 }
 
-/* Toggle button — slotted into .depth-btns next to ·/··/···. Reuses
-   the same .depth-btn base styling so it visually matches. Highlight
-   ON = star glows with accent green; OFF = dimmed grey outline. */
+/* Highlight-toggle pill — sits next to ·/··/··· depth buttons but is
+   visually distinct: text label + lightning icon + clear ON/OFF colour.
+   No depth-btn class so it doesn't get re-styled by setDepthGroup's
+   active rotation. */
 .ob-flash-toggle {
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--text3);
-  transition: color .15s, background .15s;
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 6px; padding: 2px 7px 2px 6px;
+  border-radius: 9px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer; user-select: none;
+  border: 1px solid;
+  transition: color .15s, background .15s, border-color .15s;
+  line-height: 1;
 }
-.ob-flash-toggle svg { display: block; }
-.ob-flash-toggle:hover { color: var(--text); background: var(--surface3); }
-body:not(.ob-no-flash) .ob-flash-toggle { color: #1AFFAB; }
+.ob-flash-toggle .ob-flash-icon { flex-shrink: 0; }
+
+/* ON state — green pill with the lightning glow. */
+body:not(.ob-no-flash) .ob-flash-toggle {
+  color: #1AFFAB;
+  background: rgba(26,255,171,.10);
+  border-color: rgba(26,255,171,.40);
+}
 body:not(.ob-no-flash) .ob-flash-toggle:hover {
-  color: #1AFFAB; background: rgba(26,255,171,.10);
+  background: rgba(26,255,171,.20);
+  border-color: rgba(26,255,171,.65);
 }
+body:not(.ob-no-flash) .ob-flash-label-off { display: none; }
+
+/* OFF state — dim grey pill with a strikethrough through the icon. */
+body.ob-no-flash .ob-flash-toggle {
+  color: var(--text3);
+  background: var(--surface2);
+  border-color: var(--border);
+}
+body.ob-no-flash .ob-flash-toggle:hover {
+  color: var(--text2);
+  background: var(--surface3);
+  border-color: var(--text3);
+}
+body.ob-no-flash .ob-flash-label-on { display: none; }
+/* Strike through the lightning icon when OFF so the state reads
+   immediately, not just via colour (accessibility win for colourblind
+   users too). */
+body.ob-no-flash .ob-flash-icon {
+  position: relative;
+  opacity: .55;
+}
+body.ob-no-flash .ob-flash-toggle::before {
+  content: '';
+  position: absolute;
+  left: 5px; top: 50%;
+  width: 11px; height: 1.5px;
+  background: currentColor;
+  transform: rotate(-22deg);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.ob-flash-toggle { position: relative; }
 
 body.arb-loading .val,
 body.arb-loading .hero-sym,
