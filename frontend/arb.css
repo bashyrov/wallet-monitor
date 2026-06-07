@@ -1386,6 +1386,49 @@ body.light .wl-star-btn:hover { background: rgba(229,192,123,0.16); }
    Pulses on every frame so the user sees depth liveness even when no
    trades have come through this venue's /ws/trades. */
 .trade-activity-dot.bk-active { color: #7CB9F7; background: currentColor; animation: tradeDotPulse 500ms ease-out; }
+
+/* ── Global highlight-on-update toggle ─────────────────────────────────
+   When body.ob-no-flash is set (user disabled "Highlight updates"),
+   every level/dot animation across every orderbook (main /arb dual,
+   spot/short panel) is suppressed. Critical: this is a pure CSS gate
+   — JS still calls .classList.add('bk-level-*') / .add('tp-buy') etc.
+   on every update. We don't touch the hot path; we just don't ANIMATE
+   the result. Levels + prices still tick at full venue rate. The
+   animation:none rule wins via !important to beat the specific
+   animation declarations above. */
+body.ob-no-flash .book-row.bk-level-up,
+body.ob-no-flash .book-row.bk-level-down,
+body.ob-no-flash .book-row.bk-level-tick,
+body.ob-no-flash .book-row.tp-buy,
+body.ob-no-flash .book-row.tp-sell {
+  animation: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+body.ob-no-flash .trade-activity-dot.tp-active-buy,
+body.ob-no-flash .trade-activity-dot.tp-active-sell,
+body.ob-no-flash .trade-activity-dot.bk-active {
+  animation: none !important;
+  opacity: .35 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Toggle button — slotted into .depth-btns next to ·/··/···. Reuses
+   the same .depth-btn base styling so it visually matches. Highlight
+   ON = star glows with accent green; OFF = dimmed grey outline. */
+.ob-flash-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text3);
+  transition: color .15s, background .15s;
+}
+.ob-flash-toggle svg { display: block; }
+.ob-flash-toggle:hover { color: var(--text); background: var(--surface3); }
+body:not(.ob-no-flash) .ob-flash-toggle { color: #1AFFAB; }
+body:not(.ob-no-flash) .ob-flash-toggle:hover {
+  color: #1AFFAB; background: rgba(26,255,171,.10);
+}
+
 body.arb-loading .val,
 body.arb-loading .hero-sym,
 body.arb-loading #tb-net-val,

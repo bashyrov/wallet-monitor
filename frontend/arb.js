@@ -2128,9 +2128,32 @@ function updateDepthLabels(side,price){
 
 function setDepthGroup(side,idx,el){
   _depthGroupIdx[side]=idx;
-  document.querySelectorAll(`#depth-btns-${side} .depth-btn`).forEach(b=>b.classList.remove('active'));
+  // Exclude the flash-toggle from the active rotation — it's not part
+  // of the depth selection, only shares the .depth-btn base styling.
+  document.querySelectorAll(`#depth-btns-${side} .depth-btn:not(.ob-flash-toggle)`).forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
   if(_lastBookData[side]) renderBook(_lastBookData[side],side);
+}
+
+// ── Global highlight-on-update toggle ─────────────────────────────────
+// Disables level-flash + dot-pulse animations across every orderbook
+// (main /arb dual, spot/short panel) via the body.ob-no-flash CSS gate.
+// Persists in localStorage.avalant_ob_no_flash. Critical: this DOES NOT
+// touch the level-update hot path. JS still adds .bk-level-up etc. on
+// every change; we just don't ANIMATE the result. Levels + prices tick
+// at full venue rate (20-100+/s) regardless.
+const OB_FLASH_LS_KEY = 'avalant_ob_no_flash';
+function _obFlashLoad(){
+  try{
+    if(localStorage.getItem(OB_FLASH_LS_KEY) === '1'){
+      document.body.classList.add('ob-no-flash');
+    }
+  }catch{}
+}
+_obFlashLoad();
+function toggleObFlash(_el){
+  const off = document.body.classList.toggle('ob-no-flash');
+  try{ localStorage.setItem(OB_FLASH_LS_KEY, off ? '1' : '0'); }catch{}
 }
 
 // ── Order book render ─────────────────────────────────────────────────────────
