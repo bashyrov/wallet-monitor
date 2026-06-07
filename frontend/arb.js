@@ -1026,38 +1026,163 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
     return n.toFixed(n < 1 ? 4 : 2);
   };
+  // Row-pool depth ladder: 50 ask + 50 bid DOM nodes per side, pre-created
+  // once, then mutated text/style on each frame. Mirrors the futures
+  // _applyLevelsToPool pattern so the same per-level flash + activity-dot
+  // pulse + mid-arrow revert effects work here too. innerHTML rewrite
+  // (old impl) destroyed the row elements on every tick → no continuity
+  // for CSS animations → flash classes never had time to render.
+  const PT_ROW_POOL_SIZE = 50;
+  const _ptBookPool = { long: null, short: null };
+  function _ptBuildSidePool(containerId, kind) {
+    const el = document.getElementById(containerId);
+    if (!el) return null;
+    el.innerHTML = '';
+    const rows = [];
+    for (let i = 0; i < PT_ROW_POOL_SIZE; i++) {
+      const row = document.createElement('div');
+      row.className = 'book-row';
+      const bg = document.createElement('div');
+      bg.className = 'book-row-bg';
+      bg.style.width = '0%';
+      bg.style.background = kind === 'ask' ? '#F87171' : '#1AFFAB';
+      const price = document.createElement('span');
+      price.className = kind === 'ask' ? 'ask-price' : 'bid-price';
+      const amount = document.createElement('span');
+      amount.className = 'book-amount';
+      const total = document.createElement('span');
+      total.className = 'book-total';
+      row.append(bg, price, amount, total);
+      row.style.display = 'none';
+      el.appendChild(row);
+      rows.push({ row, bg, price, amount, total });
+    }
+    return rows;
+  }
+  function _ptEnsurePool(side) {
+    if (_ptBookPool[side]) return _ptBookPool[side];
+    const asks = _ptBuildSidePool('pt-asks-' + side, 'ask');
+    const bids = _ptBuildSidePool('pt-bids-' + side, 'bid');
+    if (!asks || !bids) return null;
+    _ptBookPool[side] = { asks, bids };
+    return _ptBookPool[side];
+  }
+  function _ptScheduleFlash(row, cls) {
+    row.classList.remove('bk-level-up', 'bk-level-down', 'bk-level-tick');
+    row.offsetWidth;  // force reflow so re-add re-triggers animation
+    row.classList.add(cls);
+    if (row._flashTimer) clearTimeout(row._flashTimer);
+    row._flashTimer = setTimeout(() => row.classList.remove(cls), 720);
+  }
+  function _ptFlashDot(side) {
+    // Find the venue activity dot near the book header. Same pattern as
+    // futures _flashBookDot; bk-active = neutral cyan pulse, doesn't
+    // compete with green/red trade pulses (which use tp-active-*).
+    const anchor = document.querySelector('#pt-mid-' + side)
+                || document.querySelector('#pt-book-' + side + '-name');
+    if (!anchor || !anchor.parentElement) return;
+    let dot = anchor.parentElement.querySelector('.trade-activity-dot[data-side="' + side + '"]');
+    if (!dot) {
+      dot = document.createElement('span');
+      dot.className = 'trade-activity-dot';
+      dot.setAttribute('data-side', side);
+      anchor.parentElement.appendChild(dot);
+    }
+    if (dot.classList.contains('tp-active-buy') || dot.classList.contains('tp-active-sell')) return;
+    dot.classList.remove('bk-active');
+    dot.offsetWidth;
+    dot.classList.add('bk-active');
+    setTimeout(() => dot.classList.remove('bk-active'), 520);
+  }
+  // Walk levels, mutate row text/style only when value changed, fire
+  // per-level flash on price/size shifts. Mirrors futures
+  // _applyLevelsToPool 1:1 — direction-aware colour (ask drop = green,
+  // ask rise = red; bid mirrors).
+  function _ptApplyLevels(rows, levels, max, sideName) {
+    let total = 0;
+    let anyChange = false;
+    const n = levels.length;
+    for (let i = 0; i < PT_ROW_POOL_SIZE; i++) {
+      const r = rows[i];
+      if (i >= n) {
+        if (r.row.style.display !== 'none') r.row.style.display = 'none';
+        continue;
+      }
+      const [p, q] = levels[i];
+      total += q * p;
+      const pct = Math.min(100, (q / max * 100));
+      const widthStr = pct.toFixed(1) + '%';
+      const widthChanged = r._w !== widthStr;
+      if (widthChanged) { r.bg.style.width = widthStr; r._w = widthStr; }
+      const ps = _fmtP(p);
+      const priceChanged = r._p !== ps;
+      if (priceChanged) { r.price.textContent = ps; r._p = ps; }
+      const qs = _fmtQ(q);
+      const qtyChanged = r._q !== qs;
+      if (qtyChanged) { r.amount.textContent = qs; r._q = qs; }
+      const ts = _fmtQ(total);
+      if (r._t !== ts) { r.total.textContent = ts; r._t = ts; }
+      if (r.row.style.display === 'none') r.row.style.display = '';
+
+      // Per-level flash. Skip first paint (r._pLast undefined) so we
+      // don't strobe every row on the initial render.
+      if (priceChanged && r._pLast !== undefined && p !== r._pLast) {
+        const up = p > r._pLast;
+        const good = (sideName === 'ask') ? !up : up;
+        _ptScheduleFlash(r.row, good ? 'bk-level-up' : 'bk-level-down');
+        anyChange = true;
+      } else if (qtyChanged && r._qLast !== undefined && r._pLast !== undefined) {
+        _ptScheduleFlash(r.row, 'bk-level-tick');
+        anyChange = true;
+      }
+      r._pLast = p; r._qLast = q;
+    }
+    return anyChange;
+  }
+  // Mid-arrow flash colour with 1500ms revert — was missing in the old
+  // impl, so the arrow colour stayed stuck on the last direction.
+  const _ptMidPrev = { long: null, short: null };
+  const _ptMidTimer = { long: null, short: null };
+
   function _renderBook(side, asksAll, bidsAll) {
-    const asksEl = $('pt-asks-' + side);
-    const bidsEl = $('pt-bids-' + side);
-    if (!asksEl || !bidsEl) return;
-    const N = 14;
-    const asks = asksAll.slice(0, N).reverse();
-    const bids = bidsAll.slice(0, N);
-    const maxAsk = asks.reduce((a, b) => a + (+b[1]), 0);
-    const maxBid = bids.reduce((a, b) => a + (+b[1]), 0);
-    const rowHtml = (arr, kind, maxTot) => {
-      let cum = 0;
-      return arr.map(([p, q]) => {
-        cum += +q;
-        const pct = Math.min(100, (cum / Math.max(1e-9, maxTot)) * 100);
-        const bgCol = kind === 'ask' ? 'var(--red)' : 'var(--green)';
-        const pxCls = kind === 'ask' ? 'ask-price' : 'bid-price';
-        return `<div class="book-row"><div class="book-row-bg" style="width:${pct.toFixed(1)}%;background:${bgCol}"></div><span class="${pxCls}">${_fmtP(p)}</span><span class="book-amount">${_fmtQ(q)}</span><span class="book-total">${_fmtQ(cum)}</span></div>`;
-      }).join('');
-    };
-    asksEl.innerHTML = rowHtml(asks, 'ask', maxAsk);
-    bidsEl.innerHTML = rowHtml(bids, 'bid', maxBid);
+    const pool = _ptEnsurePool(side);
+    if (!pool) return;
+    // Pick top 50 closest to market (asks ascending → reverse so the
+    // table draws highest→lowest with the spread at the bottom).
+    const asks = (asksAll || []).slice().sort((a, b) => +a[0] - +b[0]).slice(0, PT_ROW_POOL_SIZE).reverse();
+    const bids = (bidsAll || []).slice().sort((a, b) => +b[0] - +a[0]).slice(0, PT_ROW_POOL_SIZE);
+
+    let maxA = 1, maxB = 1;
+    for (let i = 0; i < asks.length; i++) if (+asks[i][1] > maxA) maxA = +asks[i][1];
+    for (let i = 0; i < bids.length; i++) if (+bids[i][1] > maxB) maxB = +bids[i][1];
+
+    const asksDelta = _ptApplyLevels(pool.asks, asks.map(([p,q]) => [+p, +q]), maxA, 'ask');
+    const bidsDelta = _ptApplyLevels(pool.bids, bids.map(([p,q]) => [+p, +q]), maxB, 'bid');
+    if (asksDelta || bidsDelta) _ptFlashDot(side);
 
     if (asksAll.length && bidsAll.length) {
       const bestAsk = +asksAll[0][0];
       const bestBid = +bidsAll[0][0];
       const mid = (bestAsk + bestBid) / 2;
       const prev = side === 'long' ? _lastMidLong : _lastMidShort;
-      const arrow = mid > prev ? '▲' : mid < prev ? '▼' : '·';
-      const col = mid > prev ? 'var(--green)' : mid < prev ? 'var(--red)' : 'var(--text3)';
       setT('pt-mid-' + side, _fmtP(mid));
+
       const a = $('pt-mid-arrow-' + side);
-      if (a) { a.textContent = arrow; a.style.color = col; }
+      const midEl = $('pt-mid-' + side);
+      if (prev !== null && prev !== mid && a && midEl) {
+        const up = mid > prev;
+        const col = up ? '#1AFFAB' : '#F87171';
+        a.textContent = up ? '▲' : '▼';
+        a.style.color = col;
+        midEl.style.color = col;
+        if (_ptMidTimer[side]) clearTimeout(_ptMidTimer[side]);
+        _ptMidTimer[side] = setTimeout(() => {
+          if (midEl) midEl.style.color = '';
+          if (a) a.textContent = '·';
+        }, 1500);
+      }
+      _ptMidPrev[side] = mid;
+
       if (side === 'long') {
         _lastMidLong = mid;
         _lastAskLong = bestAsk;
