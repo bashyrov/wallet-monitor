@@ -741,6 +741,111 @@ async def _in_out_resolve(items: str):
     return out
 
 
+@router.get("/arb-spread-history")
+async def arb_spread_history(
+    symbol: str = Query(..., pattern=r"^[A-Za-z0-9._-]{1,32}$"),
+    long: str = Query(..., pattern=r"^[a-z0-9_-]{1,16}$"),
+    short: str = Query(..., pattern=r"^[a-z0-9_-]{1,16}$"),
+    tf: str = Query("auto", pattern=r"^(auto|5s|1m|1h)$"),
+    from_ts: int | None = Query(None, alias="from"),
+    to_ts: int | None = Query(None, alias="to"),
+):
+    """OHLC time-series of in/out spread for a (long, short, symbol) tuple.
+
+    Three storage tiers chosen by `tf`:
+      - `5s` — last 24h, 5-second buckets
+      - `1m` — last 7d, 1-minute buckets
+      - `1h` — last 90d, 1-hour buckets
+      - `auto` — server picks by span size, capped at 1500 candles in
+        the response so neither client nor chart engine drown on huge
+        ranges.
+
+    Returns `{tf, candles: [{t, in_o, in_h, in_l, in_c, out_o, ..., n}]}`.
+    The chart treats absent buckets as whitespace (LWC `whitespace_data`)
+    so gaps where go-fetcher was down don't draw a fake connected line.
+    """
+    import time as _t
+    from sqlalchemy import text
+    from backend.db.base import SessionLocal
+
+    now = int(_t.time())
+    # Default window: 30 minutes back from now — typical first paint
+    # for the entry/exit chart on /arb.
+    if to_ts is None:
+        to_ts = now
+    if from_ts is None:
+        from_ts = to_ts - 30 * 60
+    if from_ts >= to_ts:
+        return {"tf": tf if tf != "auto" else "5s", "candles": []}
+    span_s = to_ts - from_ts
+
+    # tf=auto: pick the coarsest tier that still gives reasonable
+    # density. Goal: ≥30 candles for context, ≤1500 to keep the chart
+    # responsive. Boundaries match the per-tier retention so the picked
+    # tier always has data for `from_ts`.
+    chosen_tf = tf
+    if tf == "auto":
+        if span_s <= 5 * 60:        # ≤5m → 5s (≤60 candles)
+            chosen_tf = "5s"
+        elif span_s <= 2 * 3600:    # ≤2h → 1m (≤120 candles)
+            chosen_tf = "1m"
+        else:                        # >2h → 1h
+            chosen_tf = "1h"
+    # If the requested tf can't cover `from_ts` (retention window
+    # crossed), bump to a coarser tier rather than serving partial data.
+    max_lookback = {"5s": 24*3600, "1m": 7*24*3600, "1h": 90*24*3600}
+    if now - from_ts > max_lookback[chosen_tf]:
+        if chosen_tf == "5s":
+            chosen_tf = "1m"
+        if now - from_ts > max_lookback[chosen_tf] and chosen_tf == "1m":
+            chosen_tf = "1h"
+
+    table = {"5s": "arb_spread_candles_5s",
+             "1m": "arb_spread_candles_1m",
+             "1h": "arb_spread_candles_1h"}[chosen_tf]
+
+    # Cap candles at 1500. If the natural query would return more,
+    # widen the tier rather than truncate — truncation hides recent
+    # data which is what the user is actually looking at.
+    bucket_secs = {"5s": 5, "1m": 60, "1h": 3600}[chosen_tf]
+    estimated = span_s // bucket_secs
+    if estimated > 1500:
+        # One more tier bump.
+        chosen_tf = {"5s": "1m", "1m": "1h", "1h": "1h"}[chosen_tf]
+        table = {"5s": "arb_spread_candles_5s",
+                 "1m": "arb_spread_candles_1m",
+                 "1h": "arb_spread_candles_1h"}[chosen_tf]
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(text(f"""
+            SELECT bucket_ts, in_open, in_high, in_low, in_close,
+                   out_open, out_high, out_low, out_close, samples
+            FROM {table}
+            WHERE exchange_long = :el AND exchange_short = :es
+              AND symbol = :sym
+              AND bucket_ts >= :from_ts AND bucket_ts <= :to_ts
+            ORDER BY bucket_ts ASC
+            LIMIT 1500
+        """), {
+            "el": long.lower(), "es": short.lower(),
+            "sym": symbol.upper(),
+            "from_ts": from_ts, "to_ts": to_ts,
+        }).all()
+    finally:
+        db.close()
+
+    candles = [{
+        "t":     int(r[0]),
+        "in_o":  float(r[1]), "in_h": float(r[2]),
+        "in_l":  float(r[3]), "in_c": float(r[4]),
+        "out_o": float(r[5]), "out_h": float(r[6]),
+        "out_l": float(r[7]), "out_c": float(r[8]),
+        "n":     int(r[9]),
+    } for r in rows]
+    return {"tf": chosen_tf, "candles": candles}
+
+
 @router.get("/arb-price-history")
 async def arb_price_history(
     symbol: str = Query(...),
