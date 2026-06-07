@@ -39,16 +39,20 @@ const (
 type Service struct {
 	jwt       *JWTValidator
 	longShort *LongShort
+	spotShort *SpotShort
+	dexShort  *DexShort
 	funding   *Funding
 	book      *Book
 	trades    *Trades
 	upgrader  websocket.Upgrader
 }
 
-func NewService(jwt *JWTValidator, longShort *LongShort, funding *Funding, book *Book, trades *Trades) *Service {
+func NewService(jwt *JWTValidator, longShort *LongShort, spotShort *SpotShort, dexShort *DexShort, funding *Funding, book *Book, trades *Trades) *Service {
 	return &Service{
 		jwt:       jwt,
 		longShort: longShort,
+		spotShort: spotShort,
+		dexShort:  dexShort,
 		funding:   funding,
 		book:      book,
 		trades:    trades,
@@ -68,6 +72,12 @@ func NewService(jwt *JWTValidator, longShort *LongShort, funding *Funding, book 
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/screener/ws/long-short", s.handleLongShort)
 	mux.HandleFunc("/api/screener/ws/arb", s.handleLongShort) // legacy alias
+	if s.spotShort != nil {
+		mux.HandleFunc("/api/screener/ws/spot-short", s.handleSpotShort)
+	}
+	if s.dexShort != nil {
+		mux.HandleFunc("/api/screener/ws/dex-short", s.handleDexShort)
+	}
 	mux.HandleFunc("/api/screener/ws/funding", s.handleFunding)
 	mux.HandleFunc("/api/screener/ws/book", s.handleBook)
 	if s.trades != nil {
@@ -80,6 +90,12 @@ func (s *Service) Routes(mux *http.ServeMux) {
 // goroutine via the errgroup in main.
 func (s *Service) Run(ctx context.Context) {
 	go s.longShort.Run(ctx)
+	if s.spotShort != nil {
+		go s.spotShort.Run(ctx)
+	}
+	if s.dexShort != nil {
+		go s.dexShort.Run(ctx)
+	}
 	go s.funding.Run(ctx)
 	go s.book.Run(ctx)
 	// trades is push-driven (OnTick) but now uses a per-pair pending
@@ -145,6 +161,64 @@ func (s *Service) handleLongShort(w http.ResponseWriter, r *http.Request) {
 	}
 	go s.longShort.hub.runWriter(c)
 	go s.longShort.hub.runReader(c)
+}
+
+// handleSpotShort upgrades and registers the client on the spot-short
+// hub. Public feed → optional auth (same policy as long-short).
+func (s *Service) handleSpotShort(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.L().Debug().Err(err).Msg("ws upgrade failed")
+		return
+	}
+	uid, ok := s.handshakeAuth(conn, authOptional)
+	if !ok {
+		return
+	}
+	c := &client{
+		uid:    uid,
+		conn:   conn,
+		outbox: make(chan []byte, clientOutboxSize),
+		done:   make(chan struct{}),
+	}
+	s.spotShort.hub.register(c)
+	if snap := s.spotShort.SnapshotForNewClient(); snap != nil {
+		select {
+		case c.outbox <- snap:
+		default:
+		}
+	}
+	go s.spotShort.hub.runWriter(c)
+	go s.spotShort.hub.runReader(c)
+}
+
+// handleDexShort upgrades and registers the client on the dex-short
+// hub. Public feed → optional auth (same policy as long-short).
+func (s *Service) handleDexShort(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.L().Debug().Err(err).Msg("ws upgrade failed")
+		return
+	}
+	uid, ok := s.handshakeAuth(conn, authOptional)
+	if !ok {
+		return
+	}
+	c := &client{
+		uid:    uid,
+		conn:   conn,
+		outbox: make(chan []byte, clientOutboxSize),
+		done:   make(chan struct{}),
+	}
+	s.dexShort.hub.register(c)
+	if snap := s.dexShort.SnapshotForNewClient(); snap != nil {
+		select {
+		case c.outbox <- snap:
+		default:
+		}
+	}
+	go s.dexShort.hub.runWriter(c)
+	go s.dexShort.hub.runReader(c)
 }
 
 // handleBook upgrades and registers the client on the book hub.

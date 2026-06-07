@@ -266,12 +266,16 @@ func main() {
 			}
 		}()
 		longShort := wsbroadcast.NewLongShort(cfg.CacheDir)
+		spotShort := wsbroadcast.NewSpotShort(cfg.CacheDir)
+		dexShort := wsbroadcast.NewDexShort(cfg.CacheDir)
 		bookCh := wsbroadcast.NewBook(bookReader, store, mgr)
 		tickRing := ticks.NewRing(50)
 		tradesCh = wsbroadcast.NewTrades(tickRing, mgr)
 		wsSvc := wsbroadcast.NewService(
 			wsbroadcast.NewJWTValidator(secret),
 			longShort,
+			spotShort,
+			dexShort,
 			wsbroadcast.NewFunding(cfg.CacheDir),
 			bookCh,
 			tradesCh,

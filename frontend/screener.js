@@ -602,38 +602,69 @@ let _dexTimer = null;
 let _pageDX = 0;
 let _dexSort = { col: 'in_pct', dir: 'desc' };
 
+// /ws/dex-short — Class 1 broadcaster, 2s aggregate diff.
+// Wire format: {type:'snapshot', opportunities:[]} on connect; then
+// {type:'diff', added?, updated?, removed?:[[sym,short_ex],...]}.
+// dex_arbitrage.json itself is rewritten only every 30s (DexScreener
+// rate-limit), so most ticks see mtime unchanged and the server skips
+// pushing — bandwidth stays near zero between refreshes.
+const _dexRowsByKey = new Map();
+const _dexKey = (o) => `${o.symbol}|${o.short_exchange}`;
+let _wsDex = null;
+const _retryDex = { val: 0 }, _pingDex = { val: null }, _retryTimerDex = { val: null };
+
+function _applyDexPayload(data) {
+  if (!data) return;
+  if (data.type === 'diff') {
+    if (Array.isArray(data.added)) for (const o of data.added) _dexRowsByKey.set(_dexKey(o), o);
+    if (Array.isArray(data.updated)) for (const o of data.updated) _dexRowsByKey.set(_dexKey(o), o);
+    if (Array.isArray(data.removed)) {
+      for (const k of data.removed) {
+        const key = Array.isArray(k) ? k.join('|') : k;
+        _dexRowsByKey.delete(key);
+      }
+    }
+  } else {
+    // snapshot — authoritative full set
+    _dexRowsByKey.clear();
+    for (const o of (data.opportunities || [])) _dexRowsByKey.set(_dexKey(o), o);
+  }
+  _dexRows = Array.from(_dexRowsByKey.values());
+}
+
+const _connectDex = _makeWs({
+  path: 'dex-short',
+  retryRef: _retryDex, pingRef: _pingDex, retryTimerRef: _retryTimerDex,
+  onMessage: (data) => {
+    _applyDexPayload(data);
+    if (_mode === 'dex') applyDex();
+  },
+});
+
 async function loadDex() {
   _inOutFirstSorted.dex = false;
   if (!_dexRows.length) {
     document.getElementById('tbody-dex').innerHTML =
       '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
   }
+  // First paint via REST so we don't wait up to 2s for the first WS tick.
+  // After that the WS keeps the table live without timer-based polling.
   try {
     const r = await Auth.apiFetch('/screener/dex-short');
-    if (!r.ok) throw new Error('dex ' + r.status);
-    const j = await r.json();
-    const incoming = j.opportunities || [];
-    // Anti-flicker: per-row stickiness instead of full-table replace.
-    // Pairs that drop out of one cycle's top-N stay visible for the
-    // grace window so a basis-ranking shuffle doesn't make the row
-    // disappear for 30s.
-    if (incoming.length === 0 && _dexRows.length > 0) {
-      console.debug('[dex] kept last snapshot — server returned 0 opps');
-    } else {
-      _dexRows = _mergeSticky(_dexRows, incoming, r =>
-        `${r.symbol}|${r.dex_chain}|${r.dex_name}|${r.short_exchange}`);
+    if (r.ok) {
+      const j = await r.json();
+      _applyDexPayload({type: 'snapshot', opportunities: j.opportunities || []});
+      applyDex();
     }
-    applyDex();
   } catch (e) {
-    // Network / 5xx — leave the previous table intact, don't stomp on
-    // user's view. Only show "Failed" if we have nothing at all.
     if (!_dexRows.length) {
       document.getElementById('tbody-dex').innerHTML = _emptyRow({kind:'error',title:'Failed to load DEX/Short',sub:(e.message||'Network error').slice(0,200),colspan:9,retryFn:'loadDex()'});
     }
   }
-  clearInterval(_dexTimer);
-  // 30 s — matches fetcher's dex refresh cadence (DexScreener rate-limited)
-  _dexTimer = setInterval(() => { if (document.hidden) return; if (_mode === 'dex') loadDex(); }, 30000);
+  if (!_wsDex || _wsDex.readyState === WebSocket.CLOSED) {
+    _wsDex = _connectDex();
+  }
+  // No timer — the WS pushes diffs at the Class 1 broadcast cadence.
 }
 
 function sortDex(col) {
@@ -824,36 +855,64 @@ let _spotTimer = null;
 let _pageSP = 0;
 let _spotSort = { col: 'in_pct', dir: 'desc' };
 
+// /ws/spot-short — Class 1 broadcaster, 2s aggregate diff.
+// Same wire format as /ws/long-short with `spot_exchange` instead of
+// `long_exchange`. Removed-row payload is [sym, spot_ex, short_ex].
+const _spotRowsByKey = new Map();
+const _spotKey = (o) => `${o.symbol}|${o.spot_exchange}|${o.short_exchange}`;
+let _wsSpot = null;
+const _retrySp = { val: 0 }, _pingSp = { val: null }, _retryTimerSp = { val: null };
+
+function _applySpotPayload(data) {
+  if (!data) return;
+  if (data.type === 'diff') {
+    if (Array.isArray(data.added)) for (const o of data.added) _spotRowsByKey.set(_spotKey(o), o);
+    if (Array.isArray(data.updated)) for (const o of data.updated) _spotRowsByKey.set(_spotKey(o), o);
+    if (Array.isArray(data.removed)) {
+      for (const k of data.removed) {
+        const key = Array.isArray(k) ? k.join('|') : k;
+        _spotRowsByKey.delete(key);
+      }
+    }
+  } else {
+    _spotRowsByKey.clear();
+    for (const o of (data.opportunities || [])) _spotRowsByKey.set(_spotKey(o), o);
+  }
+  _spotRows = Array.from(_spotRowsByKey.values());
+}
+
+const _connectSpot = _makeWs({
+  path: 'spot-short',
+  retryRef: _retrySp, pingRef: _pingSp, retryTimerRef: _retryTimerSp,
+  onMessage: (data) => {
+    _applySpotPayload(data);
+    if (_mode === 'spot') applySpot();
+  },
+});
+
 async function loadSpot() {
   _inOutFirstSorted.spot = false;
   if (!_spotRows.length) {
     document.getElementById('tbody-spot').innerHTML =
       '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Computing spot-short arbitrage…</td></tr>';
   }
+  // First-paint via REST (cold-start cache might be empty). After that the
+  // WS keeps the table live without timer-based polling.
   try {
     const r = await Auth.apiFetch('/screener/spot-short');
-    if (!r.ok) throw new Error('spot ' + r.status);
-    const j = await r.json();
-    const incoming = j.opportunities || [];
-    // Per-row stickiness. See _mergeSticky comment.
-    if (incoming.length === 0 && _spotRows.length > 0) {
-      console.debug('[spot] kept last snapshot — server returned 0 opps');
-    } else {
-      _spotRows = _mergeSticky(_spotRows, incoming, r =>
-        `${r.symbol}|${r.spot_exchange}|${r.short_exchange}`);
+    if (r.ok) {
+      const j = await r.json();
+      _applySpotPayload({type: 'snapshot', opportunities: j.opportunities || []});
+      applySpot();
     }
-    applySpot();
   } catch (e) {
     if (!_spotRows.length) {
       document.getElementById('tbody-spot').innerHTML = _emptyRow({kind:'error',title:'Failed to load Spot/Short',sub:(e.message||'Network error').slice(0,200),colspan:9,retryFn:'loadSpot()'});
     }
   }
-  clearInterval(_spotTimer);
-  // 2 s — matches fetcher's spot refresh cadence (and futures REST backstop)
-  // Post-upgrade (VPS 40, 12 cores): cycle shortened to 1 s so the Spot/Short
-  // tab feels as live as Long/Short. Backend spot-arb cycle was also dropped
-  // to 1 s, so each poll sees freshly-written data.
-  _spotTimer = setInterval(() => { if (document.hidden) return; if (_mode === 'spot') loadSpot(); }, 1000);
+  if (!_wsSpot || _wsSpot.readyState === WebSocket.CLOSED) {
+    _wsSpot = _connectSpot();
+  }
 }
 
 function sortSpot(col) {

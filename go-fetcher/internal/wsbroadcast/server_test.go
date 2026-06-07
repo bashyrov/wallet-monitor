@@ -36,10 +36,12 @@ func buildTestService(t *testing.T, secret string) *Service {
 	dir := t.TempDir()
 	jwt := NewJWTValidator(secret)
 	ls := NewLongShort(dir)
+	sp := NewSpotShort(dir)
+	dx := NewDexShort(dir)
 	fn := NewFunding(dir)
 	bk := NewBook(nil, nil, nil)
 	tr := NewTrades(ticks.NewRing(50), nil)
-	return NewService(jwt, ls, fn, bk, tr)
+	return NewService(jwt, ls, sp, dx, fn, bk, tr)
 }
 
 func startHTTPTest(t *testing.T, svc *Service) (*httptest.Server, string) {
@@ -79,7 +81,7 @@ func TestService_RoutesRegisteredOnMux(t *testing.T) {
 
 func TestService_TradesEndpoint_OmittedWhenTradesNil(t *testing.T) {
 	dir := t.TempDir()
-	svc := NewService(NewJWTValidator("k"), NewLongShort(dir), NewFunding(dir), NewBook(nil, nil, nil), nil)
+	svc := NewService(NewJWTValidator("k"), NewLongShort(dir), NewSpotShort(dir), NewDexShort(dir), NewFunding(dir), NewBook(nil, nil, nil), nil)
 	mux := http.NewServeMux()
 	svc.Routes(mux)
 	w := httptest.NewRecorder()
