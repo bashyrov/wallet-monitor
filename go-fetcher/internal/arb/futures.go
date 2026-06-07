@@ -392,12 +392,17 @@ func (c *Compute) tick() {
 			longEx, _ := row["long_exchange"].(string)
 			shortEx, _ := row["short_exchange"].(string)
 			sym, _ := row["symbol"].(string)
-			inPctV, okIn := row["in_pct"].(float64)
-			outPctV, okOut := row["out_pct"].(float64)
-			if !okIn || !okOut {
+			// in_pct / out_pct are stored as *float64 in the opp map (line
+			// 317-318 below) — they're nil-able because top-of-book may be
+			// missing for new pairs. Coerce; skip rows where either side
+			// is missing rather than recording 0 (which would be a false
+			// observation of "no spread").
+			inPctPtr, okIn := row["in_pct"].(*float64)
+			outPctPtr, okOut := row["out_pct"].(*float64)
+			if !okIn || !okOut || inPctPtr == nil || outPctPtr == nil {
 				continue
 			}
-			c.spread.RecordOpp(longEx, shortEx, sym, inPctV, outPctV, now)
+			c.spread.RecordOpp(longEx, shortEx, sym, *inPctPtr, *outPctPtr, now)
 		}
 	}
 
