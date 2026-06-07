@@ -298,11 +298,32 @@ async def lifespan(app: FastAPI):
         _warmer_task = asyncio.create_task(warmer_loop(interval_s=0.8))
         logger.info("Cache warmer started for funding + exchange-health snapshots")
 
+    # Arb spread time-series consumer + rollup daemon. Behind
+    # AVALANT_SPREAD_HISTORY=1 — both functions early-return when off.
+    # Both replicas run; XREADGROUP gives exactly-once delivery on
+    # consumer side, ON CONFLICT DO NOTHING makes rollup idempotent.
+    _spread_consumer_task = None
+    _spread_rollup_task = None
+    if role != "fetcher":
+        from backend.services import arb_spread_service
+        if arb_spread_service.is_enabled():
+            _spread_consumer_task = asyncio.create_task(
+                arb_spread_service.run_spread_consumer()
+            )
+            _spread_rollup_task = asyncio.create_task(
+                arb_spread_service.run_rollup_daemon()
+            )
+            logger.info("Arb spread consumer + rollup daemon started")
+
     try:
         yield
     finally:
         if _warmer_task is not None:
             _warmer_task.cancel()
+        if _spread_consumer_task is not None:
+            _spread_consumer_task.cancel()
+        if _spread_rollup_task is not None:
+            _spread_rollup_task.cancel()
         for t in _alpha_tasks:
             t.cancel()
         for fn in _stop_fns:

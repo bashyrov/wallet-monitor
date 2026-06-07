@@ -1,7 +1,7 @@
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, JSON, Boolean, Float, Numeric, UniqueConstraint
+from sqlalchemy import Column, Integer, SmallInteger, String, DateTime, Table, ForeignKey, JSON, Boolean, Float, Numeric, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.db.base import Base
@@ -907,3 +907,41 @@ class ArbTriggerOrder(Base):
                           foreign_keys=[parent_trigger_id], back_populates="children")
     children = relationship("ArbTriggerOrder", back_populates="parent",
                             foreign_keys=[parent_trigger_id], cascade="all, delete-orphan")
+
+
+# ── Arb spread time-series (chart history) ─────────────────────────────
+# Three tier OHLC tables for the in/out spread chart, populated by the
+# go-fetcher → Redis stream → consumer pipeline. Schema mirrors the
+# alembic migration n3o4p5q6r7s8 — keep in sync.
+
+class _ArbSpreadCandleBase:
+    """Mixin: PK + OHLC columns shared by the 5s/1m/1h tables."""
+    exchange_long = Column(String(16), primary_key=True)
+    exchange_short = Column(String(16), primary_key=True)
+    symbol = Column(String(32), primary_key=True)
+    bucket_ts = Column(Integer, primary_key=True)
+    in_open = Column(Float, nullable=False)
+    in_high = Column(Float, nullable=False)
+    in_low = Column(Float, nullable=False)
+    in_close = Column(Float, nullable=False)
+    out_open = Column(Float, nullable=False)
+    out_high = Column(Float, nullable=False)
+    out_low = Column(Float, nullable=False)
+    out_close = Column(Float, nullable=False)
+    samples = Column(SmallInteger, nullable=False, default=1)
+
+
+class ArbSpreadCandle5s(_ArbSpreadCandleBase, Base):
+    """5s OHLC of in/out spread per (long_ex, short_ex, symbol). Written
+    by go-fetcher via Redis stream → consumer. Retention 24h."""
+    __tablename__ = "arb_spread_candles_5s"
+
+
+class ArbSpreadCandle1m(_ArbSpreadCandleBase, Base):
+    """1m rollup from 5s. Built by rollup daemon hourly. Retention 7d."""
+    __tablename__ = "arb_spread_candles_1m"
+
+
+class ArbSpreadCandle1h(_ArbSpreadCandleBase, Base):
+    """1h rollup from 1m. Built by rollup daemon daily. Retention 90d."""
+    __tablename__ = "arb_spread_candles_1h"
