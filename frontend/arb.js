@@ -2430,6 +2430,12 @@ function setEeTf(el,sec){
   el.classList.add('active');
   _eeNeedsFit=true;
   if(_eeChart) _eeChart.applyOptions({timeScale:{secondsVisible:sec<=60}});
+  // Refetch from server — long TFs now read from the spread time-series
+  // instead of the (incorrect) /arb-price-history endpoint that returned
+  // price legs. _eeServerLoaded resets so renderEntryExitChart goes
+  // through the load path again.
+  _eeServerLoaded=false;
+  _eeLoadServerHistoryIntoChart().catch(()=>{});
   renderEntryExitChart();
 }
 function setEeUnit(el,u){
@@ -2629,6 +2635,85 @@ function _eeInit(){
   const ro=new ResizeObserver(()=>{if(_eeChart) _eeChart.applyOptions({width:el.clientWidth,height:el.clientHeight});});
   ro.observe(el);
   _eeChart.applyOptions({width:el.clientWidth,height:el.clientHeight});
+  // Pull server history immediately so the chart shows context on
+  // first paint, not 5s of empty waiting. Errors handled by falling
+  // back to local rolling buffer (cold-path branch in renderEntryExitChart).
+  _eeLoadServerHistoryIntoChart().catch(()=>{});
+}
+
+// ── Server history fetch ───────────────────────────────────────────────
+// Pulls OHLC candles from /api/screener/arb-spread-history. Used:
+//   - on first paint, replacing the 5s of empty waiting on cold start
+//   - on TF change, refetched with the new window
+//   - on long-TF tabs (1h/4h/24h) which were incorrectly using
+//     /arb-price-history (price legs, not spread) before
+// localStorage stays as the live-buffer fallback when the endpoint is
+// empty (pair outside top-500 → server has no history → fall back to
+// local accumulation, current behaviour).
+let _eeServerLoaded=false;
+let _eeServerInArr=[];
+let _eeServerOutArr=[];
+
+function _eeBucketSecForTf(tf){
+  if(tf==='5s') return 5;
+  if(tf==='1m') return 60;
+  if(tf==='1h') return 3600;
+  return 5;
+}
+
+async function _eeFetchServerHistory(){
+  // Map our local TF buttons (seconds visible on screen) to the API's
+  // `tf` parameter. Server picks the tier by span when tf=auto, but we
+  // also request a `from`/`to` window that the user actually sees on
+  // screen — gives the chart a tight, representative dataset.
+  let bucket;
+  let windowS;
+  if(_eeTfSec<=60){ bucket='5s'; windowS=30*60; }              // 30 min @ 5s
+  else if(_eeTfSec<=300){ bucket='1m'; windowS=4*3600; }       // 4 h @ 1m
+  else if(_eeTfSec<=1200){ bucket='1m'; windowS=24*3600; }     // 1 day @ 1m
+  else{ bucket='1h'; windowS=14*24*3600; }                     // 2 weeks @ 1h
+  const now=Math.floor(Date.now()/1000);
+  const fromTs=now-windowS;
+  const url=`/api/screener/arb-spread-history?symbol=${encodeURIComponent(SYM)}&long=${encodeURIComponent(LONG.toLowerCase())}&short=${encodeURIComponent(SHORT.toLowerCase())}&tf=${bucket}&from=${fromTs}&to=${now}`;
+  try{
+    const r=await Auth.apiFetch(url);
+    if(!r.ok) return null;
+    const d=await r.json();
+    if(!d||!Array.isArray(d.candles)) return null;
+    // Map to LWC OHLC shape. Server fields are short to save bandwidth.
+    const inArr=[]; const outArr=[];
+    for(const c of d.candles){
+      inArr.push({time:c.t,open:c.in_o,high:c.in_h,low:c.in_l,close:c.in_c});
+      outArr.push({time:c.t,open:c.out_o,high:c.out_h,low:c.out_l,close:c.out_c});
+    }
+    return {tf:d.tf||bucket,inArr,outArr};
+  }catch{ return null; }
+}
+
+async function _eeLoadServerHistoryIntoChart(){
+  if(!_eeChart||!_eeInSeries||!_eeOutSeries) return;
+  const res=await _eeFetchServerHistory();
+  if(!res||!res.inArr.length){
+    _eeServerLoaded=false;
+    return;
+  }
+  _eeServerInArr=res.inArr;
+  _eeServerOutArr=res.outArr;
+  _eeServerLoaded=true;
+  // Push to LWC. CandlestickSeries with missing buckets renders natural
+  // visual gaps — no synthetic whitespace points needed (LWC v4 candle
+  // drawing leaves an empty column at any timestamp not in the data
+  // array). This is honest "data was missing" rendering.
+  _eeInSeries.setData(_eeServerInArr);
+  _eeOutSeries.setData(_eeServerOutArr);
+  const loading=document.getElementById('ee-loading');
+  const chartEl=document.getElementById('ee-chart');
+  if(loading) loading.style.display='none';
+  if(chartEl) chartEl.style.display='block';
+  if(_eeNeedsFit){
+    _eeChart.timeScale().fitContent();
+    _eeNeedsFit=false;
+  }
 }
 
 function renderEntryExitChart(){
@@ -2639,9 +2724,27 @@ function renderEntryExitChart(){
   const chartEl=document.getElementById('ee-chart');
   if(loading) loading.style.display='none';
   if(chartEl) chartEl.style.display='block';
+
+  // When server history is loaded, only update the LATEST in-progress
+  // candle from local live ticks. Pushing setData() with the full
+  // _eeHist would clobber the dense historical context that was
+  // fetched. series.update() is the LWC-idiomatic incremental path.
+  if(_eeServerLoaded){
+    const {inArr,outArr}=_eeBuildCandles();
+    if(inArr.length){
+      const lastIn=inArr[inArr.length-1];
+      const lastOut=outArr[outArr.length-1];
+      _eeInSeries.update(lastIn);
+      _eeOutSeries.update(lastOut);
+    }
+    return;
+  }
+
+  // Cold path: no server history (pair not in top-500, endpoint
+  // disabled, or network blip). Same behaviour as before — bucket
+  // local samples and setData. Preserves backwards compatibility.
   const {inArr,outArr}=_eeBuildCandles();
   if(!inArr.length) return;
-  // Update last candle incrementally if possible to avoid disturbing user's pan/zoom
   _eeInSeries.setData(inArr);
   _eeOutSeries.setData(outArr);
   if(_eeNeedsFit){
