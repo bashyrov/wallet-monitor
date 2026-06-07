@@ -177,6 +177,17 @@ def _find_any_wallet(db: Session, user_id: int, exchange: str) -> Wallet | None:
     )
 
 
+# Module-level monotonic-clock helper for cache TTL maths. get_pair_status
+# (and _get_live_mark) reference _mono(); previously it was only imported
+# locally inside _list_user_positions_inner, so /api/trade/status raised
+# NameError on every call → /arb hits the endpoint, console spammed with
+# 500s. Use the same impl arbitrage_service ships so cache_at_mono values
+# inter-op if ever shared.
+import time as _time_mod
+def _mono() -> float:
+    return _time_mod.monotonic()
+
+
 _PAIR_STATUS_CACHE: dict[tuple, tuple[dict, float]] = {}
 # 3s TTL: /arb trade panel polls /trade/status каждые 5s now (was 15s),
 # и юзер должен видеть свежий balance после external moves (deposit/
