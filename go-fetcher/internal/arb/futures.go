@@ -107,6 +107,16 @@ var minVolumeUSD = func() float64 {
 	return 0
 }()
 
+// SpreadRecorder is the minimal interface Compute uses to record opps
+// into the in/out spread history pipeline. Implemented by the spread
+// package's Recorder. Decoupled so this package doesn't import
+// internal/spread (avoids cycle: spread → log → arb is fine, but
+// keeping the boundary explicit reads cleaner).
+type SpreadRecorder interface {
+	TopN() int
+	RecordOpp(longEx, shortEx, symbol string, inPct, outPct float64, now time.Time)
+}
+
 // Compute is the periodic arb-compute service. Reads funding.Store on a
 // ticker, builds opportunities, dumps arbitrage.json.
 type Compute struct {
@@ -114,6 +124,11 @@ type Compute struct {
 	books    *cache.Store // optional — for baking in/out top-of-book into each opp
 	cacheDir string
 	interval time.Duration
+
+	// Optional spread-history recorder. When set + enabled, every
+	// tick feeds the top-N opps into 5s OHLC buckets. nil/disabled =
+	// zero overhead (the call sites short-circuit via TopN()==0).
+	spread SpreadRecorder
 
 	mu          sync.Mutex
 	firstSeen   map[oppKey]time.Time
@@ -134,6 +149,13 @@ func NewCompute(store *funding.Store, books *cache.Store, cacheDir string, inter
 		firstSeen: make(map[oppKey]time.Time, 4096),
 		lastSeen:  make(map[oppKey]time.Time, 4096),
 	}
+}
+
+// SetSpreadRecorder wires the in/out spread history recorder. Optional;
+// when unset the recording branch in tick() short-circuits via the
+// TopN()==0 guard so the existing hot path is untouched.
+func (c *Compute) SetSpreadRecorder(r SpreadRecorder) {
+	c.spread = r
 }
 
 func (c *Compute) Run(ctx context.Context) error {
@@ -352,6 +374,31 @@ func (c *Compute) tick() {
 	written := opps
 	if len(written) > arbFileTopN {
 		written = written[:arbFileTopN]
+	}
+
+	// Spread-history recording — feed top-N (recorder-configured) into
+	// the in-memory 5s OHLC bucket aggregator. Recorder is a no-op stub
+	// when AVALANT_SPREAD_HISTORY=0 (default) → zero allocation, one
+	// branch per opp. Pair ranking is dynamic; pairs that drop out
+	// between flushes keep the data already recorded (retention is by
+	// date in the consumer, not by current rank).
+	if c.spread != nil {
+		recN := c.spread.TopN()
+		if recN > len(written) {
+			recN = len(written)
+		}
+		for i := 0; i < recN; i++ {
+			row := written[i]
+			longEx, _ := row["long_exchange"].(string)
+			shortEx, _ := row["short_exchange"].(string)
+			sym, _ := row["symbol"].(string)
+			inPctV, okIn := row["in_pct"].(float64)
+			outPctV, okOut := row["out_pct"].(float64)
+			if !okIn || !okOut {
+				continue
+			}
+			c.spread.RecordOpp(longEx, shortEx, sym, inPctV, outPctV, now)
+		}
 	}
 
 	exList := make([]string, 0, len(exchanges))

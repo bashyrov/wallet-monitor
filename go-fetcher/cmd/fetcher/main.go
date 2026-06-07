@@ -64,6 +64,7 @@ import (
 	fextended "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/extended"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/spread"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ticks"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade"
@@ -199,6 +200,19 @@ func main() {
 	g.Go(func() error {
 		return arbCompute.Run(gctx)
 	})
+
+	// Spread-history recorder — buffers top-N (default 500) arb opps as
+	// 5s OHLC candles and ships them to Redis stream arb:spread:bucket.
+	// Python consumer batch-INSERTs into arb_spread_candles_5s. Behind
+	// AVALANT_SPREAD_HISTORY=1 — recorder is a no-op stub when off, so
+	// arb compute pays zero overhead in the default config.
+	spreadRecorder := spread.New(cfg.RedisURL)
+	if spreadRecorder.Enabled {
+		arbCompute.SetSpreadRecorder(spreadRecorder)
+		g.Go(func() error {
+			return spreadRecorder.Run(gctx)
+		})
+	}
 
 	// Spot arb compute — Python's spot_arbitrage_service. REST tickers
 	// from 9 spot venues + funding store join → spot_arbitrage.json
