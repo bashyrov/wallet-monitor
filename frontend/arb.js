@@ -289,6 +289,11 @@ if (TYPE === 'spot' || TYPE === 'dex') {
               <div class="book-panel" data-side="long">
                 <div class="book-header">
                   <span class="book-ex-name" id="pt-book-long-name">${EX_LABEL[LONG]||LONG}</span>
+                  <div class="depth-btns" id="pt-depth-btns-long">
+                    <span class="depth-btn active" onclick="setPtDepth('long',0,this)">·</span>
+                    <span class="depth-btn" onclick="setPtDepth('long',1,this)">··</span>
+                    <span class="depth-btn" onclick="setPtDepth('long',2,this)">···</span>
+                  </div>
                   <span class="book-price-hdr" id="pt-book-long-age">—</span>
                 </div>
                 <div class="book-cols"><span class="book-col-lbl">Price</span><span class="book-col-lbl">Amount</span><span class="book-col-lbl">Total</span></div>
@@ -302,6 +307,11 @@ if (TYPE === 'spot' || TYPE === 'dex') {
               <div class="book-panel" data-side="short">
                 <div class="book-header">
                   <span class="book-ex-name" id="pt-book-short-name">${EX_LABEL[SHORT]||SHORT}</span>
+                  <div class="depth-btns" id="pt-depth-btns-short">
+                    <span class="depth-btn active" onclick="setPtDepth('short',0,this)">·</span>
+                    <span class="depth-btn" onclick="setPtDepth('short',1,this)">··</span>
+                    <span class="depth-btn" onclick="setPtDepth('short',2,this)">···</span>
+                  </div>
                   <span class="book-price-hdr" id="pt-book-short-age">—</span>
                 </div>
                 <div class="book-cols"><span class="book-col-lbl">Price</span><span class="book-col-lbl">Amount</span><span class="book-col-lbl">Total</span></div>
@@ -1026,6 +1036,18 @@ if (TYPE === 'spot' || TYPE === 'dex') {
     if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
     return n.toFixed(n < 1 ? 4 : 2);
   };
+  // USD formatter for the Total column — mirrors futures' fmtV. We can't
+  // reuse fmtV directly (it's `const` declared after the IIFE's throw at
+  // line 1649 → TDZ from this scope). Same magnitude logic so a $1.2M
+  // wall in the spot book reads identically to long/short.
+  const _fmtVUSD = (v) => {
+    const n = +v;
+    if (!n) return '0';
+    if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
+    if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
+    if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+    return n.toFixed(1);
+  };
   // Row-pool depth ladder: 50 ask + 50 bid DOM nodes per side, pre-created
   // once, then mutated text/style on each frame. Mirrors the futures
   // _applyLevelsToPool pattern so the same per-level flash + activity-dot
@@ -1120,7 +1142,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       const qs = _fmtQ(q);
       const qtyChanged = r._q !== qs;
       if (qtyChanged) { r.amount.textContent = qs; r._q = qs; }
-      const ts = _fmtQ(total);
+      // Total column in USD (q * p cumulative), not raw token qty —
+      // matches futures' fmtV(total) so leg-to-leg comparison reads
+      // the same magnitude on both modes.
+      const ts = _fmtVUSD(total);
       if (r._t !== ts) { r.total.textContent = ts; r._t = ts; }
       if (r.row.style.display === 'none') r.row.style.display = '';
 
@@ -1143,14 +1168,171 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // impl, so the arrow colour stayed stuck on the last direction.
   const _ptMidPrev = { long: null, short: null };
   const _ptMidTimer = { long: null, short: null };
+  // Depth-group state (·/··/···). Mirrors futures _depthGroupIdx but
+  // local — that const lives after the IIFE's throw (TDZ here). The
+  // setPtDepth handler in the template wires onclick to update + repaint.
+  const _ptDepthIdx = { long: 0, short: 0 };
+  // Stash latest book payload per side so depth-button clicks can
+  // immediately re-render with the new group size without waiting for
+  // the next WS frame.
+  const _ptLastBookData = { long: null, short: null };
+
+  function _ptUpdateDepthLabels(side, price) {
+    if (typeof getDepthLabel !== 'function') return;
+    const btns = document.querySelectorAll('#pt-depth-btns-' + side + ' .depth-btn');
+    btns.forEach((btn, i) => { btn.textContent = getDepthLabel(price, i); });
+  }
+  // Global handler — called from inline onclick in the template.
+  window.setPtDepth = function (side, idx, el) {
+    _ptDepthIdx[side] = idx;
+    document.querySelectorAll('#pt-depth-btns-' + side + ' .depth-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    const d = _ptLastBookData[side];
+    if (d) _renderBook(side, d.asks || [], d.bids || []);
+  };
+
+  // ── /ws/trades (short-leg only) ──────────────────────────────────────
+  // Backend confirmation: go-fetcher RegisterTicks covers 18 perp venues
+  // (binance, bybit, okx, gate, mexc, kucoin, bitget, bingx, htx, kraken,
+  // backpack, whitebit, aster, hyperliquid, paradex, lighter, ethereal,
+  // extended) but NO `<ex>_spot` venues and no DEX pools. So:
+  //   spot/short long leg (binance_spot:SYM)  → no trade feed exists
+  //   dex/short  long leg (DexScreener)       → no trade feed exists
+  //   short leg in both modes (CEX perp)      → trade feed available
+  // → trades only subscribe + flash on the SHORT leg here. Long leg
+  // stays silent; it's the nature of the data, not a bug.
+  let _ptTradesWs = null;
+  let _ptTradesBackoff = 1000;
+  function _ptFlashTradeRow(side, price, taker) {
+    // Buys hit asks (taker bought from ask); sells hit bids.
+    const targetSide = (taker === 'B') ? 'asks' : 'bids';
+    const container = document.getElementById('pt-' + targetSide + '-' + side);
+    const sel = (taker === 'B') ? '.ask-price' : '.bid-price';
+    const cls = (taker === 'B') ? 'tp-buy' : 'tp-sell';
+    // Also pulse the activity dot with the trade-buy/sell colour. Wins
+    // over the neutral bk-active book pulse for the same 720ms window.
+    const anchor = document.querySelector('#pt-mid-' + side)
+                || document.querySelector('#pt-book-' + side + '-name');
+    if (anchor && anchor.parentElement) {
+      let dot = anchor.parentElement.querySelector('.trade-activity-dot[data-side="' + side + '"]');
+      if (!dot) {
+        dot = document.createElement('span');
+        dot.className = 'trade-activity-dot';
+        dot.setAttribute('data-side', side);
+        anchor.parentElement.appendChild(dot);
+      }
+      const dotCls = (taker === 'B') ? 'tp-active-buy' : 'tp-active-sell';
+      dot.classList.remove('tp-active-buy', 'tp-active-sell', 'bk-active');
+      dot.offsetWidth;
+      dot.classList.add(dotCls);
+      setTimeout(() => dot.classList.remove(dotCls), 720);
+    }
+    if (!container) return;
+    const px = +price;
+    const rows = container.querySelectorAll('.book-row');
+    let best = null, bestDelta = Infinity;
+    for (const r of rows) {
+      if (r.style.display === 'none') continue;
+      const p = parseFloat((r.querySelector(sel)?.textContent || '').replace(/[,\s]/g, ''));
+      if (!isFinite(p)) continue;
+      const d = Math.abs(p - px);
+      if (d < bestDelta) { bestDelta = d; best = r; }
+    }
+    if (!best) return;
+    best.classList.remove('tp-buy', 'tp-sell');
+    best.offsetWidth;
+    best.classList.add(cls);
+    setTimeout(() => best.classList.remove(cls), 720);
+  }
+  function _ptOpenTradesWs() {
+    if (_ptTradesWs && (_ptTradesWs.readyState === 0 || _ptTradesWs.readyState === 1)) return;
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = proto + '://' + location.host + '/api/screener/ws/trades';
+    const token = Auth.getToken() || '';
+    let ws;
+    try { ws = new WebSocket(url); } catch (_) { return; }
+    _ptTradesWs = ws;
+    const shortPair = SHORT.toLowerCase() + ':' + SYM.toUpperCase();
+    ws.onopen = () => {
+      _ptTradesBackoff = 1000;
+      try {
+        ws.send(JSON.stringify({ auth: token }));
+        ws.send(JSON.stringify({ action: 'subscribe', pairs: [shortPair] }));
+      } catch (_) {}
+    };
+    // Coalesce by frame (rAF) — hot pairs hit 100+ trades/s; flashing
+    // every one is wasteful (consecutive flashes inside one frame are
+    // visually identical). Mirrors futures _drainTradeQ pattern.
+    let q = [];
+    let raf = null;
+    function drain() {
+      raf = null;
+      if (!q.length) return;
+      // Only the most recent trade matters visually within one frame.
+      const t = q[q.length - 1];
+      q = [];
+      _ptFlashTradeRow('short', t.p, t.d);
+    }
+    ws.onmessage = (e) => {
+      let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
+      const arr = msg && msg.trades;
+      if (!Array.isArray(arr)) return;
+      for (const t of arr) {
+        const pair = (t.e || '').toLowerCase() + ':' + (t.s || '').toUpperCase();
+        if (pair !== shortPair) continue;
+        q.push(t);
+      }
+      if (q.length && !raf) raf = requestAnimationFrame(drain);
+    };
+    ws.onclose = () => {
+      _ptTradesWs = null;
+      setTimeout(_ptOpenTradesWs, Math.min(_ptTradesBackoff, 10000));
+      _ptTradesBackoff = Math.min(_ptTradesBackoff * 2, 10000);
+    };
+    ws.onerror = () => { try { ws.close(); } catch (_) {} };
+  }
+  _ptOpenTradesWs();
+
+  // Empty-book placeholder — symbol delisted / not listed on the venue.
+  // Mirrors futures _renderEmptyBook so the user sees a clean message
+  // instead of just blank rows.
+  function _ptRenderEmpty(side) {
+    const a = document.getElementById('pt-asks-' + side);
+    const b = document.getElementById('pt-bids-' + side);
+    const msg = '<div class="book-empty" style="padding:18px 10px;color:var(--text3);font-size:11px;text-align:center">no orderbook · symbol delisted or unlisted</div>';
+    if (a) a.innerHTML = msg;
+    if (b) b.innerHTML = '';
+    _ptBookPool[side] = null;  // force rebuild on next non-empty render
+  }
 
   function _renderBook(side, asksAll, bidsAll) {
+    // Cache raw payload so depth-button clicks can re-render.
+    _ptLastBookData[side] = { asks: asksAll, bids: bidsAll };
+
+    if (!asksAll.length && !bidsAll.length) {
+      _ptRenderEmpty(side);
+      return;
+    }
+
     const pool = _ptEnsurePool(side);
     if (!pool) return;
-    // Pick top 50 closest to market (asks ascending → reverse so the
-    // table draws highest→lowest with the spread at the bottom).
-    const asks = (asksAll || []).slice().sort((a, b) => +a[0] - +b[0]).slice(0, PT_ROW_POOL_SIZE).reverse();
-    const bids = (bidsAll || []).slice().sort((a, b) => +b[0] - +a[0]).slice(0, PT_ROW_POOL_SIZE);
+
+    // Group depth (·/··/···) — mirrors futures path. getGroupSize +
+    // groupBookLevels are function declarations (hoisted to module scope)
+    // so callable from this IIFE despite the throw at line 1649.
+    const refPrice = (+bidsAll[0]?.[0]) || (+asksAll[0]?.[0]) || 0;
+    const groupSize = (typeof getGroupSize === 'function') ? getGroupSize(refPrice, _ptDepthIdx[side]) : 0;
+    _ptUpdateDepthLabels(side, refPrice);
+
+    // Group + sort. Asks: lowest first → reverse so the table draws
+    // highest→lowest with the spread at the bottom (matches futures).
+    let asksRaw = asksAll, bidsRaw = bidsAll;
+    if (groupSize > 0 && typeof groupBookLevels === 'function') {
+      asksRaw = groupBookLevels(asksAll, groupSize);
+      bidsRaw = groupBookLevels(bidsAll, groupSize);
+    }
+    const asks = asksRaw.slice().sort((a, b) => +a[0] - +b[0]).slice(0, PT_ROW_POOL_SIZE).reverse();
+    const bids = bidsRaw.slice().sort((a, b) => +b[0] - +a[0]).slice(0, PT_ROW_POOL_SIZE);
 
     let maxA = 1, maxB = 1;
     for (let i = 0; i < asks.length; i++) if (+asks[i][1] > maxA) maxA = +asks[i][1];
