@@ -74,9 +74,16 @@ type dexSpotKey struct {
 const (
 	dexSpotOppMinLifetime = 25 * time.Second
 	dexSpotOppPurgeAfter  = 5 * time.Minute
-	dexSpotMaxBasisPct    = 100.0 // collision guard — same threshold as dex_short
-	dexSpotFeeRoundtrip   = dexFeeRoundtripPct
-	dexSpotMinDEXLiqUSD   = minDEXLiqUSD
+	// % guard. address_verified rows: trusted up to dexSpotVerifiedMaxPct
+	// (large legitimate gaps on new listings stay visible).
+	// Unverified rows: tighter cutoff to suppress ticker-collision noise
+	// (the -67% / +52% "US.HUOBI ≠ US.CETUS" class that bug surfaced).
+	// User policy: address is the cause, % guard is just a noise filter
+	// for the fallback path — don't make it the primary defence.
+	dexSpotVerifiedMaxPct   = 200.0 // verified by address: keep wide
+	dexSpotUnverifiedMaxPct = 30.0  // ticker-only: drop obvious collisions
+	dexSpotFeeRoundtrip     = dexFeeRoundtripPct
+	dexSpotMinDEXLiqUSD     = minDEXLiqUSD
 )
 
 // NewDexSpotCompute wires the new compute against the existing DEX +
@@ -160,10 +167,10 @@ func (c *DexSpotCompute) tick() {
 				continue
 			}
 			spreadPct := (st.Price - dex.Price) / mid * 100.0
-			// Collision filter — same |basis| guard dex_short uses.
-			if spreadPct > dexSpotMaxBasisPct || spreadPct < -dexSpotMaxBasisPct {
-				continue
-			}
+			// Defer the % guard until after address verification — the
+			// threshold differs (verified rows get the wide 200% cap,
+			// unverified the tight 30% cap). The verify call is cheap;
+			// it's a single map lookup in cex_assets.Registry.
 			// Hysteresis: same pattern as dex_short. Avoids a hit on first
 			// observation from leaking into a published opp before the
 			// pair has demonstrated stable existence.
@@ -201,6 +208,19 @@ func (c *DexSpotCompute) tick() {
 			verified, matchChain, addrKnown := false, "", false
 			if c.cexMatcher != nil {
 				verified, matchChain, addrKnown = c.cexMatcher(cexEx, sym, dex.Chain, dex.BaseAddress)
+			}
+			// % guard branches on verification status. Address is the
+			// authoritative collision filter; % cap is just noise rejection
+			// for the fallback path. Verified rows: 200% — keep big
+			// legitimate gaps on new-listing arbs. Unverified: 30% — drop
+			// the most egregious ticker-collisions (-67% on US.CETUS-vs-
+			// US.HUOBI was the canary that surfaced this bug).
+			maxAllowed := dexSpotUnverifiedMaxPct
+			if verified {
+				maxAllowed = dexSpotVerifiedMaxPct
+			}
+			if spreadPct > maxAllowed || spreadPct < -maxAllowed {
+				continue
 			}
 			cexHits++
 			opps = append(opps, map[string]any{

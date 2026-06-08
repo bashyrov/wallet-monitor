@@ -845,6 +845,34 @@ tbody td { padding: 11px 10px; font-size: 13px; }
 /* symbol */
 .td-symbol { font-weight: 700; font-family: var(--mono); }
 
+/* Unverified-address pill — sits inline next to the symbol on dex_short
+   + dex_spot rows. Two visual flavours via the text content alone (no
+   modifier class needed): the "⚠" prefix on "unverified" makes the
+   no-data case visually louder than "addr ≠" (ticker known, address
+   mismatch — already suspicious but data exists). Yellow/orange tone
+   separates it from the green positive-spread / red negative-spread
+   cells in the same row. */
+.unverified-pill {
+  display: inline-block;
+  padding: 1px 5px;
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+  border-radius: 3px;
+  background: rgba(252, 211, 77, 0.12);
+  color: #FCD34D;
+  border: 1px solid rgba(252, 211, 77, 0.3);
+  cursor: help;
+  user-select: none;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.unverified-pill:hover {
+  background: rgba(252, 211, 77, 0.22);
+}
+
 /* exchange badge */
 .ex-badge {
   display: inline-flex; align-items: center; gap: 6px;

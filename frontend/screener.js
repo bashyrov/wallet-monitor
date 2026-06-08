@@ -111,6 +111,28 @@ function exTradeUrl(exchange, symbol) {
   return urls[exchange] || null;
 }
 
+// ── DEX↔CEX address-verification pill ────────────────────────────────────────
+// Shown on dex_short + dex_spot rows whose address_verified === false.
+// Three states, each with distinct copy so the user knows WHY a row isn't
+// trusted (drives their manual due-diligence decision):
+//   verified=true                         → no pill
+//   verified=false, address_known=true    → "addr mismatch" (ticker exists on
+//                                            the venue but on a DIFFERENT chain
+//                                            or contract — likely collision)
+//   verified=false, address_known=false   → "unverified" (we have no address
+//                                            data for this venue / no API key)
+// Inline so the small CSS surface (1 rule) lives next to its consumer; the
+// .unverified-pill class is global (works on screener tabs + later /arb).
+function _unverifiedBadge(r) {
+  if (r.address_verified) return '';
+  const known = !!r.address_known;
+  const title = known
+    ? 'Ticker exists on this CEX but on a different chain/contract — possible token collision. Verify manually.'
+    : 'No address data for this CEX in our registry (gate/kucoin/bitget verified; others fall back to ticker match). Verify manually.';
+  const label = known ? 'addr ≠' : '⚠ unverified';
+  return ` <span class="unverified-pill" title="${title}" onclick="event.stopPropagation()">${label}</span>`;
+}
+
 function exBadge(exchange, symbol) {
   const url = exTradeUrl(exchange, symbol);
   const label = EX_LABEL[exchange] || exchange;
@@ -736,7 +758,7 @@ function renderDex() {
     const dexLink = r.dex_pair_url ? `<a href="${r.dex_pair_url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--purple);text-decoration:none;font-weight:600">${dexLabel}</a>` : `<span style="color:var(--purple);font-weight:600">${dexLabel}</span>`;
     const dexDetailUrl = `/arb?type=dex-short&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
     return `<tr data-short-ex="${r.short_exchange}" style="cursor:pointer" onclick="window.open('${dexDetailUrl}','_blank')">
-      <td class="td-symbol"><a href="${dexDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
+      <td class="td-symbol"><a href="${dexDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}</td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
@@ -966,7 +988,7 @@ function renderDexSpot() {
     const dirCls = r.direction === 'dex_to_cex' ? 'rate-pos' : 'rate-neg';
     const detailUrl = `/arb?type=dex-spot&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.cex_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
     return `<tr style="cursor:pointer" onclick="window.open('${detailUrl}','_blank')">
-      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
+      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}</td>
       <td><div class="cell-ex">${(r.dex_name||'').toUpperCase()}${r.dex_chain ? ` · <span style="color:var(--text3)">${(r.dex_chain||'').toUpperCase()}</span>` : ''}</div><div class="cell-sub">Liq ${fmtVol(r.dex_liquidity_usd)} · Vol ${fmtVol(r.dex_volume_usd)}</div></td>
       <td><div class="cell-ex">${esc(r.cex_exchange)}</div><div class="cell-sub">Vol ${fmtVol(r.cex_volume_usd)}</div></td>
       <td class="${dirCls}" style="white-space:nowrap">${dirArrow} ${dirLabel}</td>

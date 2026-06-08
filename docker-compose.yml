@@ -293,6 +293,14 @@ services:
       # /api/screener/ws/dex-spot. OFF = compute goroutine never spawns,
       # JSON file never written, REST returns cold envelope, WS route 404.
       AVALANT_DEX_SPOT: ${AVALANT_DEX_SPOT:-0}
+      # Address-based DEX↔CEX token matching. ON = go-fetcher fetches
+      # gate/kucoin/bitget currency lists every 24h, builds a (venue,
+      # ticker, chain) → contract_address registry, exposes it to
+      # dex_short + dex_spot compute. Rows where the CEX-side address
+      # matches the DexScreener pool's BaseToken.address get
+      # address_verified=true. Off / 6 unsupported venues / address
+      # missing → frontend shows the unverified pill.
+      AVALANT_CEX_ASSETS: ${AVALANT_CEX_ASSETS:-0}
       # Toggle for the in/out spread time-series pipeline (chart history).
       # ON = go-fetcher buckets opps into 5s OHLC + publishes to Redis
       # stream arb:spread:bucket; Python consumer + rollup + retention
