@@ -287,6 +287,12 @@ services:
       #   event-driven BBO with a 10ms per-pair floor.
       # See go-fetcher/internal/wsbroadcast/book.go for the hot-set logic.
       AVALANT_TIERED_FRESHNESS: ${AVALANT_TIERED_FRESHNESS:-0}
+      # Toggle for the 4th screener mode: DEX↔CEX spot-only arbitrage.
+      # ON = go-fetcher spawns DexSpotCompute (reads DEX + spot snapshots
+      # from existing engines; no extra DexScreener load) and mounts
+      # /api/screener/ws/dex-spot. OFF = compute goroutine never spawns,
+      # JSON file never written, REST returns cold envelope, WS route 404.
+      AVALANT_DEX_SPOT: ${AVALANT_DEX_SPOT:-0}
       # Toggle for the in/out spread time-series pipeline (chart history).
       # ON = go-fetcher buckets opps into 5s OHLC + publishes to Redis
       # stream arb:spread:bucket; Python consumer + rollup + retention
