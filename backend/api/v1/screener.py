@@ -144,6 +144,27 @@ async def dex_arbitrage_opportunities():
     return await get_dex_arbitrage_opportunities()
 
 
+@router.get("/dex-spot", dependencies=[Depends(_enforce_screener_rl)])
+async def dex_spot_opportunities():
+    """DEX↔CEX spot-only arbitrage. Both legs spot; no funding/perp.
+    File produced by go-fetcher dex_spot compute when AVALANT_DEX_SPOT=1.
+    When the flag is off the file doesn't exist → cold envelope returned."""
+    from backend.services import arbitrage_service as _arb
+    cached = await _arb._read_file_cache_async("dex_spot_arbitrage.json", max_age=120.0)
+    if cached and isinstance(cached, dict) and cached.get("opportunities") is not None:
+        return cached
+    # Cold path: same 500 ms polling pattern as /dex-short — Go writes
+    # the file every 30s when enabled. If flag off, every attempt sees
+    # ENOENT → cold envelope.
+    for _ in range(10):
+        await asyncio.sleep(0.05)
+        cached = await _arb._read_file_cache_async("dex_spot_arbitrage.json", max_age=120.0)
+        if cached and isinstance(cached, dict) and cached.get("opportunities") is not None:
+            return cached
+    return {"opportunities": [], "generated_at": int(time.time()),
+            "symbols_scanned": 0, "cex_hits": 0, "cex_exchanges": [], "cold": True}
+
+
 @router.get("/all-arbitrage", dependencies=[Depends(_enforce_screener_rl)])
 async def all_arbitrage():
     """Combined futures-arb + spot-short arb + dex-short arb, sorted by net profit."""

@@ -114,6 +114,12 @@ const _TYPE_ALIAS = {
   'futures': 'long-short', 'arb': 'long-short', 'arbitrage': 'long-short', 'long-short': 'long-short', 'longshort': 'long-short',
   'spot': 'spot', 'spot-short': 'spot', 'spotshort': 'spot',
   'dex':  'dex',  'dex-short':  'dex',  'dexshort':  'dex',
+  // dex_spot: 4th mode. DEX↔CEX spot-only. Both legs spot, no perp/funding.
+  // Detail page reuses the spot/dex IIFE (single canonical ladder on CEX
+  // spot side via <ex>_spot WS-adapter; DEX side single mid price, no
+  // orderbook) — TYPE === 'dex_spot' joins the same condition as 'spot'
+  // and 'dex' below.
+  'dex-spot': 'dex_spot', 'dexspot': 'dex_spot', 'dex_spot': 'dex_spot',
 };
 // Internal TYPE keeps the old short-form ('futures'/'spot'/'dex') so the rest
 // of the page code doesn't need to change.
@@ -161,10 +167,23 @@ function _renderBalCell(w) {
 // iteration). For now show a clean placeholder card so the button
 // navigation works end-to-end and users aren't dropped into a broken
 // terminal painted with dashes.
-if (TYPE === 'spot' || TYPE === 'dex') {
-  const SRC = TYPE === 'spot' ? '/screener/spot-short' : '/screener/dex-short';
-  const BACK = '/screener?mode=' + TYPE;
-  const IS_DEX = TYPE === 'dex';
+if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
+  const SRC = TYPE === 'spot' ? '/screener/spot-short'
+            : TYPE === 'dex'  ? '/screener/dex-short'
+            : '/screener/dex-spot';
+  const BACK = '/screener?mode=' + (TYPE === 'dex_spot' ? 'dex-spot' : TYPE);
+  // IS_DEX = "any DEX-side mode" — long leg has no ladder (DexScreener
+  // single mid). Used by the orderbook path to know whether to subscribe
+  // to a long-side book and whether to hide the long ladder panel.
+  // Both dex/short and dex/spot share this property.
+  const IS_DEX = (TYPE === 'dex' || TYPE === 'dex_spot');
+  const IS_DEX_SPOT = TYPE === 'dex_spot';
+  // Short-leg pair format differs by mode:
+  //   spot/short  → bybit:BTC      (perp)
+  //   dex/short   → bybit:BTC      (perp)
+  //   dex/spot    → bybit_spot:BTC (CEX SPOT — needs _spot suffix to match
+  //                                 the spot WS adapter in go-fetcher)
+  // The _ptBookPair helper below reads IS_DEX_SPOT to decide.
   const LONG_LABEL_PLAIN = IS_DEX ? 'DEX' : 'SPOT';
 
   // Reuse the futures arb terminal's CSS — .infobar / .hero-block / .ex-card /
@@ -1440,7 +1459,16 @@ if (TYPE === 'spot' || TYPE === 'dex') {
   // like PAXG / XAUT) and the ladder stays blank.
   const _ptBookPair = (side) => {
     const ex = (side === 'long' ? LONG : SHORT).toLowerCase();
-    const isSpotLeg = (side === 'long' && TYPE === 'spot');
+    // Spot leg lives under '<ex>_spot:<symbol>' in books.json (separate
+    // spot-WS adapter in go-fetcher). Each mode's spot leg gets the
+    // suffix:
+    //   spot/short  → long-leg is CEX spot
+    //   dex/spot    → SHORT-leg is CEX spot (long-leg is DexScreener)
+    //   dex/short   → no spot leg (long-leg DEX, short perp)
+    //   long/short  → no spot leg (both perp)
+    const isSpotLeg =
+      (side === 'long'  && TYPE === 'spot')      ||
+      (side === 'short' && TYPE === 'dex_spot');
     return (isSpotLeg ? ex + '_spot' : ex) + ':' + SYM.toUpperCase();
   };
   function _openPtBookWs() {

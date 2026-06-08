@@ -28,8 +28,8 @@
 <!-- Preload critical assets so browser fetches them in parallel with HTML
      parse. fetchpriority="high" ensures the bundle + CSS jump ahead of
      icons and other low-priority discoveries. -->
-<link rel="preload" as="script" href="/dist/core.min.js?v=20260608b" fetchpriority="high">
-<link rel="preload" as="script" href="/screener.js?v=20260608b"    fetchpriority="high">
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260608c" fetchpriority="high">
+<link rel="preload" as="script" href="/screener.js?v=20260608c"    fetchpriority="high">
 <link rel="preload" as="style"  href="/screener.css"               fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
@@ -60,6 +60,7 @@
       <button class="mode-tab active" id="tab-arb" onclick="switchMode('arb')">Long/Short</button>
       <button class="mode-tab" id="tab-spot"    onclick="switchMode('spot')">Spot/Short</button>
       <button class="mode-tab" id="tab-dex"     onclick="switchMode('dex')">DEX/Short</button>
+      <button class="mode-tab" id="tab-dex-spot" onclick="switchMode('dex-spot')">DEX/Spot</button>
       <button class="mode-tab" id="tab-funding-arb" onclick="switchMode('funding-arb')">Funding Arb</button>
       <button class="mode-tab" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
     </div>
@@ -349,6 +350,29 @@
       <div class="pager" id="pager-dex"></div>
     </div>
 
+    <!-- ── DEX/SPOT SECTION (DEX↔CEX spot price arb, no funding/perp) ── -->
+    <div id="section-dex-spot" style="display:none">
+      <div class="table-wrap">
+        <table id="tbl-dex-spot">
+          <thead>
+            <tr>
+              <th onclick="sortDexSpot('symbol')"        data-dscol="symbol"        data-tip="Token ticker (exists on a DEX AND on at least one CEX spot)">Token <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDexSpot('dex_name')"      data-dscol="dex_name"      data-tip="DEX venue + chain (best-liquidity USD-quoted pair). Liquidity · 24h volume shown below.">DEX / Liquidity <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDexSpot('cex_exchange')"  data-dscol="cex_exchange"  data-tip="CEX spot venue + 24h USD volume">CEX spot / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDexSpot('direction')"     data-dscol="direction"     data-tip="Trade direction. dex→cex = buy DEX/sell CEX; cex→dex = buy CEX/sell DEX">Direction <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDexSpot('abs_spread_pct')" data-dscol="abs_spread_pct" class="sorted" data-tip="|spread| = |(cex_spot − dex_price) / mid| × 100. Higher = wider gap to capture.">|Spread| <span class="sort-arrow">↓</span></th>
+              <th onclick="sortDexSpot('total_fees')"    data-dscol="total_fees"    data-tip="DEX round-trip (~0.8%) + CEX spot taker × 2. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDexSpot('net_pct')"       data-dscol="net_pct"       data-tip="Net = |spread| − total fees">Net % <span class="sort-arrow">↕</span></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-dex-spot"><tr><td colspan="8" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading DEX/Spot opportunities</div><div class="empty-sub">Requires AVALANT_DEX_SPOT=1 on the fetcher. DexScreener can take 10-30 s for first scan.</div></div></td></tr></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-dex-spot"></div>
+      <div class="pager" id="pager-dex-spot"></div>
+    </div>
+
     <!-- ── FUNDING ARB SECTION (positive-funding spot+short, same-venue OK) ── -->
     <div id="section-funding-arb" style="display:none">
       <div class="table-wrap">
@@ -510,10 +534,10 @@
 </nav>
 
 <!-- Shared modules bundled — see frontend/build.mjs. One RTT vs 11. -->
-<script src="/dist/core.min.js?v=20260608b"></script>
+<script src="/dist/core.min.js?v=20260608c"></script>
 <!-- Page-specific code (was 2750 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes. -->
-<script src="/screener.js?v=20260608b" defer></script>
+<script src="/screener.js?v=20260608c" defer></script>
 
 </body>
 </html>

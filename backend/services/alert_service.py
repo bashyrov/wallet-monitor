@@ -100,24 +100,31 @@ _ANY = "*"  # stored value meaning "match any exchange"
 _CACHE_DIR = "/tmp/avalant_cache"
 
 # Map mode → (cache filename, long-exchange field name in that cache)
+# dex_spot has a special field name `cex_exchange` for the short-leg side
+# (CEX spot, not perp). The lookup code (_get_spread_from_opps) compares
+# against `short_exchange` for non-dex_spot rows; dex_spot rows substitute
+# `cex_exchange` — see the conditional in _get_spread_from_opps.
 _MODE_META = {
-    "futures": ("arbitrage.json",     "long_exchange"),
-    "spot":    ("spot_arbitrage.json", "spot_exchange"),
-    "dex":     ("dex_arbitrage.json",  "dex_name"),
+    "futures":  ("arbitrage.json",         "long_exchange"),
+    "spot":     ("spot_arbitrage.json",     "spot_exchange"),
+    "dex":      ("dex_arbitrage.json",      "dex_name"),
+    "dex_spot": ("dex_spot_arbitrage.json", "dex_name"),
 }
 
 # Label for TG messages
 _MODE_LABEL = {
-    "futures": "Futures L/S",
-    "spot":    "Spot/Short",
-    "dex":     "DEX/Short",
+    "futures":  "Futures L/S",
+    "spot":     "Spot/Short",
+    "dex":      "DEX/Short",
+    "dex_spot": "DEX/Spot",
 }
 
 # URL type param for the /arb page
 _MODE_URL_TYPE = {
-    "futures": "long-short",
-    "spot":    "spot-short",
-    "dex":     "dex-short",
+    "futures":  "long-short",
+    "spot":     "spot-short",
+    "dex":      "dex-short",
+    "dex_spot": "dex-spot",
 }
 
 
@@ -147,32 +154,46 @@ def _load_arb_cache(mode: str) -> list[dict]:
 
 
 def _opp_spread(opp: dict) -> float:
-    """Return in_pct (preferred, orderbook-based) or net_profit as fallback."""
+    """Return in_pct (preferred, orderbook-based) or net_profit as fallback.
+    dex_spot has no in_pct/net_profit — it's a spot-spot delta — so we
+    fall back to spread_pct which is the signed (cex - dex) / mid * 100."""
     v = opp.get("in_pct")
     if v is not None:
         return float(v)
     np = opp.get("net_profit")
     if np is not None:
         return float(np)
+    sp = opp.get("spread_pct")
+    if sp is not None:
+        return float(sp)
     return 0.0
 
 
+def _short_field_for_mode(mode: str) -> str:
+    """dex_spot stores the CEX leg as `cex_exchange`; everyone else as
+    `short_exchange`. Used by _get_spread_from_opps + _best_pair_from_opps
+    so the same scan code handles both wire shapes."""
+    return "cex_exchange" if mode == "dex_spot" else "short_exchange"
+
+
 def _get_spread_from_opps(opps: list[dict], symbol: str, long_ex: str,
-                           short_ex: str, long_field: str) -> float | None:
+                           short_ex: str, long_field: str,
+                           short_field: str = "short_exchange") -> float | None:
     """Find the matching opp and return its in/out spread."""
     for opp in opps:
         if opp.get("symbol") != symbol:
             continue
         if opp.get(long_field, "").lower() != long_ex.lower():
             continue
-        if opp.get("short_exchange", "").lower() != short_ex.lower():
+        if opp.get(short_field, "").lower() != short_ex.lower():
             continue
         return _opp_spread(opp)
     return None
 
 
 def _best_pair_from_opps(opps: list[dict], symbol: str,
-                          long_field: str) -> tuple[str, str, float] | None:
+                          long_field: str,
+                          short_field: str = "short_exchange") -> tuple[str, str, float] | None:
     """Scan all opps for `symbol` and return the one with the largest |spread|."""
     best: tuple[str, str, float] | None = None
     for opp in opps:
@@ -181,7 +202,7 @@ def _best_pair_from_opps(opps: list[dict], symbol: str,
         spread = _opp_spread(opp)
         if best is None or abs(spread) > abs(best[2]):
             long_ex = opp.get(long_field, "")
-            short_ex = opp.get("short_exchange", "")
+            short_ex = opp.get(short_field, "")
             best = (long_ex, short_ex, spread)
     return best
 
@@ -189,8 +210,9 @@ def _best_pair_from_opps(opps: list[dict], symbol: str,
 async def _get_spread(symbol: str, long_ex: str, short_ex: str, mode: str) -> float | None:
     try:
         _, long_field = _MODE_META.get(mode, _MODE_META["futures"])
+        short_field = _short_field_for_mode(mode)
         opps = _load_arb_cache(mode)
-        return _get_spread_from_opps(opps, symbol, long_ex, short_ex, long_field)
+        return _get_spread_from_opps(opps, symbol, long_ex, short_ex, long_field, short_field)
     except Exception:
         return None
 
@@ -198,8 +220,9 @@ async def _get_spread(symbol: str, long_ex: str, short_ex: str, mode: str) -> fl
 async def _best_pair_for_symbol(symbol: str, mode: str) -> tuple[str, str, float] | None:
     try:
         _, long_field = _MODE_META.get(mode, _MODE_META["futures"])
+        short_field = _short_field_for_mode(mode)
         opps = _load_arb_cache(mode)
-        return _best_pair_from_opps(opps, symbol, long_field)
+        return _best_pair_from_opps(opps, symbol, long_field, short_field)
     except Exception:
         return None
 

@@ -150,7 +150,7 @@ let _mode = (() => {
   return 'arb';
 })();
 // Canonicalise URL param name for sharing (?mode=long-short not ?mode=arb)
-const _MODE_CANON = {arb:'long-short', spot:'spot-short', dex:'dex-short', 'funding-arb':'funding-arb'};
+const _MODE_CANON = {arb:'long-short', spot:'spot-short', dex:'dex-short', 'dex-spot':'dex-spot', 'funding-arb':'funding-arb'};
 let _rows = [];           // funding rows
 let _arbRows = [];                    // flat array for table rendering
 // Tracks whether the first in_pct landing has triggered a one-time sort.
@@ -546,16 +546,16 @@ function switchMode(mode) {
     url.searchParams.set('mode', _MODE_CANON[mode] || mode);
     history.replaceState(null, '', url);
   } catch {}
-  ['all','arb','spot','dex','funding','funding-arb','alpha'].forEach(m => {
+  ['all','arb','spot','dex','dex-spot','funding','funding-arb','alpha'].forEach(m => {
     const t = document.getElementById('tab-' + m);
     if (t) t.classList.toggle('active', mode === m);
     const s = document.getElementById('section-' + m);
     if (s) s.style.display = mode === m ? '' : 'none';
   });
   document.getElementById('lp-filters-funding').style.display   = mode === 'funding' ? '' : 'none';
-  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex' || mode === 'funding-arb') ? '' : 'none';
+  document.getElementById('lp-filters-arb').style.display       = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex' || mode === 'dex-spot' || mode === 'funding-arb') ? '' : 'none';
   const mf = document.getElementById('mob-filters-funding'); if (mf) mf.style.display = mode === 'funding' ? '' : 'none';
-  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex' || mode === 'funding-arb') ? '' : 'none';
+  const ma = document.getElementById('mob-filters-arb');     if (ma) ma.style.display = (mode === 'arb' || mode === 'alpha' || mode === 'all' || mode === 'spot' || mode === 'dex' || mode === 'dex-spot' || mode === 'funding-arb') ? '' : 'none';
   const mobSortF = document.getElementById('mobile-sort-funding'); if (mobSortF) mobSortF.style.display = mode === 'funding' ? '' : 'none';
   const mobSortA = document.getElementById('mobile-sort-arb');     if (mobSortA) mobSortA.style.display = mode === 'arb'     ? '' : 'none';
   renderAlphaStatus();
@@ -564,6 +564,7 @@ function switchMode(mode) {
   else if (mode === 'funding') { _pollFunding(false); applyFilter(); }
   else if (mode === 'spot') loadSpot();
   else if (mode === 'dex') loadDex();
+  else if (mode === 'dex-spot') loadDexSpot();
   else if (mode === 'funding-arb') loadFundingArb();
   else if (mode === 'all') loadAll();
   else applyArb();
@@ -847,6 +848,137 @@ function renderDexCards() {
 }
 
 function goPageDX(p) { _pageDX = p; renderDex(); }
+
+// ── DEX/Spot arbitrage (DEX↔CEX spot-only, no funding/perp) ───────────────────
+// Behind go-fetcher AVALANT_DEX_SPOT=1. REST endpoint returns cold envelope
+// if the file isn't being written; in that case the table shows the empty
+// state with the explanatory subtitle.
+let _dexSpotRows = [];
+let _dexSpotFiltered = [];
+let _pageDS = 0;
+let _dexSpotSort = { col: 'abs_spread_pct', dir: 'desc' };
+
+const _dexSpotRowsByKey = new Map();
+const _dexSpotKey = (o) => `${o.symbol}|${o.cex_exchange}`;
+let _wsDexSpot = null;
+const _retryDS = { val: 0 }, _pingDS = { val: null }, _retryTimerDS = { val: null };
+
+function _applyDexSpotPayload(data) {
+  if (!data) return;
+  if (data.type === 'diff') {
+    if (Array.isArray(data.added)) for (const o of data.added) _dexSpotRowsByKey.set(_dexSpotKey(o), o);
+    if (Array.isArray(data.updated)) for (const o of data.updated) _dexSpotRowsByKey.set(_dexSpotKey(o), o);
+    if (Array.isArray(data.removed)) {
+      for (const k of data.removed) {
+        const key = Array.isArray(k) ? k.join('|') : k;
+        _dexSpotRowsByKey.delete(key);
+      }
+    }
+  } else {
+    _dexSpotRowsByKey.clear();
+    for (const o of (data.opportunities || [])) _dexSpotRowsByKey.set(_dexSpotKey(o), o);
+  }
+  _dexSpotRows = Array.from(_dexSpotRowsByKey.values());
+}
+
+const _connectDexSpot = _makeWs({
+  path: 'dex-spot',
+  retryRef: _retryDS, pingRef: _pingDS, retryTimerRef: _retryTimerDS,
+  onMessage: (data) => {
+    _applyDexSpotPayload(data);
+    if (_mode === 'dex-spot') applyDexSpot();
+  },
+});
+
+async function loadDexSpot() {
+  if (!_dexSpotRows.length) {
+    document.getElementById('tbody-dex-spot').innerHTML =
+      '<tr><td colspan="8" class="empty-msg"><span class="spinner"></span>Scanning DEX↔CEX spot pairs…</td></tr>';
+  }
+  try {
+    const r = await Auth.apiFetch('/screener/dex-spot');
+    if (r.ok) {
+      const j = await r.json();
+      _applyDexSpotPayload({type: 'snapshot', opportunities: j.opportunities || []});
+      applyDexSpot();
+    }
+  } catch (e) {
+    if (!_dexSpotRows.length) {
+      document.getElementById('tbody-dex-spot').innerHTML = _emptyRow({kind:'error',title:'Failed to load DEX/Spot',sub:(e.message||'Network error').slice(0,200),colspan:8,retryFn:'loadDexSpot()'});
+    }
+  }
+  if (!_wsDexSpot || _wsDexSpot.readyState === WebSocket.CLOSED) {
+    _wsDexSpot = _connectDexSpot();
+  }
+}
+
+function sortDexSpot(col) {
+  if (_dexSpotSort.col === col) _dexSpotSort.dir = _dexSpotSort.dir === 'desc' ? 'asc' : 'desc';
+  else { _dexSpotSort.col = col; _dexSpotSort.dir = 'desc'; }
+  document.querySelectorAll('#tbl-dex-spot th[data-dscol]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (th.dataset.dscol === col) { th.classList.add('sorted'); if (arrow) arrow.textContent = _dexSpotSort.dir === 'desc' ? '↓' : '↑'; }
+    else                          { th.classList.remove('sorted'); if (arrow) arrow.textContent = '↕'; }
+  });
+  applyDexSpot();
+}
+
+function applyDexSpot(keepPage = false) {
+  // Symbol search + exchange filter reuse the same global controls.
+  _dexSpotFiltered = _dexSpotRows.filter(r => {
+    if (_exDisabled.has(r.cex_exchange)) return false;
+    if (_search && !r.symbol.toLowerCase().includes(_search.toLowerCase())) return false;
+    return true;
+  });
+  const dir = _dexSpotSort.dir === 'desc' ? -1 : 1;
+  const col = _dexSpotSort.col;
+  _dexSpotFiltered.sort((a, b) => {
+    let av = a[col], bv = b[col];
+    if (typeof av === 'string') return av.localeCompare(bv) * dir;
+    return ((+av || 0) - (+bv || 0)) * dir;
+  });
+  if (!keepPage) _pageDS = 0;
+  renderDexSpot();
+}
+
+function renderDexSpot() {
+  const tbody = document.getElementById('tbody-dex-spot');
+  if (!tbody) return;
+  if (!_dexSpotFiltered.length) {
+    tbody.innerHTML = _emptyRow({
+      kind: 'empty',
+      title: _dexSpotRows.length ? 'No matches' : 'No DEX/Spot data yet',
+      sub: _dexSpotRows.length
+        ? 'Adjust filters above.'
+        : 'AVALANT_DEX_SPOT=1 must be set on the fetcher. DexScreener can take 10-30s for the first scan.',
+      colspan: 8,
+    });
+    return;
+  }
+  const start = _pageDS * PAGE_SIZE;
+  const page = _dexSpotFiltered.slice(start, start + PAGE_SIZE);
+  tbody.innerHTML = page.map(r => {
+    const spreadCls = r.abs_spread_pct > 0 ? 'rate-pos' : 'rate-zero';
+    const netCls = r.net_pct > 0 ? 'net-pos' : 'net-neg';
+    const netSign = r.net_pct >= 0 ? '+' : '';
+    const dirArrow = r.direction === 'dex_to_cex' ? '▲' : '▼';
+    const dirLabel = r.direction === 'dex_to_cex' ? 'DEX→CEX' : 'CEX→DEX';
+    const dirCls = r.direction === 'dex_to_cex' ? 'rate-pos' : 'rate-neg';
+    const detailUrl = `/arb?type=dex-spot&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.cex_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
+    return `<tr style="cursor:pointer" onclick="window.open('${detailUrl}','_blank')">
+      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a></td>
+      <td><div class="cell-ex">${(r.dex_name||'').toUpperCase()}${r.dex_chain ? ` · <span style="color:var(--text3)">${(r.dex_chain||'').toUpperCase()}</span>` : ''}</div><div class="cell-sub">Liq ${fmtVol(r.dex_liquidity_usd)} · Vol ${fmtVol(r.dex_volume_usd)}</div></td>
+      <td><div class="cell-ex">${esc(r.cex_exchange)}</div><div class="cell-sub">Vol ${fmtVol(r.cex_volume_usd)}</div></td>
+      <td class="${dirCls}" style="white-space:nowrap">${dirArrow} ${dirLabel}</td>
+      <td class="num ${spreadCls}">${r.abs_spread_pct.toFixed(4)}%</td>
+      <td class="num">${r.total_fees.toFixed(3)}%</td>
+      <td class="num ${netCls}">${netSign}${r.net_pct.toFixed(4)}%</td>
+      <td><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" class="arb-detail-btn" title="Open detail">↗</a></td>
+    </tr>`;
+  }).join('');
+}
+
+function goPageDS(p) { _pageDS = p; renderDexSpot(); }
 
 // ── Spot-short arbitrage (mirrors arb layout + cadence) ──────────────────────
 let _spotRows = [];

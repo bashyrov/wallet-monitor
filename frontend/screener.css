@@ -490,7 +490,17 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
   border-bottom: 1px solid var(--border);
   padding: 0 16px;
   margin-bottom: 0;
+  /* 7 tabs (All / Long-Short / Spot-Short / DEX-Short / DEX-Spot /
+     Funding-Arb / Funding-Rates) overflow narrow viewports. Horizontal
+     scroll + flex-shrink:0 on children so tabs keep their full label
+     width instead of squeezing illegibly. webkit-scrollbar:none keeps
+     the strip clean on mobile. */
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.mode-tabs::-webkit-scrollbar { display: none; }
+.mode-tab { flex-shrink: 0; }
 /* ── Phone density (≤560px): trim noise so core arb metrics stay legible ── */
 @media (max-width: 560px) {
   /* Phone density pass. Trims columns aggressively so the core arb metrics

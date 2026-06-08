@@ -259,7 +259,7 @@ class ArbAlert(Base):
     short_exchange = Column(String, nullable=False)
     threshold = Column(Float, nullable=False)          # min spread % to trigger
     direction = Column(String, nullable=False, default="any")  # any | above | below
-    mode = Column(String, nullable=True)               # futures | spot | dex (null = futures)
+    mode = Column(String, nullable=True)               # futures | spot | dex | dex_spot (null = futures)
     trigger_mode = Column(String, nullable=True)       # speed | protected (null = speed)
     enabled = Column(Boolean, nullable=False, default=True)
     last_triggered_at = Column(DateTime, nullable=True)
@@ -651,7 +651,7 @@ class TradePosition(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     kind = Column(String, nullable=False)              # single | pair
-    pair_kind = Column(String, nullable=True)          # long_short | spot_short | null
+    pair_kind = Column(String, nullable=True)          # long_short | spot_short | dex_spot | null
     status = Column(String, nullable=False, index=True)
     symbol = Column(String, nullable=False, index=True)
 
