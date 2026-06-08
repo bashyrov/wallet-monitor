@@ -43,6 +43,7 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/paradex"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/whitebit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/arb"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cex_assets"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	faster "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/aster"
 	fbinance "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/binance"
@@ -238,17 +239,54 @@ func main() {
 		return dexCompute.Run(gctx)
 	})
 
+	// CEX assets registry — resolves CEX-listed tokens to per-chain
+	// contract addresses for address-based DEX↔CEX matching. Behind
+	// AVALANT_CEX_ASSETS=1. Off = registry empty, all dex/* rows fall
+	// back to ticker matching with address_unverified=true.
+	var cexRegistry *cex_assets.Registry
+	if os.Getenv("AVALANT_CEX_ASSETS") == "1" {
+		cexRegistry = cex_assets.NewRegistry(cfg.CacheDir)
+		if err := cexRegistry.LoadFromDisk(); err != nil {
+			log.L().Warn().Err(err).Msg("cex_assets: LoadFromDisk failed (continuing with empty registry)")
+		}
+		mgr := cex_assets.NewManager(cexRegistry, cfg.CacheDir)
+		g.Go(func() error {
+			mgr.Run(gctx)
+			return nil
+		})
+		log.L().Info().
+			Int("venues_after_load", cexRegistry.VenueCount()).
+			Msg("AVALANT_CEX_ASSETS=1 → cex_assets manager ENABLED (gate/kucoin/bitget)")
+	}
+
 	// DEX↔CEX spot-only arb. Behind AVALANT_DEX_SPOT=1. Shares DEX
 	// snapshots with dexCompute and spot snapshots with spotCompute — no
 	// extra DexScreener / venue REST load. Off by default; goroutine
-	// never spawned unless the flag is on.
+	// never spawned unless the flag is on. Optional cexRegistry enables
+	// address-based matching (vs ticker-only) — also fed to dexCompute
+	// below so dex/short benefits identically.
 	var dexSpotCompute *arb.DexSpotCompute
+	// Wrap the cex_assets.Registry into the arb.CexAddressMatcher
+	// closure shape. nil registry → nil matcher → arb emits
+	// address_verified=false for every row (correct fallback).
+	var cexMatcher arb.CexAddressMatcher
+	if cexRegistry != nil {
+		cexMatcher = func(venue, ticker, dexChain, dexAddress string) (bool, string, bool) {
+			res := cexRegistry.MatchByAddress(venue, ticker, dexChain, dexAddress)
+			return res.Verified, res.MatchChain, res.AddressKnown
+		}
+	}
 	if os.Getenv("AVALANT_DEX_SPOT") == "1" {
 		dexSpotCompute = arb.NewDexSpotCompute(dexCompute, spotCompute, cfg.CacheDir, 30*time.Second)
+		dexSpotCompute.SetCexRegistry(cexMatcher)
 		g.Go(func() error {
 			return dexSpotCompute.Run(gctx)
 		})
 		log.L().Info().Msg("AVALANT_DEX_SPOT=1 → dex_spot compute ENABLED")
+	}
+	// dex/short also gets the registry so its address column is verified.
+	if cexMatcher != nil {
+		dexCompute.SetCexRegistry(cexMatcher)
 	}
 
 	// Trade-stream (tick) hub — populated only when WS broadcaster is up.

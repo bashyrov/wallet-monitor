@@ -20,6 +20,17 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
 
+// CexAddressMatcher is the read closure compute uses against the CEX
+// assets registry. main.go builds it from cex_assets.Registry — the
+// arb package itself doesn't import cex_assets to keep this layer
+// transport-agnostic and the dep graph one-directional.
+//
+// Returns: verified (chain AND address both match the venue's record),
+// matchChain (DexScreener canonical chain if verified, else ""), and
+// addressKnown (ticker exists in venue registry — distinguishes
+// "verified false because address differs" from "we have no data").
+type CexAddressMatcher func(venue, ticker, dexChain, dexAddress string) (verified bool, matchChain string, addressKnown bool)
+
 // dexInfo is the result of a DexScreener pool lookup.
 type dexInfo struct {
 	Symbol       string
@@ -56,6 +67,19 @@ type DEXCompute struct {
 	// reads — a starved cycle keeps the previous map.
 	snapMu  sync.RWMutex
 	dexSnap map[string]dexInfo
+
+	// cexMatcher is set when AVALANT_CEX_ASSETS=1. When nil, every row
+	// emits address_verified=false unconditionally.
+	cexMatcher CexAddressMatcher
+}
+
+// SetCexRegistry wires the address-match closure. Safe to call before
+// or after Run is started — the compute reads c.cexMatcher under the
+// mu lock only inside tick().
+func (c *DEXCompute) SetCexRegistry(m CexAddressMatcher) {
+	c.mu.Lock()
+	c.cexMatcher = m
+	c.mu.Unlock()
 }
 
 type cgEntry struct {
@@ -397,32 +421,44 @@ func (c *DEXCompute) tick(ctx context.Context) {
 			if fundingOnly > 0 {
 				netAPR = fundingOnly * (365.0 * 3.0)
 			}
+			// Address verification. dex_short uses perpEx as the CEX
+			// venue. Only 3 public adapters in v1 (gate/kucoin/bitget);
+			// every other venue returns AddressKnown=false → verified
+			// also false → frontend renders ⚠ unverified pill. Same
+			// policy when AVALANT_CEX_ASSETS=0 (registry empty).
+			verified, matchChain, addrKnown := false, "", false
+			if c.cexMatcher != nil {
+				verified, matchChain, addrKnown = c.cexMatcher(perpEx, sym, dex.Chain, dex.BaseAddress)
+			}
 			opps = append(opps, map[string]any{
-				"type":              "dex_short",
-				"symbol":            sym,
-				"dex_chain":         dex.Chain,
-				"dex_name":          dex.Dex,
-				"dex_pair_url":      dex.PairURL,
-				"dex_base_address":  dex.BaseAddress,
-				"short_exchange":    perpEx,
-				"dex_price":         dex.Price,
-				"perp_price":        p.MarkPrice,
-				"dex_liquidity_usd": dex.LiquidityUSD,
-				"dex_volume_usd":    dex.VolumeUSD,
-				"perp_volume_usd":   p.Volume24h,
-				"funding_rate":      p.Rate,
-				"short_funding_8h":  shortFunding,
-				"basis_pct":         basisPct,
-				"gross":             gross,
-				"fee_dex":           feeDexRT,
-				"fee_perp":          feePerpRT,
-				"total_fees":        totalFees,
-				"net_profit":        net,
-				"net_apr":           netAPR,
-				"interval_h":        intH,
-				"next_ts":           nextTsOf(p.NextFunding),
-				"in_pct":            inPct,
-				"out_pct":           outPct,
+				"type":               "dex_short",
+				"symbol":             sym,
+				"dex_chain":          dex.Chain,
+				"dex_name":           dex.Dex,
+				"dex_pair_url":       dex.PairURL,
+				"dex_base_address":   dex.BaseAddress,
+				"short_exchange":     perpEx,
+				"dex_price":          dex.Price,
+				"perp_price":         p.MarkPrice,
+				"dex_liquidity_usd":  dex.LiquidityUSD,
+				"dex_volume_usd":     dex.VolumeUSD,
+				"perp_volume_usd":    p.Volume24h,
+				"funding_rate":       p.Rate,
+				"short_funding_8h":   shortFunding,
+				"basis_pct":          basisPct,
+				"gross":              gross,
+				"fee_dex":            feeDexRT,
+				"fee_perp":           feePerpRT,
+				"total_fees":         totalFees,
+				"net_profit":         net,
+				"net_apr":            netAPR,
+				"interval_h":         intH,
+				"next_ts":            nextTsOf(p.NextFunding),
+				"in_pct":             inPct,
+				"out_pct":            outPct,
+				"address_verified":   verified,
+				"address_match_chain": matchChain,
+				"address_known":      addrKnown,
 			})
 		}
 	}

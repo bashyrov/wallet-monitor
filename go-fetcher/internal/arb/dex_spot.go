@@ -51,6 +51,17 @@ type DexSpotCompute struct {
 	mu        sync.Mutex
 	firstSeen map[dexSpotKey]time.Time
 	lastSeen  map[dexSpotKey]time.Time
+
+	// cexMatcher is set when AVALANT_CEX_ASSETS=1 (same registry that
+	// dex_short uses). nil → every row emits address_verified=false.
+	cexMatcher CexAddressMatcher
+}
+
+// SetCexRegistry wires the address-match closure.
+func (c *DexSpotCompute) SetCexRegistry(m CexAddressMatcher) {
+	c.mu.Lock()
+	c.cexMatcher = m
+	c.mu.Unlock()
 }
 
 type dexSpotKey struct {
@@ -182,27 +193,39 @@ func (c *DexSpotCompute) tick() {
 			feeCexRT := spotFeeOf(cexEx) * 100.0 * 2.0
 			totalFees := feeDexRT + feeCexRT
 			netPct := absSpread - totalFees
+			// Address verification — same policy as dex_short. With
+			// AVALANT_CEX_ASSETS=1, gate/kucoin/bitget rows are verified
+			// when (chain, address) match; every other venue (incl.
+			// htx and the 5 signed venues without keys) returns
+			// AddressKnown=false → verified=false → UI ⚠ unverified.
+			verified, matchChain, addrKnown := false, "", false
+			if c.cexMatcher != nil {
+				verified, matchChain, addrKnown = c.cexMatcher(cexEx, sym, dex.Chain, dex.BaseAddress)
+			}
 			cexHits++
 			opps = append(opps, map[string]any{
-				"type":              "dex_spot",
-				"symbol":            sym,
-				"direction":         direction,
-				"dex_chain":         dex.Chain,
-				"dex_name":          dex.Dex,
-				"dex_pair_url":      dex.PairURL,
-				"dex_base_address":  dex.BaseAddress,
-				"cex_exchange":      cexEx,
-				"dex_price":         dex.Price,
-				"cex_spot_price":    st.Price,
-				"dex_liquidity_usd": dex.LiquidityUSD,
-				"dex_volume_usd":    dex.VolumeUSD,
-				"cex_volume_usd":    st.VolumeUSD,
-				"spread_pct":        spreadPct,    // signed
-				"abs_spread_pct":    absSpread,    // ranking key
-				"fee_dex":           feeDexRT,
-				"fee_cex":           feeCexRT,
-				"total_fees":        totalFees,
-				"net_pct":           netPct,
+				"type":                "dex_spot",
+				"symbol":              sym,
+				"direction":           direction,
+				"dex_chain":           dex.Chain,
+				"dex_name":            dex.Dex,
+				"dex_pair_url":        dex.PairURL,
+				"dex_base_address":    dex.BaseAddress,
+				"cex_exchange":        cexEx,
+				"dex_price":           dex.Price,
+				"cex_spot_price":      st.Price,
+				"dex_liquidity_usd":   dex.LiquidityUSD,
+				"dex_volume_usd":      dex.VolumeUSD,
+				"cex_volume_usd":      st.VolumeUSD,
+				"spread_pct":          spreadPct, // signed
+				"abs_spread_pct":      absSpread, // ranking key
+				"fee_dex":             feeDexRT,
+				"fee_cex":             feeCexRT,
+				"total_fees":          totalFees,
+				"net_pct":             netPct,
+				"address_verified":    verified,
+				"address_match_chain": matchChain,
+				"address_known":       addrKnown,
 			})
 		}
 	}
