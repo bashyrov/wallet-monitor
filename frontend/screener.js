@@ -947,9 +947,15 @@ function sortDexSpot(col) {
 
 function applyDexSpot(keepPage = false) {
   // Symbol search + exchange filter reuse the same global controls.
+  // Read the search input value inline — there is no `_search` global in
+  // this file (the other tabs read it the same way). Without this guard
+  // applyDexSpot threw ReferenceError silently inside loadDexSpot's
+  // try/catch, leaving the spinner spinning forever — confirmed user
+  // symptom 'крутится и нету ошибок'.
+  const q = (document.getElementById('search')?.value || '').trim().toUpperCase();
   _dexSpotFiltered = _dexSpotRows.filter(r => {
     if (_exDisabled.has(r.cex_exchange)) return false;
-    if (_search && !r.symbol.toLowerCase().includes(_search.toLowerCase())) return false;
+    if (q && !r.symbol.toUpperCase().includes(q)) return false;
     return true;
   });
   const dir = _dexSpotSort.dir === 'desc' ? -1 : 1;
