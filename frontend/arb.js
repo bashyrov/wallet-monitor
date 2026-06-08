@@ -1460,6 +1460,24 @@ if (TYPE === 'spot' || TYPE === 'dex') {
         ws.send(JSON.stringify({ action: 'subscribe', pairs }));
       } catch (_) {}
     };
+    // rAF-coalesced render. Hot pairs (bybit perp ~44/s, binance perp
+    // ~100/s) push faster than the screen can paint. Without coalescing
+    // we'd run the full _renderBook pipeline (sort + group + 50-row
+    // pool walk × 2 sides + per-level flash + setTimeout scheduling)
+    // for every WS frame → main-thread starvation → user sees the
+    // book "тупить" (sluggish, scroll jank, late flashes).
+    // Mirrors futures _bookRafId pattern at arb.js:~2786.
+    const _ptBookRafId = { long: null, short: null };
+    const _ptLatestBook = { long: null, short: null };
+    function _ptScheduleRender(side, asks, bids) {
+      _ptLatestBook[side] = { asks, bids };
+      if (_ptBookRafId[side]) return;
+      _ptBookRafId[side] = requestAnimationFrame(() => {
+        _ptBookRafId[side] = null;
+        const d = _ptLatestBook[side];
+        if (d) _renderBook(side, d.asks, d.bids);
+      });
+    }
     ws.onmessage = (e) => {
       _ptLastWsAt = Date.now();
       let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
@@ -1467,10 +1485,10 @@ if (TYPE === 'spot' || TYPE === 'dex') {
       if (!books) return;
       const longPair = _ptBookPair('long'), shortPair = _ptBookPair('short');
       if (!IS_DEX && books[longPair]) {
-        _renderBook('long', books[longPair].asks || [], books[longPair].bids || []);
+        _ptScheduleRender('long', books[longPair].asks || [], books[longPair].bids || []);
       }
       if (books[shortPair]) {
-        _renderBook('short', books[shortPair].asks || [], books[shortPair].bids || []);
+        _ptScheduleRender('short', books[shortPair].asks || [], books[shortPair].bids || []);
       }
     };
     ws.onclose = () => {
