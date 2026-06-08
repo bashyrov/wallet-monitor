@@ -41,18 +41,20 @@ type Service struct {
 	longShort *LongShort
 	spotShort *SpotShort
 	dexShort  *DexShort
+	dexSpot   *DexSpot
 	funding   *Funding
 	book      *Book
 	trades    *Trades
 	upgrader  websocket.Upgrader
 }
 
-func NewService(jwt *JWTValidator, longShort *LongShort, spotShort *SpotShort, dexShort *DexShort, funding *Funding, book *Book, trades *Trades) *Service {
+func NewService(jwt *JWTValidator, longShort *LongShort, spotShort *SpotShort, dexShort *DexShort, dexSpot *DexSpot, funding *Funding, book *Book, trades *Trades) *Service {
 	return &Service{
 		jwt:       jwt,
 		longShort: longShort,
 		spotShort: spotShort,
 		dexShort:  dexShort,
+		dexSpot:   dexSpot,
 		funding:   funding,
 		book:      book,
 		trades:    trades,
@@ -78,6 +80,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	if s.dexShort != nil {
 		mux.HandleFunc("/api/screener/ws/dex-short", s.handleDexShort)
 	}
+	if s.dexSpot != nil {
+		mux.HandleFunc("/api/screener/ws/dex-spot", s.handleDexSpot)
+	}
 	mux.HandleFunc("/api/screener/ws/funding", s.handleFunding)
 	mux.HandleFunc("/api/screener/ws/book", s.handleBook)
 	if s.trades != nil {
@@ -95,6 +100,9 @@ func (s *Service) Run(ctx context.Context) {
 	}
 	if s.dexShort != nil {
 		go s.dexShort.Run(ctx)
+	}
+	if s.dexSpot != nil {
+		go s.dexSpot.Run(ctx)
 	}
 	go s.funding.Run(ctx)
 	go s.book.Run(ctx)
@@ -219,6 +227,35 @@ func (s *Service) handleDexShort(w http.ResponseWriter, r *http.Request) {
 	}
 	go s.dexShort.hub.runWriter(c)
 	go s.dexShort.hub.runReader(c)
+}
+
+// handleDexSpot upgrades and registers the client on the dex-spot hub.
+// Public feed → optional auth (same policy as long-short).
+func (s *Service) handleDexSpot(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.L().Debug().Err(err).Msg("ws upgrade failed")
+		return
+	}
+	uid, ok := s.handshakeAuth(conn, authOptional)
+	if !ok {
+		return
+	}
+	c := &client{
+		uid:    uid,
+		conn:   conn,
+		outbox: make(chan []byte, clientOutboxSize),
+		done:   make(chan struct{}),
+	}
+	s.dexSpot.hub.register(c)
+	if snap := s.dexSpot.SnapshotForNewClient(); snap != nil {
+		select {
+		case c.outbox <- snap:
+		default:
+		}
+	}
+	go s.dexSpot.hub.runWriter(c)
+	go s.dexSpot.hub.runReader(c)
 }
 
 // handleBook upgrades and registers the client on the book hub.

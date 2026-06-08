@@ -238,6 +238,19 @@ func main() {
 		return dexCompute.Run(gctx)
 	})
 
+	// DEX↔CEX spot-only arb. Behind AVALANT_DEX_SPOT=1. Shares DEX
+	// snapshots with dexCompute and spot snapshots with spotCompute — no
+	// extra DexScreener / venue REST load. Off by default; goroutine
+	// never spawned unless the flag is on.
+	var dexSpotCompute *arb.DexSpotCompute
+	if os.Getenv("AVALANT_DEX_SPOT") == "1" {
+		dexSpotCompute = arb.NewDexSpotCompute(dexCompute, spotCompute, cfg.CacheDir, 30*time.Second)
+		g.Go(func() error {
+			return dexSpotCompute.Run(gctx)
+		})
+		log.L().Info().Msg("AVALANT_DEX_SPOT=1 → dex_spot compute ENABLED")
+	}
+
 	// Trade-stream (tick) hub — populated only when WS broadcaster is up.
 	// Hoisted to outer scope so tick adapter registration below the
 	// broadcaster block can reach OnTick.
@@ -268,6 +281,12 @@ func main() {
 		longShort := wsbroadcast.NewLongShort(cfg.CacheDir)
 		spotShort := wsbroadcast.NewSpotShort(cfg.CacheDir)
 		dexShort := wsbroadcast.NewDexShort(cfg.CacheDir)
+		// dex-spot broadcaster only attaches when the compute is enabled.
+		// nil here means /api/screener/ws/dex-spot is not mounted (404).
+		var dexSpotCh *wsbroadcast.DexSpot
+		if dexSpotCompute != nil {
+			dexSpotCh = wsbroadcast.NewDexSpot(cfg.CacheDir)
+		}
 		bookCh := wsbroadcast.NewBook(bookReader, store, mgr)
 		tickRing := ticks.NewRing(50)
 		tradesCh = wsbroadcast.NewTrades(tickRing, mgr)
@@ -276,6 +295,7 @@ func main() {
 			longShort,
 			spotShort,
 			dexShort,
+			dexSpotCh,
 			wsbroadcast.NewFunding(cfg.CacheDir),
 			bookCh,
 			tradesCh,

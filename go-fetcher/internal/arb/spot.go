@@ -53,10 +53,36 @@ type SpotCompute struct {
 	books    *cache.Store
 	cacheDir string
 	interval time.Duration
+
+	// spotSnap holds the most recent spotMap produced by tick() so the
+	// dex_spot compute can join it against DexScreener prices without
+	// re-hitting the 9 venue REST endpoints.
+	snapMu   sync.RWMutex
+	spotSnap map[string]map[string]spotTicker
 }
 
 func NewSpotCompute(store *funding.Store, books *cache.Store, cacheDir string, interval time.Duration) *SpotCompute {
 	return &SpotCompute{store: store, books: books, cacheDir: cacheDir, interval: interval}
+}
+
+// SnapshotSpotMap returns a shallow copy of the latest per-venue spot
+// ticker map. Each outer entry is the symbol; inner map is exchange →
+// ticker. Returns nil before the first successful tick.
+func (c *SpotCompute) SnapshotSpotMap() map[string]map[string]spotTicker {
+	c.snapMu.RLock()
+	defer c.snapMu.RUnlock()
+	if c.spotSnap == nil {
+		return nil
+	}
+	out := make(map[string]map[string]spotTicker, len(c.spotSnap))
+	for sym, byEx := range c.spotSnap {
+		inner := make(map[string]spotTicker, len(byEx))
+		for ex, t := range byEx {
+			inner[ex] = t
+		}
+		out[sym] = inner
+	}
+	return out
 }
 
 func (c *SpotCompute) Run(ctx context.Context) error {
@@ -122,6 +148,21 @@ func (c *SpotCompute) tick(ctx context.Context) {
 			bucket[r.ex] = t
 		}
 	}
+
+	// Publish snapshot for DexSpotCompute. Deep-copy under the write lock
+	// — DexSpotCompute reads concurrently and the next tick will
+	// overwrite spotMap.
+	spotSnap := make(map[string]map[string]spotTicker, len(spotMap))
+	for sym, byEx := range spotMap {
+		inner := make(map[string]spotTicker, len(byEx))
+		for ex, t := range byEx {
+			inner[ex] = t
+		}
+		spotSnap[sym] = inner
+	}
+	c.snapMu.Lock()
+	c.spotSnap = spotSnap
+	c.snapMu.Unlock()
 
 	// perp_map[symbol][exchange] = funding tick
 	perpMap := make(map[string]map[string]funding.Tick, 1024)

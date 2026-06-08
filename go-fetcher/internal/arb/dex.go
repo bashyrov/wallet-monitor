@@ -48,6 +48,14 @@ type DEXCompute struct {
 
 	firstSeen map[dexKey]time.Time
 	lastSeen  map[dexKey]time.Time
+
+	// dexSnap holds the most recent successful dexBySym snapshot so the
+	// dex_spot compute can join CEX spot prices against it without
+	// re-hitting DexScreener (rate-limited). Updated at the end of every
+	// successful tick under snapMu. Empty/stale snapshot still serves
+	// reads — a starved cycle keeps the previous map.
+	snapMu  sync.RWMutex
+	dexSnap map[string]dexInfo
 }
 
 type cgEntry struct {
@@ -434,6 +442,36 @@ func (c *DEXCompute) tick(ctx context.Context) {
 	if err := writeAtomic(filepath.Join(c.cacheDir, "dex_arbitrage.json"), out); err != nil {
 		log.L().Warn().Err(err).Msg("dex_arbitrage write failed")
 	}
+
+	// Publish snapshot for DexSpotCompute (and any other consumer).
+	// Deref the *dexInfo into a value so the consumer can't observe
+	// mid-tick mutations on the upstream pointer (the next cycle may
+	// overwrite entries in-place).
+	snap := make(map[string]dexInfo, len(dexBySym))
+	for k, v := range dexBySym {
+		if v != nil {
+			snap[k] = *v
+		}
+	}
+	c.snapMu.Lock()
+	c.dexSnap = snap
+	c.snapMu.Unlock()
+}
+
+// SnapshotDexBySym returns a shallow copy of the most recent dexBySym
+// produced by tick(). Consumed by DexSpotCompute. Safe for concurrent
+// reads — returns a new map each call.
+func (c *DEXCompute) SnapshotDexBySym() map[string]dexInfo {
+	c.snapMu.RLock()
+	defer c.snapMu.RUnlock()
+	if c.dexSnap == nil {
+		return nil
+	}
+	out := make(map[string]dexInfo, len(c.dexSnap))
+	for k, v := range c.dexSnap {
+		out[k] = v
+	}
+	return out
 }
 
 func (c *DEXCompute) writeEmpty() {
