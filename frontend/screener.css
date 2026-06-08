@@ -572,6 +572,9 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
 .type-pill.tp-ls   { color: var(--green);  background: rgba(26,255,171,0.08);  border: 1px solid rgba(26,255,171,0.3); }
 .type-pill.tp-spot { color: var(--yellow); background: rgba(229,192,123,0.08); border: 1px solid rgba(229,192,123,0.3); }
 .type-pill.tp-dex  { color: #A78BFA;       background: rgba(167,139,250,0.1);  border: 1px solid rgba(167,139,250,0.3); }
+/* DEX/Spot — purple (DEX leg) + teal accent (CEX spot leg). Distinct from
+   tp-dex so the 4 row-types stay visually separable in the All tab. */
+.type-pill.tp-dex-spot { color: #5EEAD4;   background: rgba(94,234,212,0.10); border: 1px solid rgba(94,234,212,0.3); }
 
 /* All-tab type chips (show only futures / spot-short / dex-short / all) */
 .all-type-chip {

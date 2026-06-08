@@ -978,31 +978,139 @@ function renderDexSpot() {
       title: _dexSpotRows.length ? 'No matches' : 'No DEX/Spot data yet',
       sub: _dexSpotRows.length
         ? 'Adjust filters above.'
-        : 'AVALANT_DEX_SPOT=1 must be set on the fetcher. DexScreener can take 10-30s for the first scan.',
+        : 'AVALANT_DEX_SPOT=1 must be set on the fetcher. DexScreener can take 10-30 s for the first scan.',
       colspan: 8,
     });
+    renderPager('pager-dex-spot', _pageDS, _dexSpotFiltered.length, 'goPageDS');
+    renderDexSpotCards();
     return;
   }
   const start = _pageDS * PAGE_SIZE;
   const page = _dexSpotFiltered.slice(start, start + PAGE_SIZE);
   tbody.innerHTML = page.map(r => {
+    const netCls   = r.net_pct > 0 ? 'net-pos' : 'net-neg';
+    const netSign  = r.net_pct >= 0 ? '+' : '';
     const spreadCls = r.abs_spread_pct > 0 ? 'rate-pos' : 'rate-zero';
-    const netCls = r.net_pct > 0 ? 'net-pos' : 'net-neg';
-    const netSign = r.net_pct >= 0 ? '+' : '';
-    const dirArrow = r.direction === 'dex_to_cex' ? '▲' : '▼';
-    const dirLabel = r.direction === 'dex_to_cex' ? 'DEX→CEX' : 'CEX→DEX';
-    const dirCls = r.direction === 'dex_to_cex' ? 'rate-pos' : 'rate-neg';
+    // Direction cell: small filled arrow on the cheaper side. Green when
+    // you BUY on DEX (the asset is cheaper there); red when you BUY on
+    // CEX. The arrow points TOWARD the leg you sell on.
+    const dirArrow = r.direction === 'dex_to_cex' ? '→' : '←';
+    const dirCls   = r.direction === 'dex_to_cex' ? 'rate-pos' : 'rate-neg';
+    const dirLabel = r.direction === 'dex_to_cex' ? 'DEX → CEX' : 'CEX → DEX';
+    const shealth = _exHealth[r.cex_exchange] || {};
+    const sdot = `<span class="ex-status-dot ${shealth.klass || ''}" title="${r.cex_exchange}"></span>`;
+    const dexLabel = (r.dex_name || 'dex').toUpperCase();
+    const chain    = (r.dex_chain || '').toUpperCase();
+    const dexLink  = r.dex_pair_url
+      ? `<a href="${r.dex_pair_url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--purple);text-decoration:none;font-weight:600">${dexLabel}</a>`
+      : `<span style="color:var(--purple);font-weight:600">${dexLabel}</span>`;
     const detailUrl = `/arb?type=dex-spot&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.cex_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
-    return `<tr style="cursor:pointer" onclick="window.open('${detailUrl}','_blank')">
+    return `<tr data-short-ex="${r.cex_exchange}_spot" data-symbol="${r.symbol}" data-kind="dex_spot" style="cursor:pointer" onclick="window.open('${detailUrl}','_blank')">
       <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}</td>
-      <td><div class="cell-ex">${(r.dex_name||'').toUpperCase()}${r.dex_chain ? ` · <span style="color:var(--text3)">${(r.dex_chain||'').toUpperCase()}</span>` : ''}</div><div class="cell-sub">Liq ${fmtVol(r.dex_liquidity_usd)} · Vol ${fmtVol(r.dex_volume_usd)}</div></td>
-      <td><div class="cell-ex">${esc(r.cex_exchange)}</div><div class="cell-sub">Vol ${fmtVol(r.cex_volume_usd)}</div></td>
-      <td class="${dirCls}" style="white-space:nowrap">${dirArrow} ${dirLabel}</td>
-      <td class="num ${spreadCls}">${r.abs_spread_pct.toFixed(4)}%</td>
-      <td class="num">${r.total_fees.toFixed(3)}%</td>
-      <td class="num ${netCls}">${netSign}${r.net_pct.toFixed(4)}%</td>
+      <td>
+        <div class="arb-pair">
+          <div class="arb-ex-rate">
+            <span class="arb-label">dex</span>
+            ${dexLink}${chain ? `<span style="color:var(--text3);font-size:10px;margin-left:6px">${chain}</span>` : ''}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.dex_price)} · <span style="font-family:var(--mono)">liq ${fmtVol(r.dex_liquidity_usd)}</span></div>
+        </div>
+      </td>
+      <td>
+        <div class="arb-pair">
+          <div class="arb-ex-rate">
+            <span class="arb-label">spot</span>
+            ${window.EX.chip(r.cex_exchange)}${sdot}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-left:36px">${fmtPrice(r.cex_spot_price)} · <span style="font-family:var(--mono)">${fmtVol(r.cex_volume_usd)}</span></div>
+        </div>
+      </td>
+      <td class="td-spread"><span class="${dirCls}" style="white-space:nowrap;font-weight:600">${dirArrow} ${dirLabel}</span></td>
+      <td class="td-gross"><span class="${spreadCls}">${r.abs_spread_pct.toFixed(4)}%</span><br><span style="font-size:10px;color:var(--text3);font-weight:400">mid-anchored</span></td>
+      <td class="td-fees">
+        <span title="dex rt: ${r.fee_dex.toFixed(3)}% + cex spot rt: ${r.fee_cex.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
+      </td>
+      <td><span class="td-net ${netCls}">${netSign}${r.net_pct.toFixed(4)}%</span></td>
       <td><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" class="arb-detail-btn" title="Open detail">↗</a></td>
     </tr>`;
+  }).join('');
+  renderPager('pager-dex-spot', _pageDS, _dexSpotFiltered.length, 'goPageDS');
+  renderDexSpotCards();
+}
+
+// Mobile card list — same shape spot/short uses. Lets us drop the
+// horizontal table on phones without losing the dex-pool + cex-venue
+// + direction triad. Reads from _dexSpotFiltered + _pageDS.
+function renderDexSpotCards() {
+  const wrap = document.getElementById('cards-dex-spot');
+  if (!wrap) return;
+  if (!_dexSpotFiltered.length) {
+    wrap.innerHTML = `<div class="empty-msg-card"><div class="empty-spinner"></div><div class="empty-title">${_dexSpotRows.length ? 'No matches' : 'No DEX/Spot data yet'}</div><div class="empty-sub">${_dexSpotRows.length ? 'Adjust filters above.' : 'DexScreener can take 10-30s.'}</div></div>`;
+    return;
+  }
+  const start = _pageDS * PAGE_SIZE;
+  const page  = _dexSpotFiltered.slice(start, start + PAGE_SIZE);
+  wrap.innerHTML = page.map(r => {
+    const netCls   = r.net_pct > 0 ? 'net-pos' : 'net-neg';
+    const netSign  = r.net_pct >= 0 ? '+' : '';
+    const spreadCls = r.abs_spread_pct > 0 ? 'rate-pos' : 'rate-zero';
+    const dirCls   = r.direction === 'dex_to_cex' ? 'rate-pos' : 'rate-neg';
+    const dirLabel = r.direction === 'dex_to_cex' ? 'DEX → CEX' : 'CEX → DEX';
+    const dexLabel = (r.dex_name || 'DEX').toUpperCase();
+    const chain    = (r.dex_chain || '').toUpperCase();
+    const dexChip  = `<span class="ex-chip"><span class="ex-dot" style="background:#A78BFA"></span><span class="ex-name">${dexLabel}${chain ? ` <span style="color:var(--text3);font-weight:500">· ${chain}</span>` : ''}</span></span>`;
+    const detailUrl = `/arb?type=dex-spot&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.cex_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
+    const key = `dexspot|${r.symbol}|${r.dex_name}|${r.cex_exchange}`;
+    const isOpen = _openArbKey === key;
+    return `
+    <div class="card${isOpen?' open':''}" onclick="toggleCard(this)" data-key="${key}">
+      <div class="card-head">
+        <span class="type-pill tp-dex-spot" style="margin-right:6px">DX/SP</span>
+        ${symbolLink(r.symbol, r.cex_exchange)}${_unverifiedBadge(r)}
+        <div class="card-badges">
+          ${dexChip}
+          <span style="color:var(--text3);font-size:11px">⇄</span>
+          ${exBadge(r.cex_exchange, r.symbol)}
+        </div>
+        <div class="card-right">
+          <span class="card-net ${netCls}">${netSign}${r.net_pct.toFixed(4)}%</span>
+          <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">net</span>
+        </div>
+        <span class="card-chevron">▼</span>
+      </div>
+      <div class="card-body">
+        <div class="card-row">
+          <span class="card-lbl">DEX</span>
+          <div class="card-exrow">
+            <div class="card-exrow-item">${dexChip}</div>
+            <div style="font-size:11px;color:var(--text3)">${fmtPrice(r.dex_price)} · liq ${fmtVol(r.dex_liquidity_usd)}</div>
+          </div>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">CEX spot</span>
+          <div class="card-exrow">
+            <div class="card-exrow-item">${exBadge(r.cex_exchange, r.symbol)}</div>
+            <div style="font-size:11px;color:var(--text3)">${fmtPrice(r.cex_spot_price)} · ${fmtVol(r.cex_volume_usd)}</div>
+          </div>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Direction</span>
+          <span class="card-val ${dirCls}">${dirLabel}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">|Spread|</span>
+          <span class="card-val ${spreadCls}">${r.abs_spread_pct.toFixed(4)}%</span>
+        </div>
+        <div class="card-row">
+          <span class="card-lbl">Fees</span>
+          <span class="card-val" style="color:var(--text2)" title="dex rt: ${r.fee_dex.toFixed(3)}% + cex spot rt: ${r.fee_cex.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
+        </div>
+        <div class="card-row" style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
+          <span class="card-lbl">Open detail</span>
+          <a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" class="card-cta">↗</a>
+        </div>
+      </div>
+    </div>`;
   }).join('');
 }
 
