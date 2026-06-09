@@ -125,31 +125,57 @@ def register(body: UserRegister, request: Request, response: Response, db: Sessi
         }
     user = svc.register_user(db, body.username, body.email, body.password)
     _clear_attempts(ip)
-    # Referral capture — optional. Invalid / unknown codes are silently
-    # dropped (we don't want a broken share link to block registration).
-    # Self-referral is rejected for the same reason as promo per_user_max:
-    # the obvious abuse path. No mid-flight reassignment after this point.
+    # Referral capture — split-discount system (new). Tries the new
+    # ReferralCode binding first; if no match, falls back to the legacy
+    # path so an existing-but-unmigrated user's auto-generated code from
+    # the old users.referral_code column still works during the cutover.
+    # New-system match raises CodeServiceError on hard rejects (15-cap,
+    # self-referral, already-bound); those become 400 to the client so a
+    # would-be referee sees a clear reason. Format/lookup failures stay
+    # silent (broken share link must not block signup).
     if body.referral_code:
+        from backend.services import referral_code_service as _codes
         try:
-            from backend.services import referral_service
-            referrer = referral_service.find_referrer_by_code(db, body.referral_code)
-            if referrer and referrer.id != user.id:
-                user.referred_by_id = referrer.id
+            bound = _codes.bind_referee(db, referee=user, raw_code=body.referral_code)
+            if bound is not None:
                 db.add(user)
                 db.flush()
                 logger.info(
-                    "Referral capture: user=%s (id=%d) referred_by=%s (id=%d)",
-                    user.username, user.id, referrer.username, referrer.id,
+                    "Referral split-bind: user=%s (id=%d) → code=%s (owner=%d)",
+                    user.username, user.id, bound.code, bound.owner_id,
                 )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Referral capture failed for %s: %s", user.username, exc)
-    # Mint the new user's own code so they can share immediately.
+        except (_codes.SelfReferralError, _codes.RegistrationCapError) as e:
+            # Hard rejects: registration cancels with explanatory error
+            # (rollback by FastAPI's transaction is handled by db.commit
+            # not being called below).
+            raise HTTPException(status_code=400, detail=str(e))
+        except _codes.CodeServiceError as e:
+            logger.warning("Referral split-bind failed for %s: %s", user.username, e)
+        # Legacy path — only if the new system didn't bind. Preserves
+        # backwards compat with old users.referral_code codes during
+        # migration window.
+        if user.signup_code_id is None:
+            try:
+                from backend.services import referral_service
+                referrer = referral_service.find_referrer_by_code(db, body.referral_code)
+                if referrer and referrer.id != user.id:
+                    user.referred_by_id = referrer.id
+                    db.add(user)
+                    db.flush()
+                    logger.info(
+                        "Referral legacy capture: user=%s (id=%d) referred_by=%s (id=%d)",
+                        user.username, user.id, referrer.username, referrer.id,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Legacy referral capture failed for %s: %s",
+                                user.username, exc)
+    # Auto-mint of legacy users.referral_code DISABLED for new users —
+    # the split-discount system replaces it. New users create codes
+    # explicitly via POST /api/referrals/codes if they want one.
     try:
-        from backend.services import referral_service
-        referral_service.ensure_referral_code(db, user)
         db.commit()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Referral code mint failed for %s: %s", user.username, exc)
+        logger.warning("Referral binding commit failed for %s: %s", user.username, exc)
         db.rollback()
     logger.info("New user registered: %s (id=%d, admin=%s)", user.username, user.id, user.is_admin)
     token = svc.create_token(user.id)

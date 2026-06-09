@@ -184,6 +184,99 @@ def request_payout(
     }
 
 
+# ── Split-discount referral codes (new system) ─────────────────────────────
+# Three endpoints for the new ReferralCode model. Split as a security
+# control: self-serve and admin live on physically different routes so a
+# user cannot trick the admin-only path with a forged type/admin_id —
+# the gate is route-level Depends(get_admin_user), not a body field.
+
+from backend.services import referral_code_service as _codes
+
+
+@router.post("/codes", status_code=201)
+def user_create_code(body: dict, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """Self-serve: any authenticated user creates a code with pool <= 25%.
+    Pool > 25% is REJECTED — even if the client tries to forge a
+    code_type='admin' field, this endpoint hard-wires code_type='self_serve'
+    and refuses to look at body['code_type']. Layer 2 of defense-in-depth
+    (layer 1 = route separation, layer 3 = DB CHECK).
+    """
+    try:
+        code = _codes.create_self_serve_code(
+            db, owner=user,
+            code=body.get("code"),
+            commission_pct=body.get("commission_pct", 0),
+            discount_pct=body.get("discount_pct", 0),
+        )
+    except _codes.CodeServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return _codes.serialize_code_for_owner(code, db=db)
+
+
+@router.get("/codes/me")
+def list_my_codes(db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """Owner-only view of one user's codes. Returns full info incl.
+    commission_pct + per-code usage stats. Not paginated — the 50-cap
+    keeps the set small."""
+    from backend.db.models import ReferralCode
+    rows = db.query(ReferralCode).filter(ReferralCode.owner_id == user.id).all()
+    return [_codes.serialize_code_for_owner(c, db=db) for c in rows]
+
+
+@router.get("/codes/{code}/preview")
+def preview_code(code: str, db: Session = Depends(get_db)):
+    """Public-ish preview for the registration page. Returns ONLY the
+    discount + open/closed status; commission_pct is withheld so a
+    casual scraper can't enumerate per-owner rates. 404 on miss.
+    """
+    found = _codes.find_code_by_string(db, code)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Code not found")
+    return _codes.serialize_code_for_preview(found, db=db)
+
+
+@admin_router.post("/codes", status_code=201)
+def admin_create_code(body: dict, db: Session = Depends(get_db),
+                      admin: User = Depends(get_admin_user)):
+    """Admin-only: pool <= 45% allowed. Bound to Depends(get_admin_user)
+    — same gate as every other /api/admin/* route. Non-admins receive
+    403 here, never reach the service layer.
+
+    body fields:
+      code           (required) — 4-32 chars alnum + - + _
+      commission_pct (required) — Decimal, % retained by owner
+      discount_pct   (required) — Decimal, % subtracted from price
+      owner_id       (optional) — defaults to current admin's id;
+                                  must reference an existing user.
+    """
+    try:
+        code = _codes.create_admin_code(
+            db, admin=admin,
+            owner_id=body.get("owner_id"),
+            code=body.get("code"),
+            commission_pct=body.get("commission_pct", 0),
+            discount_pct=body.get("discount_pct", 0),
+        )
+    except _codes.CodeServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    return _codes.serialize_code_for_owner(code, db=db)
+
+
+@admin_router.get("/codes")
+def admin_list_codes(db: Session = Depends(get_db),
+                     admin: User = Depends(get_admin_user)):
+    """All codes across all users — admin oversight view. No filter
+    params yet; the 50-per-owner cap + light overall volume keep this
+    small for the foreseeable future."""
+    from backend.db.models import ReferralCode
+    rows = db.query(ReferralCode).order_by(ReferralCode.created_at.desc()).all()
+    return [_codes.serialize_code_for_owner(c, db=db) for c in rows]
+
+
 # ── Admin ──────────────────────────────────────────────────────────────────
 
 @admin_router.get("/payouts")
