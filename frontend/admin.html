@@ -697,6 +697,10 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M2 4l5-3 5 3M2 10l5 3 5-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Avashare payouts
     </a>
+    <a class="sidebar-item" href="#" onclick="showTab('refcodes',this);loadRefCodesTab();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="3" width="10" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M4 6h6M4 9h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Referral codes
+    </a>
     <a class="sidebar-item" href="#" onclick="showTab('refunds',this);loadRefundsTab();return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 4l-3 3 3 3M3 7h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3"/></svg>
       Refunds
@@ -1230,6 +1234,68 @@
       </div>
     </div>
 
+    <!-- ══ REFERRAL CODES TAB (split-discount system) ══ -->
+    <div id="tab-refcodes" style="display:none">
+      <div class="page-title">Referral codes</div>
+      <div class="page-sub">
+        Split-discount system. Self-serve codes are user-created with a 25% pool cap; admin codes can use up to 45%. All codes are immutable and saturate after 15 sign-ups × 5 purchases per friend.
+      </div>
+
+      <!-- Admin create form -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px">Create admin code (≤45% pool)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:11px;color:var(--text3)">Code</label>
+            <input id="rc-code" type="text" placeholder="4-32 chars" maxlength="32" style="width:100%;padding:7px 9px;background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text3)">Owner user ID (optional)</label>
+            <input id="rc-owner-id" type="number" placeholder="default: you" style="width:100%;padding:7px 9px;background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:13px">
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <div id="rc-create-err" style="font-size:11px;color:var(--red);flex:1"></div>
+          </div>
+        </div>
+
+        <!-- Pool bar -->
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:6px">
+          <span>Pool: <strong id="rc-pool-used" style="color:var(--text)">0</strong>/45%</span>
+          <span id="rc-pool-remaining">45% remaining</span>
+        </div>
+        <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface3);margin-bottom:14px">
+          <div id="rc-bar-comm" style="background:var(--green);width:0;transition:width 0.15s"></div>
+          <div id="rc-bar-disc" style="background:#60A5FA;width:0;transition:width 0.15s"></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label style="font-size:11px;color:var(--green);display:block;margin-bottom:4px">Commission (owner earns)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input id="rc-comm" type="range" min="0" max="45" step="0.5" value="20" style="flex:1;accent-color:var(--green)">
+              <span id="rc-comm-val" style="font-family:var(--mono);font-size:13px;width:48px;text-align:right">20%</span>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#60A5FA;display:block;margin-bottom:4px">Discount (friend saves)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input id="rc-disc" type="range" min="0" max="45" step="0.5" value="20" style="flex:1;accent-color:#60A5FA">
+              <span id="rc-disc-val" style="font-family:var(--mono);font-size:13px;width:48px;text-align:right">20%</span>
+            </div>
+          </div>
+        </div>
+        <button onclick="adminCreateCode()" class="btn btn-primary" id="rc-create-btn">Create admin code</button>
+      </div>
+
+      <!-- Filters + list -->
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button onclick="rcFilter('all')" id="rc-tab-all" class="filter-btn active">All</button>
+        <button onclick="rcFilter('self_serve')" id="rc-tab-self" class="filter-btn">Self-serve</button>
+        <button onclick="rcFilter('admin')" id="rc-tab-admin" class="filter-btn">Admin</button>
+      </div>
+      <div id="rc-list-wrap"><div style="padding:30px;text-align:center;color:var(--text3)">Loading…</div></div>
+    </div>
+
     <!-- ══ REFUNDS TAB ══ -->
     <div id="tab-refunds" style="display:none">
       <div class="page-title">Refunds</div>
@@ -1403,7 +1469,7 @@ input[type="checkbox"] { accent-color: var(--green); width: 14px; height: 14px; 
 </style>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260609d"></script>
+<script src="/dist/core.min.js?v=20260610a"></script>
 <script>
 Auth.requireAdmin('/portfolio');
 
@@ -2609,6 +2675,132 @@ function setRefundFilter(s){
   }
   loadRefundsTab(_rfLastQuery);
 }
+
+// ── Referral codes admin tab ───────────────────────────────────────────────
+// Split-discount system. Admin can create codes ≤45% pool. Lists all codes
+// across users with filters. The pool-bar UX mirrors the user-side profile
+// modal — single visual scale showing how the 45% pool is split between
+// commission (owner) + discount (friend).
+const _RC_POOL_MAX_ADMIN = 45;
+let   _rcAllCodes = [];
+let   _rcFilter = 'all';
+
+async function loadRefCodesTab() {
+  _rcRecalcPoolBar();
+  await _rcReload();
+}
+
+async function _rcReload() {
+  const wrap = document.getElementById('rc-list-wrap');
+  wrap.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text3)">Loading…</div>';
+  try {
+    const r = await Auth.apiFetch('/admin/referrals/codes');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _rcAllCodes = await r.json();
+    _rcRender();
+  } catch (e) {
+    wrap.innerHTML = '<div style="padding:30px;text-align:center;color:var(--red)">Failed to load: ' + (e.message || 'unknown') + '</div>';
+  }
+}
+
+function rcFilter(kind) {
+  _rcFilter = kind;
+  for (const v of ['all','self_serve','admin']) {
+    const el = document.getElementById('rc-tab-' + (v === 'self_serve' ? 'self' : v));
+    if (el) el.classList.toggle('active', v === kind);
+  }
+  _rcRender();
+}
+
+function _rcRender() {
+  const wrap = document.getElementById('rc-list-wrap');
+  let list = _rcAllCodes;
+  if (_rcFilter !== 'all') list = list.filter(c => c.code_type === _rcFilter);
+  if (!list.length) {
+    wrap.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text3)">No codes</div>';
+    return;
+  }
+  wrap.innerHTML = `<table class="data-table" style="width:100%">
+    <thead><tr>
+      <th>Code</th><th>Type</th><th>Owner ID</th><th>Comm %</th><th>Disc %</th><th>Total</th><th>Signups</th><th>Created</th>
+    </tr></thead>
+    <tbody>${list.map(c => {
+      const total = (+c.commission_pct || 0) + (+c.discount_pct || 0);
+      const created = c.created_at ? new Date(c.created_at).toISOString().slice(0,10) : '—';
+      return `<tr>
+        <td style="font-family:var(--mono);font-weight:600">${_rcEsc(c.code)}</td>
+        <td><span class="pill ${c.code_type==='admin'?'pill-warn':'pill-info'}">${c.code_type}</span></td>
+        <td>${c.created_by_admin_id != null ? '<span title="created by admin '+c.created_by_admin_id+'">' + c.created_by_admin_id + '</span>' : '—'}</td>
+        <td style="font-family:var(--mono);color:var(--green)">${(+c.commission_pct).toFixed(1)}</td>
+        <td style="font-family:var(--mono);color:#60A5FA">${(+c.discount_pct).toFixed(1)}</td>
+        <td style="font-family:var(--mono)">${total.toFixed(1)}</td>
+        <td style="font-family:var(--mono)">${c.registrations_used}/15</td>
+        <td style="color:var(--text3);font-size:11px">${created}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function _rcRecalcPoolBar() {
+  const commEl = document.getElementById('rc-comm');
+  const discEl = document.getElementById('rc-disc');
+  if (!commEl || !discEl) return;
+  let comm = +commEl.value || 0;
+  let disc = +discEl.value || 0;
+  if (comm + disc > _RC_POOL_MAX_ADMIN) {
+    disc = _RC_POOL_MAX_ADMIN - comm;
+    if (disc < 0) { disc = 0; comm = _RC_POOL_MAX_ADMIN; commEl.value = comm; }
+    discEl.value = disc;
+  }
+  document.getElementById('rc-comm-val').textContent = comm.toFixed(1) + '%';
+  document.getElementById('rc-disc-val').textContent = disc.toFixed(1) + '%';
+  const used = comm + disc;
+  document.getElementById('rc-pool-used').textContent = used.toFixed(1);
+  document.getElementById('rc-pool-remaining').textContent = (_RC_POOL_MAX_ADMIN - used).toFixed(1) + '% remaining';
+  // Bar scale: 45 * 100/45 = 100%, so multiplier is 100/45 ≈ 2.222.
+  const scale = 100 / _RC_POOL_MAX_ADMIN;
+  document.getElementById('rc-bar-comm').style.width = (comm * scale) + '%';
+  document.getElementById('rc-bar-disc').style.width = (disc * scale) + '%';
+}
+
+async function adminCreateCode() {
+  const code = (document.getElementById('rc-code').value || '').trim();
+  const owner = (document.getElementById('rc-owner-id').value || '').trim();
+  const comm = +document.getElementById('rc-comm').value || 0;
+  const disc = +document.getElementById('rc-disc').value || 0;
+  const errEl = document.getElementById('rc-create-err');
+  errEl.textContent = '';
+  if (!code || code.length < 4) { errEl.textContent = 'Code: min 4 chars'; return; }
+  if (!/^[A-Za-z0-9_-]+$/.test(code)) { errEl.textContent = 'Code: only A-Z 0-9 - _'; return; }
+  const body = {code, commission_pct: comm, discount_pct: disc};
+  if (owner) body.owner_id = parseInt(owner, 10);
+  const btn = document.getElementById('rc-create-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const r = await Auth.apiFetch('/admin/referrals/codes', {method: 'POST', body: JSON.stringify(body)});
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.detail || ('HTTP ' + r.status));
+    }
+    document.getElementById('rc-code').value = '';
+    document.getElementById('rc-owner-id').value = '';
+    await _rcReload();
+    if (typeof toast === 'function') toast(`Created ${code}`, 'success');
+  } catch (e) {
+    errEl.textContent = e.message || 'Failed';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Create admin code';
+  }
+}
+
+function _rcEsc(s) { return (s == null ? '' : String(s)).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+
+// Wire sliders on load — once at script init since admin tab is always
+// in the DOM, just display:none until opened.
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('rc-comm')?.addEventListener('input', _rcRecalcPoolBar);
+  document.getElementById('rc-disc')?.addEventListener('input', _rcRecalcPoolBar);
+});
 
 async function loadRefundsTab(query){
   if (typeof query === 'string') _rfLastQuery = query;

@@ -20,15 +20,52 @@
 
 // Capture ?ref=XYZ on any landing page so the register form can prefill
 // it even if the user navigates through home/pricing/login first.
+// Stored in localStorage with a 30-day TTL so a referral link tapped
+// today survives the user closing the tab and registering tomorrow
+// (sessionStorage was lost on tab close — closed via the new code).
+// The TTL is enforced on read by checking the timestamp; expired
+// entries get cleared lazily.
 (function captureReferral(){
   try {
     const params = new URLSearchParams(window.location.search);
     let code = params.get('ref') || params.get('referral') || params.get('r');
     if (!code) return;
-    code = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
-    if (code) sessionStorage.setItem('avalant_pending_ref', code);
+    // Keep the new code-charset (4-32 alnum + - + _) — strip to fit.
+    code = code.trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+    if (!code) return;
+    const payload = JSON.stringify({code, ts: Date.now()});
+    try { localStorage.setItem('avalant_pending_ref', payload); } catch {}
+    // Mirror to sessionStorage for back-compat with any consumers that
+    // still read the old key directly (cleaned up over time).
+    try { sessionStorage.setItem('avalant_pending_ref', code); } catch {}
   } catch {}
 })();
+
+// 30-day TTL read helper. Returns the saved code or null on miss /
+// expired. Lazy-clears expired entries so storage doesn't grow.
+window.AvalantRef = window.AvalantRef || {
+  TTL_MS: 30 * 24 * 60 * 60 * 1000,
+  get() {
+    try {
+      const raw = localStorage.getItem('avalant_pending_ref');
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && obj.code && (Date.now() - (obj.ts || 0) < this.TTL_MS)) {
+          return obj.code;
+        }
+        // Expired — wipe it.
+        localStorage.removeItem('avalant_pending_ref');
+      }
+    } catch {}
+    // Fall back to legacy sessionStorage entry for in-flight visitors
+    // who arrived before this code shipped.
+    try { return sessionStorage.getItem('avalant_pending_ref'); } catch { return null; }
+  },
+  clear() {
+    try { localStorage.removeItem('avalant_pending_ref'); } catch {}
+    try { sessionStorage.removeItem('avalant_pending_ref'); } catch {}
+  },
+};
 
 const Auth = (() => {
   const TOKEN_KEY = 'wm_token';

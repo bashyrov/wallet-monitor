@@ -580,6 +580,13 @@
       </svg>
       <span>Avashare</span>
     </button>
+    <button class="avashare-btn" onclick="openMyCodes()" title="Manage your referral codes (split-discount)" style="margin-left:8px">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="12" height="10" rx="1.5"/>
+        <path d="M5 7h6M5 10h4"/>
+      </svg>
+      <span>My codes</span>
+    </button>
   </div>
 
 
@@ -1340,7 +1347,7 @@
 </div>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260609d"></script>
+<script src="/dist/core.min.js?v=20260610a"></script>
 <script src="/venue-help.js" defer></script>
 <script>
 // ─── Profile sidebar: tab switcher (one pane visible at a time) ───
@@ -3569,6 +3576,244 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.getElementById('avs-bg').classList.contains('open')) closeAvashare();
 });
 </script>
+
+<!-- ─ Split-discount referral codes (NEW system) ────────────────────────────
+     User-owned codes with split commission/discount. UX is built around
+     the 'pool' concept: a single 25% bar split into 'you earn / friend
+     saves'. Moving one slider clamps the other so sum<=25 always — DB
+     CHECK is the backstop, but the user shouldn't be allowed to even
+     attempt a 30/10 mix. -->
+<div class="my-codes-bg" id="my-codes-bg" onclick="if(event.target===this) closeMyCodes()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:20px">
+  <div class="my-codes-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:680px;width:100%;max-height:90vh;overflow:auto;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0;font-size:18px">My referral codes</h2>
+      <button onclick="closeMyCodes()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:24px;line-height:1">×</button>
+    </div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:20px;line-height:1.5">
+      Create codes that split a pool of <strong>25%</strong> between your commission and your friend's discount.
+      Examples: 10/15 (you get 10%, friend gets 15% off) or 5/20 (you get 5%, friend gets 20% off).
+      Each code allows up to <strong>15 sign-ups</strong> and <strong>5 purchases per friend</strong>.
+    </p>
+
+    <!-- Create form -->
+    <div id="my-codes-create" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px">Create a new code</div>
+      <input id="mc-code" type="text" placeholder="Code (4-32 chars, letters / digits / - / _)" maxlength="32" style="width:100%;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;margin-bottom:6px">
+      <div id="mc-code-err" style="font-size:11px;color:var(--red);min-height:14px;margin-bottom:10px"></div>
+
+      <!-- Split pool slider — the visual centrepiece. Single bar showing
+           commission (left, green) + discount (right, blue) + remaining
+           pool (gray). Two sliders below directly bind to each half. -->
+      <div style="margin-top:6px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:6px">
+          <span>Pool: <strong id="mc-pool-used" style="color:var(--text)">0</strong>/25%</span>
+          <span id="mc-pool-remaining" style="color:var(--text3)">25% remaining</span>
+        </div>
+        <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface3);margin-bottom:14px">
+          <div id="mc-bar-comm" style="background:var(--green);width:0;transition:width 0.15s"></div>
+          <div id="mc-bar-disc" style="background:#60A5FA;width:0;transition:width 0.15s"></div>
+        </div>
+
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">
+          <div style="flex:1">
+            <label style="font-size:11px;color:var(--green);display:block;margin-bottom:4px">You earn (commission)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input id="mc-comm" type="range" min="0" max="25" step="0.5" value="10" style="flex:1;accent-color:var(--green)">
+              <span id="mc-comm-val" style="font-family:var(--mono);font-size:13px;width:48px;text-align:right">10%</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">
+          <div style="flex:1">
+            <label style="font-size:11px;color:#60A5FA;display:block;margin-bottom:4px">Friend saves (discount)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input id="mc-disc" type="range" min="0" max="25" step="0.5" value="10" style="flex:1;accent-color:#60A5FA">
+              <span id="mc-disc-val" style="font-family:var(--mono);font-size:13px;width:48px;text-align:right">10%</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="mc-preview" style="font-size:12px;color:var(--text2);padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:12px">
+          On a <strong>$100</strong> purchase: friend pays <strong style="color:#60A5FA">$90</strong>, you earn <strong style="color:var(--green)">$10</strong>.
+        </div>
+
+        <button id="mc-create-btn" onclick="createMyCode()" class="btn btn-primary" style="width:100%">Create code</button>
+        <div id="mc-create-err" style="font-size:12px;color:var(--red);margin-top:8px;min-height:14px"></div>
+      </div>
+    </div>
+
+    <!-- Owner cap counter -->
+    <div id="mc-cap-info" style="font-size:11px;color:var(--text3);margin-bottom:8px"></div>
+
+    <!-- Codes list -->
+    <div id="mc-list" style="display:flex;flex-direction:column;gap:8px">
+      <div style="text-align:center;color:var(--text3);font-size:12px;padding:20px">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const _MC_CHARSET = /^[A-Za-z0-9_-]+$/;
+const _MC_POOL_MAX = 25;       // self-serve cap
+const _MC_OWNER_CAP = 50;      // anti-squat
+let   _mcCodes = [];
+
+function openMyCodes() {
+  document.getElementById('my-codes-bg').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  _mcLoad();
+  _mcRecalcPreview();
+}
+function closeMyCodes() {
+  document.getElementById('my-codes-bg').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+async function _mcLoad() {
+  const listEl = document.getElementById('mc-list');
+  try {
+    const r = await Auth.apiFetch('/referrals/codes/me');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _mcCodes = await r.json();
+    _mcRender();
+  } catch (e) {
+    listEl.innerHTML = '<div style="text-align:center;color:var(--red);font-size:12px;padding:20px">Failed to load: ' + (e.message || 'unknown') + '</div>';
+  }
+}
+
+function _mcRender() {
+  const listEl = document.getElementById('mc-list');
+  const capEl = document.getElementById('mc-cap-info');
+  const btn = document.getElementById('mc-create-btn');
+  capEl.textContent = `You have ${_mcCodes.length} / ${_MC_OWNER_CAP} codes`;
+  if (_mcCodes.length >= _MC_OWNER_CAP) {
+    btn.disabled = true;
+    btn.textContent = `Code cap reached (${_MC_OWNER_CAP})`;
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Create code';
+  }
+  if (!_mcCodes.length) {
+    listEl.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:20px">No codes yet. Create your first one above.</div>';
+    return;
+  }
+  listEl.innerHTML = _mcCodes.map(c => {
+    const total = (+c.commission_pct || 0) + (+c.discount_pct || 0);
+    return `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-family:var(--mono);font-weight:700;font-size:14px">${_esc(c.code)}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase">${c.code_type === 'admin' ? 'Admin · ' + total + '%' : 'Self-serve · ' + total + '%'}</div>
+        </div>
+        <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--surface3);margin-bottom:8px">
+          <div style="background:var(--green);width:${(+c.commission_pct || 0) * 4}%"></div>
+          <div style="background:#60A5FA;width:${(+c.discount_pct || 0) * 4}%"></div>
+        </div>
+        <div style="display:flex;gap:14px;font-size:11px;color:var(--text2);font-family:var(--mono)">
+          <span><span style="color:var(--green)">●</span> You earn ${c.commission_pct}%</span>
+          <span><span style="color:#60A5FA">●</span> Friend ${c.discount_pct}% off</span>
+          <span style="margin-left:auto;color:var(--text3)">Signups ${c.registrations_used}/15</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// Pool maths. When either slider moves, the OTHER one's max is reduced
+// to keep the sum ≤ _MC_POOL_MAX. Slider stays at its current value
+// unless that value would now exceed the cap (then clamped down).
+function _mcRecalcPreview() {
+  const commEl = document.getElementById('mc-comm');
+  const discEl = document.getElementById('mc-disc');
+  if (!commEl || !discEl) return;
+  let comm = +commEl.value || 0;
+  let disc = +discEl.value || 0;
+  // Clamp: if comm + disc > POOL, reduce whichever was changed less recently.
+  // Simpler model: never exceed POOL, reduce the other so total fits.
+  if (comm + disc > _MC_POOL_MAX) {
+    disc = _MC_POOL_MAX - comm;
+    if (disc < 0) { disc = 0; comm = _MC_POOL_MAX; commEl.value = comm; }
+    discEl.value = disc;
+  }
+  document.getElementById('mc-comm-val').textContent = comm.toFixed(1) + '%';
+  document.getElementById('mc-disc-val').textContent = disc.toFixed(1) + '%';
+  const used = comm + disc;
+  const remaining = _MC_POOL_MAX - used;
+  document.getElementById('mc-pool-used').textContent = used.toFixed(1);
+  document.getElementById('mc-pool-remaining').textContent = remaining.toFixed(1) + '% remaining';
+  // Bar widths: each percent maps to 4% of the total bar (25*4 = 100).
+  document.getElementById('mc-bar-comm').style.width = (comm * 4) + '%';
+  document.getElementById('mc-bar-disc').style.width = (disc * 4) + '%';
+  // Preview: on $100, friend pays (100 - disc), you earn comm.
+  const friendPays = 100 - disc;
+  document.getElementById('mc-preview').innerHTML = `On a <strong>$100</strong> purchase: friend pays <strong style="color:#60A5FA">$${friendPays.toFixed(2)}</strong>, you earn <strong style="color:var(--green)">$${comm.toFixed(2)}</strong>.`;
+  // Also live-validate the code field
+  _mcValidateCode();
+}
+
+function _mcValidateCode() {
+  const code = (document.getElementById('mc-code').value || '').trim();
+  const err = document.getElementById('mc-code-err');
+  const btn = document.getElementById('mc-create-btn');
+  if (!code) { err.textContent = ''; return true; }
+  if (code.length < 4) { err.textContent = 'Min 4 characters'; btn.disabled = true; return false; }
+  if (code.length > 32) { err.textContent = 'Max 32 characters'; btn.disabled = true; return false; }
+  if (!_MC_CHARSET.test(code)) { err.textContent = 'Only letters, digits, - and _ allowed'; btn.disabled = true; return false; }
+  err.textContent = '';
+  if (_mcCodes.length < _MC_OWNER_CAP) btn.disabled = false;
+  return true;
+}
+
+async function createMyCode() {
+  const code = (document.getElementById('mc-code').value || '').trim();
+  const comm = +document.getElementById('mc-comm').value || 0;
+  const disc = +document.getElementById('mc-disc').value || 0;
+  const errEl = document.getElementById('mc-create-err');
+  errEl.textContent = '';
+  if (!_mcValidateCode() || !code) {
+    errEl.textContent = 'Enter a valid code';
+    return;
+  }
+  const btn = document.getElementById('mc-create-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const r = await Auth.apiFetch('/referrals/codes', {
+      method: 'POST',
+      body: JSON.stringify({code, commission_pct: comm, discount_pct: disc}),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.detail || ('HTTP ' + r.status));
+    }
+    // Clear form, reload list
+    document.getElementById('mc-code').value = '';
+    document.getElementById('mc-code-err').textContent = '';
+    await _mcLoad();
+    if (typeof toast === 'function') toast(`Created ${code}`, 'success');
+  } catch (e) {
+    errEl.textContent = e.message || 'Failed';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Create code';
+  }
+}
+
+function _esc(s) { return (s == null ? '' : String(s)).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+
+// Wire sliders + code input → live preview
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('mc-comm')?.addEventListener('input', _mcRecalcPreview);
+  document.getElementById('mc-disc')?.addEventListener('input', _mcRecalcPreview);
+  document.getElementById('mc-code')?.addEventListener('input', _mcValidateCode);
+});
+
+// Esc to close
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const bg = document.getElementById('my-codes-bg');
+    if (bg && bg.style.display === 'flex') closeMyCodes();
+  }
+});
+</script>
+
 <app-footer></app-footer>
 </body>
 </html>

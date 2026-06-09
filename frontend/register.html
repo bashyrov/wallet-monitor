@@ -163,7 +163,12 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="f-ref">Referral code <span style="color:var(--text3);font-weight:500;text-transform:none;letter-spacing:0">(optional)</span></label>
-        <input id="f-ref" class="input mono" type="text" placeholder="e.g. AVL7XK2" autocomplete="off" maxlength="16" style="text-transform:uppercase;letter-spacing:0.05em">
+        <input id="f-ref" class="input mono" type="text" placeholder="e.g. AVL7XK2" autocomplete="off" maxlength="32" style="letter-spacing:0.05em">
+        <!-- Live preview of the discount this code grants. Populated by
+             the input-handler in the JS below; querying /preview returns
+             {discount_pct, is_open, registrations_remaining}. The owner's
+             commission_pct is intentionally NOT shown (it's private). -->
+        <div id="ref-preview" style="margin-top:6px;font-size:12px;font-family:var(--mono);min-height:16px"></div>
       </div>
 
       <div id="reg-error" class="form-err"></div>
@@ -223,22 +228,68 @@
 </nav>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260609d"></script>
+<script src="/dist/core.min.js?v=20260610a"></script>
 <script>
 Auth.redirectIfAuthed('/screener');
 
 (function prefillReferral(){
   try {
     const params = new URLSearchParams(window.location.search);
+    // Prefer the new 30-day-TTL store; fall back to URL params directly
+    // for the case where the user landed on /register with ?ref= and the
+    // captureReferral IIFE in auth.js hasn't run yet (script load order).
     let code = params.get('ref') || params.get('referral') || params.get('r')
-            || sessionStorage.getItem('avalant_pending_ref');
+            || (window.AvalantRef && window.AvalantRef.get());
     if (!code) return;
-    code = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
+    code = code.trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
     if (!code) return;
     const inp = document.getElementById('f-ref');
-    if (inp && !inp.value) inp.value = code;
+    if (inp && !inp.value) {
+      inp.value = code;
+      previewReferral(code);  // immediate preview on auto-fill
+    }
   } catch {}
 })();
+
+// Live discount preview. Debounced 350ms so typing doesn't slam /preview.
+// Public endpoint (no auth) — 404 means no such code, render a muted
+// hint. is_open=false means the 15-cap is hit → render warning that
+// registration will succeed but without a discount.
+let _refPrevTimer = null;
+async function previewReferral(rawCode) {
+  const el = document.getElementById('ref-preview');
+  if (!el) return;
+  const code = (rawCode || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+  if (!code || code.length < 4) {
+    el.textContent = '';
+    el.style.color = '';
+    return;
+  }
+  try {
+    const r = await fetch(`/api/referrals/codes/${encodeURIComponent(code)}/preview`);
+    if (r.status === 404) {
+      el.textContent = '— unknown code; you can still register without a discount';
+      el.style.color = 'var(--text3)';
+      return;
+    }
+    if (!r.ok) { el.textContent = ''; return; }
+    const j = await r.json();
+    if (j.is_open === false) {
+      el.textContent = `⚠ ${code} is closed (no signup slots left); registration will go through without a discount`;
+      el.style.color = 'var(--yellow)';
+      return;
+    }
+    const pct = (+j.discount_pct || 0).toFixed(1);
+    el.innerHTML = `✓ You'll get <strong style="color:var(--green)">${pct}%</strong> off · ${j.registrations_remaining}/15 slots left`;
+    el.style.color = 'var(--text2)';
+  } catch {
+    el.textContent = '';
+  }
+}
+document.getElementById('f-ref')?.addEventListener('input', (e) => {
+  clearTimeout(_refPrevTimer);
+  _refPrevTimer = setTimeout(() => previewReferral(e.target.value), 350);
+});
 
 function togglePw(id, btn) {
   const el = document.getElementById(id);
@@ -258,7 +309,10 @@ async function handleRegister(e) {
   const email = document.getElementById('f-email').value.trim();
   const password = document.getElementById('f-password').value;
   const password2 = document.getElementById('f-password2').value;
-  const referral_code = (document.getElementById('f-ref').value || '').trim().toUpperCase();
+  // Keep the case as typed — server is case-insensitive on lookup but
+  // stores the casing for display ('CryptoPro' stays mixed). Old codes
+  // are all-uppercase, so backwards-compat works regardless.
+  const referral_code = (document.getElementById('f-ref').value || '').trim();
 
   if (password !== password2) {
     errEl.textContent = 'Passwords do not match';
