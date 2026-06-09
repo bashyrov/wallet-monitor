@@ -681,19 +681,21 @@ func (b *Book) handleSubscribe(c *client, pairs []string) {
 func (b *Book) sendInitialSnapshot(c *client, pairKey string) {
 	ex, sym, ok := splitPair(pairKey)
 	if !ok {
-		log.L().Warn().Str("pair", pairKey).Msg("sendInitialSnapshot: splitPair failed")
 		return
 	}
 	entry, found := b.store.Get(ex, sym)
 	if !found || entry == nil {
-		log.L().Warn().Str("pair", pairKey).Msg("sendInitialSnapshot: cache MISS")
+		// Cold cache (post-restart or pair never subscribed before) —
+		// no-op. Frontend's REST fallback (fetchBook on /arb open)
+		// covers this case, so the user still sees the book within
+		// ~1s via REST, and the symbols.Manager.Touch from the rest
+		// of handleSubscribe will warm the WS subscription for
+		// follow-up live updates.
 		return
 	}
 	if len(entry.Bids) == 0 && len(entry.Asks) == 0 {
-		log.L().Warn().Str("pair", pairKey).Msg("sendInitialSnapshot: empty book")
 		return
 	}
-	log.L().Warn().Str("pair", pairKey).Int("bids", len(entry.Bids)).Int("asks", len(entry.Asks)).Msg("sendInitialSnapshot: pushing")
 	// Trim to broadcast levels — same as OnBookUpdate path.
 	nb := entry.Bids
 	if len(nb) > bookBroadcastLevels {

@@ -2529,6 +2529,14 @@ async function fetchBook(exchange,side){
     const empty = !d || (!(d.bids||[]).length && !(d.asks||[]).length);
     if (empty && _lastBookData[side]) return;
     _lastBookData[side]=d;
+    // Mark this side as freshly-populated so the staleness watchdog (line
+    // 3174: `if (!lastTs) ...`) doesn't fire a false-positive 'No data'
+    // toast after 12s. WS onmessage stamps the same field — REST renders
+    // were silently bypassing it, which made the toast lie when the WS
+    // was silent but REST was serving the book just fine (the SPCX gate
+    // / aster case the user reported: book WAS rendering, toast still
+    // claimed 'no data').
+    if (!empty) _lastBookSideTs[side]=Date.now();
     renderBook(d,side);
   }catch{}
   finally{_bookInflight[side]=false;}
