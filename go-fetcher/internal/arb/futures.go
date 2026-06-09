@@ -71,9 +71,15 @@ const (
 	oppMinLifetime = 1 * time.Second
 	oppPurgeAfter  = 90 * time.Second
 
-	// Spread sanity-cap: rows with |price_spread|>100% are usually
-	// ticker-collisions. Python's threshold; we keep it.
-	highSpreadThreshold = 1.0
+	// Spread sanity-cap: rows with |price_spread|>200% are usually
+	// ticker-collisions. Symmetric with the 3.0× max/min ratio guard above:
+	// ratio=3.0 produces +200% spread on the low→high direction and -67%
+	// on the inverse. Lower threshold (1.0=100%) was killing the positive
+	// direction of legitimate cross-venue spreads — e.g. kucoin($0.085)
+	// → bybit($0.20) at 2.4× ratio shows +139% spread which used to be
+	// filtered out while the inverse bybit→kucoin (-58% spread, invalid
+	// price direction anyway) leaked through.
+	highSpreadThreshold = 2.0
 )
 
 // File-cache cap — top-N kept in arbitrage.json. Tunable via
