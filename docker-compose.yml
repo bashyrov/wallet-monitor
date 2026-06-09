@@ -26,6 +26,10 @@ x-app-env: &app-env
   ACCESS_TOKEN_EXPIRE_DAYS: ${ACCESS_TOKEN_EXPIRE_DAYS:-30}
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  # Block creation of new PromoCode rows. Existing promos remain editable
+  # (PATCH) and usable at checkout — only POST /api/admin/promos is
+  # gated. Replaced by the split-discount ReferralCode system.
+  PROMO_CREATION_DISABLED: ${PROMO_CREATION_DISABLED:-0}
   # Arb cadence knobs — tune without rebuild via `docker compose restart`.
   # Tightened to live-mode values (0.6 s → 0.3 s) after the post-PR-#104
   # snapshot optimisation brought compute cycles down to ~300 ms; with the
