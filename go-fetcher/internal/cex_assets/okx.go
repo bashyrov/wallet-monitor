@@ -72,6 +72,9 @@ func FetchOKX(ctx context.Context, client *http.Client, creds SignedCreds) (Venu
 			Chain   string `json:"chain"`   // "USDT-ERC20"
 			CtAddr  string `json:"ctAddr"`
 			MainNet bool   `json:"mainNet"`
+			// Per-chain transfer status, in the SAME payload.
+			CanDep bool `json:"canDep"`
+			CanWd  bool `json:"canWd"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
@@ -102,7 +105,14 @@ func FetchOKX(ctx context.Context, client *http.Client, creds SignedCreds) (Venu
 		if canon == "" {
 			continue
 		}
-		out[ticker] = append(out[ticker], AssetAddress{Chain: canon, Address: addr})
+		dep := r.CanDep
+		wd := r.CanWd
+		out[ticker] = append(out[ticker], AssetAddress{
+			Chain:    canon,
+			Address:  addr,
+			Deposit:  &dep,
+			Withdraw: &wd,
+		})
 	}
 	return out, nil
 }

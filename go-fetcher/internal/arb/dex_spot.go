@@ -205,9 +205,9 @@ func (c *DexSpotCompute) tick() {
 			// when (chain, address) match; every other venue (incl.
 			// htx and the 5 signed venues without keys) returns
 			// AddressKnown=false → verified=false → UI ⚠ unverified.
-			verified, matchChain, addrKnown := false, "", false
+			var match CexMatch
 			if c.cexMatcher != nil {
-				verified, matchChain, addrKnown = c.cexMatcher(cexEx, sym, dex.Chain, dex.BaseAddress)
+				match = c.cexMatcher(cexEx, sym, dex.Chain, dex.BaseAddress)
 			}
 			// % guard branches on verification status. Address is the
 			// authoritative collision filter; % cap is just noise rejection
@@ -216,7 +216,7 @@ func (c *DexSpotCompute) tick() {
 			// the most egregious ticker-collisions (-67% on US.CETUS-vs-
 			// US.HUOBI was the canary that surfaced this bug).
 			maxAllowed := dexSpotUnverifiedMaxPct
-			if verified {
+			if match.Verified {
 				maxAllowed = dexSpotVerifiedMaxPct
 			}
 			if spreadPct > maxAllowed || spreadPct < -maxAllowed {
@@ -243,9 +243,12 @@ func (c *DexSpotCompute) tick() {
 				"fee_cex":             feeCexRT,
 				"total_fees":          totalFees,
 				"net_pct":             netPct,
-				"address_verified":    verified,
-				"address_match_chain": matchChain,
-				"address_known":       addrKnown,
+				"address_verified":    match.Verified,
+				"address_match_chain": match.MatchChain,
+				"address_known":       match.AddressKnown,
+				// tri-state per-network status (nil → JSON null = UI "unknown")
+				"cex_deposit":  match.Deposit,
+				"cex_withdraw": match.Withdraw,
 			})
 		}
 	}

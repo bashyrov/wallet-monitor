@@ -60,6 +60,9 @@ func FetchBingX(ctx context.Context, client *http.Client, creds SignedCreds) (Ve
 			NetworkList []struct {
 				Network         string `json:"network"`
 				ContractAddress string `json:"contractAddress"`
+				// In SAME payload — per-network transfer flags.
+				DepositEnable  bool `json:"depositEnable"`
+				WithdrawEnable bool `json:"withdrawEnable"`
 			} `json:"networkList"`
 		} `json:"data"`
 	}
@@ -84,7 +87,14 @@ func FetchBingX(ctx context.Context, client *http.Client, creds SignedCreds) (Ve
 			if canon == "" {
 				continue
 			}
-			out[ticker] = append(out[ticker], AssetAddress{Chain: canon, Address: addr})
+			dep := n.DepositEnable
+			wd := n.WithdrawEnable
+			out[ticker] = append(out[ticker], AssetAddress{
+				Chain:    canon,
+				Address:  addr,
+				Deposit:  &dep,
+				Withdraw: &wd,
+			})
 		}
 	}
 	return out, nil

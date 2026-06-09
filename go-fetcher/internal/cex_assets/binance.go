@@ -69,6 +69,9 @@ func FetchBinance(ctx context.Context, client *http.Client, creds SignedCreds) (
 		NetworkList []struct {
 			Network         string `json:"network"`
 			ContractAddress string `json:"contractAddress"`
+			// In SAME payload — dirt-cheap addition vs the address fetch.
+			DepositEnable  bool `json:"depositEnable"`
+			WithdrawEnable bool `json:"withdrawEnable"`
 		} `json:"networkList"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
@@ -89,7 +92,14 @@ func FetchBinance(ctx context.Context, client *http.Client, creds SignedCreds) (
 			if canon == "" {
 				continue
 			}
-			out[ticker] = append(out[ticker], AssetAddress{Chain: canon, Address: addr})
+			dep := n.DepositEnable
+			wd := n.WithdrawEnable
+			out[ticker] = append(out[ticker], AssetAddress{
+				Chain:    canon,
+				Address:  addr,
+				Deposit:  &dep,
+				Withdraw: &wd,
+			})
 		}
 	}
 	return out, nil

@@ -65,14 +65,10 @@ func FetchKuCoin(ctx context.Context, client *http.Client) (VenueAssets, error) 
 			continue
 		}
 		for _, ch := range c.Chains {
-			// Skip chains where both deposit AND withdraw are off —
-			// usually a delisting marker. Some assets have one direction
-			// disabled but the address is still valid for matching.
-			if !ch.IsDepositEnabled && !ch.IsWithdrawEnabled {
-				continue
-			}
-			// Prefer chainId when present (lowercase, standardised) but
-			// fall back to chainName.
+			// Don't pre-filter on transfer status: even when deposit or
+			// withdraw is off, the entry's value to the user is "address
+			// verified BUT transfer disabled" — that's the hazard we
+			// surface, not hide.
 			raw := ch.ChainID
 			if raw == "" {
 				raw = ch.ChainName
@@ -85,7 +81,14 @@ func FetchKuCoin(ctx context.Context, client *http.Client) (VenueAssets, error) 
 			if addr == "" {
 				continue
 			}
-			out[ticker] = append(out[ticker], AssetAddress{Chain: canon, Address: addr})
+			dep := ch.IsDepositEnabled
+			wd := ch.IsWithdrawEnabled
+			out[ticker] = append(out[ticker], AssetAddress{
+				Chain:    canon,
+				Address:  addr,
+				Deposit:  &dep,
+				Withdraw: &wd,
+			})
 		}
 	}
 	return out, nil

@@ -271,9 +271,15 @@ func main() {
 	// address_verified=false for every row (correct fallback).
 	var cexMatcher arb.CexAddressMatcher
 	if cexRegistry != nil {
-		cexMatcher = func(venue, ticker, dexChain, dexAddress string) (bool, string, bool) {
+		cexMatcher = func(venue, ticker, dexChain, dexAddress string) arb.CexMatch {
 			res := cexRegistry.MatchByAddress(venue, ticker, dexChain, dexAddress)
-			return res.Verified, res.MatchChain, res.AddressKnown
+			return arb.CexMatch{
+				Verified:     res.Verified,
+				MatchChain:   res.MatchChain,
+				AddressKnown: res.AddressKnown,
+				Deposit:      res.Deposit,
+				Withdraw:     res.Withdraw,
+			}
 		}
 	}
 	if os.Getenv("AVALANT_DEX_SPOT") == "1" {

@@ -16,6 +16,16 @@ import (
 type AssetAddress struct {
 	Chain   string `json:"chain"`   // DexScreener canonical id ("ethereum", "bsc", ...)
 	Address string `json:"address"` // lowercase; "" for L1 natives
+	// Deposit / Withdraw — PER-NETWORK status from the same config-fetch
+	// the address came from. Tri-state via *bool: nil = unknown (venue
+	// didn't expose this for this entry, or htx which has no field at
+	// all), &true / &false otherwise. The UI surface MUST distinguish
+	// "unknown" from "enabled" — same hazard category as ticker
+	// collisions: a false positive misleads the user into a trade they
+	// physically can't execute (deposit closed → bought DEX, asset
+	// stuck off-CEX; withdraw closed → bought CEX, asset stuck on-CEX).
+	Deposit  *bool `json:"deposit,omitempty"`
+	Withdraw *bool `json:"withdraw,omitempty"`
 }
 
 // VenueAssets is the per-venue map: ticker → list of (chain, address) pairs.
@@ -44,6 +54,13 @@ type MatchResult struct {
 	// don't match" from "we have no data on this venue's listing".
 	// Drives the unverified-reason field in dex/spot opp output.
 	AddressKnown bool
+	// Deposit / Withdraw — PER-NETWORK status of the MATCHING entry (or
+	// nil when no verified match was found). Even on Verified=false but
+	// AddressKnown=true we DON'T fall through to any other chain's
+	// status here — the user is shown "unverified" and per-chain status
+	// is meaningless without knowing which token they'd actually trade.
+	Deposit  *bool
+	Withdraw *bool
 }
 
 // Registry holds the in-memory address index plus a write-through file
@@ -180,7 +197,13 @@ func (r *Registry) MatchByAddress(venue, ticker, dexChain, dexAddress string) Ma
 			continue
 		}
 		if strings.EqualFold(e.Chain, chain) && strings.EqualFold(e.Address, a) {
-			return MatchResult{Verified: true, MatchChain: e.Chain, AddressKnown: true}
+			return MatchResult{
+				Verified:     true,
+				MatchChain:   e.Chain,
+				AddressKnown: true,
+				Deposit:      e.Deposit,
+				Withdraw:     e.Withdraw,
+			}
 		}
 	}
 	return res

@@ -65,12 +65,10 @@ func FetchGate(ctx context.Context, client *http.Client) (VenueAssets, error) {
 			continue
 		}
 		for _, ch := range r.Chains {
-			// Skip chains where deposit AND withdraw are both off —
-			// usually means the asset has migrated off that chain. One-
-			// direction-disabled is fine; the address is still valid.
-			if ch.DepositDisabled && ch.WithdrawDisabled {
-				continue
-			}
+			// Don't pre-filter on transfer status: even when deposit or
+			// withdraw is off, the entry's value to the user is "address
+			// verified BUT transfer disabled" — that's the hazard we
+			// surface, not hide. Only skip on schema problems.
 			canon := NormalizeChain(ch.Name)
 			if canon == "" {
 				// Unknown CEX chain id (e.g. TRX, KCC, BTC native) —
@@ -82,7 +80,19 @@ func FetchGate(ctx context.Context, client *http.Client) (VenueAssets, error) {
 			if addr == "" {
 				continue
 			}
-			out[ticker] = append(out[ticker], AssetAddress{Chain: canon, Address: addr})
+			// Gate exposes inverted flags (disabled, not enabled). Flip
+			// to positive sense so the registry contract is consistent
+			// across venues. *bool so consumers can distinguish "we
+			// know it's off" (&false) from "we don't know" (nil) —
+			// matters because the UI must NOT show unknown as enabled.
+			dep := !ch.DepositDisabled
+			wd := !ch.WithdrawDisabled
+			out[ticker] = append(out[ticker], AssetAddress{
+				Chain:    canon,
+				Address:  addr,
+				Deposit:  &dep,
+				Withdraw: &wd,
+			})
 		}
 	}
 	return out, nil

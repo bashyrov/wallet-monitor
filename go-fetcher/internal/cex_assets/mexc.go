@@ -58,6 +58,9 @@ func FetchMEXC(ctx context.Context, client *http.Client, creds SignedCreds) (Ven
 		NetworkList []struct {
 			Network  string `json:"network"`
 			Contract string `json:"contract"` // <-- not contractAddress
+			// In SAME payload — per-network transfer flags.
+			DepositEnable  bool `json:"depositEnable"`
+			WithdrawEnable bool `json:"withdrawEnable"`
 		} `json:"networkList"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
@@ -80,7 +83,14 @@ func FetchMEXC(ctx context.Context, client *http.Client, creds SignedCreds) (Ven
 			if canon == "" {
 				continue
 			}
-			out[ticker] = append(out[ticker], AssetAddress{Chain: canon, Address: addr})
+			dep := n.DepositEnable
+			wd := n.WithdrawEnable
+			out[ticker] = append(out[ticker], AssetAddress{
+				Chain:    canon,
+				Address:  addr,
+				Deposit:  &dep,
+				Withdraw: &wd,
+			})
 		}
 	}
 	return out, nil

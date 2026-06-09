@@ -64,6 +64,12 @@ func FetchBybit(ctx context.Context, client *http.Client, creds SignedCreds) (Ve
 					Chain           string `json:"chain"`
 					ChainType       string `json:"chainType"`
 					ContractAddress string `json:"contractAddress"`
+					// Bybit uses string-encoded booleans "0"/"1" for
+					// these flags (a recurring Bybit quirk — same for
+					// many on/off fields across their v5 API). Parsed
+					// below: "1" = enabled, anything else = disabled.
+					ChainDeposit  string `json:"chainDeposit"`
+					ChainWithdraw string `json:"chainWithdraw"`
 				} `json:"chains"`
 			} `json:"rows"`
 		} `json:"result"`
@@ -94,7 +100,14 @@ func FetchBybit(ctx context.Context, client *http.Client, creds SignedCreds) (Ve
 			if canon == "" {
 				continue
 			}
-			out[ticker] = append(out[ticker], AssetAddress{Chain: canon, Address: addr})
+			dep := ch.ChainDeposit == "1"
+			wd := ch.ChainWithdraw == "1"
+			out[ticker] = append(out[ticker], AssetAddress{
+				Chain:    canon,
+				Address:  addr,
+				Deposit:  &dep,
+				Withdraw: &wd,
+			})
 		}
 	}
 	return out, nil

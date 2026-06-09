@@ -20,6 +20,19 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
 
+// CexMatch is the verdict compute receives from the address registry
+// closure. Deposit/Withdraw are tri-state (*bool, nil = unknown) and
+// must be surfaced as "unknown" in the UI — never assumed enabled.
+// Same rule as AddressKnown: the user is making a transfer decision,
+// false-positive on transfer availability is a high-cost error.
+type CexMatch struct {
+	Verified     bool
+	MatchChain   string
+	AddressKnown bool
+	Deposit      *bool
+	Withdraw     *bool
+}
+
 // CexAddressMatcher is the read closure compute uses against the CEX
 // assets registry. main.go builds it from cex_assets.Registry — the
 // arb package itself doesn't import cex_assets to keep this layer
@@ -29,7 +42,7 @@ import (
 // matchChain (DexScreener canonical chain if verified, else ""), and
 // addressKnown (ticker exists in venue registry — distinguishes
 // "verified false because address differs" from "we have no data").
-type CexAddressMatcher func(venue, ticker, dexChain, dexAddress string) (verified bool, matchChain string, addressKnown bool)
+type CexAddressMatcher func(venue, ticker, dexChain, dexAddress string) CexMatch
 
 // dexInfo is the result of a DexScreener pool lookup.
 type dexInfo struct {
@@ -426,9 +439,9 @@ func (c *DEXCompute) tick(ctx context.Context) {
 			// every other venue returns AddressKnown=false → verified
 			// also false → frontend renders ⚠ unverified pill. Same
 			// policy when AVALANT_CEX_ASSETS=0 (registry empty).
-			verified, matchChain, addrKnown := false, "", false
+			var match CexMatch
 			if c.cexMatcher != nil {
-				verified, matchChain, addrKnown = c.cexMatcher(perpEx, sym, dex.Chain, dex.BaseAddress)
+				match = c.cexMatcher(perpEx, sym, dex.Chain, dex.BaseAddress)
 			}
 			opps = append(opps, map[string]any{
 				"type":               "dex_short",
@@ -456,9 +469,12 @@ func (c *DEXCompute) tick(ctx context.Context) {
 				"next_ts":            nextTsOf(p.NextFunding),
 				"in_pct":             inPct,
 				"out_pct":            outPct,
-				"address_verified":   verified,
-				"address_match_chain": matchChain,
-				"address_known":      addrKnown,
+				"address_verified":   match.Verified,
+				"address_match_chain": match.MatchChain,
+				"address_known":      match.AddressKnown,
+				// tri-state per-network status (nil → JSON null = UI "unknown")
+				"cex_deposit":  match.Deposit,
+				"cex_withdraw": match.Withdraw,
 			})
 		}
 	}

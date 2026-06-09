@@ -63,13 +63,10 @@ func FetchBitget(ctx context.Context, client *http.Client) (VenueAssets, error) 
 			continue
 		}
 		for _, ch := range c.Chains {
-			// Skip fully-disabled chains — assets that no longer trade
-			// on either side. A coin can lose one direction but the
-			// address is still legitimate for matching.
-			if strings.ToLower(ch.Withdrawable) == "false" &&
-				strings.ToLower(ch.Rechargeable) == "false" {
-				continue
-			}
+			// Don't pre-filter on transfer status: even when deposit or
+			// withdraw is off, the entry's value to the user is "address
+			// verified BUT transfer disabled" — that's the hazard we
+			// surface, not hide.
 			canon := NormalizeChain(ch.Chain)
 			if canon == "" {
 				continue
@@ -78,7 +75,16 @@ func FetchBitget(ctx context.Context, client *http.Client) (VenueAssets, error) 
 			if addr == "" {
 				continue
 			}
-			out[ticker] = append(out[ticker], AssetAddress{Chain: canon, Address: addr})
+			// Bitget uses positive flags but as string "true"/"false".
+			// "rechargeable" = deposit, "withdrawable" = withdraw.
+			dep := strings.EqualFold(strings.TrimSpace(ch.Rechargeable), "true")
+			wd := strings.EqualFold(strings.TrimSpace(ch.Withdrawable), "true")
+			out[ticker] = append(out[ticker], AssetAddress{
+				Chain:    canon,
+				Address:  addr,
+				Deposit:  &dep,
+				Withdraw: &wd,
+			})
 		}
 	}
 	return out, nil

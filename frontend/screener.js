@@ -111,6 +111,48 @@ function exTradeUrl(exchange, symbol) {
   return urls[exchange] || null;
 }
 
+// ── DEX↔CEX deposit/withdraw indicators ──────────────────────────────────────
+// Per-network transfer status on the CEX leg of a dex_short / dex_spot row.
+// Tri-state: enabled (green), disabled (red), unknown (gray).
+//   row.cex_deposit / row.cex_withdraw:
+//     true  → enabled  (green ⬇ / ⬆)
+//     false → disabled (red strike — closed gate)
+//     null  → unknown  (gray ?)  — venue/network status not in registry
+// Mode-aware emphasis: the directionally-relevant flag matters more for
+// trade execution and gets a louder warning ring + tooltip prefix.
+//   dex_short            → deposit critical (you ship DEX-bought spot to CEX)
+//   dex_spot dex_to_cex  → deposit critical (you sell on CEX)
+//   dex_spot cex_to_dex  → withdraw critical (you sell on DEX)
+function _txIndicators(r) {
+  // mode = 'short' | 'spot_d2c' | 'spot_c2d'
+  let mode = 'short';
+  if (r.type === 'dex_spot') {
+    mode = r.direction === 'cex_to_dex' ? 'spot_c2d' : 'spot_d2c';
+  }
+  const critDep = (mode === 'short' || mode === 'spot_d2c');
+  const critWd  = (mode === 'spot_c2d');
+  const pill = (kind, val, isCritical) => {
+    const known = val !== null && val !== undefined;
+    let cls = 'tx-unknown', sym = (kind === 'dep' ? '⬇' : '⬆');
+    let label, title;
+    if (!known) {
+      label = sym + '?';
+      title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} status unknown for ${r.cex_exchange||r.short_exchange} on ${r.dex_chain||'?'} — registry has no data (htx / venue API key not configured).`;
+    } else if (val) {
+      cls = 'tx-on';
+      label = sym;
+      title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} ENABLED on ${r.cex_exchange||r.short_exchange} for ${r.address_match_chain||r.dex_chain||'?'}.`;
+    } else {
+      cls = 'tx-off';
+      label = sym + '×';
+      title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} DISABLED on ${r.cex_exchange||r.short_exchange} for ${r.address_match_chain||r.dex_chain||'?'} — you cannot ${kind === 'dep' ? 'send funds TO' : 'send funds FROM'} this CEX over this network right now. Trade NOT executable.`;
+    }
+    if (isCritical && known && !val) cls += ' tx-crit';
+    return `<span class="tx-pill ${cls}" title="${title}" onclick="event.stopPropagation()">${label}</span>`;
+  };
+  return `<span class="tx-row">${pill('dep', r.cex_deposit, critDep)}${pill('wd', r.cex_withdraw, critWd)}</span>`;
+}
+
 // ── DEX↔CEX address-verification pill ────────────────────────────────────────
 // Shown on dex_short + dex_spot rows whose address_verified === false.
 // Three states, each with distinct copy so the user knows WHY a row isn't
@@ -758,7 +800,7 @@ function renderDex() {
     const dexLink = r.dex_pair_url ? `<a href="${r.dex_pair_url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--purple);text-decoration:none;font-weight:600">${dexLabel}</a>` : `<span style="color:var(--purple);font-weight:600">${dexLabel}</span>`;
     const dexDetailUrl = `/arb?type=dex-short&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
     return `<tr data-short-ex="${r.short_exchange}" style="cursor:pointer" onclick="window.open('${dexDetailUrl}','_blank')">
-      <td class="td-symbol"><a href="${dexDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}</td>
+      <td class="td-symbol"><a href="${dexDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}${_txIndicators(r)}</td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
@@ -822,7 +864,7 @@ function renderDexCards() {
     <div class="card${isOpen?' open':''}" onclick="toggleCard(this)" data-key="${key}">
       <div class="card-head">
         <span class="type-pill tp-dex" style="margin-right:6px">DEX</span>
-        ${symbolLink(r.symbol, r.short_exchange)}
+        ${symbolLink(r.symbol, r.short_exchange)}${_unverifiedBadge(r)}${_txIndicators(r)}
         <div class="card-badges">
           ${dexChip}
           <span style="color:var(--text3);font-size:11px">→</span>
@@ -1006,7 +1048,7 @@ function renderDexSpot() {
       : `<span style="color:var(--purple);font-weight:600">${dexLabel}</span>`;
     const detailUrl = `/arb?type=dex-spot&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.cex_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
     return `<tr data-short-ex="${r.cex_exchange}_spot" data-symbol="${r.symbol}" data-kind="dex_spot" style="cursor:pointer" onclick="window.open('${detailUrl}','_blank')">
-      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}</td>
+      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}${_txIndicators(r)}</td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
@@ -1066,7 +1108,7 @@ function renderDexSpotCards() {
     <div class="card${isOpen?' open':''}" onclick="toggleCard(this)" data-key="${key}">
       <div class="card-head">
         <span class="type-pill tp-dex-spot" style="margin-right:6px">DX/SP</span>
-        ${symbolLink(r.symbol, r.cex_exchange)}${_unverifiedBadge(r)}
+        ${symbolLink(r.symbol, r.cex_exchange)}${_unverifiedBadge(r)}${_txIndicators(r)}
         <div class="card-badges">
           ${dexChip}
           <span style="color:var(--text3);font-size:11px">⇄</span>
