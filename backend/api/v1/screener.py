@@ -300,6 +300,12 @@ async def pair_opp(
             "short_volume": float(r_short.get("volume_usd") or 0),
             "long_interval_h": r_long.get("interval_h", 8),
             "short_interval_h": r_short.get("interval_h", 8),
+            # Next funding timestamp — Unix seconds. UI on /arb shows
+            # countdown until next payout for each leg. Was missing
+            # entirely (handler didn't forward), so the page always
+            # rendered "—" under NEXT.
+            "long_next_ts": r_long.get("next_ts"),
+            "short_next_ts": r_short.get("next_ts"),
             "gross_funding": round(gross * 100, 6),
             "price_spread": round(spread * 100, 4),
             "fee_long": round(fee_l * 100, 4), "fee_short": round(fee_s * 100, 4),

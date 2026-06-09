@@ -2345,6 +2345,13 @@ def get_cached_rates() -> dict[str, dict]:
                     "rate":       row.get("rate", 0.0),
                     "interval_h": ivl,
                     "price":      row.get("price", 0.0),
+                    # Forwarded so /screener/pair can report 24h volume +
+                    # next funding time on the /arb detail page. The
+                    # fields existed in the upstream venue rows but were
+                    # silently dropped here — UI showed "0 USDT" + "—"
+                    # for every direct-pair lookup.
+                    "volume_usd": row.get("volume_usd", 0.0),
+                    "next_ts":    row.get("next_ts"),
                 }
         return result
 
@@ -2367,5 +2374,10 @@ def get_cached_rates() -> dict[str, dict]:
             "rate":       row.get("rate", 0.0),
             "interval_h": ivl,
             "price":      row.get("price", 0.0),
+            # Same fix as the in-process path above — funding.json
+            # carries these fields, the cache adapter just wasn't
+            # forwarding them.
+            "volume_usd": row.get("volume_usd", 0.0),
+            "next_ts":    row.get("next_ts"),
         }
     return result
