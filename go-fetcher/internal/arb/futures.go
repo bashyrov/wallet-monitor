@@ -267,18 +267,18 @@ func (c *Compute) tick() {
 				// absolute terms only when computed off the larger leg.
 				// max/min ratio is symmetric and unambiguous.
 				//
-				// Loosened 1.5× → 2.0× per user feedback after H token
-				// where the OKX/Bybit listing ($0.17-0.20) was treated as
-				// a different token from KuCoin/Gate/etc ($0.076) due to
-				// the 2.3× ratio — user confirmed it's the same token.
-				// 2.0× admits more cross-listings; address-verification via
-				// cex_assets registry remains the authoritative collision
-				// check for dex/* modes.
+				// Loosened 1.5× → 2.0× → 3.0× per user feedback after H token
+				// where Bybit listing (\$0.20) needed 2.5× ratio against
+				// KuCoin (\$0.079) to admit the cross-listed pair.
+				// 3.0× admits true cross-venue listings; genuine
+				// ticker-collisions (EDGE 12× gap) still get caught.
+				// Address-verification via cex_assets registry remains
+				// the authoritative collision check for dex/* modes.
 				hi, lo := longPE.mark, shortPE.mark
 				if hi < lo {
 					hi, lo = lo, hi
 				}
-				if lo <= 0 || hi/lo > 2.0 {
+				if lo <= 0 || hi/lo > 3.0 {
 					continue
 				}
 				priceSpread := (shortPE.mark - longPE.mark) / longPE.mark
