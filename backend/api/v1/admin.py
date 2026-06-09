@@ -801,6 +801,20 @@ def admin_create_promo(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
+    # Promo-code CREATION is blocked when PROMO_CREATION_DISABLED=1.
+    # The split-discount ReferralCode model (migration r1s2t3u4v5w6)
+    # supersedes per-checkout promo discounts; new admin promos would
+    # bypass the per-referee 5-cap + the (commission+discount)≤45
+    # invariant. Existing promos stay editable (PATCH) and usable at
+    # checkout — only NEW row creation is gated. 503 not 403 because
+    # the route itself is admin-only; the 503 signals "feature retired"
+    # rather than auth failure.
+    import os
+    if os.environ.get("PROMO_CREATION_DISABLED", "0") == "1":
+        raise HTTPException(
+            status_code=503,
+            detail="Promo code creation disabled (replaced by ReferralCode split-discount system). Existing promos remain editable.",
+        )
     code = (body.get("code") or "").strip()
     try:
         promo = _promo_service.create_code(db, code, body)
