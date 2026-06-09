@@ -681,19 +681,19 @@ func (b *Book) handleSubscribe(c *client, pairs []string) {
 func (b *Book) sendInitialSnapshot(c *client, pairKey string) {
 	ex, sym, ok := splitPair(pairKey)
 	if !ok {
-		log.L().Info().Str("pair", pairKey).Msg("sendInitialSnapshot: splitPair failed")
+		log.L().Warn().Str("pair", pairKey).Msg("sendInitialSnapshot: splitPair failed")
 		return
 	}
 	entry, found := b.store.Get(ex, sym)
 	if !found || entry == nil {
-		log.L().Info().Str("pair", pairKey).Msg("sendInitialSnapshot: cache MISS")
+		log.L().Warn().Str("pair", pairKey).Msg("sendInitialSnapshot: cache MISS")
 		return
 	}
 	if len(entry.Bids) == 0 && len(entry.Asks) == 0 {
-		log.L().Info().Str("pair", pairKey).Msg("sendInitialSnapshot: empty book")
+		log.L().Warn().Str("pair", pairKey).Msg("sendInitialSnapshot: empty book")
 		return
 	}
-	log.L().Info().Str("pair", pairKey).Int("bids", len(entry.Bids)).Int("asks", len(entry.Asks)).Msg("sendInitialSnapshot: pushing")
+	log.L().Warn().Str("pair", pairKey).Int("bids", len(entry.Bids)).Int("asks", len(entry.Asks)).Msg("sendInitialSnapshot: pushing")
 	// Trim to broadcast levels — same as OnBookUpdate path.
 	nb := entry.Bids
 	if len(nb) > bookBroadcastLevels {
