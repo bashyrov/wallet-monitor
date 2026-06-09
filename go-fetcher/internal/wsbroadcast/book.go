@@ -652,8 +652,84 @@ func (b *Book) handleSubscribe(c *client, pairs []string) {
 		b.reportHotSize()
 	}
 
+	// Immediate snapshot — kill the visible "staircase" during the
+	// gap between subscribe and the first OnBookUpdate. Without this,
+	// the user-facing /arb book sat for up to 1s (pending-flush
+	// interval) before the first depth frame arrived. We have a fresh
+	// snapshot in cache.Store from the adapter's last push (typically
+	// 20-50ms old); send it ONLY to this client right now. Doesn't
+	// touch hot-path or per-pair pending state — it's a one-shot push
+	// to one client's outbox.
+	if b.store != nil {
+		for _, p := range added {
+			b.sendInitialSnapshot(c, p)
+		}
+	}
+
 	if len(added) > 0 {
 		log.L().Debug().Int("uid", c.uid).Strs("pairs", added).Msg("book subscribe")
+	}
+}
+
+// sendInitialSnapshot looks up the latest cached snapshot for pairKey
+// and pushes it as a one-shot frame to the given client's outbox.
+// Mirrors the wire format pushBypass uses so the frontend's onmessage
+// handler treats this identically to a hot-path push. Silent no-op when
+// the cache has no entry (pair just subscribed, no adapter data yet).
+// Updates the per-client last-ts-sent so the next hot-path push doesn't
+// re-send the same snapshot.
+func (b *Book) sendInitialSnapshot(c *client, pairKey string) {
+	ex, sym, ok := splitPair(pairKey)
+	if !ok {
+		return
+	}
+	entry, found := b.store.Get(ex, sym)
+	if !found || entry == nil {
+		return
+	}
+	if len(entry.Bids) == 0 && len(entry.Asks) == 0 {
+		return
+	}
+	// Trim to broadcast levels — same as OnBookUpdate path.
+	nb := entry.Bids
+	if len(nb) > bookBroadcastLevels {
+		nb = nb[:bookBroadcastLevels]
+	}
+	na := entry.Asks
+	if len(na) > bookBroadcastLevels {
+		na = na[:bookBroadcastLevels]
+	}
+	ts := float64(entry.UpdatedAt.UnixMilli()) / 1000.0
+	bidSlice := make([][]float64, len(nb))
+	for i, lv := range nb {
+		bidSlice[i] = []float64{lv[0], lv[1]}
+	}
+	askSlice := make([][]float64, len(na))
+	for i, lv := range na {
+		askSlice[i] = []float64{lv[0], lv[1]}
+	}
+	body, err := json.Marshal(map[string]any{
+		"books": map[string]any{
+			pairKey: map[string]any{
+				"ts":   ts,
+				"bids": bidSlice,
+				"asks": askSlice,
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+	// Mark last-ts-sent so the hot-path push doesn't immediately re-send
+	// the same snapshot if OnBookUpdate fires within the next ms.
+	b.mu.Lock()
+	if set, ok := b.subs[c]; ok {
+		set[pairKey] = ts
+	}
+	b.mu.Unlock()
+	select {
+	case c.outbox <- body:
+	default:
 	}
 }
 
