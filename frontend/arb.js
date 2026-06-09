@@ -5301,7 +5301,7 @@ async function toggleArbWatch(){
     }else{
       const r=await Auth.apiFetch('/screener/watchlist',{method:'POST',body:JSON.stringify({symbol:SYM,long_exchange:LONG,short_exchange:SHORT})});
       if(!r.ok)throw new Error();
-      const j=await r.json();_wlArbId=j.id;btn.classList.add('on');_toast('Added to watchlist');
+      const j=await r.json();_wlArbId=j.id;btn.classList.add('on');_toast('Added to watchlist', true);
     }
   }catch{_toast('Watchlist action failed');}
 }
