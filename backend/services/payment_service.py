@@ -48,24 +48,38 @@ def compute_pricing(
     plan: Plan,
     period: BillingPeriod,
     promo: PromoCode | None,
+    ref_code_discount_pct: Decimal | None = None,
 ) -> dict[str, Decimal]:
     """Server-authoritative price calculation.
 
     Pricing model:
       base_total = plan.price_usd_monthly × period.months × (1 - period.discount_pct / 100)
-      final     = base_total × (1 - promo.discount_pct / 100)
+      total_discount = promo.discount_pct + ref_code_discount_pct
+      total_discount_clamped = min(total_discount, GLOBAL_CAP_PCT)   # 45
+      final = base_total × (1 - total_discount_clamped / 100)
 
     Both rounded to 2 decimals (HALF_UP) at the end so the user sees a
     clean number on the invoice page. Frontend may show any intermediate
     UI, but the actual money is computed here from the DB rows so a
     tampered request can't sneak through.
+
+    Layer-3 clamp at GLOBAL_CAP_PCT (45) is defense in depth — the
+    ReferralCode CHECK constraint already enforces discount_pct <= 45,
+    and 5-cap helper zeroes it out past the per-referee limit. This
+    extra clamp catches any future drift where one of those guards
+    grows a bug.
     """
+    from backend.services.referral_code_service import GLOBAL_CAP_PCT
     base = billing_period_service.compute_total(plan.price_usd_monthly, period)
-    discount_pct = Decimal(promo.discount_pct) if promo else Decimal("0")
-    final = _round_money(base * (Decimal("100") - discount_pct) / Decimal("100"))
+    promo_pct = Decimal(promo.discount_pct) if promo else Decimal("0")
+    ref_pct = Decimal(ref_code_discount_pct) if ref_code_discount_pct else Decimal("0")
+    total_discount = promo_pct + ref_pct
+    if total_discount > GLOBAL_CAP_PCT:
+        total_discount = GLOBAL_CAP_PCT
+    final = _round_money(base * (Decimal("100") - total_discount) / Decimal("100"))
     return {
         "base_amount_usd": base,
-        "discount_pct": discount_pct,
+        "discount_pct": total_discount,
         "final_amount_usd": final,
     }
 
@@ -145,7 +159,18 @@ async def create_checkout(
         if not promo:
             raise ValueError("invalid promo code")
 
-    pricing = compute_pricing(plan, period, promo)
+    # Apply the user's bound ReferralCode discount when they're under
+    # the 5-per-referee cap. Zero is safely passed through compute_pricing.
+    from backend.services import referral_code_service as _codes
+    from backend.db.models import ReferralCode as _RC
+    ref_discount = None
+    if user.signup_code_id is not None:
+        code = db.query(_RC).filter(_RC.id == user.signup_code_id).first()
+        if code is not None:
+            used = _codes.count_non_reversed_usages(db, code.id, user.id)
+            ref_discount = _codes.effective_discount_pct(code, used)
+
+    pricing = compute_pricing(plan, period, promo, ref_code_discount_pct=ref_discount)
     if pricing["final_amount_usd"] <= 0:
         raise ValueError("computed amount is zero — refusing to create invoice")
 
@@ -182,6 +207,81 @@ async def create_checkout(
 
 
 # ── Webhook handler ───────────────────────────────────────────────────────────
+def _credit_split_discount(db: Session, *, user, payment) -> None:
+    """New-system commission credit. Called from _activate_user only when
+    user.signup_code_id is set. Creates one ReferralCodeUsage row + one
+    paired ReferralEarning row (both UNIQUE on payment_id → idempotent).
+
+    Cap policy: silently no-ops past the 5-per-referee cap. The user has
+    already been charged the full price (checkout-time discount also
+    skipped past the cap), so this is the symmetric no-side accrual.
+    """
+    from decimal import Decimal
+    from backend.db.models import (
+        ReferralCode, ReferralCodeUsage, ReferralEarning,
+    )
+    from backend.services import referral_code_service as _codes
+    from backend.services import referral_service
+
+    code = db.query(ReferralCode).filter(ReferralCode.id == user.signup_code_id).first()
+    if code is None:
+        # signup_code_id points at a deleted code — shouldn't happen
+        # (codes are not deletable) but defensive.
+        logger.warning(
+            "split-credit skip: user=%s signup_code_id=%s missing in DB",
+            user.id, user.signup_code_id,
+        )
+        return
+    # Self-referral defense at credit time too (belt + suspenders — the
+    # registration path already blocks, but a bad direct DB write
+    # shouldn't pay owner_id for their own payment).
+    if code.owner_id == user.id:
+        logger.warning(
+            "split-credit skip: self-referral detected user=%s code=%s",
+            user.id, code.id,
+        )
+        return
+    usage_count = _codes.count_non_reversed_usages(db, code.id, user.id)
+    if usage_count >= _codes.USAGES_PER_REFEREE:
+        logger.info(
+            "split-credit skip: 5-cap reached user=%s code=%s usages=%d",
+            user.id, code.id, usage_count,
+        )
+        return
+    final_amount = Decimal(str(payment.final_amount_usd or 0))
+    commission_pct = _codes.effective_commission_pct(code, usage_count)
+    discount_pct = _codes.effective_discount_pct(code, usage_count)
+    commission_amount = (final_amount * commission_pct / Decimal("100")).quantize(Decimal("0.01"))
+    # discount_applied is what was already subtracted at checkout —
+    # informational only on this row, not re-applied to the price.
+    base_amount = Decimal(str(payment.base_amount_usd or 0))
+    discount_amount = (base_amount * discount_pct / Decimal("100")).quantize(Decimal("0.01"))
+
+    # Both inserts in one flush — UNIQUE(payment_id) on each catches the
+    # idempotency case (webhook retry → IntegrityError on the second
+    # insert, no double-credit).
+    db.add(ReferralCodeUsage(
+        code_id=code.id,
+        referee_id=user.id,
+        payment_id=payment.id,
+        payment_amount_usd=final_amount,
+        commission_earned=commission_amount,
+        discount_applied=discount_amount,
+    ))
+    db.add(ReferralEarning(
+        referrer_id=code.owner_id,
+        referee_id=user.id,
+        payment_id=payment.id,
+        pct=commission_pct,
+        amount_usd=commission_amount,
+    ))
+    db.flush()
+    logger.info(
+        "split-credit OK: owner=%s referee=%s code=%s amount=%s commission=%s",
+        code.owner_id, user.id, code.id, final_amount, commission_amount,
+    )
+
+
 def _activate_user(db: Session, payment: Payment) -> None:
     # Refunded payments must never re-grant a plan, even if a stale
     # webhook reaches this code path. The admin button + the webhook
@@ -222,18 +322,32 @@ def _activate_user(db: Session, payment: Payment) -> None:
             logger.info("promo bonus_days=%d added to payment %s (user=%s)",
                         bonus, payment.id, payment.user_id)
     user.plan_expires_at = payment.activated_until
-    # Referral commission — credit the referrer (if any) for this confirmed
-    # activation. Idempotent (UNIQUE on payment_id). Errors don't block the
-    # plan activation: we'd rather honour the user's payment than reject it
-    # because of a referral-bookkeeping bug.
+    # Referral commission — dispatch on user.signup_code_id presence:
+    #
+    #   signup_code_id IS NOT NULL → NEW split-discount flow. Create
+    #                                ReferralCodeUsage (idempotent UNIQUE
+    #                                payment_id) AND ReferralEarning (same
+    #                                fraud-protection as legacy). Respects
+    #                                5-per-referee cap (silently skips
+    #                                beyond cap — no error to the user).
+    #   referred_by_id IS NOT NULL  → LEGACY system FROZEN per the
+    #                                approved migration plan. No new
+    #                                accrual; existing balances still
+    #                                payable through the unchanged payout
+    #                                flow. Logged for observability.
+    #   neither                     → no referral, no-op.
+    #
+    # Errors don't block the plan activation: we'd rather honour the
+    # user's payment than reject it because of a referral-bookkeeping bug.
     try:
-        from backend.services import referral_service
-        referral_service.credit_commission(
-            db,
-            referee=user,
-            payment=payment,
-            amount_usd=payment.final_amount_usd or 0,
-        )
+        from backend.services import referral_code_service as _codes
+        if user.signup_code_id is not None:
+            _credit_split_discount(db, user=user, payment=payment)
+        elif user.referred_by_id is not None:
+            logger.info(
+                "referral legacy FROZEN: user=%s payment=%s referred_by=%s — no accrual",
+                user.id, payment.id, user.referred_by_id,
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("referral credit failed for payment=%s user=%s: %s",
                        payment.id, user.id, exc)
@@ -429,6 +543,25 @@ def refund_payment(
     except Exception as exc:
         logger.error("refund: referral reversal failed for payment=%s: %s", payment.id, exc)
         out["referral_action"] = "error"
+
+    # New-system Usage reversal — symmetric with reverse_commission. The
+    # 5-per-referee counter excludes reversed rows, so refunding frees
+    # a slot. Idempotent via reversed_at NULL check.
+    try:
+        from backend.db.models import ReferralCodeUsage
+        usage = db.query(ReferralCodeUsage).filter(
+            ReferralCodeUsage.payment_id == payment.id,
+        ).first()
+        if usage is not None and usage.reversed_at is None:
+            usage.reversed_at = now
+            usage.reversal_reason = (reason or "")[:500]
+            db.add(usage)
+            db.flush()
+            logger.info("split-credit usage reversed: payment=%s code=%s",
+                        payment.id, usage.code_id)
+    except Exception as exc:
+        logger.error("refund: split usage reversal failed payment=%s: %s",
+                     payment.id, exc)
 
     db.commit()
     db.refresh(payment)

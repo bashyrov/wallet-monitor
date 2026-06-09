@@ -346,6 +346,18 @@ def request_payout(
 
     amount = available_balance(db, user)
     min_payout = current_min_payout_usd()
+    # Refund-after-cashout block: when reverse_commission inserted a
+    # sibling negative-amount earning (because the original was already
+    # paid out via a completed payout), available_balance goes < 0. The
+    # user CANNOT withdraw until future earnings bring the balance back
+    # to >= min. This closes the spec'd hole — a user can't refund a
+    # payment they already cashed-out commission on and walk away with
+    # both the refund AND the commission.
+    if amount < 0:
+        raise PayoutError(
+            f"Outstanding refund debt: ${abs(amount)} must be covered by future "
+            f"earnings before another payout can be requested."
+        )
     if amount < min_payout:
         raise PayoutError(f"Minimum payout is ${min_payout}")
 
