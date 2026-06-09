@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/obsmetrics"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
@@ -154,6 +155,16 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		return nil, nil
 	}
 	token := strings.TrimSuffix(msg.Arg.InstID, a.instSuffix)
+
+	// Per-channel input counter — fired AFTER filters but BEFORE any
+	// merge/dedup work. Prove rate per channel (books vs bbo-tbt) at
+	// the recv boundary so a "silent BBO" can be distinguished from a
+	// "quiet market" without speculation.
+	chanLabel := "books"
+	if isBBO {
+		chanLabel = "bbo-tbt"
+	}
+	obsmetrics.AdapterChanFramesIn.Inc(a.cacheKey + "/" + chanLabel + ":" + token)
 
 	if isBBO {
 		return a.applyBBO(token, msg.Data[0].Bids, msg.Data[0].Asks), nil

@@ -70,6 +70,13 @@ var (
 	//     digits per second on the hottest BTC during volatile moments.
 	BookBypassPushes  = newCounterVec("avalant_book_bypass_pushes_total", "Book frames sent event-driven (bypassing flush) — pair label")
 	BookHotFloorDrops = newCounterVec("avalant_book_hot_floor_drops_total", "OnBookUpdate frames coalesced because they hit the 10ms hot floor")
+
+	// AdapterChanFramesIn — recv-side counter PER CHANNEL on multi-channel
+	// adapters (OKX: books + bbo-tbt; Binance: bookTicker + depth; ...).
+	// Lets us prove input rate per channel separately, so a venue's
+	// real-time channel "going silent" gets caught before being blamed on
+	// market quietness. Label format: "<exchange>/<channel>:<SYM>".
+	AdapterChanFramesIn = newCounterVec("avalant_adapter_chan_frames_in_total", "WS frames received from the venue, labelled by adapter/channel/symbol")
 )
 
 // HotSetSize is a single-value gauge. Set by Book.report() each time the
@@ -106,7 +113,7 @@ func Handler() http.Handler {
 		}
 		// Tiered freshness counters use pair labels (ex:SYM) rather than
 		// exchange-only. Different cardinality bucket — render separately.
-		for _, cv := range []*counterVec{BookBypassPushes, BookHotFloorDrops} {
+		for _, cv := range []*counterVec{BookBypassPushes, BookHotFloorDrops, AdapterChanFramesIn} {
 			fmt.Fprintf(w, "# HELP %s %s\n", cv.name, cv.help)
 			fmt.Fprintf(w, "# TYPE %s counter\n", cv.name)
 			snap := cv.snapshot()

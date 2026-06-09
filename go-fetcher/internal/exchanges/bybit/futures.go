@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/obsmetrics"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
 )
 
@@ -133,6 +134,15 @@ func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 		return nil, nil
 	}
 	token := strings.TrimSuffix(sym, "USDT")
+
+	// Per-channel input counter — mirrors okx adapter so we can compare
+	// OKX bbo-tbt vs Bybit orderbook.1 rates head-to-head at the recv
+	// boundary.
+	chanLabel := "orderbook.50"
+	if isBBO {
+		chanLabel = "orderbook.1"
+	}
+	obsmetrics.AdapterChanFramesIn.Inc("bybit/" + chanLabel + ":" + token)
 
 	if isBBO {
 		return a.applyBBO(token, msg.Type, msg.Data.Bids, msg.Data.Asks), nil
