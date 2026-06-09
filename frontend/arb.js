@@ -3176,8 +3176,8 @@ function _checkBookStaleness(){
         _staleNoticeShown[side] = true;
         try {
           toast({
-            title: `Нет данных по ${SYM} на ${venue}`,
-            sub:   'Возможно символ не торгуется на этой бирже или фид прогревается',
+            title: `No data for ${SYM} on ${venue}`,
+            sub:   'Symbol may not be tradable on this venue, or the feed is warming up',
             type:  'warn',
             duration: 6000,
           });
@@ -3194,8 +3194,8 @@ function _checkBookStaleness(){
         _staleToastLast[side] = now;
         try {
           toast({
-            title: `Задержка данных ${venue}`,
-            sub:   `Последнее обновление ${Math.round(ageMs/1000)}s назад`,
+            title: `${venue} data delayed`,
+            sub:   `Last update ${Math.round(ageMs/1000)}s ago`,
             type:  'warn',
             duration: 5000,
           });
