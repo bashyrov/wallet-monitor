@@ -1238,12 +1238,18 @@
     <div id="tab-refcodes" style="display:none">
       <div class="page-title">Referral codes</div>
       <div class="page-sub">
-        Split-discount system. Self-serve codes are user-created with a 25% pool cap; admin codes can use up to 45%. All codes are immutable and saturate after 15 sign-ups × 5 purchases per friend.
+        Split-discount system. Self-serve codes are user-created with a 25% pool cap; admin codes can use up to 45%. All codes are immutable.
       </div>
 
       <!-- Admin create form -->
       <div class="card" style="margin-bottom:16px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:12px">Create admin code (≤45% pool)</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:6px">
+          <span>Create admin code (≤45% pool)</span>
+          <!-- Same info-dot pattern as the user-side profile modal — hover
+               reveals the per-code usage caps so admins don't have to
+               remember the spec by heart. -->
+          <span class="info-dot" title="Each code has two usage limits:&#10;• Up to 15 different users can sign up with it&#10;• Each user gets the discount on up to 5 purchases&#10;Total lifetime: 75 discounted transactions per code." style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--surface3);color:var(--text3);font-size:10px;font-weight:600;cursor:help;font-family:var(--mono);border:1px solid var(--border)">i</span>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
             <label style="font-size:11px;color:var(--text3)">Code</label>
@@ -1469,7 +1475,7 @@ input[type="checkbox"] { accent-color: var(--green); width: 14px; height: 14px; 
 </style>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260610a"></script>
+<script src="/dist/core.min.js?v=20260610b"></script>
 <script>
 Auth.requireAdmin('/portfolio');
 
@@ -2734,7 +2740,7 @@ function _rcRender() {
         <td style="font-family:var(--mono);color:var(--green)">${(+c.commission_pct).toFixed(1)}</td>
         <td style="font-family:var(--mono);color:#60A5FA">${(+c.discount_pct).toFixed(1)}</td>
         <td style="font-family:var(--mono)">${total.toFixed(1)}</td>
-        <td style="font-family:var(--mono)">${c.registrations_used}/15</td>
+        <td style="font-family:var(--mono);cursor:help" title="Up to 15 different users can sign up with this code. Each user gets the discount on up to 5 purchases.">${c.registrations_used}/15</td>
         <td style="color:var(--text3);font-size:11px">${created}</td>
       </tr>`;
     }).join('')}</tbody>

@@ -1347,7 +1347,7 @@
 </div>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260610a"></script>
+<script src="/dist/core.min.js?v=20260610b"></script>
 <script src="/venue-help.js" defer></script>
 <script>
 // ─── Profile sidebar: tab switcher (one pane visible at a time) ───
@@ -3592,12 +3592,18 @@ document.addEventListener('keydown', (e) => {
     <p style="color:var(--text2);font-size:13px;margin-bottom:20px;line-height:1.5">
       Create codes that split a pool of <strong>25%</strong> between your commission and your friend's discount.
       Examples: 10/15 (you get 10%, friend gets 15% off) or 5/20 (you get 5%, friend gets 20% off).
-      Each code allows up to <strong>15 sign-ups</strong> and <strong>5 purchases per friend</strong>.
     </p>
 
     <!-- Create form -->
     <div id="my-codes-create" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px">
-      <div style="font-size:13px;font-weight:600;margin-bottom:12px">Create a new code</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:6px">
+        <span>Create a new code</span>
+        <!-- Info icon — hover reveals the cap rules. Kept compact so the
+             form-header doesn't sprawl. title= tooltip is browser-native
+             and works without JS; matches the .unverified-pill hover
+             pattern on the screener pages. -->
+        <span class="info-dot" title="Each code has two usage limits:&#10;• Up to 15 different friends can sign up using it&#10;• Each friend gets the discount on up to 5 purchases&#10;Total lifetime: 75 discounted transactions per code." style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--surface3);color:var(--text3);font-size:10px;font-weight:600;cursor:help;font-family:var(--mono);border:1px solid var(--border)">i</span>
+      </div>
       <input id="mc-code" type="text" placeholder="Code (4-32 chars, letters / digits / - / _)" maxlength="32" style="width:100%;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;margin-bottom:6px">
       <div id="mc-code-err" style="font-size:11px;color:var(--red);min-height:14px;margin-bottom:10px"></div>
 
@@ -3712,7 +3718,7 @@ function _mcRender() {
         <div style="display:flex;gap:14px;font-size:11px;color:var(--text2);font-family:var(--mono)">
           <span><span style="color:var(--green)">●</span> You earn ${c.commission_pct}%</span>
           <span><span style="color:#60A5FA">●</span> Friend ${c.discount_pct}% off</span>
-          <span style="margin-left:auto;color:var(--text3)">Signups ${c.registrations_used}/15</span>
+          <span style="margin-left:auto;color:var(--text3);cursor:help" title="Up to 15 friends can sign up with this code. Each friend gets the discount on up to 5 purchases, then the code stops applying for that friend.">Signups ${c.registrations_used}/15</span>
         </div>
       </div>`;
   }).join('');
