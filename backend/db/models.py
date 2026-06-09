@@ -1,7 +1,7 @@
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Column, Integer, SmallInteger, String, DateTime, Table, ForeignKey, JSON, Boolean, Float, Numeric, UniqueConstraint
+from sqlalchemy import Column, Integer, SmallInteger, String, DateTime, Table, ForeignKey, JSON, Boolean, Float, Numeric, UniqueConstraint, CheckConstraint, Index, text
 from sqlalchemy.orm import relationship
 
 from backend.db.base import Base
@@ -92,6 +92,12 @@ class User(Base):
                             nullable=True, index=True)
     referral_pct_override = Column(Float, nullable=True)
     referral_payout_address = Column(String, nullable=True)
+    # New split-discount system. NULL = registered without a code (or legacy
+    # pre-r1s2t3u4v5w6 user). Set → all subsequent payments use this code's
+    # discount + commission rates and count against its 5-per-referee cap.
+    # See migrations/r1s2t3u4v5w6_referral_codes.py for invariants.
+    signup_code_id = Column(Integer, ForeignKey("referral_codes.id", ondelete="SET NULL"),
+                            nullable=True)
 
     wallets = relationship("Wallet", back_populates="user", cascade="all, delete-orphan")
     arb_alerts = relationship("ArbAlert", back_populates="user", cascade="all, delete-orphan")
@@ -945,3 +951,133 @@ class ArbSpreadCandle1m(_ArbSpreadCandleBase, Base):
 class ArbSpreadCandle1h(_ArbSpreadCandleBase, Base):
     """1h rollup from 1m. Built by rollup daemon daily. Retention 90d."""
     __tablename__ = "arb_spread_candles_1h"
+
+
+# ── Split-discount referral codes (new system, replaces fixed-20% accrual) ───
+
+class ReferralCode(Base):
+    """User-owned discount + commission code.
+
+    The CHECK constraints in __table_args__ are the LOAD-BEARING security
+    invariants of the split model. They are duplicated in alembic
+    r1s2t3u4v5w6 so prod and dev/test (Base.metadata.create_all) carry
+    the same defenses. NEVER weaken either side independently.
+
+    Invariants:
+      1. commission_pct >= 0 AND discount_pct >= 0
+      2. commission_pct + discount_pct <= 45   — global cap (any type)
+      3. created_by_admin_id IS NOT NULL OR sum <= 25 — high pool needs admin
+      4. code_type IN ('self_serve','admin')
+      5. type ↔ admin_id consistency (closes forged-label bypass)
+
+    Immutability: there is no service path that updates commission_pct /
+    discount_pct / code_type after INSERT. Codes are not deleted (audit +
+    already-bound referees would be orphaned). Saturation via the
+    15-registration cap is the natural lifecycle.
+    """
+    __tablename__ = "referral_codes"
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                      nullable=False, index=True)
+    code = Column(String(32), nullable=False)
+    commission_pct = Column(Numeric(5, 2), nullable=False)
+    discount_pct = Column(Numeric(5, 2), nullable=False)
+    code_type = Column(String(16), nullable=False)
+    # NULL for self_serve. For admin codes, the FK is set to the admin
+    # user.id at create time so audit can trace who issued a high-pool code.
+    created_by_admin_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                                 nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            'commission_pct >= 0 AND discount_pct >= 0',
+            name='ck_referral_codes_nonneg',
+        ),
+        CheckConstraint(
+            'commission_pct + discount_pct <= 45',
+            name='ck_referral_codes_total_cap',
+        ),
+        CheckConstraint(
+            'created_by_admin_id IS NOT NULL '
+            'OR (commission_pct + discount_pct <= 25)',
+            name='ck_referral_codes_high_pool_needs_admin',
+        ),
+        CheckConstraint(
+            "code_type IN ('self_serve', 'admin')",
+            name='ck_referral_codes_type_enum',
+        ),
+        CheckConstraint(
+            "(code_type = 'self_serve' AND created_by_admin_id IS NULL) "
+            "OR (code_type = 'admin' AND created_by_admin_id IS NOT NULL)",
+            name='ck_referral_codes_type_admin_match',
+        ),
+        # Case-insensitive uniqueness — LOWER(code) UNIQUE. Crypto/crypto
+        # collisions blocked. Functional index works on both Postgres and
+        # SQLite (since 3.9 — well below our pinned version).
+        Index('uq_referral_codes_lower', text('LOWER(code)'), unique=True),
+    )
+
+    owner = relationship("User", foreign_keys=[owner_id])
+    created_by = relationship("User", foreign_keys=[created_by_admin_id])
+
+
+class ReferralCodeRegistration(Base):
+    """Binds a referee to ONE code, forever. UNIQUE(referee_id) is the
+    load-bearing anti-reattribution invariant — a user cannot switch
+    codes post-signup, nor be bound to a second one. The 15-registration
+    cap is enforced at the service layer (counting rows by code_id)
+    rather than as a CHECK because dynamic counts can't be expressed in
+    CHECK; the UNIQUE on referee_id covers the harder case (a single
+    user owned by two referrers).
+
+    Duplicated in alembic r1s2t3u4v5w6.
+    """
+    __tablename__ = "referral_code_registrations"
+    id = Column(Integer, primary_key=True, index=True)
+    code_id = Column(Integer, ForeignKey("referral_codes.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    referee_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('referee_id', name='uq_reg_referee'),
+        UniqueConstraint('code_id', 'referee_id', name='uq_reg_code_referee'),
+    )
+
+    code = relationship("ReferralCode")
+    referee = relationship("User", foreign_keys=[referee_id])
+
+
+class ReferralCodeUsage(Base):
+    """Append-only ledger of paid invoices that consumed a code's discount
+    and produced a commission earning. UNIQUE(payment_id) is the
+    idempotency seal — webhook retry or double-call cannot double-credit.
+
+    reversed_at is set when the linked payment is refunded — the
+    5-per-referee counter excludes reversed rows so the referee gets
+    their discount + commission slot back.
+
+    Paired with ReferralEarning: every non-reversed Usage row has a
+    matching Earning row (same payment_id). Earning is the balance ledger
+    (powers payouts); Usage is the cap ledger (powers the 5-per-referee
+    counter + the discount history for the receipt UI).
+    """
+    __tablename__ = "referral_code_usages"
+    id = Column(Integer, primary_key=True, index=True)
+    code_id = Column(Integer, ForeignKey("referral_codes.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    referee_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    payment_id = Column(Integer, ForeignKey("payments.id", ondelete="SET NULL"),
+                        nullable=True, unique=True)
+    payment_amount_usd = Column(Numeric(14, 2), nullable=False)
+    commission_earned = Column(Numeric(14, 2), nullable=False)
+    discount_applied = Column(Numeric(14, 2), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    reversed_at = Column(DateTime, nullable=True)
+    reversal_reason = Column(String, nullable=True)
+
+    code = relationship("ReferralCode")
+    referee = relationship("User", foreign_keys=[referee_id])
