@@ -1447,7 +1447,7 @@
 </div>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260610h"></script>
+<script src="/dist/core.min.js?v=20260610i"></script>
 <script src="/venue-help.js" defer></script>
 <script>
 // ─── Profile sidebar: tab switcher (one pane visible at a time) ───
@@ -3737,12 +3737,23 @@ function _mcRender() {
     const total = (+c.commission_pct || 0) + (+c.discount_pct || 0);
     const commPct = (+c.commission_pct || 0) * (100/25);
     const discPct = (+c.discount_pct || 0) * (100/25);
+    // Share link — friend opens this and the code auto-fills the
+    // registration form (register.html prefillReferral reads ?ref=).
+    // Copy button hands the full URL by default so the user shares it
+    // directly; secondary 'code only' button stays for the rare case
+    // they want just the string. Tooltip on the code shows the full
+    // link so users see what gets shared.
+    const shareLink = `${location.origin}/register?ref=${encodeURIComponent(c.code)}`;
     return `
       <div style="background:var(--surface3);border:1px solid var(--border);border-radius:10px;padding:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="font-family:var(--mono);font-weight:700;font-size:14px;color:var(--text)">${_mcEsc(c.code)}</div>
-            <button onclick="_avsCopy('${_mcEsc(c.code)}', this)" style="background:none;border:1px solid var(--border);color:var(--text2);padding:3px 8px;border-radius:5px;cursor:pointer;font-size:10px">Copy</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+            <div style="font-family:var(--mono);font-weight:700;font-size:14px;color:var(--text)" title="${_mcEsc(shareLink)}">${_mcEsc(c.code)}</div>
+            <button onclick="_avsCopy('${_mcEsc(shareLink)}', this)" title="Copy share link with code embedded" style="background:linear-gradient(135deg, rgba(26,255,171,0.15), rgba(26,255,171,0.08));border:1px solid rgba(26,255,171,0.35);color:#1AFFAB;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:10px;font-weight:600;display:inline-flex;align-items:center;gap:4px">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3H4a1 1 0 00-1 1v8a1 1 0 001 1h6a1 1 0 001-1V4a1 1 0 00-1-1z"/><path d="M6 3V2a1 1 0 011-1h5a1 1 0 011 1v8a1 1 0 01-1 1h-1"/></svg>
+              Copy link
+            </button>
+            <button onclick="_avsCopy('${_mcEsc(c.code)}', this)" title="Copy just the code (without link)" style="background:none;border:1px solid var(--border);color:var(--text3);padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px">code</button>
           </div>
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">${c.code_type === 'admin' ? 'Admin · ' : ''}${total}% pool</div>
         </div>
