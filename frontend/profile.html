@@ -550,21 +550,26 @@
       cursor: pointer;
       outline: none;
       --val: 0.4;
-      --c1: var(--green);
-      --c2: #16d493;
+      --c1: var(--green);      /* neon green — brand primary */
+      --c2: var(--green-d);    /* darker green for gradient depth */
     }
-    .mc-range.disc { --c1: #60A5FA; --c2: #3b82f6; }
+    /* Friend-saves (discount) leg uses brand teal — pairs with the
+       neon green and matches design.css palette elsewhere (--teal
+       #06B6D4 is the standard secondary accent on this site). */
+    .mc-range.disc { --c1: var(--teal); --c2: #0891B2; }
 
     /* WebKit (Chrome/Safari/Edge) — track */
     .mc-range::-webkit-slider-runnable-track {
       height: 12px;
       border-radius: 999px;
+      /* No transition on background-size — that easing was the
+         visible 'fill lags behind thumb' bug. Fill must lock to
+         the thumb's instantaneous position, not animate. */
       background:
         linear-gradient(90deg, var(--c1), var(--c2)) 0/calc(var(--val) * 100%) no-repeat,
         rgba(255, 255, 255, 0.06);
       box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4),
                   inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-      transition: background-size 0.12s ease;
     }
     /* WebKit — thumb */
     .mc-range::-webkit-slider-thumb {
@@ -1442,7 +1447,7 @@
 </div>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260610g"></script>
+<script src="/dist/core.min.js?v=20260610h"></script>
 <script src="/venue-help.js" defer></script>
 <script>
 // ─── Profile sidebar: tab switcher (one pane visible at a time) ───
@@ -3594,8 +3599,8 @@ function _avsRender() {
       </div>
 
       <div style="position:relative;display:flex;height:14px;border-radius:8px;overflow:hidden;background:var(--surface2);border:1px solid var(--border);margin-bottom:18px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.15)">
-        <div id="mc-bar-comm" style="background:linear-gradient(90deg, #1AFFAB 0%, #16d493 100%);width:0;transition:width 0.18s cubic-bezier(.4,1.5,.6,1);box-shadow:0 0 8px rgba(26,255,171,0.4)"></div>
-        <div id="mc-bar-disc" style="background:linear-gradient(90deg, #60A5FA 0%, #3b82f6 100%);width:0;transition:width 0.18s cubic-bezier(.4,1.5,.6,1);box-shadow:0 0 8px rgba(96,165,250,0.4)"></div>
+        <div id="mc-bar-comm" style="background:linear-gradient(90deg, #1AFFAB 0%, #16d493 100%);width:0;;box-shadow:0 0 8px rgba(26,255,171,0.4)"></div>
+        <div id="mc-bar-disc" style="background:linear-gradient(90deg, #06B6D4 0%, #0891B2 100%);width:0;;box-shadow:0 0 8px rgba(6,182,212,0.45)"></div>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:14px">
@@ -3611,11 +3616,11 @@ function _avsRender() {
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-            <label style="font-size:11px;color:#60A5FA;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;gap:5px">
-              <span style="width:8px;height:8px;border-radius:50%;background:#60A5FA;display:inline-block;box-shadow:0 0 6px rgba(96,165,250,0.6)"></span>
+            <label style="font-size:11px;color:#06B6D4;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;gap:5px">
+              <span style="width:8px;height:8px;border-radius:50%;background:#06B6D4;display:inline-block;box-shadow:0 0 6px rgba(6,182,212,0.65)"></span>
               Friend saves
             </label>
-            <span id="mc-disc-val" style="font-family:var(--mono);font-size:14px;font-weight:700;color:#60A5FA">10.0%</span>
+            <span id="mc-disc-val" style="font-family:var(--mono);font-size:14px;font-weight:700;color:#06B6D4">10.0%</span>
           </div>
           <input id="mc-disc" class="mc-range disc" type="range" min="0" max="25" step="0.5" value="10" style="--val:0.4">
         </div>
@@ -3623,7 +3628,7 @@ function _avsRender() {
 
       <div id="mc-preview" style="font-size:12px;color:var(--text2);padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;line-height:1.5">
         On a <strong style="color:var(--text)">$100</strong> purchase: friend pays
-        <strong style="color:#60A5FA">$90.00</strong>, you earn
+        <strong style="color:#06B6D4">$90.00</strong>, you earn
         <strong style="color:#1AFFAB">$10.00</strong>.
       </div>
 
@@ -3743,11 +3748,11 @@ function _mcRender() {
         </div>
         <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--surface2);margin-bottom:8px">
           <div style="background:#1AFFAB;width:${commPct}%"></div>
-          <div style="background:#60A5FA;width:${discPct}%"></div>
+          <div style="background:#06B6D4;width:${discPct}%"></div>
         </div>
         <div style="display:flex;gap:12px;font-size:11px;color:var(--text2);font-family:var(--mono);flex-wrap:wrap">
           <span><span style="color:#1AFFAB">●</span> Earn ${c.commission_pct}%</span>
-          <span><span style="color:#60A5FA">●</span> Save ${c.discount_pct}%</span>
+          <span><span style="color:#06B6D4">●</span> Save ${c.discount_pct}%</span>
           <span style="margin-left:auto;color:var(--text3);cursor:help" title="Up to 15 friends can sign up · 5 purchases per friend">${c.registrations_used}/15 signups</span>
         </div>
       </div>`;
@@ -3775,7 +3780,7 @@ function _mcRecalc() {
   document.getElementById('mc-bar-comm').style.width = (comm * 4) + '%';
   document.getElementById('mc-bar-disc').style.width = (disc * 4) + '%';
   const friend = (100 - disc).toFixed(2);
-  document.getElementById('mc-preview').innerHTML = `On a <strong style="color:var(--text)">$100</strong> purchase: friend pays <strong style="color:#60A5FA">$${friend}</strong>, you earn <strong style="color:#1AFFAB">$${comm.toFixed(2)}</strong>.`;
+  document.getElementById('mc-preview').innerHTML = `On a <strong style="color:var(--text)">$100</strong> purchase: friend pays <strong style="color:#06B6D4">$${friend}</strong>, you earn <strong style="color:#1AFFAB">$${comm.toFixed(2)}</strong>.`;
   _mcValidateCode();
 }
 
