@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/design.css">
 <link rel="stylesheet" href="/navbar.css">
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260610i"></script>
+<script src="/dist/core.min.js?v=20260610j"></script>
 <style>
   body { min-height: 100dvh; position: relative; overflow-x: hidden; }
   body::before {
@@ -105,6 +105,14 @@
         <span class="lbl">Promo (<span id="row-discount-pct"></span>%)</span>
         <span class="val" style="color:var(--green)" id="row-discount">—</span>
       </div>
+      <!-- Referral discount line — surfaces the auto-applied discount
+           from the user's signup_code_id. Hidden if 0 (no code bound or
+           5-per-referee cap reached). Visually distinct teal accent so
+           the user sees it's separate from a promo. -->
+      <div class="row" id="row-ref-discount-wrap" style="display:none">
+        <span class="lbl">Referral (<span id="row-ref-discount-pct"></span>%)</span>
+        <span class="val" style="color:#06B6D4" id="row-ref-discount">—</span>
+      </div>
       <div class="row" id="row-bonus-wrap" style="display:none">
         <span class="lbl">Bonus days</span>
         <span class="val" style="color:var(--purple)" id="row-bonus">—</span>
@@ -139,6 +147,10 @@ const periodId = parseInt(params.get('period_id') || '0', 10) || null;
 let _plan = null;
 let _period = null;
 let _promo = null;
+// Loaded from /auth/me before _renderTotals first fires — auto-applied
+// discount from the user's bound signup_code_id. 0 when no code bound
+// or 5-per-referee cap exhausted.
+let _refDiscountPct = 0;
 
 function show(panelId){
   ['state-loading','state-error','state-checkout','state-success','state-fail'].forEach(id => {
@@ -161,7 +173,20 @@ async function _load(){
     show('state-error'); return;
   }
   try {
-    const r = await fetch('/api/plans');
+    // Fetch plans + user-context in parallel — saves one RTT vs serial.
+    // /auth/me carries the effective referral_discount_pct now (added
+    // alongside the checkout-UI work); falls back to 0 if the field is
+    // missing (older backend).
+    const [r, meR] = await Promise.all([
+      fetch('/api/plans'),
+      Auth.apiFetch('/auth/me'),
+    ]);
+    try {
+      if (meR && meR.ok) {
+        const me = await meR.json();
+        _refDiscountPct = Number(me.referral_discount_pct || 0);
+      }
+    } catch {}
     const j = await r.json();
     _plan = (j.plans || []).find(p => p.id === planId);
     _period = (j.billing_periods || []).find(p => p.id === periodId);
@@ -201,11 +226,40 @@ function _renderTotals(){
   const base = _baseTotal();
   document.getElementById('row-base').textContent = _money(base);
   const bonusWrap = document.getElementById('row-bonus-wrap');
+  const refWrap   = document.getElementById('row-ref-discount-wrap');
+
+  // Effective referral discount %. Prefer the value /promo/validate
+  // returned (recomputed with both promo+ref); fall back to the
+  // /auth/me value cached at page load. 0 → hide the line.
+  const refPct = _promo
+    ? Number(_promo.referral_discount_pct || 0)
+    : Number(_refDiscountPct || 0);
+  if (refPct > 0) {
+    refWrap.style.display = '';
+    document.getElementById('row-ref-discount-pct').textContent = refPct.toFixed(2);
+    // Amount saved by referral leg. When promo is set, isolate the
+    // referral portion: base − (base × (1 − ref/100)) = base × ref/100.
+    // No-promo path: same math. Keeps the line accurate even when both
+    // discounts stack (server caps the SUM at 45%, so the displayed
+    // line shows the un-capped ref portion which can be slightly
+    // higher than the actual contribution — accept that minor display
+    // skew rather than re-deriving the cap math client-side).
+    document.getElementById('row-ref-discount').textContent =
+      '−' + _money(base * refPct / 100);
+  } else {
+    refWrap.style.display = 'none';
+  }
+
   if (_promo){
     if ((_promo.discount_pct || 0) > 0) {
       document.getElementById('row-discount-wrap').style.display = '';
       document.getElementById('row-discount-pct').textContent = _promo.discount_pct.toFixed(2);
-      document.getElementById('row-discount').textContent = '−' + _money(base - _promo.final_amount_usd);
+      // Promo's contribution = base × promo_pct / 100. Server already
+      // capped the SUM; the displayed line shows the un-capped promo
+      // portion, same display-skew note as the referral line above.
+      const promoPct = Number(_promo.discount_pct || 0);
+      document.getElementById('row-discount').textContent =
+        '−' + _money(base * promoPct / 100);
     } else {
       document.getElementById('row-discount-wrap').style.display = 'none';
     }
@@ -215,11 +269,16 @@ function _renderTotals(){
     } else {
       bonusWrap.style.display = 'none';
     }
+    // Server-authoritative total (already applies cap + rounding).
     document.getElementById('row-total').textContent = _money(_promo.final_amount_usd);
   } else {
     document.getElementById('row-discount-wrap').style.display = 'none';
     bonusWrap.style.display = 'none';
-    document.getElementById('row-total').textContent = _money(base);
+    // No promo — total is base minus referral (if any). Server applies
+    // the same math on /checkout submit, so the displayed total
+    // matches the invoice.
+    const total = base * (100 - refPct) / 100;
+    document.getElementById('row-total').textContent = _money(total);
   }
 }
 

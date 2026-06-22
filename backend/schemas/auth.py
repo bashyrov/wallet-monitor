@@ -66,6 +66,14 @@ class UserOut(BaseModel):
     totp_enabled: bool = False       # True when the user has armed TOTP 2FA
     has_password: bool = True        # False for OAuth-only users (Google) who never set a local password
     auto_renew: bool = True          # False = user clicked Cancel — we stop expiry pings
+    # Effective discount % the user gets on the NEXT purchase from their
+    # bound ReferralCode (if any). 0 when: no signup_code_id, code's
+    # 5-per-referee cap is exhausted, or signup_code_id points at a
+    # non-existent code (defensive). Surface to /checkout so the UI can
+    # show a 'Referral discount' line — without this field the user pays
+    # the discounted amount but the checkout page only shows full-price-
+    # minus-promo, which is confusing (favorable but inconsistent).
+    referral_discount_pct: float = 0.0
     created_at: datetime
     email_verified_at: Optional[datetime] = None  # None = unverified; frontend shows a banner
 

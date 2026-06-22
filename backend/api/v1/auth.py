@@ -561,6 +561,27 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         out.wallet_limit = out.portfolio_limit
     except Exception:
         pass
+    # Compute effective referral discount the user gets on their NEXT
+    # purchase. Reads signup_code_id (bound at registration), looks up
+    # the code, applies the 5-per-referee cap via the same helper the
+    # webhook accrual uses. Wrapped in try/except — never break /me on
+    # a referral-side bug.
+    try:
+        if current_user.signup_code_id is not None:
+            from backend.db.models import ReferralCode
+            from backend.services import referral_code_service as _codes
+            code = db.query(ReferralCode).filter(
+                ReferralCode.id == current_user.signup_code_id
+            ).first()
+            if code is not None:
+                used = _codes.count_non_reversed_usages(
+                    db, code.id, current_user.id
+                )
+                out.referral_discount_pct = float(
+                    _codes.effective_discount_pct(code, used)
+                )
+    except Exception:
+        pass
     # Stash result for the next 30s of /me hits on this worker.
     try:
         _ME_CACHE[current_user.id] = (out.model_dump(mode="python"), now)

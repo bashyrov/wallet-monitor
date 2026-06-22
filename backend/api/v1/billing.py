@@ -139,7 +139,31 @@ def promo_validate(
     period = billing_period_service.get_period(db, int(billing_period_id))
     if not plan or not period:
         return {"valid": False}
-    pricing = payment_service.compute_pricing(plan, period, promo)
+    # Include user's effective ReferralCode discount in the preview so
+    # the price shown here matches what create_invoice will actually
+    # charge. Without this the preview shows higher than the real
+    # invoice (user pays less than UI promises — favorable but
+    # confusing).
+    ref_discount = None
+    try:
+        if current_user.signup_code_id is not None:
+            from backend.db.models import ReferralCode
+            from backend.services import referral_code_service as _codes
+            code = db.query(ReferralCode).filter(
+                ReferralCode.id == current_user.signup_code_id
+            ).first()
+            if code is not None:
+                used = _codes.count_non_reversed_usages(
+                    db, code.id, current_user.id
+                )
+                eff = _codes.effective_discount_pct(code, used)
+                if eff > 0:
+                    ref_discount = eff
+    except Exception:
+        pass
+    pricing = payment_service.compute_pricing(
+        plan, period, promo, ref_code_discount_pct=ref_discount,
+    )
     return {
         "valid": True,
         "code": promo.code,
@@ -147,6 +171,9 @@ def promo_validate(
         "bonus_days": int(getattr(promo, "bonus_days", 0) or 0),
         "base_amount_usd": float(pricing["base_amount_usd"]),
         "final_amount_usd": float(pricing["final_amount_usd"]),
+        # Surfaced so the checkout UI can show the breakdown — promo
+        # discount AND referral discount as separate lines.
+        "referral_discount_pct": float(ref_discount or 0),
     }
 
 
