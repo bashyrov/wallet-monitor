@@ -532,6 +532,108 @@
       }
     }
 
+    /* ── Premium custom range slider for the Avashare split-pool ──────
+       Strips the browser-default control entirely and rebuilds:
+       - Tall (12px) pill-shaped track with subtle inset shadow
+       - Track gradient shows the filled portion using a CSS custom
+         property --val (0..1) updated by _mcRecalc on every input.
+       - Big circular thumb (22px) with white inner core + coloured halo
+         that glows on hover and presses on :active.
+       Cross-browser: webkit + moz selectors below carry identical
+       styling. */
+    .mc-range {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 28px;
+      background: transparent;
+      cursor: pointer;
+      outline: none;
+      --val: 0.4;
+      --c1: var(--green);
+      --c2: #16d493;
+    }
+    .mc-range.disc { --c1: #60A5FA; --c2: #3b82f6; }
+
+    /* WebKit (Chrome/Safari/Edge) — track */
+    .mc-range::-webkit-slider-runnable-track {
+      height: 12px;
+      border-radius: 999px;
+      background:
+        linear-gradient(90deg, var(--c1), var(--c2)) 0/calc(var(--val) * 100%) no-repeat,
+        rgba(255, 255, 255, 0.06);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4),
+                  inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+      transition: background-size 0.12s ease;
+    }
+    /* WebKit — thumb */
+    .mc-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      border: 3px solid var(--c1);
+      margin-top: -5px;
+      cursor: grab;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4),
+                  0 0 0 4px color-mix(in srgb, var(--c1) 18%, transparent),
+                  0 0 18px color-mix(in srgb, var(--c1) 35%, transparent);
+      transition: transform 0.12s cubic-bezier(.4,1.5,.6,1),
+                  box-shadow 0.12s ease,
+                  border-color 0.12s ease;
+    }
+    .mc-range:hover::-webkit-slider-thumb {
+      transform: scale(1.08);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5),
+                  0 0 0 6px color-mix(in srgb, var(--c1) 25%, transparent),
+                  0 0 26px color-mix(in srgb, var(--c1) 50%, transparent);
+    }
+    .mc-range:active::-webkit-slider-thumb {
+      cursor: grabbing;
+      transform: scale(1.12);
+    }
+    .mc-range:focus-visible::-webkit-slider-thumb {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5),
+                  0 0 0 6px color-mix(in srgb, var(--c1) 40%, transparent),
+                  0 0 30px color-mix(in srgb, var(--c1) 65%, transparent);
+    }
+
+    /* Firefox — track */
+    .mc-range::-moz-range-track {
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+    }
+    .mc-range::-moz-range-progress {
+      height: 12px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--c1), var(--c2));
+    }
+    /* Firefox — thumb */
+    .mc-range::-moz-range-thumb {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      border: 3px solid var(--c1);
+      cursor: grab;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4),
+                  0 0 0 4px color-mix(in srgb, var(--c1) 18%, transparent),
+                  0 0 18px color-mix(in srgb, var(--c1) 35%, transparent);
+      transition: transform 0.12s cubic-bezier(.4,1.5,.6,1), box-shadow 0.12s ease;
+    }
+    .mc-range:hover::-moz-range-thumb {
+      transform: scale(1.08);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5),
+                  0 0 0 6px color-mix(in srgb, var(--c1) 25%, transparent),
+                  0 0 26px color-mix(in srgb, var(--c1) 50%, transparent);
+    }
+    .mc-range:active::-moz-range-thumb {
+      cursor: grabbing;
+      transform: scale(1.12);
+    }
+
     </style>
 </head>
 <body>
@@ -1340,7 +1442,7 @@
 </div>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260610f"></script>
+<script src="/dist/core.min.js?v=20260610g"></script>
 <script src="/venue-help.js" defer></script>
 <script>
 // ─── Profile sidebar: tab switcher (one pane visible at a time) ───
@@ -3505,8 +3607,7 @@ function _avsRender() {
             </label>
             <span id="mc-comm-val" style="font-family:var(--mono);font-size:14px;font-weight:700;color:#1AFFAB">10.0%</span>
           </div>
-          <input id="mc-comm" type="range" min="0" max="25" step="0.5" value="10"
-                 style="width:100%;accent-color:#1AFFAB;height:8px;cursor:pointer">
+          <input id="mc-comm" class="mc-range" type="range" min="0" max="25" step="0.5" value="10" style="--val:0.4">
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
@@ -3516,8 +3617,7 @@ function _avsRender() {
             </label>
             <span id="mc-disc-val" style="font-family:var(--mono);font-size:14px;font-weight:700;color:#60A5FA">10.0%</span>
           </div>
-          <input id="mc-disc" type="range" min="0" max="25" step="0.5" value="10"
-                 style="width:100%;accent-color:#60A5FA;height:8px;cursor:pointer">
+          <input id="mc-disc" class="mc-range disc" type="range" min="0" max="25" step="0.5" value="10" style="--val:0.4">
         </div>
       </div>
 
@@ -3667,6 +3767,9 @@ function _mcRecalc() {
   }
   document.getElementById('mc-comm-val').textContent = comm.toFixed(1) + '%';
   document.getElementById('mc-disc-val').textContent = disc.toFixed(1) + '%';
+  // Drive the custom slider track-fill via CSS var --val (0..1).
+  commEl.style.setProperty('--val', (comm / 25).toFixed(4));
+  discEl.style.setProperty('--val', (disc / 25).toFixed(4));
   const used = comm + disc;
   document.getElementById('mc-pool-used').textContent = used.toFixed(1);
   document.getElementById('mc-bar-comm').style.width = (comm * 4) + '%';
