@@ -1447,7 +1447,7 @@
 </div>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260610j"></script>
+<script src="/dist/core.min.js?v=20260625a"></script>
 <script src="/venue-help.js" defer></script>
 <script>
 // ─── Profile sidebar: tab switcher (one pane visible at a time) ───
@@ -2022,7 +2022,10 @@ function _renderPlanCard(me) {
   // Hide upgrade card on unlimited / admin tiers.
   const upgradeCard = document.getElementById('plan-upgrade-card');
   if (upgradeCard) {
-    upgradeCard.style.display = (plan === 'unlim' || plan === 'enterprise' || plan === 'full') ? 'none' : '';
+    // Hide upgrade prompt for users already on the top plan (full
+    // = Screener+Portfolio) or the admin Unlim tier. enterprise was
+    // dropped along with the inactive Pro/Platinum tiers.
+    upgradeCard.style.display = (plan === 'unlim' || plan === 'full') ? 'none' : '';
   }
   _renderSubControls(me);
 }

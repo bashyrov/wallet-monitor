@@ -1475,7 +1475,7 @@ input[type="checkbox"] { accent-color: var(--green); width: 14px; height: 14px; 
 </style>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260610j"></script>
+<script src="/dist/core.min.js?v=20260625a"></script>
 <script>
 Auth.requireAdmin('/portfolio');
 
@@ -1700,16 +1700,18 @@ function animNum(id, to) {
   requestAnimationFrame(tick);
 }
 
+// Mirrors the active /pricing tiers. Legacy slugs (basic / pro /
+// platinum / enterprise) removed when DB cleanup deleted the inactive
+// rows — those would now hit the fallback below.
 const PLAN_META = {
-  basic:      { label: 'Basic',      limit: '4',      cls: 'plan-basic' },
-  pro:        { label: 'Pro',        limit: '30',     cls: 'plan-pro' },
-  platinum:   { label: 'Platinum',   limit: '70',     cls: 'plan-platinum' },
-  enterprise: { label: 'Enterprise', limit: 'Custom', cls: 'plan-enterprise' },
-  unlim:      { label: 'Unlim',      limit: '∞',      cls: 'plan-unlim' },
+  free:     { label: 'Free',                limit: '5',  cls: 'plan-basic' },
+  screener: { label: 'Screener only',       limit: '0',  cls: 'plan-pro' },
+  full:     { label: 'Screener + Portfolio', limit: '30', cls: 'plan-platinum' },
+  unlim:    { label: 'Unlim',               limit: '∞',  cls: 'plan-unlim' },
 };
 
 function planBadge(plan) {
-  const m = PLAN_META[plan] || PLAN_META.basic;
+  const m = PLAN_META[plan] || PLAN_META.free;
   return `<span class="badge ${m.cls}">${m.label}</span>`;
 }
 
@@ -1732,7 +1734,7 @@ async function toggleBlock(userId, currentlyBlocked) {
 
 // ── Plan modal ─────────────────────────────────────────────────────────────────
 let _planUserId = null;
-let _planSelected = 'basic';
+let _planSelected = 'free';
 
 function openPlanModal(userId, username, currentPlan, isAdmin, currentExpires) {
   _planUserId = userId;
@@ -1745,7 +1747,9 @@ function openPlanModal(userId, username, currentPlan, isAdmin, currentExpires) {
 
 function renderPlanOpts(isAdmin) {
   const grid = document.getElementById('plan-select-grid');
-  const plans = ['basic', 'pro', 'platinum', 'enterprise'];
+  // Order matches the /pricing card sequence: Free → Screener-only →
+  // Screener+Portfolio. Unlim sits at the end as the admin grant tier.
+  const plans = ['free', 'screener', 'full'];
   if (isAdmin) plans.push('unlim');
   grid.innerHTML = plans.map(p => {
     const m = PLAN_META[p];
