@@ -3222,17 +3222,19 @@ try {
     position: fixed; inset: 0; z-index: 500;
     background: rgba(8,8,11,0.78);
     backdrop-filter: blur(10px);
-    display: none; align-items: flex-start; justify-content: center;
-    padding: 3vh 16px 16px;
+    display: none; align-items: center; justify-content: center;
+    padding: 24px 16px;
     animation: avsFadeIn .18s ease-out;
   }
   .avs-bg.open { display: flex; }
   .avs-modal {
     width: 100%; max-width: 1200px;
+    max-height: calc(100vh - 48px);
     background: #101014;
     border: 1px solid #22222A;
     border-radius: 16px;
     overflow: hidden;
+    display: flex; flex-direction: column;
     position: relative;
     box-shadow:
       0 40px 100px -20px rgba(0,0,0,.85),
@@ -3294,40 +3296,55 @@ try {
 
   .avs-stats {
     display: grid; grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    padding: 0 20px 12px;
+    gap: 10px;
+    padding: 0 20px 14px;
     position: relative; z-index: 2;
   }
   .avs-stat {
-    padding: 9px 12px;
-    background: #17171C;
+    padding: 11px 14px;
+    background: linear-gradient(180deg, #18181E 0%, #15151A 100%);
     border: 1px solid #22222A;
-    border-radius: 9px;
+    border-radius: 10px;
     text-align: center;
+    transition: border-color .15s, transform .15s;
+    position: relative;
+    overflow: hidden;
   }
+  .avs-stat::after {
+    content: ''; position: absolute; inset: 0 0 auto 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(26,255,171,.18), transparent);
+    opacity: .6;
+  }
+  .avs-stat:hover { border-color: #2A2A34; transform: translateY(-1px); }
   .avs-stat-val {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 16px; font-weight: 500;
+    font-size: 17px; font-weight: 500;
     color: #ECECEC; letter-spacing: -0.3px;
     line-height: 1;
   }
   .avs-stat-lb {
     font-size: 9.5px; color: #676B7E;
     text-transform: uppercase; letter-spacing: .08em;
-    margin-top: 4px;
+    margin-top: 5px;
   }
 
   .avs-body {
-    padding: 0 0 4px;
+    padding: 0;
     border-top: 1px solid #22222A;
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #22222A transparent;
   }
-  /* 3-column wide layout — Create | Codes+Payout | Commissions+History.
-     Drops to 2 columns ≥760px, single column on narrow. */
+  .avs-body::-webkit-scrollbar { width: 6px; }
+  .avs-body::-webkit-scrollbar-thumb { background: #2E2E38; border-radius: 3px; }
+  /* 3-column wide layout — Create | Codes+Payout | Commissions+History. */
   .avs-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
     gap: 14px;
-    padding: 14px 16px 6px;
+    padding: 16px 18px;
+    align-items: stretch;
   }
   @media (max-width: 1060px) {
     .avs-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -3335,19 +3352,34 @@ try {
   @media (max-width: 720px) {
     .avs-grid { grid-template-columns: 1fr; }
   }
+  /* Columns stretch to grid row height — blocks within distribute that space. */
   .avs-col { display: flex; flex-direction: column; min-width: 0; gap: 12px; }
+  .avs-col > .avs-block { flex: 0 0 auto; }
+  /* Last block in each column grows to fill remaining vertical space so
+     all three columns look the same height end-to-end. */
+  .avs-col > .avs-block:last-child {
+    flex: 1 1 auto;
+    display: flex; flex-direction: column;
+  }
+  .avs-col > .avs-block:last-child > .avs-scroll,
+  .avs-col > .avs-block:last-child > .avs-block-body {
+    flex: 1 1 auto;
+  }
   .avs-block {
     background: var(--surface3);
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: hidden;
+    transition: border-color .15s;
   }
+  .avs-block:hover { border-color: #2A2A34; }
   .avs-block-head {
     font-size: 10px; font-weight: 700; letter-spacing: .12em;
     text-transform: uppercase; color: #9B9FAB;
-    padding: 9px 12px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(180deg, rgba(255,255,255,.012), transparent);
   }
   .avs-block-body { padding: 12px; }
   .avs-block-flat { padding: 0; }
@@ -3357,7 +3389,10 @@ try {
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #2E2E38 transparent;
+    min-height: 80px;
   }
+  /* Last block per column gets its scroll free to grow with the column. */
+  .avs-col > .avs-block:last-child .avs-scroll { max-height: none; }
   .avs-scroll::-webkit-scrollbar { width: 6px; }
   .avs-scroll::-webkit-scrollbar-thumb { background: #2E2E38; border-radius: 3px; }
   /* First row in commissions/payout list — drop the duplicated top border
@@ -3471,12 +3506,13 @@ try {
   }
 
   .avs-foot {
-    padding: 14px 24px;
+    padding: 11px 20px;
     border-top: 1px solid #22222A;
     background: #0C0C10;
-    font-size: 11.5px; color: #676B7E;
+    font-size: 11px; color: #676B7E;
     display: flex; align-items: center; justify-content: space-between;
     gap: 12px;
+    flex-shrink: 0;
   }
   .avs-foot-left { display: flex; align-items: center; gap: 8px; }
   .avs-foot-dot { width: 6px; height: 6px; border-radius: 50%; background: #1AFFAB; box-shadow: 0 0 8px rgba(26,255,171,.6); }
