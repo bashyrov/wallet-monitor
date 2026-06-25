@@ -21,7 +21,6 @@ const _ICONS = {
 
 const _ALL_LINKS = [
   { id: 'app',       href: '/portfolio',       label: 'Portfolio', icon: _ICONS.portfolio, authOnly: false },
-  { id: 'archive',   href: '/archive',   label: 'Archive',   icon: _ICONS.archive,   authOnly: false },
   { id: 'screener',  href: '/screener',  label: 'Screener',  icon: _ICONS.screener,  authOnly: false },
   { id: 'pricing',   href: '/pricing',   label: 'Pricing',   icon: _ICONS.pricing,   authOnly: false },
 ];
