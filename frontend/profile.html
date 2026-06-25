@@ -3228,7 +3228,7 @@ try {
   }
   .avs-bg.open { display: flex; }
   .avs-modal {
-    width: 100%; max-width: 760px;
+    width: 100%; max-width: 980px;
     background: #101014;
     border: 1px solid #22222A;
     border-radius: 18px;
@@ -3318,8 +3318,35 @@ try {
   }
 
   .avs-body {
-    padding: 4px 0;
+    padding: 4px 0 8px;
     border-top: 1px solid #22222A;
+  }
+  /* Two-column wide layout — codes on the left, payout + history on the right. */
+  .avs-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 20px;
+    padding: 16px 20px 8px;
+  }
+  .avs-col { display: flex; flex-direction: column; min-width: 0; }
+  .avs-block {
+    background: var(--surface3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+  .avs-block-head {
+    font-size: 10px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: #9B9FAB;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .avs-block-body { padding: 14px; }
+  .avs-block-flat { padding: 0; }
+  @media (max-width: 760px) {
+    .avs-grid { grid-template-columns: 1fr; }
   }
   /* Inner scrollable lists — only the long ones get their own scroll. */
   .avs-scroll {
@@ -3330,6 +3357,9 @@ try {
   }
   .avs-scroll::-webkit-scrollbar { width: 6px; }
   .avs-scroll::-webkit-scrollbar-thumb { background: #2E2E38; border-radius: 3px; }
+  /* First row in commissions/payout list — drop the duplicated top border
+     since the parent block already provides one via .avs-block-head. */
+  .avs-block-flat > div:first-child { border-top: 0 !important; }
 
   .avs-section-title {
     font-size: 10px; font-weight: 700; letter-spacing: .12em;
@@ -3576,94 +3606,112 @@ function _avsRender() {
   }
 
   document.getElementById('avs-body').innerHTML = `
-    <div class="avs-section-title" style="display:flex;align-items:center;gap:8px">
-      <span>My codes</span>
-      <span id="mc-cap-info" style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">—</span>
-    </div>
+    <div class="avs-grid">
 
-    <div style="margin:0 16px 14px;padding:16px;background:var(--surface3);border:1px solid var(--border);border-radius:12px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:6px;color:var(--text)">
-        <span>Create a new code</span>
-        <span title="Each code allows 15 sign-ups · 5 purchases per friend · 75 lifetime discounted transactions" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--surface2);color:var(--text3);font-size:9px;font-weight:600;cursor:help;font-family:var(--mono);border:1px solid var(--border)">i</span>
-      </div>
+      <!-- ─── LEFT: Codes (create + list) ─── -->
+      <div class="avs-col">
 
-      <input id="mc-code" type="text" placeholder="Code (4-32 chars · letters · digits · - · _)" maxlength="32"
-             style="width:100%;box-sizing:border-box;padding:11px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:14px;letter-spacing:0.04em">
-      <div id="mc-code-err" style="font-size:11px;color:#F87171;min-height:14px;margin-top:6px"></div>
-
-      <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Pool · 25% max</div>
-        <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">
-          <span id="mc-pool-used" style="color:var(--text);font-weight:600">0</span>/25%
-        </div>
-      </div>
-
-      <div style="position:relative;display:flex;height:14px;border-radius:8px;overflow:hidden;background:var(--surface2);border:1px solid var(--border);margin-bottom:18px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.15)">
-        <div id="mc-bar-comm" style="background:linear-gradient(90deg, #1AFFAB 0%, #16d493 100%);width:0;;box-shadow:0 0 8px rgba(26,255,171,0.4)"></div>
-        <div id="mc-bar-disc" style="background:linear-gradient(90deg, #06B6D4 0%, #0891B2 100%);width:0;;box-shadow:0 0 8px rgba(6,182,212,0.45)"></div>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:14px">
-        <div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-            <label style="font-size:11px;color:#1AFFAB;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;gap:5px">
-              <span style="width:8px;height:8px;border-radius:50%;background:#1AFFAB;display:inline-block;box-shadow:0 0 6px rgba(26,255,171,0.6)"></span>
-              You earn
-            </label>
-            <span id="mc-comm-val" style="font-family:var(--mono);font-size:14px;font-weight:700;color:#1AFFAB">10.0%</span>
+        <div class="avs-block">
+          <div class="avs-block-head">
+            <span>Create a new code</span>
+            <span title="Each code allows 15 sign-ups · 5 purchases per friend · 75 lifetime discounted transactions" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--surface2);color:var(--text3);font-size:9px;font-weight:600;cursor:help;font-family:var(--mono);border:1px solid var(--border)">i</span>
           </div>
-          <input id="mc-comm" class="mc-range" type="range" min="0" max="25" step="0.5" value="10" style="--val:0.4">
-        </div>
-        <div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-            <label style="font-size:11px;color:#06B6D4;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;gap:5px">
-              <span style="width:8px;height:8px;border-radius:50%;background:#06B6D4;display:inline-block;box-shadow:0 0 6px rgba(6,182,212,0.65)"></span>
-              Friend saves
-            </label>
-            <span id="mc-disc-val" style="font-family:var(--mono);font-size:14px;font-weight:700;color:#06B6D4">10.0%</span>
+          <div class="avs-block-body">
+            <input id="mc-code" type="text" placeholder="Code (4-32 chars · letters · digits · - · _)" maxlength="32"
+                   style="width:100%;box-sizing:border-box;padding:11px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:14px;letter-spacing:0.04em">
+            <div id="mc-code-err" style="font-size:11px;color:#F87171;min-height:14px;margin-top:6px"></div>
+
+            <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+              <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Pool · 25% max</div>
+              <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">
+                <span id="mc-pool-used" style="color:var(--text);font-weight:600">0</span>/25%
+              </div>
+            </div>
+
+            <div style="position:relative;display:flex;height:14px;border-radius:8px;overflow:hidden;background:var(--surface2);border:1px solid var(--border);margin-bottom:18px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.15)">
+              <div id="mc-bar-comm" style="background:linear-gradient(90deg, #1AFFAB 0%, #16d493 100%);width:0;;box-shadow:0 0 8px rgba(26,255,171,0.4)"></div>
+              <div id="mc-bar-disc" style="background:linear-gradient(90deg, #06B6D4 0%, #0891B2 100%);width:0;;box-shadow:0 0 8px rgba(6,182,212,0.45)"></div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:14px">
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+                  <label style="font-size:11px;color:#1AFFAB;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;gap:5px">
+                    <span style="width:8px;height:8px;border-radius:50%;background:#1AFFAB;display:inline-block;box-shadow:0 0 6px rgba(26,255,171,0.6)"></span>
+                    You earn
+                  </label>
+                  <span id="mc-comm-val" style="font-family:var(--mono);font-size:14px;font-weight:700;color:#1AFFAB">10.0%</span>
+                </div>
+                <input id="mc-comm" class="mc-range" type="range" min="0" max="25" step="0.5" value="10" style="--val:0.4">
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+                  <label style="font-size:11px;color:#06B6D4;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;gap:5px">
+                    <span style="width:8px;height:8px;border-radius:50%;background:#06B6D4;display:inline-block;box-shadow:0 0 6px rgba(6,182,212,0.65)"></span>
+                    Friend saves
+                  </label>
+                  <span id="mc-disc-val" style="font-family:var(--mono);font-size:14px;font-weight:700;color:#06B6D4">10.0%</span>
+                </div>
+                <input id="mc-disc" class="mc-range disc" type="range" min="0" max="25" step="0.5" value="10" style="--val:0.4">
+              </div>
+            </div>
+
+            <div id="mc-preview" style="font-size:12px;color:var(--text2);padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;line-height:1.5">
+              On a <strong style="color:var(--text)">$100</strong> purchase: friend pays
+              <strong style="color:#06B6D4">$90.00</strong>, you earn
+              <strong style="color:#1AFFAB">$10.00</strong>.
+            </div>
+
+            <button id="mc-create-btn" onclick="createMyCode()"
+                    style="width:100%;padding:12px;border-radius:8px;background:linear-gradient(135deg,#1AFFAB,#16d493);color:#000;font-weight:700;border:none;cursor:pointer;font-size:13px;letter-spacing:0.02em;transition:transform 0.12s,box-shadow 0.12s;box-shadow:0 4px 16px rgba(26,255,171,0.25)">
+              Create code
+            </button>
+            <div id="mc-create-err" style="font-size:11px;color:#F87171;margin-top:8px;min-height:14px"></div>
           </div>
-          <input id="mc-disc" class="mc-range disc" type="range" min="0" max="25" step="0.5" value="10" style="--val:0.4">
         </div>
+
+        <div class="avs-block">
+          <div class="avs-block-head">
+            <span>My codes</span>
+            <span id="mc-cap-info" style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;margin-left:auto">—</span>
+          </div>
+          <div id="mc-list" class="avs-scroll" style="display:flex;flex-direction:column;gap:8px;padding:12px 14px">
+            <div style="text-align:center;color:var(--text3);font-size:12px;padding:14px">Loading your codes…</div>
+          </div>
+        </div>
+
       </div>
 
-      <div id="mc-preview" style="font-size:12px;color:var(--text2);padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;line-height:1.5">
-        On a <strong style="color:var(--text)">$100</strong> purchase: friend pays
-        <strong style="color:#06B6D4">$90.00</strong>, you earn
-        <strong style="color:#1AFFAB">$10.00</strong>.
+      <!-- ─── RIGHT: Payout + history ─── -->
+      <div class="avs-col">
+
+        <div class="avs-block">
+          <div class="avs-block-head"><span>Request payout · min $${minPayout.toFixed(2)}</span></div>
+          <div class="avs-block-body">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <input id="avs-addr" placeholder="TRC20 USDT address (T…)" value="${addr}"
+                     ${canRequest ? '' : 'disabled'}
+                     style="padding:10px 12px;border:1px solid var(--border);background:var(--surface);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px">
+              ${payoutCta}
+              <div id="avs-payout-msg" style="font-size:11px;color:var(--text3);min-height:14px"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="avs-block">
+          <div class="avs-block-head"><span>Recent commissions</span></div>
+          <div class="avs-scroll avs-block-flat">${histHtml}</div>
+        </div>
+
+        ${payoutsHtml ? `
+        <div class="avs-block">
+          <div class="avs-block-head"><span>Payout history</span></div>
+          <div class="avs-scroll avs-block-flat">${payoutsHtml}</div>
+        </div>` : ''}
+
       </div>
 
-      <button id="mc-create-btn" onclick="createMyCode()"
-              style="width:100%;padding:12px;border-radius:8px;background:linear-gradient(135deg,#1AFFAB,#16d493);color:#000;font-weight:700;border:none;cursor:pointer;font-size:13px;letter-spacing:0.02em;transition:transform 0.12s,box-shadow 0.12s;box-shadow:0 4px 16px rgba(26,255,171,0.25)">
-        Create code
-      </button>
-      <div id="mc-create-err" style="font-size:11px;color:#F87171;margin-top:8px;min-height:14px"></div>
     </div>
-
-    <div id="mc-list" class="avs-scroll" style="margin:0 16px 18px;display:flex;flex-direction:column;gap:8px;padding-right:4px">
-      <div style="text-align:center;color:var(--text3);font-size:12px;padding:14px">Loading your codes…</div>
-    </div>
-
-    <div class="avs-section-title">Request payout · min $${minPayout.toFixed(2)}</div>
-    <div style="padding:0 16px 16px">
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <input id="avs-addr" placeholder="TRC20 USDT address (T…)" value="${addr}"
-               ${canRequest ? '' : 'disabled'}
-               style="padding:10px 12px;border:1px solid var(--border);background:var(--surface3);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px">
-        ${payoutCta}
-        <div id="avs-payout-msg" style="font-size:11px;color:var(--text3);min-height:14px"></div>
-      </div>
-    </div>
-
-    <div class="avs-section-title">Recent commissions</div>
-    <div class="avs-scroll" style="margin:0 16px 14px;background:var(--surface3);border:1px solid var(--border);border-radius:10px">
-      ${histHtml}
-    </div>
-
-    ${payoutsHtml ? `
-      <div class="avs-section-title">Payout history</div>
-      <div class="avs-scroll" style="margin:0 16px 14px;background:var(--surface3);border:1px solid var(--border);border-radius:10px">
-        ${payoutsHtml}
-      </div>` : ''}
   `;
 }
 
