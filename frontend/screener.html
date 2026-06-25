@@ -174,72 +174,95 @@
       </button>
     </div>
 
-    <!-- ── MOBILE FILTERS PANEL ── -->
+    <!-- ── MOBILE FILTERS PANEL — single source of truth for ≤700px ── -->
     <div class="mob-filters" id="mob-filters">
       <div class="mob-filters-inner">
 
-        <!-- Exchanges -->
-        <div class="lp-title" style="margin-bottom:8px">Exchanges</div>
-        <div class="lp-ex-actions">
-          <button class="lp-ex-action" onclick="exSelectAll()">All</button>
-          <button class="lp-ex-action" onclick="exSelectNone()">None</button>
-        </div>
-        <div id="lp-ex-items-mob" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
-
-        <!-- Hidden Tokens (mobile) -->
-        <div style="margin-bottom:14px">
-          <div class="lp-title" style="margin-bottom:8px">Hidden tokens</div>
-          <div class="lp-hidden-input-wrap">
-            <input class="lp-hidden-input" id="hidden-token-input-mob" type="text" placeholder="e.g. BTC" autocomplete="off"
-              onkeydown="if(event.key==='Enter')addHiddenToken(true)">
-            <button class="lp-hidden-add" onclick="addHiddenToken(true)">Hide</button>
-          </div>
-          <div class="lp-hidden-chips" id="hidden-chips-mob"></div>
+        <div class="mfp-head">
+          <div class="mfp-title">Filters</div>
+          <button class="mfp-reset" onclick="mobResetFilters()" title="Reset all filters">Reset</button>
+          <button class="mfp-close" onclick="toggleMobFilters()" aria-label="Close filters">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+          </button>
         </div>
 
-        <!-- Funding filters -->
-        <div id="mob-filters-funding" style="display:none">
-          <div class="lp-title" style="margin-bottom:8px">Funding filters</div>
-          <div class="lp-filter-group">
-            <div class="lp-filter-label">Min |APR|</div>
-            <input class="lp-filter-input" id="f-min-apr-mob" type="number" min="0" step="0.1" placeholder="0%" oninput="document.getElementById('f-min-apr').value=this.value;applyFilter()">
-          </div>
-          <div class="lp-toggle active" id="f-cross-toggle-mob" onclick="toggleCrossOnly()">
-            <div class="lp-toggle-dot" id="f-cross-dot-mob"></div>
-            Multi-exchange only
-          </div>
-        </div>
-
-        <!-- Long/Short filters -->
-        <div id="mob-filters-arb">
-          <div class="lp-title" style="margin-bottom:8px">Long/Short filters</div>
-          <div class="lp-filter-group">
-            <div class="lp-filter-label">Min net profit %</div>
-            <input class="lp-filter-input" id="f-min-net-mob" type="number" step="0.001" placeholder="0%" oninput="document.getElementById('f-min-net').value=this.value;_reapplyCurrentMode()">
-          </div>
-          <div class="lp-filter-group">
-            <div class="lp-filter-label">Min gross funding %</div>
-            <input class="lp-filter-input" id="f-min-gross-mob" type="number" step="0.001" placeholder="any" oninput="document.getElementById('f-min-gross').value=this.value;_reapplyCurrentMode()">
-          </div>
-          <div class="lp-filter-group">
-            <div class="lp-filter-label">Min (Gross + Spread) %</div>
-            <input class="lp-filter-input" id="f-min-gs-mob" type="number" step="0.001" placeholder="e.g. 0" oninput="document.getElementById('f-min-gs').value=this.value;_reapplyCurrentMode()">
-          </div>
-          <div class="lp-filter-group">
-            <div class="lp-filter-label">Min 24h volume (USDT)</div>
-            <div class="vol-quick">
-              <button class="vol-chip" data-v="0"         onclick="setMinVol(0, this)">Any</button>
-              <button class="vol-chip" data-v="100000"    onclick="setMinVol(100000, this)">100K</button>
-              <button class="vol-chip" data-v="1000000"   onclick="setMinVol(1000000, this)">1M</button>
-              <button class="vol-chip" data-v="10000000"  onclick="setMinVol(10000000, this)">10M</button>
-              <button class="vol-chip" data-v="100000000" onclick="setMinVol(100000000, this)">100M</button>
+        <!-- Exchanges — dropdown (button shows count, expands list with check rows) -->
+        <div class="mfp-section">
+          <button type="button" class="mfp-dd-btn" id="mob-ex-dd-btn" onclick="toggleMobExDropdown()" aria-expanded="false">
+            <span class="mfp-dd-label">Exchanges</span>
+            <span class="mfp-dd-meta">
+              <span class="mfp-dd-count" id="mob-ex-count">—</span>
+              <svg class="mfp-dd-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"/></svg>
+            </span>
+          </button>
+          <div class="mfp-dd-panel" id="mob-ex-dd-panel">
+            <div class="mfp-dd-actions">
+              <button onclick="exSelectAll()">Select all</button>
+              <button onclick="exSelectNone()">Clear</button>
+              <button onclick="exSelectInvert()">Invert</button>
             </div>
-            <input class="lp-filter-input" id="f-min-vol-mob" type="number" min="0" step="10000" placeholder="e.g. 500000" oninput="document.getElementById('f-min-vol').value=this.value;_reapplyCurrentMode()">
+            <div class="mfp-dd-list" id="lp-ex-items-mob"></div>
           </div>
-          <div class="lp-toggle" id="f-valid-toggle-mob" onclick="toggleValidOnly()">
-            <div class="lp-toggle-dot" id="f-valid-dot-mob" style="opacity:.4"></div>
+        </div>
+
+        <!-- Funding filters (visible only on Funding tab) -->
+        <div class="mfp-section" id="mob-filters-funding" style="display:none">
+          <div class="mfp-section-title">Funding</div>
+          <div class="mfp-grid">
+            <label class="mfp-field">
+              <span>Min |APR|</span>
+              <input class="mfp-input" id="f-min-apr-mob" type="number" min="0" step="0.1" placeholder="0%" oninput="document.getElementById('f-min-apr').value=this.value;applyFilter()">
+            </label>
+          </div>
+          <button class="mfp-toggle active" id="f-cross-toggle-mob" onclick="toggleCrossOnly()">
+            <span class="mfp-toggle-dot" id="f-cross-dot-mob"></span>
+            Multi-exchange only
+          </button>
+        </div>
+
+        <!-- Arb filters (visible on Long/Short, Spot, DEX tabs) -->
+        <div class="mfp-section" id="mob-filters-arb">
+          <div class="mfp-section-title">Long / Short · Spot · DEX</div>
+          <div class="mfp-grid">
+            <label class="mfp-field">
+              <span>Min net %</span>
+              <input class="mfp-input" id="f-min-net-mob" type="number" step="0.001" placeholder="0" oninput="document.getElementById('f-min-net').value=this.value;_reapplyCurrentMode()">
+            </label>
+            <label class="mfp-field">
+              <span>Min gross %</span>
+              <input class="mfp-input" id="f-min-gross-mob" type="number" step="0.001" placeholder="any" oninput="document.getElementById('f-min-gross').value=this.value;_reapplyCurrentMode()">
+            </label>
+            <label class="mfp-field">
+              <span>Min G+S %</span>
+              <input class="mfp-input" id="f-min-gs-mob" type="number" step="0.001" placeholder="0" oninput="document.getElementById('f-min-gs').value=this.value;_reapplyCurrentMode()">
+            </label>
+            <label class="mfp-field">
+              <span>Min volume</span>
+              <input class="mfp-input" id="f-min-vol-mob" type="number" min="0" step="10000" placeholder="500000" oninput="document.getElementById('f-min-vol').value=this.value;_reapplyCurrentMode()">
+            </label>
+          </div>
+          <div class="mfp-vol-chips">
+            <button class="vol-chip" data-v="0"         onclick="setMinVol(0, this)">Any</button>
+            <button class="vol-chip" data-v="100000"    onclick="setMinVol(100000, this)">100K</button>
+            <button class="vol-chip" data-v="1000000"   onclick="setMinVol(1000000, this)">1M</button>
+            <button class="vol-chip" data-v="10000000"  onclick="setMinVol(10000000, this)">10M</button>
+            <button class="vol-chip" data-v="100000000" onclick="setMinVol(100000000, this)">100M</button>
+          </div>
+          <button class="mfp-toggle" id="f-valid-toggle-mob" onclick="toggleValidOnly()">
+            <span class="mfp-toggle-dot" id="f-valid-dot-mob" style="opacity:.4"></span>
             Valid price only
+          </button>
+        </div>
+
+        <!-- Hidden tokens -->
+        <div class="mfp-section">
+          <div class="mfp-section-title">Hidden tokens</div>
+          <div class="mfp-hide-row">
+            <input class="mfp-input" id="hidden-token-input-mob" type="text" placeholder="e.g. BTC" autocomplete="off" style="flex:1;text-transform:uppercase"
+              onkeydown="if(event.key==='Enter')addHiddenToken(true)">
+            <button class="mfp-hide-add" onclick="addHiddenToken(true)">Hide</button>
           </div>
+          <div class="lp-hidden-chips" id="hidden-chips-mob" style="margin-top:8px"></div>
         </div>
 
       </div>

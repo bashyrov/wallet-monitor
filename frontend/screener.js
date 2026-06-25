@@ -447,6 +447,8 @@ function _updateExCount(){
                        : active === 0 ? 'rgba(248,113,113,.22)'
                        : 'rgba(229,192,123,.22)';
   _renderExBtnDots();
+  // Mirror the count into the mobile dropdown trigger badge.
+  if (typeof _updateMobExCount === 'function') _updateMobExCount();
 }
 
 // Render the small exchange-color dots inside the accordion button
@@ -560,6 +562,50 @@ function toggleMobFilters() {
   const btn   = document.getElementById('mob-filter-btn');
   const open  = panel.classList.toggle('open');
   btn.classList.toggle('active', open);
+}
+
+// Exchanges dropdown inside the mobile filters panel.
+function toggleMobExDropdown() {
+  const btn   = document.getElementById('mob-ex-dd-btn');
+  const panel = document.getElementById('mob-ex-dd-panel');
+  if (!btn || !panel) return;
+  const open = panel.classList.toggle('open');
+  btn.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+// "X / Y selected" badge on the dropdown trigger — recalculated whenever
+// the exchange selection changes (called from toggleExMob + exSelectAll/None).
+function _updateMobExCount() {
+  const el = document.getElementById('mob-ex-count');
+  if (!el) return;
+  const total    = EXCHANGES.length;
+  const selected = total - _exDisabled.size;
+  el.textContent = selected === total ? 'All ' + total : selected + ' / ' + total;
+}
+
+// Reset all mobile filters — clears every numeric input, both desktop and
+// mobile twins (mob has oninput-mirror handlers, so just clearing the
+// desktop one alone wouldn't update the mob field's visible value).
+function mobResetFilters() {
+  const ids = [
+    'f-min-net', 'f-min-net-mob',
+    'f-min-gross', 'f-min-gross-mob',
+    'f-min-gs', 'f-min-gs-mob',
+    'f-min-vol', 'f-min-vol-mob',
+    'f-min-apr', 'f-min-apr-mob',
+    'hidden-token-input', 'hidden-token-input-mob',
+    'search', 'search-mobile',
+  ];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+  document.querySelectorAll('.vol-chip.is-active').forEach(c => c.classList.remove('is-active'));
+  const anyVol = document.querySelector('.vol-chip[data-v="0"]');
+  if (anyVol) anyVol.classList.add('is-active');
+  if (typeof _reapplyCurrentMode === 'function') _reapplyCurrentMode();
+  if (typeof applyFilter === 'function') applyFilter();
 }
 
 function buildMobExChips() {
