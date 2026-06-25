@@ -28,7 +28,7 @@
 <!-- Preload critical assets so browser fetches them in parallel with HTML
      parse. fetchpriority="high" ensures the bundle + CSS jump ahead of
      icons and other low-priority discoveries. -->
-<link rel="preload" as="script" href="/dist/core.min.js?v=20260625a" fetchpriority="high">
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260626b" fetchpriority="high">
 <link rel="preload" as="script" href="/screener.js?v=20260625a"    fetchpriority="high">
 <link rel="preload" as="style"  href="/screener.css"               fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
@@ -549,10 +549,6 @@
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M3 5h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Screener
   </a>
-  <a href="/watchlist" class="bnav-item">
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M10 2L12.3 7.1L18 7.9L14 11.9L15 18L10 15L5 18L6 11.9L2 7.9L7.7 7.1z"/></svg>
-    Watchlist
-  </a>
   <a href="/pricing" class="bnav-item">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 3h6.2l7.5 7.5-6.2 6.2L3 9.2V3z" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/></svg>
     Pricing
@@ -564,7 +560,7 @@
 </nav>
 
 <!-- Shared modules bundled — see frontend/build.mjs. One RTT vs 11. -->
-<script src="/dist/core.min.js?v=20260625a"></script>
+<script src="/dist/core.min.js?v=20260626b"></script>
 <!-- Page-specific code (was 2750 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes. -->
 <script src="/screener.js?v=20260625a" defer></script>

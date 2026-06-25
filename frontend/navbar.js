@@ -145,8 +145,9 @@ class AppNavbar extends HTMLElement {
       <a href="/" class="brand">avalant<span class="brand-cursor">_</span></a>
       <nav class="topbar-nav">${navHtml}</nav>
       <div class="topbar-right">${_rightHtml(page)}</div>
-      <button class="nav-burger" id="nb-burger" aria-label="Open menu">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
+      <button class="nav-burger" id="nb-burger" aria-label="Open menu" aria-expanded="false">
+        <svg class="bg-icon bg-open" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
+        <svg class="bg-icon bg-close" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
       </button>
     `;
 
@@ -196,12 +197,20 @@ class AppNavbar extends HTMLElement {
     const drawer = document.getElementById('nav-drawer-root');
     const burger = this.querySelector('#nb-burger');
     if (!drawer || !burger) return;
-    const close = drawer.querySelector('#nb-close');
-    const open = () => { drawer.classList.add('open'); burger.classList.add('open'); document.body.style.overflow = 'hidden'; };
-    const shut = () => { drawer.classList.remove('open'); burger.classList.remove('open'); document.body.style.overflow = ''; };
-    burger.addEventListener('click', open);
-    close && close.addEventListener('click', shut);
-    drawer.querySelectorAll('a[data-nb-drawer]').forEach(a => a.addEventListener('click', shut));
+    const open = () => {
+      drawer.classList.add('open');
+      burger.classList.add('open');
+      burger.setAttribute('aria-expanded', 'true');
+      // No body-overflow lock — drawer drops below the topbar, page can stay scrollable
+    };
+    const shut = () => {
+      drawer.classList.remove('open');
+      burger.classList.remove('open');
+      burger.setAttribute('aria-expanded', 'false');
+    };
+    const toggle = () => burger.classList.contains('open') ? shut() : open();
+    burger.addEventListener('click', toggle);
+    drawer.querySelectorAll('a[data-nb-drawer], .drawer-acct-item').forEach(el => el.addEventListener('click', shut));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') shut(); });
   }
 
