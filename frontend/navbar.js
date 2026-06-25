@@ -27,11 +27,11 @@ const _ALL_LINKS = [
 ];
 
 const _NAV_SET = {
-  app:       ['app', 'archive', 'screener', 'pricing'],
-  archive:   ['app', 'archive', 'screener', 'pricing'],
-  profile:   ['app', 'archive', 'screener', 'pricing'],
-  index:     ['app', 'archive', 'screener', 'pricing'],
-  pricing:   ['app', 'archive', 'screener', 'pricing'],
+  app:       ['app', 'screener', 'pricing'],
+  archive:   ['app', 'screener', 'pricing'],
+  profile:   ['app', 'screener', 'pricing'],
+  index:     ['app', 'screener', 'pricing'],
+  pricing:   ['app', 'screener', 'pricing'],
   // Screener service — trimmed nav so the workspace gets max width.
   screener:  ['app', 'screener', 'pricing'],
   arb:       ['app', 'screener', 'pricing'],
