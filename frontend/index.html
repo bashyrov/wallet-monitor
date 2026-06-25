@@ -928,7 +928,7 @@ img, svg { display: block; max-width: 100%; }
 }
 </style>
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260626c"></script>
+<script src="/dist/core.min.js?v=20260626d"></script>
 </head>
 <body>
 
@@ -954,7 +954,6 @@ img, svg { display: block; max-width: 100%; }
     </div>
     <div class="nav-cta" id="nav-cta-user" style="display:none">
       <a href="/portfolio" class="btn btn-primary">Open app</a>
-      <a href="/profile" class="avatar-btn" id="hp-avatar" title="Profile" style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--green) 0%,#7BE0C9 100%);display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#071612;text-decoration:none;">U</a>
     </div>
     <button class="nav-burger" id="burger" aria-label="Menu">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
@@ -1784,9 +1783,6 @@ img, svg { display: block; max-width: 100%; }
     if (user)  user.style.display  = 'flex';
     if (dGuest) dGuest.style.display = 'none';
     if (dUser)  dUser.style.display  = 'flex';
-    const u = Auth.getUser && Auth.getUser();
-    const av = document.getElementById('hp-avatar');
-    if (av && u) av.textContent = (u.username || u.email || 'U')[0].toUpperCase();
   }
 })();
 

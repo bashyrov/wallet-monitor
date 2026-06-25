@@ -108,7 +108,6 @@ function _rightHtml(page) {
         </div>
         <div id="_nb-user" style="display:none;align-items:center;gap:10px">
           <a href="/portfolio" class="btn btn-primary btn-sm">Open app</a>
-          ${_avatarBtn()}
         </div>`;
 
     case 'pricing':
@@ -246,6 +245,19 @@ class AppNavbar extends HTMLElement {
     if (loggedIn && user) {
       const av = this.querySelector('#nav-avatar');
       if (av) av.textContent = (user.username || user.email || 'U')[0].toUpperCase();
+    }
+
+    // Hamburger visibility — narrow by page+auth:
+    //   guest  → only on index + pricing (they get Sign in / Get started CTAs
+    //            on desktop; mobile drawer lets them see those CTAs too)
+    //   authed → only on index (every other auth-only page navigates via
+    //            the mobile bottom-nav; logout is reachable via /profile)
+    const burger = this.querySelector('#nb-burger');
+    if (burger) {
+      const allowedGuest = (page === 'index' || page === 'pricing');
+      const allowedAuthed = (page === 'index');
+      const show = loggedIn ? allowedAuthed : allowedGuest;
+      burger.style.display = show ? '' : 'none';
     }
 
     // Guest/user toggle for pages that ship both blocks
