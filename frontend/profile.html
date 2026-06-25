@@ -772,15 +772,19 @@
   </div>
 
   <script>
-    // Show/hide email-verify card based on /auth/me. auth.js is loaded
-    // later in the body via core.min.js, so we wait for DOMContentLoaded
-    // (window.Auth is defined synchronously when that bundle parses).
+    // TG-only users get a synthetic placeholder email at registration
+    // (tg_<id>@tg.avalant.local — see backend/services/tg_auth_service.py).
+    // It's not a deliverable address, so prompting them to verify it would
+    // be misleading. Treat such users as having no email at all.
+    window._isSyntheticEmail = e => typeof e === 'string' && /@tg\.avalant\.local$/i.test(e);
+
     document.addEventListener('DOMContentLoaded', async () => {
       try {
         if (typeof Auth === 'undefined') return;
         const r = await Auth.apiFetch('/auth/me');
         if (!r.ok) return;
         const me = await r.json();
+        if (window._isSyntheticEmail(me.email)) return;   // TG-only — no card
         if (me.email_verified_at) return;
         document.getElementById('ev-card').style.display = 'flex';
         const em = document.getElementById('profile-email');
@@ -1626,7 +1630,15 @@ Auth.requireAuth('/login');
     const nameEl = document.getElementById('profile-name');
     const emailEl = document.getElementById('profile-email');
     if (nameEl) nameEl.textContent = u.username || 'User';
-    if (emailEl) emailEl.textContent = u.email || '';
+    if (emailEl) {
+      // TG-only users have a placeholder email (tg_<id>@tg.avalant.local).
+      // Don't show it — show @tg_username (or just hide if no handle).
+      if (window._isSyntheticEmail && window._isSyntheticEmail(u.email)) {
+        emailEl.textContent = u.tg_username ? '@' + u.tg_username : '';
+      } else {
+        emailEl.textContent = u.email || '';
+      }
+    }
     const adminRow = document.getElementById('admin-row');
     if (adminRow) adminRow.style.display = u.is_admin ? '' : 'none';
   }
@@ -1639,6 +1651,16 @@ Auth.requireAuth('/login');
       if (joinedEl && me.created_at) {
         const d = new Date(me.created_at);
         joinedEl.textContent = 'Member since ' + d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      }
+      // Re-apply email logic with fresh data — /auth/me has tg_username
+      // even when localStorage's cached user lacks it.
+      const emailEl = document.getElementById('profile-email');
+      if (emailEl) {
+        if (window._isSyntheticEmail && window._isSyntheticEmail(me.email)) {
+          emailEl.textContent = me.tg_username ? '@' + me.tg_username : '';
+        } else {
+          emailEl.textContent = me.email || '';
+        }
       }
       _renderPlanCard(me);
       _updateTgStatus(me.tg_linked, me.tg_username);
