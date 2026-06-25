@@ -66,7 +66,7 @@ function _avatarBtn() {
   // dispatches avalant:auth-changed), _applyAuth() replaces this with
   // the user's initial. The icon prevents a misleading "U" placeholder
   // when localStorage is briefly empty after a hard refresh.
-  return `<a href="/profile" class="avatar-btn" id="nav-avatar" title="Profile" aria-label="Profile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg></a>`;
+  return `<button type="button" class="avatar-btn" id="nav-avatar" title="Account menu" aria-label="Account menu" aria-haspopup="menu" onclick="openAvatarMenu(event)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg></button>`;
 }
 
 function _rightHtml(page) {
@@ -248,6 +248,73 @@ class AppNavbar extends HTMLElement {
   }
 }
 customElements.define('app-navbar', AppNavbar);
+
+/* ─── Avatar dropdown menu (used on every page with a navbar) ──────────
+   Shows Profile + Sign out so the user picks intent instead of always
+   being routed to /profile on click. Anchored under the avatar button,
+   closes on outside click + Escape. */
+window.openAvatarMenu = window.openAvatarMenu || function(ev) {
+  ev && ev.stopPropagation();
+  // Toggle off if already open
+  const existing = document.getElementById('nb-avatar-menu');
+  if (existing) { existing.remove(); return; }
+
+  const anchor = (ev && ev.currentTarget) || document.getElementById('nav-avatar');
+  if (!anchor) return;
+  const r = anchor.getBoundingClientRect();
+
+  const menu = document.createElement('div');
+  menu.id = 'nb-avatar-menu';
+  menu.className = 'nb-avatar-menu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `
+    <a href="/profile" class="nb-avm-item" role="menuitem">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="2.6"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
+      <span>Profile</span>
+    </a>
+    <div class="nb-avm-sep"></div>
+    <button type="button" class="nb-avm-item danger" role="menuitem" id="nb-avm-logout">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5L13 8 10 11M13 8H5M7 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h4"/></svg>
+      <span>Sign out</span>
+    </button>
+  `;
+  Object.assign(menu.style, {
+    position: 'fixed',
+    top: (r.bottom + 8) + 'px',
+    right: Math.max(8, window.innerWidth - r.right) + 'px',
+    zIndex: '400',
+  });
+  document.body.appendChild(menu);
+  // Animate in on next frame
+  requestAnimationFrame(() => menu.classList.add('open'));
+
+  const close = () => {
+    menu.classList.remove('open');
+    setTimeout(() => menu.remove(), 120);
+    document.removeEventListener('click', onOutside, true);
+    document.removeEventListener('keydown', onEsc, true);
+  };
+  const onOutside = (e) => {
+    if (menu.contains(e.target)) return;
+    if (anchor.contains(e.target)) return;
+    close();
+  };
+  const onEsc = (e) => { if (e.key === 'Escape') close(); };
+  setTimeout(() => {
+    document.addEventListener('click', onOutside, true);
+    document.addEventListener('keydown', onEsc, true);
+  }, 0);
+
+  const logoutBtn = menu.querySelector('#nb-avm-logout');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      close();
+      if (typeof Auth !== 'undefined' && Auth.logout) Auth.logout('/login');
+      else window.location.href = '/login';
+    });
+  }
+};
 
 /* ─── Shared alerts popover (used by screener / arb / watchlist) ─────── */
 window.openAlertsPopover = window.openAlertsPopover || function(ev) {
