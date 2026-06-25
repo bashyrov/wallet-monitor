@@ -818,13 +818,6 @@
       </div>
       <button class="btn-danger" onclick="Auth.logout('/login')">Sign out</button>
     </div>
-    <div class="danger-row">
-      <div>
-        <div class="danger-label">Delete account</div>
-        <div class="danger-desc">Permanently delete your account and all wallets</div>
-      </div>
-      <button class="btn-danger" onclick="toast('Account deletion coming soon', 'info')">Delete account</button>
-    </div>
   </div>
 
   <script>
@@ -3235,7 +3228,7 @@ try {
   }
   .avs-bg.open { display: flex; }
   .avs-modal {
-    width: 100%; max-width: 520px;
+    width: 100%; max-width: 760px;
     background: #101014;
     border: 1px solid #22222A;
     border-radius: 18px;
@@ -3325,14 +3318,18 @@ try {
   }
 
   .avs-body {
-    max-height: 52vh; overflow-y: auto;
     padding: 4px 0;
     border-top: 1px solid #22222A;
-    scrollbar-width: thin;
-    scrollbar-color: #22222A transparent;
   }
-  .avs-body::-webkit-scrollbar { width: 6px; }
-  .avs-body::-webkit-scrollbar-thumb { background: #2E2E38; border-radius: 3px; }
+  /* Inner scrollable lists — only the long ones get their own scroll. */
+  .avs-scroll {
+    max-height: 220px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #2E2E38 transparent;
+  }
+  .avs-scroll::-webkit-scrollbar { width: 6px; }
+  .avs-scroll::-webkit-scrollbar-thumb { background: #2E2E38; border-radius: 3px; }
 
   .avs-section-title {
     font-size: 10px; font-weight: 700; letter-spacing: .12em;
@@ -3642,7 +3639,7 @@ function _avsRender() {
       <div id="mc-create-err" style="font-size:11px;color:#F87171;margin-top:8px;min-height:14px"></div>
     </div>
 
-    <div id="mc-list" style="margin:0 16px 18px;display:flex;flex-direction:column;gap:8px">
+    <div id="mc-list" class="avs-scroll" style="margin:0 16px 18px;display:flex;flex-direction:column;gap:8px;padding-right:4px">
       <div style="text-align:center;color:var(--text3);font-size:12px;padding:14px">Loading your codes…</div>
     </div>
 
@@ -3658,13 +3655,13 @@ function _avsRender() {
     </div>
 
     <div class="avs-section-title">Recent commissions</div>
-    <div style="margin:0 16px 14px;background:var(--surface3);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+    <div class="avs-scroll" style="margin:0 16px 14px;background:var(--surface3);border:1px solid var(--border);border-radius:10px">
       ${histHtml}
     </div>
 
     ${payoutsHtml ? `
       <div class="avs-section-title">Payout history</div>
-      <div style="margin:0 16px 14px;background:var(--surface3);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div class="avs-scroll" style="margin:0 16px 14px;background:var(--surface3);border:1px solid var(--border);border-radius:10px">
         ${payoutsHtml}
       </div>` : ''}
   `;
