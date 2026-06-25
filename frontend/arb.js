@@ -374,7 +374,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
             <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 9h12M8 2v12"/></svg></div>
             <h4>No open positions</h4>
             <p>Connect a read-only API key to see exchange positions here.</p>
-            <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
+            <a href="/profile#sec-security" class="acc-empty-cta">Manage API keys</a>
           </div>
         </div>
         <div class="acc-pane" id="acc-pane-triggers">
@@ -420,8 +420,8 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           </table>
           <div class="acc-empty" id="acc-balances-empty">
             <h4>No connected exchanges</h4>
-            <p>Add API keys in Portfolio to see live balances here.</p>
-            <a href="/portfolio" class="acc-empty-cta">Manage API keys</a>
+            <p>Add API keys in your profile to see live balances here.</p>
+            <a href="/profile#sec-security" class="acc-empty-cta">Manage API keys</a>
           </div>
         </div>
       </div>
