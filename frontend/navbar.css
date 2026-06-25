@@ -9,16 +9,24 @@
 
 .topbar {
   position: sticky; top: 0; z-index: 100;
-  background: rgba(10,10,13,0.78);
-  backdrop-filter: saturate(160%) blur(14px);
-  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  background: rgba(10,10,13,0.82);
+  backdrop-filter: saturate(160%) blur(18px);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
   border-bottom: 1px solid transparent;
-  transition: border-color .2s ease, background .2s ease;
+  transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+}
+.topbar::after {
+  /* Subtle hairline gradient — fades in once the page has scrolled */
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.05), transparent);
+  pointer-events: none; opacity: 0; transition: opacity .2s ease;
 }
 .topbar.scrolled {
   border-bottom-color: var(--border);
-  background: rgba(10,10,13,0.92);
+  background: rgba(10,10,13,0.95);
+  box-shadow: 0 6px 22px -10px rgba(0,0,0,.55);
 }
+.topbar.scrolled::after { opacity: 1; }
 
 app-navbar {
   display: flex;
@@ -35,8 +43,14 @@ app-navbar {
   color: var(--text);
   flex-shrink: 0;
   user-select: none;
+  transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
 .brand:hover { opacity: 0.85; }
+.brand:active { transform: translateY(0.5px); }
+.brand-cursor {
+  color: var(--green);
+  text-shadow: 0 0 12px rgba(26,255,171,.55);
+}
 
 /* ─── Center menu (desktop) — absolutely positioned so it ignores side widths */
 .topbar-nav {
@@ -263,12 +277,25 @@ button.nav-lnk { background: none; cursor: pointer; }
 
 /* Mobile breakpoint */
 @media (max-width: 900px) {
-  app-navbar { padding: 0 16px; height: 56px; }
+  app-navbar { padding: 0 16px; height: 56px; justify-content: space-between; }
   .topbar-nav { display: none; }
   .topbar-right { display: none; }
   .nav-burger { display: inline-flex; }
   /* Avatar hidden on mobile — Profile lives in bottom-nav + hamburger drawer */
   .avatar-btn { display: none !important; }
+  /* When burger is hidden (only homepage + pricing show it on mobile)
+     the topbar becomes brand-only — center the brand so it doesn't
+     look top-heavy on the left. Class added by navbar.js _applyAuth. */
+  app-navbar.no-burger {
+    justify-content: center;
+  }
+  app-navbar.no-burger .brand {
+    font-size: 19px;
+    letter-spacing: -0.015em;
+  }
+  app-navbar.no-burger .brand-cursor {
+    text-shadow: 0 0 14px rgba(26,255,171,.65);
+  }
 }
 
 /* ─── Alerts popover (anchored to .nav-lnk-bell) ─────────────────────── */

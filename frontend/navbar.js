@@ -258,6 +258,9 @@ class AppNavbar extends HTMLElement {
       const allowedAuthed = (page === 'index');
       const show = loggedIn ? allowedAuthed : allowedGuest;
       burger.style.display = show ? '' : 'none';
+      // Mirror state into a class on the host element so CSS can centre
+      // the brand on mobile pages where the topbar is brand-only.
+      this.classList.toggle('no-burger', !show);
     }
 
     // Guest/user toggle for pages that ship both blocks

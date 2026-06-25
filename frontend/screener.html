@@ -28,13 +28,13 @@
 <!-- Preload critical assets so browser fetches them in parallel with HTML
      parse. fetchpriority="high" ensures the bundle + CSS jump ahead of
      icons and other low-priority discoveries. -->
-<link rel="preload" as="script" href="/dist/core.min.js?v=20260626d" fetchpriority="high">
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260626e" fetchpriority="high">
 <link rel="preload" as="script" href="/screener.js?v=20260625a"    fetchpriority="high">
 <link rel="preload" as="style"  href="/screener.css"               fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
 <link rel="stylesheet" href="/design.css">
-  <link rel="stylesheet" href="/navbar.css?v=20260626c">
+  <link rel="stylesheet" href="/navbar.css?v=20260626e">
   <link rel="stylesheet" href="/fonts/fonts.css">
 <link rel="stylesheet" href="/screener.css">
 </head>
@@ -560,7 +560,7 @@
 </nav>
 
 <!-- Shared modules bundled — see frontend/build.mjs. One RTT vs 11. -->
-<script src="/dist/core.min.js?v=20260626d"></script>
+<script src="/dist/core.min.js?v=20260626e"></script>
 <!-- Page-specific code (was 2750 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes. -->
 <script src="/screener.js?v=20260625a" defer></script>
