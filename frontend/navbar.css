@@ -364,3 +364,66 @@ body.light .nav-lnk.active::after { background: #006B3C; box-shadow: none; }
 body.light .nav-drawer { background: rgba(255,255,255,0.97); }
 body.light .drawer-menu a { color: #1A1A1A; }
 body.light .drawer-menu a:hover { color: #006B3C; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Canonical mobile bottom-nav — matches the /screener pill design.
+   Uses !important to override the seven per-page inline duplicates so
+   every page renders an identical pill instead of having to keep them
+   in sync by hand. body:has(.bottom-nav) scopes the safe-area padding
+   to pages that actually render the nav (skips login/register/etc).
+   ═══════════════════════════════════════════════════════════════════════ */
+.bottom-nav {
+  display: none !important;
+  position: fixed !important;
+  bottom: 12px !important; left: 12px !important; right: 12px !important;
+  height: 64px !important;
+  background: rgba(13,13,16,0.82) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  border: 1px solid rgba(255,255,255,0.07) !important;
+  border-top: 1px solid rgba(255,255,255,0.07) !important;
+  border-radius: 20px !important;
+  z-index: 300 !important;
+  align-items: center !important;
+  justify-content: space-around !important;
+  padding: 0 4px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45) !important;
+}
+.bnav-item {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 3px !important;
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+  text-decoration: none !important;
+  color: #9B9FAB !important;
+  font-size: 10px !important; font-weight: 500 !important;
+  white-space: nowrap !important;
+  min-width: 0 !important;
+  flex: 1 1 0 !important;
+  text-align: center !important;
+  background: none !important;
+  transition: color .15s ease !important;
+}
+.bnav-item svg { opacity: 0.45 !important; transition: opacity .15s ease !important; }
+.bnav-item:hover { color: #ECECEC !important; background: none !important; }
+.bnav-item:hover svg { opacity: 0.7 !important; }
+.bnav-item.active { color: #1AFFAB !important; background: none !important; }
+.bnav-item.active svg { opacity: 1 !important; }
+
+@media (max-width: 768px) {
+  .bottom-nav { display: flex !important; }
+  /* Reserve viewport space for the floating pill so it never overlaps page
+     content. Modern :has() — old browsers just get a small overlap. */
+  body:has(.bottom-nav) { padding-bottom: 88px !important; }
+}
+
+body.light .bottom-nav {
+  background: rgba(255,255,255,0.94) !important;
+  border-color: rgba(0,0,0,0.08) !important;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.14) !important;
+}
+body.light .bnav-item { color: #595959 !important; }
+body.light .bnav-item.active { color: #006B3C !important; }
+body.light .bnav-item:hover { color: #1A1A1A !important; }
