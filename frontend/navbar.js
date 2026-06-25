@@ -151,26 +151,42 @@ class AppNavbar extends HTMLElement {
       </button>
     `;
 
-    // Drawer (separate root so it sits on top of everything)
-    if (!document.getElementById('nav-drawer-root')) {
-      const drawer = document.createElement('div');
+    // Drawer (separate root so it sits on top of everything).
+    // On every page render we REPLACE existing markup so per-page nav-set
+    // changes (e.g. screener vs portfolio) propagate without a hard refresh.
+    let drawer = document.getElementById('nav-drawer-root');
+    if (!drawer) {
+      drawer = document.createElement('div');
       drawer.id = 'nav-drawer-root';
       drawer.className = 'nav-drawer';
-      drawer.innerHTML = `
-        <div class="drawer-top">
-          <a href="/" class="brand">avalant<span class="brand-cursor">_</span></a>
-          <button class="nav-burger" id="nb-close" aria-label="Close menu">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
-          </button>
-        </div>
-        <nav class="drawer-menu">${drawerHtml}</nav>
-        <div class="drawer-cta">
-          <a href="/login" class="btn btn-outline btn-lg" id="nb-drawer-signin">Sign in</a>
-          <a href="/register" class="btn btn-primary btn-lg" id="nb-drawer-register">Get started</a>
-        </div>
-      `;
       document.body.appendChild(drawer);
     }
+    drawer.innerHTML = `
+      <div class="drawer-top">
+        <a href="/" class="brand">avalant<span class="brand-cursor">_</span></a>
+        <button class="nav-burger" id="nb-close" aria-label="Close menu">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
+        </button>
+      </div>
+      <nav class="drawer-menu">${drawerHtml}</nav>
+      <!-- Account block — shown only when logged in. Replaces the guest CTAs
+           at the drawer bottom so mobile users get Profile + Sign-out the
+           same way desktop users get them via the avatar dropdown. -->
+      <div class="drawer-account" id="nb-drawer-account" style="display:none">
+        <a href="/profile" class="drawer-acct-item" data-nb-drawer="profile">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="2.6"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
+          <span>Profile</span>
+        </a>
+        <button type="button" class="drawer-acct-item danger" id="nb-drawer-logout">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5L13 8 10 11M13 8H5M7 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h4"/></svg>
+          <span>Sign out</span>
+        </button>
+      </div>
+      <div class="drawer-cta" id="nb-drawer-cta">
+        <a href="/login" class="btn btn-outline btn-lg" id="nb-drawer-signin">Sign in</a>
+        <a href="/register" class="btn btn-primary btn-lg" id="nb-drawer-register">Get started</a>
+      </div>
+    `;
 
     this._wireBurger();
     this._wireScrollState();
@@ -237,13 +253,24 @@ class AppNavbar extends HTMLElement {
       }
     }
 
-    // Drawer CTA also hides Sign-In when already logged in
-    const drSignin = document.getElementById('nb-drawer-signin');
-    const drReg    = document.getElementById('nb-drawer-register');
-    if (loggedIn && drSignin && drReg) {
-      drSignin.style.display = 'none';
-      drReg.textContent = 'Open app';
-      drReg.href = '/portfolio';
+    // Drawer: when logged in, swap the guest CTAs for the Account block
+    // (Profile + Sign out). When guest, show Sign in + Get started.
+    const drCta = document.getElementById('nb-drawer-cta');
+    const drAcct = document.getElementById('nb-drawer-account');
+    if (loggedIn) {
+      if (drCta) drCta.style.display = 'none';
+      if (drAcct) drAcct.style.display = 'flex';
+      const logoutBtn = document.getElementById('nb-drawer-logout');
+      if (logoutBtn && !logoutBtn._wired) {
+        logoutBtn._wired = true;
+        logoutBtn.addEventListener('click', () => {
+          if (Auth && Auth.logout) Auth.logout('/login');
+          else window.location.href = '/login';
+        });
+      }
+    } else {
+      if (drCta) drCta.style.display = 'flex';
+      if (drAcct) drAcct.style.display = 'none';
     }
   }
 }

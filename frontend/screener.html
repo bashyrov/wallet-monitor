@@ -496,7 +496,14 @@
       }
       (function(){
         try {
-          if (localStorage.getItem('ex-status-hidden') === '1') {
+          const v = localStorage.getItem('ex-status-hidden');
+          // Mobile (≤768px) defaults to HIDDEN when the user has never
+          // toggled the strip. Desktop defaults to visible. Once the user
+          // explicitly opens/closes it the choice persists across reloads
+          // and the platform default no longer applies.
+          const isMobile = window.innerWidth <= 768;
+          const shouldHide = v === '1' || (v === null && isMobile);
+          if (shouldHide) {
             document.getElementById('alpha-status-strip').classList.add('is-hidden');
           }
         } catch(_){}

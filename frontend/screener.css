@@ -213,8 +213,17 @@ body { padding-bottom: 44px; }
   color: var(--text2); border-radius: 999px;
   padding: 6px 12px; gap: 6px; font-size: 11px; cursor: pointer;
   align-items: center;
+  box-shadow: 0 4px 14px -4px rgba(0,0,0,.5);
 }
-.alpha-status-strip .as-show:hover { color: var(--text); }
+.alpha-status-strip .as-show:hover {
+  color: var(--text);
+  border-color: #2A2A34;
+  background: var(--surface3);
+}
+/* On mobile lift the show-pill above the bottom nav bar (88px tall + gap). */
+@media (max-width: 768px) {
+  .alpha-status-strip .as-show { bottom: 96px; right: 10px; padding: 7px 13px; }
+}
 
 .left-panel {
   width: 260px;

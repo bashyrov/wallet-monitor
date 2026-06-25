@@ -3503,7 +3503,16 @@ try {
     .avs-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   }
   @media (max-width: 720px) {
-    .avs-grid { grid-template-columns: 1fr; }
+    /* Mobile — single column, tighten paddings, allow the modal to grow
+       to fill the viewport so the user can scroll naturally inside .avs-body. */
+    .avs-grid { grid-template-columns: 1fr; gap: 10px; padding: 12px; }
+    .avs-modal { max-height: calc(100vh - 24px); border-radius: 12px; }
+    .avs-bg { padding: 12px 10px; align-items: flex-start; }
+    .avs-head { padding: 14px 14px 10px; }
+    .avs-stats { padding: 0 14px 12px; gap: 8px; }
+    .avs-stat-val { font-size: 15px; }
+    .avs-col > .avs-block:last-child { flex: 0 0 auto; }
+    .avs-col > .avs-block:last-child .avs-scroll { max-height: 180px; }
   }
   /* Columns stretch to grid row height — blocks within distribute that space. */
   .avs-col { display: flex; flex-direction: column; min-width: 0; gap: 12px; }
