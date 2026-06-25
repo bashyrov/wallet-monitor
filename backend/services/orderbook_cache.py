@@ -872,7 +872,20 @@ async def get_cached_orderbook(exchange: str, symbol: str, limit: int = 50) -> d
             if d.get("bids") or d.get("asks"):
                 entry["last_request"] = now
                 return d
-        # Memory miss → REST fallback.
+        # Redis — go-fetcher mirrors every adapter push here (TTL 10s, ~50ms
+        # cadence). Serving partial-depth (Top-N from WS) beats a 429-ed REST
+        # round-trip to the venue; the user sees the book immediately and any
+        # follow-up shallow request comes from the same warm key.
+        try:
+            from backend.services.orderbook_redis import read_book
+            rb = read_book(exchange, symbol)
+            if rb and now - rb.get("ts", 0) < FILE_FRESH_MAX:
+                d = rb.get("data") or {}
+                if d.get("bids") or d.get("asks"):
+                    return d
+        except Exception:
+            pass
+        # Memory + Redis miss → REST fallback.
         rest_data = await _rest_fallback(exchange, symbol, limit)
         if rest_data and (rest_data.get("bids") or rest_data.get("asks")):
             # Trip last_request so the WS poller (if any) keeps the cache
