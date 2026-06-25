@@ -772,8 +772,10 @@
   </div>
 
   <script>
-    // Show/hide email-verify card based on /auth/me. Runs once on profile load.
-    (async () => {
+    // Show/hide email-verify card based on /auth/me. auth.js is loaded
+    // later in the body via core.min.js, so we wait for DOMContentLoaded
+    // (window.Auth is defined synchronously when that bundle parses).
+    document.addEventListener('DOMContentLoaded', async () => {
       try {
         if (typeof Auth === 'undefined') return;
         const r = await Auth.apiFetch('/auth/me');
@@ -781,7 +783,6 @@
         const me = await r.json();
         if (me.email_verified_at) return;
         document.getElementById('ev-card').style.display = 'flex';
-        // Also tag the email line in the hero with a subtle "unverified" pill.
         const em = document.getElementById('profile-email');
         if (em && !em.querySelector('.ev-tag')) {
           const tag = document.createElement('span');
@@ -790,7 +791,7 @@
           em.appendChild(tag);
         }
       } catch {}
-    })();
+    });
 
     async function evSendVerify() {
       const btn = document.getElementById('ev-send');
