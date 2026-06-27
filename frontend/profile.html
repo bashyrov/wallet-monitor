@@ -1191,6 +1191,23 @@
           <div class="k-list" id="k-list"><div class="k-empty"><span class="spinner"></span></div></div>
         </div>
         <div class="k-pane" id="k-pane-add">
+          <!-- Server IP banner — surfaces our outbound IP so users can
+               whitelist it on the exchange. Only renders for the Exchange
+               (CEX) tab; populated from /api/meta/server-ip on form open.
+               Hidden if env AVALANT_SERVER_IP is empty. -->
+          <div id="k-server-ip-banner" class="k-ip-banner" style="display:none">
+            <div class="k-ip-icon">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5c1.8 2 1.8 11 0 13M1.5 8h13M3 4.5c2.5 1 7.5 1 10 0M3 11.5c2.5-1 7.5-1 10 0"/></svg>
+            </div>
+            <div class="k-ip-body">
+              <div class="k-ip-title">Whitelist this IP on the exchange</div>
+              <div class="k-ip-sub">Most CEX let you pin your API key to specific IPs. Add ours for safer keys.</div>
+            </div>
+            <button type="button" class="k-ip-pill" id="k-server-ip-pill" onclick="kCopyServerIp(this)" title="Copy IP">
+              <code class="mono" id="k-server-ip-val">—</code>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M2 11V3a1 1 0 011-1h8"/></svg>
+            </button>
+          </div>
           <form id="k-form" onsubmit="event.preventDefault();kSubmit()">
             <div class="k-type-tabs">
               <button type="button" class="k-type-tab is-active" data-type="exchange" onclick="kPickType(this)">Exchange <span class="k-type-tab-sub">CEX · API key</span></button>
@@ -1319,6 +1336,43 @@
     .k-tab.is-active .k-count{background:rgba(26,255,171,0.12);color:var(--green);}
     .k-pane{display:none;padding:16px;}
     .k-pane.is-active{display:block;}
+    /* Server-IP banner — shown on the Add-key form (Exchange tab) so
+       users know which IP to whitelist on the exchange API console. */
+    .k-ip-banner {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 13px; margin-bottom: 14px;
+      background: linear-gradient(135deg, rgba(6,182,212,.07) 0%, rgba(6,182,212,.02) 100%), var(--surface);
+      border: 1px solid rgba(6,182,212,.25);
+      border-left: 3px solid #06B6D4;
+      border-radius: 10px;
+    }
+    .k-ip-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: rgba(6,182,212,.10); border: 1px solid rgba(6,182,212,.22);
+      color: #06B6D4; flex-shrink: 0;
+      display: grid; place-items: center;
+    }
+    .k-ip-body { flex: 1; min-width: 0; }
+    .k-ip-title { font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.25; }
+    .k-ip-sub { font-size: 11px; color: var(--text3); margin-top: 2px; line-height: 1.4; }
+    .k-ip-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 10px;
+      background: var(--surface3); border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text); cursor: pointer;
+      font-family: inherit;
+      transition: color .12s, border-color .12s, background .12s;
+      flex-shrink: 0;
+    }
+    .k-ip-pill:hover { border-color: #06B6D4; color: #06B6D4; background: rgba(6,182,212,.06); }
+    .k-ip-pill code { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; font-weight: 600; }
+    .k-ip-pill svg { color: var(--text3); transition: color .12s; }
+    .k-ip-pill:hover svg { color: #06B6D4; }
+    @media (max-width: 560px) {
+      .k-ip-banner { flex-wrap: wrap; gap: 10px; }
+      .k-ip-pill { width: 100%; justify-content: center; }
+    }
     .k-list{display:flex;flex-direction:column;gap:8px;}
     .k-empty{padding:36px 18px;text-align:center;color:var(--text3);font-size:12.5px;}
     .k-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);transition:border-color .15s;}
@@ -2593,6 +2647,7 @@ function kSwitchTo(tab){
       if (menu) { menu.dataset.built = ''; menu.innerHTML = ''; }
       kBuildExchangeDd();
     });
+    _kEnsureServerIp();
   }
 }
 
@@ -2636,6 +2691,50 @@ function kPickType(btn){
             || document.querySelector('#k-ex-dd .k-dd-menu');
   if (menu) { menu.dataset.built = ''; menu.innerHTML = ''; kBuildExchangeDd(); }
   _kUpdateFieldVisibility();
+  // Server-IP banner shown only on Exchange (CEX) tab — perp DEX uses
+  // on-chain signing, chains have no API key, so the IP whitelist
+  // affordance is irrelevant for those.
+  const ipBanner = document.getElementById('k-server-ip-banner');
+  if (ipBanner) {
+    ipBanner.style.display = (_K_TYPE === 'exchange' && _kCachedServerIp()) ? 'flex' : 'none';
+  }
+}
+
+// One-shot fetch of our outbound server IP. Cached on window so the
+// banner renders synchronously after the first hit.
+let _SERVER_IP_FETCHED = false;
+async function _kEnsureServerIp(){
+  if (_SERVER_IP_FETCHED) return;
+  _SERVER_IP_FETCHED = true;
+  try {
+    const r = await fetch('/api/meta/server-ip', { credentials: 'omit' });
+    if (!r.ok) return;
+    const j = await r.json();
+    const ip = (j && j.ip) ? String(j.ip).trim() : '';
+    if (!ip) return;
+    window._AVALANT_SERVER_IP = ip;
+    const valEl = document.getElementById('k-server-ip-val');
+    if (valEl) valEl.textContent = ip;
+    // If user is already on the Exchange tab, reveal banner now.
+    const ipBanner = document.getElementById('k-server-ip-banner');
+    if (ipBanner && _K_TYPE === 'exchange') ipBanner.style.display = 'flex';
+  } catch {}
+}
+function _kCachedServerIp(){ return window._AVALANT_SERVER_IP || ''; }
+
+function kCopyServerIp(btn){
+  const ip = _kCachedServerIp();
+  if (!ip) return;
+  navigator.clipboard.writeText(ip).then(()=>{
+    if (btn) {
+      btn.style.color = '#06B6D4';
+      btn.style.borderColor = '#06B6D4';
+      setTimeout(() => { btn.style.color = ''; btn.style.borderColor = ''; }, 1100);
+    }
+    if (typeof toast === 'function') toast('Server IP copied', 'success');
+  }, ()=>{
+    if (typeof toast === 'function') toast('Copy failed — select manually', 'error');
+  });
 }
 
 function kBuildExchangeDd(){

@@ -8,7 +8,7 @@ window.VENUE_HELP = {
   // ── CEX ────────────────────────────────────────────────────────────
   binance: {
     where: 'binance.com → User Center → API Management → Create API',
-    perms: '✅ Read · ✅ Enable Futures · ❌ Withdrawals · IP whitelist 37.60.252.32',
+    perms: '✅ Read · ✅ Enable Futures · ❌ Withdrawals · pin IP (see banner above)',
     fields: [
       ['API Key',    'Long string from Binance'],
       ['API Secret', 'Shown ONCE at creation — copy immediately'],
@@ -24,7 +24,7 @@ window.VENUE_HELP = {
   },
   okx: {
     where: 'okx.com → User Center → API → Create V5 API Key',
-    perms: '✅ Read + Trade · ❌ Withdraw · pin IP 37.60.252.32 if possible',
+    perms: '✅ Read + Trade · ❌ Withdraw · pin IP (see banner above) if possible',
     fields: [
       ['API Key',    'OKX API key (shown after Create)'],
       ['API Secret', 'OKX secret (shown ONCE at Create — copy immediately)'],

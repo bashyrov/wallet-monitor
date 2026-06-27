@@ -59,6 +59,10 @@ x-app-env: &app-env
   TG_AUTH_BOT_TOKEN: ${TG_AUTH_BOT_TOKEN:-}
   TG_AUTH_BOT_USERNAME: ${TG_AUTH_BOT_USERNAME:-}
   PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://avalant.xyz}
+  # Outbound IP we make venue API calls from. Surfaced on the /profile
+  # add-key form so users know which IP to whitelist on the exchange.
+  # Leave empty in dev — UI hides the row.
+  AVALANT_SERVER_IP: ${AVALANT_SERVER_IP:-}
   CRYPTOCLOUD_API_KEY: ${CRYPTOCLOUD_API_KEY:-}
   CRYPTOCLOUD_SHOP_ID: ${CRYPTOCLOUD_SHOP_ID:-}
   CRYPTOCLOUD_WEBHOOK_SECRET: ${CRYPTOCLOUD_WEBHOOK_SECRET:-}
