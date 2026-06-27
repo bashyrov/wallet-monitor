@@ -66,14 +66,17 @@
       font-size: 13px;
       transition: filter 0.15s ease, box-shadow 0.15s ease;
     }
-    .topbar-right .btn-primary:hover {
+    .topbar-right .btn-primary:hover:not(:disabled) {
       filter: brightness(0.88);
+      background: var(--green);
       transform: none;
       box-shadow: none;
     }
-    .topbar-right .btn-primary:active {
+    .topbar-right .btn-primary:active:not(:disabled) {
       filter: brightness(0.78);
+      background: var(--green);
       transform: none;
+      box-shadow: none;
     }
 
     /* ── BUTTONS ── */
@@ -102,17 +105,23 @@
     }
     /* Hover — same green, just darkened via filter. Text colour stays
        #09090B; no transform / no glow. brightness(0.88) is visible but
-       restrained; active darkens further. */
+       restrained; active darkens further.
+       :not(:disabled) here matches design.css's specificity so this rule
+       actually wins — otherwise design.css's "background:#2BFFB6 +
+       translateY(-1px) + outer-glow" override the filter and the lift
+       comes back. */
     .btn-primary {
       transition: filter 0.15s ease;
     }
-    .btn-primary:hover {
+    .btn-primary:hover:not(:disabled) {
       filter: brightness(0.88);
+      background: var(--green);
       transform: none;
       box-shadow: none;
     }
-    .btn-primary:active {
+    .btn-primary:active:not(:disabled) {
       filter: brightness(0.78);
+      background: var(--green);
       transform: none;
       box-shadow: none;
     }
