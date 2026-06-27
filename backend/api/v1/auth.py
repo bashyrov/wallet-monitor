@@ -322,14 +322,22 @@ async def login_totp(body: dict, request: Request, response: Response, db: Sessi
     return Token(access_token=token, recovery_used=used_recovery if used_recovery else None)
 
 
-def _verify_sensitive_op_gate(user: User, body: dict, request: Request, *, action: str) -> None:
+def _verify_sensitive_op_gate(user: User, body: dict, request: Request, *, action: str,
+                               require_totp: bool = False) -> None:
     """Shared gate for sensitive ops (/me/2fa/setup, /disable,
     /recovery-codes/regenerate, account delete). Accepts either:
       • body.email_code — single-use 6-digit code issued via
-        /me/email-confirm/request, 10min TTL (always works)
+        /me/email-confirm/request, 10min TTL (always works UNLESS
+        require_totp=True)
       • body.totp_code  — current 6-digit code from the user's authenticator
         (only works if user has 2FA armed; preferred when enabled — no email
         round-trip)
+
+    When require_totp=True (used for /2fa/disable and /2fa/recovery-codes
+    /regenerate), the email-code fallback is rejected — caller must prove
+    possession of the authenticator itself. This prevents an attacker who
+    has a stolen session + mailbox from silently undoing 2FA. Recovery
+    codes are also accepted as a TOTP substitute.
 
     Password is NOT accepted — it's reserved for login only. Same throttle
     bucket as login (pwd:<uid>) so failed attempts cool down."""
@@ -345,7 +353,9 @@ def _verify_sensitive_op_gate(user: User, body: dict, request: Request, *, actio
         )
 
     accepted = False
-    # TOTP path (only when 2FA is armed) — preferred since no mail round-trip
+    # TOTP path (only when 2FA is armed) — preferred since no mail round-trip.
+    # Recovery codes also accepted here as a possession-equivalent fallback
+    # (user saved them at setup time; burned on use).
     totp_code = (body.get("totp_code") or "").strip()
     if totp_code and user.totp_verified_at and user.totp_secret_enc:
         try:
@@ -354,10 +364,19 @@ def _verify_sensitive_op_gate(user: User, body: dict, request: Request, *, actio
                 accepted = True
         except Exception:
             accepted = False
+        if not accepted and _totp.is_recovery_format(totp_code):
+            try:
+                stored = user.totp_recovery_codes or []
+                ok, remaining = _totp.verify_and_consume_recovery_code(stored, totp_code)
+                if ok:
+                    user.totp_recovery_codes = remaining
+                    accepted = True
+            except Exception:
+                accepted = False
 
-    # Email-code path (always available — primary gate for setup-time
-    # operations when 2FA isn't armed yet)
-    if not accepted:
+    # Email-code path — DISABLED when require_totp is set so a hijacked
+    # session + mailbox can't silently undo 2FA.
+    if not accepted and not require_totp:
         email_code = (body.get("email_code") or "").strip()
         if email_code and _ec.verify(user.id, email_code):
             accepted = True
@@ -475,10 +494,11 @@ async def me_2fa_recovery_regenerate(body: dict, request: Request,
 async def me_2fa_disable(body: dict, request: Request,
                           current_user: User = Depends(get_current_user),
                           db: Session = Depends(get_db)):
-    """Disarm 2FA. Requires the current password OR a single-use email
-    confirmation code (for Google-only users). Prevents a stolen session
-    from undoing protection silently."""
-    _verify_sensitive_op_gate(current_user, body, request, action="2fa_disable")
+    """Disarm 2FA. REQUIRES the current TOTP code (or a recovery code) —
+    email fallback is rejected so a hijacked session + mailbox can't
+    silently disable 2FA. Recovery code is burned on use."""
+    _verify_sensitive_op_gate(current_user, body, request, action="2fa_disable",
+                                require_totp=True)
     current_user.totp_secret_enc = None
     current_user.totp_verified_at = None
     current_user.totp_recovery_codes = None
