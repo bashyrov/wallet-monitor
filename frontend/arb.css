@@ -568,6 +568,11 @@ body.light .alert-toast-icon-wrap{background:#FBECEC;}
 .alert-item-pair{font-weight:700;font-family:var(--mono);font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .alert-item-meta{color:var(--text3);font-size:10px;display:flex;gap:6px;align-items:center;}
 .alert-item-scope{display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;background:rgba(26,255,171,0.08);border:1px solid rgba(26,255,171,0.22);color:var(--green);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.3px;margin-left:6px;}
+/* Trigger-mode pill in alert-list row — replaces the previous emoji
+   prefix with a clear text badge. SPEED = yellow, PROTECTED = teal. */
+.alert-mode{display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;margin-right:6px;border:1px solid;}
+.alert-mode-fast{color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.10);}
+.alert-mode-prot{color:var(--teal);border-color:rgba(6,182,212,0.35);background:rgba(6,182,212,0.10);}
 .alert-item-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--text3);opacity:.6;}
 .alert-item-del{background:none;border:none;color:var(--text3);cursor:pointer;padding:5px 7px;border-radius:5px;font-size:13px;line-height:1;transition:background .15s,color .15s;}
 .alert-item-del:hover{color:var(--red);background:rgba(248,113,113,.1);}

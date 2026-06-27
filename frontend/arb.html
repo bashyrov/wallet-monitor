@@ -31,9 +31,9 @@
      HTML parse, instead of waiting until the parser reaches each tag.
      fetchpriority="high" tells the browser to schedule these ahead of
      other low-priority discoveries (e.g. images far down the page). -->
-<link rel="preload" as="script" href="/dist/core.min.js?v=20260628a" fetchpriority="high">
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260628b" fetchpriority="high">
 <link rel="preload" as="script" href="/arb.js?v=20260625a" fetchpriority="high">
-<link rel="preload" as="style"  href="/arb.css?v=20260625a"      fetchpriority="high">
+<link rel="preload" as="style"  href="/arb.css?v=20260628b"      fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
 <!-- Pre-establish TCP+TLS to exchange API origins so the first orderbook /
@@ -59,19 +59,19 @@
      Replaces 11 individual <script> tags (1 RTT vs 11 — huge win on HTTP/1.1
      and still measurable on HTTP/2). Loaded synchronously so inline page
      scripts below have Auth / Formatters / EX available at parse time. -->
-<script src="/dist/core.min.js?v=20260628a"></script>
+<script src="/dist/core.min.js?v=20260628b"></script>
 <!-- Page-specific code (was ~7000 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes — equivalent
      to the previous mid-body execution since the trailing init() call
      anyway waited on DOMContentLoaded for most code paths. -->
 <script src="/arb.js?v=20260625a" defer></script>
 <link rel="stylesheet" href="/design.css">
-<link rel="stylesheet" href="/navbar.css?v=20260626e">
+<link rel="stylesheet" href="/navbar.css?v=20260628b">
 <!-- lightweight-charts (161KB) loaded lazily via _loadLightweightCharts()
      in an idle callback after init — chart sits below the fold on most
      viewports and orderbook rendering takes priority. -->
 
-<link rel="stylesheet" href="/arb.css?v=20260625a">
+<link rel="stylesheet" href="/arb.css?v=20260628b">
 </head>
 <body>
 
@@ -499,7 +499,7 @@
       </div>
       <div class="acc-pane" id="acc-pane-balances">
         <table class="acc-table">
-          <thead><tr><th>Exchange</th><th>Wallet</th><th>Key type</th><th class="num">Available USDT</th><th class="num">Locked</th><th class="num">Equity</th></tr></thead>
+          <thead><tr><th>Exchange</th><th>Wallet</th><th>Key type</th><th class="num">Spot USDT</th><th class="num">Futures USDT</th><th class="num">Total</th></tr></thead>
           <tbody id="acc-balances-body"></tbody>
         </table>
         <div class="acc-empty" id="acc-balances-empty">
@@ -1059,12 +1059,8 @@
           <div class="alert-lbl">Trigger Mode</div>
           <div class="al-trigger-toggle" id="al-trigger-toggle">
             <input type="hidden" id="al-trigger-mode" value="speed">
-            <button type="button" class="al-trigger-btn is-active" data-v="speed" onclick="alTriggerPick(this)">
-              <span>⚡</span> Speed
-            </button>
-            <button type="button" class="al-trigger-btn" data-v="protected" onclick="alTriggerPick(this)">
-              <span>🛡</span> Protected
-            </button>
+            <button type="button" class="al-trigger-btn is-active" data-v="speed" onclick="alTriggerPick(this)">Speed</button>
+            <button type="button" class="al-trigger-btn" data-v="protected" onclick="alTriggerPick(this)">Protected</button>
           </div>
           <div class="al-trigger-hint" id="al-trigger-hint">Fires immediately when spread crosses threshold.</div>
         </div>

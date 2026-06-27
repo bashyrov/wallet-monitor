@@ -167,29 +167,44 @@ async def dex_spot_opportunities():
 
 @router.get("/all-arbitrage", dependencies=[Depends(_enforce_screener_rl)])
 async def all_arbitrage():
-    """Combined futures-arb + spot-short arb + dex-short arb, sorted by net profit."""
+    """Combined feed of every arb mode the screener exposes: futures
+    L/S, spot-short, DEX-short, AND dex-spot. Funding-arb is a derived
+    view of spot-short (positive-funding subset), so it's covered by
+    `spot_opps` already. Funding-rates is informational, not arbitrage,
+    so it's intentionally excluded. Sorted by net profit, top 500."""
     from backend.services.spot_arbitrage_service import get_spot_arbitrage_opportunities as _spot
     from backend.services.dex_arbitrage_service import get_dex_arbitrage_opportunities as _dex
-    fut, spot, dex = await asyncio.gather(
+    from backend.services import arbitrage_service as _arb
+
+    async def _read_dex_spot():
+        cached = await _arb._read_file_cache_async("dex_spot_arbitrage.json", max_age=120.0)
+        if cached and isinstance(cached, dict):
+            return cached
+        return {"opportunities": []}
+
+    fut, spot, dex, dex_spot = await asyncio.gather(
         get_arbitrage_opportunities(),
         _spot(),
         _dex(),
+        _read_dex_spot(),
         return_exceptions=True,
     )
-    fut_opps  = [] if isinstance(fut,  BaseException) else (fut.get("opportunities")  or [])
-    spot_opps = [] if isinstance(spot, BaseException) else (spot.get("opportunities") or [])
-    dex_opps  = [] if isinstance(dex,  BaseException) else (dex.get("opportunities")  or [])
-    for r in fut_opps:
-        r.setdefault("type", "futures")
-    merged = list(fut_opps) + list(spot_opps) + list(dex_opps)
+    fut_opps      = [] if isinstance(fut,      BaseException) else (fut.get("opportunities")      or [])
+    spot_opps     = [] if isinstance(spot,     BaseException) else (spot.get("opportunities")     or [])
+    dex_opps      = [] if isinstance(dex,      BaseException) else (dex.get("opportunities")      or [])
+    dex_spot_opps = [] if isinstance(dex_spot, BaseException) else (dex_spot.get("opportunities") or [])
+    for r in fut_opps:      r.setdefault("type", "futures")
+    for r in dex_spot_opps: r.setdefault("type", "dex_spot")
+    merged = list(fut_opps) + list(spot_opps) + list(dex_opps) + list(dex_spot_opps)
     merged.sort(key=lambda x: x.get("net_profit", 0.0), reverse=True)
     return {
         "opportunities": merged[:500],
         "generated_at": int(time.time()),
         "counts": {
-            "futures": len(fut_opps),
+            "futures":    len(fut_opps),
             "spot_short": len(spot_opps),
-            "dex_short": len(dex_opps),
+            "dex_short":  len(dex_opps),
+            "dex_spot":   len(dex_spot_opps),
         },
     }
 

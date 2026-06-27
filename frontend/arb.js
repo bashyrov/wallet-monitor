@@ -162,6 +162,28 @@ function _renderBalCell(w) {
   return `<div style="font-weight:600">${fmt(total)}</div>${breakdown}`;
 }
 
+// Three discrete columns: Spot USDT · Futures USDT · Total. Returns
+// a 3-cell string ready to slot into <tr>. Highlights the slice that
+// the current pair actually uses (long side for spot mode, short side
+// always futures).
+function _renderBalCells(w) {
+  const fmt = v => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
+  if (w.error) {
+    const errCell = `<span style="color:var(--red);font-size:10.5px" title="${_walletBalErrAttr(w.error)}">${_walletBalErrLabel(w.error)}</span>`;
+    return `<td class="num">${errCell}</td><td class="num" style="color:var(--text3)">—</td><td class="num" style="color:var(--text3)">—</td>`;
+  }
+  const sp = w.spot_usdt, fu = w.futures_usdt, total = w.balance_usdt;
+  let spHi = '', fuHi = '';
+  if (w.exchange === LONG)  (TYPE === 'spot') ? spHi = 'color:var(--green);font-weight:700' : fuHi = 'color:var(--green);font-weight:700';
+  if (w.exchange === SHORT) fuHi = 'color:var(--green);font-weight:700';
+  const cell = (v, hi) => v == null
+    ? '<span style="color:var(--text3)">—</span>'
+    : `<span style="${hi||'font-weight:600'}">${fmt(v)}</span>`;
+  return `<td class="num">${cell(sp, spHi)}</td>`
+       + `<td class="num">${cell(fu, fuHi)}</td>`
+       + `<td class="num" style="font-weight:700">${total == null ? '<span style="color:var(--text3)">—</span>' : fmt(total)}</td>`;
+}
+
 // Type-gate: full futures terminal only makes sense for type=futures.
 // Spot/Short and DEX/Short need their own detail layouts (coming in next
 // iteration). For now show a clean placeholder card so the button
@@ -415,7 +437,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
         </div>
         <div class="acc-pane" id="acc-pane-balances">
           <table class="acc-table">
-            <thead><tr><th>Exchange</th><th>Account</th><th>Purpose</th><th class="num">Balance</th><th class="num">Reserved</th><th class="num">Available</th></tr></thead>
+            <thead><tr><th>Exchange</th><th>Account</th><th>Purpose</th><th class="num">Spot USDT</th><th class="num">Futures USDT</th><th class="num">Total</th></tr></thead>
             <tbody id="acc-balances-body"></tbody>
           </table>
           <div class="acc-empty" id="acc-balances-empty">
@@ -1966,7 +1988,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           <td>${EX_LABEL[w.exchange]||w.exchange}</td>
           <td>${w.name||''}</td>
           <td>${keyType}</td>
-          <td class="num">${_renderBalCell(w)}</td>
+          ${_renderBalCells(w)}
         </tr>`;
       }).join('');
     } catch (e) { console.error('[pair-acc] balances:', e); }
@@ -3938,11 +3960,13 @@ function renderAlertList(){
   const dirLabel={any:'Any side',above:'In-spread ≥ +',below:'In-spread ≤ −'};
   list.innerHTML=mine.map(a=>{
     const isAny = a.long_exchange==='*' && a.short_exchange==='*';
-    const scopeBadge = isAny ? '<span class="alert-item-scope">🔭 Any pair</span>' : '';
-    const tIcon = (a.trigger_mode||'speed')==='protected' ? '🛡' : '⚡';
+    const scopeBadge = isAny ? '<span class="alert-item-scope">Any pair</span>' : '';
+    const tLabel = (a.trigger_mode||'speed')==='protected'
+      ? '<span class="alert-mode alert-mode-prot">PROTECTED</span>'
+      : '<span class="alert-mode alert-mode-fast">SPEED</span>';
     return `<div class="alert-item" data-id="${a.id}">
       <div class="alert-item-info">
-        <span class="alert-item-pair">${tIcon} ±${a.threshold}% in-spread ${scopeBadge}</span>
+        <span class="alert-item-pair">${tLabel} ±${a.threshold}% in-spread ${scopeBadge}</span>
         <span class="alert-item-meta">${dirLabel[a.direction]||a.direction}<span class="sep"></span>${a.enabled?'active':'paused'}</span>
       </div>
       <button class="alert-item-toggle ${a.enabled?'enabled':''}" onclick="toggleAlert(${a.id})">${a.enabled?'ON':'OFF'}</button>
@@ -5275,9 +5299,7 @@ async function accLoadBalances(){
         <td>${w.can_trade
             ? '<span style="color:var(--yellow);font-weight:600;font-size:10.5px">TRADE</span>'
             : '<span style="color:var(--teal);font-weight:600;font-size:10.5px">READ</span>'}</td>
-        <td class="num">${_renderBalCell(w)}</td>
-        <td class="num" style="color:var(--text3)">—</td>
-        <td class="num" style="color:var(--text3)">—</td>
+        ${_renderBalCells(w)}
       </tr>`;
     }).join('');
     document.getElementById('acc-cnt-balances').textContent = rows.length;

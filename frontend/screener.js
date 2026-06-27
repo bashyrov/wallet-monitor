@@ -1650,7 +1650,7 @@ function setAllType(t, btn) {
   renderAll();
 }
 function _countAll() {
-  const c = { futures: 0, spot_short: 0, dex_short: 0 };
+  const c = { futures: 0, spot_short: 0, dex_short: 0, dex_spot: 0 };
   for (const r of _allRows) {
     const t = r.type || 'futures';
     if (c[t] != null) c[t]++;
@@ -1660,6 +1660,7 @@ function _countAll() {
   el('all-cnt-fut', c.futures);
   el('all-cnt-spot', c.spot_short);
   el('all-cnt-dex', c.dex_short);
+  el('all-cnt-dex-spot', c.dex_spot);
 }
 function renderAll() {
   _countAll();
