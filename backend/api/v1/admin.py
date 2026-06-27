@@ -56,8 +56,21 @@ def admin_stats(
             "joined": u.created_at.strftime("%Y-%m-%d %H:%M"),
         })
 
+    # Active-user counts — last_active_at is bumped on every authenticated
+    # request via deps._bump_last_active (throttled to 1/min/user).
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    active_24h = db.query(func.count(User.id)).filter(
+        User.last_active_at >= now - timedelta(hours=24)
+    ).scalar() or 0
+    active_7d = db.query(func.count(User.id)).filter(
+        User.last_active_at >= now - timedelta(days=7)
+    ).scalar() or 0
+
     return {
         "users_count": users_count,
+        "active_users_24h": active_24h,
+        "active_users_7d": active_7d,
         "wallets_count": wallets_count,
         "tags_count": tags_count,
         "requests_total": requests_total,

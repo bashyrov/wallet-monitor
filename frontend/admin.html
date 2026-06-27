@@ -725,7 +725,7 @@
         <div class="kpi green">
           <div class="kpi-icon" style="background:var(--green-dim)">👥</div>
           <div class="kpi-num" id="kpi-users" style="color:var(--green)">—</div>
-          <div class="kpi-label">Total users</div>
+          <div class="kpi-label">Total users · <span id="kpi-users-active" style="color:var(--text3);font-size:11px">— active 24h</span></div>
         </div>
         <div class="kpi yellow">
           <div class="kpi-icon" style="background:var(--yellow-dim)">📊</div>
@@ -1618,6 +1618,11 @@ async function loadStats() {
   animNum('kpi-perpdex',   px);
   animNum('kpi-tags',      tagsCount);
   animNum('kpi-requests',  requestsTotal);
+  // Active-user sub-label inside the Total Users kpi
+  const active24h = stats ? (stats.active_users_24h || 0) : 0;
+  const active7d  = stats ? (stats.active_users_7d  || 0) : 0;
+  const aEl = document.getElementById('kpi-users-active');
+  if (aEl) aEl.textContent = `${active24h} active 24h · ${active7d} active 7d`;
 
   document.getElementById('last-updated').textContent =
     'Last updated: ' + new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });

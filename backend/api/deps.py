@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from fastapi import Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 
@@ -5,6 +7,29 @@ from backend.db.base import get_db  # re-export for API layer
 from backend.db.models import User
 
 __all__ = ["get_db", "get_current_user", "get_admin_user"]
+
+# Throttle window for the last_active_at bump — one write per user per minute.
+# Most active users hit 5-20 authenticated routes per minute (screener WS auth
+# included), so without this we'd be doing one UPDATE per request. With it
+# the DB writes scale by active-user-count, not by request-rate.
+_LAST_ACTIVE_THROTTLE = timedelta(minutes=1)
+
+
+def _bump_last_active(db: Session, user: User) -> None:
+    """Update users.last_active_at iff the cached value is stale (>1 min).
+    Swallows DB errors — presence tracking is best-effort, must never fail
+    the request."""
+    try:
+        now = datetime.utcnow()
+        prev = user.last_active_at
+        if prev is None or (now - prev) >= _LAST_ACTIVE_THROTTLE:
+            user.last_active_at = now
+            db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 def get_current_user(
@@ -50,6 +75,7 @@ def get_current_user(
             _online_hb(uid)
         except Exception:
             pass
+        _bump_last_active(db, user)
         return user
 
     try:
@@ -67,6 +93,7 @@ def get_current_user(
         _online_hb(user.id)
     except Exception:
         pass
+    _bump_last_active(db, user)
     return user
 
 
