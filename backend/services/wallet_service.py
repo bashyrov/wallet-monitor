@@ -141,7 +141,12 @@ def _display_info(wallet: Wallet) -> str:
     creds = decrypt_credentials(wallet.credentials or {})
     if wallet.wallet_type == "exchange":
         return _mask_identifier(creds.get("api_key", ""))
-    return _mask_identifier(creds.get("api_key") or creds.get("address") or "")
+    # Prefer address over api_key — Lighter's api_key is a tiny numeric
+    # account_index (≤4 digits) and would degrade to "****", hiding the
+    # actual L1 hex address which is the meaningful identifier. Aster
+    # stores its master wallet under api_key and has no address field,
+    # so the fallback covers it.
+    return _mask_identifier(creds.get("address") or creds.get("api_key") or "")
 
 
 def wallet_to_out(wallet: Wallet) -> WalletOut:
