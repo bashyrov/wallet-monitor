@@ -1009,7 +1009,10 @@
             <div style="font-size:11px;color:var(--text3)">Future sign-ins ask for a code from your authenticator</div>
           </div>
         </div>
-        <button onclick="tfaDisableShow()" class="tfa-btn tfa-btn-danger">Disable 2FA</button>
+        <div class="tfa-btn-row">
+          <button onclick="tfaDisableShow()" class="tfa-btn tfa-btn-danger">Disable 2FA</button>
+          <button onclick="tfaRegenShow()" class="tfa-btn tfa-btn-ghost">Regenerate recovery codes</button>
+        </div>
       </div>
 
       <!-- Modal: Disable 2FA gate -->
@@ -1141,11 +1144,6 @@
             <button class="cf-btn cf-btn-primary" style="background:#E5C07B;color:#0B0B0E" onclick="_hideRecoveryCodes()">I saved them</button>
           </div>
         </div>
-      </div>
-
-      <!-- Regenerate recovery codes — only shown when 2FA is on -->
-      <div id="tfa-on-view-regen" style="display:none;margin-top:10px">
-        <button onclick="tfaRegenShow()" class="tfa-btn tfa-btn-ghost">Regenerate recovery codes</button>
       </div>
 
       <!-- Modal: Regenerate recovery codes gate -->
@@ -1654,6 +1652,11 @@
     .cf-helper a { color: var(--green); text-decoration: none; font-weight: 600; }
     .cf-helper a:hover { text-decoration: underline; }
 
+    /* ─── 2FA action row: Disable + Regenerate side-by-side. Wraps to
+       stacked on very narrow screens. */
+    .tfa-btn-row {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
     /* ─── Unified action buttons for the 2FA card ──────────────────────
        Same footprint for both — only the colour changes (red for the
        destructive Disable, neutral for Regenerate). */
@@ -1993,8 +1996,6 @@ function _updateTfaStatus(enabled) {
   }
   document.getElementById('tfa-on-view').style.display  = enabled ? 'block' : 'none';
   document.getElementById('tfa-off-view').style.display = enabled ? 'none'  : 'block';
-  const regen = document.getElementById('tfa-on-view-regen');
-  if (regen) regen.style.display = enabled ? 'block' : 'none';
   if (!enabled) _hideRecoveryCodes();
   // Gate API key creation: banner + disable Add tab. Server returns 403 on
   // POST /api/wallets when totp_verified_at is NULL, so this is UX only.
