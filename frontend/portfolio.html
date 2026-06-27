@@ -2129,7 +2129,7 @@
                     <br>
                     <button type="button" class="ip-hint-copy" onclick="copyServerIp(this)" title="Click to copy">
                       <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg>
-                      <span>37.60.252.32</span>
+                      <span class="srv-ip">…</span>
                     </button>
                   </div>
                 </div>
@@ -2240,7 +2240,7 @@
                       <br>
                       <button type="button" class="ip-hint-copy" onclick="copyServerIp(this)" title="Click to copy">
                         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg>
-                        <span>37.60.252.32</span>
+                        <span class="srv-ip">…</span>
                       </button>
                     </div>
                   </div>
@@ -2836,8 +2836,39 @@ function setPurpose(section, purpose, btn) {
   }
 }
 
+// Live outbound IP — fetched once on page load from /api/meta/server-ip
+// (env-driven so it tracks server moves automatically). Cached on window
+// so copyServerIp can be synchronous after the first hit.
+function _populateSrvIp(root) {
+  const ip = window._AVALANT_SERVER_IP;
+  if (!ip) return;
+  (root || document).querySelectorAll('.srv-ip').forEach(el => {
+    const t = (el.textContent || '').trim();
+    if (!t || t === '…' || t === '...' ) el.textContent = ip;
+  });
+}
+async function _ensureServerIp() {
+  if (window._AVALANT_SERVER_IP) { _populateSrvIp(); return window._AVALANT_SERVER_IP; }
+  try {
+    const r = await fetch('/api/meta/server-ip', { credentials: 'omit' });
+    if (!r.ok) return '';
+    const j = await r.json();
+    const ip = (j && j.ip) ? String(j.ip).trim() : '';
+    if (ip) {
+      window._AVALANT_SERVER_IP = ip;
+      _populateSrvIp();
+    }
+    return ip;
+  } catch { return ''; }
+}
+document.addEventListener('DOMContentLoaded', _ensureServerIp);
+
 async function copyServerIp(btn) {
-  const ip = '37.60.252.32';
+  const ip = (await _ensureServerIp()) || '';
+  if (!ip) {
+    if (typeof toast === 'function') toast('Server IP unavailable', 'error');
+    return;
+  }
   try {
     await navigator.clipboard.writeText(ip);
   } catch {
@@ -2908,7 +2939,7 @@ function openEditWalletModal(walletId) {
           <br>
           <button type="button" class="ip-hint-copy" onclick="copyServerIp(this)" title="Click to copy">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg>
-            <span>37.60.252.32</span>
+            <span class="srv-ip">…</span>
           </button>
         </div>
       </div>
@@ -2988,6 +3019,9 @@ function openEditWalletModal(walletId) {
   }
 
   document.getElementById('modal-edit-wallet').classList.remove('hidden');
+  // Populate any .srv-ip placeholders that were just injected via the
+  // edit-form innerHTML templates (Add/Perpdex paths above).
+  if (typeof _populateSrvIp === 'function') _populateSrvIp(document.getElementById('modal-edit-wallet'));
   document.getElementById('ew-name').focus();
 }
 
