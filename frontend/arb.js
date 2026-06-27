@@ -1755,10 +1755,10 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           <span style="color:${sideCol};font-weight:700;font-size:10px">${sideTxt}</span>
           <span class="mono" style="color:var(--text2)">${qty.toFixed(4)} ${SYM}</span>
           <span class="mono ${pnlCls}" style="margin-left:auto">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span>
-          <button title="Share" data-share='${shareData}' onclick='_openShareFromBtn(this)'
-                  style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px">↗</button>
-          <button onclick="tradeClose(${p.wallet_id}, '${p.position_id || p.symbol}')"
-                  style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:3px 8px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button>
+          <button class="pos-btn pos-btn-share" title="Share P&L card" aria-label="Share" data-share='${shareData}' onclick='_openShareFromBtn(this)'>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
+          </button>
+          <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id || p.symbol}')">Close</button>
         </div>`;
     }).join('');
     if (typeof _renderIfChanged === 'function') _renderIfChanged('pt-positions-list', html);
@@ -5094,11 +5094,12 @@ async function accLoadPositions(){
           <td class="num ${pnlCls}">${sumUsd(pnl)}</td>
           <td class="num ${pnlCls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
           <td style="white-space:nowrap">
-            <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')" style="background:transparent;border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-family:inherit">Close</button>
-            <button class="pos-share" title="Share P&amp;L card"
+            <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')">Close</button>
+            <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share"
                     data-share='${_htmlEsc(JSON.stringify({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct,funding_pnl_usd:(p.funding_pnl_usd!=null?Number(p.funding_pnl_usd):null)}))}'
-                    onclick='_openShareFromBtn(this)'
-                    style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:4px">↗</button>
+                    onclick='_openShareFromBtn(this)'>
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
+            </button>
           </td>
         </tr>`;
     };

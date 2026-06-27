@@ -882,6 +882,44 @@ body.light .bnav-item.active{color:#000;}
 .trade-position-row .pos-close { background:transparent; border:1px solid var(--border); color:var(--text3); font-size:10px; padding:3px 8px; border-radius:4px; cursor:pointer; font-family:inherit; }
 .trade-position-row .pos-close:hover { color:var(--red); border-color:var(--red); }
 
+/* ── Action buttons in the /arb positions list ──────────────────────
+   Used in both the in-pair compact row and the main Positions table.
+   Close is a destructive ghost (red on hover), Share is a green icon
+   chip. Both 26×26 / 26px-tall pills, same footprint so the row keeps
+   a consistent rhythm. */
+.pos-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 26px; padding: 0 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface3);
+  color: var(--text2);
+  font-family: inherit;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+  flex-shrink: 0;
+}
+.pos-btn:hover { color: var(--text); border-color: var(--border2); background: var(--surface2); }
+.pos-btn-close { color: var(--text3); }
+.pos-btn-close:hover {
+  color: var(--red);
+  border-color: rgba(248,113,113,0.4);
+  background: rgba(248,113,113,0.08);
+}
+.pos-btn-share {
+  width: 26px; padding: 0;            /* icon-only square */
+  color: var(--green);
+}
+.pos-btn-share:hover {
+  color: #001a0d;
+  background: var(--green);
+  border-color: var(--green);
+}
+.pos-btn-share svg { display: block; }
+/* Spacing for adjacent action buttons inside a positions cell. */
+.pos-btn + .pos-btn { margin-left: 6px; }
+
 body.light .trade-tab.is-active, body.light .trade-dd-chip.is-active { background:#FFFFFF; }
 body.light .trade-position-row { background:#F7F7F7; }
 
