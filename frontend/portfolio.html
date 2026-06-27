@@ -64,14 +64,15 @@
       height: 30px;
       padding: 0 12px;
       font-size: 13px;
-      transition: background 0.15s ease, box-shadow 0.15s ease;
+      transition: filter 0.15s ease, box-shadow 0.15s ease;
     }
     .topbar-right .btn-primary:hover {
-      /* Subtle dark overlay on top of the mint green — slightly darker
-         on hover without altering the green or the text colour. */
-      background:
-        linear-gradient(0deg, rgba(0,0,0,0.10), rgba(0,0,0,0.10)),
-        var(--green);
+      filter: brightness(0.88);
+      transform: none;
+      box-shadow: none;
+    }
+    .topbar-right .btn-primary:active {
+      filter: brightness(0.78);
       transform: none;
     }
 
@@ -99,20 +100,21 @@
       color: #09090B;
       font-weight: 500;
     }
-    /* Hover — same green, just darkened by a flat 10% black overlay.
-       No transform, no glow, text colour unchanged (#09090B). */
+    /* Hover — same green, just darkened via filter. Text colour stays
+       #09090B; no transform / no glow. brightness(0.88) is visible but
+       restrained; active darkens further. */
+    .btn-primary {
+      transition: filter 0.15s ease;
+    }
     .btn-primary:hover {
-      background:
-        linear-gradient(0deg, rgba(0,0,0,0.10), rgba(0,0,0,0.10)),
-        var(--green);
-      border-color: var(--green);
+      filter: brightness(0.88);
       transform: none;
+      box-shadow: none;
     }
     .btn-primary:active {
-      background:
-        linear-gradient(0deg, rgba(0,0,0,0.18), rgba(0,0,0,0.18)),
-        var(--green);
+      filter: brightness(0.78);
       transform: none;
+      box-shadow: none;
     }
 
     .btn-sm { padding: 0 10px; height: 28px; font-size: 12px; }
