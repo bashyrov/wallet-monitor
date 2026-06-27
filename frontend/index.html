@@ -147,10 +147,14 @@ img, svg { display: block; max-width: 100%; }
 .btn-outline:active { transform: translateY(1px); filter: brightness(0.92); }
 .btn-primary {
   background: var(--green); color: #071612; font-weight: 700;
-  box-shadow: 0 4px 16px -2px rgba(26,255,171,0.25);
+  border: 0; box-shadow: none;
+  transition: filter 0.15s ease;
 }
-.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px -2px rgba(26,255,171,0.45); background: #2BFFB6; }
-.btn-primary:active { transform: translateY(1px); box-shadow: 0 2px 8px -2px rgba(26,255,171,0.35); filter: brightness(0.95); }
+.btn-primary:hover, .btn-primary:active {
+  background: var(--green); color: #071612; border: 0; box-shadow: none; transform: none;
+}
+.btn-primary:hover  { filter: brightness(0.72); }
+.btn-primary:active { filter: brightness(0.60); }
 .btn-lg { padding: 14px 24px; font-size: 15px; }
 .nav-burger { display: none; margin-left: auto; width: 40px; height: 40px; border-radius: 10px; align-items: center; justify-content: center; color: var(--text); }
 .nav-burger:hover { background: var(--surface2); }

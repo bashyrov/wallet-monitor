@@ -226,9 +226,16 @@
     .confirm-delete:hover { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.4); }
 
     /* ── LAYOUT ── */
-    /* Lock topbar to viewport top on every breakpoint — overrides any
-       parent overflow/relative trick that might break sticky context. */
-    .topbar { position: sticky !important; top: 0 !important; z-index: 100; }
+    /* Pin topbar to the viewport top regardless of parent overflow.
+       sticky breaks when an ancestor has overflow:hidden (which .main
+       does below) — fixed bypasses that entirely. body gets a matching
+       padding-top so content doesn't slip under the bar. */
+    body { padding-top: 52px; }
+    .topbar {
+      position: fixed !important;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+    }
     .main {
       display: flex;
       height: calc(100vh - 52px);
