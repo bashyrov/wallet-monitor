@@ -2183,6 +2183,12 @@ function _renderPlanCard(me) {
   if (nameEl) nameEl.textContent = label + ' Plan';
   if (descEl) {
     let d = `${portfolio} portfolio · ${keysPerVenue} keys per exchange`;
+    // Plan-enforced trade delay (Free = 500ms; paid tiers = 0). Surface
+    // it so users on Free see why their orders feel "slow".
+    const tdMs = Number(me.trade_delay_ms || 0);
+    if (tdMs > 0) {
+      d += ` · ${tdMs}ms trade delay`;
+    }
     if (me.plan_expires_at) {
       const exp = new Date(me.plan_expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       d += ` · Paid until ${exp}`;

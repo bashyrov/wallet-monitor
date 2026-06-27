@@ -60,6 +60,7 @@ class UserOut(BaseModel):
     wallet_limit: Optional[int] = None   # alias for portfolio_limit (legacy)
     portfolio_limit: Optional[int] = None
     exchange_keys_per_venue: Optional[int] = None
+    trade_delay_ms: int = 0              # plan-enforced sleep before open/close orders (Free = 500)
     is_plan_expired: bool = False
     tg_username: Optional[str] = None
     tg_linked: bool = False          # True if tg_chat_id is set (user ran /start)
