@@ -64,20 +64,20 @@
       height: 30px;
       padding: 0 12px;
       font-size: 13px;
-      transition: filter 0.15s ease, box-shadow 0.15s ease;
-    }
-    .topbar-right .btn-primary:hover:not(:disabled) {
-      filter: brightness(0.88);
-      background: var(--green);
-      transform: none;
+      border: 0;
       box-shadow: none;
+      transition: filter 0.15s ease;
     }
+    .topbar-right .btn-primary:hover:not(:disabled),
     .topbar-right .btn-primary:active:not(:disabled) {
-      filter: brightness(0.78);
       background: var(--green);
-      transform: none;
+      border: 0;
       box-shadow: none;
+      color: #09090B;
+      transform: none;
     }
+    .topbar-right .btn-primary:hover:not(:disabled)  { filter: brightness(0.88); }
+    .topbar-right .btn-primary:active:not(:disabled) { filter: brightness(0.78); }
 
     /* ── BUTTONS ── */
     .btn {
@@ -97,34 +97,29 @@
     }
     .btn:hover { border-color: var(--surface4); color: var(--text); background: var(--surface3); }
 
+    /* Primary button: flat mint pill that only darkens on hover/active.
+       No border, no outer shadow, no transform, no colour shift on the
+       label. The :not(:disabled) bumps specificity above design.css's
+       .btn-primary:hover:not(:disabled) which otherwise re-adds lift +
+       glow + a lighter green. */
     .btn-primary {
       background: var(--green);
-      border-color: var(--green);
+      border: 0;
+      box-shadow: none;
       color: #09090B;
       font-weight: 500;
-    }
-    /* Hover — same green, just darkened via filter. Text colour stays
-       #09090B; no transform / no glow. brightness(0.88) is visible but
-       restrained; active darkens further.
-       :not(:disabled) here matches design.css's specificity so this rule
-       actually wins — otherwise design.css's "background:#2BFFB6 +
-       translateY(-1px) + outer-glow" override the filter and the lift
-       comes back. */
-    .btn-primary {
       transition: filter 0.15s ease;
     }
-    .btn-primary:hover:not(:disabled) {
-      filter: brightness(0.88);
-      background: var(--green);
-      transform: none;
-      box-shadow: none;
-    }
+    .btn-primary:hover:not(:disabled),
     .btn-primary:active:not(:disabled) {
-      filter: brightness(0.78);
       background: var(--green);
-      transform: none;
+      border: 0;
       box-shadow: none;
+      color: #09090B;
+      transform: none;
     }
+    .btn-primary:hover:not(:disabled)  { filter: brightness(0.88); }
+    .btn-primary:active:not(:disabled) { filter: brightness(0.78); }
 
     .btn-sm { padding: 0 10px; height: 28px; font-size: 12px; }
     .btn-ghost { border-color: transparent; background: transparent; }
