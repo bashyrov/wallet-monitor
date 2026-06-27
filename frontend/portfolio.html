@@ -27,7 +27,7 @@
   <meta name="twitter:title"       content="Avalant Portfolio">
   <meta name="twitter:description" content="Unified portfolio across 12 CEX accounts and 15 chains.">
   <meta name="twitter:image"       content="https://avalant.xyz/og-image.jpg">
-<link rel="preload" as="script" href="/dist/core.min.js?v=20260626e" fetchpriority="high">
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260628a" fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css"        fetchpriority="high">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
 <link rel="preload" as="font"   href="/fonts/inter_v20_UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2"    type="font/woff2" crossorigin>
@@ -2513,7 +2513,7 @@
 <div id="toast-container"></div>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260626e"></script>
+<script src="/dist/core.min.js?v=20260628a"></script>
 <script src="/venue-help.js" defer></script>
 <script>
 (function() {
@@ -2831,10 +2831,18 @@ function renderWallets() {
   if (shortcutEl) shortcutEl.style.display = S.search ? 'none' : '';
 
   if (!ws.length) {
-    const msg = S.search
-      ? `No wallets match "<b>${esc(S.search)}</b>"`
-      : S.wallets.length ? 'No wallets match this tag' : 'No wallets yet.<br>Click <b>+ Add Wallet</b> to begin';
-    el.innerHTML = `<div class="empty"><span class="empty-icon">◈</span>${msg}</div>`;
+    let body;
+    if (S.search) {
+      body = `No wallets match "<b>${esc(S.search)}</b>"`;
+    } else if (S.wallets.length) {
+      body = 'No wallets match this tag';
+    } else {
+      // First-time empty state — give the user a working CTA since the
+      // topbar +Add Wallet was removed.
+      body = `No wallets yet.<br>
+        <button class="btn btn-primary btn-sm" style="margin-top:14px" onclick="openAddWalletModal()">+ Add wallet</button>`;
+    }
+    el.innerHTML = `<div class="empty"><span class="empty-icon">◈</span>${body}</div>`;
     return;
   }
   el.innerHTML = ws.map((w, i) => walletRow(w, i)).join('');

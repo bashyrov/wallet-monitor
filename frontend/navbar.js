@@ -71,7 +71,7 @@ function _avatarBtn() {
 function _rightHtml(page) {
   switch (page) {
     case 'app':
-      return `<button class="btn btn-primary btn-sm" onclick="openAddWalletModal()">+ Add Wallet</button>${_avatarBtn()}`;
+      return _avatarBtn();
     case 'archive':
     case 'profile':
     case 'checkout':

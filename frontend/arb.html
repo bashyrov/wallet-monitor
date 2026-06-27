@@ -31,7 +31,7 @@
      HTML parse, instead of waiting until the parser reaches each tag.
      fetchpriority="high" tells the browser to schedule these ahead of
      other low-priority discoveries (e.g. images far down the page). -->
-<link rel="preload" as="script" href="/dist/core.min.js?v=20260626e" fetchpriority="high">
+<link rel="preload" as="script" href="/dist/core.min.js?v=20260628a" fetchpriority="high">
 <link rel="preload" as="script" href="/arb.js?v=20260625a" fetchpriority="high">
 <link rel="preload" as="style"  href="/arb.css?v=20260625a"      fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
@@ -59,7 +59,7 @@
      Replaces 11 individual <script> tags (1 RTT vs 11 — huge win on HTTP/1.1
      and still measurable on HTTP/2). Loaded synchronously so inline page
      scripts below have Auth / Formatters / EX available at parse time. -->
-<script src="/dist/core.min.js?v=20260626e"></script>
+<script src="/dist/core.min.js?v=20260628a"></script>
 <!-- Page-specific code (was ~7000 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes — equivalent
      to the previous mid-body execution since the trailing init() call
