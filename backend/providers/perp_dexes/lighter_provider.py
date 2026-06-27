@@ -45,15 +45,48 @@ class LighterProvider(BaseWalletProvider):
 
             acc = data if "assets" in data else (data.get("accounts") or [{}])[0]
 
+            # Lighter splits balance across three buckets per asset:
+            #   balance         — free spot
+            #   locked_balance  — locked in resting orders
+            #   margin_balance  — posted as collateral for perpetuals
+            # The old code summed only the first two, missing the perpetuals
+            # equity entirely — a user with $20 spot + $21 perp margin saw
+            # only $20 here while the Lighter UI showed $41 total.
             totals = defaultdict(Decimal)
             for asset in acc.get("assets") or []:
                 symbol = (asset.get("symbol") or "").upper()
-                total = self._d(asset.get("balance")) + self._d(asset.get("locked_balance"))
-                if symbol and total > 0:
+                if not symbol:
+                    continue
+                total = (
+                    self._d(asset.get("balance"))
+                    + self._d(asset.get("locked_balance"))
+                    + self._d(asset.get("margin_balance"))
+                )
+                if total > 0:
                     totals[symbol] += total
 
+            # Perpetuals are USDC-quoted on Lighter, so unrealized PnL on
+            # open positions contributes to USDC equity. Realized PnL is
+            # already folded into margin_balance / balance by the venue.
+            unrealized = Decimal("0")
+            for pos in acc.get("positions") or []:
+                unrealized += self._d(pos.get("unrealized_pnl"))
+            if unrealized != 0:
+                totals["USDC"] += unrealized
+
             filtered_assets = {k: str(v) for k, v in totals.items() if v > 0}
-            return BalanceResult(wallet=wallet, provider=self.name, totals=filtered_assets, details={"assets": filtered_assets})
+            return BalanceResult(
+                wallet=wallet,
+                provider=self.name,
+                totals=filtered_assets,
+                details={
+                    "assets": filtered_assets,
+                    "total_asset_value": acc.get("total_asset_value"),
+                    "collateral": acc.get("collateral"),
+                    "available_balance": acc.get("available_balance"),
+                    "unrealized_pnl_usd": str(unrealized),
+                },
+            )
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 400:
