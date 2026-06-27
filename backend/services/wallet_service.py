@@ -119,14 +119,29 @@ def _build_perpdex_creds(body: WalletCreate) -> dict:
     return creds
 
 
-def _display_info(wallet: Wallet) -> str:
-    creds = decrypt_credentials(wallet.credentials or {})
-    if wallet.wallet_type == "exchange" or (wallet.wallet_type == "perpdex" and wallet.type_value == "aster"):
-        key = creds.get("api_key", "")
-        if len(key) > 8:
-            return key[:4] + "****" + key[-4:]
+def _mask_identifier(s: str) -> str:
+    """Uniform XXXX****YYYY mask — 4 chars prefix + literal **** + 4 chars
+    suffix = 12-char total. Anything ≤8 chars degrades to '****' so we
+    never leak the whole secret on a short input."""
+    s = (s or "").strip()
+    if len(s) <= 8:
         return "****"
-    return creds.get("address", "")
+    return s[:4] + "****" + s[-4:]
+
+
+def _display_info(wallet: Wallet) -> str:
+    """All wallet types render the same 12-char masked form. Source
+    field varies by venue:
+      - exchange  → api_key (every CEX)
+      - perpdex   → api_key when present (Aster), else address
+                    (Hyperliquid, Lighter, Paradex, Extended)
+      - chain     → address
+    Previously chain + most perpdex venues leaked the full address /
+    pubkey — long visual strings broke the row alignment in the UI."""
+    creds = decrypt_credentials(wallet.credentials or {})
+    if wallet.wallet_type == "exchange":
+        return _mask_identifier(creds.get("api_key", ""))
+    return _mask_identifier(creds.get("api_key") or creds.get("address") or "")
 
 
 def wallet_to_out(wallet: Wallet) -> WalletOut:
