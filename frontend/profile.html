@@ -2807,12 +2807,14 @@ function kPickType(btn){
             || document.querySelector('#k-ex-dd .k-dd-menu');
   if (menu) { menu.dataset.built = ''; menu.innerHTML = ''; kBuildExchangeDd(); }
   _kUpdateFieldVisibility();
-  // Server-IP banner shown only on Exchange (CEX) tab — perp DEX uses
-  // on-chain signing, chains have no API key, so the IP whitelist
-  // affordance is irrelevant for those.
+  // Server-IP banner: shown on Exchange (CEX) AND Perp DEX tabs since
+  // venues like Aster/Hyperliquid also support IP whitelisting on their
+  // API/sub-account keys. Chains use plain addresses — no key, no IP
+  // affordance, so the banner stays hidden for that tab.
   const ipBanner = document.getElementById('k-server-ip-banner');
   if (ipBanner) {
-    ipBanner.style.display = (_K_TYPE === 'exchange' && _kCachedServerIp()) ? 'flex' : 'none';
+    const showIp = (_K_TYPE === 'exchange' || _K_TYPE === 'perpdex') && _kCachedServerIp();
+    ipBanner.style.display = showIp ? 'flex' : 'none';
   }
 }
 
@@ -3098,7 +3100,11 @@ function kExPick(btn){
   window.removeEventListener('resize', _kExPositionMenu);
   _kUpdateFieldVisibility();
   const canTradeHint = document.getElementById('k-for-screener')?.closest('.k-field');
-  if (canTradeHint) canTradeHint.style.opacity = (_K_TYPE==='exchange' && _K_TRADABLE.has(v)) ? '1' : '0.55';
+  // Perp DEX venues (hyperliquid/aster/ethereal/etc.) also live in the
+  // tradable set — used to only check 'exchange', leaving perpdex tab
+  // permanently dimmed even though we fully support trading there.
+  const tradableType = (_K_TYPE === 'exchange' || _K_TYPE === 'perpdex');
+  if (canTradeHint) canTradeHint.style.opacity = (tradableType && _K_TRADABLE.has(v)) ? '1' : '0.55';
 }
 
 // ── Reusable confirm modal ──
