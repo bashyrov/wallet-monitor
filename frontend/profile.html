@@ -1405,15 +1405,22 @@
     .k-row .k-ex{font-family:Inter,sans-serif;font-weight:700;font-size:12px;min-width:80px;color:var(--text);letter-spacing:-0.01em;}
     .k-row .k-name{flex:1;font-size:12.5px;color:var(--text);font-family:Inter,sans-serif;font-weight:500;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;}
     .k-row .k-masked{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text3);min-width:96px;}
-    .k-row .k-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:700;letter-spacing:0.04em;border:1px solid;}
-    .k-pill.ro{color:var(--teal);border-color:rgba(6,182,212,0.35);background:rgba(6,182,212,0.06);}
-    .k-pill.tr{color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.08);}
-    .k-pill.archived{color:var(--text3);border-color:var(--border);background:var(--surface3);}
+    /* Icon-only purpose chips — 22px square with border + soft tint.
+       Tooltip on hover carries the full meaning (Portfolio / Screener). */
+    .k-row .k-pill{
+      display:inline-flex;align-items:center;justify-content:center;
+      width:22px;height:22px;border-radius:7px;border:1px solid;
+      flex-shrink:0;cursor:default;
+      transition:filter .12s, transform .12s;
+    }
+    .k-row .k-pill:hover{filter:brightness(1.18);transform:translateY(-1px);}
+    .k-row .k-pill + .k-pill{margin-left:4px;}
+    .k-pill.ro{color:var(--teal);border-color:rgba(6,182,212,0.35);background:rgba(6,182,212,0.08);}
+    .k-pill.tr{color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.10);}
+    .k-pill.archived{color:var(--text3);border-color:var(--border);background:var(--surface3);width:auto;height:auto;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:700;letter-spacing:0.04em;}
     .k-row .k-actions-inline{display:flex;gap:4px;margin-left:auto;}
     .k-row .k-act{-webkit-appearance:none;appearance:none;width:28px;height:28px;border-radius:7px;background:var(--surface3);border:1px solid var(--border);color:var(--text3);cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s,background .15s;display:inline-flex;align-items:center;justify-content:center;}
     .k-row .k-act:hover{color:var(--text);}
-    .k-row .k-act.trade.is-on{color:var(--yellow);border-color:var(--yellow);background:rgba(229,192,123,0.1);}
-    .k-row .k-act.trade:hover:not(.is-on){color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.08);}
     .k-row .k-act.danger:hover{color:var(--red);border-color:var(--red);background:rgba(248,113,113,0.08);}
     .k-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
     .k-field{display:flex;flex-direction:column;gap:5px;}
@@ -3170,11 +3177,16 @@ function kRender(){
     const label = _kLabel(w.type_value);
     const tradable = !isChain && _K_TRADABLE.has(w.type_value);
     const purpose = w.purpose || (w.can_trade ? 'screener' : 'portfolio');
+    // Icon-only purpose chips — replaces wordy PORTFOLIO/SCREENER text
+    // tags. Bar-chart for Portfolio, lightning for Screener (trading).
+    // Tooltips carry the full description on hover.
+    const _ICON_PORT = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13V9M6 13V5M10 13V8M14 13V3"/></svg>';
+    const _ICON_SCR  = '<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M9 1L3 9h4l-1 6 6-8H8z"/></svg>';
+    const portChip = `<span class="k-pill ro" title="Portfolio key — read-only balance tracking">${_ICON_PORT}</span>`;
+    const scrChip  = `<span class="k-pill tr" title="Screener key — used for live trading">${_ICON_SCR}</span>`;
     const purposePill = purpose === 'both'
-      ? '<span class="k-pill ro" title="Portfolio + Screener"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span><span class="k-pill tr" title="Portfolio + Screener"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
-      : purpose === 'screener'
-        ? '<span class="k-pill tr" title="Used by the Screener for trading"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>SCREENER</span>'
-        : '<span class="k-pill ro" title="Read-only portfolio key"><span style="width:5px;height:5px;border-radius:50%;background:currentColor"></span>PORTFOLIO</span>';
+      ? (portChip + scrChip)
+      : purpose === 'screener' ? scrChip : portChip;
     return `<div class="k-row">
       <span class="k-ex-dot" style="background:${color}"></span>
       <span class="k-ex">${label}</span>
@@ -3182,9 +3194,6 @@ function kRender(){
       <span class="k-masked">${_kEsc(w.display_info)}</span>
       ${purposePill}
       <div class="k-actions-inline">
-        ${tradable ? `<button class="k-act trade ${(purpose==='screener'||purpose==='both')?'is-on':''}" title="${(purpose==='screener'||purpose==='both')?'Disable Screener on this key':'Also enable for Screener (trading)'}" onclick="kToggleTrade(${w.id}, ${(purpose==='screener'||purpose==='both')?'true':'false'})">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
-        </button>` : ''}
         <button class="k-act" title="Edit key" onclick="kEdit(${w.id})">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/></svg>
         </button>
