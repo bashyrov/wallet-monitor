@@ -380,7 +380,7 @@
     .wallet-row {
       position: relative;
       display: flex; align-items: flex-start; gap: 10px;
-      padding: 12px 14px 12px 16px;
+      padding: 12px 70px 12px 16px;
       border-radius: 10px;
       border: 1px solid var(--border);
       background: linear-gradient(180deg, var(--surface2) 0%, var(--surface) 100%);
@@ -521,17 +521,17 @@
     .wallet-row.selected .wallet-actions { opacity: 1; }
     body.light .wallet-actions { border-top-color: rgba(0,0,0,.06); }
 
-    /* Subtle live-pulse on trade-enabled wallets */
-    @keyframes wr-trade-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(229,192,123,0.4); }
-      50%      { box-shadow: 0 0 0 4px rgba(229,192,123,0); }
-    }
-    .wallet-row .trade-live-dot {
+    /* Top-right action cluster — Tags + Archive lifted out of the bottom
+       row so they're reachable without scanning the card's full width. */
+    .wallet-tr-actions {
       position: absolute; top: 10px; right: 10px;
-      width: 6px; height: 6px; border-radius: 50%;
-      background: var(--yellow);
-      animation: wr-trade-pulse 1.8s infinite;
+      display: flex; gap: 6px;
+      opacity: .55; transition: opacity .15s;
+      z-index: 2;
     }
+    .wallet-row:hover .wallet-tr-actions,
+    .wallet-row.selected .wallet-tr-actions { opacity: 1; }
+    .wallet-tr-actions .icon-btn { width: 24px; height: 24px; font-size: 12px; }
 
     /* ── ADDRESS MODAL ── */
     .addr-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
@@ -2855,8 +2855,11 @@ function walletRow(w, idx = 0) {
   const errBadge = errInfo ? `<span class="wallet-err-badge has-tip" data-tip="${esc('Last balance check failed: ' + (errInfo.error || 'unknown'))}">⚠ error</span>` : '';
 
   return `<div class="wallet-row${ck?' selected':''}${errInfo?' has-error':''}" id="wr-${w.id}" style="--wr-accent:${color}">
-    ${w.can_trade ? '<span class="trade-live-dot" title="Live trading enabled"></span>' : ''}
     <input type="checkbox" ${ck?'checked':''} onchange="toggleW(${w.id},this.checked)">
+    <div class="wallet-tr-actions">
+      <button class="icon-btn has-tip" data-tip="Tags" onclick="openTagDrop(event,${w.id})">⊕</button>
+      <button class="icon-btn has-tip" data-tip="Archive" onclick="archiveWallet(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">⊟</button>
+    </div>
     <div class="wallet-body">
       <div class="wallet-head">
         <span class="wallet-name">${esc(w.name)}</span>
@@ -2874,8 +2877,6 @@ function walletRow(w, idx = 0) {
           <svg width="13" height="13" viewBox="0 0 16 16" fill="${w.is_main?'currentColor':'none'}" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="8 1.5 10 6 14.5 6.5 11 9.5 12 14 8 11.5 4 14 5 9.5 1.5 6.5 6 6"/></svg>
         </button>` : ''}
         ${isExchange ? `<button class="icon-btn has-tip" data-tip="Addresses" onclick="toggleAddrPanel(event,${w.id})">◈</button>` : ''}
-        <button class="icon-btn has-tip" data-tip="Tags" onclick="openTagDrop(event,${w.id})">⊕</button>
-        <button class="icon-btn has-tip" data-tip="Archive" onclick="archiveWallet(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">⊟</button>
       </div>
     </div>
   </div>`;
