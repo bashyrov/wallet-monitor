@@ -226,6 +226,9 @@
     .confirm-delete:hover { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.4); }
 
     /* ── LAYOUT ── */
+    /* Lock topbar to viewport top on every breakpoint — overrides any
+       parent overflow/relative trick that might break sticky context. */
+    .topbar { position: sticky !important; top: 0 !important; z-index: 100; }
     .main {
       display: flex;
       height: calc(100vh - 52px);
@@ -369,7 +372,7 @@
     }
     #btn-check-balance {
       width: 100%; height: 36px;
-      font-size: 13px; font-weight: 500;
+      font-size: 13px; font-weight: 700;
       border-radius: 8px;
       display: flex; align-items: center; justify-content: center; gap: 6px;
     }
