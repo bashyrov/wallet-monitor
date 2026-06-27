@@ -1024,8 +1024,16 @@
             </div>
             <div class="cf-title" id="cf-disable-title">Disable 2FA</div>
           </div>
-          <p class="cf-sub">After this, sign-ins will only require your password (or Google). Confirm with the <strong>6-digit code from your authenticator</strong> (or a recovery code if you've lost the device).</p>
-          <input id="tfa-disable-pwd" class="cf-input is-danger" type="text" inputmode="text" placeholder="123 456 — or recovery code" autocomplete="one-time-code" maxlength="20">
+          <p class="cf-sub">After this, sign-ins will only require your password (or Google). Confirm with <strong>BOTH</strong> your authenticator code (or recovery code) <strong>AND</strong> a fresh email code — two factors, neither alone is enough.</p>
+          <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin:6px 0 4px">Authenticator / recovery code</label>
+          <input id="tfa-disable-totp" class="cf-input is-danger" type="text" inputmode="text" placeholder="123 456 — or recovery code" autocomplete="one-time-code" maxlength="20">
+          <div class="cf-helper" style="margin-top:10px">
+            <span>Email code:</span>
+            <a href="#" onclick="requestEmailCode(this,event);return false">Send code</a>
+            <span class="ec-status" style="color:var(--text2)"></span>
+          </div>
+          <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin:6px 0 4px">Email code</label>
+          <input id="tfa-disable-pwd" class="cf-input is-danger" type="text" inputmode="numeric" placeholder="123 456" autocomplete="one-time-code" maxlength="6">
           <div class="cf-actions">
             <button class="cf-btn cf-btn-secondary" onclick="tfaDisableHide()">Cancel</button>
             <button class="cf-btn cf-btn-danger" id="tfa-disable-btn" onclick="tfaDisable()">Disable</button>
@@ -1144,12 +1152,15 @@
             </div>
             <div class="cf-title" id="cf-regen-title">Regenerate recovery codes</div>
           </div>
-          <p class="cf-sub">Your old codes will be invalidated. Confirm with an email code or your authenticator.</p>
-          <div class="cf-helper">
+          <p class="cf-sub">Your old codes will be invalidated. Confirm with <strong>BOTH</strong> your authenticator code (or recovery code) <strong>AND</strong> a fresh email code.</p>
+          <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin:6px 0 4px">Authenticator / recovery code</label>
+          <input id="tfa-regen-totp" class="cf-input" type="text" inputmode="text" placeholder="123 456 — or recovery code" autocomplete="one-time-code" maxlength="20">
+          <div class="cf-helper" style="margin-top:10px">
             <span>Email code:</span>
             <a href="#" onclick="requestEmailCode(this,event);return false">Send code</a>
             <span class="ec-status" style="color:var(--text2)"></span>
           </div>
+          <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin:6px 0 4px">Email code</label>
           <input id="tfa-regen-pwd" class="cf-input" type="text" inputmode="numeric" placeholder="123 456" autocomplete="one-time-code" maxlength="6">
           <div class="cf-actions">
             <button class="cf-btn cf-btn-secondary" onclick="tfaRegenHide()">Cancel</button>
@@ -1991,24 +2002,26 @@ function tfaDisableHide() {
 }
 
 async function tfaDisable() {
-  const code  = (document.getElementById('tfa-disable-pwd').value || '').trim();
+  const totp  = (document.getElementById('tfa-disable-totp').value || '').trim();
+  const email = (document.getElementById('tfa-disable-pwd').value || '').trim();
   const errEl = document.getElementById('tfa-disable-err');
   const btn   = document.getElementById('tfa-disable-btn');
   errEl.style.display = 'none';
-  if (!code) {
-    errEl.textContent = 'Enter your 6-digit authenticator code (or a recovery code).';
+  const missing = [];
+  if (!totp)  missing.push('authenticator / recovery code');
+  if (!email) missing.push('email code');
+  if (missing.length) {
+    errEl.textContent = 'Both factors required — fill in: ' + missing.join(' + ');
     errEl.style.display = 'block';
     return;
   }
   btn.disabled = true; btn.textContent = 'Disabling…';
   try {
-    // Backend requires TOTP-equivalent for disable — email fallback is
-    // rejected so a hijacked session + mailbox can't silently undo 2FA.
-    // Send as totp_code; recovery codes are accepted via the same field
-    // by the server (it auto-detects format).
+    // Backend requires BOTH for disable — totp_code (or recovery via same
+    // field) AND email_code. Server validates both independently.
     const r = await Auth.apiFetch('/auth/me/2fa/disable', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ totp_code: code }),
+      body: JSON.stringify({ totp_code: totp, email_code: email }),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'disable failed');
@@ -2089,17 +2102,24 @@ function tfaRegenHide(){
 }
 
 async function tfaRegen(){
-  const code = document.getElementById('tfa-regen-pwd').value;
-  const totp = (document.getElementById('tfa-regen-totp') || {}).value || '';
+  const email = (document.getElementById('tfa-regen-pwd').value  || '').trim();
+  const totp  = (document.getElementById('tfa-regen-totp').value || '').trim();
   const errEl = document.getElementById('tfa-regen-err');
   const btn = document.getElementById('tfa-regen-btn');
   errEl.style.display = 'none';
-  if (!code && !totp) { errEl.textContent = 'Enter the email code (or your authenticator code).'; errEl.style.display = 'block'; return; }
+  const missing = [];
+  if (!totp)  missing.push('authenticator / recovery code');
+  if (!email) missing.push('email code');
+  if (missing.length) {
+    errEl.textContent = 'Both factors required — fill in: ' + missing.join(' + ');
+    errEl.style.display = 'block';
+    return;
+  }
   btn.disabled = true; btn.textContent = 'Generating…';
   try {
     const r = await Auth.apiFetch('/auth/me/2fa/recovery-codes/regenerate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(_gateBody('tfa-regen', code)),
+      body: JSON.stringify({ totp_code: totp, email_code: email }),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'failed');

@@ -323,21 +323,20 @@ async def login_totp(body: dict, request: Request, response: Response, db: Sessi
 
 
 def _verify_sensitive_op_gate(user: User, body: dict, request: Request, *, action: str,
-                               require_totp: bool = False) -> None:
+                               require_both: bool = False) -> None:
     """Shared gate for sensitive ops (/me/2fa/setup, /disable,
-    /recovery-codes/regenerate, account delete). Accepts either:
-      • body.email_code — single-use 6-digit code issued via
-        /me/email-confirm/request, 10min TTL (always works UNLESS
-        require_totp=True)
-      • body.totp_code  — current 6-digit code from the user's authenticator
-        (only works if user has 2FA armed; preferred when enabled — no email
-        round-trip)
+    /recovery-codes/regenerate, account delete).
 
-    When require_totp=True (used for /2fa/disable and /2fa/recovery-codes
-    /regenerate), the email-code fallback is rejected — caller must prove
-    possession of the authenticator itself. This prevents an attacker who
-    has a stolen session + mailbox from silently undoing 2FA. Recovery
-    codes are also accepted as a TOTP substitute.
+    Default mode — EITHER:
+      • body.email_code (single-use 6-digit, /me/email-confirm/request, 10min)
+      • body.totp_code  (6-digit from authenticator; recovery code also accepted
+        in this field and burned on use)
+
+    When require_both=True (used for /2fa/disable), BOTH a fresh TOTP code
+    AND a fresh email code must validate. This means an attacker needs
+    BOTH the live authenticator AND mailbox access — a stolen session +
+    one of the two factors is no longer enough. Recovery code substitutes
+    for the TOTP half (still requires the email half).
 
     Password is NOT accepted — it's reserved for login only. Same throttle
     bucket as login (pwd:<uid>) so failed attempts cool down."""
@@ -352,43 +351,51 @@ def _verify_sensitive_op_gate(user: User, body: dict, request: Request, *, actio
             headers={"Retry-After": str(retry_after)},
         )
 
-    accepted = False
-    # TOTP path (only when 2FA is armed) — preferred since no mail round-trip.
-    # Recovery codes also accepted here as a possession-equivalent fallback
-    # (user saved them at setup time; burned on use).
+    # ── TOTP / recovery-code path ──
+    totp_ok = False
     totp_code = (body.get("totp_code") or "").strip()
     if totp_code and user.totp_verified_at and user.totp_secret_enc:
         try:
             secret = _totp.decrypt_secret(user.totp_secret_enc)
             if _totp.verify_code(secret, totp_code):
-                accepted = True
+                totp_ok = True
         except Exception:
-            accepted = False
-        if not accepted and _totp.is_recovery_format(totp_code):
+            totp_ok = False
+        if not totp_ok and _totp.is_recovery_format(totp_code):
             try:
                 stored = user.totp_recovery_codes or []
                 ok, remaining = _totp.verify_and_consume_recovery_code(stored, totp_code)
                 if ok:
                     user.totp_recovery_codes = remaining
-                    accepted = True
+                    totp_ok = True
             except Exception:
-                accepted = False
+                totp_ok = False
 
-    # Email-code path — DISABLED when require_totp is set so a hijacked
-    # session + mailbox can't silently undo 2FA.
-    if not accepted and not require_totp:
-        email_code = (body.get("email_code") or "").strip()
-        if email_code and _ec.verify(user.id, email_code):
-            accepted = True
+    # ── Email-code path ──
+    email_ok = False
+    email_code = (body.get("email_code") or "").strip()
+    if email_code and _ec.verify(user.id, email_code):
+        email_ok = True
+
+    accepted = (totp_ok and email_ok) if require_both else (totp_ok or email_ok)
 
     if not accepted:
         cooldown = login_throttle.register_failure(throttle_key)
-        logger.warning("%s: bad gate uid=%s ip=%s", action, user.id, ip)
+        logger.warning("%s: bad gate uid=%s ip=%s totp_ok=%s email_ok=%s require_both=%s",
+                       action, user.id, ip, totp_ok, email_ok, require_both)
         if cooldown:
             raise HTTPException(
                 status_code=429,
                 detail=f"Too many attempts. Try again in {cooldown} second{'s' if cooldown != 1 else ''}.",
                 headers={"Retry-After": str(cooldown)},
+            )
+        if require_both:
+            missing = []
+            if not totp_ok:  missing.append("authenticator code")
+            if not email_ok: missing.append("email code")
+            raise HTTPException(
+                status_code=401,
+                detail=f"Both factors required — missing or invalid: {' + '.join(missing)}.",
             )
         raise HTTPException(
             status_code=401,
@@ -476,12 +483,13 @@ def me_2fa_verify(body: dict, current_user: User = Depends(get_current_user), db
 async def me_2fa_recovery_regenerate(body: dict, request: Request,
                                       current_user: User = Depends(get_current_user),
                                       db: Session = Depends(get_db)):
-    """Regenerate the 8 single-use recovery codes. Requires the current
-    password OR a single-use email confirmation code (for Google-only users).
-    Old codes are invalidated. Returns new plaintext codes ONCE."""
+    """Regenerate the 8 single-use recovery codes. REQUIRES BOTH a fresh
+    TOTP code (or recovery code) AND a fresh email code — same gate as
+    /2fa/disable. Old codes are invalidated. Returns new plaintext codes ONCE."""
     if not current_user.totp_verified_at:
         raise HTTPException(status_code=400, detail="2FA not enabled")
-    _verify_sensitive_op_gate(current_user, body, request, action="2fa_regen")
+    _verify_sensitive_op_gate(current_user, body, request, action="2fa_regen",
+                                require_both=True)
     from backend.services import totp as _totp
     plain_codes = _totp.generate_recovery_codes(8)
     current_user.totp_recovery_codes = _totp.hash_recovery_codes(plain_codes)
@@ -494,11 +502,12 @@ async def me_2fa_recovery_regenerate(body: dict, request: Request,
 async def me_2fa_disable(body: dict, request: Request,
                           current_user: User = Depends(get_current_user),
                           db: Session = Depends(get_db)):
-    """Disarm 2FA. REQUIRES the current TOTP code (or a recovery code) —
-    email fallback is rejected so a hijacked session + mailbox can't
-    silently disable 2FA. Recovery code is burned on use."""
+    """Disarm 2FA. REQUIRES BOTH a fresh TOTP code (or recovery code) AND
+    a fresh email confirmation code. Forces an attacker to compromise the
+    authenticator AND mailbox — a stolen session + one factor isn't enough.
+    Recovery code is burned on use."""
     _verify_sensitive_op_gate(current_user, body, request, action="2fa_disable",
-                                require_totp=True)
+                                require_both=True)
     current_user.totp_secret_enc = None
     current_user.totp_verified_at = None
     current_user.totp_recovery_codes = None
