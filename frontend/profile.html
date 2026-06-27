@@ -3262,14 +3262,19 @@ async function kSubmit(){
   const forScreener  = document.getElementById('k-for-screener').checked;
   const purpose = forPortfolio && forScreener ? 'both' : (forScreener ? 'screener' : 'portfolio');
   const msg  = document.getElementById('k-msg');
-  msg.style.display = 'none';
+  if (msg) msg.style.display = 'none';
   const purposeErr = document.getElementById('k-purpose-err');
   if (purposeErr) purposeErr.style.display = 'none';
 
   const isPerp  = _K_TYPE === 'perpdex';
   const isChain = _K_TYPE === 'chain';
   const perpNeedsKey = isPerp && _K_PERP_NEEDS_KEY.has(ex);
-  const setErr = (m) => { msg.className='k-msg err'; msg.textContent=m; msg.style.display='block'; };
+  // Validation + outcome surface via the shared toast() helper (top-right
+  // pop-up, matches every other page) instead of an inline strip below
+  // the form. The inline #k-msg div is left in the DOM for backwards
+  // compat with anything that still pokes at it, but kSubmit no longer
+  // writes to it.
+  const setErr = (m) => { if (typeof toast === 'function') toast(m, 'error'); };
 
   if (!ex || !name) { setErr('Fill ' + (isChain ? 'chain' : isPerp ? 'perp DEX' : 'exchange') + ' and label'); return; }
   if (name.length < 6) { setErr('Label must be at least 6 characters'); return; }
@@ -3375,9 +3380,13 @@ async function kSubmit(){
       const detail = typeof err.detail === 'string' ? err.detail : (Array.isArray(err.detail) ? err.detail.map(x=>x.msg).join(', ') : 'Save failed');
       throw new Error(detail);
     }
-    msg.className = 'k-msg ok';
-    msg.textContent = forScreener ? 'Key validated and saved — ready for trading ✓' : 'Key validated and saved ✓';
-    msg.style.display = 'block';
+    if (typeof toast === 'function') {
+      toast(
+        forScreener ? 'Key saved & ready for trading' : 'Key saved',
+        'success',
+        `${_kLabel(ex)} · ${name}`
+      );
+    }
     document.getElementById('k-form').reset();
     document.getElementById('k-for-portfolio').checked = true;
     document.getElementById('k-for-screener').checked = false;
@@ -3389,9 +3398,7 @@ async function kSubmit(){
     await kLoad();
     setTimeout(() => kSwitchTo('list'), 700);
   } catch (e) {
-    msg.className = 'k-msg err';
-    msg.textContent = e.message || 'Save failed';
-    msg.style.display = 'block';
+    if (typeof toast === 'function') toast(e.message || 'Save failed', 'error');
   } finally {
     btn.disabled = false; btn.textContent = oldText;
   }
@@ -3503,9 +3510,10 @@ async function kEditSubmit(){
   const apiSec = document.getElementById('k-edit-apisec').value.trim();
   const pass = document.getElementById('k-edit-apipass')?.value?.trim() || '';
   const msg = document.getElementById('k-edit-msg');
-  msg.style.display = 'none';
-  if (name.length < 6) { msg.className = 'k-msg err'; msg.textContent = 'Label must be at least 6 characters'; msg.style.display = 'block'; return; }
-  if ((apiKey && !apiSec) || (!apiKey && apiSec)) { msg.className = 'k-msg err'; msg.textContent = 'Provide both API key and secret to rotate'; msg.style.display = 'block'; return; }
+  if (msg) msg.style.display = 'none';
+  const _t = (m, k) => { if (typeof toast === 'function') toast(m, k); };
+  if (name.length < 6) { _t('Label must be at least 6 characters', 'error'); return; }
+  if ((apiKey && !apiSec) || (!apiKey && apiSec)) { _t('Provide both API key and secret to rotate', 'error'); return; }
 
   const btn = document.getElementById('k-edit-submit');
   btn.disabled = true; const prev = btn.textContent; btn.textContent = apiKey ? 'Validating & saving…' : 'Saving…';
@@ -3530,15 +3538,11 @@ async function kEditSubmit(){
       throw new Error(detail);
     }
     // If creds rotated and purpose is screener, re-validate by calling /trade/status probe (indirectly via balance)
-    msg.className = 'k-msg ok';
-    msg.textContent = apiKey ? 'Credentials rotated and saved ✓' : 'Saved ✓';
-    msg.style.display = 'block';
+    _t(apiKey ? 'Credentials rotated' : 'Saved', 'success');
     await kLoad();
     setTimeout(kEditClose, 700);
   } catch (e) {
-    msg.className = 'k-msg err';
-    msg.textContent = e.message || 'Save failed';
-    msg.style.display = 'block';
+    _t(e.message || 'Save failed', 'error');
   } finally {
     btn.disabled = false; btn.textContent = prev;
   }
