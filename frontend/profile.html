@@ -1406,7 +1406,9 @@
     .k-row .k-name{flex:1;font-size:12.5px;color:var(--text);font-family:Inter,sans-serif;font-weight:500;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;}
     .k-row .k-masked{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text3);min-width:96px;}
     /* Icon-only purpose chips — same 28×28 footprint as the Edit/Delete
-       action buttons so the row keeps a consistent visual rhythm. */
+       action buttons so the row keeps a consistent visual rhythm.
+       Chips live INSIDE .k-actions-inline now, so the row's gap rule
+       applies between chip↔chip AND chip↔action — no special-case margins. */
     .k-row .k-pill{
       display:inline-flex;align-items:center;justify-content:center;
       width:28px;height:28px;border-radius:7px;border:1px solid;
@@ -1414,11 +1416,10 @@
       transition:filter .12s, transform .12s;
     }
     .k-row .k-pill:hover{filter:brightness(1.18);transform:translateY(-1px);}
-    .k-row .k-pill + .k-pill{margin-left:4px;}
     .k-pill.ro{color:var(--teal);border-color:rgba(6,182,212,0.35);background:rgba(6,182,212,0.08);}
     .k-pill.tr{color:var(--yellow);border-color:rgba(229,192,123,0.35);background:rgba(229,192,123,0.10);}
     .k-pill.archived{color:var(--text3);border-color:var(--border);background:var(--surface3);width:auto;height:auto;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:700;letter-spacing:0.04em;}
-    .k-row .k-actions-inline{display:flex;gap:4px;margin-left:auto;}
+    .k-row .k-actions-inline{display:flex;gap:6px;margin-left:auto;align-items:center;}
     .k-row .k-act{-webkit-appearance:none;appearance:none;width:28px;height:28px;border-radius:7px;background:var(--surface3);border:1px solid var(--border);color:var(--text3);cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s,background .15s;display:inline-flex;align-items:center;justify-content:center;}
     .k-row .k-act:hover{color:var(--text);}
     .k-row .k-act.danger:hover{color:var(--red);border-color:var(--red);background:rgba(248,113,113,0.08);}
@@ -3183,11 +3184,11 @@ function kRender(){
     const label = _kLabel(w.type_value);
     const tradable = !isChain && _K_TRADABLE.has(w.type_value);
     const purpose = w.purpose || (w.can_trade ? 'screener' : 'portfolio');
-    // Icon-only purpose chips — replaces wordy PORTFOLIO/SCREENER text
-    // tags. Bar-chart for Portfolio, lightning for Screener (trading).
+    // Icon-only purpose chips. Bar-chart for Portfolio, candlestick chart
+    // for Screener (live trading) — the lightning bolt felt too generic.
     // Tooltips carry the full description on hover.
     const _ICON_PORT = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13V9M6 13V5M10 13V8M14 13V3"/></svg>';
-    const _ICON_SCR  = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M9 1L3 9h4l-1 6 6-8H8z"/></svg>';
+    const _ICON_SCR  = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="2.5" height="6" rx="0.4"/><path d="M4.25 4v2M4.25 12v2"/><rect x="10.5" y="4" width="2.5" height="5" rx="0.4"/><path d="M11.75 2v2M11.75 9v3"/></svg>';
     const portChip = `<span class="k-pill ro" title="Portfolio key — read-only balance tracking">${_ICON_PORT}</span>`;
     const scrChip  = `<span class="k-pill tr" title="Screener key — used for live trading">${_ICON_SCR}</span>`;
     const purposePill = purpose === 'both'
@@ -3198,8 +3199,8 @@ function kRender(){
       <span class="k-ex">${label}</span>
       <span class="k-name">${_kEsc(w.name)}</span>
       <span class="k-masked">${_kEsc(w.display_info)}</span>
-      ${purposePill}
       <div class="k-actions-inline">
+        ${purposePill}
         <button class="k-act" title="Edit key" onclick="kEdit(${w.id})">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/></svg>
         </button>
