@@ -165,7 +165,13 @@ class GateProvider(BaseWalletProvider):
         # still reports the same funds — summing both double-counts. So:
         #   · if Unified is non-empty, trust it as the single spot-side
         #     source (it already rolls up spot + margin + cross).
-        #   · otherwise, fall back to spot (+ cross-margin if populated).
+        #   · otherwise, take the MAX per asset across spot and margin.
+        #     Gate's /margin/cross/accounts for users not actively
+        #     margin-trading returns the spot pool projected as margin
+        #     equity — summing it on top of /spot/accounts doubled the
+        #     headline balance (113 USDT × 2 = 226). max() lets a real
+        #     margin position (where it diverges from spot) still surface
+        #     without double-counting the common case.
         unified_dict = unified if not isinstance(unified, Exception) else {}
         margin_dict  = margin  if not isinstance(margin,  Exception) else {}
 
@@ -174,10 +180,10 @@ class GateProvider(BaseWalletProvider):
             for k, v in unified_dict.items():
                 spot_merged[k] += v
         else:
-            for k, v in (spot or {}).items():
-                spot_merged[k] += v
-            for k, v in margin_dict.items():
-                spot_merged[k] += v
+            spot_dict = spot or {}
+            for k in set(spot_dict.keys()) | set(margin_dict.keys()):
+                spot_merged[k] = max(spot_dict.get(k, Decimal("0")),
+                                     margin_dict.get(k, Decimal("0")))
 
         futures: dict[str, Decimal] = defaultdict(Decimal)
         upnl = Decimal("0")
