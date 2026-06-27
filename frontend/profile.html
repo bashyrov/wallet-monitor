@@ -1405,11 +1405,11 @@
     .k-row .k-ex{font-family:Inter,sans-serif;font-weight:700;font-size:12px;min-width:80px;color:var(--text);letter-spacing:-0.01em;}
     .k-row .k-name{flex:1;font-size:12.5px;color:var(--text);font-family:Inter,sans-serif;font-weight:500;min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;}
     .k-row .k-masked{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text3);min-width:96px;}
-    /* Icon-only purpose chips — 22px square with border + soft tint.
-       Tooltip on hover carries the full meaning (Portfolio / Screener). */
+    /* Icon-only purpose chips — same 28×28 footprint as the Edit/Delete
+       action buttons so the row keeps a consistent visual rhythm. */
     .k-row .k-pill{
       display:inline-flex;align-items:center;justify-content:center;
-      width:22px;height:22px;border-radius:7px;border:1px solid;
+      width:28px;height:28px;border-radius:7px;border:1px solid;
       flex-shrink:0;cursor:default;
       transition:filter .12s, transform .12s;
     }
@@ -3180,8 +3180,8 @@ function kRender(){
     // Icon-only purpose chips — replaces wordy PORTFOLIO/SCREENER text
     // tags. Bar-chart for Portfolio, lightning for Screener (trading).
     // Tooltips carry the full description on hover.
-    const _ICON_PORT = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13V9M6 13V5M10 13V8M14 13V3"/></svg>';
-    const _ICON_SCR  = '<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M9 1L3 9h4l-1 6 6-8H8z"/></svg>';
+    const _ICON_PORT = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13V9M6 13V5M10 13V8M14 13V3"/></svg>';
+    const _ICON_SCR  = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M9 1L3 9h4l-1 6 6-8H8z"/></svg>';
     const portChip = `<span class="k-pill ro" title="Portfolio key — read-only balance tracking">${_ICON_PORT}</span>`;
     const scrChip  = `<span class="k-pill tr" title="Screener key — used for live trading">${_ICON_SCR}</span>`;
     const purposePill = purpose === 'both'
