@@ -271,22 +271,69 @@
 
     /* ── WALLET SEARCH ── */
     .wallet-search-wrap {
-      position: relative; display: flex; align-items: center;
-      padding: 8px 12px; border-bottom: 1px solid var(--border);
-      flex-shrink: 0; gap: 6px;
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
-    .wallet-search-icon { color: var(--text3); flex-shrink: 0; }
+    .wallet-search-box {
+      position: relative; display: flex; align-items: center;
+      gap: 8px;
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 0 10px 0 11px;
+      height: 36px;
+      transition: border-color .12s, background .12s, box-shadow .12s;
+    }
+    .wallet-search-box:hover { border-color: var(--border2); }
+    .wallet-search-box:focus-within {
+      border-color: var(--green);
+      background: var(--surface2);
+      box-shadow: 0 0 0 3px rgba(26,255,171,0.12);
+    }
+    .wallet-search-icon {
+      color: var(--text3); flex-shrink: 0;
+      transition: color .12s;
+    }
+    .wallet-search-box:focus-within .wallet-search-icon { color: var(--green); }
     .wallet-search-input {
-      flex: 1; background: none; border: none; outline: none;
+      flex: 1; min-width: 0;
+      background: none; border: none; outline: none;
       color: var(--text); font-size: 13px; font-family: inherit;
       caret-color: var(--green);
+      padding: 0; height: 100%;
     }
     .wallet-search-input::placeholder { color: var(--text4); }
-    .wallet-search-clear {
-      background: none; border: none; cursor: pointer;
-      color: var(--text3); font-size: 12px; padding: 0 2px; line-height: 1;
+    .wallet-search-shortcut {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; font-weight: 600;
+      color: var(--text3);
+      padding: 2px 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      flex-shrink: 0;
+      user-select: none;
+      transition: opacity .12s;
     }
-    .wallet-search-clear:hover { color: var(--text); }
+    .wallet-search-box:focus-within .wallet-search-shortcut { opacity: 0; }
+    .wallet-search-clear {
+      display: grid; place-items: center;
+      width: 20px; height: 20px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--text3); cursor: pointer;
+      padding: 0; line-height: 1;
+      transition: color .12s, border-color .12s, background .12s;
+      flex-shrink: 0;
+    }
+    .wallet-search-clear svg { display: block; }
+    .wallet-search-clear:hover {
+      color: var(--text); border-color: var(--border2);
+      background: var(--surface2);
+    }
+    /* Light theme tweak */
+    body.light .wallet-search-box { background: #FFFFFF; }
+    body.light .wallet-search-shortcut { background: #F7F7F7; }
 
     /* ── WALLET CONTROLS ── */
     .wallet-ctrl {
@@ -1986,13 +2033,20 @@
       </div>
     </div>
     <div class="wallet-search-wrap">
-      <svg class="wallet-search-icon" width="13" height="13" viewBox="0 0 13 13" fill="none">
-        <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.4"/>
-        <path d="M9 9l2.5 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-      </svg>
-      <input class="wallet-search-input" id="wallet-search" type="text" placeholder="Search wallets…"
-        oninput="S.search=this.value.trim().toLowerCase();renderWallets()">
-      <button class="wallet-search-clear" id="wallet-search-clear" onclick="clearSearch()" style="display:none">✕</button>
+      <div class="wallet-search-box">
+        <svg class="wallet-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <input class="wallet-search-input" id="wallet-search" type="text"
+          placeholder="Search wallets by name, type, address…"
+          autocomplete="off" spellcheck="false"
+          oninput="S.search=this.value.trim().toLowerCase();renderWallets()">
+        <span class="wallet-search-shortcut" id="wallet-search-shortcut" aria-hidden="true">⌘K</span>
+        <button class="wallet-search-clear" id="wallet-search-clear" onclick="clearSearch()" title="Clear" aria-label="Clear search" style="display:none">
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+        </button>
+      </div>
     </div>
     <div class="wallet-ctrl">
       <label class="check-wrap">
@@ -2670,6 +2724,37 @@ function clearSearch() {
   renderWallets();
 }
 
+// Cmd+K (Mac) / Ctrl+K (Win/Linux) focuses the wallet search field.
+// Escape inside the field clears + blurs. Listener registered once on
+// DOMContentLoaded — global because the search box is always present
+// on this page.
+(() => {
+  // Swap ⌘K → Ctrl K on non-Mac so the shortcut hint matches what
+  // the user's actual modifier key triggers.
+  const isMac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+  if (!isMac) {
+    const el = document.getElementById('wallet-search-shortcut');
+    if (el) el.textContent = 'Ctrl K';
+  }
+})();
+document.addEventListener('keydown', (e) => {
+  // ⌘K / Ctrl+K — focus search
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    const inp = document.getElementById('wallet-search');
+    if (inp) {
+      e.preventDefault();
+      inp.focus();
+      inp.select();
+    }
+    return;
+  }
+  // Escape inside the search field — clear + blur
+  if (e.key === 'Escape' && e.target && e.target.id === 'wallet-search') {
+    clearSearch();
+    e.target.blur();
+  }
+});
+
 function renderTagFilters() {
   const el = document.getElementById('tag-filters');
   // Detach manage-wrap before innerHTML replacement
@@ -2727,6 +2812,10 @@ function renderWallets() {
 
   const clearBtn = document.getElementById('wallet-search-clear');
   if (clearBtn) clearBtn.style.display = S.search ? '' : 'none';
+  // Hide the ⌘K hint as soon as the user typed something — the box now
+  // serves as the active filter, the shortcut affordance is just noise.
+  const shortcutEl = document.getElementById('wallet-search-shortcut');
+  if (shortcutEl) shortcutEl.style.display = S.search ? 'none' : '';
 
   if (!ws.length) {
     const msg = S.search
@@ -2781,17 +2870,12 @@ function walletRow(w, idx = 0) {
       </div>
       <div class="wallet-addr" title="${esc(w.display_info)}">${esc(w.display_info)}</div>
       <div class="wallet-actions">
-        ${(w.wallet_type === 'exchange' || w.wallet_type === 'perpdex') ? `<button class="icon-btn has-tip trade-toggle-btn ${w.can_trade?'is-on':''}" data-tip="${w.can_trade?'Trading ENABLED — click to disable':'Enable live trading (Screener)'}" onclick="toggleCanTrade(${w.id},${w.can_trade?'true':'false'})" aria-label="Toggle trading">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l5-5 3 3 4-4"/><path d="M10 4h4v4"/></svg>
-        </button>` : ''}
         ${isExchange ? `<button class="icon-btn has-tip ${w.is_main?'is-main-on':''}" data-tip="${w.is_main?'Main trading key for this exchange':'Make this the main trading key'}" onclick="setMainWallet(${w.id})" aria-label="Set as main trading key">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="${w.is_main?'currentColor':'none'}" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="8 1.5 10 6 14.5 6.5 11 9.5 12 14 8 11.5 4 14 5 9.5 1.5 6.5 6 6"/></svg>
         </button>` : ''}
         ${isExchange ? `<button class="icon-btn has-tip" data-tip="Addresses" onclick="toggleAddrPanel(event,${w.id})">◈</button>` : ''}
         <button class="icon-btn has-tip" data-tip="Tags" onclick="openTagDrop(event,${w.id})">⊕</button>
-        <button class="icon-btn has-tip" data-tip="Edit" onclick="openEditWalletModal(${w.id})">✎</button>
         <button class="icon-btn has-tip" data-tip="Archive" onclick="archiveWallet(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">⊟</button>
-        <button class="icon-btn danger has-tip" data-tip="Delete" onclick="delWallet(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">✕</button>
       </div>
     </div>
   </div>`;
