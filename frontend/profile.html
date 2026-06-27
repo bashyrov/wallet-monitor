@@ -1024,16 +1024,21 @@
             </div>
             <div class="cf-title" id="cf-disable-title">Disable 2FA</div>
           </div>
-          <p class="cf-sub">After this, sign-ins will only require your password (or Google). Confirm with <strong>BOTH</strong> your authenticator code (or recovery code) <strong>AND</strong> a fresh email code — two factors, neither alone is enough.</p>
-          <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin:6px 0 4px">Authenticator / recovery code</label>
-          <input id="tfa-disable-totp" class="cf-input is-danger" type="text" inputmode="text" placeholder="123 456 — or recovery code" autocomplete="one-time-code" maxlength="20">
-          <div class="cf-helper" style="margin-top:10px">
-            <span>Email code:</span>
-            <a href="#" onclick="requestEmailCode(this,event);return false">Send code</a>
-            <span class="ec-status" style="color:var(--text2)"></span>
+          <p class="cf-sub">After this, sign-ins will only require your password (or Google). Confirm with <strong>both factors</strong> — your authenticator AND a fresh email code. Neither alone is enough.</p>
+          <div class="cf-field">
+            <label class="cf-field-lbl" for="tfa-disable-totp">1 · Authenticator code</label>
+            <input id="tfa-disable-totp" class="cf-input is-danger" type="text" inputmode="text" placeholder="6-digit code (or recovery code)" autocomplete="one-time-code" maxlength="20">
+            <div class="cf-field-hint">From Google Authenticator / Authy / 1Password. Recovery codes also work — they burn on use.</div>
           </div>
-          <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin:6px 0 4px">Email code</label>
-          <input id="tfa-disable-pwd" class="cf-input is-danger" type="text" inputmode="numeric" placeholder="123 456" autocomplete="one-time-code" maxlength="6">
+          <div class="cf-field">
+            <label class="cf-field-lbl" for="tfa-disable-pwd">2 · Email code</label>
+            <div class="cf-field-wrap">
+              <input id="tfa-disable-pwd" class="cf-input is-danger" type="text" inputmode="numeric" placeholder="6-digit code from email" autocomplete="one-time-code" maxlength="6">
+              <button type="button" class="cf-input-suffix-btn" onclick="requestEmailCode(this,event)">Send code</button>
+            </div>
+            <div class="cf-field-hint">Click Send code to receive a fresh 6-digit code. Valid for 10 minutes.</div>
+            <div class="cf-status is-info" id="tfa-disable-status"></div>
+          </div>
           <div class="cf-actions">
             <button class="cf-btn cf-btn-secondary" onclick="tfaDisableHide()">Cancel</button>
             <button class="cf-btn cf-btn-danger" id="tfa-disable-btn" onclick="tfaDisable()">Disable</button>
@@ -1060,12 +1065,15 @@
             <div style="margin-left:auto;font-size:10.5px;color:var(--text3);font-weight:600;letter-spacing:0.06em;text-transform:uppercase">Step 1 / 3</div>
           </div>
           <p class="cf-sub">First we verify your email. Next you'll scan a QR with your authenticator, then save recovery codes.</p>
-          <div class="cf-helper">
-            <span>We'll send a 6-digit code to your email.</span>
-            <a href="#" onclick="requestEmailCode(this,event);return false">Send code</a>
-            <span class="ec-status" style="color:var(--text2)"></span>
+          <div class="cf-field">
+            <label class="cf-field-lbl" for="tfa-enable-pwd">Email code</label>
+            <div class="cf-field-wrap">
+              <input id="tfa-enable-pwd" class="cf-input" type="text" inputmode="numeric" placeholder="6-digit code from email" autocomplete="one-time-code" maxlength="6">
+              <button type="button" class="cf-input-suffix-btn" onclick="requestEmailCode(this,event)">Send code</button>
+            </div>
+            <div class="cf-field-hint">We'll email a 6-digit code. Valid for 10 minutes.</div>
+            <div class="cf-status is-info" id="tfa-enable-status"></div>
           </div>
-          <input id="tfa-enable-pwd" class="cf-input" type="text" inputmode="numeric" placeholder="123 456" autocomplete="one-time-code" maxlength="6">
           <div class="cf-actions">
             <button class="cf-btn cf-btn-secondary" onclick="tfaEnableHide()">Cancel</button>
             <button class="cf-btn cf-btn-primary" id="tfa-enable-submit" onclick="tfaSetup()">Continue</button>
@@ -1152,16 +1160,21 @@
             </div>
             <div class="cf-title" id="cf-regen-title">Regenerate recovery codes</div>
           </div>
-          <p class="cf-sub">Your old codes will be invalidated. Confirm with <strong>BOTH</strong> your authenticator code (or recovery code) <strong>AND</strong> a fresh email code.</p>
-          <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin:6px 0 4px">Authenticator / recovery code</label>
-          <input id="tfa-regen-totp" class="cf-input" type="text" inputmode="text" placeholder="123 456 — or recovery code" autocomplete="one-time-code" maxlength="20">
-          <div class="cf-helper" style="margin-top:10px">
-            <span>Email code:</span>
-            <a href="#" onclick="requestEmailCode(this,event);return false">Send code</a>
-            <span class="ec-status" style="color:var(--text2)"></span>
+          <p class="cf-sub">Your old recovery codes will be invalidated. Confirm with <strong>both factors</strong> — your authenticator AND a fresh email code.</p>
+          <div class="cf-field">
+            <label class="cf-field-lbl" for="tfa-regen-totp">1 · Authenticator code</label>
+            <input id="tfa-regen-totp" class="cf-input" type="text" inputmode="text" placeholder="6-digit code (or recovery code)" autocomplete="one-time-code" maxlength="20">
+            <div class="cf-field-hint">From Google Authenticator / Authy / 1Password. Recovery codes also work.</div>
           </div>
-          <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin:6px 0 4px">Email code</label>
-          <input id="tfa-regen-pwd" class="cf-input" type="text" inputmode="numeric" placeholder="123 456" autocomplete="one-time-code" maxlength="6">
+          <div class="cf-field">
+            <label class="cf-field-lbl" for="tfa-regen-pwd">2 · Email code</label>
+            <div class="cf-field-wrap">
+              <input id="tfa-regen-pwd" class="cf-input" type="text" inputmode="numeric" placeholder="6-digit code from email" autocomplete="one-time-code" maxlength="6">
+              <button type="button" class="cf-input-suffix-btn" onclick="requestEmailCode(this,event)">Send code</button>
+            </div>
+            <div class="cf-field-hint">Click Send code to receive a fresh 6-digit code. Valid for 10 minutes.</div>
+            <div class="cf-status is-info" id="tfa-regen-status"></div>
+          </div>
           <div class="cf-actions">
             <button class="cf-btn cf-btn-secondary" onclick="tfaRegenHide()">Cancel</button>
             <button class="cf-btn cf-btn-primary" id="tfa-regen-btn" onclick="tfaRegen()">Generate</button>
@@ -1632,6 +1645,53 @@
     .cf-helper { font-size: 12px; color: var(--text3); margin: 0 0 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .cf-helper a { color: var(--green); text-decoration: none; font-weight: 600; }
     .cf-helper a:hover { text-decoration: underline; }
+
+    /* ─── Unified field-block for confirmation modals ──────────────────
+       Each .cf-field renders: label · input (+ inline Send-code button
+       for email fields) · hint or status. Replaces the old free-floating
+       "Email code: <Send> code" helper row that left the trigger far
+       from its input. */
+    .cf-field { margin-top: 12px; }
+    .cf-field:first-child { margin-top: 0; }
+    .cf-field-lbl {
+      display: block; font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text2); margin-bottom: 6px;
+    }
+    .cf-field-wrap { position: relative; }
+    /* When wrapped, the input gets right-padding to clear the inline Send btn */
+    .cf-field-wrap .cf-input {
+      padding-right: 108px;
+      padding-left: 14px;
+      text-align: left;
+      letter-spacing: 0.14em;
+      font-size: 15px;
+    }
+    .cf-input-suffix-btn {
+      position: absolute; top: 50%; right: 5px; transform: translateY(-50%);
+      padding: 8px 14px;
+      font-family: inherit; font-size: 11.5px; font-weight: 700;
+      letter-spacing: 0.02em;
+      background: var(--green-soft); color: var(--green);
+      border: 1px solid var(--green-edge); border-radius: 6px;
+      cursor: pointer; white-space: nowrap;
+      transition: background .12s, color .12s, border-color .12s, opacity .15s;
+    }
+    .cf-input-suffix-btn:hover { background: var(--green); color: #001a0d; border-color: var(--green); }
+    .cf-input-suffix-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .cf-input-suffix-btn[data-cooling="1"] { background: var(--surface3); color: var(--text3); border-color: var(--border); }
+    .cf-field-hint { font-size: 11px; color: var(--text3); margin-top: 6px; line-height: 1.45; }
+    .cf-status {
+      font-size: 11.5px; line-height: 1.45;
+      margin-top: 6px; min-height: 14px;
+    }
+    .cf-status.is-ok   { color: var(--green); }
+    .cf-status.is-err  { color: var(--red); }
+    .cf-status.is-info { color: var(--text2); }
+    /* Plain TOTP/recovery input — left-aligned mono with comfortable spacing */
+    .cf-field .cf-input:not([id$="-email"]):not([id$="-pwd"]) {
+      text-align: left; padding-left: 14px; letter-spacing: 0.14em; font-size: 15px;
+    }
   </style>
 
   </section><!-- /sec-security -->
@@ -1796,25 +1856,53 @@ async function requestEmailCode(linkEl, evt){
   if (evt) evt.preventDefault();
   // If the link is in cooldown — ignore the click entirely.
   if (linkEl.dataset.cooling === '1') return;
-  const status = linkEl.parentElement.querySelector('.ec-status');
+  // Status element discovery — supports both the legacy <a> + .ec-status
+  // sibling layout AND the new .cf-field block (button + .cf-status).
+  const field = linkEl.closest('.cf-field');
+  let status = null;
+  let statusClassed = false;  // new pattern uses .cf-status with is-ok/is-err
+  if (field) {
+    status = field.querySelector('.cf-status');
+    statusClassed = !!status;
+  }
+  if (!status) status = (linkEl.parentElement && linkEl.parentElement.querySelector('.ec-status')) || null;
+  const setStatus = (text, tone /* 'ok'|'err'|'info' */) => {
+    if (!status) return;
+    status.textContent = text;
+    if (statusClassed) {
+      status.classList.remove('is-ok', 'is-err', 'is-info');
+      status.classList.add('is-' + (tone || 'info'));
+    } else if (tone === 'err') {
+      status.style.color = 'var(--red)';
+    } else if (tone === 'ok') {
+      status.style.color = 'var(--green)';
+    } else {
+      status.style.color = 'var(--text2)';
+    }
+  };
   const originalLabel = linkEl.dataset.originalLabel || linkEl.textContent.trim() || 'Send code';
   linkEl.dataset.originalLabel = originalLabel;
   linkEl.textContent = 'Sending…';
+  linkEl.disabled = true;
   linkEl.style.pointerEvents = 'none';
   linkEl.style.opacity = '0.6';
-  if (status) status.textContent = '';
+  setStatus('', 'info');
   try {
     const r = await Auth.apiFetch('/auth/me/email-confirm/request', { method: 'POST' });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || 'Send failed');
-    if (status) {
-      if (j.dev_code) status.textContent = `dev code: ${j.dev_code}`;
-      else status.textContent = j.delivered ? 'Sent. Check your email (10 min).' : 'Sent — mailer not configured.';
+    if (j.dev_code) {
+      setStatus(`dev code: ${j.dev_code}`, 'info');
+    } else if (j.delivered) {
+      setStatus('✓ Code sent — check your email (valid 10 min).', 'ok');
+    } else {
+      setStatus('Sent — mailer not configured.', 'info');
     }
     _startResendCountdown(linkEl, _RESEND_COOLDOWN_SEC);
   } catch (e) {
-    if (status) status.textContent = 'Failed: ' + (e.message || 'try again');
+    setStatus('Failed: ' + (e.message || 'try again'), 'err');
     linkEl.textContent = originalLabel;
+    linkEl.disabled = false;
     linkEl.style.pointerEvents = '';
     linkEl.style.opacity = '';
   }
@@ -1825,15 +1913,16 @@ function _startResendCountdown(linkEl, seconds){
   const prev = _resendTimers.get(linkEl);
   if (prev) clearInterval(prev);
   linkEl.dataset.cooling = '1';
+  linkEl.disabled = true;
   let remaining = seconds;
-  const baseLabel = linkEl.dataset.originalLabel || 'Send code';
   const tick = () => {
     if (remaining <= 0) {
       const t = _resendTimers.get(linkEl);
       if (t) clearInterval(t);
       _resendTimers.delete(linkEl);
       linkEl.dataset.cooling = '';
-      linkEl.textContent = 'Resend code';
+      linkEl.disabled = false;
+      linkEl.textContent = 'Resend';
       linkEl.style.pointerEvents = '';
       linkEl.style.opacity = '';
       return;
