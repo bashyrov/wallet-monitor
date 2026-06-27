@@ -580,6 +580,11 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         out.trade_delay_ms = int(getattr(lim, "trade_delay_ms", 0) or 0)
         out.is_plan_expired = lim.is_expired
         out.wallet_limit = out.portfolio_limit
+        # Mirror effective plan_slug into legacy `plan` string so the
+        # plan-card label matches the actual tier the user gets. For admins
+        # this surfaces "unlim" instead of their nominal Free row.
+        if getattr(lim, "plan_slug", None):
+            out.plan = lim.plan_slug
     except Exception:
         pass
     # Compute effective referral discount the user gets on their NEXT

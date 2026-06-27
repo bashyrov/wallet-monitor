@@ -187,6 +187,15 @@ def is_paid_active(user: User, plan: Plan) -> bool:
 
 def effective_limits(db: Session, user: User) -> EffectiveLimits:
     plan = get_user_plan(db, user)
+    # Admin override: admins always get the Unlim tier's limits regardless
+    # of their nominal plan in users.plan_id. Keeps the DB clean — no need
+    # to UPDATE plan_id on every admin grant — and ensures newly-promoted
+    # admins immediately bypass Free-tier trade delay + wallet caps without
+    # waiting for a separate plan migration.
+    if getattr(user, "is_admin", False):
+        unlim = get_plan_by_slug(db, "unlim")
+        if unlim is not None:
+            plan = unlim
     free = get_free_plan(db) or plan
     is_expired = (
         not plan.is_free
