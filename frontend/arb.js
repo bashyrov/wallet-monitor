@@ -381,9 +381,8 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
         <div class="acc-tab" data-pane="balances" onclick="accSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
         <span class="acc-spacer"></span>
         <div class="acc-keyinfo" id="acc-keyinfo">
-          <span class="pill ro" title="Read-only keys"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
-          <span class="pill tr" title="Trading keys"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
-          <button type="button" class="pill" style="background:none;cursor:pointer;font-family:inherit" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
+          <button type="button" class="pill pill-muted" title="Manually pair positions into arbitrage spreads" onclick="openSyncPairs()">Sync ⇆</button>
+          <button type="button" class="pill pill-muted" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
         </div>
       </div>
       <div class="acc-body">
@@ -1798,7 +1797,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       const pnlCls = pnl >= 0 ? 'rate-pos' : 'rate-neg';
       const sideTxt = p.side === 'buy' ? 'LONG' : 'SHORT';
       const sideCol = p.side === 'buy' ? 'var(--green)' : 'var(--red)';
-      const shareB64 = _toShareB64({
+      const shareId = _stashShare({
         symbol: p.symbol, exchange: p.exchange, side: p.side,
         quantity: qty, entry_price: entry, mark_price: mark,
         leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
@@ -1810,7 +1809,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           <span class="mono" style="color:var(--text2)">${qty.toFixed(4)} ${SYM}</span>
           <span class="mono ${pnlCls}" style="margin-left:auto">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span>
           <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id || p.symbol}')">Close</button>
-          <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share" data-share-b64="${shareB64}" onclick="_openShareFromBtn(this)">
+          <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share" data-share-id="${shareId}" onclick="_openShareFromBtn(this)">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
           </button>
         </div>`;
@@ -1929,13 +1928,13 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
         const entry = Number(p.entry_price || 0);
         const mark  = Number(p.mark_price || 0);
         const upnlPct = (entry > 0 && qty > 0) ? (upnl / (entry * qty) * 100) : 0;
-        const shareB64 = (typeof _toShareB64 === 'function') ? _toShareB64({
+        const shareId = _stashShare({
           symbol: p.symbol, exchange: p.exchange, side: p.side,
           quantity: qty, entry_price: entry, mark_price: mark,
           leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
           unrealized_pnl_usd: upnl, pnl_pct: upnlPct,
           funding_pnl_usd: (p.funding_pnl_usd != null ? Number(p.funding_pnl_usd) : null),
-        }) : '';
+        });
         return `<tr>
           <td>${p.symbol}</td>
           <td>${EX_LABEL[p.exchange]||p.exchange}</td>
@@ -1949,7 +1948,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           <td style="white-space:nowrap">
             <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')">Close</button>
             <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share"
-                    data-share-b64="${shareB64}"
+                    data-share-id="${shareId}"
                     onclick="_openShareFromBtn(this)">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
             </button>
@@ -2001,7 +2000,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
               <button class="pos-btn pos-btn-close"
                       onclick="event.stopPropagation();_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')">Close Both</button>
               <button class="pos-btn pos-btn-share" title="Share pair P&amp;L card" aria-label="Share"
-                      data-share-pair-b64="${(typeof _toShareB64==='function')?_toShareB64({
+                      data-share-pair-id="${_stashShare({
                         symbol: pair.symbol,
                         long:  { exchange: pair.long.exchange, side: pair.long.side, quantity: Number(pair.long.quantity||0), entry_price: Number(pair.long.entry_price||0), mark_price: Number(pair.long.mark_price||0), leverage: Number(pair.long.leverage||1), unrealized_pnl_usd: Number(pair.long.unrealized_pnl_usd||0) },
                         short: { exchange: pair.short.exchange, side: pair.short.side, quantity: Number(pair.short.quantity||0), entry_price: Number(pair.short.entry_price||0), mark_price: Number(pair.short.mark_price||0), leverage: Number(pair.short.leverage||1), unrealized_pnl_usd: Number(pair.short.unrealized_pnl_usd||0) },
@@ -2010,7 +2009,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
                         pair_size_usd: legUsd,
                         combined_pct: combinedPct,
                         entry_spread_pct: entrySpread,
-                      }):''}"
+                      })}"
                       onclick="event.stopPropagation();_openSharePairFromBtn(this)">
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
               </button>
@@ -2065,7 +2064,15 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
   }
 
   async function _ptLoadAcc() {
-    const tasks = [_ptLoadKeyCounts(), _ptLoadAccPositions(), _ptLoadBalances(), _ptLoadOrders(), _refreshPairDecisions()];
+    // Canonical Long/Short renderer — same template across every mode
+    // (spot / dex / dex_spot). The earlier _ptLoad* dupes diverged on
+    // styling; route everything through accLoad* so positions, balances,
+    // orders and counts all match the Long/Short reference visually.
+    const tasks = [_refreshPairDecisions()];
+    if (typeof accLoadKeyCounts === 'function') tasks.push(accLoadKeyCounts());
+    if (typeof accLoadPositions === 'function') tasks.push(accLoadPositions());
+    if (typeof accLoadBalances === 'function') tasks.push(accLoadBalances());
+    if (typeof accLoadOrders === 'function') tasks.push(accLoadOrders());
     if (typeof accLoadTriggers === 'function') tasks.push(accLoadTriggers());
     await Promise.all(tasks);
     if (typeof accLoadPnl === 'function') accLoadPnl();
@@ -5191,7 +5198,7 @@ async function accLoadPositions(){
           <td style="white-space:nowrap">
             <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')">Close</button>
             <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share"
-                    data-share-b64="${_toShareB64({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct,funding_pnl_usd:(p.funding_pnl_usd!=null?Number(p.funding_pnl_usd):null)})}"
+                    data-share-id="${_stashShare({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct,funding_pnl_usd:(p.funding_pnl_usd!=null?Number(p.funding_pnl_usd):null)})}"
                     onclick="_openShareFromBtn(this)">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
             </button>
@@ -5273,7 +5280,7 @@ async function accLoadPositions(){
                       : `_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')`}"
                     title="${pair._spot_short ? 'Close the short leg only — sell the spot holding manually on the exchange' : ''}">${pair._spot_short ? 'Close Short' : 'Close Both'}</button>
             <button class="pos-btn pos-btn-share" title="Share pair P&amp;L card" aria-label="Share"
-                    data-share-pair-b64="${_toShareB64({
+                    data-share-pair-id="${_stashShare({
                       symbol: pair.symbol,
                       long: {
                         exchange: pair.long.exchange,
@@ -5977,12 +5984,12 @@ async function refreshTradePositions(){
     const pnl = Number(p.unrealized_pnl_usd || 0);
     const funding = Number(p.funding_pnl_usd || 0);
     const pnlPct = (entry > 0 && qty > 0) ? (pnl / (entry * qty) * 100) : 0;
-    const shareData = _htmlEsc(JSON.stringify({
+    const shareId = _stashShare({
       symbol: p.symbol, exchange: p.exchange, side: p.side,
       quantity: qty, entry_price: entry, mark_price: mark,
       leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
       unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
-    }));
+    });
 
     let fundingRow = '';
     if (p.funding_pnl_usd !== null && p.funding_pnl_usd !== undefined) {
@@ -6029,7 +6036,7 @@ async function refreshTradePositions(){
         <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
         <span class="pos-pnl ${pnlCls}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</span>
         <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id}')">Close</button>
-        <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share" data-share='${shareData}'
+        <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share" data-share-id="${shareId}"
                 onclick="_openShareFromBtn(this)">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
         </button>
@@ -7506,28 +7513,43 @@ async function _ensureRefCode(){
 
 // Reads the position from the button's data-share attribute. Browsers
 // auto-decode HTML entities when reading data-* via JS, so we get clean JSON.
+// Share-payload transport: keyed by a small id stamped in the button's
+// data-share-id, with the full object stashed on window._shareCache.
+// Sidesteps every HTML-attribute escaping pitfall (JSON-in-attribute,
+// base64 padding, Unicode tickers) by simply not putting the payload
+// in the DOM at all.
+window._shareCache = window._shareCache || {};
+let _shareIdSeq = 0;
+function _stashShare(obj){
+  const id = '_s' + (++_shareIdSeq);
+  window._shareCache[id] = obj;
+  return id;
+}
 function _openShareFromBtn(btn){
   try {
-    // Prefer the base64 transport (data-share-b64) — survives any HTML
-    // attribute escaping. Fall back to the legacy raw JSON attribute
-    // (data-share) for backwards compat.
-    const b64 = btn.getAttribute('data-share-b64');
-    let pos;
-    if (b64) {
-      pos = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    let pos = null;
+    const id = btn.getAttribute('data-share-id');
+    if (id && window._shareCache[id]) {
+      pos = window._shareCache[id];
     } else {
-      const raw = btn.getAttribute('data-share');
-      pos = JSON.parse(raw);
+      // Legacy fallbacks — old cached HTML still in flight or other
+      // call sites we haven't migrated yet.
+      const b64 = btn.getAttribute('data-share-b64');
+      if (b64) {
+        pos = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      } else {
+        pos = JSON.parse(btn.getAttribute('data-share'));
+      }
     }
     openShareCard(pos);
   } catch (e) {
-    console.error('share-card data parse failed', e, btn.getAttribute('data-share-b64') || btn.getAttribute('data-share'));
+    console.error('share-card data parse failed', e);
     if (typeof toast === 'function') toast('Could not open share card', 'error');
   }
 }
 
-// btoa() chokes on Unicode; round-trip via UTF-8 percent-encoding
-// keeps emoji / non-ASCII tickers safe.
+// Kept for any caller still pointing at base64 transport — falls back
+// gracefully if btoa fails (Unicode chars round-tripped via percent).
 function _toShareB64(obj){
   try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
   catch { return ''; }
@@ -7618,12 +7640,17 @@ function openShareCard(pos){
 
 function _openSharePairFromBtn(btn){
   try {
-    const b64 = btn.getAttribute('data-share-pair-b64');
-    let pair;
-    if (b64) {
-      pair = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    let pair = null;
+    const id = btn.getAttribute('data-share-pair-id');
+    if (id && window._shareCache[id]) {
+      pair = window._shareCache[id];
     } else {
-      pair = JSON.parse(btn.getAttribute('data-share-pair'));
+      const b64 = btn.getAttribute('data-share-pair-b64');
+      if (b64) {
+        pair = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      } else {
+        pair = JSON.parse(btn.getAttribute('data-share-pair'));
+      }
     }
     openSharePairCard(pair);
   } catch(e){

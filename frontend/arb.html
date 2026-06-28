@@ -32,8 +32,8 @@
      fetchpriority="high" tells the browser to schedule these ahead of
      other low-priority discoveries (e.g. images far down the page). -->
 <link rel="preload" as="script" href="/dist/core.min.js?v=20260628b" fetchpriority="high">
-<link rel="preload" as="script" href="/arb.js?v=20260628d" fetchpriority="high">
-<link rel="preload" as="style"  href="/arb.css?v=20260628b"      fetchpriority="high">
+<link rel="preload" as="script" href="/arb.js?v=20260628g" fetchpriority="high">
+<link rel="preload" as="style"  href="/arb.css?v=20260628d"      fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
 <!-- Pre-establish TCP+TLS to exchange API origins so the first orderbook /
@@ -64,14 +64,14 @@
      Loaded with defer so it runs after DOM parse completes — equivalent
      to the previous mid-body execution since the trailing init() call
      anyway waited on DOMContentLoaded for most code paths. -->
-<script src="/arb.js?v=20260628d" defer></script>
+<script src="/arb.js?v=20260628g" defer></script>
 <link rel="stylesheet" href="/design.css">
 <link rel="stylesheet" href="/navbar.css?v=20260628b">
 <!-- lightweight-charts (161KB) loaded lazily via _loadLightweightCharts()
      in an idle callback after init — chart sits below the fold on most
      viewports and orderbook rendering takes priority. -->
 
-<link rel="stylesheet" href="/arb.css?v=20260628b">
+<link rel="stylesheet" href="/arb.css?v=20260628d">
 </head>
 <body>
 
@@ -420,10 +420,8 @@
       <div class="acc-tab" data-pane="balances" onclick="accSwitch(this)" role="tab">Balances <span class="acc-count" id="acc-cnt-balances">0</span></div>
       <span class="acc-spacer"></span>
       <div class="acc-keyinfo" id="acc-keyinfo">
-        <span class="pill ro" title="Read-only keys control Balances / Positions / Orders visibility"><span class="pill-dot"></span>Read-only <span class="mono" id="acc-ro-count">0</span></span>
-        <span class="pill tr" title="Trading keys place real orders"><span class="pill-dot"></span>Trade <span class="mono" id="acc-tr-count">0</span></span>
-        <button type="button" class="pill" style="background:none;cursor:pointer;font-family:inherit" title="Manually pair positions into arbitrage spreads" onclick="openSyncPairs()">Sync ⇆</button>
-        <button type="button" class="pill" style="text-decoration:none;color:var(--text2);background:none;cursor:pointer;font-family:inherit" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
+        <button type="button" class="pill pill-muted" title="Manually pair positions into arbitrage spreads" onclick="openSyncPairs()">Sync ⇆</button>
+        <button type="button" class="pill pill-muted" title="Manage API keys" onclick="openKeysPopup()">Keys ⚙</button>
       </div>
     </div>
     <div class="acc-body">
