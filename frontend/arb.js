@@ -1925,7 +1925,17 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
         const sideCls = side === 'buy' ? 'pos' : 'neg';
         const sideTxt = side === 'buy' ? 'LONG' : 'SHORT';
         const upnl = +(p.unrealized_pnl_usd || 0);
-        const upnlPct = p.entry_price && p.quantity ? (upnl / (p.entry_price * p.quantity) * 100) : null;
+        const qty  = Number(p.quantity || 0);
+        const entry = Number(p.entry_price || 0);
+        const mark  = Number(p.mark_price || 0);
+        const upnlPct = (entry > 0 && qty > 0) ? (upnl / (entry * qty) * 100) : 0;
+        const shareB64 = (typeof _toShareB64 === 'function') ? _toShareB64({
+          symbol: p.symbol, exchange: p.exchange, side: p.side,
+          quantity: qty, entry_price: entry, mark_price: mark,
+          leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
+          unrealized_pnl_usd: upnl, pnl_pct: upnlPct,
+          funding_pnl_usd: (p.funding_pnl_usd != null ? Number(p.funding_pnl_usd) : null),
+        }) : '';
         return `<tr>
           <td>${p.symbol}</td>
           <td>${EX_LABEL[p.exchange]||p.exchange}</td>
@@ -1936,7 +1946,14 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           <td class="num ${(+p.funding_pnl_usd||0) >= 0 ? 'pos' : 'neg'}">${fmtUsd(p.funding_pnl_usd)}</td>
           <td class="num ${upnl >= 0 ? 'pos' : 'neg'}">${fmtUsd(upnl)}</td>
           <td class="num ${upnl >= 0 ? 'pos' : 'neg'}">${fmtPct(upnlPct)}</td>
-          <td></td>
+          <td style="white-space:nowrap">
+            <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')">Close</button>
+            <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share"
+                    data-share-b64="${shareB64}"
+                    onclick="_openShareFromBtn(this)">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
+            </button>
+          </td>
         </tr>`;
       };
 
@@ -1980,7 +1997,24 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
             <td class="num">${hasFunding ? `<span class="${fundCls}">${fmtUsd(tFund)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
             <td class="num ${pnlCls}" style="font-weight:700">${fmtUsd(tPnl)}</td>
             <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
-            <td></td>
+            <td style="white-space:nowrap" onclick="event.stopPropagation()">
+              <button class="pos-btn pos-btn-close"
+                      onclick="event.stopPropagation();_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')">Close Both</button>
+              <button class="pos-btn pos-btn-share" title="Share pair P&amp;L card" aria-label="Share"
+                      data-share-pair-b64="${(typeof _toShareB64==='function')?_toShareB64({
+                        symbol: pair.symbol,
+                        long:  { exchange: pair.long.exchange, side: pair.long.side, quantity: Number(pair.long.quantity||0), entry_price: Number(pair.long.entry_price||0), mark_price: Number(pair.long.mark_price||0), leverage: Number(pair.long.leverage||1), unrealized_pnl_usd: Number(pair.long.unrealized_pnl_usd||0) },
+                        short: { exchange: pair.short.exchange, side: pair.short.side, quantity: Number(pair.short.quantity||0), entry_price: Number(pair.short.entry_price||0), mark_price: Number(pair.short.mark_price||0), leverage: Number(pair.short.leverage||1), unrealized_pnl_usd: Number(pair.short.unrealized_pnl_usd||0) },
+                        total_pnl_usd: tPnl,
+                        total_funding_usd: hasFunding ? tFund : null,
+                        pair_size_usd: legUsd,
+                        combined_pct: combinedPct,
+                        entry_spread_pct: entrySpread,
+                      }):''}"
+                      onclick="event.stopPropagation();_openSharePairFromBtn(this)">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
+              </button>
+            </td>
           </tr>`;
         const legs = isOpen ? (rowFor(pair.long) + rowFor(pair.short)) : '';
         return header + legs;
