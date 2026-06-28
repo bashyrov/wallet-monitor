@@ -1777,21 +1777,21 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       const pnlCls = pnl >= 0 ? 'rate-pos' : 'rate-neg';
       const sideTxt = p.side === 'buy' ? 'LONG' : 'SHORT';
       const sideCol = p.side === 'buy' ? 'var(--green)' : 'var(--red)';
-      const shareData = JSON.stringify({
+      const shareB64 = _toShareB64({
         symbol: p.symbol, exchange: p.exchange, side: p.side,
         quantity: qty, entry_price: entry, mark_price: mark,
         leverage: Number(p.leverage || 1), margin_mode: p.margin_mode,
         unrealized_pnl_usd: pnl, pnl_pct: pnlPct,
-      }).replace(/'/g, '&#39;');
+      });
       return `
         <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:11px">
           <span style="color:${sideCol};font-weight:700;font-size:10px">${sideTxt}</span>
           <span class="mono" style="color:var(--text2)">${qty.toFixed(4)} ${SYM}</span>
           <span class="mono ${pnlCls}" style="margin-left:auto">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</span>
-          <button class="pos-btn pos-btn-share" title="Share P&L card" aria-label="Share" data-share='${shareData}' onclick='_openShareFromBtn(this)'>
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
-          </button>
           <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id || p.symbol}')">Close</button>
+          <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share" data-share-b64="${shareB64}" onclick="_openShareFromBtn(this)">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
+          </button>
         </div>`;
     }).join('');
     if (typeof _renderIfChanged === 'function') _renderIfChanged('pt-positions-list', html);
@@ -5136,9 +5136,9 @@ async function accLoadPositions(){
           <td style="white-space:nowrap">
             <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')">Close</button>
             <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share"
-                    data-share='${_htmlEsc(JSON.stringify({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct,funding_pnl_usd:(p.funding_pnl_usd!=null?Number(p.funding_pnl_usd):null)}))}'
-                    onclick='_openShareFromBtn(this)'>
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
+                    data-share-b64="${_toShareB64({symbol:p.symbol,exchange:p.exchange,side:p.side,quantity:qty,entry_price:Number(p.entry_price||0),mark_price:mark,leverage:Number(p.leverage||1),margin_mode:p.margin_mode,unrealized_pnl_usd:pnl,pnl_pct:pnlPct,funding_pnl_usd:(p.funding_pnl_usd!=null?Number(p.funding_pnl_usd):null)})}"
+                    onclick="_openShareFromBtn(this)">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
             </button>
           </td>
         </tr>`;
@@ -7452,13 +7452,29 @@ async function _ensureRefCode(){
 // auto-decode HTML entities when reading data-* via JS, so we get clean JSON.
 function _openShareFromBtn(btn){
   try {
-    const raw = btn.getAttribute('data-share');
-    const pos = JSON.parse(raw);
+    // Prefer the base64 transport (data-share-b64) — survives any HTML
+    // attribute escaping. Fall back to the legacy raw JSON attribute
+    // (data-share) for backwards compat.
+    const b64 = btn.getAttribute('data-share-b64');
+    let pos;
+    if (b64) {
+      pos = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    } else {
+      const raw = btn.getAttribute('data-share');
+      pos = JSON.parse(raw);
+    }
     openShareCard(pos);
   } catch (e) {
-    console.error('share-card data parse failed', e, btn.getAttribute('data-share'));
+    console.error('share-card data parse failed', e, btn.getAttribute('data-share-b64') || btn.getAttribute('data-share'));
     if (typeof toast === 'function') toast('Could not open share card', 'error');
   }
+}
+
+// btoa() chokes on Unicode; round-trip via UTF-8 percent-encoding
+// keeps emoji / non-ASCII tickers safe.
+function _toShareB64(obj){
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
+  catch { return ''; }
 }
 
 // Closed-pnl row → share card. Reshapes the PnL row (which carries

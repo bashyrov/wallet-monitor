@@ -918,18 +918,29 @@ body.light .bnav-item.active{color:#000;}
   border-color: rgba(248,113,113,0.4);
   background: rgba(248,113,113,0.08);
 }
+/* Share button — brand-mint filled by default, matches our primary CTA.
+   Dark glyph on mint bg gives instant "this is the brand action" cue. */
 .pos-btn-share {
-  width: 26px; padding: 0;            /* icon-only square */
-  color: var(--green);
-}
-.pos-btn-share:hover {
-  color: #001a0d;
+  width: 26px; padding: 0;
   background: var(--green);
   border-color: var(--green);
+  color: #071612;
+  transition: filter .12s, background .12s, border-color .12s;
+}
+.pos-btn-share:hover {
+  background: var(--green);
+  border-color: var(--green);
+  color: #071612;
+  filter: brightness(0.88);
 }
 .pos-btn-share svg { display: block; }
-/* Spacing for adjacent action buttons inside a positions cell. */
-.pos-btn + .pos-btn { margin-left: 6px; }
+/* Spacing between the two action buttons. */
+.pos-btn + .pos-btn { margin-left: 8px; }
+/* Visual gap between the actions cell and the last data column —
+   matches the 14px+14px (28) padding gap between regular columns.
+   Applied to td containing pos-btn so it works in both the in-pair
+   compact row (flex) and the main Positions table (td). */
+.acc-table td:has(.pos-btn) { padding-left: 24px; }
 
 body.light .trade-tab.is-active, body.light .trade-dd-chip.is-active { background:#FFFFFF; }
 body.light .trade-position-row { background:#F7F7F7; }
