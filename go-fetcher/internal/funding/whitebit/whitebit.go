@@ -11,6 +11,7 @@ package whitebit
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,32 @@ func (a *Adapter) HeartbeatInterval() time.Duration { return 0 }
 func (a *Adapter) PongFor(_ []byte) []byte          { return nil }
 func (a *Adapter) UseLibPings() bool                { return false }
 func (a *Adapter) DecompressGzip() bool             { return false }
+
+// intervalFromMs returns the funding interval in hours implied by the
+// distance from now (UTC) to the next-funding timestamp (ms).
+// Rounds to the nearest of {1,2,4,8}h; falls back to 8h.
+func intervalFromMsStr(s string) float64 {
+	const fallback = 8.0
+	if s == "" {
+		return fallback
+	}
+	ms, _ := strconv.ParseInt(s, 10, 64)
+	if ms <= 0 {
+		return fallback
+	}
+	now := time.Now().UnixMilli()
+	delta := float64(ms - now)
+	if delta <= 0 {
+		return fallback
+	}
+	hours := delta / (60 * 60 * 1000)
+	for _, cand := range []int{1, 2, 4, 8} {
+		if math.Abs(hours-float64(cand)) < 0.5 {
+			return float64(cand)
+		}
+	}
+	return fallback
+}
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
 	var doc struct {
@@ -70,7 +97,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			IndexPrice: idx,
 			Volume24h:  vol,
 			OpenIntUSD: oi * last,
-			IntervalH:  8,
+			IntervalH:  intervalFromMsStr(r.NextFundingRateTimestamp),
 		}
 		if nextMs > 0 {
 			t.NextFunding = time.UnixMilli(nextMs)
