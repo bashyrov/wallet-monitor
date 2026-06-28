@@ -6173,11 +6173,12 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeKeysP
   const LABELS = (window.EX && window.EX.labels) || {};
   const FRESH_S = 8, STALE_S = 30;
   const wrap = document.getElementById('ex-status-items');
+  // spot/dex/dex_spot modes replace body.innerHTML and don't ship the
+  // status strip — bail early instead of throwing on null.innerHTML
+  // (which used to halt the entire module parse and TDZ-poison every
+  // later let-declared module-level variable).
+  if (!wrap) return;
   function rebuild(){
-    // Status strip: dot + venue name only. Age is hidden in the visual
-    // strip (kept as title attribute for hover) — clutters the bar
-    // without adding actionable info; the dot already encodes
-    // fresh/slow/stale.
     wrap.innerHTML = EXES.map(e => `<span class="as-ex" id="exs-${e}"><span class="d"></span><span class="nm">${LABELS[e]||e}</span></span>`).join('');
   }
   rebuild();
