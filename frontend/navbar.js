@@ -313,18 +313,51 @@ window.openAvatarMenu = window.openAvatarMenu || function(ev) {
   if (!anchor) return;
   const r = anchor.getBoundingClientRect();
 
+  // Pull user info from Auth (cached on window after login). Falls back
+  // to "Account" / no plan badge for legacy sessions without cached user.
+  const u = (typeof Auth !== 'undefined' && Auth.getUser) ? (Auth.getUser() || {}) : {};
+  const name = u.username || u.email || 'Account';
+  const initial = (name[0] || 'A').toUpperCase();
+  const planRaw = (u.plan || '').toString().toLowerCase();
+  const planLabel = planRaw ? planRaw.charAt(0).toUpperCase() + planRaw.slice(1) : '';
+  const isAdmin = !!u.is_admin;
+
   const menu = document.createElement('div');
   menu.id = 'nb-avatar-menu';
   menu.className = 'nb-avatar-menu';
   menu.setAttribute('role', 'menu');
   menu.innerHTML = `
+    <div class="nb-avm-head">
+      <div class="nb-avm-avatar">${initial}</div>
+      <div class="nb-avm-meta">
+        <div class="nb-avm-name" title="${name}">${name}</div>
+        ${planLabel ? `<div class="nb-avm-plan ${'plan-'+planRaw}">${planLabel}${isAdmin ? ' · Admin' : ''}</div>` : (isAdmin ? '<div class="nb-avm-plan plan-admin">Admin</div>' : '')}
+      </div>
+    </div>
+    <div class="nb-avm-sep"></div>
+    <a href="/portfolio" class="nb-avm-item" role="menuitem">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="12" height="9" rx="2"/><path d="M2 7h12M6 4V2.5a1 1 0 011-1h2a1 1 0 011 1V4"/></svg>
+      <span>Portfolio</span>
+    </a>
     <a href="/profile" class="nb-avm-item" role="menuitem">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="2.6"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="2.6"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
       <span>Profile</span>
     </a>
+    <a href="/profile#sec-security" class="nb-avm-item" role="menuitem">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="6" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg>
+      <span>Security &amp; 2FA</span>
+    </a>
+    <a href="/avashare" class="nb-avm-item" role="menuitem">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2"/><circle cx="11" cy="11" r="2"/><path d="M6.5 6.5l3 3"/></svg>
+      <span>Avashare</span>
+    </a>
+    ${isAdmin ? `<a href="/admin" class="nb-avm-item" role="menuitem">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2v4c0 3.4-2.3 6.4-5.5 7.5C4.8 13.9 2.5 10.9 2.5 7.5v-4L8 1.5z"/></svg>
+      <span>Admin</span>
+    </a>` : ''}
     <div class="nb-avm-sep"></div>
     <button type="button" class="nb-avm-item danger" role="menuitem" id="nb-avm-logout">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5L13 8 10 11M13 8H5M7 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h4"/></svg>
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5L13 8 10 11M13 8H5M7 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h4"/></svg>
       <span>Sign out</span>
     </button>
   `;

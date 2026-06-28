@@ -12,7 +12,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin — Avalant</title>
   <link rel="stylesheet" href="/design.css">
-  <link rel="stylesheet" href="/navbar.css?v=20260628b">
+  <link rel="stylesheet" href="/navbar.css?v=20260628c">
   <link rel="stylesheet" href="/fonts/fonts.css">
   <style>
     /* :root tokens come from /design.css */
@@ -613,34 +613,26 @@
       <span class="drawer-brand">avalant<span>_</span></span>
       <button class="drawer-close" onclick="closeDrawer()">✕</button>
     </div>
-    <a class="drawer-item active" id="drawer-dashboard" href="#" onclick="showTab('dashboard',this);closeDrawer();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="8" width="3.5" height="5" rx="1" fill="currentColor" opacity=".5"/><rect x="5.25" y="5" width="3.5" height="8" rx="1" fill="currentColor" opacity=".7"/><rect x="9.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
-      Dashboard
-    </a>
-    <a class="drawer-item" id="drawer-users" href="#" onclick="showTab('users',this);closeDrawer();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 12c0-2.8 2.7-5 6-5s6 2.2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Users
-    </a>
-    <a class="drawer-item" id="drawer-errors" href="#" onclick="showTab('errors',this);loadErrors();closeDrawer();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L1.5 11.5h11L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v2.5M7 10.2v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Provider Errors
-    </a>
-    <a class="drawer-item" id="drawer-screener" href="#" onclick="showTab('screener',this);loadScreenerConfig();closeDrawer();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M2 3h10M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Screener
-    </a>
-    <a class="drawer-item" id="drawer-portfolio" href="#" onclick="showTab('portfolio',this);loadPortfolioConfig();closeDrawer();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M2 7h10M2 10h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Portfolio
-    </a>
-    <a class="drawer-item" id="drawer-maintenance" href="#" onclick="showTab('maintenance',this);loadScreenerConfig();closeDrawer();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 3.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Maintenance
-    </a>
+    <div class="sidebar-section" style="padding:0 14px 4px;font-size:10px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase">Overview</div>
+    <a class="drawer-item active" id="drawer-dashboard" href="#" onclick="showTab('dashboard',this);closeDrawer();return false;">Dashboard</a>
+    <div class="sidebar-section" style="padding:8px 14px 4px;font-size:10px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase">Users</div>
+    <a class="drawer-item" id="drawer-users" href="#" onclick="showTab('users',this);closeDrawer();return false;">All users</a>
+    <div class="sidebar-section" style="padding:8px 14px 4px;font-size:10px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase">Monetisation</div>
     <a class="drawer-item" href="#" onclick="showTab('plans',this);loadPlansAdmin();closeDrawer();return false;">Plans</a>
-    <a class="drawer-item" href="#" onclick="showTab('promos',this);loadPromosAdmin();closeDrawer();return false;">Promo codes</a>
-    <a class="drawer-item" href="#" onclick="showTab('popups',this);loadPopupsAdmin();closeDrawer();return false;">Popups</a>
     <a class="drawer-item" href="#" onclick="showTab('periods',this);loadPeriodsAdmin();closeDrawer();return false;">Billing periods</a>
+    <a class="drawer-item" href="#" onclick="showTab('promos',this);loadPromosAdmin();closeDrawer();return false;">Promo codes</a>
+    <a class="drawer-item" href="#" onclick="showTab('refunds',this);loadRefundsTab();closeDrawer();return false;">Refunds</a>
+    <a class="drawer-item" href="#" onclick="showTab('refcodes',this);loadRefCodesTab();closeDrawer();return false;">Referral codes</a>
+    <a class="drawer-item" href="#" onclick="showTab('avashare',this);loadAvashareTab();closeDrawer();return false;">Avashare payouts</a>
+    <div class="sidebar-section" style="padding:8px 14px 4px;font-size:10px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase">Operations</div>
+    <a class="drawer-item" id="drawer-screener" href="#" onclick="showTab('screener',this);loadScreenerConfig();closeDrawer();return false;">Screener config</a>
+    <a class="drawer-item" id="drawer-portfolio" href="#" onclick="showTab('portfolio',this);loadPortfolioConfig();closeDrawer();return false;">Portfolio config</a>
+    <a class="drawer-item" id="drawer-maintenance" href="#" onclick="showTab('maintenance',this);loadScreenerConfig();closeDrawer();return false;">Maintenance</a>
+    <a class="drawer-item" href="#" onclick="showTab('freshness',this);loadFreshnessTab();closeDrawer();return false;">Exchange freshness</a>
+    <a class="drawer-item" id="drawer-errors" href="#" onclick="showTab('errors',this);loadErrors();closeDrawer();return false;">Provider errors</a>
+    <div class="sidebar-section" style="padding:8px 14px 4px;font-size:10px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase">Communications</div>
+    <a class="drawer-item" href="#" onclick="showTab('broadcast',this);loadBroadcastTab();closeDrawer();return false;">Broadcast</a>
+    <a class="drawer-item" href="#" onclick="showTab('popups',this);loadPopupsAdmin();closeDrawer();return false;">Popups</a>
     <div class="drawer-sep"></div>
     <a class="drawer-item" href="/portfolio">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M6 2H2a1 1 0 00-1 1v9a1 1 0 001 1h10a1 1 0 001-1V8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8 1h5v5M13 1L7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -653,69 +645,79 @@
 
   <!-- ── SIDEBAR ── -->
   <aside class="sidebar">
+    <!-- Overview: pulse of the platform -->
     <div class="sidebar-section">Overview</div>
     <a class="sidebar-item active" href="#" onclick="showTab('dashboard',this);return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="8" width="3.5" height="5" rx="1" fill="currentColor" opacity=".5"/><rect x="5.25" y="5" width="3.5" height="8" rx="1" fill="currentColor" opacity=".7"/><rect x="9.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
       Dashboard
     </a>
+
+    <!-- Users: account-level management -->
+    <div class="sidebar-section" style="margin-top:14px">Users</div>
     <a class="sidebar-item" href="#" onclick="showTab('users',this);return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 12c0-2.8 2.7-5 6-5s6 2.2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Users
+      All users
     </a>
-    <a class="sidebar-item" href="#" onclick="showTab('errors',this);loadErrors();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L1.5 11.5h11L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v2.5M7 10.2v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Provider Errors
-    </a>
-    <a class="sidebar-item" href="#" onclick="showTab('screener',this);loadScreenerConfig();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M2 3h10M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Screener
-    </a>
-    <a class="sidebar-item" href="#" onclick="showTab('portfolio',this);loadPortfolioConfig();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M2 7h10M2 10h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Portfolio
-    </a>
-    <a class="sidebar-item" href="#" onclick="showTab('maintenance',this);loadScreenerConfig();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 3.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Maintenance
-    </a>
+
+    <!-- Monetisation: anything that moves money -->
     <div class="sidebar-section" style="margin-top:14px">Monetisation</div>
     <a class="sidebar-item" href="#" onclick="showTab('plans',this);loadPlansAdmin();return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 1h6l3 3v9H3V1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M3 6h7M3 9h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Plans
     </a>
-    <a class="sidebar-item" href="#" onclick="showTab('promos',this);loadPromosAdmin();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7l5-5 5 5-5 5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="5" cy="5" r="0.7" fill="currentColor"/></svg>
-      Promo codes
-    </a>
-    <a class="sidebar-item" href="#" onclick="showTab('popups',this);loadPopupsAdmin();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2" width="11" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 10v2M9 10v2M4 12h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Popups
-    </a>
     <a class="sidebar-item" href="#" onclick="showTab('periods',this);loadPeriodsAdmin();return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3l2 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Billing periods
     </a>
-    <div class="sidebar-section" style="margin-top:14px">Communications</div>
-    <a class="sidebar-item" href="#" onclick="showTab('broadcast',this);loadBroadcastTab();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4l5 4 5-4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><rect x="2" y="3" width="10" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>
-      Broadcast
-    </a>
-    <a class="sidebar-item" href="#" onclick="showTab('avashare',this);loadAvashareTab();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M2 4l5-3 5 3M2 10l5 3 5-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Avashare payouts
-    </a>
-    <a class="sidebar-item" href="#" onclick="showTab('refcodes',this);loadRefCodesTab();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="3" width="10" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M4 6h6M4 9h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Referral codes
+    <a class="sidebar-item" href="#" onclick="showTab('promos',this);loadPromosAdmin();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7l5-5 5 5-5 5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="5" cy="5" r="0.7" fill="currentColor"/></svg>
+      Promo codes
     </a>
     <a class="sidebar-item" href="#" onclick="showTab('refunds',this);loadRefundsTab();return false;">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 4l-3 3 3 3M3 7h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3"/></svg>
       Refunds
     </a>
+    <a class="sidebar-item" href="#" onclick="showTab('refcodes',this);loadRefCodesTab();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="3" width="10" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M4 6h6M4 9h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Referral codes
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('avashare',this);loadAvashareTab();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M2 4l5-3 5 3M2 10l5 3 5-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Avashare payouts
+    </a>
+
+    <!-- Operations: runtime knobs + system health -->
     <div class="sidebar-section" style="margin-top:14px">Operations</div>
+    <a class="sidebar-item" href="#" onclick="showTab('screener',this);loadScreenerConfig();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M2 3h10M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Screener config
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('portfolio',this);loadPortfolioConfig();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M2 7h10M2 10h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Portfolio config
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('maintenance',this);loadScreenerConfig();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 3.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Maintenance
+    </a>
     <a class="sidebar-item" href="#" onclick="showTab('freshness',this);loadFreshnessTab();return false;">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3l2 1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M3 7l3 2 5-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Exchange freshness
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('errors',this);loadErrors();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L1.5 11.5h11L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v2.5M7 10.2v.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Provider errors
+    </a>
+
+    <!-- Communications: user-facing messages -->
+    <div class="sidebar-section" style="margin-top:14px">Communications</div>
+    <a class="sidebar-item" href="#" onclick="showTab('broadcast',this);loadBroadcastTab();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4l5 4 5-4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><rect x="2" y="3" width="10" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>
+      Broadcast
+    </a>
+    <a class="sidebar-item" href="#" onclick="showTab('popups',this);loadPopupsAdmin();return false;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2" width="11" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 10v2M9 10v2M4 12h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Popups
     </a>
   </aside>
 
@@ -1487,7 +1489,7 @@ input[type="checkbox"] { accent-color: var(--green); width: 14px; height: 14px; 
 </style>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260628c"></script>
+<script src="/dist/core.min.js?v=20260628d"></script>
 <script>
 Auth.requireAdmin('/portfolio');
 
