@@ -7541,10 +7541,15 @@ async function _ensureRefCode(){
 // Sidesteps every HTML-attribute escaping pitfall (JSON-in-attribute,
 // base64 padding, Unicode tickers) by simply not putting the payload
 // in the DOM at all.
+// Stored on window because the spot/dex IIFE deliberately throws at the
+// end of its block (`_arb_type_gate`) to skip the futures-specific
+// script below. That throw halts module parsing, so any `let` declared
+// later in the file (which was the previous home of _shareIdSeq) stays
+// in TDZ on spot/dex/dex_spot pages. Putting it on `window` survives.
 window._shareCache = window._shareCache || {};
-let _shareIdSeq = 0;
+window._shareIdSeq = window._shareIdSeq || 0;
 function _stashShare(obj){
-  const id = '_s' + (++_shareIdSeq);
+  const id = '_s' + (++window._shareIdSeq);
   window._shareCache[id] = obj;
   return id;
 }
