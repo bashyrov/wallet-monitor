@@ -85,11 +85,62 @@ const (
 	// and /premiumIndex doesn't carry volume. Without this the screener
 	// volume-floor filter dropped Binance rows or reported "$0" volume.
 	restTickerURL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
+	// /fundingInfo — per-symbol fundingIntervalHours (4 or 8). Not included
+	// in /premiumIndex. Fetched once and cached for the life of the process.
+	fundingInfoURL = "https://fapi.binance.com/fapi/v1/fundingInfo"
 )
 
-type Adapter struct{}
+type Adapter struct {
+	fundMu       sync.RWMutex
+	fundInterval map[string]int // "BTCUSDT" -> hours
+}
 
 func New() *Adapter { return &Adapter{} }
+
+func (a *Adapter) fetchIntervalCache(ctx context.Context) {
+	a.fundMu.RLock()
+	if a.fundInterval != nil {
+		a.fundMu.RUnlock()
+		return
+	}
+	a.fundMu.RUnlock()
+	var rows []struct {
+		Symbol               string `json:"symbol"`
+		FundingIntervalHours int    `json:"fundingIntervalHours"`
+	}
+	if err := funding.HTTPGet(ctx, fundingInfoURL, &rows); err != nil {
+		return
+	}
+	a.fundMu.Lock()
+	defer a.fundMu.Unlock()
+	a.fundInterval = make(map[string]int, len(rows))
+	for _, r := range rows {
+		h := r.FundingIntervalHours
+		if h < 1 {
+			h = 8
+		}
+		a.fundInterval[r.Symbol] = h
+	}
+}
+
+func (a *Adapter) lookupInterval(ctx context.Context, symbol string) int {
+	a.fundMu.RLock()
+	if a.fundInterval != nil {
+		defer a.fundMu.RUnlock()
+		if ivl, ok := a.fundInterval[symbol]; ok {
+			return ivl
+		}
+		return 8
+	}
+	a.fundMu.RUnlock()
+	a.fetchIntervalCache(ctx)
+	a.fundMu.RLock()
+	defer a.fundMu.RUnlock()
+	if ivl, ok := a.fundInterval[symbol]; ok {
+		return ivl
+	}
+	return 8
+}
 
 func (a *Adapter) Name() string                          { return "binance" }
 func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
@@ -185,7 +236,7 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			MarkPrice:   mark,
 			IndexPrice:  idx,
 			NextFunding: time.UnixMilli(r.NextFunding),
-			IntervalH:   8,
+			IntervalH:   float64(a.lookupInterval(context.Background(), r.Symbol)),
 		})
 	}
 	return out, nil
@@ -198,6 +249,7 @@ func (a *Adapter) UseLibPings() bool                { return true }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
+	a.fetchIntervalCache(ctx)
 	var rows []struct {
 		Symbol        string `json:"symbol"`
 		MarkPrice     string `json:"markPrice"`
@@ -249,7 +301,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			IndexPrice:  idx,
 			Volume24h:   volBySymbol[token],
 			NextFunding: time.UnixMilli(r.NextFundingTs),
-			IntervalH:   8,
+			IntervalH:   float64(a.lookupInterval(ctx, r.Symbol)),
 		})
 	}
 	return out, nil
