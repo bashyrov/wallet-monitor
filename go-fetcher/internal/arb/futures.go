@@ -449,16 +449,29 @@ func (c *Compute) computeInOut(longEx, shortEx, sym string) (*float64, *float64)
 	return ComputeInOutPair(c.books, longEx, shortEx, sym)
 }
 
-// ComputeInOutPair returns top-of-book entry/exit basis as percentages.
-// On a clean read it caches (in, out) keyed by the pair so a transient
-// book hiccup (WS resub, REST gap, prune→resub) returns the LAST GOOD
-// value for up to inOutStickyTTL instead of nil. Without this the
-// screener row was disappearing for a frame whenever a book briefly
-// emptied, which read as the metric "blinking to 0" on the user's side.
+// ComputeInOutPair returns top-of-book entry/exit basis as percentages,
+// both normalised to a single reference price so they live in the same
+// unit space and can be summed: `in_pct + out_pct` = realistic
+// round-trip P&L if you opened and closed the arb against current top
+// of book.
 //
-//	in_pct  = (bestBidShort - bestAskLong)  / bestAskLong  * 100
-//	out_pct = (bestBidLong  - bestAskShort) / bestAskShort * 100
+// Reference price ref = (bestAskLong + bestAskShort) / 2  — the mid
+// between what the long leg's buy side and short leg's buy side would
+// cost. It's symmetric (doesn't favour either venue) and stable when
+// either side dislocates.
 //
+//	ref     = (bestAskLong + bestAskShort) / 2
+//	in_pct  = (bestBidShort - bestAskLong)  / ref * 100
+//	out_pct = (bestBidLong  - bestAskShort) / ref * 100
+//
+// Previously each side used its own denominator (askLong for in,
+// askShort for out), which made the two metrics live in different unit
+// spaces — adding them did NOT reproduce true P&L on pairs where the
+// two venues quote far apart (saw +23% in / -19% out reading as "+4%"
+// even though the trader was actually breakeven).
+//
+// Sticky-cached so a transient book hiccup (WS resub, REST gap,
+// prune→resub) returns the LAST GOOD value for up to inOutStickyTTL.
 // Used by all three arb compute paths (futures / spot / dex).
 func ComputeInOutPair(books *cache.Store, longEx, shortEx, sym string) (*float64, *float64) {
 	if books == nil {
@@ -475,8 +488,9 @@ func ComputeInOutPair(books *cache.Store, longEx, shortEx, sym string) (*float64
 		bestAskShort := shortE.Asks[0][0]
 		bestBidShort := shortE.Bids[0][0]
 		if bestAskLong > 0 && bestBidLong > 0 && bestAskShort > 0 && bestBidShort > 0 {
-			in := round4((bestBidShort - bestAskLong) / bestAskLong * 100)
-			out := round4((bestBidLong - bestAskShort) / bestAskShort * 100)
+			ref := (bestAskLong + bestAskShort) / 2
+			in := round4((bestBidShort - bestAskLong) / ref * 100)
+			out := round4((bestBidLong - bestAskShort) / ref * 100)
 			inOutCache.put(longEx, shortEx, sym, in, out)
 			return &in, &out
 		}
@@ -534,10 +548,12 @@ var inOutCache inOutCacheT
 
 // ComputeInOutDex — DEX/short variant. The "long" side has no orderbook
 // (it's a DEX with a single mid price baked into the opp at compute
-// time); only the perp short side has a book to walk. Computes:
+// time); only the perp short side has a book to walk. Same unified-
+// reference math as ComputeInOutPair — `in + out` ≈ round-trip P&L.
 //
-//	in_pct  = (bestBidShort - dexPrice)   / dexPrice    * 100
-//	out_pct = (dexPrice - bestAskShort)   / bestAskShort * 100
+//	ref     = (dexPrice + bestAskShort) / 2
+//	in_pct  = (bestBidShort - dexPrice)   / ref * 100
+//	out_pct = (dexPrice - bestAskShort)   / ref * 100
 func ComputeInOutDex(books *cache.Store, shortEx, sym string, dexPrice float64) (*float64, *float64) {
 	if books == nil || dexPrice <= 0 {
 		return nil, nil
@@ -548,8 +564,9 @@ func ComputeInOutDex(books *cache.Store, shortEx, sym string, dexPrice float64) 
 		bestAskShort := shortE.Asks[0][0]
 		bestBidShort := shortE.Bids[0][0]
 		if bestAskShort > 0 && bestBidShort > 0 {
-			in := round4((bestBidShort - dexPrice) / dexPrice * 100)
-			out := round4((dexPrice - bestAskShort) / bestAskShort * 100)
+			ref := (dexPrice + bestAskShort) / 2
+			in := round4((bestBidShort - dexPrice) / ref * 100)
+			out := round4((dexPrice - bestAskShort) / ref * 100)
 			// Sticky-cache the same way as the futures/spot path so a
 			// brief WS gap on the perp leg doesn't flap the row.
 			inOutCache.put("dex", shortEx, sym, in, out)

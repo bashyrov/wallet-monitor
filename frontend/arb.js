@@ -2982,8 +2982,13 @@ function sampleEntryExit(){
   const bidL=_vwap(L.bids,_eeSize,_eeSizeUnit);
   const askS=_vwap(S.asks,_eeSize,_eeSizeUnit);
   if(!askL||!bidL||!askS||!bidS) return;
-  const inPct=(bidS-askL)/askL*100;
-  const outPct=(bidL-askS)/askS*100;
+  // Single reference price so in% and out% live in the same unit space —
+  // in + out then equals realistic round-trip P&L. Was per-side
+  // denominator (askL for in, askS for out) which read wrong on pairs
+  // where venues quote far apart. Mirrors go-fetcher ComputeInOutPair.
+  const ref=(askL+askS)/2;
+  const inPct=(bidS-askL)/ref*100;
+  const outPct=(bidL-askS)/ref*100;
   const ts=Date.now()/1000;
   const last=_eeHist[_eeHist.length-1];
   // 20ms (was 120ms) so entry/exit redraws at full underlying data rate.
