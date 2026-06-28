@@ -1963,6 +1963,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       const {pairs, singles} = _ptPairPositions(arr);
 
       const pairHtml = pairs.map(pair => {
+        try {
         const lp = +(pair.long.unrealized_pnl_usd || 0);
         const sp = +(pair.short.unrealized_pnl_usd || 0);
         const tPnl = lp + sp;
@@ -2022,15 +2023,35 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           </tr>`;
         const legs = isOpen ? (rowFor(pair.long) + rowFor(pair.short)) : '';
         return header + legs;
+        } catch (e) {
+          console.error('[pair-acc] pair render failed:', e, 'pair=', pair);
+          return `<tr><td colspan="10" style="color:var(--red);font-size:11px;padding:6px 10px">Pair render error · check console</td></tr>`;
+        }
       }).join('');
 
+      // Wrap rowFor so one broken row can't blank the whole table.
+      const safeRowFor = (p) => {
+        try { return rowFor(p); }
+        catch (e) {
+          console.error('[pair-acc] rowFor failed:', e, 'row=', p);
+          return `<tr><td colspan="10" style="color:var(--red);font-size:11px;padding:6px 10px">Row render error · check console</td></tr>`;
+        }
+      };
       const singlesHtml = singles.map(p => {
         const upnl = +(p.unrealized_pnl_usd || 0);
         totalUpnl += upnl;
-        return rowFor(p);
+        return safeRowFor(p);
       }).join('');
 
-      if (tb) tb.innerHTML = pairHtml + singlesHtml;
+      // Final write — pairs.map above already used rowFor inline; if it
+      // threw mid-iteration the whole map died. Rerun via safe variant
+      // by intercepting at innerHTML time.
+      try {
+        if (tb) tb.innerHTML = pairHtml + singlesHtml;
+      } catch (e) {
+        console.error('[pair-acc] innerHTML write failed:', e);
+        if (tb) tb.innerHTML = singlesHtml || '<tr><td colspan="10" style="color:var(--red);font-size:11px;padding:6px 10px">Render failed · check console</td></tr>';
+      }
       const upnlEl = document.getElementById('acc-upnl');
       if (upnlEl) upnlEl.textContent = fmtUsd(totalUpnl);
     } catch (e) { console.error('[pair-acc] positions:', e); }
