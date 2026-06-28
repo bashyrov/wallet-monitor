@@ -7541,14 +7541,14 @@ async function _ensureRefCode(){
 // Sidesteps every HTML-attribute escaping pitfall (JSON-in-attribute,
 // base64 padding, Unicode tickers) by simply not putting the payload
 // in the DOM at all.
-// Stored on window because the spot/dex IIFE deliberately throws at the
-// end of its block (`_arb_type_gate`) to skip the futures-specific
-// script below. That throw halts module parsing, so any `let` declared
-// later in the file (which was the previous home of _shareIdSeq) stays
-// in TDZ on spot/dex/dex_spot pages. Putting it on `window` survives.
-window._shareCache = window._shareCache || {};
-window._shareIdSeq = window._shareIdSeq || 0;
+// Lazy-init inside the function body — the module-top initialization
+// lines themselves never execute on spot/dex/dex_spot, because the
+// IIFE block at line ~2115 ends with an intentional throw to skip the
+// futures-specific code below. Anything written at module-top after
+// the throw is dead on those pages.
 function _stashShare(obj){
+  if (!window._shareCache) window._shareCache = {};
+  if (typeof window._shareIdSeq !== 'number') window._shareIdSeq = 0;
   const id = '_s' + (++window._shareIdSeq);
   window._shareCache[id] = obj;
   return id;
@@ -7557,7 +7557,7 @@ function _openShareFromBtn(btn){
   try {
     let pos = null;
     const id = btn.getAttribute('data-share-id');
-    if (id && window._shareCache[id]) {
+    if (id && window._shareCache && window._shareCache[id]) {
       pos = window._shareCache[id];
     } else {
       // Legacy fallbacks — old cached HTML still in flight or other
@@ -7670,7 +7670,7 @@ function _openSharePairFromBtn(btn){
   try {
     let pair = null;
     const id = btn.getAttribute('data-share-pair-id');
-    if (id && window._shareCache[id]) {
+    if (id && window._shareCache && window._shareCache[id]) {
       pair = window._shareCache[id];
     } else {
       const b64 = btn.getAttribute('data-share-pair-b64');
