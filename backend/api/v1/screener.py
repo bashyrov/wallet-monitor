@@ -152,7 +152,7 @@ async def dex_spot_opportunities():
     from backend.services import arbitrage_service as _arb
     cached = await _arb._read_file_cache_async("dex_spot_arbitrage.json", max_age=120.0)
     if cached and isinstance(cached, dict) and cached.get("opportunities") is not None:
-        return cached
+        return _arb._apply_admin_filters(cached)
     # Cold path: same 500 ms polling pattern as /dex-short — Go writes
     # the file every 30s when enabled. If flag off, every attempt sees
     # ENOENT → cold envelope.
@@ -160,7 +160,7 @@ async def dex_spot_opportunities():
         await asyncio.sleep(0.05)
         cached = await _arb._read_file_cache_async("dex_spot_arbitrage.json", max_age=120.0)
         if cached and isinstance(cached, dict) and cached.get("opportunities") is not None:
-            return cached
+            return _arb._apply_admin_filters(cached)
     return {"opportunities": [], "generated_at": int(time.time()),
             "symbols_scanned": 0, "cex_hits": 0, "cex_exchanges": [], "cold": True}
 

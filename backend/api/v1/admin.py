@@ -1116,10 +1116,40 @@ async def admin_broadcast(
     if not rows:
         return {"sent": 0, "failed": 0, "skipped": "no eligible recipients"}
 
+    # Telegram HTML only allows a narrow tag set (b/i/u/s/a/code/pre/
+    # blockquote/tg-spoiler). Admin pastes from a doc/email often bring
+    # <p>, <br>, <div>, <span>, <strong>, <em> etc. — strict mode
+    # rejects with 400 "can't parse entities" and the message silently
+    # never lands. Normalise before sending.
+    def _normalize_for_tg_html(text: str) -> str:
+        import re
+        s = text
+        # Newline equivalents
+        s = re.sub(r"</?\s*br\s*/?\s*>", "\n", s, flags=re.IGNORECASE)
+        s = re.sub(r"</\s*p\s*>", "\n\n", s, flags=re.IGNORECASE)
+        s = re.sub(r"<\s*p[^>]*>", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"</?\s*div[^>]*>", "\n", s, flags=re.IGNORECASE)
+        # Tag aliases TG doesn't recognise
+        s = re.sub(r"<\s*strong(\s[^>]*)?>", "<b>", s, flags=re.IGNORECASE)
+        s = re.sub(r"</\s*strong\s*>", "</b>", s, flags=re.IGNORECASE)
+        s = re.sub(r"<\s*em(\s[^>]*)?>", "<i>", s, flags=re.IGNORECASE)
+        s = re.sub(r"</\s*em\s*>", "</i>", s, flags=re.IGNORECASE)
+        # Drop everything else not in TG's allow-list (keep contents)
+        ALLOWED = {"b", "i", "u", "s", "a", "code", "pre", "blockquote", "tg-spoiler"}
+        def _drop_tag(m: re.Match) -> str:
+            tag = m.group(1).lower().lstrip("/")
+            return m.group(0) if tag in ALLOWED else ""
+        s = re.sub(r"<\s*/?\s*([a-zA-Z][a-zA-Z0-9-]*)(\s[^>]*)?\s*/?\s*>", _drop_tag, s)
+        # Collapse runs of 3+ newlines to 2
+        s = re.sub(r"\n{3,}", "\n\n", s)
+        return s.strip()
+
+    text = _normalize_for_tg_html(body.text) if parse_mode == "HTML" else body.text
+
     async def _one(chat_id: int) -> bool:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = {
-            "chat_id": chat_id, "text": body.text,
+            "chat_id": chat_id, "text": text,
             "disable_web_page_preview": True,
         }
         if parse_mode:
@@ -1127,7 +1157,15 @@ async def admin_broadcast(
         try:
             async with httpx.AsyncClient(timeout=10) as c:
                 r = await c.post(url, json=payload)
-                return bool(r.json().get("ok"))
+                if r.json().get("ok"):
+                    return True
+                # Parse-error fallback: retry as plain text so the
+                # admin's message at least lands (without formatting).
+                if parse_mode:
+                    plain = {"chat_id": chat_id, "text": body.text, "disable_web_page_preview": True}
+                    r2 = await c.post(url, json=plain)
+                    return bool(r2.json().get("ok"))
+                return False
         except Exception:
             return False
 

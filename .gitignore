@@ -8,8 +8,12 @@ dist/
 build/
 
 # ── Frontend ──────────────────────────────────────────
-# dist/ is committed — Dockerfile has no Node.js, server can't rebuild.
-# Rebuild locally with `npm run build` after changing shared JS modules.
+# frontend/dist/ IS committed — Dockerfile has no Node.js, server can't
+# rebuild. Re-allow it here so the generic `dist/` Python pattern above
+# doesn't sweep it up. Rebuild locally with `npm run build` after
+# changing shared JS modules.
+!frontend/dist/
+!frontend/dist/**
 node_modules/
 package-lock.json
 

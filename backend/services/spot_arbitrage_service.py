@@ -341,14 +341,14 @@ async def get_spot_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dic
         # nginx connect-timeout → both upstreams marked dead → 502 storms.
         cached = await _arb._read_file_cache_async("spot_arbitrage.json", max_age=120.0)
         if cached and isinstance(cached, dict):
-            return cached
+            return _arb._apply_admin_filters(cached)
         # Cold-start: block briefly so the page doesn't flash an empty table
         # when the fetcher is about to land its first write. Up to 500 ms.
         for _ in range(10):
             await asyncio.sleep(0.05)
             cached = await _arb._read_file_cache_async("spot_arbitrage.json", max_age=120.0)
             if cached and isinstance(cached, dict):
-                return cached
+                return _arb._apply_admin_filters(cached)
         return {"opportunities": [], "generated_at": int(time.time()), "spot_exchanges": SPOT_EXCHANGES, "cold": True}
 
     # Fetch only spot tickers in this loop — perp rows come from the

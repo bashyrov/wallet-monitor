@@ -80,7 +80,12 @@
     const kind = opts.danger ? 'danger' : (opts.info ? 'info' : 'default');
     const hdr = root.querySelector('[data-av-cf-hdr]');
     hdr.classList.remove('danger','info'); if (kind !== 'default') hdr.classList.add(kind);
-    root.querySelector('[data-av-cf-ic]').innerHTML = ICONS[kind] || ICONS.default;
+    // Icon is OFF by default — the title + danger button colour carry the
+    // intent on their own and the trash/warn icon read as visual noise on
+    // close-position confirmations. Set opts.icon = true to opt back in.
+    const ic = root.querySelector('[data-av-cf-ic]');
+    if (opts.icon === true) { ic.style.display = ''; ic.innerHTML = ICONS[kind] || ICONS.default; }
+    else { ic.style.display = 'none'; }
     root.querySelector('[data-av-cf-title]').textContent = title;
     root.querySelector('[data-av-cf-msg]').innerHTML = message;
     const okBtn = root.querySelector('[data-av-cf-ok]');

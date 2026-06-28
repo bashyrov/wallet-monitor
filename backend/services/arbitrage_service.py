@@ -2065,10 +2065,53 @@ def _compute_arb_sync(rows: list[dict], ts: float, *, exclude: set[str] | None =
     }
 
 
+_EXCHANGE_FIELDS = (
+    "long_exchange", "short_exchange", "spot_exchange", "dex_name",
+    "long_ex", "short_ex",
+)
+
+
+def _apply_admin_filters(result: dict) -> dict:
+    """Strip opportunities whose symbol is in hidden_symbols or whose any
+    leg-exchange field (long/short/spot/dex) appears in disabled_exchanges.
+    Applied at read-time on the web side because go-fetcher (which writes
+    arbitrage.json) doesn't know about admin runtime knobs — keeping this
+    on the web side means the admin toggle in /admin → Screener takes
+    effect within one cache TTL (≤4s) without redeploying go-fetcher.
+
+    Used by all four screener feeds (long-short / spot / dex / dex-spot)
+    — opportunity rows differ in shape (spot uses spot_exchange, dex uses
+    dex_name) but the filter sweeps any known leg field."""
+    from backend.services import admin_settings
+    opps = (result or {}).get("opportunities") or []
+    if not opps:
+        return result
+    hidden = admin_settings.get_hidden_symbols()
+    disabled = admin_settings.get_disabled_exchanges()
+    if not hidden and not disabled:
+        return result
+    keep = []
+    for o in opps:
+        sym = (o.get("symbol") or "").upper()
+        if hidden and sym in hidden:
+            continue
+        if disabled:
+            hit = False
+            for f in _EXCHANGE_FIELDS:
+                v = (o.get(f) or "").lower()
+                if v and v in disabled:
+                    hit = True
+                    break
+            if hit:
+                continue
+        keep.append(o)
+    return {**result, "opportunities": keep, "filtered_count": len(opps) - len(keep)}
+
+
 async def get_arbitrage_opportunities(force: bool = False) -> dict:
     now = time.time()
     if not force and _arb_result_cache["data"] and now - _arb_result_cache["ts"] < _ARB_CACHE_TTL:
-        return _arb_result_cache["data"]
+        return _apply_admin_filters(_arb_result_cache["data"])
 
     # File cache fallback (written by broadcaster worker) — skipped on forced
     # recompute so the refresh loop always writes fresh data.
@@ -2085,7 +2128,7 @@ async def get_arbitrage_opportunities(force: bool = False) -> dict:
         if fc and fc.get("opportunities"):
             _arb_result_cache["data"] = fc
             _arb_result_cache["ts"] = now
-            return fc
+            return _apply_admin_filters(fc)
         if is_web:
             # Fetcher hasn't written yet — return an empty shell rather than
             # running a heavy compute on the web worker.
@@ -2101,7 +2144,7 @@ async def get_arbitrage_opportunities(force: bool = False) -> dict:
     _arb_result_cache["data"] = result
     _arb_result_cache["ts"] = time.time()
     _write_file_cache("arbitrage.json", _slim_arb_for_file(result))
-    return result
+    return _apply_admin_filters(result)
 
 
 # Cap the file-cache copy to the top-N opportunities to shrink disk / tmpfs
