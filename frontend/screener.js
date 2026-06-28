@@ -355,6 +355,40 @@ let _filtered = [];
 let _filteredArb = [];
 let _exDisabled = new Set();   // exchanges to hide (empty = show all)
 let _hiddenTokens = new Set(JSON.parse(localStorage.getItem('screener_hidden_tokens') || '[]'));
+
+// Admin-side filters from /api/screener/availability — independent of the
+// per-user _hiddenTokens. WS frames go go-fetcher → browser directly, so
+// REST-side filtering alone won't hide admin-suppressed symbols once the
+// WS stream lands. Apply the same filter on every WS-rendered row.
+let _adminHiddenSymbols = new Set();
+let _adminDisabledExchanges = new Set();
+async function _loadAdminFilters(){
+  try {
+    const r = await fetch('/api/screener/availability', {credentials:'omit'});
+    if (!r.ok) return;
+    const j = await r.json();
+    _adminHiddenSymbols = new Set((j.hidden_symbols || []).map(s => String(s).toUpperCase()));
+    _adminDisabledExchanges = new Set((j.disabled_exchanges || []).map(s => String(s).toLowerCase()));
+  } catch {}
+}
+_loadAdminFilters();
+// Refresh once a minute so admin toggles propagate without a page reload.
+setInterval(_loadAdminFilters, 60_000);
+
+function _adminBlocked(r){
+  if (!r) return false;
+  const sym = String(r.symbol || '').toUpperCase();
+  if (_adminHiddenSymbols.has(sym)) return true;
+  if (_adminDisabledExchanges.size === 0) return false;
+  // Sweep every known exchange-field — different feeds use different keys
+  // (long_exchange, short_exchange, spot_exchange, dex_name, exchange).
+  const fields = ['long_exchange','short_exchange','spot_exchange','dex_name','exchange'];
+  for (const f of fields) {
+    const v = String(r[f] || '').toLowerCase();
+    if (v && _adminDisabledExchanges.has(v)) return true;
+  }
+  return false;
+}
 let _sortF = { col: 'apr', asc: false };
 // Default sort = In (entry-divergence). Rows without a live orderbook
 // have null in_pct and sink to the bottom — so the top of the table is
@@ -841,6 +875,7 @@ function applyDex(keepPage = false) {
     if (q && !r.symbol.toUpperCase().includes(q)) return false;
     if (_exDisabled.has(r.short_exchange)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
+    if (_adminBlocked(r)) return false;
     if (minNet != null && r.net_profit < minNet) return false;
     if (minGS  != null && r.gross < minGS) return false;
     if (minVol && (r.perp_volume_usd || 0) < minVol) return false;
@@ -1336,6 +1371,7 @@ function applySpot(keepPage = false) {
     if (q && !r.symbol.toUpperCase().includes(q)) return false;
     if (_exDisabled.has(r.spot_exchange) || _exDisabled.has(r.short_exchange)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
+    if (_adminBlocked(r)) return false;
     if (minNet != null && r.net_profit < minNet) return false;
     if (minGS  != null && r.gross < minGS) return false;
     if (minVol && (Math.min(r.spot_volume_usd || 0, r.perp_volume_usd || 0) < minVol)) return false;
@@ -1543,6 +1579,7 @@ function applyFA(keepPage = false) {
       if (q && !r.symbol.toUpperCase().includes(q)) return false;
       if (_exDisabled.has(r.spot_exchange) || _exDisabled.has(r.short_exchange)) return false;
       if (_hiddenTokens.has(r.symbol)) return false;
+      if (_adminBlocked(r)) return false;
       if ((r.short_funding_8h || 0) <= 0) return false;
       if (minVol && (Math.min(r.spot_volume_usd || 0, r.perp_volume_usd || 0) < minVol)) return false;
       return true;
@@ -1716,6 +1753,7 @@ function renderAll() {
     if (_allTypeFilter !== 'all' && rType !== _allTypeFilter) return false;
     if (q && !r.symbol.toUpperCase().includes(q)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
+    if (_adminBlocked(r)) return false;
     const longEx =
       r.type === 'spot_short' ? r.spot_exchange :
       r.type === 'dex_short'  ? null :
@@ -2226,6 +2264,7 @@ function applyFilter(keepPage = false) {
   _filtered = _rows.filter(r => {
     if (_exDisabled.has(r.exchange)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
+    if (_adminBlocked(r)) return false;
     if (q && !r.symbol.includes(q)) return false;
     if (minApr > 0 && Math.abs(r.apr) < minApr) return false;
     if (minVol > 0 && (r.volume_usd || 0) < minVol) return false;
@@ -2293,6 +2332,7 @@ function applyArb(keepPage = false) {
   _filteredArb = _arbRows.filter(r => {
     if (_exDisabled.has(r.long_exchange) || _exDisabled.has(r.short_exchange)) return false;
     if (_hiddenTokens.has(r.symbol)) return false;
+    if (_adminBlocked(r)) return false;
     if (q && !r.symbol.includes(q)) return false;
     if (r.net_profit < minNet)   return false;
     if (r.gross_funding < minGross) return false;

@@ -257,6 +257,10 @@ async def availability():
         "exchanges": data.get("exchanges", []),
         "symbols": sorted({r["symbol"] for r in data.get("rows", [])}),
         "hidden_symbols": sorted(admin_settings.get_hidden_symbols()),
+        # Exposed so the frontend can filter WS frames locally — WS lives
+        # in go-fetcher and bypasses Python, so server-side filtering on
+        # REST alone isn't enough.
+        "disabled_exchanges": sorted(admin_settings.get_disabled_exchanges()),
     }
     _availability_cache["data"] = result
     _availability_cache["ts"] = now
