@@ -85,7 +85,7 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 	turn, _ := strconv.ParseFloat(msg.Data.Turnover24h, 64)
 	nextMs, _ := strconv.ParseInt(msg.Data.NextFundingTime, 10, 64)
 
-	ivl := a.lookupInterval(sym)
+	ivl := a.lookupInterval(context.Background(), sym)
 
 	tick := funding.Tick{
 		Symbol:    token,
@@ -141,7 +141,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		idx, _ := strconv.ParseFloat(r.IndexPrice, 64)
 		turn, _ := strconv.ParseFloat(r.Turnover24h, 64)
 		nextMs, _ := strconv.ParseInt(r.NextFundingTime, 10, 64)
-		ivl := a.lookupInterval(r.Symbol)
+		ivl := a.lookupInterval(ctx, r.Symbol)
 		tick := funding.Tick{
 			Symbol:    token,
 			Rate:      rate,
@@ -194,8 +194,21 @@ func (a *Adapter) fetchIntervalCache(ctx context.Context) {
 }
 
 // lookupInterval returns the per-symbol funding interval in hours.
-// Falls back to 8h if the symbol isn't cached.
-func (a *Adapter) lookupInterval(symbol string) int {
+// Lazily triggers fetchIntervalCache if the cache hasn't been populated.
+func (a *Adapter) lookupInterval(ctx context.Context, symbol string) int {
+	a.fundMu.RLock()
+	if a.fundInterval != nil {
+		defer a.fundMu.RUnlock()
+		if ivl, ok := a.fundInterval[symbol]; ok {
+			return ivl
+		}
+		return 8
+	}
+	a.fundMu.RUnlock()
+
+	// Cold start — fill the cache before falling through.
+	a.fetchIntervalCache(ctx)
+
 	a.fundMu.RLock()
 	defer a.fundMu.RUnlock()
 	if ivl, ok := a.fundInterval[symbol]; ok {
