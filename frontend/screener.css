@@ -818,8 +818,11 @@ body.light .vol-chip.is-active { background: #F0F7F3; }
 table { width: 100%; border-collapse: collapse; table-layout: auto; }
 #tbl-funding { min-width: 0; }
 #tbl-arb     { min-width: 0; }
+/* Uniform cell padding across every screener mode table (arb / funding /
+   funding-arb / spot / dex / dex-spot / all). Numeric / value columns
+   get a 90px min-width so right-aligned values don't crowd the header. */
 thead th {
-  text-align: left; padding: 8px 10px;
+  text-align: left; padding: 10px 14px;
   font-size: 11px; font-weight: 600; color: var(--text3);
   text-transform: uppercase; letter-spacing: .5px;
   border-bottom: 1px solid var(--border);
@@ -851,7 +854,9 @@ tbody tr:hover { background: var(--surface); }
 .arb-row-enter { animation: _arb-row-in .22s ease forwards; }
 .cell-flash-up   { animation: _cell-up   .7s ease forwards; }
 .cell-flash-down { animation: _cell-down .7s ease forwards; }
-tbody td { padding: 11px 10px; font-size: 13px; }
+tbody td { padding: 10px 14px; font-size: 13px; }
+.td-price, .td-rate, .td-apr, .td-next, .td-gross, .td-spread,
+.td-fees, .td-net, .td-vol { min-width: 90px; }
 .td-symbol, .td-price, .td-rate, .td-apr, .td-next, .td-gross, .td-spread, .td-fees, .td-net, .td-vol { white-space: nowrap; }
 
 /* symbol */
