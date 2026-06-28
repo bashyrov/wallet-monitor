@@ -426,24 +426,45 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           </div>
         </div>
         <div class="acc-pane" id="acc-pane-pnl">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 8px;gap:10px;flex-wrap:wrap">
+            <div style="font-size:12px;color:var(--text3)">
+              <span id="acc-pnl-synced">Syncing fills from your venues…</span>
+              <span id="acc-pnl-syncing" style="display:none;color:var(--green);margin-left:8px">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="animation:spin 1s linear infinite;vertical-align:-1px"><path d="M2 8a6 6 0 1 0 11.2-3"/></svg>
+                syncing
+              </span>
+            </div>
+            <button id="acc-pnl-sync-btn" onclick="accSyncPnl(this)" class="btn-sync"
+                    style="background:transparent;border:1px solid var(--border);color:var(--text2);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:6px">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8a6 6 0 1 1-1.76-4.24M14 3v3h-3"/></svg>
+              Sync
+            </button>
+          </div>
+          <div class="acc-sum-grid" style="padding-bottom:6px">
+            <div class="acc-sum-card"><div class="acc-sum-lbl">Closed (30d)</div><div class="acc-sum-val" id="acc-pnl-total">$0.00</div></div>
+            <div class="acc-sum-card"><div class="acc-sum-lbl">Trades</div><div class="acc-sum-val" id="acc-pnl-count">0</div></div>
+            <div class="acc-sum-card"><div class="acc-sum-lbl">Win rate</div><div class="acc-sum-val" id="acc-pnl-winrate">—</div></div>
+            <div class="acc-sum-card"><div class="acc-sum-lbl">Funding (30d)</div><div class="acc-sum-val" id="acc-pnl-funding">$0.00</div></div>
+          </div>
           <table class="acc-table">
-            <thead><tr><th>Pair</th><th>Status</th><th class="num">Entry %</th><th class="num">Exit %</th><th class="num">Long $</th><th class="num">Short $</th><th class="num">Funding $</th><th class="num">Total $</th><th>Duration</th></tr></thead>
+            <thead><tr><th style="width:24px"></th><th>Closed</th><th>Type</th><th>Symbol</th><th>Venues</th><th class="num">Total P&amp;L</th><th class="num">ROI</th></tr></thead>
             <tbody id="acc-pnl-body"></tbody>
           </table>
           <div class="acc-empty" id="acc-pnl-empty">
-            <h4>No P&amp;L yet</h4>
-            <p>Closed pairs show up here with combined leg + funding P&amp;L.</p>
+            <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13L6 9l3 3 5-5"/><path d="M10 4h4v4"/></svg></div>
+            <h4>No closed positions yet</h4>
+            <p>P&amp;L history populates as you close positions. Pairs are auto-detected by the spread%±5% rule, or you can pair manually with Sync ⇆.</p>
           </div>
         </div>
         <div class="acc-pane" id="acc-pane-balances">
           <table class="acc-table">
-            <thead><tr><th>Exchange</th><th>Account</th><th class="num">Spot USDT</th><th class="num">Futures USDT</th><th class="num">Total</th></tr></thead>
+            <thead><tr><th>Exchange</th><th>Wallet</th><th class="num">Spot USDT</th><th class="num">Futures USDT</th><th class="num">Total</th></tr></thead>
             <tbody id="acc-balances-body"></tbody>
           </table>
           <div class="acc-empty" id="acc-balances-empty">
-            <h4>No connected exchanges</h4>
-            <p>Add API keys in your profile to see live balances here.</p>
-            <a href="/profile#sec-security" class="acc-empty-cta">Manage API keys</a>
+            <div class="acc-empty-icon"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 6v4M6 8h4"/></svg></div>
+            <h4>No balance data</h4>
+            <p>Add a read-only or trading API key in <a href="/portfolio" style="color:var(--green)">Portfolio</a> and it'll show up here with live equity.</p>
           </div>
         </div>
       </div>
