@@ -123,8 +123,49 @@ function exTradeUrl(exchange, symbol) {
 //   dex_short            → deposit critical (you ship DEX-bought spot to CEX)
 //   dex_spot dex_to_cex  → deposit critical (you sell on CEX)
 //   dex_spot cex_to_dex  → withdraw critical (you sell on DEX)
+// Subtle SVG glyphs replace the heavy ⬇/⬆/× emoji. Stroked, brand-mint
+// when enabled, soft red when blocked, muted grey when unknown.
+const _TX_ICONS = {
+  dep: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v9M4 8l4 4 4-4M2.5 14h11"/></svg>',
+  wd:  '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V4M4 8l4-4 4 4M2.5 2h11"/></svg>',
+  off: '<svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>',
+};
+
+function _txCellHtml(kind, val, isCritical, r) {
+  const known = val !== null && val !== undefined;
+  let cls = 'tx-unknown', extra = '', title;
+  if (!known) {
+    title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} status unknown for ${r.cex_exchange||r.short_exchange} on ${r.dex_chain||'?'} — registry has no data (htx / venue API key not configured).`;
+  } else if (val) {
+    cls = 'tx-on';
+    title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} ENABLED on ${r.cex_exchange||r.short_exchange} for ${r.address_match_chain||r.dex_chain||'?'}.`;
+  } else {
+    cls = 'tx-off';
+    title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} DISABLED on ${r.cex_exchange||r.short_exchange} for ${r.address_match_chain||r.dex_chain||'?'} — trade NOT executable.`;
+    extra = `<span class="tx-strike">${_TX_ICONS.off}</span>`;
+  }
+  if (isCritical && known && !val) cls += ' tx-crit';
+  return `<td class="tx-cell"><span class="tx-chip ${cls}" title="${title}" onclick="event.stopPropagation()">${_TX_ICONS[kind]}${extra}</span></td>`;
+}
+
+// Returns the two separate <td>s for a row, in dep then wd order.
+// Replaces the old single-cell _txIndicators() which crammed both into
+// the Symbol column.
+function _txCells(r) {
+  let mode = 'short';
+  if (r.type === 'dex_spot') {
+    mode = r.direction === 'cex_to_dex' ? 'spot_c2d' : 'spot_d2c';
+  }
+  const critDep = (mode === 'short' || mode === 'spot_d2c');
+  const critWd  = (mode === 'spot_c2d');
+  return _txCellHtml('dep', r.cex_deposit, critDep, r)
+       + _txCellHtml('wd',  r.cex_withdraw, critWd, r);
+}
+
+// Legacy helper still called by the card view — keeps the same inline
+// pill rendering for cards (the new separate columns only make sense
+// in the desktop tabular view).
 function _txIndicators(r) {
-  // mode = 'short' | 'spot_d2c' | 'spot_c2d'
   let mode = 'short';
   if (r.type === 'dex_spot') {
     mode = r.direction === 'cex_to_dex' ? 'spot_c2d' : 'spot_d2c';
@@ -133,22 +174,20 @@ function _txIndicators(r) {
   const critWd  = (mode === 'spot_c2d');
   const pill = (kind, val, isCritical) => {
     const known = val !== null && val !== undefined;
-    let cls = 'tx-unknown', sym = (kind === 'dep' ? '⬇' : '⬆');
-    let label, title;
+    let cls = 'tx-unknown', icon = _TX_ICONS[kind], extra = '';
+    let title;
     if (!known) {
-      label = sym + '?';
-      title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} status unknown for ${r.cex_exchange||r.short_exchange} on ${r.dex_chain||'?'} — registry has no data (htx / venue API key not configured).`;
+      title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} status unknown for ${r.cex_exchange||r.short_exchange} on ${r.dex_chain||'?'} — registry has no data.`;
     } else if (val) {
       cls = 'tx-on';
-      label = sym;
       title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} ENABLED on ${r.cex_exchange||r.short_exchange} for ${r.address_match_chain||r.dex_chain||'?'}.`;
     } else {
       cls = 'tx-off';
-      label = sym + '×';
-      title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} DISABLED on ${r.cex_exchange||r.short_exchange} for ${r.address_match_chain||r.dex_chain||'?'} — you cannot ${kind === 'dep' ? 'send funds TO' : 'send funds FROM'} this CEX over this network right now. Trade NOT executable.`;
+      title = `${kind === 'dep' ? 'Deposit' : 'Withdraw'} DISABLED on ${r.cex_exchange||r.short_exchange} for ${r.address_match_chain||r.dex_chain||'?'} — trade NOT executable.`;
+      extra = `<span class="tx-strike">${_TX_ICONS.off}</span>`;
     }
     if (isCritical && known && !val) cls += ' tx-crit';
-    return `<span class="tx-pill ${cls}" title="${title}" onclick="event.stopPropagation()">${label}</span>`;
+    return `<span class="tx-chip ${cls}" title="${title}" onclick="event.stopPropagation()">${icon}${extra}</span>`;
   };
   return `<span class="tx-row">${pill('dep', r.cex_deposit, critDep)}${pill('wd', r.cex_withdraw, critWd)}</span>`;
 }
@@ -165,14 +204,18 @@ function _txIndicators(r) {
 //                                            data for this venue / no API key)
 // Inline so the small CSS surface (1 rule) lives next to its consumer; the
 // .unverified-pill class is global (works on screener tabs + later /arb).
+// Verification status — compact icon-only badge instead of the old wordy
+// "⚠ unverified" / "addr ≠" pills. Tooltip carries the full explanation.
 function _unverifiedBadge(r) {
   if (r.address_verified) return '';
   const known = !!r.address_known;
   const title = known
-    ? 'Ticker exists on this CEX but on a different chain/contract — possible token collision. Verify manually.'
-    : 'No address data for this CEX in our registry (gate/kucoin/bitget verified; others fall back to ticker match). Verify manually.';
-  const label = known ? 'addr ≠' : '⚠ unverified';
-  return ` <span class="unverified-pill" title="${title}" onclick="event.stopPropagation()">${label}</span>`;
+    ? 'Address mismatch — token exists on this CEX but on a different chain/contract. Possible ticker collision.'
+    : 'Unverified — no address data for this CEX in our registry. Verify manually.';
+  const cls = known ? 'unverified-dot is-mismatch' : 'unverified-dot';
+  // Small alert-triangle SVG — subtle, brand-neutral.
+  const icon = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14 13H2L8 2.5z"/><path d="M8 7v3M8 11.5v0.01"/></svg>';
+  return ` <span class="${cls}" title="${title}" onclick="event.stopPropagation()" aria-label="${known?'address mismatch':'unverified'}">${icon}</span>`;
 }
 
 function exBadge(exchange, symbol) {
@@ -756,7 +799,7 @@ async function loadDex() {
   _inOutFirstSorted.dex = false;
   if (!_dexRows.length) {
     document.getElementById('tbody-dex').innerHTML =
-      '<tr><td colspan="9" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
+      '<tr><td colspan="11" class="empty-msg"><span class="spinner"></span>Scanning DEX pairs…</td></tr>';
   }
   // First paint via REST so we don't wait up to 2s for the first WS tick.
   // After that the WS keeps the table live without timer-based polling.
@@ -846,7 +889,7 @@ function renderDex() {
     const dexLink = r.dex_pair_url ? `<a href="${r.dex_pair_url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--purple);text-decoration:none;font-weight:600">${dexLabel}</a>` : `<span style="color:var(--purple);font-weight:600">${dexLabel}</span>`;
     const dexDetailUrl = `/arb?type=dex-short&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
     return `<tr data-short-ex="${r.short_exchange}" style="cursor:pointer" onclick="window.open('${dexDetailUrl}','_blank')">
-      <td class="td-symbol"><a href="${dexDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}${_txIndicators(r)}</td>
+      <td class="td-symbol"><a href="${dexDetailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}</td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
@@ -872,6 +915,7 @@ function renderDex() {
         <span title="dex rt: ${r.fee_dex.toFixed(3)}% + perp rt: ${r.fee_perp.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
+      ${_txCells(r)}
       <td style="display:flex;gap:4px;align-items:center">
         <a href="/arb?type=dex&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain)}&long=${esc(r.dex_name)}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address)}&pair=${esc((r.dex_pair_url||'').split('/').pop())}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
       </td>
@@ -1003,7 +1047,7 @@ const _connectDexSpot = _makeWs({
 async function loadDexSpot() {
   if (!_dexSpotRows.length) {
     document.getElementById('tbody-dex-spot').innerHTML =
-      '<tr><td colspan="8" class="empty-msg"><span class="spinner"></span>Scanning DEX↔CEX spot pairs…</td></tr>';
+      '<tr><td colspan="10" class="empty-msg"><span class="spinner"></span>Scanning DEX↔CEX spot pairs…</td></tr>';
   }
   try {
     const r = await Auth.apiFetch('/screener/dex-spot');
@@ -1094,7 +1138,7 @@ function renderDexSpot() {
       : `<span style="color:var(--purple);font-weight:600">${dexLabel}</span>`;
     const detailUrl = `/arb?type=dex-spot&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain||'')}&long=${esc(r.dex_name||'')}&short=${esc(r.cex_exchange)}&addr=${esc(r.dex_base_address||'')}&pair=${esc((r.dex_pair_url||'').split('/').pop())}`;
     return `<tr data-short-ex="${r.cex_exchange}_spot" data-symbol="${r.symbol}" data-kind="dex_spot" style="cursor:pointer" onclick="window.open('${detailUrl}','_blank')">
-      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}${_txIndicators(r)}</td>
+      <td class="td-symbol"><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--text3)">${esc(r.symbol)}</a>${_unverifiedBadge(r)}</td>
       <td>
         <div class="arb-pair">
           <div class="arb-ex-rate">
@@ -1119,6 +1163,7 @@ function renderDexSpot() {
         <span title="dex rt: ${r.fee_dex.toFixed(3)}% + cex spot rt: ${r.fee_cex.toFixed(3)}%">−${r.total_fees.toFixed(4)}%</span>
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_pct.toFixed(4)}%</span></td>
+      ${_txCells(r)}
       <td><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" class="arb-detail-btn" title="Open detail">↗</a></td>
     </tr>`;
   }).join('');

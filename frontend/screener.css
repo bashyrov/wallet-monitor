@@ -869,55 +869,67 @@ tbody td { padding: 10px 14px; font-size: 13px; }
    mismatch — already suspicious but data exists). Yellow/orange tone
    separates it from the green positive-spread / red negative-spread
    cells in the same row. */
-.unverified-pill {
-  display: inline-block;
-  padding: 1px 5px;
+/* Unverified / address-mismatch badge — small ⚠ icon, brand-neutral.
+   Tooltip carries the full message; the icon alone reads as "needs
+   attention" without screaming for it the way the old yellow pill did. */
+.unverified-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px;
   margin-left: 6px;
-  font-size: 9px;
-  font-weight: 600;
-  font-family: var(--mono);
-  letter-spacing: 0.02em;
-  border-radius: 3px;
-  background: rgba(252, 211, 77, 0.12);
-  color: #FCD34D;
-  border: 1px solid rgba(252, 211, 77, 0.3);
+  border-radius: 50%;
+  color: var(--text3);
+  background: rgba(155,159,171,0.10);
   cursor: help;
   user-select: none;
   vertical-align: middle;
-  white-space: nowrap;
+  transition: color .12s, background .12s;
 }
-.unverified-pill:hover {
-  background: rgba(252, 211, 77, 0.22);
+.unverified-dot:hover { color: var(--text); background: rgba(155,159,171,0.18); }
+/* Address-mismatch — louder, hints at collision risk. */
+.unverified-dot.is-mismatch {
+  color: #E5C07B;
+  background: rgba(229,192,123,0.10);
 }
+.unverified-dot.is-mismatch:hover { background: rgba(229,192,123,0.20); }
+.unverified-dot svg { display: block; }
 
-/* Per-network deposit (⬇) / withdraw (⬆) status indicators. Tri-state:
-   tx-on    = enabled  (green)
-   tx-off   = disabled (red, with × suffix) — trade NOT executable
-   tx-unknown = no data (gray ?)            — venue/network not in registry
-   tx-crit  = the direction-critical flag is disabled (adds yellow ring) */
+/* Deposit / Withdraw status — now lives in its own table cell. Brand-mint
+   when enabled, soft red when blocked, muted grey when unknown. SVG icons
+   replace the heavy ⬇/⬆/× emoji. */
+.tx-cell { text-align: center; padding-left: 8px; padding-right: 8px; }
 .tx-row {
-  display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle;
+  display: inline-flex; gap: 3px; vertical-align: middle;
 }
-.tx-pill {
-  display: inline-block;
-  padding: 1px 4px;
-  font-size: 10px;
-  font-family: var(--mono);
-  font-weight: 700;
-  border-radius: 3px;
+.tx-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  position: relative;
+  width: 22px; height: 22px;
+  border-radius: 6px;
   cursor: help;
   user-select: none;
-  line-height: 1.3;
-  border: 1px solid transparent;
+  transition: background .12s, color .12s;
 }
-.tx-pill.tx-on      { color: var(--green); background: rgba(26,255,171,0.08);  border-color: rgba(26,255,171,0.25); }
-.tx-pill.tx-off     { color: #FF6B6B;      background: rgba(255,107,107,0.12); border-color: rgba(255,107,107,0.35); }
-.tx-pill.tx-unknown { color: var(--text3); background: rgba(155,159,171,0.08); border-color: rgba(155,159,171,0.2); }
-/* Critical-disabled: extra louder ring + slight glow. The direction-relevant
-   flag being off is the actual blocker; the other one just costs flexibility. */
-.tx-pill.tx-off.tx-crit {
-  border-color: rgba(255,107,107,0.7);
-  box-shadow: 0 0 0 1px rgba(255,107,107,0.4), 0 0 6px rgba(255,107,107,0.25);
+.tx-chip svg { display: block; }
+/* Diagonal strikethrough × for "off" state — small overlay top-right. */
+.tx-chip .tx-strike {
+  position: absolute; top: 1px; right: 1px;
+  width: 9px; height: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #F87171;
+  background: rgba(248,113,113,0.18);
+  border-radius: 50%;
+  padding: 1px;
+}
+.tx-chip.tx-on      { color: var(--green); background: rgba(26,255,171,0.07); }
+.tx-chip.tx-off     { color: var(--text2); background: rgba(155,159,171,0.06); }
+.tx-chip.tx-unknown { color: var(--text4); background: rgba(155,159,171,0.04); }
+.tx-chip.tx-on:hover      { background: rgba(26,255,171,0.16); }
+.tx-chip.tx-off:hover     { background: rgba(155,159,171,0.12); }
+.tx-chip.tx-unknown:hover { background: rgba(155,159,171,0.10); }
+/* Critical-disabled — same chip, but the strike turns louder red ring */
+.tx-chip.tx-off.tx-crit .tx-strike {
+  background: #F87171; color: #fff;
+  box-shadow: 0 0 0 2px rgba(248,113,113,0.18);
 }
 
 /* exchange badge */

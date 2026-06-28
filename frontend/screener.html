@@ -363,10 +363,12 @@
               <th onclick="sortDex('short_funding_8h')" data-dcol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('total_fees')"      data-dcol="total_fees"      data-tip="DEX round-trip (~0.8%) + perp round-trip. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortDex('net_profit')"      data-dcol="net_profit"      data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↕</span></th>
+              <th data-tip="CEX deposit status for this token's chain (you ship DEX-bought spot TO CEX)">Dep</th>
+              <th data-tip="CEX withdraw status (closed = you can't get funds out)">Wd</th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-dex"><tr><td colspan="9" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading DEX/Short opportunities</div><div class="empty-sub">DexScreener can take 10-30 seconds for the first scan.</div></div></td></tr></tbody>
+          <tbody id="tbody-dex"><tr><td colspan="11" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading DEX/Short opportunities</div><div class="empty-sub">DexScreener can take 10-30 seconds for the first scan.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-dex"></div>
@@ -386,10 +388,12 @@
               <th onclick="sortDexSpot('abs_spread_pct')" data-dscol="abs_spread_pct" class="sorted" data-tip="|spread| = |(cex_spot − dex_price) / mid| × 100. Higher = wider gap to capture.">|Spread| <span class="sort-arrow">↓</span></th>
               <th onclick="sortDexSpot('total_fees')"    data-dscol="total_fees"    data-tip="DEX round-trip (~0.8%) + CEX spot taker × 2. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
               <th onclick="sortDexSpot('net_pct')"       data-dscol="net_pct"       data-tip="Net = |spread| − total fees">Net % <span class="sort-arrow">↕</span></th>
+              <th data-tip="CEX deposit status for this token's chain (you need to send funds TO the CEX before selling)">Dep</th>
+              <th data-tip="CEX withdraw status (closed = you can't move funds out after sell)">Wd</th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tbody-dex-spot"><tr><td colspan="8" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading DEX/Spot opportunities</div><div class="empty-sub">Requires AVALANT_DEX_SPOT=1 on the fetcher. DexScreener can take 10-30 s for first scan.</div></div></td></tr></tbody>
+          <tbody id="tbody-dex-spot"><tr><td colspan="10" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading DEX/Spot opportunities</div><div class="empty-sub">Requires AVALANT_DEX_SPOT=1 on the fetcher. DexScreener can take 10-30 s for first scan.</div></div></td></tr></tbody>
         </table>
       </div>
       <div class="cards-wrap" id="cards-dex-spot"></div>
