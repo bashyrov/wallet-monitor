@@ -1438,7 +1438,18 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
     setT('pt-book-' + side + '-age', `live · ${_obTicks[side]} ticks`);
   }
   async function _refreshBook(side) {
-    const isSpotSide = (side === 'long' && !IS_DEX);
+    // A leg is a spot leg when:
+    //   - long  AND mode === 'spot'      (spot/short)
+    //   - long  AND mode === 'dex_spot'  (CEX spot on long side) — for symmetry,
+    //                                     covered by !IS_DEX below
+    //   - short AND mode === 'dex_spot'  (CEX spot on SHORT — the bug we're fixing)
+    // The original `side === 'long' && !IS_DEX` missed the short-side
+    // spot leg in dex_spot mode, so kucoin/etc. got pulled from the
+    // futures orderbook ($0.04) instead of the spot one ($0.12) for
+    // tokens like SIREN where futures + spot diverge.
+    const isSpotSide =
+      (side === 'long'  && !IS_DEX) ||
+      (side === 'short' && TYPE === 'dex_spot');
     const ex = side === 'long' ? LONG : SHORT;
     const path = isSpotSide
       ? `/screener/orderbook-spot?exchange=${ex}&symbol=${SYM}&limit=200`
@@ -2534,10 +2545,19 @@ async function fetchBook(exchange,side){
   if(_bookInflight[side]) return;  // skip if previous request still pending
   _bookInflight[side]=true;
   try{
+    // Spot-leg orderbook router — same gate as _refreshBook above. Without
+    // this dex_spot's SHORT-side request hits the futures route ($0.04 for
+    // SIREN) instead of spot ($0.12), giving a wildly wrong ladder.
+    //   spot/short → long-leg is CEX spot
+    //   dex/spot   → short-leg is CEX spot
+    const isSpotSide =
+      (side === 'long'  && TYPE === 'spot') ||
+      (side === 'short' && TYPE === 'dex_spot');
+    const endpoint = isSpotSide ? 'orderbook-spot' : 'orderbook';
     // Detail page wants the deepest book the venue offers — 200 levels.
     // limit > 30 forces a fresh REST snapshot in get_cached_orderbook
     // (WS prewarm caches only top-of-book for the screener list).
-    const res=await Auth.apiFetch(`/screener/orderbook?symbol=${SYM}&exchange=${exchange}&limit=200`);
+    const res=await Auth.apiFetch(`/screener/${endpoint}?symbol=${SYM}&exchange=${exchange}&limit=200`);
     if(!res.ok) return;
     const d=await res.json();
     // Don't overwrite the last good snapshot with an empty REST response
