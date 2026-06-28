@@ -1920,14 +1920,18 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       let totalUpnl = 0;
 
       const rowFor = (p) => {
-        const side = (p.side || '').toLowerCase();
-        const sideCls = side === 'buy' ? 'pos' : 'neg';
-        const sideTxt = side === 'buy' ? 'LONG' : 'SHORT';
-        const upnl = +(p.unrealized_pnl_usd || 0);
-        const qty  = Number(p.quantity || 0);
+        const sideCls  = p.side === 'buy' ? 'acc-side-long' : 'acc-side-short';
+        const sideTxt  = p.side === 'buy' ? 'LONG' : 'SHORT';
+        const upnl  = +(p.unrealized_pnl_usd || 0);
+        const qty   = Number(p.quantity || 0);
         const entry = Number(p.entry_price || 0);
-        const mark  = Number(p.mark_price || 0);
+        const mark  = Number(p.mark_price  || 0);
+        const sizeUsd = qty * mark;
         const upnlPct = (entry > 0 && qty > 0) ? (upnl / (entry * qty) * 100) : 0;
+        const pnlCls  = upnl >= 0 ? 'acc-pos-pnl-pos' : 'acc-pos-pnl-neg';
+        const funding = (p.funding_pnl_usd != null)
+          ? `<span class="${(Number(p.funding_pnl_usd)||0)>=0?'acc-pos-pnl-pos':'acc-pos-pnl-neg'}">${fmtUsd(p.funding_pnl_usd)}</span>`
+          : '<span style="color:var(--text3)">—</span>';
         const shareId = _stashShare({
           symbol: p.symbol, exchange: p.exchange, side: p.side,
           quantity: qty, entry_price: entry, mark_price: mark,
@@ -1936,15 +1940,15 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           funding_pnl_usd: (p.funding_pnl_usd != null ? Number(p.funding_pnl_usd) : null),
         });
         return `<tr>
-          <td>${p.symbol}</td>
-          <td>${EX_LABEL[p.exchange]||p.exchange}</td>
+          <td><span class="sym">${p.symbol}</span><span style="color:var(--text3);margin-left:3px">USDT</span></td>
+          <td><span class="ex-pill">${(EX_LABEL[p.exchange]||p.exchange)}</span></td>
           <td class="${sideCls}">${sideTxt}</td>
-          <td class="num">${fmtPx(p.quantity)}</td>
-          <td class="num">${fmtPx(p.entry_price)}</td>
-          <td class="num">${fmtPx(p.mark_price)}</td>
-          <td class="num ${(+p.funding_pnl_usd||0) >= 0 ? 'pos' : 'neg'}">${fmtUsd(p.funding_pnl_usd)}</td>
-          <td class="num ${upnl >= 0 ? 'pos' : 'neg'}">${fmtUsd(upnl)}</td>
-          <td class="num ${upnl >= 0 ? 'pos' : 'neg'}">${fmtPct(upnlPct)}</td>
+          <td class="num">${qty.toFixed(4)}<br><span style="color:var(--text3);font-size:10px">${sizeUsd.toFixed(2)} USDT</span></td>
+          <td class="num">${entry.toFixed(4)}</td>
+          <td class="num" style="color:var(--text2)">${mark.toFixed(4)}</td>
+          <td class="num">${funding}</td>
+          <td class="num ${pnlCls}">${fmtUsd(upnl)}</td>
+          <td class="num ${pnlCls}">${upnlPct>=0?'+':''}${upnlPct.toFixed(2)}%</td>
           <td style="white-space:nowrap">
             <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id||p.symbol}')">Close</button>
             <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share"
@@ -1988,7 +1992,8 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
             <td colspan="2" style="padding:8px 10px">
               <span style="color:var(--green);font-family:monospace;margin-right:6px">${caret}</span>
               <span style="color:var(--green);font-size:10px;font-weight:700;letter-spacing:0.04em">⇆ ${_pairModeLabel(pair)}</span>
-              <span style="margin-left:6px;font-weight:600">${pair.symbol}</span>
+              <span class="sym" style="margin-left:6px">${pair.symbol}</span>
+              <span style="color:var(--text3);margin-left:3px">USDT</span>
               <span style="color:var(--text3);margin-left:10px;font-size:11px">${EX_LABEL[pair.long.exchange]||pair.long.exchange} ⇄ ${EX_LABEL[pair.short.exchange]||pair.short.exchange}</span>
             </td>
             <td colspan="2" class="num" style="color:var(--text2);font-size:11px">${legUsd.toFixed(2)} USDT / leg<br><span style="color:var(--text3);font-size:10px">entry spread ${entrySpreadTxt}</span></td>
@@ -2064,15 +2069,11 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
   }
 
   async function _ptLoadAcc() {
-    // Canonical Long/Short renderer — same template across every mode
-    // (spot / dex / dex_spot). The earlier _ptLoad* dupes diverged on
-    // styling; route everything through accLoad* so positions, balances,
-    // orders and counts all match the Long/Short reference visually.
-    const tasks = [_refreshPairDecisions()];
-    if (typeof accLoadKeyCounts === 'function') tasks.push(accLoadKeyCounts());
-    if (typeof accLoadPositions === 'function') tasks.push(accLoadPositions());
-    if (typeof accLoadBalances === 'function') tasks.push(accLoadBalances());
-    if (typeof accLoadOrders === 'function') tasks.push(accLoadOrders());
+    // Use spot/dex-local _ptLoad* renderers — they understand the
+    // spot-short / dex-short shape the canonical Long/Short renderer
+    // doesn't. The rowFor template inside them already matches the
+    // canonical visual (USDT subtitle, ex-pill, formatted size).
+    const tasks = [_ptLoadKeyCounts(), _ptLoadAccPositions(), _ptLoadBalances(), _ptLoadOrders(), _refreshPairDecisions()];
     if (typeof accLoadTriggers === 'function') tasks.push(accLoadTriggers());
     await Promise.all(tasks);
     if (typeof accLoadPnl === 'function') accLoadPnl();
