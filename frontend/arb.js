@@ -437,7 +437,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
         </div>
         <div class="acc-pane" id="acc-pane-balances">
           <table class="acc-table">
-            <thead><tr><th>Exchange</th><th>Account</th><th>Purpose</th><th class="num">Spot USDT</th><th class="num">Futures USDT</th><th class="num">Total</th></tr></thead>
+            <thead><tr><th>Exchange</th><th>Account</th><th class="num">Spot USDT</th><th class="num">Futures USDT</th><th class="num">Total</th></tr></thead>
             <tbody id="acc-balances-body"></tbody>
           </table>
           <div class="acc-empty" id="acc-balances-empty">
@@ -1981,13 +1981,9 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       }
       if (em) em.style.display = 'none';
       if (tb) tb.innerHTML = rows.map(w => {
-        const keyType = w.can_trade
-          ? '<span class="pill tr" style="font-size:10px"><span class="pill-dot"></span>Trade</span>'
-          : '<span class="pill ro" style="font-size:10px"><span class="pill-dot"></span>Read-only</span>';
         return `<tr>
           <td>${EX_LABEL[w.exchange]||w.exchange}</td>
           <td>${w.name||''}</td>
-          <td>${keyType}</td>
           ${_renderBalCells(w)}
         </tr>`;
       }).join('');
@@ -5296,9 +5292,6 @@ async function accLoadBalances(){
       return `<tr>
         <td><span class="ex-pill">${(EX_LABEL[w.exchange]||w.exchange)}</span></td>
         <td><span class="sym" style="font-family:Inter,sans-serif;font-weight:600;font-size:11.5px;color:var(--text)">${w.name}</span></td>
-        <td>${w.can_trade
-            ? '<span style="color:var(--yellow);font-weight:600;font-size:10.5px">TRADE</span>'
-            : '<span style="color:var(--teal);font-weight:600;font-size:10.5px">READ</span>'}</td>
         ${_renderBalCells(w)}
       </tr>`;
     }).join('');
