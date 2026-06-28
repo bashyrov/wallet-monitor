@@ -6,12 +6,16 @@
 // REST: https://api.bybit.com/v5/market/tickers?category=linear — full
 //       sweep, used as backstop. Bug #7 covered: WS sometimes pushes
 //       partial updates with rate but no volume; REST refills volume.
+//
+// Funding interval is per-symbol (4h or 8h). Fetched from
+// /v5/market/instruments-info?category=linear&type=perpetual and cached.
 package bybit
 
 import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
@@ -21,9 +25,15 @@ import (
 const (
 	wsURL   = "wss://stream.bybit.com/v5/public/linear"
 	restURL = "https://api.bybit.com/v5/market/tickers?category=linear"
+	// instruments-info endpoint returns per-symbol metadata including
+	// fundingInterval (minutes). Used to build the interval cache.
+	instrumentsURL = "https://api.bybit.com/v5/market/instruments-info?category=linear&type=perpetual"
 )
 
-type Adapter struct{}
+type Adapter struct {
+	fundMu       sync.RWMutex
+	fundInterval map[string]int // "BTCUSDT" -> hours
+}
 
 func New() *Adapter { return &Adapter{} }
 
@@ -75,13 +85,15 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 	turn, _ := strconv.ParseFloat(msg.Data.Turnover24h, 64)
 	nextMs, _ := strconv.ParseInt(msg.Data.NextFundingTime, 10, 64)
 
+	ivl := a.lookupInterval(sym)
+
 	tick := funding.Tick{
 		Symbol:    token,
 		Rate:      rate,
 		MarkPrice: mark,
 		IndexPrice: idx,
 		Volume24h: turn,
-		IntervalH: 8,
+		IntervalH: float64(ivl),
 	}
 	if nextMs > 0 {
 		tick.NextFunding = time.UnixMilli(nextMs)
@@ -99,6 +111,9 @@ func (a *Adapter) UseLibPings() bool                { return false }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
+	// Populate the per-symbol funding-interval cache.
+	a.fetchIntervalCache(ctx)
+
 	var doc struct {
 		Result struct {
 			List []struct {
@@ -126,13 +141,14 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		idx, _ := strconv.ParseFloat(r.IndexPrice, 64)
 		turn, _ := strconv.ParseFloat(r.Turnover24h, 64)
 		nextMs, _ := strconv.ParseInt(r.NextFundingTime, 10, 64)
+		ivl := a.lookupInterval(r.Symbol)
 		tick := funding.Tick{
 			Symbol:    token,
 			Rate:      rate,
 			MarkPrice: mark,
 			IndexPrice: idx,
 			Volume24h: turn,
-			IntervalH: 8,
+			IntervalH: float64(ivl),
 		}
 		if nextMs > 0 {
 			tick.NextFunding = time.UnixMilli(nextMs)
@@ -140,6 +156,52 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		out = append(out, tick)
 	}
 	return out, nil
+}
+
+// fetchIntervalCache fetches /instruments-info once and populates
+// a.fundInterval. Called once per BackstopFetch cycle.
+func (a *Adapter) fetchIntervalCache(ctx context.Context) {
+	a.fundMu.RLock()
+	if a.fundInterval != nil {
+		a.fundMu.RUnlock()
+		return
+	}
+	a.fundMu.RUnlock()
+
+	var doc struct {
+		Result struct {
+			List []struct {
+				Symbol          string `json:"symbol"`
+				FundingInterval string `json:"fundingInterval"` // minutes
+			} `json:"list"`
+		} `json:"result"`
+	}
+	if err := funding.HTTPGet(ctx, instrumentsURL, &doc); err != nil {
+		// Cache stays nil; ParseWS/BackstopFetch fall back to 8h.
+		return
+	}
+	a.fundMu.Lock()
+	defer a.fundMu.Unlock()
+	a.fundInterval = make(map[string]int, len(doc.Result.List))
+	for _, r := range doc.Result.List {
+		mins, _ := strconv.Atoi(r.FundingInterval)
+		hours := mins / 60
+		if hours < 1 {
+			hours = 8 // canonical fallback
+		}
+		a.fundInterval[r.Symbol] = hours
+	}
+}
+
+// lookupInterval returns the per-symbol funding interval in hours.
+// Falls back to 8h if the symbol isn't cached.
+func (a *Adapter) lookupInterval(symbol string) int {
+	a.fundMu.RLock()
+	defer a.fundMu.RUnlock()
+	if ivl, ok := a.fundInterval[symbol]; ok {
+		return ivl
+	}
+	return 8
 }
 
 func (a *Adapter) BackstopInterval() time.Duration { return 2 * time.Second }

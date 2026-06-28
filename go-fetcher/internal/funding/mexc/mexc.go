@@ -8,11 +8,15 @@
 //   merged with /api/v1/contract/funding_rate (rate per symbol — slow).
 // To stay fast we use ONLY the ticker endpoint (it includes fundingRate
 // and nextSettleTime).
+//
+// Funding interval is per-symbol (4h or 8h). Fetched from
+// /api/v1/contract/detail and cached.
 package mexc
 
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
@@ -20,7 +24,10 @@ import (
 
 const restURL = "https://contract.mexc.com/api/v1/contract/ticker"
 
-type Adapter struct{}
+type Adapter struct {
+	fundMu       sync.RWMutex
+	fundInterval map[string]int // "BTCUSDT" -> hours
+}
 
 func New() *Adapter { return &Adapter{} }
 
@@ -37,6 +44,9 @@ func (a *Adapter) UseLibPings() bool                { return false }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
+	// Populate the per-symbol funding-interval cache.
+	a.fetchIntervalCache(ctx)
+
 	var doc struct {
 		Data []struct {
 			Symbol         string  `json:"symbol"`
@@ -54,11 +64,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 	// MEXC's bulk ticker endpoint omits `nextSettleTime` (only the per-
 	// symbol /contract/funding_rate/<symbol> route carries it). 885
 	// per-symbol fetches don't fit the per-call budget, so compute the
-	// next 8h boundary in UTC — MEXC settles at 00:00/08:00/16:00 UTC
-	// for all USDT-perp contracts. Without this every MEXC row had
+	// next interval boundary in UTC — MEXC settles at 00:00/08:00/16:00
+	// UTC for all USDT-perp contracts. Without this every MEXC row had
 	// next_ts=0 and the screener "next funding" column was empty.
-	const cyclehrs = 8
-	cycle := time.Duration(cyclehrs) * time.Hour
+	cycle := time.Duration(8) * time.Hour
 	nextSettle := time.Now().UTC().Truncate(cycle).Add(cycle)
 
 	out := make([]funding.Tick, 0, len(doc.Data))
@@ -71,13 +80,14 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		if mark == 0 {
 			mark = r.LastPrice
 		}
+		ivl := a.lookupInterval(r.Symbol)
 		t := funding.Tick{
 			Symbol:      token,
 			Rate:        r.FundingRate,
 			MarkPrice:   mark,
 			IndexPrice:  r.IndexPrice,
 			Volume24h:   r.Amount24,
-			IntervalH:   cyclehrs,
+			IntervalH:   float64(ivl),
 			NextFunding: nextSettle,
 		}
 		if r.NextSettleTime > 0 {
@@ -86,6 +96,48 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// fetchIntervalCache fetches /contract/detail once and populates
+// a.fundInterval. Called once per BackstopFetch cycle.
+func (a *Adapter) fetchIntervalCache(ctx context.Context) {
+	a.fundMu.RLock()
+	if a.fundInterval != nil {
+		a.fundMu.RUnlock()
+		return
+	}
+	a.fundMu.RUnlock()
+
+	var doc struct {
+		Code int `json:"code"`
+		Data []struct {
+			Symbol             string `json:"symbol"`
+			FundingIntervalHrs int    `json:"fundingIntervalHours"`
+		} `json:"data"`
+	}
+	if err := funding.HTTPGet(ctx, "https://contract.mexc.com/api/v1/contract/detail", &doc); err != nil {
+		return
+	}
+	a.fundMu.Lock()
+	defer a.fundMu.Unlock()
+	a.fundInterval = make(map[string]int, len(doc.Data))
+	for _, d := range doc.Data {
+		if d.FundingIntervalHrs < 1 {
+			d.FundingIntervalHrs = 8
+		}
+		a.fundInterval[d.Symbol] = d.FundingIntervalHrs
+	}
+}
+
+// lookupInterval returns the per-symbol funding interval in hours.
+// Falls back to 8h if the symbol isn't cached.
+func (a *Adapter) lookupInterval(symbol string) int {
+	a.fundMu.RLock()
+	defer a.fundMu.RUnlock()
+	if ivl, ok := a.fundInterval[symbol]; ok {
+		return ivl
+	}
+	return 8
 }
 
 // MEXC returns ALL contracts in one shot; no point hitting it more than

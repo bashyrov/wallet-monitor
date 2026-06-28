@@ -11,6 +11,7 @@ package aster
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,10 +161,35 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			MarkPrice:   mark,
 			IndexPrice:  idx,
 			NextFunding: time.UnixMilli(r.NextFunding),
-			IntervalH:   8,
+			IntervalH:   float64(intervalFromTs(r.NextFunding)),
 		})
 	}
 	return out, nil
+}
+
+// intervalFromTs returns the funding interval in hours implied by the
+// distance from now (UTC) to the next-funding timestamp. Rounds to the
+// nearest of {1,2,4,8}h; falls back to 8h if the delta is < 1h or
+// ambiguous.
+func intervalFromTs(ts int64) int {
+	const fallback = 8
+	if ts <= 0 {
+		return fallback
+	}
+	now := time.Now().UnixMilli()
+	delta := ts - now
+	if delta <= 0 {
+		// nextFunding is in the past — stale data; use fallback
+		return fallback
+	}
+	hours := float64(delta) / (60 * 60 * 1000)
+	// snap to nearest of {1,2,4,8}
+	for _, cand := range []int{1, 2, 4, 8} {
+		if math.Abs(hours-float64(cand)) < 0.5 {
+			return cand
+		}
+	}
+	return fallback
 }
 
 func (a *Adapter) Heartbeat() []byte                { return nil }
@@ -220,7 +246,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			IndexPrice:  idx,
 			Volume24h:   volBySymbol[token],
 			NextFunding: time.UnixMilli(r.NextFundingTs),
-			IntervalH:   8,
+			IntervalH:   float64(intervalFromTs(r.NextFundingTs)),
 		})
 	}
 	return out, nil
