@@ -5233,14 +5233,13 @@ async function accLoadPositions(){
           </td>
           <td class="num ${pnlCls}">${combinedPct>=0?'+':''}${combinedPct.toFixed(2)}%</td>
           <td style="white-space:nowrap">
-            <button class="pos-close"
+            <button class="pos-btn pos-btn-close"
                     onclick="event.stopPropagation();${pair._spot_short
                       ? `tradeClose(${pair.short.wallet_id}, '${pair.short.position_id||pair.symbol}')`
                       : `_tradeClosePair(${pair.long.wallet_id}, ${pair.short.wallet_id}, '${pair.symbol}')`}"
-                    title="${pair._spot_short ? 'Close the short leg only — sell the spot holding manually on the exchange' : ''}"
-                    style="background:var(--green);border:none;color:#0a0a0f;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-weight:700;font-family:inherit">${pair._spot_short ? 'Close Short' : 'Close Both'}</button>
-            <button title="Share pair P&amp;L card"
-                    data-share-pair='${_htmlEsc(JSON.stringify({
+                    title="${pair._spot_short ? 'Close the short leg only — sell the spot holding manually on the exchange' : ''}">${pair._spot_short ? 'Close Short' : 'Close Both'}</button>
+            <button class="pos-btn pos-btn-share" title="Share pair P&amp;L card" aria-label="Share"
+                    data-share-pair-b64="${_toShareB64({
                       symbol: pair.symbol,
                       long: {
                         exchange: pair.long.exchange,
@@ -5260,15 +5259,16 @@ async function accLoadPositions(){
                         leverage: Number(pair.short.leverage || 1),
                         unrealized_pnl_usd: Number(pair.short.unrealized_pnl_usd || 0),
                       },
-                      total_pnl_usd: netPnl,            // includes funding
-                      total_price_pnl_usd: totalPnl,    // price-only uPnL
+                      total_pnl_usd: netPnl,
+                      total_price_pnl_usd: totalPnl,
                       total_funding_usd: hasFunding ? totalFunding : null,
                       pair_size_usd: pairUsd,
                       combined_pct: combinedPct,
                       entry_spread_pct: entrySpread,
-                    }))}'
-                    onclick='event.stopPropagation();_openSharePairFromBtn(this)'
-                    style="background:transparent;border:1px solid var(--border);color:var(--green);padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;margin-left:4px">↗</button>
+                    })}"
+                    onclick="event.stopPropagation();_openSharePairFromBtn(this)">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
+            </button>
           </td>
         </tr>`;
       const legs = isOpen ? (safeRowFor(pair.long) + safeRowFor(pair.short)) : '';
@@ -5994,10 +5994,11 @@ async function refreshTradePositions(){
         <span style="color:var(--text3);font-size:10px">${EX_LABEL[p.exchange] || p.exchange}</span>
         <span class="pos-qty">${qty.toFixed(4)} ${SYM}</span>
         <span class="pos-pnl ${pnlCls}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</span>
-        <button class="pos-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id}')">Close</button>
-        <button class="pos-share" title="Share P&amp;L card" data-share='${shareData}'
-                onclick='_openShareFromBtn(this)'
-                style="background:transparent;border:1px solid var(--border);color:var(--green);padding:3px 7px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:4px">↗</button>
+        <button class="pos-btn pos-btn-close" onclick="tradeClose(${p.wallet_id}, '${p.position_id}')">Close</button>
+        <button class="pos-btn pos-btn-share" title="Share P&amp;L card" aria-label="Share" data-share='${shareData}'
+                onclick="_openShareFromBtn(this)">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-3 3M3 14V8a3 3 0 013-3h8"/></svg>
+        </button>
         ${fundingRow}
         ${spotPairRow}
       </div>`;
@@ -7583,8 +7584,13 @@ function openShareCard(pos){
 
 function _openSharePairFromBtn(btn){
   try {
-    const raw = btn.getAttribute('data-share-pair');
-    const pair = JSON.parse(raw);
+    const b64 = btn.getAttribute('data-share-pair-b64');
+    let pair;
+    if (b64) {
+      pair = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    } else {
+      pair = JSON.parse(btn.getAttribute('data-share-pair'));
+    }
     openSharePairCard(pair);
   } catch(e){
     console.error('share-pair parse failed', e);
