@@ -56,6 +56,32 @@ func (a *Futures) BuildSubscribe(symbols []string) [][]byte {
 	return frames
 }
 
+// BuildUnsubscribe — sending depth_unsubscribe keeps the WS alive on
+// symbol-set churn (Manager rotates prewarm every 5s). Without this the
+// runner force-closes on every reconcile cycle that drops a symbol,
+// killing in-flight orderbook updates → visible "stale" feel on /arb.
+func (a *Futures) BuildUnsubscribe(symbols []string) [][]byte {
+	if len(symbols) == 0 {
+		return nil
+	}
+	markets := make([]any, 0, len(symbols))
+	for _, s := range symbols {
+		markets = append(markets, strings.ToUpper(s)+"_PERP")
+	}
+	f := map[string]any{
+		"id":     1,
+		"method": "depth_unsubscribe",
+		"params": markets,
+	}
+	b, _ := ws.MarshalJSON(f)
+	// Clear local diff-state for removed markets so a future re-subscribe
+	// gets a clean book.
+	for _, s := range symbols {
+		delete(a.books, strings.ToUpper(s))
+	}
+	return [][]byte{b}
+}
+
 func (a *Futures) Parse(frame []byte) (*ws.Snapshot, error) {
 	var msg struct {
 		Method string `json:"method"`
