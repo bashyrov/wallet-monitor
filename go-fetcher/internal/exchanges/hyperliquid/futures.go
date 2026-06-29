@@ -45,8 +45,15 @@ import (
 const (
 	futuresWS   = "wss://api.hyperliquid.xyz/ws"
 	infoREST    = "https://api.hyperliquid.xyz/info"
-	backstopGap = 1500 * time.Millisecond // refetch if cache older than this
-	backstopMax = 8                       // max parallel REST fetches per tick
+	// HL WS is unreliable: server drops the TCP connection at subscribe
+	// frame 1-2 with "broken pipe" regardless of inter-frame delay (saw
+	// constant failures at 500ms in prod). Treat REST as primary and let
+	// WS opportunistically deliver what it can. Shorter gap + more
+	// concurrency makes the 1s ticker sweep through 60-80 subscribed
+	// coins per tick — HL public REST limit is 1200/min so 80 req/s
+	// sustained is fine (~25% of budget).
+	backstopGap = 800 * time.Millisecond // refetch if cache older than this
+	backstopMax = 20                     // max parallel REST fetches per tick
 )
 
 type Futures struct {
@@ -267,8 +274,11 @@ func (a *Futures) HeartbeatInterval() time.Duration { return 0 }
 func (a *Futures) PongFor(_ []byte) []byte          { return nil }
 func (a *Futures) UseLibPings() bool                { return true }
 
-// HL drops connection with "write: broken pipe" after 4-8 subscribe frames.
-func (a *Futures) SubscribeDelay() time.Duration { return 500 * time.Millisecond }
+// HL drops the TCP connection at frame 1-2 with broken pipe regardless of
+// inter-frame delay — prod observation at 500ms = constant failure on
+// every reconnect. Bumped to 2s to give the server room; even with this
+// WS is best-effort and the REST backstop carries the load.
+func (a *Futures) SubscribeDelay() time.Duration { return 2 * time.Second }
 func (a *Futures) MaxSymbols() int               { return 0 }
 func (a *Futures) DecompressGzip() bool          { return false }
 func (a *Futures) OnReconnect()                  {}
