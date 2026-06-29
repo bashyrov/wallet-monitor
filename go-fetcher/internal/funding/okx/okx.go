@@ -73,7 +73,7 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 	token := strings.TrimSuffix(msg.Arg.InstID, "-USDT-SWAP")
 	out := make([]funding.Tick, 0, len(msg.Data))
 	for _, d := range msg.Data {
-		t := funding.Tick{Symbol: token, IntervalH: 8}
+		t := funding.Tick{Symbol: token}
 		switch msg.Arg.Channel {
 		case "funding-rate":
 			if v, ok := d["fundingRate"].(string); ok {

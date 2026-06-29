@@ -155,30 +155,35 @@ func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]fundin
 
 	// Per-symbol current-fund-rate — nextFunding + real intervalH.
 	// Bulk tickers omit nextFundingTime; current-fund-rate provides "nextUpdate".
-	if len(symbols) > 0 {
+	// Sweep ALL byToken keys (not just subscribed symbols) so the full
+	// ~488 instruments get correct interval + nextFunding, not just ~40.
+	allSyms := make([]string, 0, len(byToken))
+	for tok := range byToken {
+		allSyms = append(allSyms, tok)
+	}
+	// Merge subscribed symbols in case any aren't in tickers feed.
+	seen := make(map[string]struct{}, len(allSyms))
+	for _, s := range allSyms {
+		seen[strings.ToUpper(s)] = struct{}{}
+	}
+	for _, s := range symbols {
+		u := strings.ToUpper(s)
+		if _, ok := seen[u]; !ok {
+			allSyms = append(allSyms, u)
+			seen[u] = struct{}{}
+		}
+	}
+	if len(allSyms) > 0 {
 		type rateEntry struct {
 			token       string
 			nextFunding time.Time
 			intervalH   float64
 		}
-		// Fallback for symbols the per-symbol sweep doesn't cover within
-		// the budget — populate with the next 8h UTC boundary (most
-		// bitget symbols pay 8h; a small subset pay 4h but those land
-		// on the same wall-clock cycle anyway). Without this, the long
-		// tail of bitget rows shipped with next_ts=0 (77/488 in prod).
-		const cyclehrs = 8
-		nextFallback := time.Now().UTC().Truncate(time.Duration(cyclehrs) * time.Hour).Add(time.Duration(cyclehrs) * time.Hour)
-		for token, t := range byToken {
-			if t.NextFunding.IsZero() {
-				t.NextFunding = nextFallback
-				byToken[token] = t
-			}
-		}
 
-		entries := make(chan rateEntry, len(symbols))
+		entries := make(chan rateEntry, len(allSyms))
 		sem := make(chan struct{}, 8)
 		var wg sync.WaitGroup
-		for _, sym := range symbols {
+		for _, sym := range allSyms {
 			sym := sym
 			wg.Add(1)
 			go func() {
