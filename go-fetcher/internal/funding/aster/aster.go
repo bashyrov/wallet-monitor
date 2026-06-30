@@ -11,7 +11,6 @@ package aster
 
 import (
 	"context"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +29,9 @@ const (
 	// the binance funding adapter.
 	restTickerURL    = "https://fapi.asterdex.com/fapi/v1/ticker/24hr"
 	restExchangeInfo = "https://fapi.asterdex.com/fapi/v1/exchangeInfo"
+	// /fundingInfo — per-symbol fundingIntervalHours (1, 4, or 8). Same
+	// shape as Binance's endpoint. Cached for process lifetime.
+	fundingInfoURL = "https://fapi.asterdex.com/fapi/v1/fundingInfo"
 )
 
 var (
@@ -78,9 +80,60 @@ func _refreshTradingSet(ctx context.Context) {
 	_tradingMu.Unlock()
 }
 
-type Adapter struct{}
+type Adapter struct {
+	fundMu       sync.RWMutex
+	fundInterval map[string]int // "BTCUSDT" -> hours
+}
 
 func New() *Adapter { return &Adapter{} }
+
+// fetchIntervalCache populates fundInterval from /fundingInfo on first
+// call. Idempotent — subsequent calls no-op once the cache is non-nil.
+// Mirrors the binance pattern.
+func (a *Adapter) fetchIntervalCache(ctx context.Context) {
+	a.fundMu.RLock()
+	if a.fundInterval != nil {
+		a.fundMu.RUnlock()
+		return
+	}
+	a.fundMu.RUnlock()
+	var rows []struct {
+		Symbol               string `json:"symbol"`
+		FundingIntervalHours int    `json:"fundingIntervalHours"`
+	}
+	if err := funding.HTTPGet(ctx, fundingInfoURL, &rows); err != nil {
+		return
+	}
+	a.fundMu.Lock()
+	defer a.fundMu.Unlock()
+	a.fundInterval = make(map[string]int, len(rows))
+	for _, r := range rows {
+		h := r.FundingIntervalHours
+		if h < 1 {
+			h = 8
+		}
+		a.fundInterval[r.Symbol] = h
+	}
+}
+
+func (a *Adapter) lookupInterval(ctx context.Context, symbol string) int {
+	a.fundMu.RLock()
+	if a.fundInterval != nil {
+		defer a.fundMu.RUnlock()
+		if ivl, ok := a.fundInterval[symbol]; ok {
+			return ivl
+		}
+		return 8
+	}
+	a.fundMu.RUnlock()
+	a.fetchIntervalCache(ctx)
+	a.fundMu.RLock()
+	defer a.fundMu.RUnlock()
+	if ivl, ok := a.fundInterval[symbol]; ok {
+		return ivl
+	}
+	return 8
+}
 
 func (a *Adapter) Name() string                          { return "aster" }
 func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
@@ -161,35 +214,10 @@ func (a *Adapter) ParseWS(frame []byte) ([]funding.Tick, error) {
 			MarkPrice:   mark,
 			IndexPrice:  idx,
 			NextFunding: time.UnixMilli(r.NextFunding),
-			IntervalH:   float64(intervalFromTs(r.NextFunding)),
+			IntervalH:   float64(a.lookupInterval(context.Background(), r.Symbol)),
 		})
 	}
 	return out, nil
-}
-
-// intervalFromTs returns the funding interval in hours implied by the
-// distance from now (UTC) to the next-funding timestamp. Rounds to the
-// nearest of {1,2,4,8}h; falls back to 8h if the delta is < 1h or
-// ambiguous.
-func intervalFromTs(ts int64) int {
-	const fallback = 8
-	if ts <= 0 {
-		return fallback
-	}
-	now := time.Now().UnixMilli()
-	delta := ts - now
-	if delta <= 0 {
-		// nextFunding is in the past — stale data; use fallback
-		return fallback
-	}
-	hours := float64(delta) / (60 * 60 * 1000)
-	// snap to nearest of {1,2,4,8}
-	for _, cand := range []int{1, 2, 4, 8} {
-		if math.Abs(hours-float64(cand)) < 0.5 {
-			return cand
-		}
-	}
-	return fallback
 }
 
 func (a *Adapter) Heartbeat() []byte                { return nil }
@@ -227,6 +255,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		}
 	}
 	_refreshTradingSet(ctx)
+	a.fetchIntervalCache(ctx)
 	out := make([]funding.Tick, 0, len(rows))
 	for _, r := range rows {
 		if !strings.HasSuffix(r.Symbol, "USDT") {
@@ -246,7 +275,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			IndexPrice:  idx,
 			Volume24h:   volBySymbol[token],
 			NextFunding: time.UnixMilli(r.NextFundingTs),
-			IntervalH:   float64(intervalFromTs(r.NextFundingTs)),
+			IntervalH:   float64(a.lookupInterval(ctx, r.Symbol)),
 		})
 	}
 	return out, nil
