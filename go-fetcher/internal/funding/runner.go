@@ -36,7 +36,23 @@ type Runner struct {
 	// pushing every <500ms. Only restored on actual data, not pings.
 	lastWS   time.Time
 	lastWSMu sync.RWMutex
+
+	// lastREST — wall-clock of the last successful REST sweep. The
+	// adaptive WS-skip guards against unbounded skipping: even if WS
+	// stays fresh forever, REST still runs at least every restMaxSkip.
+	// This matters because most adapters' WS payloads are partial
+	// (rate + mark only) and REST is the only source for NextFunding /
+	// IntervalH / OpenInterest. Without this Gate's next_funding got
+	// stuck on the previous period after every settlement.
+	lastREST   time.Time
+	lastRESTMu sync.RWMutex
 }
+
+// Maximum time the REST sweep is allowed to be skipped in favour of
+// WS freshness. Past this, REST must run regardless — most WS payloads
+// don't carry NextFunding/IntervalH so stale next_funding accumulates
+// silently otherwise.
+const restMaxSkip = 30 * time.Second
 
 func NewRunner(a Adapter, store *Store) *Runner {
 	l := wmlog.L().With().Str("funding", a.Name()).Logger()
@@ -57,6 +73,22 @@ func (r *Runner) wsFreshFor(d time.Duration) bool {
 		return false
 	}
 	return time.Since(last) < d
+}
+
+func (r *Runner) markRESTRun() {
+	r.lastRESTMu.Lock()
+	r.lastREST = time.Now()
+	r.lastRESTMu.Unlock()
+}
+
+func (r *Runner) restAge() time.Duration {
+	r.lastRESTMu.RLock()
+	last := r.lastREST
+	r.lastRESTMu.RUnlock()
+	if last.IsZero() {
+		return time.Hour // treat as ancient — first tick will run
+	}
+	return time.Since(last)
 }
 
 // safeSend — single sanctioned write path. Holds writeMu so the
@@ -239,11 +271,17 @@ func (r *Runner) restLoop(ctx context.Context) {
 			return
 		case <-t.C:
 			// Adaptive: skip the REST sweep when WS has pushed any data
-			// in the last 5 seconds. REST exists as safety net for WS
-			// gaps; if WS is delivering, the sweep is just wasted RTT
-			// + bandwidth. Five seconds is generous — even slow
-			// venues push at least once per 1-2s when active.
-			if r.wsFreshFor(5 * time.Second) {
+			// in the last 5 seconds — REST exists as safety net, no
+			// point burning RTT every 2s if WS is delivering.
+			//
+			// BUT: most adapters' WS payloads are partial. Gate/Bybit/
+			// Binance WS carry rate+mark+volume but NOT NextFunding or
+			// FundingInterval. If WS stays fresh forever, REST never
+			// runs, and after settlement the cached NextFunding stays
+			// stuck on the previous period (one period = 1-8h of
+			// staleness on a user-visible field). restMaxSkip caps the
+			// skip window so REST refreshes at least every 30s.
+			if r.wsFreshFor(5*time.Second) && r.restAge() < restMaxSkip {
 				continue
 			}
 			r.runBackstopOnce(ctx)
@@ -276,6 +314,7 @@ func (r *Runner) runBackstopOnce(ctx context.Context) {
 	for _, t := range ticks {
 		r.store.Apply(r.a.Name(), t)
 	}
+	r.markRESTRun()
 	r.log.Debug().Int("ticks", len(ticks)).Msg("rest backstop ok")
 }
 
