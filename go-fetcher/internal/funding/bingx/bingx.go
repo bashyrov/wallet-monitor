@@ -218,7 +218,13 @@ func (a *Adapter) maybeStartIntervalSweep(
 			continue
 		}
 		token := strings.TrimSuffix(r.Symbol, "-USDT")
-		if a.lookupInterval(token) > 0 {
+		// Check the map directly, NOT lookupInterval — the latter
+		// returns 8 as fallback, which would make every uncached
+		// symbol look "already resolved" and get skipped forever.
+		a.intervalMu.RLock()
+		_, cached := a.interval[token]
+		a.intervalMu.RUnlock()
+		if cached {
 			continue
 		}
 		cands = append(cands, cand{token: token, vol: volBySymbol[token]})
