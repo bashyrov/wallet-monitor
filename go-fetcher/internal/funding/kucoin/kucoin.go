@@ -37,14 +37,23 @@ func (a *Adapter) DecompressGzip() bool             { return false }
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
 	var doc struct {
 		Data []struct {
-			Symbol           string  `json:"symbol"`           // "XBTUSDTM"
-			MarkPrice        float64 `json:"markPrice"`
-			IndexPrice       float64 `json:"indexPrice"`
-			FundingFeeRate   float64 `json:"fundingFeeRate"`
-			NextFundingRateTime int64 `json:"nextFundingRateTime"`
-			VolumeOf24h      float64 `json:"volumeOf24h"`
-			TurnoverOf24h    float64 `json:"turnoverOf24h"`
-			FundingRateInterval int  `json:"fundingRateInterval"` // minutes? hours?
+			Symbol              string  `json:"symbol"` // "XBTUSDTM"
+			MarkPrice           float64 `json:"markPrice"`
+			IndexPrice          float64 `json:"indexPrice"`
+			FundingFeeRate      float64 `json:"fundingFeeRate"`
+			NextFundingRateTime int64   `json:"nextFundingRateTime"`
+			VolumeOf24h         float64 `json:"volumeOf24h"`
+			TurnoverOf24h       float64 `json:"turnoverOf24h"`
+			// KuCoin has TWO funding-interval fields:
+			//   - fundingRateInterval: legacy, hours as int. null for all
+			//     new-listed pairs (2025+). Previously the only source we
+			//     read, causing every recent listing to fall back to 8h.
+			//   - fundingRateGranularity: current field, milliseconds.
+			//     TAIKO_USDT = 3600000ms = 1h; BTC = 28800000ms = 8h.
+			// Prefer granularity when present; only use legacy interval on
+			// the odd row where granularity is missing (0).
+			FundingRateInterval    int   `json:"fundingRateInterval"`
+			FundingRateGranularity int64 `json:"fundingRateGranularity"`
 		} `json:"data"`
 	}
 	if err := funding.HTTPGet(ctx, restURL, &doc); err != nil {
@@ -59,9 +68,15 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		if token == "XBT" {
 			token = "BTC"
 		}
-		ivl := float64(r.FundingRateInterval) // hours per KuCoin API docs
+		// Resolve interval — granularity (ms) has priority.
+		ivl := 0.0
+		if r.FundingRateGranularity > 0 {
+			ivl = float64(r.FundingRateGranularity) / 3_600_000.0 // ms → hours
+		} else if r.FundingRateInterval > 0 {
+			ivl = float64(r.FundingRateInterval) // hours (legacy)
+		}
 		if ivl <= 0 {
-			ivl = 8
+			ivl = 8 // canonical fallback
 		}
 		t := funding.Tick{
 			Symbol:     token,
