@@ -9,21 +9,30 @@
 
 .topbar {
   position: sticky; top: 0; z-index: 100;
-  background: rgba(10,10,13,0.82);
+  /* Higher base opacity (0.82 → 0.94) so content scrolling underneath
+     doesn't visually bleed through — the previous value let table rows
+     and card content peek through the navbar, making the bottom edge
+     look "smushed" against the first content block. Combined with the
+     permanent hairline border-bottom below, this gives a crisp separation
+     without waiting for the scrolled state to kick in. */
+  background: rgba(10,10,13,0.94);
   backdrop-filter: saturate(160%) blur(18px);
   -webkit-backdrop-filter: saturate(160%) blur(18px);
-  border-bottom: 1px solid transparent;
+  /* Always visible — was transparent until scrolled, which made the
+     first page paint feel like navbar+content were glued together. */
+  border-bottom: 1px solid rgba(255,255,255,.05);
   transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
 }
 .topbar::after {
-  /* Subtle hairline gradient — fades in once the page has scrolled */
+  /* Hairline gradient sheen — fades in on scroll for a slightly stronger
+     signal that the user is not at the top. */
   content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.05), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
   pointer-events: none; opacity: 0; transition: opacity .2s ease;
 }
 .topbar.scrolled {
   border-bottom-color: var(--border);
-  background: rgba(10,10,13,0.95);
+  background: rgba(10,10,13,0.97);
   box-shadow: 0 6px 22px -10px rgba(0,0,0,.55);
 }
 .topbar.scrolled::after { opacity: 1; }
