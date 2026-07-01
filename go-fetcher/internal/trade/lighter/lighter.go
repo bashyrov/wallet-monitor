@@ -1,23 +1,24 @@
-// Lighter zk-perp adapter — partial port (read-only).
+// Lighter zk-perp adapter — full trade support (pure Go).
 //
-// Lighter is a ZK-rollup; trade authority is delegated to API keys whose
-// signatures are computed by a native CGO library shipped per-platform
-// with the official `lighter-sdk` Python wrapper. There is no
-// Go-native equivalent for that signer, and bringing the same shared
-// libs in over CGO would tie this package to the upstream's release
-// cadence + per-arch builds.
+// Lighter is a ZK-rollup with API keys signed via Schnorr/Poseidon over
+// the ECgFp5 curve. The official Python `lighter-sdk` ships a native
+// CGO library for signing which historically was the only path — we
+// used to route lighter writes through Python for that reason.
+//
+// As of 2026-05 upstream published `github.com/elliottech/lighter-go`
+// with a pure-Go KeyManager + ConstructCreateOrderTx implementation
+// (no CGO, no lighter-sdk dependency, no per-arch native builds).
+// This adapter uses that SDK for signing — see sign.go.
 //
 // What this adapter does:
 //
 //   - GetBalance / ListPositions hit the unsigned REST endpoints
 //     (/api/v1/account) and run entirely in Go.
-//   - PlaceOrder / ClosePosition / SetLeverage return a clean
-//     KindUnsupported error so the caller can fall back to the
-//     Python adapter (which keeps lighter-sdk in-process).
-//
-// Operationally: keep "lighter" out of GO_TRADE_VENUES. If it ends up
-// there by mistake, the user-facing error makes the misconfig obvious
-// without crashing the trade flow.
+//   - PlaceOrder / ClosePosition / SetLeverage sign L2 transactions via
+//     elliottech/lighter-go and POST to /api/v1/sendTx. Full trade
+//     support — lighter is safe to include in GO_TRADE_VENUES.
+//   - SetLeverage is a no-op (Lighter sets leverage at market level,
+//     not per-order).
 //
 // Credentials mapping (matches Python):
 //
