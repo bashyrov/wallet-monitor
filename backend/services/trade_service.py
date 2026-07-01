@@ -566,8 +566,25 @@ async def place_open_order(
 
     fill_price = result.get("avg_price") or result.get("fill_price") or result.get("price")
     fill_qty = result.get("filled_qty") or result.get("qty") or quantity
+    # Distinguish partial vs full fill so the Order History UI can
+    # highlight partial rows separately (yellow "partial" pill vs green
+    # "filled" pill). We call it partial when fill is between (0, 0.98]
+    # of requested — 2% tolerance covers venue rounding to lot size on
+    # markets like Bybit (qtyStep=0.01 leaves ~1% remainder on odd
+    # requested amounts). Anything ≥ 0.98 counts as filled.
+    try:
+        req_q = float(quantity or 0)
+        fill_q = float(fill_qty or 0)
+    except (TypeError, ValueError):
+        req_q, fill_q = 0.0, 0.0
+    if req_q > 0 and fill_q <= 0:
+        order_status = "cancelled"
+    elif req_q > 0 and fill_q / req_q < 0.98:
+        order_status = "partial"
+    else:
+        order_status = "filled"
     _finalize_order(
-        db, order_row, status="filled",
+        db, order_row, status=order_status,
         exchange_order_id=str(result.get("order_id") or "") or None,
         filled_qty=fill_qty,
         avg_fill_price=float(fill_price) if fill_price else None,
