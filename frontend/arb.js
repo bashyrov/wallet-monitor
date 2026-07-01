@@ -2426,8 +2426,11 @@ function renderSpreadChart(){
     setH('stt-spread',`<span class="${spCls}">${sign(pt.spread)}${pt.spread.toFixed(4)}%</span>`);
     setT('stt-val-long',fmtP(pt.longC));
     setT('stt-val-short',fmtP(pt.shortC));
-    const wR=body.getBoundingClientRect();let left=e.clientX-wR.left;left=Math.max(75,Math.min(wR.width-75,left));
-    tip.style.left=left+'px';tip.style.top='6px';tip.classList.add('visible');
+    // position:fixed → coordinates are viewport-space. Anchor left to
+    // cursor (clamped inside chart body), top just below chart body top.
+    const wR=body.getBoundingClientRect();
+    let left=e.clientX;left=Math.max(wR.left+75,Math.min(wR.right-75,left));
+    tip.style.left=(left-75)+'px';tip.style.top=(wR.top+6)+'px';tip.classList.add('visible');
   });
   svg.addEventListener('mouseleave',sHide);
   function sHide(){sch.setAttribute('opacity','0');scd.setAttribute('opacity','0');tip.classList.remove('visible');}
@@ -2491,8 +2494,9 @@ function renderFundChart(){
     setH('ftt-long',lr!=null?`<span style="color:${lr>0?'#1AFFAB':lr<0?'#F87171':'#9B9FAB'}">${sign(lr)}${lr.toFixed(4)}%</span>`:'<span style="color:#55596A">—</span>');
     setH('ftt-short',sr!=null?`<span style="color:${sr>0?'#1AFFAB':sr<0?'#F87171':'#9B9FAB'}">${sign(sr)}${sr.toFixed(4)}%</span>`:'<span style="color:#55596A">—</span>');
     if(lr!=null&&sr!=null){const net=sr-lr;setH('ftt-net',`<span style="color:${net>=0?'#1AFFAB':'#F87171'}">${sign(net)}${net.toFixed(4)}%</span>`);}else setT('ftt-net','—');
-    const wR=body.getBoundingClientRect();let left=e.clientX-wR.left;left=Math.max(70,Math.min(wR.width-70,left));
-    ftip.style.left=left+'px';ftip.style.top='4px';ftip.classList.add('visible');
+    const wR=body.getBoundingClientRect();
+    let left=e.clientX;left=Math.max(wR.left+70,Math.min(wR.right-70,left));
+    ftip.style.left=(left-70)+'px';ftip.style.top=(wR.top+4)+'px';ftip.classList.add('visible');
   });
   svg.addEventListener('mouseleave',fHide);
   function fHide(){fch.setAttribute('opacity','0');fdl.setAttribute('opacity','0');fds.setAttribute('opacity','0');ftip.classList.remove('visible');}

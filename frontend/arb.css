@@ -374,7 +374,10 @@ body.light .ee-inout-overlay{background:rgba(255,255,255,.78);border-color:rgba(
 .calc-val{font-family:var(--mono);font-size:12px;font-weight:600;}
 
 /* Tooltip */
-.chart-tooltip,.fund-tooltip{position:absolute;pointer-events:none;opacity:0;transition:opacity .1s;background:#15151E;border:1px solid var(--border2);border-radius:7px;padding:7px 10px;min-width:130px;z-index:10;box-shadow:0 6px 20px rgba(0,0,0,.6);font-size:11px;}
+/* position:fixed + high z-index so the tooltip floats above sibling
+   blocks (orderbooks, info cards, etc.) regardless of parent stacking
+   context. JS sets left/top in viewport coordinates. */
+.chart-tooltip,.fund-tooltip{position:fixed;pointer-events:none;opacity:0;transition:opacity .1s;background:#15151E;border:1px solid var(--border2);border-radius:7px;padding:7px 10px;min-width:130px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.6);font-size:11px;}
 .chart-tooltip.visible,.fund-tooltip.visible{opacity:1;}
 .tt-date{color:var(--text3);margin-bottom:4px;font-size:10px;}
 .tt-row{display:flex;justify-content:space-between;gap:10px;margin-bottom:2px;}

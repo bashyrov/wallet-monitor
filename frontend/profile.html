@@ -411,9 +411,12 @@
     .chart-svg { width: 100%; overflow: visible; display: block; }
     .chart-empty { font-size: 12px; color: var(--text4); text-align: center; padding: 32px 0; }
 
-    /* Hover tooltip on the balance chart — absolute over chart-wrap */
+    /* Hover tooltip on the balance chart — position:fixed + high z-index
+       so it floats above sibling profile blocks (sidebar, security etc.)
+       regardless of parent stacking context. JS positions in viewport
+       coordinates. */
     .chart-tooltip {
-      position: absolute; pointer-events: none; z-index: 10;
+      position: fixed; pointer-events: none; z-index: 9999;
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 8px; padding: 10px 12px;
       box-shadow: 0 8px 22px rgba(0,0,0,0.5);
@@ -2594,13 +2597,17 @@ function _chartAttachHover(wrap, data) {
     const rect = svg.getBoundingClientRect();
     const scaleX = rect.width / W;
     const scaleY = rect.height / H;
-    let px = cx * scaleX + 14;
-    let py = cy * scaleY - 14;
+    // Viewport-space positioning — position:fixed on the tooltip means
+    // left/top are relative to the browser window, not chart-wrap. Anchor
+    // to the SVG's viewport rect + local (cx,cy) scaled to viewport pixels.
+    let px = rect.left + cx * scaleX + 14;
+    let py = rect.top  + cy * scaleY - 14;
     const tipW = tip.offsetWidth || 200;
     const tipH = tip.offsetHeight || 140;
-    if (px + tipW > rect.width - 4)  px = cx * scaleX - tipW - 14;
-    if (py < 4)                       py = 4;
-    if (py + tipH > rect.height - 4)  py = rect.height - tipH - 4;
+    // Flip to the left of the cursor if we'd overflow the chart's right edge.
+    if (px + tipW > rect.right - 4)  px = rect.left + cx * scaleX - tipW - 14;
+    if (py < rect.top + 4)            py = rect.top + 4;
+    if (py + tipH > rect.bottom - 4)  py = rect.bottom - tipH - 4;
     tip.style.left = px + 'px';
     tip.style.top  = py + 'px';
   }

@@ -32,8 +32,8 @@
      fetchpriority="high" tells the browser to schedule these ahead of
      other low-priority discoveries (e.g. images far down the page). -->
 <link rel="preload" as="script" href="/dist/core.min.js?v=20260628d" fetchpriority="high">
-<link rel="preload" as="script" href="/arb.js?v=20260628m" fetchpriority="high">
-<link rel="preload" as="style"  href="/arb.css?v=20260628e"      fetchpriority="high">
+<link rel="preload" as="script" href="/arb.js?v=20260701a" fetchpriority="high">
+<link rel="preload" as="style"  href="/arb.css?v=20260701a"      fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
 <!-- Pre-establish TCP+TLS to exchange API origins so the first orderbook /
@@ -64,14 +64,14 @@
      Loaded with defer so it runs after DOM parse completes — equivalent
      to the previous mid-body execution since the trailing init() call
      anyway waited on DOMContentLoaded for most code paths. -->
-<script src="/arb.js?v=20260628m" defer></script>
+<script src="/arb.js?v=20260701a" defer></script>
 <link rel="stylesheet" href="/design.css">
 <link rel="stylesheet" href="/navbar.css?v=20260628c">
 <!-- lightweight-charts (161KB) loaded lazily via _loadLightweightCharts()
      in an idle callback after init — chart sits below the fold on most
      viewports and orderbook rendering takes priority. -->
 
-<link rel="stylesheet" href="/arb.css?v=20260628e">
+<link rel="stylesheet" href="/arb.css?v=20260701a">
 </head>
 <body>
 
