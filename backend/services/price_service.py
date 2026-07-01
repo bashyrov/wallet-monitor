@@ -114,16 +114,40 @@ _top100: set[str] = set()
 _refresh_task: asyncio.Task | None = None
 
 
-# Wrapped / bridged tokens → underlying symbol for price lookup
+# Wrapped / bridged tokens → underlying symbol for price lookup.
+# Covers: native wrappers (WBTC/WETH), Binance-bridged (BTCB), Avalanche
+# bridge (.E suffix), Arbitrum/Optimism bridged WETH (.A / .O), USDC
+# variants across L2s, Harmony bridge (1USDC etc.), Base bridge (bETH).
 WRAPPED_MAP: dict[str, str] = {
+    # BTC family
     "WBTC": "BTC", "BTCB": "BTC", "BTC.B": "BTC",
+    "TBTC": "BTC", "CBBTC": "BTC", "RENBTC": "BTC",
+    # ETH family — including L2 bridge wrappers
     "WETH": "ETH", "ETH.E": "ETH", "WETH.E": "ETH",
-    "WBNB": "BNB",
+    "WETH.A": "ETH", "WETH.O": "ETH", "WETH.M": "ETH",
+    "BETH": "ETH", "STETH": "ETH", "CBETH": "ETH", "RETH": "ETH",
+    # BNB family
+    "WBNB": "BNB", "BNBB": "BNB",
+    # Polygon (rebranded to POL)
     "WMATIC": "POL", "MATIC": "POL",
+    # Avalanche
     "WAVAX": "AVAX",
+    # Solana
     "WSOL": "SOL",
+    # Tron
     "WTRX": "TRX",
+    # Fantom / Sonic
     "WFTM": "FTM",
+    "WS": "S",
+    # Cross-chain USDC — Bridged / Native distinct on some venues
+    # (users see USDC.E on Arbitrum/Optimism/Avalanche, USDbC on Base
+    # etc.). Prices are pinned as stables via STABLES set — these entries
+    # here are a safety net for wallets that quote them as non-stable.
+    "USDC.E": "USDC", "USDCE": "USDC",
+    "USDBC": "USDC", "USDB.C": "USDC",
+    "USDT.E": "USDT", "USDTE": "USDT",
+    "1USDC": "USDC", "1USDT": "USDT",  # Harmony bridged
+    "DAI.E": "DAI",
 }
 
 
