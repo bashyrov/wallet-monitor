@@ -159,7 +159,9 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 }
 
 // fetchIntervalCache fetches /instruments-info once and populates
-// a.fundInterval. Called once per BackstopFetch cycle.
+// a.fundInterval. Iterates the paginated response — Bybit caps at
+// 500 rows per page, cursor drives the rest. Total ~700 USDT-perp
+// as of 2026-07 so 2 pages suffice.
 func (a *Adapter) fetchIntervalCache(ctx context.Context) {
 	a.fundMu.RLock()
 	if a.fundInterval != nil {
@@ -168,29 +170,45 @@ func (a *Adapter) fetchIntervalCache(ctx context.Context) {
 	}
 	a.fundMu.RUnlock()
 
-	var doc struct {
-		Result struct {
-			List []struct {
-				Symbol          string `json:"symbol"`
-				FundingInterval string `json:"fundingInterval"` // minutes
-			} `json:"list"`
-		} `json:"result"`
-	}
-	if err := funding.HTTPGet(ctx, instrumentsURL, &doc); err != nil {
-		// Cache stays nil; ParseWS/BackstopFetch fall back to 8h.
-		return
+	agg := make(map[string]int, 800)
+	cursor := ""
+	for pages := 0; pages < 10; pages++ {
+		u := instrumentsURL + "&limit=1000"
+		if cursor != "" {
+			u += "&cursor=" + cursor
+		}
+		var doc struct {
+			Result struct {
+				List []struct {
+					Symbol string `json:"symbol"`
+					// Bybit returns fundingInterval as a JSON number
+					// (minutes) — earlier version had `string` which
+					// unmarshalled to "" and fell through to 8h for
+					// every row. That silently downgraded top-30
+					// USDT-perp APR by 2x.
+					FundingInterval int `json:"fundingInterval"`
+				} `json:"list"`
+				NextPageCursor string `json:"nextPageCursor"`
+			} `json:"result"`
+		}
+		if err := funding.HTTPGet(ctx, u, &doc); err != nil {
+			return
+		}
+		for _, r := range doc.Result.List {
+			hours := r.FundingInterval / 60
+			if hours < 1 {
+				hours = 8
+			}
+			agg[r.Symbol] = hours
+		}
+		if doc.Result.NextPageCursor == "" || len(doc.Result.List) == 0 {
+			break
+		}
+		cursor = doc.Result.NextPageCursor
 	}
 	a.fundMu.Lock()
 	defer a.fundMu.Unlock()
-	a.fundInterval = make(map[string]int, len(doc.Result.List))
-	for _, r := range doc.Result.List {
-		mins, _ := strconv.Atoi(r.FundingInterval)
-		hours := mins / 60
-		if hours < 1 {
-			hours = 8 // canonical fallback
-		}
-		a.fundInterval[r.Symbol] = hours
-	}
+	a.fundInterval = agg
 }
 
 // lookupInterval returns the per-symbol funding interval in hours.
