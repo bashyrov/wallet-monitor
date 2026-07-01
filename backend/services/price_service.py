@@ -209,6 +209,10 @@ async def refresh_prices() -> None:
         logger.info("CMC top-100 loaded: %d symbols", len(symbols))
 
         # ── Step 2: Gate spot tickers (public) ───────────────────────────────
+        # Store ALL Gate _USDT pairs (~3000), not just top-100. Same API
+        # call, no rate limit impact, gets us the long tail of alts
+        # (small caps, meme tokens) that CMC top-100 misses. Portfolio
+        # views previously showed amount without USD value for those.
         gate_prices: dict[str, float] = {}
         try:
             r2 = await client.get(
@@ -226,8 +230,6 @@ async def refresh_prices() -> None:
             if not pair.endswith("_USDT"):
                 continue
             base = pair[:-5].upper()  # strip _USDT
-            if base not in symbols:
-                continue
             try:
                 price = float(ticker.get("last") or 0)
                 if price > 0:
@@ -235,17 +237,21 @@ async def refresh_prices() -> None:
             except Exception:
                 pass
 
-        logger.info("Gate prices fetched: %d / %d symbols", len(gate_prices), len(symbols))
+        logger.info("Gate prices fetched: %d USDT pairs (long tail incl.)", len(gate_prices))
 
-        # ── Step 3: Merge (Gate preferred, CMC as fallback) ──────────────────
+        # ── Step 3: Merge — full Gate cache + CMC top-100 as authoritative ───
+        # Order matters: Gate for the full universe, CMC overwrites top-100
+        # so BTC/ETH/etc. use the CMC price (more accurate than a single
+        # exchange's spot). Stables are pinned at $1.
         new_prices: dict[str, float] = {}
-        for sym in symbols:
-            if sym in STABLES:
-                new_prices[sym] = STABLE_PRICE
-            elif sym in gate_prices:
-                new_prices[sym] = gate_prices[sym]
-            elif sym in cmc_prices:
-                new_prices[sym] = cmc_prices[sym]
+        # Gate covers the long tail (~3000 symbols)
+        new_prices.update(gate_prices)
+        # CMC top-100 wins for majors (more reliable than any single spot)
+        for sym, px in cmc_prices.items():
+            new_prices[sym] = px
+        # Stables pinned
+        for sym in STABLES:
+            new_prices[sym] = STABLE_PRICE
 
         _prices.clear()
         _prices.update(new_prices)
