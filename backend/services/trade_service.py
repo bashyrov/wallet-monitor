@@ -521,6 +521,22 @@ async def place_open_order(
                     f"(GO_TRADE_VENUES) and a SpotAdapter implementation.",
                     kind="user",
                 )
+            # Python adapters only implement market orders. If the user
+            # requested a limit/stop/tp order and we've fallen through
+            # to the Python path (Go proxy down or errored), REFUSE
+            # rather than silently opening a market at current price.
+            # Prior behaviour: adapter.place_order was called without
+            # order_type/limit_price/stop_price → base signature
+            # accepted the args and shipped a market. Users had no way
+            # to know their limit order became an immediate market.
+            if order_type != "market":
+                raise TradeError(
+                    f"{order_type} orders temporarily unavailable on {ex} "
+                    f"(Go proxy required — this venue is currently on the "
+                    f"Python fallback). Use a market order or retry in a "
+                    f"few seconds.",
+                    kind="user",
+                )
             result = await adapter.place_order(creds, symbol, side, quantity,
                                                leverage=leverage, margin_mode=margin_mode)
     except TradeError:
