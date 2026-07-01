@@ -148,13 +148,27 @@ func (a *Adapter) BackstopInterval() time.Duration { return 2 * time.Second }
 // ── Per-symbol interval cache ────────────────────────────────────────────
 
 // lookupInterval returns the cached interval for `token` (BTC, BSB, …)
-// or 0 if we haven't fetched it yet. The store treats 0 as "no value"
-// and preserves the last non-zero value, so a freshly-listed symbol
-// shows the dumper's 8h fallback until the sweep populates a real value.
+// or 8h fallback if we haven't fetched it yet.
+//
+// Bug fix: previously returned 0 on cache miss. But Store.Apply merge
+// policy treats 0 as "no update, preserve old" — which meant the FIRST
+// write for any fresh symbol landed as IntervalH: 0 and stayed there
+// permanently, since every subsequent 0 was ignored. That plus the
+// slow discovery cycle (24 pairs per 4h sweep) left 96% of the 674
+// BingX pairs frozen at iv=0 in prod (audit 2026-07-01). Frontend
+// then rendered "funding /0h" which broke APR display.
+//
+// Now we return 8 by default so the row lands in the store with a
+// usable value on the FIRST cycle. When the sweep eventually fills
+// the real per-pair interval (4h/1h), that non-zero value overwrites
+// the 8 fallback via the standard merge.
 func (a *Adapter) lookupInterval(token string) float64 {
 	a.intervalMu.RLock()
 	defer a.intervalMu.RUnlock()
-	return a.interval[token]
+	if iv, ok := a.interval[token]; ok && iv > 0 {
+		return iv
+	}
+	return 8
 }
 
 // maybeStartIntervalSweep — fires at most once per `intervalSweepInterval`.
