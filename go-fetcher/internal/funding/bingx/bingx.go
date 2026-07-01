@@ -50,14 +50,19 @@ type Adapter struct {
 
 const (
 	intervalCacheTTL = 24 * time.Hour
-	// How often we refresh the per-symbol intervals. Every 4h is plenty
-	// — exchanges almost never change a pair's funding cadence, but
-	// we want SOME refresh so newly-listed pairs get picked up.
-	intervalSweepInterval = 4 * time.Hour
-	// At each sweep, only fetch this many fresh symbols (rate-limit
-	// safe — BingX caps history calls). Top-volume pairs get
-	// prioritised; the long tail catches up on subsequent sweeps.
-	intervalSweepBatch = 24
+	// How often we refresh the per-symbol intervals. 30min lets newly-
+	// listed pairs get picked up quickly; interval is trivially cheap
+	// after the initial sweep because everything is already cached.
+	intervalSweepInterval = 30 * time.Minute
+	// At each sweep, fetch up to this many fresh symbols. Was 24 which
+	// meant 668 pairs took ~28 cycles (5 days) at the previous 4h cadence
+	// — long tail of 1h/4h pairs never got real interval, stayed on 8h
+	// fallback. 200 × 30min = 3 cycles for full coverage.
+	intervalSweepBatch = 200
+	// Concurrent HTTP calls to fundingRate history. BingX docs cap
+	// unauthenticated GETs at ~500/min; sem=5 × ~300ms each = ~15 req/s
+	// sustained, well under limit.
+	intervalSweepConcurrency = 5
 )
 
 func New() *Adapter {
@@ -223,6 +228,8 @@ func (a *Adapter) maybeStartIntervalSweep(
 		cands = cands[:intervalSweepBatch]
 	}
 
+	// Bounded concurrency — see intervalSweepConcurrency comment.
+	sem := make(chan struct{}, intervalSweepConcurrency)
 	for _, c := range cands {
 		c := c
 		a.pendingMu.Lock()
@@ -234,6 +241,8 @@ func (a *Adapter) maybeStartIntervalSweep(
 		a.pendingMu.Unlock()
 
 		go func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			defer func() {
 				a.pendingMu.Lock()
 				delete(a.pending, c.token)
