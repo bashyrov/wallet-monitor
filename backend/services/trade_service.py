@@ -319,9 +319,10 @@ async def get_pair_status(db: Session, user_id: int, symbol: str, long_ex: str, 
                 out[leg]["available_usdt"] = round(max(0.0, float(bal) - reserved), 2)
             else:
                 out[leg]["available_usdt"] = None
-    except Exception:
+    except Exception as _res_exc:
         # Don't break the trade panel if reservation calc fails — fall
         # back to showing balance as available.
+        logger.debug("pair-status reservation calc failed: %s", _res_exc)
         for leg in ("long", "short"):
             bal = out[leg].get("balance_usdt")
             out[leg].setdefault("reserved_usdt", 0.0)
@@ -410,8 +411,8 @@ async def place_open_order(
             cached_bal = _us_snapshot.get_balance(user_id, wallet_id)
             if cached_bal is not None:
                 creds["_cached_balance_usdt"] = float(cached_bal)
-    except Exception:
-        pass
+    except Exception as _us_exc:
+        logger.debug("user_streams balance snapshot read failed: %s", _us_exc)
 
     # ── Pre-flight: round qty, validate notional + balance BEFORE signing an order ──
     # Run preflight concurrently with set_leverage when the cache says leverage
@@ -446,6 +447,17 @@ async def place_open_order(
         db, user_id=user_id, wallet_id=wallet_id, exchange=ex, symbol=symbol,
         side=side, intent="open", requested_qty=quantity, leverage=leverage,
         margin_mode=margin_mode, status="pending",
+    )
+
+    # Attempt log — separate from the "PLACED" one below because that
+    # one only fires on success. This one lets us reconstruct exactly
+    # what user attempted, when, before we know the outcome. Critical
+    # for support tickets like "why didn't my order go through".
+    logger.info(
+        "Order INITIATED: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s "
+        "lev=%sx mode=%s market=%s order_type=%s limit_px=%s stop_px=%s order_db_id=%s",
+        user_id, wallet_id, ex, symbol, side, quantity,
+        leverage, margin_mode, market_type, order_type, limit_price, stop_price, order_row.id,
     )
 
     preflight_task = None
@@ -594,8 +606,8 @@ async def place_open_order(
     # so the next status call reflects the fill.
     try:
         invalidate_pair_status_cache(user_id, ex)
-    except Exception:
-        pass
+    except Exception as _inv_exc:
+        logger.debug("post-order pair-status cache invalidation failed: %s", _inv_exc)
     logger.info(
         "Order PLACED: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s lev=%sx mode=%s order_db_id=%s ex_order_id=%s",
         user_id, wallet_id, ex, symbol, side, quantity, leverage, margin_mode,
@@ -637,6 +649,11 @@ async def close_position(
     order_row = _log_order(
         db, user_id=user_id, wallet_id=wallet_id, exchange=ex, symbol=norm_symbol,
         side=close_side, intent="close", requested_qty=0.0, status="pending",
+    )
+
+    logger.info(
+        "Close INITIATED: user=%s wallet=%s ex=%s sym=%s side=%s market=%s order_db_id=%s",
+        user_id, wallet_id, ex, norm_symbol, close_side, market_type, order_row.id,
     )
 
     try:

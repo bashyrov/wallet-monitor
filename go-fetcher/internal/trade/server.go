@@ -146,6 +146,7 @@ func handleClose(w http.ResponseWriter, r *http.Request) {
 	if a == nil {
 		return
 	}
+	t0 := time.Now()
 	var res *Result
 	var err error
 	if b.Request.MarketType == MarketSpot {
@@ -158,10 +159,26 @@ func handleClose(w http.ResponseWriter, r *http.Request) {
 	} else {
 		res, err = a.ClosePosition(r.Context(), b.Creds, b.Request)
 	}
+	dur := time.Since(t0).Milliseconds()
 	if err != nil {
+		log.L().Warn().
+			Str("ex", b.Exchange).Str("sym", b.Request.Symbol).
+			Str("market", string(b.Request.MarketType)).
+			Int64("venue_ms", dur).
+			Err(err).Msg("trade close failed")
 		writeError(w, err)
 		return
 	}
+	orderID := ""
+	if res != nil {
+		orderID = res.OrderID
+	}
+	log.L().Info().
+		Str("ex", b.Exchange).Str("sym", b.Request.Symbol).
+		Str("market", string(b.Request.MarketType)).
+		Int64("venue_ms", dur).
+		Str("order_id", orderID).
+		Msg("trade close")
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -174,7 +191,14 @@ func handleLeverage(w http.ResponseWriter, r *http.Request) {
 	if a == nil {
 		return
 	}
+	t0 := time.Now()
 	if err := a.SetLeverage(r.Context(), b.Creds, b.Request); err != nil {
+		log.L().Warn().
+			Str("ex", b.Exchange).Str("sym", b.Request.Symbol).
+			Int("lev", b.Request.Leverage).
+			Str("mode", string(b.Request.MarginMode)).
+			Int64("venue_ms", time.Since(t0).Milliseconds()).
+			Err(err).Msg("set leverage failed")
 		writeError(w, err)
 		return
 	}
