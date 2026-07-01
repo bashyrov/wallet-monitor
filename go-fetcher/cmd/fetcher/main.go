@@ -111,7 +111,12 @@ func main() {
 	dumper := cache.NewDumper(store, cfg.CacheDir, cfg.FileDumpInterval)
 
 	fundingStore := funding.NewStore()
-	fundingDumper := funding.NewDumper(fundingStore, cfg.CacheDir, 500*time.Millisecond)
+	// 500ms → 250ms so /screener/funding polls (3s cadence on frontend)
+	// pick up newer data on each tick. Matches orderbook dumper's
+	// AVALANT_FILE_DUMP_INTERVAL=250ms default. CPU cost is trivial —
+	// funding.json is 200-500KB, disk write is <5ms, dump happens on
+	// idle timer not hot path.
+	fundingDumper := funding.NewDumper(fundingStore, cfg.CacheDir, 250*time.Millisecond)
 	// HTX-class venues that report rate-only via REST inherit mark from
 	// the orderbook midprice — Phase 4 cross-pollination.
 	fundingDumper.SetOrderbookSource(func(ex, sym string) (float64, float64, bool) {
