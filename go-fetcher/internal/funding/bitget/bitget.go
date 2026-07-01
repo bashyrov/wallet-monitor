@@ -23,14 +23,63 @@ import (
 )
 
 const (
-	wsURL          = "wss://ws.bitget.com/v2/ws/public"
-	restURL        = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
+	wsURL           = "wss://ws.bitget.com/v2/ws/public"
+	restURL         = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES"
 	restFundRateURL = "https://api.bitget.com/api/v2/mix/market/current-fund-rate?productType=USDT-FUTURES&symbol="
+	// Bulk endpoint for per-symbol funding interval (hours as string,
+	// e.g. LAB="1", most = "8"). Returns all 675 pairs one call —
+	// avoids the 675 × sem=8 × ~150ms per-symbol sweep on
+	// current-fund-rate that was timing out under the 10s runner
+	// budget and leaving most rows on 8h fallback.
+	restContractsURL = "https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES"
 )
 
-type Adapter struct{}
+type Adapter struct {
+	fundMu       sync.RWMutex
+	fundInterval map[string]int // "LABUSDT" -> hours
+}
 
 func New() *Adapter { return &Adapter{} }
+
+// fetchIntervalCache loads /contracts once per BackstopFetch cycle
+// (idempotent — no-ops if the cache is already non-nil).
+func (a *Adapter) fetchIntervalCache(ctx context.Context) {
+	a.fundMu.RLock()
+	if a.fundInterval != nil {
+		a.fundMu.RUnlock()
+		return
+	}
+	a.fundMu.RUnlock()
+
+	var doc struct {
+		Data []struct {
+			Symbol       string `json:"symbol"`
+			FundInterval string `json:"fundInterval"` // hours as string
+		} `json:"data"`
+	}
+	if err := funding.HTTPGet(ctx, restContractsURL, &doc); err != nil {
+		return
+	}
+	a.fundMu.Lock()
+	defer a.fundMu.Unlock()
+	a.fundInterval = make(map[string]int, len(doc.Data))
+	for _, r := range doc.Data {
+		iv, _ := strconv.Atoi(r.FundInterval)
+		if iv < 1 {
+			iv = 8
+		}
+		a.fundInterval[r.Symbol] = iv
+	}
+}
+
+func (a *Adapter) lookupInterval(symbol string) int {
+	a.fundMu.RLock()
+	defer a.fundMu.RUnlock()
+	if iv, ok := a.fundInterval[symbol]; ok {
+		return iv
+	}
+	return 8
+}
 
 func (a *Adapter) Name() string                          { return "bitget" }
 func (a *Adapter) URL(_ context.Context) (string, error) { return wsURL, nil }
@@ -116,6 +165,9 @@ func (a *Adapter) UseLibPings() bool                { return false }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
 func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]funding.Tick, error) {
+	// Populate the per-symbol interval cache once (bulk /contracts).
+	a.fetchIntervalCache(ctx)
+
 	// Bulk tickers — rate, mark, vol. nextFundingTime is NOT in this response.
 	var doc struct {
 		Data []struct {
@@ -143,13 +195,14 @@ func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]fundin
 		}
 		idx, _ := strconv.ParseFloat(r.IndexPrice, 64)
 		vol, _ := strconv.ParseFloat(r.QuoteVolume, 64)
+		ivl := a.lookupInterval(r.Symbol)
 		byToken[token] = &funding.Tick{
 			Symbol:     token,
 			Rate:       rate,
 			MarkPrice:  mark,
 			IndexPrice: idx,
 			Volume24h:  vol,
-			IntervalH:  8,
+			IntervalH:  float64(ivl),
 		}
 	}
 
@@ -173,54 +226,22 @@ func (a *Adapter) BackstopFetch(ctx context.Context, symbols []string) ([]fundin
 			seen[u] = struct{}{}
 		}
 	}
-	if len(allSyms) > 0 {
-		type rateEntry struct {
-			token       string
-			nextFunding time.Time
-			intervalH   float64
+	// Synthetic nextFunding — Bitget settles at UTC boundaries of the
+	// pair's interval (00/08/16 UTC for 8h, 00/04/08/12/16/20 for 4h,
+	// every hour for 1h). Interval already came from bulk /contracts,
+	// so we can compute next locally without per-symbol REST calls
+	// (previous version fired 675 × sem=8 GETs on current-fund-rate
+	// which timed out under the 10s runner budget and left the long
+	// tail on 8h fallback).
+	for _, t := range byToken {
+		iv := int(t.IntervalH)
+		if iv < 1 {
+			iv = 8
 		}
-
-		entries := make(chan rateEntry, len(allSyms))
-		sem := make(chan struct{}, 8)
-		var wg sync.WaitGroup
-		for _, sym := range allSyms {
-			sym := sym
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				symUp := strings.ToUpper(sym) + "USDT"
-				var doc struct {
-					Data []struct {
-						FundingRateInterval string `json:"fundingRateInterval"` // hours as string
-						NextUpdate          string `json:"nextUpdate"`          // ms as string
-					} `json:"data"`
-				}
-				if err := funding.HTTPGet(ctx, restFundRateURL+symUp, &doc); err != nil || len(doc.Data) == 0 {
-					return
-				}
-				d := doc.Data[0]
-				nextMs, _ := strconv.ParseInt(d.NextUpdate, 10, 64)
-				var nf time.Time
-				if nextMs > 0 {
-					nf = time.UnixMilli(nextMs)
-				}
-				ivl, _ := strconv.ParseFloat(d.FundingRateInterval, 64)
-				if ivl <= 0 {
-					ivl = 8
-				}
-				entries <- rateEntry{token: strings.ToUpper(sym), nextFunding: nf, intervalH: ivl}
-			}()
-		}
-		go func() { wg.Wait(); close(entries) }()
-		for e := range entries {
-			if t := byToken[e.token]; t != nil {
-				t.NextFunding = e.nextFunding
-				t.IntervalH = e.intervalH
-			}
-		}
+		cycle := time.Duration(iv) * time.Hour
+		t.NextFunding = time.Now().UTC().Truncate(cycle).Add(cycle)
 	}
+	_ = symbols // no per-symbol call needed anymore
 
 	out := make([]funding.Tick, 0, len(byToken))
 	for _, t := range byToken {
