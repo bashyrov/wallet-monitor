@@ -62,6 +62,8 @@ func NewManager(reg *Registry, cacheDir string) *Manager {
 		{venue: "gate", fn: FetchGate},
 		{venue: "kucoin", fn: FetchKuCoin},
 		{venue: "bitget", fn: FetchBitget},
+		{venue: "whitebit", fn: FetchWhiteBIT}, // chain names + deposit/withdraw flags (no addr)
+		{venue: "backpack", fn: FetchBackpack}, // full addr + per-network flags
 		// Signed, hybrid — coverage tier 2. signedFn is called only when
 		// LoadSignedCreds returns HasKey()==true for this venue. No key
 		// → manager logs INFO("skipped, no creds") and moves on.
