@@ -11,7 +11,6 @@ package whitebit
 
 import (
 	"context"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -37,42 +36,26 @@ func (a *Adapter) PongFor(_ []byte) []byte          { return nil }
 func (a *Adapter) UseLibPings() bool                { return false }
 func (a *Adapter) DecompressGzip() bool             { return false }
 
-// intervalFromMs returns the funding interval in hours implied by the
-// distance from now (UTC) to the next-funding timestamp (ms).
-// Rounds to the nearest of {1,2,4,8}h; falls back to 8h.
-func intervalFromMsStr(s string) float64 {
-	const fallback = 8.0
-	if s == "" {
-		return fallback
-	}
-	ms, _ := strconv.ParseInt(s, 10, 64)
-	if ms <= 0 {
-		return fallback
-	}
-	now := time.Now().UnixMilli()
-	delta := float64(ms - now)
-	if delta <= 0 {
-		return fallback
-	}
-	hours := delta / (60 * 60 * 1000)
-	for _, cand := range []int{1, 2, 4, 8} {
-		if math.Abs(hours-float64(cand)) < 0.5 {
-			return float64(cand)
-		}
-	}
-	return fallback
-}
+// intervalFromMinutes converts WhiteBIT's `funding_interval_minutes`
+// field to hours. Falls back to 8h if missing/invalid. Bulk endpoint
+// carries this per-symbol; earlier heuristic (derive from delta to
+// next-funding ts) rounded wrong near settlement — e.g. at 06:00 UTC
+// with 8h boundary at 08:00, delta 2h snapped to iv=2. Removed.
 
 func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick, error) {
 	var doc struct {
 		Result []struct {
-			TickerID                 string `json:"ticker_id"`        // "BTC_PERP"
+			TickerID                 string `json:"ticker_id"` // "BTC_PERP"
 			LastPrice                string `json:"last_price"`
 			IndexPrice               string `json:"index_price"`
 			FundingRate              string `json:"funding_rate"`
 			NextFundingRateTimestamp string `json:"next_funding_rate_timestamp"`
 			MoneyVolume              string `json:"money_volume"`
 			OpenInterest             string `json:"open_interest"`
+			// Per-symbol interval — bulk endpoint carries this directly
+			// (JASMY_PERP = 480 minutes = 8h etc.). No need to derive
+			// from timestamp delta anymore.
+			FundingIntervalMinutes int `json:"funding_interval_minutes"`
 		} `json:"result"`
 	}
 	if err := funding.HTTPGet(ctx, restURL, &doc); err != nil {
@@ -90,6 +73,10 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		vol, _ := strconv.ParseFloat(r.MoneyVolume, 64)
 		oi, _ := strconv.ParseFloat(r.OpenInterest, 64)
 		nextMs, _ := strconv.ParseInt(r.NextFundingRateTimestamp, 10, 64)
+		ivH := float64(r.FundingIntervalMinutes) / 60
+		if ivH <= 0 {
+			ivH = 8
+		}
 		t := funding.Tick{
 			Symbol:     token,
 			Rate:       rate,
@@ -97,7 +84,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 			IndexPrice: idx,
 			Volume24h:  vol,
 			OpenIntUSD: oi * last,
-			IntervalH:  intervalFromMsStr(r.NextFundingRateTimestamp),
+			IntervalH:  ivH,
 		}
 		if nextMs > 0 {
 			t.NextFunding = time.UnixMilli(nextMs)
