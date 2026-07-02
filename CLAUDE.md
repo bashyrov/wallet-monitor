@@ -294,7 +294,7 @@ Per-venue notes:
 `internal/arb/spot_compute.go` — REST tickers across 9 spot venues + funding join, writes `spot_arbitrage.json` every 2s. `|basis_pct| > 5%` rows dropped (ticker-collision filter; e.g. MEXC "META" ≠ KuCoin "META").
 
 ### DEX-arb (Go)
-`internal/arb/dex_compute.go` — CoinGecko symbol→contract cache (1h TTL) + DexScreener pools, writes `dex_arbitrage.json` every 30s. Drops to 0 opps when DexScreener throttles; recovers next cycle.
+`internal/arb/dex.go` + `internal/okxdex/` — OKX Web3 DEX API is the SOLE on-chain source (replaced CoinGecko + DexScreener 2026-07). Hourly all-tokens sweep builds the symbol→(chainIndex, address) map (paced 1.1s/chain — the API 429s above ~1 req/s; full sweep 2-4 min, owned by `okxdex.Service.Run`, retried every 2 min until first success); one batched `POST /api/v6/dex/market/price` per 30s cycle (100/chunk, paced). Creds: `OKX_WEB3_API_KEY/_SECRET/_PASSPHRASE/_PROJECT_ID`. Output shape unchanged; `dex_name="OKX"`, liquidity/volume 0 (= unknown, OKX doesn't expose them — dex_spot's liq floor only applies when >0). **Gotcha: OKX geo-blocks our prod IPv4 (code 53015) but allows the host IPv6** — go-fetcher is attached to the `okx6` compose network (subnet `OKX6_SUBNET` in prod .env, MUST be a carve of the host's global /64: ULA loses to IPv4 in Go's RFC 6724 address selection). The "okxdex.Tokens: loaded N tokens across M chains" line is Info-level — invisible at prod's LOG_LEVEL=WARN.
 
 ### Futures arb compute (Go, 500ms cycle)
 `internal/arb/compute.go` — reads funding store, builds cross-venue ranked top-1000 opportunities, writes `arbitrage.json` every 500ms. Downstream: WS broadcast diffs to clients.
