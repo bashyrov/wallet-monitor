@@ -237,30 +237,13 @@ func main() {
 		return spotCompute.Run(gctx)
 	})
 
-	// DEX arb compute — OKX Web3 DEX API is the sole on-chain source.
-	// Token-map warm-up (chains + per-chain all-tokens sweep) runs in
-	// okxSvc.Run — the paced sweep takes 2-4 min, so it can't block
-	// startup. Compute emits empty dex_arbitrage.json until the first
-	// sweep lands (same graceful degradation as the old DexScreener-
-	// throttled path). Writes dex_arbitrage.json every 30s.
-	okxSvc := okxdex.NewService(okxdex.NewClientFromEnv())
-	if !okxSvc.Configured() {
-		log.L().Warn().Msg("okxdex: OKX_WEB3_* creds missing — dex-short will be empty")
-	} else {
-		g.Go(func() error {
-			okxSvc.Run(gctx)
-			return nil
-		})
-	}
-	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 30*time.Second, okxSvc)
-	g.Go(func() error {
-		return dexCompute.Run(gctx)
-	})
-
 	// CEX assets registry — resolves CEX-listed tokens to per-chain
-	// contract addresses for address-based DEX↔CEX matching. Behind
-	// AVALANT_CEX_ASSETS=1. Off = registry empty, all dex/* rows fall
-	// back to ticker matching with address_unverified=true.
+	// contract addresses. Two consumers: (1) DEX-arb address
+	// verification pill; (2) okxdex.Tokens as the symbol→contract
+	// discovery source for dex-short (OKX aggregator whitelist is too
+	// narrow — misses GUA/BONK/PEPE etc that CEXs list and OKX prices
+	// happily). Behind AVALANT_CEX_ASSETS=1 — dex-short is empty
+	// without this flag.
 	var cexRegistry *cex_assets.Registry
 	if os.Getenv("AVALANT_CEX_ASSETS") == "1" {
 		cexRegistry = cex_assets.NewRegistry(cfg.CacheDir)
@@ -274,8 +257,27 @@ func main() {
 		})
 		log.L().Info().
 			Int("venues_after_load", cexRegistry.VenueCount()).
-			Msg("AVALANT_CEX_ASSETS=1 → cex_assets manager ENABLED (gate/kucoin/bitget)")
+			Msg("AVALANT_CEX_ASSETS=1 → cex_assets manager ENABLED (gate/kucoin/bitget/backpack/whitebit)")
 	}
+
+	// DEX arb compute — OKX Web3 DEX API is the sole on-chain price
+	// source; cex_assets.Registry provides symbol→(chain,contract)
+	// discovery. Refresh loop is cheap in-memory (no OKX sweep), so a
+	// stale registry propagates within 5min. Writes dex_arbitrage.json
+	// every 30s.
+	okxSvc := okxdex.NewService(okxdex.NewClientFromEnv(), cexRegistry)
+	if !okxSvc.Configured() {
+		log.L().Warn().Msg("okxdex: OKX_WEB3_* creds missing OR AVALANT_CEX_ASSETS=0 — dex-short will be empty")
+	} else {
+		g.Go(func() error {
+			okxSvc.Run(gctx)
+			return nil
+		})
+	}
+	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 30*time.Second, okxSvc)
+	g.Go(func() error {
+		return dexCompute.Run(gctx)
+	})
 
 	// DEX↔CEX spot-only arb. Behind AVALANT_DEX_SPOT=1. Shares DEX
 	// snapshots with dexCompute and spot snapshots with spotCompute — no

@@ -209,6 +209,28 @@ func (r *Registry) MatchByAddress(venue, ticker, dexChain, dexAddress string) Ma
 	return res
 }
 
+// All returns a snapshot of every venue's ticker→addresses map. The
+// returned maps are copies safe for the caller to iterate without a
+// lock. Used by okxdex.Tokens as the discovery source (symbol →
+// chain,address candidates) so DEX-arb doesn't depend on OKX's
+// aggregator whitelist — which misses long-tail tokens like memes
+// that CEXs list and OKX indexes but doesn't return in /all-tokens.
+func (r *Registry) All() map[string]VenueAssets {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]VenueAssets, len(r.venues))
+	for v, m := range r.venues {
+		cp := make(VenueAssets, len(m))
+		for k, addrs := range m {
+			cpAddrs := make([]AssetAddress, len(addrs))
+			copy(cpAddrs, addrs)
+			cp[k] = cpAddrs
+		}
+		out[v] = cp
+	}
+	return out
+}
+
 // VenueCount returns the number of venues currently in the registry.
 // Used by the manager to log + by health endpoints.
 func (r *Registry) VenueCount() int {
