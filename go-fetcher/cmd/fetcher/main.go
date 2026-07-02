@@ -274,7 +274,7 @@ func main() {
 			return nil
 		})
 	}
-	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 30*time.Second, okxSvc)
+	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 10*time.Second, okxSvc)
 	g.Go(func() error {
 		return dexCompute.Run(gctx)
 	})

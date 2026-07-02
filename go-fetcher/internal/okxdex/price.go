@@ -38,12 +38,14 @@ func (c *Client) FetchPrices(ctx context.Context, refs []PriceReq) (map[string]f
 	var lastErr error
 	for i := 0; i < len(refs); i += priceChunkSize {
 		if i > 0 {
-			// Pace chunks — same per-second rate limit as the rest of
-			// the OKX Web3 API.
+			// Pace chunks — market/price tolerates ~3 rps sequentially
+			// (empirically verified). 100ms + ~300ms response ≈ 2.5 rps
+			// with headroom vs the 429 threshold hit at 5-worker
+			// concurrency.
 			select {
 			case <-ctx.Done():
 				return out, ctx.Err()
-			case <-time.After(1100 * time.Millisecond):
+			case <-time.After(100 * time.Millisecond):
 			}
 		}
 		end := i + priceChunkSize
