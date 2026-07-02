@@ -409,6 +409,10 @@ func main() {
 
 		mux := http.NewServeMux()
 		wsSvc.Routes(mux)
+		// Public /api/screener/dex-{price,candles} — thin OKX Web3
+		// DEX proxy. Signed OKX keys stay in this process; frontend
+		// polls at 2s cadence for the currently-viewed pair.
+		okxSvc.MountRoutes(mux)
 		// Trade-engine internal HTTP routes mounted on the same listener.
 		// Reachable only from the Python web role over the docker-compose
 		// network — nginx never proxies /internal/*. Auth-gated by the

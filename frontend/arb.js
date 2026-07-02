@@ -332,24 +332,23 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       <div class="left-stack" style="flex:1;display:flex;flex-direction:column;min-height:0">
         <div class="main top-row" style="flex:1;min-height:0">
 
-          <!-- LEFT: chart area (iframe or spot info) -->
+          <!-- LEFT: chart area (in/out basis chart — DEX mode drives
+               its long leg off OKX polled price, CEX mode off ws-book) -->
           <div class="col-left">
             <div class="chart-tabs">
-              <div class="chart-tab active">${IS_DEX ? 'DexScreener' : 'Entry / Exit'}</div>
+              <div class="chart-tab active">Entry / Exit</div>
             </div>
-            ${IS_DEX
-              ? `<iframe id="pt-dex-frame" class="pt-iframe" src="about:blank" loading="lazy" allow="clipboard-write; fullscreen" allowfullscreen></iframe>`
-              : `<div id="pt-ee-chart" style="flex:1;min-height:0;background:transparent;position:relative">
-                   <div style="position:absolute;top:8px;left:10px;z-index:5;display:flex;align-items:center;gap:10px;font-size:10px;font-family:var(--mono);color:var(--text3)">
-                     <span style="display:flex;align-items:center;gap:4px">
-                       <span style="display:inline-flex;gap:1px"><span style="width:3px;height:8px;background:#1AFFAB;border-radius:1px"></span><span style="width:3px;height:8px;background:#F87171;border-radius:1px"></span></span>
-                       Basis %
-                     </span>
-                     <span style="color:var(--text3)">·</span>
-                     <span id="pt-ee-count">0 bars</span>
-                   </div>
-                   <div id="pt-ee-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;pointer-events:none">Collecting order-book ticks…</div>
-                 </div>`}
+            <div id="pt-ee-chart" style="flex:1;min-height:0;background:transparent;position:relative">
+              <div style="position:absolute;top:8px;left:10px;z-index:5;display:flex;align-items:center;gap:10px;font-size:10px;font-family:var(--mono);color:var(--text3)">
+                <span style="display:flex;align-items:center;gap:4px">
+                  <span style="display:inline-flex;gap:1px"><span style="width:3px;height:8px;background:#1AFFAB;border-radius:1px"></span><span style="width:3px;height:8px;background:#F87171;border-radius:1px"></span></span>
+                  Basis %
+                </span>
+                <span style="color:var(--text3)">·</span>
+                <span id="pt-ee-count">0 bars</span>
+              </div>
+              <div id="pt-ee-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;pointer-events:none">${IS_DEX ? 'Polling OKX price…' : 'Collecting order-book ticks…'}</div>
+            </div>
           </div>
 
           <!-- CENTER: order books (futures-style .book-panel for all types) -->
@@ -853,18 +852,31 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
     }
   }
 
-  // DexScreener embed (DEX mode). `trades=0` hides the trades/txns panel
-  // so the user sees just the price candlestick chart of the asset.
-  // _setDexEmbed is also called from _refreshPair when we discover a pair
-  // via DexScreener search fallback (URL didn't carry chain+pair).
-  function _setDexEmbed(chain, pair) {
-    if (!IS_DEX || !chain || !pair) return;
-    const frame = $('pt-dex-frame');
-    if (!frame) return;
-    const url = `https://dexscreener.com/${chain}/${pair}?embed=1&theme=dark&trades=0&info=0`;
-    if (frame.src !== url) frame.src = url;
+  // DEX price poller — hits go-fetcher's OKX proxy every 2s. Result
+  // feeds `_dexPrice` used as the long-leg mid in basis calc (DEX has
+  // no orderbook so we can't derive bid/ask). Compat shim `_setDexEmbed`
+  // keeps callers that used to swap the iframe URL a no-op.
+  let _dexPrice = null;
+  let _dexPricePollTimer = null;
+  function _setDexEmbed(_c, _p) { /* replaced by native chart — no-op */ }
+  async function _pollDexPrice() {
+    if (!IS_DEX || !DEX_CHAIN || !DEX_ADDR) return;
+    try {
+      const r = await fetch(`/api/screener/dex-price?chain=${encodeURIComponent(DEX_CHAIN)}&address=${encodeURIComponent(DEX_ADDR)}`, {cache: 'no-store'});
+      if (!r.ok) return;
+      const j = await r.json();
+      const px = +j.price;
+      if (isFinite(px) && px > 0) {
+        _dexPrice = px;
+        setT('pt-px-long', fmtPxUsd(px));
+      }
+    } catch {}
   }
-  _setDexEmbed(DEX_CHAIN, DEX_PAIR);
+  if (IS_DEX && DEX_CHAIN && DEX_ADDR) {
+    _pollDexPrice();
+    _dexPricePollTimer = setInterval(_pollDexPrice, 2000);
+    window.addEventListener('beforeunload', () => { if (_dexPricePollTimer) clearInterval(_dexPricePollTimer); });
+  }
 
   // Live Entry/Exit chart for Spot / Short — candlestick series (5s buckets).
   // Each push aggregates (mid_short − mid_long) / mid_long × 100 into the
@@ -877,7 +889,6 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
   let _eeCandles = [];      // Array<{time, open, high, low, close}>
   let _eeCurBucket = null;  // current open candle (mutated on every push)
   function _eeInit() {
-    if (IS_DEX) return;
     if (!window.LightweightCharts) {
       if (typeof _loadLightweightCharts === 'function') {
         _loadLightweightCharts().then(_eeInit).catch(()=>{});
@@ -1471,11 +1482,14 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       // Live spread = In (entry basis). Prefer locally-computed value from
       // fresh top-of-book prices — updates instantly on every WS frame.
       // Falls back to _row.in_pct (REST-polled, up to 1s stale) when the
-      // long book hasn't been received yet (DEX mode or cold start).
+      // long book hasn't been received yet (cold start). DEX mode: long
+      // leg has no orderbook, so `_dexPrice` (2s OKX poll) substitutes
+      // for _lastAskLong.
       if (side === 'short') {
         let live = null;
-        if (_lastAskLong > 0 && bestBid > 0) {
-          live = (bestBid - _lastAskLong) / _lastAskLong * 100;
+        const longRef = IS_DEX ? _dexPrice : _lastAskLong;
+        if (longRef > 0 && bestBid > 0) {
+          live = (bestBid - longRef) / longRef * 100;
         } else if (_row) {
           live = (typeof _row.in_pct === 'number') ? _row.in_pct
                : (typeof _row.basis_pct === 'number' ? _row.basis_pct : null);
@@ -1484,7 +1498,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
           setT('pt-live-spread', `${live >= 0 ? '+' : ''}${live.toFixed(4)}%`);
           const el = $('pt-live-spread');
           if (el) el.style.color = live >= 0 ? 'var(--green)' : 'var(--red)';
-          if (!IS_DEX) _eePush(live);
+          _eePush(live);
         }
       }
     }
