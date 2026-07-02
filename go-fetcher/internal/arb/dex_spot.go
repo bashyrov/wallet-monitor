@@ -1,6 +1,6 @@
 // dex_spot.go — DEX↔CEX spot-only arbitrage compute.
 //
-// Both legs are SPOT: DexScreener pool price on one side, CEX spot-
+// Both legs are SPOT: OKX Web3 DEX price on one side, CEX spot-
 // ticker price on the other. Arbitrages the price gap of the same
 // token between the two venues. Direction is bidirectional:
 //
@@ -19,8 +19,8 @@
 // Data sources are SHARED with the existing engines to avoid double-
 // loading rate-limited backends:
 //
-//   - DexScreener prices: snapshot from DEXCompute (refreshed every 30s,
-//     same DexScreener fetches dex_short uses)
+//   - DEX prices: snapshot from DEXCompute (refreshed every 30s, same
+//     OKX price sweep dex_short uses)
 //   - CEX spot tickers: snapshot from SpotCompute (refreshed every 500ms,
 //     same 9-venue REST it polls for spot_short)
 //
@@ -83,13 +83,15 @@ const (
 	dexSpotVerifiedMaxPct   = 200.0 // verified by address: keep wide
 	dexSpotUnverifiedMaxPct = 30.0  // ticker-only: drop obvious collisions
 	dexSpotFeeRoundtrip     = dexFeeRoundtripPct
-	dexSpotMinDEXLiqUSD     = minDEXLiqUSD
+	// Applies only when liquidity is known (>0) — the OKX price source
+	// doesn't expose per-pool liquidity, all rows carry 0.
+	dexSpotMinDEXLiqUSD = 5_000.0
 )
 
 // NewDexSpotCompute wires the new compute against the existing DEX +
 // spot engines. `dex` and `spot` MUST be non-nil — they're the data
-// sources. interval should match dex's interval (30s) since DexScreener
-// is the slow leg.
+// sources. interval should match dex's interval (30s) since the OKX
+// price sweep is the slow leg.
 func NewDexSpotCompute(dex *DEXCompute, spot *SpotCompute, cacheDir string, interval time.Duration) *DexSpotCompute {
 	return &DexSpotCompute{
 		dex:       dex,
@@ -102,7 +104,7 @@ func NewDexSpotCompute(dex *DEXCompute, spot *SpotCompute, cacheDir string, inte
 }
 
 // Run loops on c.interval until ctx is cancelled. The first tick waits
-// 12s — DexScreener has its own warm-up plus we want SpotCompute to have
+// 12s — DEXCompute has its own warm-up plus we want SpotCompute to have
 // produced at least one snapshot.
 func (c *DexSpotCompute) Run(ctx context.Context) error {
 	t := time.NewTicker(c.interval)
@@ -151,7 +153,10 @@ func (c *DexSpotCompute) tick() {
 	opps := make([]map[string]any, 0, 512)
 	cexHits := 0
 	for sym, dex := range dexBySym {
-		if dex.Price <= 0 || dex.LiquidityUSD < dexSpotMinDEXLiqUSD {
+		// LiquidityUSD == 0 means "unknown" since the OKX cutover (the
+		// price API has no per-pool liquidity) — the floor only applies
+		// when a real figure is present.
+		if dex.Price <= 0 || (dex.LiquidityUSD > 0 && dex.LiquidityUSD < dexSpotMinDEXLiqUSD) {
 			continue
 		}
 		spotByEx, ok := spotMap[sym]

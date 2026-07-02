@@ -55,7 +55,7 @@ type SpotCompute struct {
 	interval time.Duration
 
 	// spotSnap holds the most recent spotMap produced by tick() so the
-	// dex_spot compute can join it against DexScreener prices without
+	// dex_spot compute can join it against DEX prices without
 	// re-hitting the 9 venue REST endpoints.
 	snapMu   sync.RWMutex
 	spotSnap map[string]map[string]spotTicker

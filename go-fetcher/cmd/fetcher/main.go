@@ -64,6 +64,7 @@ import (
 	fethereal "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/ethereal"
 	fextended "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/extended"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/okxdex"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/spread"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/symbols"
@@ -236,10 +237,27 @@ func main() {
 		return spotCompute.Run(gctx)
 	})
 
-	// DEX arb compute — Python's dex_arbitrage_service port. CoinGecko
-	// symbol→contract cache (1h TTL) + DexScreener pool fetches with
-	// cross-pool consensus check. Writes dex_arbitrage.json every 30s.
-	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 30*time.Second)
+	// DEX arb compute — OKX Web3 DEX API is the sole on-chain source.
+	// Blocking token-map warm-up (chains + per-chain all-tokens sweep)
+	// so the first compute cycle has data; on failure we log and carry
+	// on with an empty map (compute emits empty dex_arbitrage.json until
+	// the hourly refresh succeeds — same graceful degradation as the old
+	// DexScreener-throttled path). Writes dex_arbitrage.json every 30s.
+	okxSvc := okxdex.NewService(okxdex.NewClientFromEnv())
+	if !okxSvc.Configured() {
+		log.L().Warn().Msg("okxdex: OKX_WEB3_* creds missing — dex-short will be empty")
+	} else {
+		warmCtx, warmCancel := context.WithTimeout(gctx, 90*time.Second)
+		if err := okxSvc.Refresh(warmCtx); err != nil {
+			log.L().Warn().Err(err).Msg("okxdex: initial token sweep failed — dex-short empty until hourly refresh succeeds")
+		}
+		warmCancel()
+		g.Go(func() error {
+			okxSvc.Run(gctx)
+			return nil
+		})
+	}
+	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 30*time.Second, okxSvc)
 	g.Go(func() error {
 		return dexCompute.Run(gctx)
 	})
@@ -266,7 +284,7 @@ func main() {
 
 	// DEX↔CEX spot-only arb. Behind AVALANT_DEX_SPOT=1. Shares DEX
 	// snapshots with dexCompute and spot snapshots with spotCompute — no
-	// extra DexScreener / venue REST load. Off by default; goroutine
+	// extra OKX / venue REST load. Off by default; goroutine
 	// never spawned unless the flag is on. Optional cexRegistry enables
 	// address-based matching (vs ticker-only) — also fed to dexCompute
 	// below so dex/short benefits identically.
