@@ -265,6 +265,15 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # okx6 gives the container IPv6 egress (NAT66 out the host's global
+    # v6). OKX Web3 DEX API geo-blocks our prod IPv4 (code 53015) but
+    # allows the host's IPv6 — Go's dialer prefers v6 when a route
+    # exists, so this network is what makes dex-short work. `default`
+    # must stay listed explicitly: naming any network drops the
+    # implicit one, and redis/nginx live there.
+    networks:
+      - default
+      - okx6
     environment:
       REDIS_URL: redis://redis:6379/0
       # Shadow-mode default: write to a sibling cache dir so the
@@ -402,3 +411,13 @@ volumes:
   avalant_cache:
   avalant_cache_go:
   avalant_logs:
+
+networks:
+  default: {}
+  # IPv6-only-purpose egress net for go-fetcher (see its networks key).
+  # ULA subnet, NAT66-masqueraded by dockerd out the host's global v6.
+  okx6:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd0a:6f7e::/64
