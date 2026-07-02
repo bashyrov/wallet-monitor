@@ -247,7 +247,8 @@ func main() {
 	if !okxSvc.Configured() {
 		log.L().Warn().Msg("okxdex: OKX_WEB3_* creds missing — dex-short will be empty")
 	} else {
-		warmCtx, warmCancel := context.WithTimeout(gctx, 90*time.Second)
+		// ~50 chains × 1.1s rate-limit pacing ≈ 60-80s sweep.
+		warmCtx, warmCancel := context.WithTimeout(gctx, 3*time.Minute)
 		if err := okxSvc.Refresh(warmCtx); err != nil {
 			log.L().Warn().Err(err).Msg("okxdex: initial token sweep failed — dex-short empty until hourly refresh succeeds")
 		}

@@ -61,7 +61,19 @@ func (s *Service) Refresh(ctx context.Context) error {
 	}
 	newTokens := make(map[string][]TokenRef, 8192)
 	var total, okChains int
+	first := true
 	for idx, name := range chains {
+		// Pace the sweep unconditionally (error paths included) — the
+		// all-tokens endpoint is limited to ~1 req/s and 429s cascade
+		// otherwise.
+		if !first {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(1100 * time.Millisecond):
+			}
+		}
+		first = false
 		var rows []tokenRow
 		path := "/api/v6/dex/aggregator/all-tokens?chainIndex=" + url.QueryEscape(idx)
 		if err := s.client.do(ctx, "GET", path, nil, &rows); err != nil {
@@ -82,12 +94,6 @@ func (s *Service) Refresh(ctx context.Context) error {
 				ChainName:  name,
 			})
 			total++
-		}
-		// Pace the sweep — OKX Web3 endpoints are per-second rate-limited.
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(250 * time.Millisecond):
 		}
 	}
 	if okChains == 0 {
