@@ -230,7 +230,7 @@
        sticky breaks when an ancestor has overflow:hidden (which .main
        does below) — fixed bypasses that entirely. body gets a matching
        padding-top so content doesn't slip under the bar. */
-    body { padding-top: 52px; }
+    body { padding-top: 64px; }
     .topbar {
       position: fixed !important;
       top: 0; left: 0; right: 0;
@@ -238,7 +238,7 @@
     }
     .main {
       display: flex;
-      height: calc(100vh - 52px);
+      height: calc(100vh - 64px);
       overflow: hidden;
     }
     @media (max-width: 800px) {
@@ -1831,7 +1831,7 @@
 
 
       /* Stacked panel layout */
-      .main { flex-direction: column; height: auto; min-height: calc(100vh - 52px - 88px); overflow: visible; }
+      .main { flex-direction: column; height: auto; min-height: calc(100vh - 64px - 88px); overflow: visible; }
       .panel-wallets { width: 100% !important; max-height: none; height: auto; border-right: none; border-bottom: 1px solid var(--border); overflow: visible; }
       .panel-results { flex: 1; min-height: 40vh; overflow: visible; }
       .results-scroll { overflow: visible; }
