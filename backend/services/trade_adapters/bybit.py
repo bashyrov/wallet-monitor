@@ -86,7 +86,7 @@ def _split_code(s: str) -> tuple[str | None, str]:
 
 def _round_qty_to_step(qty: float, step: float, min_qty: float) -> float:
     if step > 0:
-        qty = math.floor(qty / step) * step
+        qty = math.floor(round(qty / step, 9)) * step
     if min_qty and qty < min_qty:
         return 0.0
     return qty
@@ -177,12 +177,16 @@ class BybitAdapter:
             return t
 
         # 1) UNIFIED — most users.
+        unified_ok = False
+        unified_err: Exception | None = None
         try:
             data = await cls._signed(creds, "GET", "/v5/account/wallet-balance", {"accountType": "UNIFIED"})
             pool = _sum_stables(data.get("list", []))
+            unified_ok = True
             if pool > 0:
-                return {"usdt": pool, "spot_usd": pool, "futures_usd": pool}
-        except RuntimeError as e:
+                return {"usdt": pool, "spot_usd": pool, "futures_usd": pool, "ok": True}
+        except Exception as e:
+            unified_err = e
             # 30086 = "Unified margin account is not opened" — classic account.
             if "30086" not in str(e):
                 logger.debug("Bybit UNIFIED balance failed: %s", e)
@@ -190,17 +194,26 @@ class BybitAdapter:
         # 2) Classic — SPOT + CONTRACT separately.
         spot_usd = 0.0
         fut_usd = 0.0
+        spot_ok = fut_ok = False
         try:
             d = await cls._signed(creds, "GET", "/v5/account/wallet-balance", {"accountType": "SPOT"})
             spot_usd = _sum_stables(d.get("list", []))
+            spot_ok = True
         except Exception:
             pass
         try:
             d = await cls._signed(creds, "GET", "/v5/account/wallet-balance", {"accountType": "CONTRACT"})
             fut_usd = _sum_stables(d.get("list", []))
+            fut_ok = True
         except Exception:
             pass
-        return {"usdt": spot_usd + fut_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
+        # Nothing readable at all (rate limit / timeout / auth) — raise
+        # instead of returning zeros so callers can tell "no funds" from
+        # "read failed".
+        if not (unified_ok or spot_ok or fut_ok):
+            raise (unified_err or RuntimeError("Bybit balance read failed"))
+        return {"usdt": spot_usd + fut_usd, "spot_usd": spot_usd, "futures_usd": fut_usd,
+                "ok": unified_ok or (spot_ok and fut_ok)}
 
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
@@ -305,12 +318,17 @@ class BybitAdapter:
         if cached_bal is not None:
             bal = float(cached_bal)
         else:
+            # Skip the margin gate on a failed/partial read — the venue
+            # enforces margin; a transient timeout must not produce a false
+            # "$0.00 USDT" rejection.
+            bal = None
             try:
-                bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-            except RuntimeError as e:
-                code, msg = _split_code(str(e))
-                return {"ok": False, "reason": _friendly_bybit(code, msg)}
-        if mark_price and leverage > 0:
+                bd = await cls.fetch_balance(creds)
+                if bd.get("ok", True):
+                    bal = bd.get("usdt", 0)
+            except Exception as e:
+                logger.warning("Bybit preflight balance read failed for %s — skipping margin gate: %s", sym, e)
+        if bal is not None and mark_price and leverage > 0:
             required = (qty_r * mark_price) / max(1, leverage)
             if bal + 0.01 < required:
                 return {"ok": False, "reason": f"Insufficient margin: need ~${required:.2f} USDT, have ${bal:.2f}."}

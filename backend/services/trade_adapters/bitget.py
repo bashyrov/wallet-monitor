@@ -148,16 +148,18 @@ class BitgetAdapter:
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
         fut_usd = 0.0
+        fut_err: Exception | None = None
         try:
             data = await cls._signed(creds, "GET", "/api/v2/mix/account/accounts", {"productType": "USDT-FUTURES"})
             for acct in (data or []):
                 if acct.get("marginCoin") == "USDT":
                     fut_usd = float(acct.get("available") or acct.get("crossedMaxAvailable") or 0)
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            fut_err = e
         # Spot — Bitget /api/v2/spot/account/assets
         spot_usd = 0.0
+        spot_err: Exception | None = None
         try:
             spot_rows = await cls._signed(creds, "GET", "/api/v2/spot/account/assets")
             for r in (spot_rows or []):
@@ -166,9 +168,15 @@ class BitgetAdapter:
                         spot_usd += float(r.get("available") or 0) + float(r.get("frozen") or 0) + float(r.get("locked") or 0)
                     except (TypeError, ValueError):
                         pass
-        except Exception:
-            pass
-        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
+        except Exception as e:
+            spot_err = e
+        # Both pots failing = account unreadable (rate limit / timeout /
+        # auth) — raise instead of returning zeros so callers can tell
+        # "no funds" from "read failed".
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
+        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd,
+                "ok": fut_err is None and spot_err is None}
 
     @classmethod
     async def set_leverage(cls, creds: dict, symbol: str, leverage: int, margin_mode: str) -> None:
@@ -235,7 +243,7 @@ class BitgetAdapter:
         vol_prec = info.get("volumePlace", 4)
 
         # Round qty to sizeMultiplier step
-        qty_r = math.floor(quantity / size_mult) * size_mult if size_mult else quantity
+        qty_r = math.floor(round(quantity / size_mult, 9)) * size_mult if size_mult else quantity
         qty_r = round(qty_r, vol_prec)
         if qty_r < min_trade:
             return {"ok": False, "reason": f"Quantity below minimum ({min_trade} {symbol.upper()})."}
@@ -243,11 +251,21 @@ class BitgetAdapter:
         if leverage > info.get("maxLeverage", 100):
             return {"ok": False, "reason": f"Max leverage for {sym} is {info['maxLeverage']}x."}
 
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            code, msg = _split_code(e)
-            return {"ok": False, "reason": _friendly_bg(code, msg)}
+        # Balance vs required margin. Honor `_cached_balance_usdt` hint from
+        # the user-stream snapshot. When the balance can't be read reliably,
+        # skip the gate and let the venue enforce margin — instead of
+        # rejecting with a false "$0.00 USDT".
+        cached_bal = creds.get("_cached_balance_usdt")
+        if cached_bal is not None:
+            bal = float(cached_bal)
+        else:
+            bal = None
+            try:
+                bd = await cls.fetch_balance(creds)
+                if bd.get("ok", True):
+                    bal = bd.get("usdt", 0)
+            except Exception as e:
+                logger.warning("Bitget preflight balance read failed for %s — skipping margin gate: %s", sym, e)
 
         mark_price = 0
         try:
@@ -258,7 +276,7 @@ class BitgetAdapter:
                     mark_price = float(tickers[0].get("markPrice") or tickers[0].get("lastPr") or 0)
         except Exception:
             pass
-        if mark_price and leverage > 0:
+        if bal is not None and mark_price and leverage > 0:
             required = (qty_r * mark_price) / max(1, leverage)
             if bal + 0.01 < required:
                 return {"ok": False, "reason": f"Insufficient margin: need ~${required:.2f} USDT, have ${bal:.2f}."}
@@ -272,7 +290,7 @@ class BitgetAdapter:
         info = await _instrument_info(sym) or {}
         size_mult = info.get("sizeMultiplier", 1)
         vol_prec = info.get("volumePlace", 4)
-        qty_r = math.floor(quantity / size_mult) * size_mult if size_mult else quantity
+        qty_r = math.floor(round(quantity / size_mult, 9)) * size_mult if size_mult else quantity
         qty_r = round(qty_r, vol_prec)
         if qty_r <= 0:
             raise RuntimeError(f"Quantity below minimum for {sym}")

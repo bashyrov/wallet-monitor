@@ -158,15 +158,17 @@ class BackpackAdapter:
         endpoints. /capital/collateral is the futures-margin pool (netEquity);
         /capital is the spot wallet."""
         fut_usd = 0.0
+        fut_err: Exception | None = None
         try:
             col = await cls._req(creds, "GET", "/api/v1/capital/collateral", "collateralQuery")
             if isinstance(col, dict):
                 ne = col.get("netEquity")
                 if ne is not None:
                     fut_usd = float(ne or 0)
-        except Exception:
-            pass
+        except Exception as e:
+            fut_err = e
         spot_usd = 0.0
+        spot_err: Exception | None = None
         try:
             spot = await cls._req(creds, "GET", "/api/v1/capital", "balanceQuery")
             if isinstance(spot, dict):
@@ -176,8 +178,12 @@ class BackpackAdapter:
                         spot_usd += float(entry.get("available") or 0) + float(entry.get("locked") or 0)
                     except (TypeError, ValueError):
                         pass
-        except Exception:
-            pass
+        except Exception as e:
+            spot_err = e
+        # Both pots failing = account unreadable — raise instead of
+        # returning zeros so callers can tell "no funds" from "read failed".
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
         return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     # ── Leverage (Backpack spot has no leverage API — stub) ──
@@ -210,10 +216,6 @@ class BackpackAdapter:
         qty_r = _round_qty(quantity, step, prec)
         if qty_r <= 0 or qty_r < min_qty:
             return {"ok": False, "reason": f"Quantity below minimum ({min_qty} {symbol.upper()})."}
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            return {"ok": False, "reason": _friendly_error(str(e))}
         return {"ok": True, "qty_rounded": qty_r, "precision": prec,
                 "min_qty": min_qty, "step_size": step}
 

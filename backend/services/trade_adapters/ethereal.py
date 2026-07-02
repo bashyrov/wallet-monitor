@@ -155,7 +155,7 @@ class EtherealAdapter:
             r = await c.get(f"{BASE}/v1/subaccount/balance",
                             params={"subaccountId": sa.get("id")})
             if r.status_code >= 400:
-                return {"usdt": 0.0, "spot_usd": 0.0, "futures_usd": 0.0}
+                raise RuntimeError(f"Ethereal balance HTTP {r.status_code}")
             items = (r.json() or {}).get("data") or []
         total = 0.0
         for it in items:

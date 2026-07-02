@@ -92,7 +92,7 @@ def _friendly_error(code: str | None, msg: str) -> str:
 
 def _round_qty_to_step(qty: float, step: float | None, precision: int) -> float:
     if step and step > 0:
-        return math.floor(qty / step) * step
+        return math.floor(round(qty / step, 9)) * step
     factor = 10 ** precision
     return math.floor(qty * factor) / factor
 
@@ -162,6 +162,7 @@ class BinanceAdapter:
         `futures_usd` for routing decisions (spot-short vs long-short)."""
         # Futures (USD-M) — existing path
         fut_usd = 0.0
+        fut_err: Exception | None = None
         try:
             data = await cls._signed(creds, "GET", "/fapi/v2/balance")
             for x in data:
@@ -171,11 +172,12 @@ class BinanceAdapter:
                     cross = float(x.get("crossWalletBalance", 0) or 0)
                     fut_usd = max(avail, cross, total)
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            fut_err = e
         # Spot — sums USDT + USDC free+locked. Endpoint:
         # GET /api/v3/account on the spot host api.binance.com.
         spot_usd = 0.0
+        spot_err: Exception | None = None
         try:
             spot_host = BASE.replace("fapi", "api")  # fapi.binance.com → api.binance.com
             data = await cls._signed(creds, "GET", "/api/v3/account", spot_host=spot_host)
@@ -186,12 +188,18 @@ class BinanceAdapter:
                         spot_usd += float(b.get("free") or 0) + float(b.get("locked") or 0)
                     except (TypeError, ValueError):
                         pass
-        except Exception:
-            pass
+        except Exception as e:
+            spot_err = e
+        # Both pots failing = account unreadable (rate limit / timeout /
+        # auth) — raise instead of returning zeros so callers can tell
+        # "no funds" from "read failed".
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
         return {
             "usdt": fut_usd + spot_usd,
             "spot_usd": spot_usd,
             "futures_usd": fut_usd,
+            "ok": fut_err is None and spot_err is None,
         }
 
     # ── Position mode ──
@@ -287,11 +295,17 @@ class BinanceAdapter:
         if cached_bal is not None:
             bal = float(cached_bal)
         else:
+            # Skip the margin gate on a failed/partial read — the venue
+            # enforces margin; a transient timeout must not produce a false
+            # "$0.00 USDT" rejection.
+            bal = None
             try:
-                bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-            except RuntimeError as e:
-                return {"ok": False, "reason": _friendly_error(*_split_code(e))}
-        if mark_price and leverage > 0:
+                bd = await cls.fetch_balance(creds)
+                if bd.get("ok", True):
+                    bal = bd.get("usdt", 0)
+            except Exception as e:
+                logger.warning("Binance preflight balance read failed for %s — skipping margin gate: %s", sym, e)
+        if bal is not None and mark_price and leverage > 0:
             required = (qty_r * mark_price) / max(1, leverage)
             if bal + 0.01 < required:
                 return {"ok": False,

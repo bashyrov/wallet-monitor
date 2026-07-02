@@ -146,16 +146,16 @@ class HyperliquidAdapter:
         from backend.services.trade_adapters._http import http_client
         client = http_client(BASE, timeout=10.0)
 
-        async def _perp() -> float:
+        async def _perp() -> tuple[float, Exception | None]:
             try:
                 r = await client.post("/info", json={"type": "clearinghouseState", "user": address},
                                       headers={"Content-Type": "application/json"})
                 j = r.json()
-                return float((j.get("marginSummary") or {}).get("accountValue", 0) or 0)
-            except Exception:
-                return 0.0
+                return float((j.get("marginSummary") or {}).get("accountValue", 0) or 0), None
+            except Exception as e:
+                return 0.0, e
 
-        async def _spot() -> float:
+        async def _spot() -> tuple[float, Exception | None]:
             try:
                 r = await client.post("/info", json={"type": "spotClearinghouseState", "user": address},
                                       headers={"Content-Type": "application/json"})
@@ -167,11 +167,15 @@ class HyperliquidAdapter:
                             t += float(b.get("total") or 0)
                         except (TypeError, ValueError):
                             pass
-                return t
-            except Exception:
-                return 0.0
+                return t, None
+            except Exception as e:
+                return 0.0, e
 
-        fut_usd, spot_usd = await asyncio.gather(_perp(), _spot())
+        (fut_usd, fut_err), (spot_usd, spot_err) = await asyncio.gather(_perp(), _spot())
+        # Both pots failing = account unreadable — raise instead of
+        # returning zeros so callers can tell "no funds" from "read failed".
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
         return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     @classmethod

@@ -150,13 +150,15 @@ class GateAdapter:
     async def fetch_balance(cls, creds: dict) -> dict:
         # Futures (USDT perp) — main collateral / availableMargin.
         fut_usd = 0.0
+        fut_err: Exception | None = None
         try:
             data = await cls._req(creds, "GET", "/api/v4/futures/usdt/accounts")
             fut_usd = float(data.get("total") or data.get("available") or 0)
-        except Exception:
-            pass
+        except Exception as e:
+            fut_err = e
         # Spot — sum USDT/USDC across spot wallet rows.
         spot_usd = 0.0
+        spot_err: Exception | None = None
         try:
             rows = await cls._req(creds, "GET", "/api/v4/spot/accounts")
             for r in rows if isinstance(rows, list) else []:
@@ -166,12 +168,19 @@ class GateAdapter:
                         spot_usd += float(r.get("available") or 0) + float(r.get("locked") or 0)
                     except (TypeError, ValueError):
                         pass
-        except Exception:
-            pass
+        except Exception as e:
+            spot_err = e
+        # Both pots failing means the account couldn't be read at all
+        # (rate limit / timeout / auth) — raise instead of returning zeros,
+        # otherwise callers can't tell "no funds" from "read failed" and
+        # show a false 0 USDT.
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
         return {
             "usdt": fut_usd + spot_usd,
             "spot_usd": spot_usd,
             "futures_usd": fut_usd,
+            "ok": fut_err is None and spot_err is None,
         }
 
     # ── Leverage ──
@@ -236,13 +245,16 @@ class GateAdapter:
         # If enable_decimal=True, Gate accepts fractional contracts (e.g. 0.1).
         # Otherwise force integer.
         if quanto > 0:
-            raw = quantity / quanto
+            # round(…, 9) kills float noise: 0.01/0.001 = 9.999999999999998
+            # → int() would truncate to 9 and falsely reject an order placed
+            # at exactly the advertised minimum.
+            raw = round(quantity / quanto, 9)
             # Gate enable_decimal accepts at most 1-decimal-place granularity
             # in practice (0.1 OK, 0.15 rejected as "invalid size") even
             # though the API gives no explicit lot field. Round DOWN to 0.1.
             if enable_decimal:
                 import math as _math
-                num_contracts = _math.floor(raw * 10) / 10
+                num_contracts = _math.floor(round(raw * 10, 6)) / 10
             else:
                 num_contracts = int(raw)
         else:
@@ -270,14 +282,24 @@ class GateAdapter:
         except Exception:
             pass
 
-        # Balance
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            return {"ok": False, "reason": _friendly_gate(*_split_label(e))}
+        # Balance vs required margin. Honor `_cached_balance_usdt` hint from
+        # the user-stream snapshot. When the balance can't be read reliably
+        # (transient timeout / rate limit), skip the gate and let the venue
+        # enforce margin — instead of rejecting with a false "$0.00 USDT".
+        cached_bal = creds.get("_cached_balance_usdt")
+        if cached_bal is not None:
+            bal = float(cached_bal)
+        else:
+            bal = None
+            try:
+                bd = await cls.fetch_balance(creds)
+                if bd.get("ok", True):
+                    bal = bd.get("usdt", 0)
+            except Exception as e:
+                logger.warning("Gate preflight balance read failed for %s — skipping margin gate: %s", contract, e)
 
         notional = num_contracts * quanto * mark_price
-        if mark_price and leverage > 0:
+        if bal is not None and mark_price and leverage > 0:
             required = notional / max(1, leverage)
             if bal + 0.01 < required:
                 return {"ok": False,
@@ -306,13 +328,16 @@ class GateAdapter:
         enable_decimal = info.get("enable_decimal", False)
 
         if quanto > 0:
-            raw = quantity / quanto
+            # round(…, 9) kills float noise: 0.01/0.001 = 9.999999999999998
+            # → int() would truncate to 9 and falsely reject an order placed
+            # at exactly the advertised minimum.
+            raw = round(quantity / quanto, 9)
             # Gate enable_decimal accepts at most 1-decimal-place granularity
             # in practice (0.1 OK, 0.15 rejected as "invalid size") even
             # though the API gives no explicit lot field. Round DOWN to 0.1.
             if enable_decimal:
                 import math as _math
-                num_contracts = _math.floor(raw * 10) / 10
+                num_contracts = _math.floor(round(raw * 10, 6)) / 10
             else:
                 num_contracts = int(raw)
         else:

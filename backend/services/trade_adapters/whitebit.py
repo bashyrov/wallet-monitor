@@ -159,19 +159,25 @@ class WhitebitAdapter:
             return t
 
         spot_usd = 0.0
+        spot_err: Exception | None = None
         try:
             data = await cls._req(creds, "/api/v4/trade-account/balance")
             if isinstance(data, dict):
                 spot_usd = _sum_trade(data)
-        except Exception:
-            pass
+        except Exception as e:
+            spot_err = e
         fut_usd = 0.0
+        fut_err: Exception | None = None
         try:
             data = await cls._req(creds, "/api/v4/collateral-account/balance")
             if isinstance(data, dict):
                 fut_usd = _sum_collateral(data)
-        except Exception:
-            pass
+        except Exception as e:
+            fut_err = e
+        # Both pots failing = account unreadable — raise instead of
+        # returning zeros so callers can tell "no funds" from "read failed".
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
         return {"usdt": spot_usd + fut_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     # ── Leverage ──
@@ -211,10 +217,6 @@ class WhitebitAdapter:
         qty_r = _round_qty(quantity, prec)
         if qty_r <= 0 or qty_r < min_amt:
             return {"ok": False, "reason": f"Quantity below minimum ({min_amt} {symbol.upper()})."}
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            return {"ok": False, "reason": _friendly_error(str(e))}
         return {"ok": True, "qty_rounded": qty_r, "precision": prec, "min_qty": min_amt}
 
     # ── Place order ──

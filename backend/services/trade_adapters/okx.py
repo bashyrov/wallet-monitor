@@ -97,7 +97,7 @@ def _split_code(exc: Exception) -> tuple[str | None, str]:
 
 def _round_qty_to_step(qty: float, step: float) -> float:
     if step > 0:
-        return math.floor(qty / step) * step
+        return math.floor(round(qty / step, 9)) * step
     return qty
 
 
@@ -165,6 +165,7 @@ class OKXAdapter:
         the trading-pool total (single pool can margin either side); `usdt`
         sums in funding for the portfolio total."""
         trading = 0.0
+        trading_err: Exception | None = None
         try:
             data = await cls._req(creds, "GET", "/api/v5/account/balance")
             for acct in data:
@@ -174,9 +175,10 @@ class OKXAdapter:
                             trading += float(d.get("cashBal") or d.get("availBal") or 0)
                         except (TypeError, ValueError):
                             pass
-        except Exception:
-            pass
+        except Exception as e:
+            trading_err = e
         funding = 0.0
+        funding_err: Exception | None = None
         try:
             data = await cls._req(creds, "GET", "/api/v5/asset/balances")
             for d in data if isinstance(data, list) else []:
@@ -185,12 +187,18 @@ class OKXAdapter:
                         funding += float(d.get("bal") or d.get("availBal") or 0)
                     except (TypeError, ValueError):
                         pass
-        except Exception:
-            pass
+        except Exception as e:
+            funding_err = e
+        # Both pots failing = account unreadable (rate limit / timeout /
+        # auth) — raise instead of returning zeros so callers can tell
+        # "no funds" from "read failed".
+        if trading_err is not None and funding_err is not None:
+            raise trading_err
         return {
             "usdt": trading + funding,
             "spot_usd": trading,    # unified pool funds spot orders
             "futures_usd": trading, # unified pool funds futures margin
+            "ok": trading_err is None and funding_err is None,
         }
 
     # ── Leverage + margin mode ──
@@ -275,18 +283,23 @@ class OKXAdapter:
         except Exception:
             pass
 
-        # Balance check — honor cached hint if available.
+        # Balance check — honor cached hint if available. Skip the margin
+        # gate on a failed/partial read — the venue enforces margin; a
+        # transient timeout must not produce a false "$0.00 USDT" rejection.
         cached_bal = creds.get("_cached_balance_usdt")
         if cached_bal is not None:
             bal = float(cached_bal)
         else:
+            bal = None
             try:
-                bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-            except RuntimeError as e:
-                return {"ok": False, "reason": _friendly_okx(*_split_code(e))}
+                bd = await cls.fetch_balance(creds)
+                if bd.get("ok", True):
+                    bal = bd.get("usdt", 0)
+            except Exception as e:
+                logger.warning("OKX preflight balance read failed for %s — skipping margin gate: %s", inst_id, e)
 
         notional = contracts * ct_val * mark_price
-        if mark_price and leverage > 0:
+        if bal is not None and mark_price and leverage > 0:
             required = notional / max(1, leverage)
             if bal + 0.01 < required:
                 return {"ok": False, "reason": f"Insufficient margin: need ~${required:.2f} USDT, have ${bal:.2f}."}

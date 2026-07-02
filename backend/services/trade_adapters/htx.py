@@ -147,6 +147,7 @@ class HtxAdapter:
     @classmethod
     async def fetch_balance(cls, creds: dict) -> dict:
         spot_usd = 0.0
+        spot_err: Exception | None = None
         try:
             acct = await cls._spot_account_id(creds)
             data = await cls._signed(creds, "GET", f"/v1/account/accounts/{acct}/balance")
@@ -156,10 +157,11 @@ class HtxAdapter:
                         spot_usd += float(row.get("balance") or 0)
                     except (TypeError, ValueError):
                         pass
-        except Exception:
-            pass
+        except Exception as e:
+            spot_err = e
         # Futures (USDT-M linear swap) — api.hbdm.com /linear-swap-api/v1/swap_cross_account_info
         fut_usd = 0.0
+        fut_err: Exception | None = None
         try:
             data = await cls._signed_fut(creds, "POST", "/linear-swap-api/v1/swap_cross_account_info",
                                           body={"margin_account": "USDT"})
@@ -169,8 +171,12 @@ class HtxAdapter:
                     fut_usd += float(x.get("margin_balance") or x.get("margin_available") or 0)
                 except (TypeError, ValueError):
                     pass
-        except Exception:
-            pass
+        except Exception as e:
+            fut_err = e
+        # Both pots failing = account unreadable — raise instead of
+        # returning zeros so callers can tell "no funds" from "read failed".
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
         return {"usdt": spot_usd + fut_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     # ── Futures-side signing (api.hbdm.com) ──────────────────────────────────

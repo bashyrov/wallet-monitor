@@ -159,6 +159,7 @@ class AsterAdapter:
         STABLES = ("USDT", "USDC", "USD1", "BUSD")
 
         fut_usd = 0.0
+        fut_err: Exception | None = None
         try:
             data = await cls._signed(creds, "GET", "/fapi/v3/balance")
             for x in (data if isinstance(data, list) else []):
@@ -167,10 +168,11 @@ class AsterAdapter:
                         fut_usd += float(x.get("availableBalance") or 0)
                     except (TypeError, ValueError):
                         pass
-        except Exception:
-            pass
+        except Exception as e:
+            fut_err = e
 
         spot_usd = 0.0
+        spot_err: Exception | None = None
         try:
             data = await cls._signed(creds, "GET", "/api/v3/account",
                                      host="https://sapi.asterdex.com")
@@ -180,9 +182,13 @@ class AsterAdapter:
                         spot_usd += float(b.get("free") or 0) + float(b.get("locked") or 0)
                     except (TypeError, ValueError):
                         pass
-        except Exception:
-            pass
+        except Exception as e:
+            spot_err = e
 
+        # Both pots failing = account unreadable — raise instead of
+        # returning zeros so callers can tell "no funds" from "read failed".
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
         return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
 
     @classmethod

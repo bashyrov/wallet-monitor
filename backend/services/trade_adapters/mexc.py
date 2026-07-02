@@ -140,6 +140,7 @@ class MexcAdapter:
     async def fetch_balance(cls, creds: dict) -> dict:
         # Futures — contract.mexc.com API (existing path).
         fut_usd = 0.0
+        fut_err: Exception | None = None
         try:
             data = await cls._signed(creds, "GET", "/api/v1/private/account/assets")
             if isinstance(data, list):
@@ -147,15 +148,22 @@ class MexcAdapter:
                     if a.get("currency") == "USDT":
                         fut_usd = float(a.get("availableBalance") or 0)
                         break
-        except Exception:
-            pass
+        except Exception as e:
+            fut_err = e
         # Spot — api.mexc.com / Binance-compatible /api/v3/account
         spot_usd = 0.0
+        spot_err: Exception | None = None
         try:
             spot_usd = await cls._fetch_spot_usd(creds)
-        except Exception:
-            pass
-        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd}
+        except Exception as e:
+            spot_err = e
+        # Both pots failing = account unreadable (rate limit / timeout /
+        # auth) — raise instead of returning zeros so callers can tell
+        # "no funds" from "read failed".
+        if fut_err is not None and spot_err is not None:
+            raise fut_err
+        return {"usdt": fut_usd + spot_usd, "spot_usd": spot_usd, "futures_usd": fut_usd,
+                "ok": fut_err is None and spot_err is None}
 
     @classmethod
     async def _fetch_spot_usd(cls, creds: dict) -> float:
@@ -173,7 +181,7 @@ class MexcAdapter:
         client = http_client("https://api.mexc.com", timeout=10.0)
         r = await client.get(url, headers={"X-MEXC-APIKEY": api_key})
         if r.status_code >= 400:
-            return 0.0
+            raise RuntimeError(f"MEXC spot account HTTP {r.status_code}")
         total = 0.0
         for b in r.json().get("balances", []):
             if (b.get("asset") or "").upper() in ("USDT", "USDC"):
@@ -221,15 +229,28 @@ class MexcAdapter:
         min_vol = info.get("minVol", 1)
         vol_unit = info.get("volUnit", 1)
         contract_size = info.get("contractSize", 1)
-        qty_contracts = int(quantity / contract_size) if contract_size else int(quantity)
+        # round(…, 9) kills float noise: 0.01/0.001 = 9.999999999999998
+        # → int() would truncate to 9 and falsely reject an order placed
+        # at exactly the advertised minimum.
+        qty_contracts = int(round(quantity / contract_size, 9)) if contract_size else int(quantity)
         qty_contracts = (qty_contracts // vol_unit) * vol_unit
         if qty_contracts < min_vol:
             return {"ok": False, "reason": f"Quantity below minimum ({min_vol} contracts, each = {contract_size} {symbol.upper()})."}
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            code, msg = _split_code(e)
-            return {"ok": False, "reason": _friendly_mexc(code, msg)}
+        # Balance vs required margin. Honor `_cached_balance_usdt` hint from
+        # the user-stream snapshot. When the balance can't be read reliably,
+        # skip the gate and let the venue enforce margin — instead of
+        # rejecting with a false "$0.00 USDT".
+        cached_bal = creds.get("_cached_balance_usdt")
+        if cached_bal is not None:
+            bal = float(cached_bal)
+        else:
+            bal = None
+            try:
+                bd = await cls.fetch_balance(creds)
+                if bd.get("ok", True):
+                    bal = bd.get("usdt", 0)
+            except Exception as e:
+                logger.warning("MEXC preflight balance read failed for %s — skipping margin gate: %s", sym, e)
         # Rough margin estimate
         mark_price = 0
         try:
@@ -238,7 +259,7 @@ class MexcAdapter:
                 mark_price = float((r.json().get("data") or {}).get("lastPrice") or 0)
         except Exception:
             pass
-        if mark_price and leverage > 0:
+        if bal is not None and mark_price and leverage > 0:
             notional = qty_contracts * contract_size * mark_price
             required = notional / max(1, leverage)
             if bal + 0.01 < required:
@@ -252,7 +273,7 @@ class MexcAdapter:
         info = await _instrument_info(sym) or {}
         contract_size = info.get("contractSize", 1)
         vol_unit = info.get("volUnit", 1)
-        qty_contracts = int(quantity / contract_size) if contract_size else int(quantity)
+        qty_contracts = int(round(quantity / contract_size, 9)) if contract_size else int(quantity)
         qty_contracts = (qty_contracts // vol_unit) * vol_unit
         if qty_contracts <= 0:
             raise RuntimeError(f"Quantity below minimum for {sym}")
