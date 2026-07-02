@@ -477,6 +477,10 @@ async def place_open_order(
                 reason = pre.get("reason") or "Pre-flight check failed"
                 _finalize_order(db, order_row, status="failed",
                                 error_kind="user", error_message=reason)
+                logger.warning(
+                    "Order REJECTED (preflight): user=%s wallet=%s ex=%s sym=%s side=%s qty=%s order_db_id=%s reason=%s",
+                    user_id, wallet_id, ex, symbol, side, quantity, order_row.id, reason,
+                )
                 raise TradeError(reason, kind="user")
             if pre.get("qty_rounded"):
                 quantity = float(pre["qty_rounded"])
@@ -487,7 +491,8 @@ async def place_open_order(
         except TradeError:
             raise
         except Exception as exc:
-            logger.info("preflight unexpected error %s/%s: %s", ex, symbol, exc)
+            logger.warning("preflight unexpected error %s/%s: %s: %s",
+                           ex, symbol, type(exc).__name__, exc)
 
     await leverage_task
 
@@ -519,6 +524,10 @@ async def place_open_order(
                     _state_cache.invalidate(ex, creds, symbol)
                     _finalize_order(db, order_row, status="failed",
                                     error_kind=gerr.kind, error_message=gerr.message)
+                    logger.warning(
+                        "Order REJECTED via go-fetcher: user=%s wallet=%s ex=%s sym=%s side=%s qty=%s kind=%s order_db_id=%s err=%s",
+                        user_id, wallet_id, ex, symbol, side, quantity, gerr.kind, order_row.id, gerr.message,
+                    )
                     raise TradeError(gerr.message, kind=gerr.kind)
                 logger.warning("Go proxy failed (%s) — falling back to Python: %s",
                                gerr.kind, gerr.message)
@@ -671,6 +680,10 @@ async def close_position(
                 if gerr.kind in ("user", "exchange"):
                     _finalize_order(db, order_row, status="failed",
                                     error_kind=gerr.kind, error_message=gerr.message)
+                    logger.warning(
+                        "Close REJECTED via go-fetcher: user=%s wallet=%s ex=%s sym=%s kind=%s order_db_id=%s err=%s",
+                        user_id, wallet_id, ex, symbol, gerr.kind, order_row.id, gerr.message,
+                    )
                     raise TradeError(gerr.message, kind=gerr.kind)
                 logger.warning("Go proxy close failed (%s) — falling back: %s",
                                gerr.kind, gerr.message)
