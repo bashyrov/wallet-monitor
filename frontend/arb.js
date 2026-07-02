@@ -250,12 +250,12 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
   document.body.classList.add('pt-type-' + TYPE);
   document.body.innerHTML = `
     <style>
-      .pt-iframe{flex:1;border:0;background:var(--bg);min-height:0;}
-      /* DEX has only one order book → let col-left breathe */
-      body.pt-type-dex .col-books{flex:0 0 340px;}
-      body.pt-type-dex .col-left{flex:1;}
-      body.pt-type-spot .col-left{flex:0 0 46%;}
-      body.pt-type-spot .col-books{flex:1;}
+      /* DEX + spot: symmetric 50/50 chart↔orderbook split so the
+         basis chart isn't dwarfed by a narrow orderbook column. */
+      body.pt-type-dex .col-books{flex:1 1 50%;min-width:0;}
+      body.pt-type-dex .col-left{flex:1 1 50%;min-width:0;}
+      body.pt-type-spot .col-left{flex:1 1 50%;min-width:0;}
+      body.pt-type-spot .col-books{flex:1 1 50%;min-width:0;}
     </style>
 
     <header class="topbar"><app-navbar page="arb"></app-navbar></header>
