@@ -9,6 +9,40 @@
 // IS_AUTHED is kept for downstream JS that gates UI on it.
 const IS_AUTHED = Auth.isLoggedIn();
 
+// ── Per-wallet last-known-good for /trade/positions renders ─────────
+// The backend aggregates wallets in parallel with a 5s per-venue timeout;
+// a venue that times out drops its rows from an otherwise NON-empty
+// response, so the empty-streak guards below never fire and the affected
+// positions blink out of the UI until the venue recovers. Merge back the
+// last rows seen for any wallet missing from the response, bounded by a
+// short TTL so genuinely-closed positions still disappear.
+// var (not let/const) — hoisted, callable from functions defined earlier
+// in the file than this declaration.
+var _lgPosMap;
+var _LG_POS_TTL_MS = 30000;
+function _lgPosMerge(scope, rows){
+  _lgPosMap = _lgPosMap || new Map();
+  const now = Date.now();
+  const byWallet = new Map();
+  for (const r of rows){
+    const w = Number(r.wallet_id || 0);
+    if (!byWallet.has(w)) byWallet.set(w, []);
+    byWallet.get(w).push(r);
+  }
+  for (const [w, wr] of byWallet) _lgPosMap.set(scope + '|' + w, {ts: now, rows: wr});
+  let out = rows;
+  for (const [k, v] of _lgPosMap){
+    if (!k.startsWith(scope + '|')) continue;
+    if (byWallet.has(Number(k.slice(scope.length + 1)))) continue;
+    if (now - v.ts > _LG_POS_TTL_MS){ _lgPosMap.delete(k); continue; }
+    out = out.concat(v.rows);
+  }
+  return out;
+}
+// Called after a user-initiated close so the just-closed position can't
+// be resurrected from the last-good rows.
+function _lgPosClear(){ if (_lgPosMap) _lgPosMap.clear(); }
+
 // ── WS idle-disconnect ──────────────────────────────────────────────
 // Если юзер открыл /arb и забыл вкладку, WS соединения продолжают
 // получать данные → жжём CPU + растёт memory от accumulated message
@@ -1773,7 +1807,8 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       if (!r.ok) return;
       rows = await r.json();
     } catch { return; }
-    rows = (rows || []).filter(r => (r.exchange || '').toLowerCase() === SHORT.toLowerCase()
+    rows = _lgPosMerge('sym:' + SYM, rows || []);
+    rows = rows.filter(r => (r.exchange || '').toLowerCase() === SHORT.toLowerCase()
                                    && (r.symbol || '').toUpperCase() === SYM.toUpperCase());
     const wrap = $('pt-positions-wrap');
     const list = $('pt-positions-list');
@@ -1897,7 +1932,7 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
       const r = await Auth.apiFetch('/trade/positions');
       if (!r.ok) return;
       const j = await r.json();
-      const arr = Array.isArray(j) ? j : (j.positions || []);
+      const arr = _lgPosMerge('acc', Array.isArray(j) ? j : (j.positions || []));
       const isStale = r.headers.get('x-positions-stale') === '1';
       const tb = document.getElementById('acc-positions-body');
       const em = document.getElementById('acc-positions-empty');
@@ -5165,6 +5200,7 @@ async function accLoadPositions(){
     // Network/server hiccup — keep showing the last state, do not blank.
     return;
   }
+  rows = _lgPosMerge('acc', rows || []);
   if (!rows.length){
     _accEmptyStreak++;
     if (_accLastPositions && _accEmptyStreak < _EMPTY_STREAK_LIMIT){
@@ -5382,6 +5418,7 @@ async function _tradeClosePair(longWid, shortWid, sym){
     if (okCount === 2)      pending && pending.update({title:'Pair closed', type:'success'});
     else if (okCount === 1) pending && pending.update({title:'One leg closed', type:'warn', sub:'The other failed — see Order History'});
     else                    pending && pending.update({title:'Close pair failed', type:'error', sub:'see Order History'});
+    if (okCount > 0) _lgPosClear();
     refreshTradePositions();
     _reloadTradeStatus();
     if (typeof accLoadPositions === 'function') accLoadPositions();
@@ -5953,6 +5990,7 @@ async function tradeClose(wid, posId){
       title: 'Position closed', type:'success',
       sub: body.avg_price ? `@ <span class="mono">${body.avg_price}</span>` : '',
     });
+    _lgPosClear();
     refreshTradePositions();
     _reloadTradeStatus();
     if (typeof accLoadPositions === 'function') accLoadPositions();
@@ -5976,6 +6014,7 @@ async function refreshTradePositions(){
   } catch {
     return;
   }
+  rows = _lgPosMerge('sym:' + SYM, rows || []);
   // Spot/short pair candidates — fire-and-forget; don't block on it.
   try {
     const r2 = await Auth.apiFetch('/trade/spot-short-pairs');
