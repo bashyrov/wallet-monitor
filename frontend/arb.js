@@ -3986,8 +3986,17 @@ async function openExPopover(anchor,side){
     onPick:v=>{
       const newLong=side==='long'?v:LONG;
       const newShort=side==='short'?v:SHORT;
-      const typeParam = TYPE === 'spot' ? '&type=spot-short' : (TYPE === 'dex' ? '&type=dex-short' : '');
-      location.href=`/arb?symbol=${SYM}&long=${newLong}&short=${newShort}${typeParam}`;
+      // Preserve chain/addr/pair on DEX mode — dropping them breaks
+      // the on-chain price lookup and the page fails to load the pair.
+      let extra = '';
+      if (TYPE === 'spot') extra = '&type=spot-short';
+      else if (TYPE === 'dex') {
+        extra = '&type=dex-short';
+        if (DEX_CHAIN) extra += `&chain=${encodeURIComponent(DEX_CHAIN)}`;
+        if (DEX_ADDR)  extra += `&addr=${encodeURIComponent(DEX_ADDR)}`;
+        if (DEX_PAIR)  extra += `&pair=${encodeURIComponent(DEX_PAIR)}`;
+      }
+      location.href=`/arb?symbol=${SYM}&long=${newLong}&short=${newShort}${extra}`;
     }});
 }
 
@@ -8082,79 +8091,89 @@ function _renderPairCombined(){
     </div>`;
 }
 
-// ─── html2canvas lazy loader ─────────────────────────────────────────
+// ─── html-to-image lazy loader ───────────────────────────────────────
+// Replaced html2canvas 1.4.1 (couldn't rasterize -webkit-mask-image,
+// CSS `filter:` on images, or complex radial-gradients — dropped card
+// downloads to a washed-out, colour-shifted preview). html-to-image
+// (dom-to-image successor) uses SVG foreignObject internally, which
+// hands the DOM to the browser's own rasteriser at snapshot time —
+// so gradients, masks, filters, and web fonts render 1:1 with what
+// the user sees on screen.
 // 200KB / 46KB gzip vendor lib used only by the share-card PNG snapshot.
 // We inject the <script> on first need and cache the in-flight Promise.
 let _html2canvasPromise = null;
 function _loadHtml2Canvas(){
-  if (typeof html2canvas === 'function') return Promise.resolve();
+  if (typeof htmlToImage !== 'undefined' && typeof htmlToImage.toBlob === 'function') return Promise.resolve();
   if (_html2canvasPromise) return _html2canvasPromise;
   _html2canvasPromise = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = '/vendor/html2canvas-1.4.1.min.js';
+    s.src = '/vendor/html-to-image-1.11.13.min.js';
     s.async = true;
     s.onload = () => resolve();
-    s.onerror = () => { _html2canvasPromise = null; reject(new Error('html2canvas load failed')); };
+    s.onerror = () => { _html2canvasPromise = null; reject(new Error('html-to-image load failed')); };
     document.head.appendChild(s);
   });
   return _html2canvasPromise;
 }
 
-// ─── Snapshot helpers ────────────────────────────────────────────────
-// html2canvas captures the live DOM. We build a 1080×675 PNG (2× the
-// 540×337 viewport target) for sharp social previews.
+// ─── Snapshot helper ─────────────────────────────────────────────────
+// Returns a Blob (PNG). 1080-wide target (or 2× the card, whichever is
+// larger) for sharp social previews. Background is the site's card
+// gradient (embedded in the .sc-card styles), so the PNG is opaque —
+// html2canvas's `backgroundColor: null` was giving a transparent PNG
+// that looked washed out in Slack / email previews on white bg.
 async function _scSnapshot(){
   try { await _loadHtml2Canvas(); } catch(e) { console.warn('[share]', e); return null; }
   const host = document.getElementById('sc-card-host');
-  if (!host || typeof html2canvas !== 'function') {
-    console.warn('[share] html2canvas missing or host gone');
+  if (!host || typeof htmlToImage === 'undefined') {
+    console.warn('[share] html-to-image missing or host gone');
     return null;
   }
   const card = host.querySelector('.sc-card');
   if (!card) return null;
-  // Wait for any <img> inside to fully decode — html2canvas otherwise
-  // races and renders a blank background where the SVG should be.
+  // Wait for every inline <img> (art SVG + brand logo) to decode so
+  // foreignObject rasterisation doesn't race and drop the images.
   const imgs = Array.from(card.querySelectorAll('img'));
   await Promise.all(imgs.map(im => (im.complete && im.naturalWidth) ? Promise.resolve() :
     new Promise(res => { im.onload = im.onerror = () => res(); })));
   const cardW = card.offsetWidth;
   const cardH = card.offsetHeight;
-  const scale = Math.max(2, Math.min(4, 1080 / cardW));
-  return await html2canvas(card, {
-    backgroundColor: null,
-    scale,
+  const pixelRatio = Math.max(2, Math.min(4, 1080 / cardW));
+  return await htmlToImage.toBlob(card, {
+    pixelRatio,
     width: cardW,
     height: cardH,
-    useCORS: false,
-    allowTaint: true,
-    logging: false,
+    cacheBust: true,
+    style: {
+      // guard against inherited transforms/opacity on parent modals
+      transform: 'none',
+      opacity: '1',
+    },
+    // Do NOT inline external stylesheets — the sc-card CSS in arb.css
+    // is already same-origin, and skipping the fetch keeps a font load
+    // race from producing a system-font fallback in the snapshot.
+    skipFonts: false,
   });
 }
 
 async function downloadShareCard(){
   try {
-    const canvas = await _scSnapshot();
-    if (!canvas) {
+    const blob = await _scSnapshot();
+    if (!blob) {
       if (typeof toast === 'function') toast('Snapshot failed', 'error');
       return;
     }
     const sym = (_sharePair && _sharePair.symbol) || (_sharePos && _sharePos.symbol) || 'pnl';
     const tag = _sharePair ? 'pair' : 'pnl';
     const fname = `avalant-${sym.toLowerCase()}-${tag}-${Date.now()}.png`;
-    canvas.toBlob(blob => {
-      if (!blob) {
-        if (typeof toast === 'function') toast('PNG encode failed', 'error');
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.download = fname;
-      a.href = url;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }, 'image/png');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.download = fname;
+    a.href = url;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (e) {
     console.error('[share] download failed', e);
     if (typeof toast === 'function') toast('Download failed: ' + (e.message || e), 'error');
@@ -8163,10 +8182,8 @@ async function downloadShareCard(){
 
 async function copyShareCard(){
   try {
-    const canvas = await _scSnapshot();
-    if (!canvas) throw new Error('snapshot fail');
-    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-    if (!blob) throw new Error('blob fail');
+    const blob = await _scSnapshot();
+    if (!blob) throw new Error('snapshot fail');
     if (navigator.clipboard && window.ClipboardItem){
       await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
       _scFlash('sc-copy-btn', 'Copied!');
