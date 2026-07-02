@@ -205,8 +205,9 @@ class KuCoinAdapter:
                 data = await cls._signed(
                     creds, "GET", "/api/v1/account-overview", {"currency": cur},
                 )
-            except Exception:
-                return {"currency": cur, "available": 0.0, "equity": 0.0, "ok": False}
+            except Exception as e:
+                return {"currency": cur, "available": 0.0, "equity": 0.0, "ok": False,
+                        "err": str(e)}
             d = data or {}
             return {
                 "currency": cur,
@@ -216,6 +217,12 @@ class KuCoinAdapter:
             }
 
         results = await _asyncio.gather(*(_one(c) for c in ("USDT", "USDC", "XBT")))
+        # All three pots failing means we couldn't read the account at all
+        # (rate limit / timeout / auth) — raise instead of returning zeros,
+        # otherwise callers (trade-status panel, preflight) can't tell
+        # "no funds" from "read failed" and show a false 0 USDT.
+        if not any(r["ok"] for r in results):
+            raise RuntimeError(results[0].get("err") or "KuCoin balance read failed")
         by_cur = {r["currency"]: r for r in results}
         usdt_pot = by_cur.get("USDT", {"available": 0.0, "equity": 0.0})
         usdt_fut = usdt_pot["available"] if usdt_pot["available"] > 0 else usdt_pot["equity"]
@@ -321,11 +328,24 @@ class KuCoinAdapter:
         if leverage > info.get("maxLeverage", 100):
             return {"ok": False, "reason": f"Max leverage for {sym} is {info['maxLeverage']}x."}
 
-        try:
-            bal = (await cls.fetch_balance(creds)).get("usdt", 0)
-        except RuntimeError as e:
-            code, msg = _split_code(e)
-            return {"ok": False, "reason": _friendly_kc(code, msg)}
+        # Balance vs required margin. Honor `_cached_balance_usdt` hint from
+        # the user-stream snapshot (same as binance/bybit/okx). When the
+        # balance can't be read reliably (transient rate limit / timeout —
+        # KuCoin REST is regularly slow under the open-order burst), skip
+        # the gate and let the venue enforce margin, instead of rejecting
+        # with a false "$0.00 USDT".
+        cached_bal = creds.get("_cached_balance_usdt")
+        if cached_bal is not None:
+            bal = float(cached_bal)
+        else:
+            bal = None
+            try:
+                bd = await cls.fetch_balance(creds)
+                by_cur = bd.get("by_currency") or {}
+                if by_cur and all(r.get("ok") for r in by_cur.values()):
+                    bal = bd.get("usdt", 0)
+            except Exception as e:
+                logger.warning("KuCoin preflight balance read failed for %s — skipping margin gate: %s", sym, e)
 
         mark_price = 0
         try:
@@ -334,7 +354,7 @@ class KuCoinAdapter:
                 mark_price = float((r.json().get("data") or {}).get("price") or 0)
         except Exception:
             pass
-        if mark_price and leverage > 0:
+        if bal is not None and mark_price and leverage > 0:
             notional = qty_lots * multiplier * mark_price
             required = notional / max(1, leverage)
             if bal + 0.01 < required:
