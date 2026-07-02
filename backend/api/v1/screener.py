@@ -144,6 +144,13 @@ async def dex_arbitrage_opportunities():
     return await get_dex_arbitrage_opportunities()
 
 
+@router.get("/dex-screener-short", dependencies=[Depends(_enforce_screener_rl)])
+async def dex_screener_short_opportunities():
+    """DEX-short via DexScreener pool prices — parallel to the OKX-based /dex-short."""
+    from backend.services.dex_arbitrage_service import get_dex_screener_arbitrage_opportunities
+    return await get_dex_screener_arbitrage_opportunities()
+
+
 @router.get("/dex-spot", dependencies=[Depends(_enforce_screener_rl)])
 async def dex_spot_opportunities():
     """DEX↔CEX spot-only arbitrage. Both legs spot; no funding/perp.

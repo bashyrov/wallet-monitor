@@ -279,6 +279,15 @@ func main() {
 		return dexCompute.Run(gctx)
 	})
 
+	// Parallel DexScreener-sourced dex-short mode — CoinGecko contract
+	// discovery + DexScreener pool prices, exactly the pre-OKX pipeline.
+	// Writes dex_screener_arbitrage.json every 30s (DexScreener rate
+	// budget); the OKX compute above is untouched.
+	dexScreenerCompute := arb.NewDEXScreenerCompute(fundingStore, store, cfg.CacheDir, 30*time.Second)
+	g.Go(func() error {
+		return dexScreenerCompute.Run(gctx)
+	})
+
 	// DEX↔CEX spot-only arb. Behind AVALANT_DEX_SPOT=1. Shares DEX
 	// snapshots with dexCompute and spot snapshots with spotCompute — no
 	// extra OKX / venue REST load. Off by default; goroutine
@@ -313,6 +322,7 @@ func main() {
 	// dex/short also gets the registry so its address column is verified.
 	if cexMatcher != nil {
 		dexCompute.SetCexRegistry(cexMatcher)
+		dexScreenerCompute.SetCexRegistry(cexMatcher)
 	}
 
 	// Trade-stream (tick) hub — populated only when WS broadcaster is up.
@@ -345,6 +355,7 @@ func main() {
 		longShort := wsbroadcast.NewLongShort(cfg.CacheDir)
 		spotShort := wsbroadcast.NewSpotShort(cfg.CacheDir)
 		dexShort := wsbroadcast.NewDexShort(cfg.CacheDir)
+		dexScreenerShort := wsbroadcast.NewDexScreenerShort(cfg.CacheDir)
 		// dex-spot broadcaster only attaches when the compute is enabled.
 		// nil here means /api/screener/ws/dex-spot is not mounted (404).
 		var dexSpotCh *wsbroadcast.DexSpot
@@ -359,6 +370,7 @@ func main() {
 			longShort,
 			spotShort,
 			dexShort,
+			dexScreenerShort,
 			dexSpotCh,
 			wsbroadcast.NewFunding(cfg.CacheDir),
 			bookCh,

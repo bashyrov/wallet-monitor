@@ -29,7 +29,7 @@
      parse. fetchpriority="high" ensures the bundle + CSS jump ahead of
      icons and other low-priority discoveries. -->
 <link rel="preload" as="script" href="/dist/core.min.js?v=20260628d" fetchpriority="high">
-<link rel="preload" as="script" href="/screener.js?v=20260628b"    fetchpriority="high">
+<link rel="preload" as="script" href="/screener.js?v=20260703a"    fetchpriority="high">
 <link rel="preload" as="style"  href="/screener.css?v=20260701b"               fetchpriority="high">
 <link rel="preload" as="style"  href="/design.css">
 <link rel="preload" as="style"  href="/fonts/fonts.css">
@@ -60,6 +60,7 @@
       <button class="mode-tab active" id="tab-arb" onclick="switchMode('arb')">Long/Short</button>
       <button class="mode-tab" id="tab-spot"    onclick="switchMode('spot')">Spot/Short</button>
       <button class="mode-tab" id="tab-dex"     onclick="switchMode('dex')">DEX/Short</button>
+      <button class="mode-tab" id="tab-dsx"     onclick="switchMode('dsx')">DexScreener</button>
       <button class="mode-tab" id="tab-dex-spot" onclick="switchMode('dex-spot')">DEX/Spot</button>
       <button class="mode-tab" id="tab-funding-arb" onclick="switchMode('funding-arb')">Funding Arb</button>
       <button class="mode-tab" id="tab-funding" onclick="switchMode('funding')">Funding Rates</button>
@@ -375,6 +376,32 @@
       <div class="pager" id="pager-dex"></div>
     </div>
 
+    <!-- ── DEXSCREENER / SHORT SECTION (parallel to DEX/Short, DexScreener-priced) ── -->
+    <div id="section-dsx" style="display:none">
+      <div class="table-wrap">
+        <table id="tbl-dsx">
+          <thead>
+            <tr>
+              <th onclick="sortDsx('symbol')"          data-dcol="symbol"          data-tip="Token ticker (exists on a DEX AND on at least one CEX perp)">Token <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDsx('dex_name')"        data-dcol="dex_name"        data-tip="DEX venue + chain (best-liquidity USD-quoted pair via DexScreener). Liquidity · 24h volume shown below.">DEX / Liquidity <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDsx('short_exchange')"  data-dcol="short_exchange"  data-tip="Perp venue to short — funding per 8h + 24h volume">Short / Volume <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDsx('in_pct')"  data-dcol="in_pct"  class="sorted" data-tip="Live entry basis. Both In and Out share ref = (dexPrice + bestAskShort_perp) / 2, so In + Out ≈ round-trip P&amp;L. Refreshed every 3s.">In <span class="io-fresh-pulse" title="3s refresh"></span> <span class="sort-arrow">↓</span></th>
+              <th onclick="sortDsx('out_pct')" data-dcol="out_pct" data-tip="Live exit basis. Shared reference as In. Refreshed every 3s.">Out <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDsx('short_funding_8h')" data-dcol="short_funding_8h" data-tip="Funding the short leg receives per 8h (positive = you earn)">Funding /8h <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDsx('total_fees')"      data-dcol="total_fees"      data-tip="DEX round-trip (~0.8%) + perp round-trip. Gas not included.">Fees <span class="sort-arrow">↕</span></th>
+              <th onclick="sortDsx('net_profit')"      data-dcol="net_profit"      data-tip="Net = basis + short funding − total fees">Net profit <span class="sort-arrow">↕</span></th>
+              <th data-tip="CEX deposit status for this token's chain (you ship DEX-bought spot TO CEX)">Dep</th>
+              <th data-tip="CEX withdraw status (closed = you can't get funds out)">Wd</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-dsx"><tr><td colspan="11" class="empty-msg is-loading"><div class="empty-inner"><div class="empty-spinner"></div><div class="empty-title">Loading DexScreener opportunities</div><div class="empty-sub">First scan can take 30-60 seconds — DexScreener is rate-limited.</div></div></td></tr></tbody>
+        </table>
+      </div>
+      <div class="cards-wrap" id="cards-dsx"></div>
+      <div class="pager" id="pager-dsx"></div>
+    </div>
+
     <!-- ── DEX/SPOT SECTION (DEX↔CEX spot price arb, no funding/perp) ── -->
     <div id="section-dex-spot" style="display:none">
       <div class="table-wrap">
@@ -568,7 +595,7 @@
 <script src="/dist/core.min.js?v=20260628d"></script>
 <!-- Page-specific code (was 2750 lines of inline JS in this file).
      Loaded with defer so it runs after DOM parse completes. -->
-<script src="/screener.js?v=20260628b" defer></script>
+<script src="/screener.js?v=20260703a" defer></script>
 
 </body>
 </html>

@@ -42,10 +42,13 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
 )
 
-// DexShort is the channel state.
+// DexShort is the channel state. Also serves the dex-screener-short
+// channel (identical wire format, different source file) via
+// NewDexScreenerShort.
 type DexShort struct {
 	hub      *Hub
 	cacheDir string
+	file     string
 
 	mu               sync.Mutex
 	lastByKey        map[string]map[string]any // key=sym|short_ex -> opp
@@ -60,6 +63,16 @@ func NewDexShort(cacheDir string) *DexShort {
 	return &DexShort{
 		hub:       NewHub("dex-short"),
 		cacheDir:  cacheDir,
+		file:      "dex_arbitrage.json",
+		lastByKey: make(map[string]map[string]any, 256),
+	}
+}
+
+func NewDexScreenerShort(cacheDir string) *DexShort {
+	return &DexShort{
+		hub:       NewHub("dex-screener-short"),
+		cacheDir:  cacheDir,
+		file:      "dex_screener_arbitrage.json",
 		lastByKey: make(map[string]map[string]any, 256),
 	}
 }
@@ -209,10 +222,10 @@ func (d *DexShort) tick() {
 	}
 }
 
-// readFile returns dex_arbitrage.json or nil on miss / unchanged mtime.
+// readFile returns the source file or nil on miss / unchanged mtime.
 // MUST hold d.mu.
 func (d *DexShort) readFile() map[string]any {
-	path := filepath.Join(d.cacheDir, "dex_arbitrage.json")
+	path := filepath.Join(d.cacheDir, d.file)
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil
@@ -234,7 +247,7 @@ func (d *DexShort) readFile() map[string]any {
 }
 
 func (d *DexShort) forceReadFile() map[string]any {
-	path := filepath.Join(d.cacheDir, "dex_arbitrage.json")
+	path := filepath.Join(d.cacheDir, d.file)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil

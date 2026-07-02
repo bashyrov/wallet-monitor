@@ -501,25 +501,32 @@ def _run_cycle_sync(min_perp_vol_usd: float = 10_000.0) -> dict:
 
 
 # ── API consumer (async, used by the FastAPI endpoint) ────────────────────────
-async def get_dex_arbitrage_opportunities(min_vol_usd: float = 10_000.0) -> dict:
+async def get_dex_arbitrage_opportunities(min_vol_usd: float = 10_000.0,
+                                          file_name: str = "dex_arbitrage.json") -> dict:
     """Web role reads the file cache; fetcher occasionally falls through here
     for a cold probe. Never runs the heavy sync cycle from an async request.
 
     Async read offloads the JSON parse to a thread — see notes in
     spot_arbitrage_service.get_spot_arbitrage_opportunities for why this
     matters under burst load."""
-    cached = await _arb._read_file_cache_async("dex_arbitrage.json", max_age=120.0)
+    cached = await _arb._read_file_cache_async(file_name, max_age=120.0)
     if cached and isinstance(cached, dict) and cached.get("opportunities") is not None:
         return _arb._apply_admin_filters(cached)
     # Cold-start: wait up to 500 ms for the fetcher to land its first write
     # instead of flashing an empty table to the user.
     for _ in range(10):
         await asyncio.sleep(0.05)
-        cached = await _arb._read_file_cache_async("dex_arbitrage.json", max_age=120.0)
+        cached = await _arb._read_file_cache_async(file_name, max_age=120.0)
         if cached and isinstance(cached, dict) and cached.get("opportunities") is not None:
             return _arb._apply_admin_filters(cached)
     return {"opportunities": [], "generated_at": int(time.time()),
             "symbols_scanned": 0, "dex_hits": 0, "cold": True}
+
+
+async def get_dex_screener_arbitrage_opportunities() -> dict:
+    """Parallel DexScreener-sourced dex-short feed — same row shape as the
+    OKX-based one, different file (written by go-fetcher DEXScreenerCompute)."""
+    return await get_dex_arbitrage_opportunities(file_name="dex_screener_arbitrage.json")
 
 
 # ── Daemon thread (sync, fetcher-side) ────────────────────────────────────────

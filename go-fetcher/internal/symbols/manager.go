@@ -196,9 +196,9 @@ func (m *Manager) PrewarmFromArbFiles(cacheDir string, fallback []string) {
 			add(o.ShortExchange, o.Symbol)
 		}
 	}
-	{
+	for _, f := range []string{"dex_arbitrage.json", "dex_screener_arbitrage.json"} {
 		var doc struct{ Opps []dexOpp `json:"opportunities"` }
-		tryRead(filepath.Join(cacheDir, "dex_arbitrage.json"), &doc)
+		tryRead(filepath.Join(cacheDir, f), &doc)
 		for _, o := range doc.Opps {
 			add(o.ShortExchange, o.Symbol)
 		}
@@ -380,11 +380,11 @@ func (m *Manager) TouchFromArbFiles(cacheDir string) {
 		}
 	}
 	// DEX/Short — DEX side has no orderbook adapter, only the perp leg.
-	{
+	for _, f := range []string{"dex_arbitrage.json", "dex_screener_arbitrage.json"} {
 		var doc struct {
 			Opps []dexOpp `json:"opportunities"`
 		}
-		tryRead(filepath.Join(cacheDir, "dex_arbitrage.json"), &doc)
+		tryRead(filepath.Join(cacheDir, f), &doc)
 		for _, o := range doc.Opps {
 			if o.Symbol == "" || o.ShortExchange == "" {
 				continue
