@@ -23,11 +23,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 /* shared topbar styles come from /navbar.css */
 @keyframes blink{50%{opacity:0;}}
 .topbar{flex-shrink:0;}
-.topbar app-navbar .nav-lnk{color:var(--text2)!important;}
-.topbar app-navbar .nav-lnk:hover,.topbar app-navbar .nav-lnk.active{color:var(--green)!important;}
 body.light .topbar{background:#FFFFFF!important;}
-body.light .topbar app-navbar .nav-lnk{color:#2A2A2A!important;}
-body.light .topbar app-navbar .nav-lnk:hover,body.light .topbar app-navbar .nav-lnk.active{color:#000!important;background:#EDEDED!important;border-color:#BABABA!important;}
 body.light .topbar app-navbar .brand{color:#000!important;}
 body.light .topbar app-navbar .brand-cursor{color:#000!important;}
 
