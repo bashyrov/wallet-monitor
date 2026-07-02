@@ -415,9 +415,13 @@ volumes:
 networks:
   default: {}
   # IPv6-only-purpose egress net for go-fetcher (see its networks key).
-  # ULA subnet, NAT66-masqueraded by dockerd out the host's global v6.
+  # NAT66-masqueraded by dockerd out the host's global v6. The subnet
+  # MUST be a carve of the host's own global prefix on prod (set
+  # OKX6_SUBNET in .env, e.g. <host /64>:6f7e::/80) — with the ULA
+  # default, RFC 6724 source-address selection makes Go prefer IPv4
+  # and the whole exercise is moot.
   okx6:
     enable_ipv6: true
     ipam:
       config:
-        - subnet: fd0a:6f7e::/64
+        - subnet: ${OKX6_SUBNET:-fd0a:6f7e::/64}
