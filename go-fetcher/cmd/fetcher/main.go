@@ -238,21 +238,15 @@ func main() {
 	})
 
 	// DEX arb compute — OKX Web3 DEX API is the sole on-chain source.
-	// Blocking token-map warm-up (chains + per-chain all-tokens sweep)
-	// so the first compute cycle has data; on failure we log and carry
-	// on with an empty map (compute emits empty dex_arbitrage.json until
-	// the hourly refresh succeeds — same graceful degradation as the old
-	// DexScreener-throttled path). Writes dex_arbitrage.json every 30s.
+	// Token-map warm-up (chains + per-chain all-tokens sweep) runs in
+	// okxSvc.Run — the paced sweep takes 2-4 min, so it can't block
+	// startup. Compute emits empty dex_arbitrage.json until the first
+	// sweep lands (same graceful degradation as the old DexScreener-
+	// throttled path). Writes dex_arbitrage.json every 30s.
 	okxSvc := okxdex.NewService(okxdex.NewClientFromEnv())
 	if !okxSvc.Configured() {
 		log.L().Warn().Msg("okxdex: OKX_WEB3_* creds missing — dex-short will be empty")
 	} else {
-		// ~50 chains × 1.1s rate-limit pacing ≈ 60-80s sweep.
-		warmCtx, warmCancel := context.WithTimeout(gctx, 3*time.Minute)
-		if err := okxSvc.Refresh(warmCtx); err != nil {
-			log.L().Warn().Err(err).Msg("okxdex: initial token sweep failed — dex-short empty until hourly refresh succeeds")
-		}
-		warmCancel()
 		g.Go(func() error {
 			okxSvc.Run(gctx)
 			return nil

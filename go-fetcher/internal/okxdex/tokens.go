@@ -107,19 +107,28 @@ func (s *Service) Refresh(ctx context.Context) error {
 	return nil
 }
 
-// Run refreshes the resolver map every hour until ctx is cancelled.
-// If the initial (startup) refresh failed, the first ticker fire retries.
+// Run owns the refresh lifecycle: an immediate initial sweep, retried
+// every 2 minutes until it first succeeds (the full paced sweep takes
+// 2-4 min, so this can't be a blocking startup step), then hourly.
 func (s *Service) Run(ctx context.Context) {
-	t := time.NewTicker(tokensRefreshEvery)
-	defer t.Stop()
+	interval := 2 * time.Minute
+	warmed := false
 	for {
+		if err := s.Refresh(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.L().Warn().Err(err).Msg("okxdex.Tokens: refresh failed — keeping previous map")
+		} else {
+			warmed = true
+		}
+		if warmed {
+			interval = tokensRefreshEvery
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			if err := s.Refresh(ctx); err != nil {
-				log.L().Warn().Err(err).Msg("okxdex.Tokens: refresh failed — keeping previous map")
-			}
+		case <-time.After(interval):
 		}
 	}
 }
