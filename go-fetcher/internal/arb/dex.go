@@ -2,11 +2,14 @@ package arb
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bytedance/sonic"
 
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
@@ -80,6 +83,16 @@ type DEXCompute struct {
 	// cexMatcher is set when AVALANT_CEX_ASSETS=1. When nil, every row
 	// emits address_verified=false unconditionally.
 	cexMatcher CexAddressMatcher
+
+	// dexScreenerLiq is the last-read liquidity snapshot from the parallel
+	// DexScreener-based compute (dex_screener_arbitrage.json). OKX's DEX
+	// API doesn't expose per-pool liquidity, so we borrow it from
+	// DexScreener when the same (symbol, chain) is present in that feed.
+	// Key = "<UPPER(symbol)>|<lower(chain)>". Refreshed inside tick() at
+	// the start of each cycle. Nil when the parallel file doesn't exist.
+	liqMu           sync.RWMutex
+	dexScreenerLiq  map[string]float64
+	dexScreenerLiqM time.Time
 }
 
 // SetCexRegistry wires the address-match closure. Safe to call before
@@ -181,7 +194,65 @@ func (c *DEXCompute) Run(ctx context.Context) error {
 	}
 }
 
+// refreshDexScreenerLiquidity reads the parallel DexScreener output
+// once per compute cycle and rebuilds the (symbol,chain) → liquidity
+// index. Cheap: file is ~150KB, gets read every 10s. Silent on error —
+// a missing/stale file just means "no DexScreener enrichment this
+// tick", rows keep dex_liquidity_usd=0.
+func (c *DEXCompute) refreshDexScreenerLiquidity() {
+	path := filepath.Join(c.cacheDir, "dex_screener_arbitrage.json")
+	st, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	// Skip re-parse if the file mtime hasn't advanced since last read.
+	c.liqMu.RLock()
+	if !st.ModTime().After(c.dexScreenerLiqM) && c.dexScreenerLiq != nil {
+		c.liqMu.RUnlock()
+		return
+	}
+	c.liqMu.RUnlock()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var doc struct {
+		Opportunities []struct {
+			Symbol      string  `json:"symbol"`
+			DexChain    string  `json:"dex_chain"`
+			LiquidityUS float64 `json:"dex_liquidity_usd"`
+		} `json:"opportunities"`
+	}
+	if err := sonic.Unmarshal(raw, &doc); err != nil {
+		return
+	}
+	m := make(map[string]float64, len(doc.Opportunities))
+	for _, r := range doc.Opportunities {
+		if r.LiquidityUS <= 0 {
+			continue
+		}
+		k := strings.ToUpper(strings.TrimSpace(r.Symbol)) + "|" + strings.ToLower(strings.TrimSpace(r.DexChain))
+		if prev, ok := m[k]; !ok || r.LiquidityUS > prev {
+			m[k] = r.LiquidityUS
+		}
+	}
+	c.liqMu.Lock()
+	c.dexScreenerLiq = m
+	c.dexScreenerLiqM = st.ModTime()
+	c.liqMu.Unlock()
+}
+
+func (c *DEXCompute) lookupDexScreenerLiquidity(symbol, chain string) float64 {
+	c.liqMu.RLock()
+	defer c.liqMu.RUnlock()
+	if c.dexScreenerLiq == nil {
+		return 0
+	}
+	return c.dexScreenerLiq[strings.ToUpper(symbol)+"|"+strings.ToLower(chain)]
+}
+
 func (c *DEXCompute) tick(ctx context.Context) {
+	c.refreshDexScreenerLiquidity()
 	// Build perp map from funding store (one entry per symbol×exchange).
 	perpMap := make(map[string]map[string]funding.Tick, 1024)
 	for ex, bucket := range c.store.SnapshotByExchange() {
@@ -276,13 +347,15 @@ func (c *DEXCompute) tick(ctx context.Context) {
 				continue
 			}
 			slug := strings.ReplaceAll(strings.ToLower(ref.ChainName), " ", "-")
+			chain := canonicalChain(ref)
 			dexBySym[cand.sym] = &dexInfo{
-				Symbol:      cand.sym,
-				Chain:       canonicalChain(ref),
-				Dex:         "OKX",
-				Price:       px,
-				BaseAddress: ref.Address,
-				PairURL:     "https://web3.okx.com/token/" + slug + "/" + ref.Address,
+				Symbol:       cand.sym,
+				Chain:        chain,
+				Dex:          "OKX",
+				Price:        px,
+				BaseAddress:  ref.Address,
+				PairURL:      "https://web3.okx.com/token/" + slug + "/" + ref.Address,
+				LiquidityUSD: c.lookupDexScreenerLiquidity(cand.sym, chain),
 			}
 			break
 		}

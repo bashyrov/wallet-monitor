@@ -223,6 +223,17 @@ function _renderBalCells(w) {
 // iteration). For now show a clean placeholder card so the button
 // navigation works end-to-end and users aren't dropped into a broken
 // terminal painted with dashes.
+// Popover state — must be declared BEFORE the spot/dex IIFE below because
+// that IIFE intentionally throws `_arb_type_gate` (see line ~2164) to stop
+// futures-specific script eval on non-futures modes. Any let/const declared
+// after the throw is left in TDZ but the popover helper functions
+// (openExPopover / _openPop / _renderPop) are hoisted and get called from
+// onclick handlers regardless of TYPE — resulting in "Cannot access
+// '_popState' before initialization" when the user clicks the SHORT chip on
+// /arb?type=dex. Declaring here means the initializer always runs first.
+let _allSymbols=[];
+let _popState={items:[],hi:0,type:null,side:null,onPick:null};
+
 if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
   const SRC = TYPE === 'spot' ? '/screener/spot-short'
             : TYPE === 'dex'  ? '/screener/dex-short'
@@ -3877,8 +3888,9 @@ if (window.EX && window.EX.ready) {
   window.EX.ready.then(() => { _EXCHANGES = _exchangesList(); });
 }
 // ── Symbol / exchange popovers ────────────────────────────────────────────────
-let _allSymbols=[];
-let _popState={items:[],hi:0,type:null,side:null,onPick:null};
+// Declarations moved to before the spot/dex IIFE (line 226) so they run
+// even when it throws `_arb_type_gate` at line 2164 — see below for the
+// stored refs. This block only keeps the async helper for symbol reload.
 
 async function _loadAllSymbols(){
   if(_allSymbols.length) return _allSymbols;
