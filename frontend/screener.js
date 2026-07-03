@@ -840,12 +840,15 @@ async function loadDex() {
   }
   // First paint via REST so we don't wait up to 2s for the first WS tick.
   // After that the WS keeps the table live without timer-based polling.
+  let restOk = false;
   try {
     const r = await Auth.apiFetch('/screener/dex-short');
     if (r.ok) {
       const j = await r.json();
-      _applyDexPayload({type: 'snapshot', opportunities: j.opportunities || []});
+      const ops = j.opportunities || [];
+      _applyDexPayload({type: 'snapshot', opportunities: ops});
       applyDex();
+      restOk = ops.length > 0;
     }
   } catch (e) {
     if (!_dexRows.length) {
@@ -855,7 +858,14 @@ async function loadDex() {
   if (!_wsDex || _wsDex.readyState === WebSocket.CLOSED) {
     _wsDex = _connectDex();
   }
-  // No timer — the WS pushes diffs at the Class 1 broadcast cadence.
+  // Safety net: if REST returned empty (cold fetcher / rewrite race) and
+  // WS also hasn't pushed anything within 5s, one auto-retry. Idempotent
+  // because a subsequent snapshot just overwrites the map.
+  if (!restOk && _mode === 'dex') {
+    setTimeout(() => {
+      if (_mode === 'dex' && !_dexRows.length) loadDex();
+    }, 5000);
+  }
 }
 
 function sortDex(col) {
