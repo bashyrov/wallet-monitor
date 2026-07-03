@@ -3954,6 +3954,7 @@ function swapExchanges(){
 }
 
 async function openExPopover(anchor,side){
+  try {
   const current=side==='long'?LONG:SHORT;
   const other=side==='long'?SHORT:LONG;
   // Spot/short mode: LONG leg is a spot venue. Same-venue is allowed
@@ -3998,6 +3999,12 @@ async function openExPopover(anchor,side){
       }
       location.href=`/arb?symbol=${SYM}&long=${newLong}&short=${newShort}${extra}`;
     }});
+  } catch (err) {
+    // Surface the error so it doesn't fail silently — otherwise clicking
+    // the chip appears to do nothing on prod, which the user reported.
+    console.error('openExPopover failed', err);
+    if (typeof toast === 'function') toast('Exchange picker error', 'error', err.message || '');
+  }
 }
 
 // Popover keyboard + outside click
