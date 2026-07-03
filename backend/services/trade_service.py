@@ -342,6 +342,7 @@ async def place_open_order(
     order_type: str = "market",
     limit_price: float | None = None,
     stop_price: float | None = None,
+    intended_spread_pct: float | None = None,
 ) -> dict:
     # Normalise inputs
     symbol = (symbol or "").strip().upper()
@@ -368,15 +369,37 @@ async def place_open_order(
     if ex not in SUPPORTED_EXCHANGES:
         raise TradeError(f"{ex} not supported yet", kind="user")
 
-    # Plan-based trade delay: free tier orders sleep `trade_delay_ms` before
-    # signing. Configurable per plan in DB (free=500ms, paid=0ms).
+    # Plan-based enforcement — trade_delay + TP/SL + spread cap live in
+    # one place so a free-tier upgrade instantly picks up new limits
+    # without a service restart. Admin/unlim bypasses via effective_limits.
     from backend.db.models import User as _User
     from backend.services import plan_service as _ps
     _user = db.query(_User).filter(_User.id == user_id).first()
+    _limits = None
     if _user is not None:
         _limits = _ps.effective_limits(db, _user)
         if _limits.trade_delay_ms > 0:
             await asyncio.sleep(_limits.trade_delay_ms / 1000.0)
+        # TP/SL gate — free tier can only place market + limit; stop_market
+        # + take_profit_market require a paid plan.
+        _requires_tp_sl = order_type in ("stop_market", "take_profit_market",
+                                          "take_profit", "stop_loss")
+        if _requires_tp_sl and not _limits.allow_tp_sl_orders:
+            raise TradeError(
+                "TP/SL orders require a paid plan. Upgrade to place stop-loss or take-profit.",
+                kind="user",
+            )
+        # Spread cap — free tier cannot open pairs where the entry
+        # basis exceeds `max_spread_pct`. Frontend passes the basis it
+        # was showing at click time (from arb.json/ws diff). Absent =
+        # single-leg open outside the arb flow → no cap.
+        if intended_spread_pct is not None and _limits.max_spread_pct < 100.0:
+            if abs(float(intended_spread_pct)) > _limits.max_spread_pct:
+                raise TradeError(
+                    f"Entry spread {intended_spread_pct:.2f}% exceeds your plan's cap "
+                    f"({_limits.max_spread_pct:.2f}%). Upgrade to trade this pair.",
+                    kind="user",
+                )
 
     # Admin-configured trade block — the exchange still serves screener /
     # funding / portfolio, but new position opens are refused from our

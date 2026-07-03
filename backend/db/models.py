@@ -442,6 +442,8 @@ class Plan(Base):
     exchange_keys_per_venue = Column(Integer, nullable=False, default=1)
     trade_delay_ms = Column(Integer, nullable=False, default=0)
     has_portfolio = Column(Boolean, nullable=False, default=True)
+    max_spread_pct = Column(Numeric(6, 2), nullable=False, default=100.0)
+    allow_tp_sl_orders = Column(Boolean, nullable=False, default=True)
     is_subscription = Column(Boolean, nullable=False, default=True)
     is_admin_only = Column(Boolean, nullable=False, default=False)
     features = Column(JSON, nullable=True)

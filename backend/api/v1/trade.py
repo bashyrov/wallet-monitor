@@ -396,6 +396,10 @@ class OpenArbIn(BaseModel):
     short_quantity: float = Field(..., gt=0, le=1_000_000)
     short_leverage: int = Field(3, ge=1, le=125)
     short_margin_mode: str = Field("isolated", pattern="^(isolated|cross)$")
+    # Entry basis the user saw when clicking Open, forwarded to
+    # trade_service so free-tier users' orders get rejected if the
+    # pair exceeds their spread cap. Absent = no cap check.
+    intended_spread_pct: float | None = None
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -419,6 +423,7 @@ async def open_arb(
         try:
             r = await trade_service.place_open_order(
                 db, user.id, wid, body.symbol, side, qty, lev, mode,
+                intended_spread_pct=body.intended_spread_pct,
             )
             return {"leg": leg, "ok": True, **r}
         except trade_service.TradeError as e:
@@ -455,6 +460,7 @@ class OpenOrderIn(BaseModel):
     order_type: str = Field("market", pattern="^(market|limit|stop_market|take_profit_market)$")
     limit_price: float | None = Field(None, gt=0)
     stop_price: float | None = Field(None, gt=0)
+    intended_spread_pct: float | None = None
 
     @field_validator("symbol", mode="before")
     @classmethod
@@ -473,6 +479,7 @@ async def open_order(
             body.leverage, body.margin_mode, market_type=body.market_type,
             order_type=body.order_type, limit_price=body.limit_price,
             stop_price=body.stop_price,
+            intended_spread_pct=body.intended_spread_pct,
         )
     except trade_service.TradeError as e:
         # Internal errors are sanitized so we don't leak internals to the

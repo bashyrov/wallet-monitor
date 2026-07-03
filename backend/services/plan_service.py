@@ -63,6 +63,11 @@ class EffectiveLimits:
     portfolio_limit: int
     exchange_keys_per_venue: int
     trade_delay_ms: int
+    # Entry-spread cap at open time (percent). 100.0 == effectively no
+    # cap; Free tier is 10.0.
+    max_spread_pct: float
+    # Whether the user can place TP/SL orders. Free = False.
+    allow_tp_sl_orders: bool
     expires_at: datetime | None
 
     @property
@@ -206,10 +211,14 @@ def effective_limits(db: Session, user: User) -> EffectiveLimits:
         portfolio_limit = plan.portfolio_limit_grace
         exchange_keys_per_venue = free.exchange_keys_per_venue
         trade_delay_ms = free.trade_delay_ms
+        max_spread_pct = float(getattr(free, "max_spread_pct", 10.0) or 10.0)
+        allow_tp_sl_orders = bool(getattr(free, "allow_tp_sl_orders", False))
     else:
         portfolio_limit = plan.portfolio_limit
         exchange_keys_per_venue = plan.exchange_keys_per_venue
         trade_delay_ms = plan.trade_delay_ms
+        max_spread_pct = float(getattr(plan, "max_spread_pct", 100.0) or 100.0)
+        allow_tp_sl_orders = bool(getattr(plan, "allow_tp_sl_orders", True))
     return EffectiveLimits(
         plan_id=plan.id,
         plan_slug=plan.slug,
@@ -220,6 +229,8 @@ def effective_limits(db: Session, user: User) -> EffectiveLimits:
         portfolio_limit=int(portfolio_limit),
         exchange_keys_per_venue=int(exchange_keys_per_venue),
         trade_delay_ms=int(trade_delay_ms),
+        max_spread_pct=max_spread_pct,
+        allow_tp_sl_orders=allow_tp_sl_orders,
         expires_at=user.plan_expires_at,
     )
 
@@ -237,6 +248,8 @@ def serialize_plan(plan: Plan) -> dict[str, Any]:
         "portfolio_limit_grace": plan.portfolio_limit_grace,
         "exchange_keys_per_venue": plan.exchange_keys_per_venue,
         "trade_delay_ms": plan.trade_delay_ms,
+        "max_spread_pct": float(getattr(plan, "max_spread_pct", 100.0) or 100.0),
+        "allow_tp_sl_orders": bool(getattr(plan, "allow_tp_sl_orders", True)),
         "has_portfolio": bool(getattr(plan, "has_portfolio", True)),
         "is_subscription": bool(getattr(plan, "is_subscription", True)),
         "is_admin_only": bool(getattr(plan, "is_admin_only", False)),
@@ -262,6 +275,7 @@ _EDITABLE_FIELDS = {
     "price_usd_monthly", "price_usd_annual",
     "portfolio_limit", "portfolio_limit_grace",
     "exchange_keys_per_venue", "trade_delay_ms",
+    "max_spread_pct", "allow_tp_sl_orders",
     "has_portfolio", "is_subscription",
     "features", "is_active", "sort_order",
 }

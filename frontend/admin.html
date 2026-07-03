@@ -2200,8 +2200,10 @@ async function loadPlansAdmin(){
               ${_row('Annual', '$' + p.price_usd_annual.toFixed(2), true)}
               ${_row('Portfolio limit', p.portfolio_limit, true)}
               ${_row('Grace limit', p.portfolio_limit_grace, true)}
-              ${_row('Keys/venue', p.exchange_keys_per_venue, true)}
+              ${_row('Keys/venue', p.exchange_keys_per_venue == -1 ? '∞' : p.exchange_keys_per_venue, true)}
               ${_row('Trade delay', p.trade_delay_ms + ' ms', true)}
+              ${_row('Max spread', (p.max_spread_pct ?? 100).toFixed(1) + '%', true)}
+              ${_row('TP/SL', p.allow_tp_sl_orders ? 'Yes' : 'No', true)}
             </div>
           </div>
           <div class="mn-actions">
@@ -2250,8 +2252,9 @@ function openPlanEditor(planId){
       <div><label style="font-size:12px;color:var(--text3)">Grace limit</label><input id="ed-grace" class="inp" type="number" value="${p?.portfolio_limit_grace??5}"></div>
       <div><label style="font-size:12px;color:var(--text3)">Keys / venue</label><input id="ed-keys" class="inp" type="number" value="${p?.exchange_keys_per_venue??1}"></div>
       <div><label style="font-size:12px;color:var(--text3)">Trade delay (ms)</label><input id="ed-delay" class="inp" type="number" value="${p?.trade_delay_ms??0}"></div>
+      <div><label style="font-size:12px;color:var(--text3)">Max spread %</label><input id="ed-spread" class="inp" type="number" step="0.1" value="${p?.max_spread_pct??100}"></div>
       <div><label style="font-size:12px;color:var(--text3)">Sort order</label><input id="ed-sort" class="inp" type="number" value="${p?.sort_order??0}"></div>
-      <div style="display:flex;align-items:flex-end;gap:8px"><label style="display:flex;align-items:center;gap:6px;font-size:13px"><input id="ed-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label></div>
+      <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap"><label style="display:flex;align-items:center;gap:6px;font-size:13px"><input id="ed-active" type="checkbox" ${p?.is_active!==false?'checked':''}>Active</label><label style="display:flex;align-items:center;gap:6px;font-size:13px"><input id="ed-tpsl" type="checkbox" ${p?.allow_tp_sl_orders!==false?'checked':''}>TP/SL</label></div>
     </div>
     <label style="display:block;font-size:12px;color:var(--text3);margin:10px 0 4px">Perks (one per line)</label>
     <textarea id="ed-perks" class="inp" rows="4">${_esc((features.perks||[]).join('\n'))}</textarea>
@@ -2275,6 +2278,8 @@ async function savePlan(planId){
     portfolio_limit_grace: parseInt(document.getElementById('ed-grace').value || '5', 10),
     exchange_keys_per_venue: parseInt(document.getElementById('ed-keys').value || '1', 10),
     trade_delay_ms: parseInt(document.getElementById('ed-delay').value || '0', 10),
+    max_spread_pct: parseFloat(document.getElementById('ed-spread').value || '100'),
+    allow_tp_sl_orders: document.getElementById('ed-tpsl').checked,
     sort_order: parseInt(document.getElementById('ed-sort').value || '0', 10),
     is_active: document.getElementById('ed-active').checked,
     features: { perks: splitLines(document.getElementById('ed-perks').value),

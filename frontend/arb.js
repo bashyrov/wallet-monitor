@@ -5855,12 +5855,18 @@ async function tradeOpenArb(){
     `<span class="mono">${SYM}</span> · LONG ${EX_LABEL[LONG]||LONG} · SHORT ${EX_LABEL[SHORT]||SHORT}`,
   );
   try {
+    // intended_spread_pct: what the user saw at click time — the server
+    // uses it to enforce the paid-plan spread cap. Preferred source is
+    // live in_pct (fresh from ws.book), falls back to REST basis_pct.
+    const _intended = (_row && (typeof _row.in_pct === 'number' ? _row.in_pct
+                                                                 : (typeof _row.basis_pct === 'number' ? _row.basis_pct : null)));
     const r = await Auth.apiFetch('/trade/open-arb', {
       method: 'POST',
       body: JSON.stringify({
         symbol: SYM,
         long_wallet_id:  L.walletId, long_quantity:  L.qty, long_leverage:  L.leverage, long_margin_mode:  L.margin,
         short_wallet_id: S.walletId, short_quantity: S.qty, short_leverage: S.leverage, short_margin_mode: S.margin,
+        intended_spread_pct: _intended,
       }),
     });
     const body = await r.json().catch(() => ({}));
