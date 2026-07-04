@@ -233,7 +233,7 @@ function _renderBalCells(w) {
 // clicks the SHORT chip on /arb?type=dex or /arb?type=spot-short.
 let _allSymbols=[];
 let _popState={items:[],hi:0,type:null,side:null,onPick:null};
-const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter','backpack','kraken'];
+const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter','backpack','kraken','upbit'];
 function _exchangesList(){
   const lst = (window.EX && window.EX.lists && window.EX.lists.screener_all) || [];
   return lst.length ? lst : _EXCHANGES_FALLBACK;

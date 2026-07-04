@@ -1489,7 +1489,7 @@ input[type="checkbox"] { accent-color: var(--green); width: 14px; height: 14px; 
 </style>
 
 <!-- Shared modules bundled — see frontend/build.mjs. -->
-<script src="/dist/core.min.js?v=20260704h"></script>
+<script src="/dist/core.min.js?v=20260704i"></script>
 <script>
 Auth.requireAdmin('/portfolio');
 
@@ -1990,7 +1990,7 @@ function renderScreenerConfig() {
     const isDex = PERPDEX_EXCHANGES.has(ex);
     return `
       <div class="ex-row ${on?'':'off'}">
-        <span class="ex-name">${ex}${isDex?' <span class="ex-kind">DEX</span>':''}</span>
+        <span class="ex-name">${(window.EX && window.EX.labels && window.EX.labels[ex]) || ex}${isDex?' <span class="ex-kind">DEX</span>':''}</span>
         <label class="toggle">
           <input type="checkbox" ${on?'checked':''} onchange="toggleExchange('${ex}',this.checked)">
           <span class="toggle-slider"></span>
@@ -2008,7 +2008,7 @@ function renderScreenerConfig() {
     const isDex = PERPDEX_EXCHANGES.has(ex);
     return `
       <div class="ex-row ${on?'':'off'}">
-        <span class="ex-name">${ex}${isDex?' <span class="ex-kind">DEX</span>':''}</span>
+        <span class="ex-name">${(window.EX && window.EX.labels && window.EX.labels[ex]) || ex}${isDex?' <span class="ex-kind">DEX</span>':''}</span>
         <label class="toggle">
           <input type="checkbox" ${on?'checked':''} onchange="toggleTradeExchange('${ex}',this.checked)">
           <span class="toggle-slider"></span>
@@ -2128,7 +2128,7 @@ function _renderPfGrid(containerId, available, disabled, key, showDexPill) {
     const on = !dset.has(v);
     return `
       <div class="ex-row ${on?'':'off'}">
-        <span class="ex-name">${v}${showDexPill && PERPDEX_EXCHANGES.has(v) ? ' <span class="ex-kind">DEX</span>' : ''}</span>
+        <span class="ex-name">${(window.EX && window.EX.labels && window.EX.labels[v]) || v}${showDexPill && PERPDEX_EXCHANGES.has(v) ? ' <span class="ex-kind">DEX</span>' : ''}</span>
         <label class="toggle">
           <input type="checkbox" ${on?'checked':''} onchange="togglePortfolio('${key}','${v}',this.checked)">
           <span class="toggle-slider"></span>

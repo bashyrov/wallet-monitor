@@ -72,7 +72,7 @@ const _Idle = (() => {
 // EXCHANGES is sourced from /api/meta/venues via exchanges.js. We keep a
 // hard-coded fallback so the dropdown still renders if the meta call
 // hasn't resolved yet (fresh page load race).
-const _EXCHANGES_FALLBACK = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter','backpack','kraken'];
+const _EXCHANGES_FALLBACK = ['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter','backpack','kraken','upbit'];
 let EXCHANGES = (window.EX && window.EX.lists && window.EX.lists.screener_all && window.EX.lists.screener_all.length)
   ? window.EX.lists.screener_all
   : _EXCHANGES_FALLBACK;

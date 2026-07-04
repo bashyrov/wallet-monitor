@@ -360,12 +360,37 @@ def _trade_supported_set() -> set[str]:
     return set(TRADE_SUPPORTED)
 
 
+def _all_venue_ids() -> set[str]:
+    """Union of every venue id the app knows about, so admin can hide any
+    of them from the screener chip drawer. Sources: perp funding fetchers,
+    spot arb fetchers, portfolio-side CEX providers, perp-DEX providers.
+    Cached implicitly by venues.get_venues_meta (60s TTL) — this reads the
+    same meta result the frontend sees so admin + user views can't drift."""
+    from backend.services.venues import get_venues_meta
+    meta = get_venues_meta()
+    ids: set[str] = set()
+    for section in ("cex", "perp_dex", "spot"):
+        for row in meta.get("screener", {}).get(section, []) or []:
+            if isinstance(row, dict) and row.get("id"):
+                ids.add(str(row["id"]))
+    for section in ("cex", "perp_dex"):
+        for row in meta.get("portfolio", {}).get(section, []) or []:
+            if isinstance(row, dict) and row.get("id"):
+                ids.add(str(row["id"]))
+    return ids
+
+
 @router.get("/screener-config")
 def screener_config_get(_: User = Depends(get_admin_user)):
     return {
         "hidden_symbols": sorted(admin_settings.get_hidden_symbols()),
         "disabled_exchanges": sorted(admin_settings.get_disabled_exchanges()),
-        "available_exchanges": sorted(FETCHERS.keys()),
+        # Union of every venue that can appear anywhere on the screener +
+        # portfolio surface: perp funding fetchers, spot-arb fetchers, and
+        # every enabled portfolio provider (so spot-only venues like Upbit
+        # show up too). Was `sorted(FETCHERS.keys())` — perp only — which
+        # made spot-only venues invisible in the admin disable-list.
+        "available_exchanges": sorted(_all_venue_ids()),
         "maintenance_mode": admin_settings.is_maintenance(),
         "screener_disabled": admin_settings.is_screener_disabled(),
         "portfolio_disabled": admin_settings.is_portfolio_disabled(),
@@ -388,7 +413,11 @@ def screener_config_patch(
     body: ScreenerConfigIn,
     user: User = Depends(get_admin_user),
 ):
-    known_ex = set(FETCHERS.keys())
+    # Accept the same union the GET returns — a venue must be admin-hideable
+    # if it shows up anywhere on the screener/portfolio surface, not just
+    # in the perp funding fetcher list. Otherwise disabling a spot-only
+    # venue like Upbit silently fails the input filter.
+    known_ex = _all_venue_ids()
     if body.hidden_symbols is not None:
         cleaned = sorted({str(s).strip().upper() for s in body.hidden_symbols if str(s).strip()})
         admin_settings.set_value(admin_settings.KEY_HIDDEN_SYMBOLS, cleaned, user_id=user.id)
