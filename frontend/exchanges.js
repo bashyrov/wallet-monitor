@@ -26,7 +26,7 @@
     whitebit: 'WhiteBIT', bingx: 'BingX', backpack: 'Backpack',
     lighter: 'Lighter', paradex: 'Paradex',
     htx: 'HTX', extended: 'Extended',
-    kraken: 'Kraken',
+    kraken: 'Kraken', upbit: 'Upbit',
   };
   const colors = {
     binance: '#F0B90B', bybit: '#F0842D', okx: '#C8C8C8', gate: '#17C684',
@@ -35,7 +35,7 @@
     whitebit: '#2DCCCD', bingx: '#1DB8F2', backpack: '#4ADE80',
     lighter: '#A78BFA', paradex: '#FF6A6A',
     htx: '#2E7DF6', extended: '#E879F9',
-    kraken: '#7C5CFF',
+    kraken: '#7C5CFF', upbit: '#0164EA',
     // Chain palette — used by source-chip grids on /landing and /
     ethereum: '#627EEA', bsc: '#F3BA2F', polygon: '#8247E5',
     arbitrum: '#28A0F0', optimism: '#FF0420', base: '#0052FF',

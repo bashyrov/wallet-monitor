@@ -21,10 +21,8 @@ def get_venues_meta() -> dict:
     from backend.providers.perp_dexes import PERPDEX_PROVIDERS
     from backend.providers.chains import CHAIN_META
 
-    SPOT_SCREENER_VENUES = {
-        "binance", "bybit", "okx", "gate",
-        "kucoin", "mexc", "bitget", "bingx",
-    }
+    from backend.services.spot_arbitrage_service import SPOT_FETCHERS
+    SPOT_SCREENER_VENUES = set(SPOT_FETCHERS.keys())
     PERP_DEX_IDS = set(PERPDEX_PROVIDERS.keys())  # what we treat as perp-DEX
     SCREENER_PERP_DEX = {ex for ex in FETCHERS.keys() if ex in PERP_DEX_IDS or ex in {"extended"}}
     SCREENER_CEX = [ex for ex in FETCHERS.keys() if ex not in SCREENER_PERP_DEX]

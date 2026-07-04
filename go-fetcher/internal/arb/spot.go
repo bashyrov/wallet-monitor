@@ -36,6 +36,7 @@ var spotFees = map[string]float64{
 	"bitget":  0.001,
 	"bingx":   0.001,
 	"htx":     0.002,
+	"upbit":   0.0025,
 }
 
 func spotFeeOf(ex string) float64 {
@@ -107,7 +108,7 @@ func (c *SpotCompute) Run(ctx context.Context) error {
 
 var spotExchanges = []string{
 	"binance", "bybit", "okx", "gate", "kucoin",
-	"mexc", "bitget", "bingx", "htx",
+	"mexc", "bitget", "bingx", "htx", "upbit",
 }
 
 func (c *SpotCompute) tick(ctx context.Context) {
@@ -320,8 +321,82 @@ func fetchSpotTickers(ctx context.Context, ex string) ([]spotTicker, error) {
 		return fetchBingXSpot(ctx)
 	case "htx":
 		return fetchHTXSpot(ctx)
+	case "upbit":
+		return fetchUpbitSpot(ctx)
 	}
 	return nil, nil
+}
+
+// Upbit's USDT market list changes rarely — cache it 10 min so each tick
+// costs ceil(206/100)=3 ticker calls instead of a full market sweep.
+var (
+	upbitMarketsMu sync.Mutex
+	upbitMarkets   []string
+	upbitMarketsTS time.Time
+)
+
+func upbitUSDTMarkets(ctx context.Context) ([]string, error) {
+	upbitMarketsMu.Lock()
+	defer upbitMarketsMu.Unlock()
+	if len(upbitMarkets) > 0 && time.Since(upbitMarketsTS) < 10*time.Minute {
+		return upbitMarkets, nil
+	}
+	var rows []struct {
+		Market string `json:"market"`
+	}
+	if err := funding.HTTPGet(ctx, "https://api.upbit.com/v1/market/all?isDetails=false", &rows); err != nil {
+		if len(upbitMarkets) > 0 {
+			return upbitMarkets, nil
+		}
+		return nil, err
+	}
+	fresh := make([]string, 0, 256)
+	for _, r := range rows {
+		if strings.HasPrefix(r.Market, "USDT-") {
+			fresh = append(fresh, r.Market)
+		}
+	}
+	if len(fresh) > 0 {
+		upbitMarkets = fresh
+		upbitMarketsTS = time.Now()
+	}
+	return upbitMarkets, nil
+}
+
+func fetchUpbitSpot(ctx context.Context) ([]spotTicker, error) {
+	markets, err := upbitUSDTMarkets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]spotTicker, 0, len(markets))
+	for i := 0; i < len(markets); i += 100 {
+		end := i + 100
+		if end > len(markets) {
+			end = len(markets)
+		}
+		var rows []struct {
+			Market      string  `json:"market"`
+			TradePrice  float64 `json:"trade_price"`
+			AccPrice24h float64 `json:"acc_trade_price_24h"`
+		}
+		u := "https://api.upbit.com/v1/ticker?markets=" + strings.Join(markets[i:end], ",")
+		if err := funding.HTTPGet(ctx, u, &rows); err != nil {
+			return out, err
+		}
+		for _, r := range rows {
+			if !strings.HasPrefix(r.Market, "USDT-") {
+				continue
+			}
+			if r.TradePrice > 0 && r.AccPrice24h > 0 {
+				out = append(out, spotTicker{
+					Symbol:    strings.TrimPrefix(r.Market, "USDT-"),
+					Price:     r.TradePrice,
+					VolumeUSD: r.AccPrice24h,
+				})
+			}
+		}
+	}
+	return out, nil
 }
 
 func fetchBinanceSpot(ctx context.Context) ([]spotTicker, error) {

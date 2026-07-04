@@ -23,6 +23,7 @@ from .hyperliquid import HyperliquidAdapter
 from .aster import AsterAdapter
 from .ethereal import EtherealAdapter
 from .htx import HtxAdapter
+from .upbit import UpbitAdapter
 from .lighter import LighterAdapter
 from .kraken import KrakenAdapter
 from .paradex import ParadexAdapter
@@ -40,6 +41,8 @@ TRADE_SUPPORTED: set[str] = {
     "hyperliquid", "aster", "ethereal", "lighter", "paradex", "extended",
     # Spot-only — futures NOT implemented, leverage/close_position raise
     "htx",
+    # Spot-only — the venue has no futures market at all
+    "upbit",
 }
 
 ADAPTERS: dict[str, type] = {
@@ -55,6 +58,7 @@ ADAPTERS: dict[str, type] = {
     "whitebit":     WhitebitAdapter,
     "backpack":     BackpackAdapter,
     "htx":          HtxAdapter,
+    "upbit":        UpbitAdapter,
     # Perp DEX
     "hyperliquid":  HyperliquidAdapter,
     "aster":        AsterAdapter,

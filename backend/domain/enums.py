@@ -15,6 +15,7 @@ class ExchangeType(str, Enum):
     WHITEBIT = "whitebit"
     BINGX = "bingx"
     HTX = "htx"
+    UPBIT = "upbit"
 
     LIGHTER = "lighter"
     HYPERLIQUID = "hyperliquid"

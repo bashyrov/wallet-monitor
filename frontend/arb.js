@@ -3993,7 +3993,7 @@ async function openExPopover(anchor,side){
   // Spot/short mode: LONG leg is a spot venue. Same-venue is allowed
   // (powers the funding-arb play) so we don't filter `other` out.
   if (TYPE === 'spot' && side === 'long') {
-    const SPOT_VENUES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx'];
+    const SPOT_VENUES = ['binance','bybit','okx','gate','kucoin','mexc','bitget','bingx','htx','upbit'];
     const items = SPOT_VENUES.map(e => ({
       value: e,
       label: (EX_LABEL[e]||e) + (e === SHORT ? ' · same as short' : ''),

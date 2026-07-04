@@ -1283,6 +1283,36 @@ async def _bingx_txs(creds: dict) -> list[Transaction]:
     return txs[:LIMIT]
 
 
+async def _upbit_txs(creds: dict) -> list[Transaction]:
+    from backend.providers.exchanges.upbit_provider import UPBIT_BASE, upbit_auth_headers
+
+    txs: list[Transaction] = []
+    async with RetryClient(timeout=15) as c:
+        for path, ttype in (("/v1/deposits", "deposit"), ("/v1/withdraws", "withdraw")):
+            if len(txs) >= LIMIT:
+                break
+            try:
+                params = {"limit": LIMIT, "order_by": "desc"}
+                headers = upbit_auth_headers(creds["api_key"], creds["api_secret"], params)
+                r = await c.get(f"{UPBIT_BASE}{path}", params=params, headers=headers)
+                r.raise_for_status()
+                for item in (r.json() or [])[:LIMIT - len(txs)]:
+                    txs.append(_tx(
+                        item.get("uuid") or item.get("txid", ""),
+                        ttype,
+                        item.get("currency", ""),
+                        item.get("amount", "0"),
+                        item.get("done_at") or item.get("created_at"),
+                        status="completed" if item.get("state") in ("ACCEPTED", "DONE") else str(item.get("state") or "").lower(),
+                        network=item.get("net_type"),
+                    ))
+            except Exception:
+                pass
+
+    txs.sort(key=lambda t: t.timestamp, reverse=True)
+    return txs[:LIMIT]
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
@@ -1331,6 +1361,8 @@ async def fetch_transactions(db_wallet: Wallet) -> TransactionResponse:
                 txs = await _whitebit_txs(c)
             elif tv == "bingx":
                 txs = await _bingx_txs(c)
+            elif tv == "upbit":
+                txs = await _upbit_txs(c)
             else:
                 txs = []
 

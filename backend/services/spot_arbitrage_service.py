@@ -50,6 +50,7 @@ SPOT_FEES: dict[str, float] = {
     "mexc":     0.0,
     "bitget":   0.001,
     "bingx":    0.001,
+    "upbit":    0.0025,
 }
 _DEFAULT_SPOT_FEE = 0.001
 
@@ -275,6 +276,54 @@ async def _fetch_htx_spot() -> list[dict]:
     return out
 
 
+# Upbit's USDT markets change rarely; cache the market list 10 min so each
+# spot tick costs ceil(206/100)=3 ticker calls instead of a market sweep.
+_upbit_markets_cache: tuple[list[str], float] = ([], 0.0)
+_UPBIT_MARKETS_TTL = 600.0
+
+
+async def _upbit_usdt_markets() -> list[str]:
+    global _upbit_markets_cache
+    markets, ts = _upbit_markets_cache
+    if markets and (time.time() - ts) < _UPBIT_MARKETS_TTL:
+        return markets
+    try:
+        r = await _http.get("https://api.upbit.com/v1/market/all", params={"isDetails": "false"})
+        if r.status_code != 200:
+            return markets
+        fresh = [m["market"] for m in (r.json() or []) if (m.get("market") or "").startswith("USDT-")]
+        if fresh:
+            _upbit_markets_cache = (fresh, time.time())
+            return fresh
+    except Exception as exc:
+        logger.debug("upbit market list fetch failed: %s", exc)
+    return markets
+
+
+async def _fetch_upbit_spot() -> list[dict]:
+    markets = await _upbit_usdt_markets()
+    if not markets:
+        return []
+    out: list[dict] = []
+    for i in range(0, len(markets), 100):
+        chunk = markets[i:i + 100]
+        r = await _http.get("https://api.upbit.com/v1/ticker", params={"markets": ",".join(chunk)})
+        if r.status_code != 200:
+            continue
+        for x in r.json() or []:
+            m = x.get("market", "")  # "USDT-BTC"
+            if not m.startswith("USDT-"):
+                continue
+            try:
+                price = float(x.get("trade_price") or 0)
+                vol = float(x.get("acc_trade_price_24h") or 0)  # quote (USDT) volume
+            except (TypeError, ValueError):
+                continue
+            if price > 0 and vol > 0:
+                out.append({"symbol": m[5:], "price": price, "volume_usd": vol})
+    return out
+
+
 SPOT_FETCHERS = {
     "binance": _fetch_binance_spot,
     "bybit":   _fetch_bybit_spot,
@@ -285,6 +334,7 @@ SPOT_FETCHERS = {
     "bitget":  _fetch_bitget_spot,
     "bingx":   _fetch_bingx_spot,
     "htx":     _fetch_htx_spot,
+    "upbit":   _fetch_upbit_spot,
 }
 
 SPOT_EXCHANGES = list(SPOT_FETCHERS.keys())

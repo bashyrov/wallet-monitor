@@ -556,10 +556,11 @@ async def place_open_order(
                                gerr.kind, gerr.message)
                 result = None
         if result is None:
-            if is_spot:
+            if is_spot and not getattr(adapter, "spot_native", False):
                 # Python adapters don't have a spot path yet — refuse with
                 # a clear message rather than silently routing through the
-                # futures method.
+                # futures method. Exception: spot-native venues (Upbit) whose
+                # place_order IS a spot order.
                 raise TradeError(
                     f"Spot trading on {ex} requires the Go proxy "
                     f"(GO_TRADE_VENUES) and a SpotAdapter implementation.",
