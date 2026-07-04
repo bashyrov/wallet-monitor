@@ -125,6 +125,17 @@ def set_value(key: str, value: Any, user_id: int | None = None) -> None:
         db.close()
     with _lock:
         _cache.pop(key, None)
+    # Invalidate downstream memoization for keys that shape the
+    # /api/meta/venues response so an admin toggle propagates on the
+    # next request instead of waiting for the 60s TTL.
+    if key in (KEY_DISABLED_EXCHANGES, KEY_DISABLED_PERPDEXES,
+               KEY_DISABLED_CHAINS, KEY_DISABLED_WALLET_EXCHANGES,
+               KEY_HIDDEN_SYMBOLS):
+        try:
+            from backend.services import venues as _venues
+            _venues.invalidate_venues_cache()
+        except Exception:
+            pass
 
 
 def get_hidden_symbols() -> set[str]:
