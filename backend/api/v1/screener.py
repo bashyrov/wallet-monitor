@@ -928,13 +928,25 @@ async def arb_price_history(
 async def all_exchanges_funding(
     symbol: str = Query(...),
 ):
-    """Current funding rate for a symbol across all exchanges that list it."""
-    data = await get_funding_data()
+    """Current funding rate for a symbol across every exchange that lists
+    it. Per-symbol view — the caller (usually the /arb pair page) has
+    already picked the venue, so we bypass the arb-view volume floor +
+    arb-exclude list that `get_funding_data` applies to the discovery
+    tabs. Otherwise low-volume-but-real listings (e.g. GMX on Kraken at
+    $5k/24h) silently vanish and the pair page stays blank."""
+    # Read the raw fetcher output — same shape as get_funding_data but
+    # without the downstream filter chain.
+    from backend.services import arbitrage_service as _arb
+    raw = await _arb._read_file_cache_async("funding.json", max_age=60.0)
+    if not raw:
+        # Cold path: fall through to the filtered API to avoid emitting
+        # an empty envelope on first hit after a fetcher restart.
+        raw = await get_funding_data()
+    rows_all = raw.get("rows") or []
     sym_upper = symbol.upper()
-    rows = [r for r in data["rows"] if r["symbol"] == sym_upper]
-    # Sort by rate descending
-    rows.sort(key=lambda r: r["rate"], reverse=True)
-    return {"symbol": sym_upper, "ts": data["ts"], "rates": rows}
+    rows = [r for r in rows_all if r.get("symbol") == sym_upper]
+    rows.sort(key=lambda r: r.get("rate", 0) or 0, reverse=True)
+    return {"symbol": sym_upper, "ts": raw.get("ts", 0), "rates": rows}
 
 
 async def _fetch_open_interest(exchange: str, symbol: str) -> dict | None:
