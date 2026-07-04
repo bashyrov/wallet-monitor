@@ -46,13 +46,14 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 
 	var doc struct {
 		Tickers []struct {
-			Symbol      string  `json:"symbol"`
-			Suspended   bool    `json:"suspended"`
-			MarkPrice   float64 `json:"markPrice"`
-			Last        float64 `json:"last"`
-			FundingRate float64 `json:"fundingRate"`
-			VolumeQuote float64 `json:"volumeQuote"`
-			Vol24h      float64 `json:"vol24h"`
+			Symbol              string  `json:"symbol"`
+			Suspended           bool    `json:"suspended"`
+			MarkPrice           float64 `json:"markPrice"`
+			Last                float64 `json:"last"`
+			FundingRate         float64 `json:"fundingRate"`
+			RelativeFundingRate float64 `json:"relativeFundingRate"`
+			VolumeQuote         float64 `json:"volumeQuote"`
+			Vol24h              float64 `json:"vol24h"`
 		} `json:"tickers"`
 	}
 	if err := sonic.Unmarshal(body, &doc); err != nil {
@@ -82,7 +83,21 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		if price == 0 {
 			price = t.Last
 		}
-		if price <= 0 || t.FundingRate == 0 {
+		// Kraken publishes TWO funding fields:
+		//   `fundingRate`         — USD amount per contract per hour
+		//                            (denominated in mark-price units)
+		//   `relativeFundingRate` — fractional rate per hour = fundingRate/mark
+		// Our downstream treats Rate as a fraction (Rate × 24 × 365 = APR),
+		// so we must use relativeFundingRate. Using fundingRate directly
+		// produced impossible APRs (BTC showed 242564% because 0.2769 was
+		// interpreted as a per-hour fraction). Fall back to a mark-based
+		// divide if relativeFundingRate is missing/zero — matches Kraken's
+		// own definition.
+		rate := t.RelativeFundingRate
+		if rate == 0 && t.FundingRate != 0 && price > 0 {
+			rate = t.FundingRate / price
+		}
+		if price <= 0 || rate == 0 {
 			continue
 		}
 		vol := t.VolumeQuote
@@ -98,7 +113,7 @@ func (a *Adapter) BackstopFetch(ctx context.Context, _ []string) ([]funding.Tick
 		}
 		out = append(out, funding.Tick{
 			Symbol:      token,
-			Rate:        t.FundingRate,
+			Rate:        rate,
 			MarkPrice:   price,
 			Volume24h:   vol,
 			NextFunding: nextFunding,
