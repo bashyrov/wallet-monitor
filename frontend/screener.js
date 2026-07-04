@@ -463,7 +463,7 @@ function removeHiddenToken(token) {
 function buildExDrop() {
   const items = document.getElementById('lp-ex-items');
   items.innerHTML = EXCHANGES.map(ex => `
-    <div class="lp-ex-item checked" id="ex-item-${ex}" onclick="toggleEx('${ex}')">
+    <div class="lp-ex-item ${_exDisabled.has(ex) ? '' : 'checked'}" id="ex-item-${ex}" onclick="toggleEx('${ex}')">
       <div class="lp-ex-dot" style="background:${EX_COLOR[ex]}"></div>
       <span class="lp-ex-label">${EX_LABEL[ex]}</span>
       <div class="lp-ex-health" id="ex-health-${ex}" title="data freshness"></div>
@@ -472,6 +472,23 @@ function buildExDrop() {
   `).join('');
   _updateExCount();
 }
+
+// Called from exchanges.js `EX.ready.then(...)` once the /api/meta/venues
+// fetch resolves. Re-renders both the desktop chip drawer and the mobile
+// chip row from the (now-authoritative) EXCHANGES list. Preserves the
+// user's `_exDisabled` set — venues that are no longer served drop out
+// automatically; new venues (e.g. Upbit) become visible without a redeploy.
+function rebuildExchangeFilter() {
+  // Clean up any user-hidden ids that are no longer in the served list.
+  const known = new Set(EXCHANGES);
+  for (const ex of Array.from(_exDisabled)) {
+    if (!known.has(ex)) _exDisabled.delete(ex);
+  }
+  if (typeof buildExDrop === 'function') buildExDrop();
+  if (typeof buildMobExChips === 'function') buildMobExChips();
+  if (typeof _reapplyCurrentMode === 'function') _reapplyCurrentMode();
+}
+window.rebuildExchangeFilter = rebuildExchangeFilter;
 
 // ── Exchange freshness polling ─────────────────────────────────────────────
 const _exHealth = {};      // {ex: {healthy, age_s, via, klass}}
@@ -691,7 +708,7 @@ function buildMobExChips() {
   const wrap = document.getElementById('lp-ex-items-mob');
   if (!wrap) return;
   wrap.innerHTML = EXCHANGES.map(ex => `
-    <div class="mob-ex-chip checked" id="mob-ex-${ex}" style="color:${EX_COLOR[ex]}" onclick="toggleExMob('${ex}')">
+    <div class="mob-ex-chip ${_exDisabled.has(ex) ? '' : 'checked'}" id="mob-ex-${ex}" style="color:${EX_COLOR[ex]}" onclick="toggleExMob('${ex}')">
       ${EX_LABEL[ex]}
     </div>
   `).join('');

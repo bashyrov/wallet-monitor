@@ -116,7 +116,15 @@
       lists.portfolio_cex     = (po.cex      || []).map(x => x.id);
       lists.portfolio_perp_dex= (po.perp_dex || []).map(x => x.id);
       lists.portfolio_chains  = (po.chains   || []).map(x => x.id);
-      lists.screener_all = lists.screener_cex.concat(lists.screener_perp_dex);
+      // Union of every screener-side venue — CEX + Perp-DEX + Spot-only
+      // (e.g. Upbit) — deduplicated. Filter chips on /screener + the /arb
+      // openExPopover dropdown iterate this list; anything not in it is
+      // invisible to the user even if backend serves rows for it.
+      lists.screener_all = Array.from(new Set([
+        ...lists.screener_cex,
+        ...lists.screener_perp_dex,
+        ...lists.screener_spot,
+      ]));
       Object.assign(counts, j.counts || {});
       // Backfill labels for any ids the API surfaces that weren't in our
       // static map (new venues added server-side without a frontend release).
