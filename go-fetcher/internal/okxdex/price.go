@@ -57,7 +57,13 @@ func (c *Client) FetchPrices(ctx context.Context, refs []PriceReq) (map[string]f
 			return out, err
 		}
 		var rows []priceRow
-		if err := c.do(ctx, "POST", "/api/v6/dex/market/price", body, &rows); err != nil {
+		// v5 → v6 endpoint choice: OKX enabled the x402 micropayment gate
+		// on v6/dex/market/price (2026-07-04) — every POST returns HTTP 402
+		// with an accepts-payment payload. v5 is unchanged and still
+		// free, identical response shape ({code, data:[{chainIndex,
+		// tokenContractAddress, price, time}], msg}). Downgrade until
+		// OKX either re-opens v6 or we implement the x402 payment flow.
+		if err := c.do(ctx, "POST", "/api/v5/dex/market/price", body, &rows); err != nil {
 			lastErr = err
 			continue
 		}
