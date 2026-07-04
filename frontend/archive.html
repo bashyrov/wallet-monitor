@@ -559,7 +559,17 @@ function toast(msg, type = '') {
   el.className = 'toast' + (type ? ' ' + type : '');
   el.textContent = msg;
   wrap.appendChild(el);
-  setTimeout(() => el.remove(), 3000);
+  let hovered = false;
+  let dismissTimer = setTimeout(() => el.remove(), 3000);
+  el.addEventListener('mouseenter', () => {
+    hovered = true;
+    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
+  });
+  el.addEventListener('mouseleave', () => {
+    if (!hovered) return;
+    hovered = false;
+    dismissTimer = setTimeout(() => el.remove(), 1500);
+  });
 }
 
 loadArchive();

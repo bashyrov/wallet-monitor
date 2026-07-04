@@ -223,16 +223,25 @@ function _renderBalCells(w) {
 // iteration). For now show a clean placeholder card so the button
 // navigation works end-to-end and users aren't dropped into a broken
 // terminal painted with dashes.
-// Popover state — must be declared BEFORE the spot/dex IIFE below because
-// that IIFE intentionally throws `_arb_type_gate` (see line ~2164) to stop
-// futures-specific script eval on non-futures modes. Any let/const declared
-// after the throw is left in TDZ but the popover helper functions
-// (openExPopover / _openPop / _renderPop) are hoisted and get called from
-// onclick handlers regardless of TYPE — resulting in "Cannot access
-// '_popState' before initialization" when the user clicks the SHORT chip on
-// /arb?type=dex. Declaring here means the initializer always runs first.
+// Popover + exchange-list state — must be declared BEFORE the spot/dex IIFE
+// below because that IIFE intentionally throws `_arb_type_gate` (see line
+// ~2164) to stop futures-specific script eval on non-futures modes. Any
+// let/const declared after the throw is left in TDZ but the popover helper
+// functions (openExPopover / _openPop / _renderPop) are hoisted and get
+// called from onclick handlers regardless of TYPE — resulting in "Cannot
+// access '_popState' / '_EXCHANGES' before initialization" when the user
+// clicks the SHORT chip on /arb?type=dex or /arb?type=spot-short.
 let _allSymbols=[];
 let _popState={items:[],hi:0,type:null,side:null,onPick:null};
+const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter','backpack','kraken'];
+function _exchangesList(){
+  const lst = (window.EX && window.EX.lists && window.EX.lists.screener_all) || [];
+  return lst.length ? lst : _EXCHANGES_FALLBACK;
+}
+let _EXCHANGES = _exchangesList();
+if (window.EX && window.EX.ready) {
+  window.EX.ready.then(() => { _EXCHANGES = _exchangesList(); });
+}
 
 if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
   const SRC = TYPE === 'spot' ? '/screener/spot-short'
@@ -3877,16 +3886,11 @@ document.addEventListener('fullscreenchange',()=>{
 // ── Navigate modal ────────────────────────────────────────────────────────────
 // Sourced from /api/meta/venues via exchanges.js — fallback to the static
 // list while the meta fetch is in flight (fresh-load race).
-const _EXCHANGES_FALLBACK=['binance','bybit','okx','gate','kucoin','mexc','bitget','hyperliquid','aster','ethereal','whitebit','bingx','htx','paradex','extended','lighter'];
-function _exchangesList(){
-  const lst = (window.EX && window.EX.lists && window.EX.lists.screener_all) || [];
-  return lst.length ? lst : _EXCHANGES_FALLBACK;
-}
-// Legacy name kept for places that read it eagerly during page bootstrap.
-let _EXCHANGES = _exchangesList();
-if (window.EX && window.EX.ready) {
-  window.EX.ready.then(() => { _EXCHANGES = _exchangesList(); });
-}
+// NOTE: actual declaration lives BEFORE the spot/dex IIFE (line ~226)
+// because that IIFE throws `_arb_type_gate` to skip futures-only script
+// eval, which leaves anything declared past it in TDZ. Hoisted popover
+// helpers (openExPopover) call `_EXCHANGES` from onclick and would hit
+// "Cannot access '_EXCHANGES' before initialization" otherwise.
 // ── Symbol / exchange popovers ────────────────────────────────────────────────
 // Declarations moved to before the spot/dex IIFE (line 226) so they run
 // even when it throws `_arb_type_gate` at line 2164 — see below for the

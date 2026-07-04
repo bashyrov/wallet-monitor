@@ -106,13 +106,39 @@ body.light .av-toast.warn .av-toast-icon-wrap{background:#FBF5E7;}
     requestAnimationFrame(() => el.classList.add('show'));
 
     let dismissTimer = null;
+    // Pause-on-hover: while the pointer sits on the toast the auto-dismiss
+    // timer is cancelled; leaving re-arms it with the remaining time or the
+    // full duration if no timer was live (e.g. user hovered after morph).
+    let currentDuration = duration;
+    let hoverStartedAt = 0;
+    let timerStartedAt = 0;
     function dismiss(){
       if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
       el.classList.add('hide');
       el.classList.remove('show');
       setTimeout(() => el.remove(), 300);
     }
-    if (duration > 0) dismissTimer = setTimeout(dismiss, duration);
+    function armTimer(ms){
+      currentDuration = ms;
+      timerStartedAt = Date.now();
+      if (ms > 0) dismissTimer = setTimeout(dismiss, ms);
+    }
+    if (duration > 0) armTimer(duration);
+    el.addEventListener('mouseenter', () => {
+      if (dismissTimer) {
+        clearTimeout(dismissTimer);
+        dismissTimer = null;
+        // Preserve the remaining time so leaving the toast doesn't reset
+        // to full duration — feels less abrupt when the user briefly hovers.
+        const elapsed = Date.now() - timerStartedAt;
+        currentDuration = Math.max(1200, currentDuration - elapsed);
+      }
+      hoverStartedAt = Date.now();
+    });
+    el.addEventListener('mouseleave', () => {
+      hoverStartedAt = 0;
+      if (currentDuration > 0) armTimer(currentDuration);
+    });
 
     // Morph the toast in place (loading → success/error). Resets auto-dismiss
     // timer based on the new type so a "loading" toast that becomes "success"
@@ -127,7 +153,10 @@ body.light .av-toast.warn .av-toast-icon-wrap{background:#FBF5E7;}
       el.className = 'av-toast show ' + newType;
       render(newType, newTitle, newSub);
       const dur = next.duration != null ? next.duration : defaultDuration(newType);
-      if (dur > 0) dismissTimer = setTimeout(dismiss, dur);
+      // Preserve hover-pause across a morph: if the user is currently
+      // hovering when update() lands, arm the timer only on mouseleave.
+      currentDuration = dur;
+      if (dur > 0 && !hoverStartedAt) armTimer(dur);
     };
 
     return dismiss;
