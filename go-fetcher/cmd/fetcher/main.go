@@ -41,6 +41,7 @@ import (
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/mexc"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/okx"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/paradex"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/upbit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/exchanges/whitebit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/arb"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cex_assets"
@@ -89,6 +90,7 @@ import (
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/okx"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/paradex"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/extended"
+	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/upbit"
 	_ "github.com/bashyrov/wallet-monitor/go-fetcher/internal/trade/whitebit"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/obsmetrics"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/ws"
@@ -706,6 +708,15 @@ func main() {
 			lighterTicks.Run(gctx)
 			return nil
 		})
+		// Upbit is spot-only — register under the "upbit_spot" venue key
+		// so the reconcile loop feeds it the same symbol set as the
+		// upbit_spot orderbook runner (spot-arb prewarm writes there).
+		upbitTicks := upbit.NewTrades(onTick)
+		mgr.RegisterTicks("upbit_spot", upbitTicks)
+		g.Go(func() error {
+			upbitTicks.Run(gctx)
+			return nil
+		})
 	}
 
 	// Initial prewarm. During shadow-mode rollout we want Go's hot-list
@@ -823,6 +834,7 @@ func orderbookRegistry(cfg config.Config, store *cache.Store) []orderbookEntry {
 		{name: "whitebit_spot", factory: func() *ws.Runner { return whitebit.NewSpot(store) }},
 		{name: "kraken_spot", factory: func() *ws.Runner { return kraken.NewSpot(store) }},
 		{name: "backpack_spot", factory: func() *ws.Runner { return backpack.NewSpot(store) }},
+		{name: "upbit_spot", factory: func() *ws.Runner { return upbit.NewSpot(store) }},
 		// Perp DEX with a spot product. Hyperliquid is the only one in
 		// the current set; the rest (paradex, lighter, etc.) are
 		// derivatives-only.
