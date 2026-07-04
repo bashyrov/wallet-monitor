@@ -235,6 +235,26 @@ class AppNavbar extends HTMLElement {
       return;
     }
     this._applyAuth(page);
+    // Background /auth/me refresh — pulls fresh user object so admin
+    // elevations / plan changes that happened AFTER the last login
+    // propagate without a re-login. Fires only when we already have a
+    // token; guest state stays untouched. Broadcast the same
+    // avalant:auth-changed event on any field change so the avatar
+    // menu re-renders (esp. the Admin link).
+    if (Auth.getToken && Auth.getToken()) {
+      Auth.apiFetch('/auth/me').then(r => (r.ok ? r.json() : null)).then(fresh => {
+        if (!fresh) return;
+        const prev = Auth.getUser() || {};
+        // Field-diff check — only rewrite storage when something meaningful
+        // changed. Avoids the noisy re-render on every page load.
+        const relevant = ['username', 'email', 'plan', 'is_admin', 'plan_expires_at', 'auto_renew'];
+        const changed = relevant.some(k => JSON.stringify(prev[k]) !== JSON.stringify(fresh[k]));
+        if (changed) {
+          try { localStorage.setItem('wm_user', JSON.stringify(fresh)); } catch(_) {}
+          window.dispatchEvent(new Event('avalant:auth-changed'));
+        }
+      }).catch(() => {});
+    }
   }
 
   _applyAuth(page) {
