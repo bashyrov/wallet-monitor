@@ -119,3 +119,15 @@ func TestTrades_Parse_AskIsSell(t *testing.T) {
 		t.Errorf("ASK must map to Sell: %+v", tks)
 	}
 }
+
+func TestTrades_Parse_SnapshotReplayDropped(t *testing.T) {
+	a := &Trades{subs: make(map[string]struct{})}
+	tks, _ := a.Parse([]byte(`{"type":"trade","code":"USDT-BTC","trade_price":60000,"trade_volume":1,"ask_bid":"BID","trade_timestamp":1700000000000,"stream_type":"SNAPSHOT"}`))
+	if tks != nil {
+		t.Errorf("SNAPSHOT replay must be dropped: %+v", tks)
+	}
+	tks, _ = a.Parse([]byte(`{"type":"trade","code":"USDT-BTC","trade_price":60000,"trade_volume":1,"ask_bid":"BID","trade_timestamp":1700000000000,"stream_type":"REALTIME"}`))
+	if len(tks) != 1 {
+		t.Errorf("REALTIME must pass: %+v", tks)
+	}
+}

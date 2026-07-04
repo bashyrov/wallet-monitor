@@ -74,6 +74,7 @@ func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
 		AskBid       string  `json:"ask_bid"`
 		TradeTsMS    int64   `json:"trade_timestamp"`
 		SequentialID int64   `json:"sequential_id"`
+		StreamType   string  `json:"stream_type"`
 		Status       string  `json:"status"`
 	}
 	if err := ticks.UnmarshalJSON(frame, &ev); err != nil {
@@ -81,6 +82,13 @@ func (a *Trades) Parse(frame []byte) ([]ticks.Tick, error) {
 	}
 	if ev.Type != "trade" {
 		return nil, nil // PING reply or non-trade frame
+	}
+	// Upbit replays the latest trade as a SNAPSHOT frame on every
+	// subscribe — and each delta-add re-sends the full code union, so
+	// without this filter every reconcile duplicates the last tick of
+	// every subscribed symbol into the ring + live feed.
+	if ev.StreamType == "SNAPSHOT" {
+		return nil, nil
 	}
 	token, ok := strings.CutPrefix(ev.Code, "USDT-")
 	if !ok {
