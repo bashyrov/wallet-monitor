@@ -59,13 +59,16 @@ def _collect() -> list[dict[str, Any]]:
         out.append({"symbol": key[0], "long_exchange": key[1], "short_exchange": key[2]})
 
     try:
-        # 1) Watchlist
+        # 1) Watchlist. DEX-mode rows are skipped — their long leg is a
+        #    DexScreener venue name the Go orderbook manager can't subscribe.
         for sym, le, se in (
             db.query(
                 WatchlistItem.symbol,
                 WatchlistItem.long_exchange,
                 WatchlistItem.short_exchange,
-            ).distinct().all()
+            )
+            .filter(~WatchlistItem.mode.like("dex%"))
+            .distinct().all()
         ):
             _add(sym, le, se)
 

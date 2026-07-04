@@ -923,14 +923,15 @@ function renderDex() {
     renderDexCards();
     return;
   }
-  tbody.innerHTML = page.map(_dexRowHTML).join('');
+  tbody.innerHTML = page.map(r => _dexRowHTML(r, 'dex-short')).join('');
   renderPager('pager-dex', _pageDX, _dexFiltered.length, 'goPageDX');
   renderDexCards();
   // in/out comes baked into row data — no fetch needed.
 }
 
 // Shared row markup for the dex-short and dex-screener-short tables.
-function _dexRowHTML(r) {
+function _dexRowHTML(r, mode) {
+    if (typeof mode !== 'string') mode = 'dex-short';
     const netCls  = r.net_profit > 0 ? 'net-pos' : 'net-neg';
     const netSign = r.net_profit >= 0 ? '+' : '';
     const basisSign = r.basis_pct >= 0 ? '+' : '';
@@ -972,6 +973,7 @@ function _dexRowHTML(r) {
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       ${_txCells(r)}
       <td style="display:flex;gap:4px;align-items:center">
+        ${_starBtn(r.symbol, (r.dex_name || '').toLowerCase(), r.short_exchange, {mode, dex_chain: r.dex_chain, dex_address: r.dex_base_address, dex_pair: (r.dex_pair_url || '').split('/').pop()})}
         <a href="/arb?type=dex&symbol=${esc(r.symbol)}&chain=${esc(r.dex_chain)}&long=${esc(r.dex_name)}&short=${esc(r.short_exchange)}&addr=${esc(r.dex_base_address)}&pair=${esc((r.dex_pair_url||'').split('/').pop())}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
       </td>
     </tr>`;
@@ -986,11 +988,12 @@ function renderDexCards() {
   }
   const start = _pageDX * PAGE_SIZE;
   const page  = _dexFiltered.slice(start, start + PAGE_SIZE);
-  wrap.innerHTML = page.map(_dexCardHTML).join('');
+  wrap.innerHTML = page.map(r => _dexCardHTML(r, 'dex-short')).join('');
 }
 
 // Shared card markup for the dex-short and dex-screener-short card views.
-function _dexCardHTML(r) {
+function _dexCardHTML(r, mode) {
+    if (typeof mode !== 'string') mode = 'dex-short';
     const netCls   = r.net_profit > 0 ? 'net-pos' : 'net-neg';
     const netSign  = r.net_profit >= 0 ? '+' : '';
     const basisCls = r.basis_pct >= 0 ? 'rate-neg' : 'rate-pos';
@@ -1048,8 +1051,9 @@ function _dexCardHTML(r) {
           <span class="card-lbl">Net APR</span>
           <span class="card-val ${aprCls}">${aprSign}${r.net_apr.toFixed(2)}%</span>
         </div>
-        <div style="margin-top:12px">
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
           <a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;background:var(--surface3);color:var(--text2);font-size:12px;font-weight:600;text-decoration:none">↗ Open detail</a>
+          ${_starBtn(r.symbol, (r.dex_name || '').toLowerCase(), r.short_exchange, {mode, dex_chain: r.dex_chain, dex_address: r.dex_base_address, dex_pair: (r.dex_pair_url || '').split('/').pop()})}
         </div>
       </div>
     </div>`;
@@ -1172,7 +1176,7 @@ function renderDsx() {
     renderDsxCards();
     return;
   }
-  tbody.innerHTML = page.map(_dexRowHTML).join('');
+  tbody.innerHTML = page.map(r => _dexRowHTML(r, 'dex-screener-short')).join('');
   renderPager('pager-dsx', _pageDSX, _dsxFiltered.length, 'goPageDSX');
   renderDsxCards();
 }
@@ -1186,7 +1190,7 @@ function renderDsxCards() {
   }
   const start = _pageDSX * PAGE_SIZE;
   const page  = _dsxFiltered.slice(start, start + PAGE_SIZE);
-  wrap.innerHTML = page.map(_dexCardHTML).join('');
+  wrap.innerHTML = page.map(r => _dexCardHTML(r, 'dex-screener-short')).join('');
 }
 
 function goPageDSX(p) { _pageDSX = p; renderDsx(); }
@@ -1352,7 +1356,10 @@ function renderDexSpot() {
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_pct.toFixed(4)}%</span></td>
       ${_txCells(r)}
-      <td><a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" class="arb-detail-btn" title="Open detail">↗</a></td>
+      <td style="display:flex;gap:4px;align-items:center">
+        ${_starBtn(r.symbol, (r.dex_name || '').toLowerCase(), r.cex_exchange, {mode: 'dex-spot', dex_chain: r.dex_chain, dex_address: r.dex_base_address, dex_pair: (r.dex_pair_url || '').split('/').pop()})}
+        <a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" class="arb-detail-btn" title="Open detail">↗</a>
+      </td>
     </tr>`;
   }).join('');
   renderPager('pager-dex-spot', _pageDS, _dexSpotFiltered.length, 'goPageDS');
@@ -1428,7 +1435,10 @@ function renderDexSpotCards() {
         </div>
         <div class="card-row" style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
           <span class="card-lbl">Open detail</span>
-          <a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" class="card-cta">↗</a>
+          <span style="display:inline-flex;gap:6px;align-items:center">
+            ${_starBtn(r.symbol, (r.dex_name || '').toLowerCase(), r.cex_exchange, {mode: 'dex-spot', dex_chain: r.dex_chain, dex_address: r.dex_base_address, dex_pair: (r.dex_pair_url || '').split('/').pop()})}
+            <a href="${detailUrl}" target="_blank" onclick="event.stopPropagation()" class="card-cta">↗</a>
+          </span>
         </div>
       </div>
     </div>`;
@@ -1608,6 +1618,7 @@ function renderSpot() {
       </td>
       <td><span class="td-net ${netCls}">${netSign}${r.net_profit.toFixed(4)}%</span></td>
       <td style="display:flex;gap:4px;align-items:center">
+        ${_starBtn(r.symbol, r.spot_exchange, r.short_exchange, {mode: 'spot-short'})}
         <a href="/arb?type=spot&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(r.short_exchange)}" target="_blank" class="arb-detail-btn" title="Open detail" onclick="event.stopPropagation()">↗</a>
       </td>
     </tr>`;
@@ -1680,8 +1691,9 @@ function renderSpotCards() {
           <span class="card-lbl">Net APR</span>
           <span class="card-val ${aprCls}">${aprSign}${r.net_apr.toFixed(2)}%</span>
         </div>
-        <div style="margin-top:12px">
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
           <a href="/arb?type=spot-short&symbol=${esc(r.symbol)}&long=${esc(r.spot_exchange)}&short=${esc(r.short_exchange)}" target="_blank" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;background:var(--surface3);color:var(--text2);font-size:12px;font-weight:600;text-decoration:none">↗ Open detail</a>
+          ${_starBtn(r.symbol, r.spot_exchange, r.short_exchange, {mode: 'spot-short'})}
         </div>
       </div>
     </div>`;
@@ -3308,8 +3320,8 @@ let _watchlist = {};     // key = "SYM|LONG>SHORT" → id
 let _loOpen = false;
 let _loTimers = {};
 
-function _wlKey(sym, l, s) { return `${sym}|${l}>${s}`; }
-function _isWatched(sym, l, s) { return !!_watchlist[_wlKey(sym, l, s)]; }
+function _wlKey(sym, l, s, mode) { return `${mode || 'long-short'}|${sym}|${l}>${s}`; }
+function _isWatched(sym, l, s, mode) { return !!_watchlist[_wlKey(sym, l, s, mode)]; }
 
 async function loadWatchlist() {
   // Watchlist is a per-user feature — anonymous visitors skip the call.
@@ -3319,7 +3331,7 @@ async function loadWatchlist() {
     if (!r.ok) return;
     const rows = await r.json();
     _watchlist = {};
-    for (const x of rows) _watchlist[_wlKey(x.symbol, x.long_exchange, x.short_exchange)] = x.id;
+    for (const x of rows) _watchlist[_wlKey(x.symbol, x.long_exchange, x.short_exchange, x.mode)] = x.id;
     _updateWlBadge();
     renderAllStars();
   } catch (_) {}
@@ -3334,17 +3346,22 @@ function _updateWlBadge() {
   badge.style.display = n > 0 ? '' : 'none';
 }
 
-async function toggleWatch(ev, sym, l, s) {
+async function toggleWatch(ev, btn) {
   ev.stopPropagation(); ev.preventDefault();
-  const key = _wlKey(sym, l, s);
+  const d = btn.dataset;
+  const key = d.wlKey;
   const id = _watchlist[key];
   try {
     if (id) {
       const r = await Auth.apiFetch(`/screener/watchlist/${id}`, { method: 'DELETE' });
       if (r.ok) { delete _watchlist[key]; toast('Removed from watchlist', 'info'); }
     } else {
+      const body = { symbol: d.sym, long_exchange: d.long, short_exchange: d.short, mode: d.mode || 'long-short' };
+      if (d.chain) body.dex_chain = d.chain;
+      if (d.addr) body.dex_address = d.addr;
+      if (d.pair) body.dex_pair = d.pair;
       const r = await Auth.apiFetch('/screener/watchlist', { method: 'POST',
-        body: JSON.stringify({ symbol: sym, long_exchange: l, short_exchange: s }) });
+        body: JSON.stringify(body) });
       if (r.ok) { const j = await r.json(); _watchlist[key] = j.id; toast('Added to watchlist', 'success'); }
     }
     _updateWlBadge();
@@ -3362,13 +3379,17 @@ function renderAllStars() {
   });
 }
 
-function _starBtn(sym, l, s) {
-  const key = _wlKey(sym, l, s);
+function _starBtn(sym, l, s, x) {
+  x = x || {};
+  const mode = x.mode || 'long-short';
+  const key = _wlKey(sym, l, s, mode);
   const on = !!_watchlist[key];
   const svg = on
     ? '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5L9.7 6l4.8.4-3.7 3.3 1.1 4.8L8 11.9 4.1 14.5l1.1-4.8L1.5 6.4 6.3 6z"/></svg>'
     : '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35"><path d="M8 1.5L9.7 6l4.8.4-3.7 3.3 1.1 4.8L8 11.9 4.1 14.5l1.1-4.8L1.5 6.4 6.3 6z"/></svg>';
-  return `<button class="star-btn ${on ? 'on' : ''}" data-wl-key="${key}" title="Watchlist" onclick="toggleWatch(event, '${sym}', '${l}', '${s}')">${svg}</button>`;
+  return `<button class="star-btn ${on ? 'on' : ''}" data-wl-key="${esc(key)}" data-sym="${esc(sym)}" data-long="${esc(l)}" data-short="${esc(s)}" data-mode="${mode}"`
+    + ` data-chain="${esc(x.dex_chain || '')}" data-addr="${esc(x.dex_address || '')}" data-pair="${esc(x.dex_pair || '')}"`
+    + ` title="Watchlist" onclick="toggleWatch(event, this)">${svg}</button>`;
 }
 
 function _alphaColor(score) {

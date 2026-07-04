@@ -381,6 +381,11 @@ class WatchlistItem(Base):
     symbol = Column(String, nullable=False)
     long_exchange = Column(String, nullable=False)
     short_exchange = Column(String, nullable=False)
+    # long-short | spot-short | dex-short | dex-screener-short | dex-spot
+    mode = Column(String, nullable=False, default="long-short", server_default="long-short")
+    dex_chain = Column(String, nullable=True)
+    dex_address = Column(String, nullable=True)
+    dex_pair = Column(String, nullable=True)
     note = Column(String, nullable=True)
     initial_spread_pct = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

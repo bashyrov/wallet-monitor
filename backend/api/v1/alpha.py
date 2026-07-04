@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_current_user, get_db
@@ -14,7 +14,13 @@ _SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,16}$")
 _KNOWN_EX = {
     "binance", "bybit", "okx", "gate", "kucoin", "mexc", "bitget",
     "hyperliquid", "aster", "ethereal", "whitebit", "bingx", "lighter", "paradex",
+    "htx", "kraken", "backpack", "extended",
 }
+_WL_MODES = {"long-short", "spot-short", "dex-short", "dex-screener-short", "dex-spot"}
+_DEX_MODES = {"dex-short", "dex-screener-short", "dex-spot"}
+# DEX venue names come from DexScreener (uniswap, raydium, aerodrome, …) —
+# open set, so only shape-check instead of membership.
+_DEX_NAME_RE = re.compile(r"^[a-z0-9_.-]{1,32}$")
 
 
 def _norm_symbol(v):
@@ -204,15 +210,36 @@ class WatchlistIn(BaseModel):
     symbol: str
     long_exchange: str
     short_exchange: str
+    mode: str = "long-short"
+    dex_chain: str | None = Field(None, max_length=64)
+    dex_address: str | None = Field(None, max_length=128)
+    dex_pair: str | None = Field(None, max_length=128)
     note: str | None = Field(None, max_length=200)
 
     @field_validator("symbol", mode="before")
     @classmethod
     def _sym(cls, v): return _norm_symbol(v)
 
-    @field_validator("long_exchange", "short_exchange", mode="before")
+    @field_validator("mode")
     @classmethod
-    def _ex(cls, v): return _norm_exchange(v)
+    def _mode(cls, v):
+        if v not in _WL_MODES:
+            raise ValueError(f"unknown mode: {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def _exchanges(self):
+        # Short/CEX leg is always one of our venues; the long leg is a DEX
+        # name in DEX modes so only shape-checked there.
+        self.short_exchange = _norm_exchange(self.short_exchange)
+        if self.mode in _DEX_MODES:
+            le = str(self.long_exchange or "").strip().lower()
+            if not _DEX_NAME_RE.match(le):
+                raise ValueError(f"bad dex name: {self.long_exchange!r}")
+            self.long_exchange = le
+        else:
+            self.long_exchange = _norm_exchange(self.long_exchange)
+        return self
 
 
 def _current_spread_pct(symbol: str, long_ex: str, short_ex: str) -> float | None:
@@ -242,7 +269,7 @@ def watchlist_get(user: User = Depends(get_current_user), db: Session = Depends(
     # tracking change from first visit after the migration.
     dirty = False
     for r in rows:
-        if r.initial_spread_pct is None:
+        if r.initial_spread_pct is None and (r.mode or "long-short") == "long-short":
             spread = _current_spread_pct(r.symbol, r.long_exchange, r.short_exchange)
             if spread is not None:
                 r.initial_spread_pct = spread
@@ -252,6 +279,8 @@ def watchlist_get(user: User = Depends(get_current_user), db: Session = Depends(
     return [{
         "id": r.id, "symbol": r.symbol, "long_exchange": r.long_exchange,
         "short_exchange": r.short_exchange, "note": r.note,
+        "mode": r.mode or "long-short",
+        "dex_chain": r.dex_chain, "dex_address": r.dex_address, "dex_pair": r.dex_pair,
         "initial_spread_pct": r.initial_spread_pct,
         "created_at": r.created_at.isoformat(),
     } for r in rows]
@@ -263,7 +292,9 @@ def watchlist_add(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if body.long_exchange == body.short_exchange:
+    # Same-venue pairs are legit outside long-short (spot vs perp on one
+    # exchange; OKX-dex vs OKX-perp).
+    if body.mode == "long-short" and body.long_exchange == body.short_exchange:
         raise HTTPException(400, "long_exchange and short_exchange must differ")
     # Dedup — no DB unique constraint today, enforce at service level
     dup = (
@@ -273,6 +304,7 @@ def watchlist_add(
             WatchlistItem.symbol == body.symbol,
             WatchlistItem.long_exchange == body.long_exchange,
             WatchlistItem.short_exchange == body.short_exchange,
+            WatchlistItem.mode == body.mode,
         )
         .first()
     )
@@ -283,8 +315,15 @@ def watchlist_add(
         symbol=body.symbol,
         long_exchange=body.long_exchange,
         short_exchange=body.short_exchange,
+        mode=body.mode,
+        dex_chain=body.dex_chain,
+        dex_address=body.dex_address,
+        dex_pair=body.dex_pair,
         note=body.note,
-        initial_spread_pct=_current_spread_pct(body.symbol, body.long_exchange, body.short_exchange),
+        initial_spread_pct=(
+            _current_spread_pct(body.symbol, body.long_exchange, body.short_exchange)
+            if body.mode == "long-short" else None
+        ),
     )
     db.add(item)
     db.commit()
