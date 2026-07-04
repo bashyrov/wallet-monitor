@@ -749,6 +749,10 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
 
   // Pair-level state
   let _row = null;
+  // Flag prevents re-showing the "pair missing" toast on every 5s poll
+  // when the pair genuinely isn't listed anywhere — one toast per page
+  // visit is enough context for the user.
+  let _pairMissingShown = false;
   const $ = (id) => document.getElementById(id);
   const fmtPx = (p) => p == null ? '—' : p >= 1000 ? p.toLocaleString('en-US', {maximumFractionDigits: 2}) : p >= 1 ? p.toFixed(4) : p.toPrecision(4);
   const fmtPxUsd = (p) => p == null ? '—' : '$' + fmtPx(p);
@@ -1124,13 +1128,26 @@ if (TYPE === 'spot' || TYPE === 'dex' || TYPE === 'dex_spot') {
         if (!row) {
           // Fallback: synthesize from all-exchanges-funding for both legs
           const perp = await _fetchPerpData();
-          const longR = perp && SHORT !== LONG
-            ? null // No direct spot endpoint, leave null
-            : null;
           if (perp) {
             // Use perp price as proxy for spot when we truly have nothing else,
             // so the page isn't blank. Clearly degraded case.
             row = _buildRow({ price: perp.price, volume_usd: perp.volume_usd }, perp);
+          } else if (!_pairMissingShown) {
+            // Neither the spot-short feed nor the venue's funding table
+            // knows this pair — usually the URL points at a venue that
+            // doesn't list this symbol (e.g. GMX on Kraken). Tell the user
+            // instead of leaving every stat as em-dash forever.
+            _pairMissingShown = true;
+            const el = document.getElementById('pt-live-spread');
+            if (el) el.textContent = 'N/A';
+            if (typeof toast === 'function') {
+              toast({
+                title: `${SYM} not listed on ${(EX_LABEL[SHORT]||SHORT)}`,
+                sub: 'Try a different SHORT venue — click the exchange chip to switch.',
+                type: 'error',
+                duration: 8000,
+              });
+            }
           }
         }
       }
