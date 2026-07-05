@@ -65,6 +65,7 @@ import (
 	fethereal "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/ethereal"
 	fextended "github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding/extended"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/binancealpha"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/okxdex"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/redisbus"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/spread"
@@ -269,14 +270,22 @@ func main() {
 	// every 30s.
 	okxSvc := okxdex.NewService(okxdex.NewClientFromEnv(), cexRegistry)
 	if !okxSvc.Configured() {
-		log.L().Warn().Msg("okxdex: OKX_WEB3_* creds missing OR AVALANT_CEX_ASSETS=0 — dex-short will be empty")
+		log.L().Warn().Msg("okxdex: OKX_WEB3_* creds missing OR AVALANT_CEX_ASSETS=0 — dex-short falls back to Binance Alpha coverage only")
 	} else {
 		g.Go(func() error {
 			okxSvc.Run(gctx)
 			return nil
 		})
 	}
-	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 10*time.Second, okxSvc)
+	// Binance Alpha token list — public, no auth. Primary dex-short
+	// price source (price + per-token liquidity in one payload); OKX
+	// covers the symbols Alpha doesn't list.
+	alphaSvc := binancealpha.NewService(binancealpha.NewClient())
+	g.Go(func() error {
+		alphaSvc.Run(gctx)
+		return nil
+	})
+	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 10*time.Second, okxSvc, alphaSvc)
 	g.Go(func() error {
 		return dexCompute.Run(gctx)
 	})

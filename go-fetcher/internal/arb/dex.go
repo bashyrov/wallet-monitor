@@ -11,6 +11,7 @@ import (
 
 	"github.com/bytedance/sonic"
 
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/binancealpha"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
@@ -42,10 +43,11 @@ type CexMatch struct {
 type CexAddressMatcher func(venue, ticker, dexChain, dexAddress string) CexMatch
 
 // dexInfo is the resolved on-chain placement + price for a symbol.
-// Since the OKX cutover the DEX name is always "OKX" (aggregator-level
-// price, no per-pool attribution) and LiquidityUSD/VolumeUSD are 0 —
-// OKX's token API doesn't expose them. Downstream consumers treat 0 as
-// "unknown", not "illiquid".
+// Dex is "Binance Alpha" when the symbol resolves via the Alpha token
+// list (price + real liquidity in one payload) and "OKX" otherwise
+// (aggregator-level price, LiquidityUSD borrowed from the DexScreener
+// parallel feed or 0). Downstream consumers treat 0 as "unknown", not
+// "illiquid".
 type dexInfo struct {
 	Symbol       string
 	Chain        string
@@ -67,6 +69,7 @@ type DEXCompute struct {
 	cacheDir string
 	interval time.Duration
 	okx      *okxdex.Service
+	alpha    *binancealpha.Service
 
 	mu        sync.Mutex
 	firstSeen map[dexKey]time.Time
@@ -162,13 +165,14 @@ func canonicalChain(ref okxdex.TokenRef) string {
 	return strings.ReplaceAll(strings.ToLower(ref.ChainName), " ", "")
 }
 
-func NewDEXCompute(store *funding.Store, books *cache.Store, cacheDir string, interval time.Duration, okx *okxdex.Service) *DEXCompute {
+func NewDEXCompute(store *funding.Store, books *cache.Store, cacheDir string, interval time.Duration, okx *okxdex.Service, alpha *binancealpha.Service) *DEXCompute {
 	return &DEXCompute{
 		store:     store,
 		books:     books,
 		cacheDir:  cacheDir,
 		interval:  interval,
 		okx:       okx,
+		alpha:     alpha,
 		firstSeen: make(map[dexKey]time.Time),
 		lastSeen:  make(map[dexKey]time.Time),
 	}
@@ -279,14 +283,52 @@ func (c *DEXCompute) tick(ctx context.Context) {
 		return
 	}
 
-	// Resolve symbols against the OKX token map. Refs are ordered by
-	// chain preference so majors resolve on their native chain first.
+	// Resolve via Binance Alpha first — price + real per-token liquidity
+	// ride the token-list payload, no per-cycle price sweep, no paywall
+	// risk. A symbol listed on multiple chains resolves to the deepest
+	// pool. Symbols Alpha doesn't cover fall through to OKX below.
+	alphaBySym := make(map[string]*dexInfo, 256)
+	if c.alpha != nil {
+		for sym := range perpMap {
+			refs := c.alpha.LookupBySymbol(sym)
+			if len(refs) == 0 {
+				continue
+			}
+			best := refs[0]
+			for _, r := range refs[1:] {
+				if r.LiquidityUSD > best.LiquidityUSD {
+					best = r
+				}
+			}
+			liq := best.LiquidityUSD
+			if liq <= 0 {
+				liq = c.lookupDexScreenerLiquidity(sym, best.Chain)
+			}
+			alphaBySym[sym] = &dexInfo{
+				Symbol:       sym,
+				Chain:        best.Chain,
+				Dex:          "Binance Alpha",
+				Price:        best.Price,
+				LiquidityUSD: liq,
+				VolumeUSD:    best.VolumeUSD,
+				BaseAddress:  best.Address,
+				PairURL:      "https://www.binance.com/en/alpha/" + best.Chain + "/" + best.Address,
+			}
+		}
+	}
+
+	// Resolve the remaining symbols against the OKX token map. Refs are
+	// ordered by chain preference so majors resolve on their native chain
+	// first.
 	type candidate struct {
 		sym  string
 		refs []okxdex.TokenRef
 	}
 	candidates := make([]candidate, 0, len(perpMap))
 	for sym := range perpMap {
+		if _, ok := alphaBySym[sym]; ok {
+			continue
+		}
 		refs := c.okx.LookupBySymbol(sym)
 		if len(refs) == 0 {
 			continue
@@ -306,9 +348,9 @@ func (c *DEXCompute) tick(ctx context.Context) {
 		}
 		candidates = append(candidates, candidate{sym: sym, refs: ordered})
 	}
-	if len(candidates) == 0 {
-		// Token map empty (creds missing / initial sweep failed) or no
-		// funding symbol exists on-chain — emit structure, no rows.
+	if len(candidates) == 0 && len(alphaBySym) == 0 {
+		// Both token maps empty (creds missing / initial sweeps failed)
+		// or no funding symbol exists on-chain — emit structure, no rows.
 		c.writeEmpty()
 		return
 	}
@@ -323,15 +365,21 @@ func (c *DEXCompute) tick(ctx context.Context) {
 			reqs = append(reqs, okxdex.PriceReq{ChainIndex: ref.ChainIndex, TokenContractAddress: ref.Address})
 		}
 	}
-	pxCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	prices, pxErr := c.okx.FetchPrices(pxCtx, reqs)
-	cancel()
+	var prices map[string]float64
+	var pxErr error
+	if len(reqs) > 0 {
+		pxCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		prices, pxErr = c.okx.FetchPrices(pxCtx, reqs)
+		cancel()
+	}
 
-	// If the cycle was completely starved (every price chunk failed),
-	// keep the previous file rather than clobbering it with empty data.
-	// Otherwise users see "DEX/Short — no opportunities" during an OKX
-	// blip even though the data was fine 30s earlier.
-	if len(prices) == 0 && pxErr != nil {
+	// If the cycle was completely starved (every OKX price chunk failed
+	// AND Alpha resolved nothing), keep the previous file rather than
+	// clobbering it with empty data. Otherwise users see "DEX/Short — no
+	// opportunities" during an OKX blip even though the data was fine
+	// 30s earlier. With Alpha rows in hand we proceed — the OKX-only
+	// symbols drop out for one tick, which beats an all-stale file.
+	if len(prices) == 0 && pxErr != nil && len(alphaBySym) == 0 {
 		log.L().Warn().Err(pxErr).Msg("dex cycle starved (OKX price fetch failed) — keeping prior file")
 		return
 	}
@@ -339,7 +387,10 @@ func (c *DEXCompute) tick(ctx context.Context) {
 	// TODO(liquidity): OKX doesn't expose per-pool liquidity, so a symbol
 	// living on multiple chains resolves to the first preference-ordered
 	// ref with a non-zero price instead of the deepest pool.
-	dexBySym := make(map[string]*dexInfo, len(candidates))
+	dexBySym := make(map[string]*dexInfo, len(candidates)+len(alphaBySym))
+	for sym, info := range alphaBySym {
+		dexBySym[sym] = info
+	}
 	for _, cand := range candidates {
 		for _, ref := range cand.refs {
 			px, ok := prices[okxdex.PriceKey(ref.ChainIndex, ref.Address)]
@@ -362,7 +413,8 @@ func (c *DEXCompute) tick(ctx context.Context) {
 	}
 
 	log.L().Info().
-		Int("scanned", len(candidates)).
+		Int("scanned", len(candidates)+len(alphaBySym)).
+		Int("alpha_hits", len(alphaBySym)).
 		Int("hits", len(dexBySym)).
 		Int("price_reqs", len(reqs)).
 		Int("prices", len(prices)).
@@ -485,7 +537,7 @@ func (c *DEXCompute) tick(ctx context.Context) {
 	out := map[string]any{
 		"opportunities":   opps,
 		"generated_at":    now.Unix(),
-		"symbols_scanned": len(candidates),
+		"symbols_scanned": len(candidates) + len(alphaBySym),
 		"dex_hits":        len(dexBySym),
 	}
 	if err := writeAtomic(filepath.Join(c.cacheDir, "dex_arbitrage.json"), out); err != nil {

@@ -77,6 +77,11 @@ def _build_venues_meta() -> dict:
         return ex in disabled_ex
 
     SPOT_SCREENER_VENUES = {ex for ex in SPOT_FETCHERS.keys() if not _drop_ex(ex)}
+    # Binance Alpha is a screener-only spot price source (go-fetcher
+    # binancealpha package feeds dex-short) — no Python fetcher, no
+    # wallet provider (holdings live on-chain, same pattern as extended).
+    if not _drop_ex("binancealpha"):
+        SPOT_SCREENER_VENUES.add("binancealpha")
     PERP_DEX_IDS = set(PERPDEX_PROVIDERS.keys())  # what we treat as perp-DEX
     SCREENER_PERP_DEX = {
         ex for ex in FETCHERS.keys()
@@ -157,6 +162,7 @@ _FALLBACK_LABELS = {
     "backpack": "Backpack",
     "hyperliquid": "Hyperliquid", "aster": "Aster", "ethereal": "Ethereal",
     "paradex": "Paradex", "lighter": "Lighter", "extended": "Extended",
+    "binancealpha": "Binance Alpha",
 }
 
 
