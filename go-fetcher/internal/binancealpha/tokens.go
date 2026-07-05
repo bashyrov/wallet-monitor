@@ -106,6 +106,15 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
+// Tokens returns the current symbol → refs index. The map is replaced
+// wholesale on refresh (never mutated in place), so sharing the
+// reference is safe — callers must not mutate.
+func (s *Service) Tokens() map[string][]TokenRef {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tokens
+}
+
 // LookupBySymbol returns all chain placements for a symbol (case-
 // insensitive). The returned slice is shared — callers must not mutate.
 func (s *Service) LookupBySymbol(sym string) []TokenRef {

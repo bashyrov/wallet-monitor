@@ -164,6 +164,11 @@ func (c *DexSpotCompute) tick() {
 			continue
 		}
 		for cexEx, st := range spotByEx {
+			// The binancealpha spot leg IS the Alpha on-chain price —
+			// pairing it against DEX prices is self-referential noise.
+			if cexEx == "binancealpha" {
+				continue
+			}
 			if st.Price <= 0 {
 				continue
 			}
@@ -272,6 +277,9 @@ func (c *DexSpotCompute) tick() {
 	cexUniverse := make(map[string]struct{}, 16)
 	for _, byEx := range spotMap {
 		for ex := range byEx {
+			if ex == "binancealpha" {
+				continue
+			}
 			cexUniverse[ex] = struct{}{}
 		}
 	}

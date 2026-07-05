@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/binancealpha"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/cache"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/funding"
 	"github.com/bashyrov/wallet-monitor/go-fetcher/internal/log"
@@ -37,6 +38,8 @@ var spotFees = map[string]float64{
 	"bingx":   0.001,
 	"htx":     0.002,
 	"upbit":   0.0025,
+	// Alpha trades ride Binance spot infrastructure — same taker fee.
+	"binancealpha": 0.001,
 }
 
 func spotFeeOf(ex string) float64 {
@@ -54,6 +57,7 @@ type SpotCompute struct {
 	books    *cache.Store
 	cacheDir string
 	interval time.Duration
+	alpha    *binancealpha.Service
 
 	// spotSnap holds the most recent spotMap produced by tick() so the
 	// dex_spot compute can join it against DEX prices without
@@ -62,8 +66,8 @@ type SpotCompute struct {
 	spotSnap map[string]map[string]spotTicker
 }
 
-func NewSpotCompute(store *funding.Store, books *cache.Store, cacheDir string, interval time.Duration) *SpotCompute {
-	return &SpotCompute{store: store, books: books, cacheDir: cacheDir, interval: interval}
+func NewSpotCompute(store *funding.Store, books *cache.Store, cacheDir string, interval time.Duration, alpha *binancealpha.Service) *SpotCompute {
+	return &SpotCompute{store: store, books: books, cacheDir: cacheDir, interval: interval, alpha: alpha}
 }
 
 // SnapshotSpotMap returns a shallow copy of the latest per-venue spot
@@ -109,6 +113,7 @@ func (c *SpotCompute) Run(ctx context.Context) error {
 var spotExchanges = []string{
 	"binance", "bybit", "okx", "gate", "kucoin",
 	"mexc", "bitget", "bingx", "htx", "upbit",
+	"binancealpha",
 }
 
 func (c *SpotCompute) tick(ctx context.Context) {
@@ -127,7 +132,7 @@ func (c *SpotCompute) tick(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			tickers, err := fetchSpotTickers(tickerCtx, ex)
+			tickers, err := c.fetchSpotTickers(tickerCtx, ex)
 			if err != nil {
 				log.L().Debug().Str("ex", ex).Err(err).Msg("spot fetch failed")
 			}
@@ -301,8 +306,10 @@ func (c *SpotCompute) tick(ctx context.Context) {
 
 // ── per-venue REST fetchers ──────────────────────────────────────────────
 
-func fetchSpotTickers(ctx context.Context, ex string) ([]spotTicker, error) {
+func (c *SpotCompute) fetchSpotTickers(ctx context.Context, ex string) ([]spotTicker, error) {
 	switch ex {
+	case "binancealpha":
+		return c.fetchBinanceAlphaSpot(), nil
 	case "binance":
 		return fetchBinanceSpot(ctx)
 	case "bybit":
@@ -325,6 +332,30 @@ func fetchSpotTickers(ctx context.Context, ex string) ([]spotTicker, error) {
 		return fetchUpbitSpot(ctx)
 	}
 	return nil, nil
+}
+
+// Binance Alpha rides the token-list cache already maintained by
+// binancealpha.Service for dex-short (price + 24h volume in one
+// payload) — zero extra REST calls per tick. Multi-chain listings
+// collapse to the deepest-liquidity placement.
+func (c *SpotCompute) fetchBinanceAlphaSpot() []spotTicker {
+	if c.alpha == nil {
+		return nil
+	}
+	toks := c.alpha.Tokens()
+	out := make([]spotTicker, 0, len(toks))
+	for sym, refs := range toks {
+		best := refs[0]
+		for _, r := range refs[1:] {
+			if r.LiquidityUSD > best.LiquidityUSD {
+				best = r
+			}
+		}
+		if best.Price > 0 && best.VolumeUSD > 0 {
+			out = append(out, spotTicker{Symbol: sym, Price: best.Price, VolumeUSD: best.VolumeUSD})
+		}
+	}
+	return out
 }
 
 // Upbit's USDT market list changes rarely — cache it 10 min so each tick

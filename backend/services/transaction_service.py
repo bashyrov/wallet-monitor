@@ -1313,6 +1313,19 @@ async def _upbit_txs(creds: dict) -> list[Transaction]:
     return txs[:LIMIT]
 
 
+async def _binancealpha_txs(creds: dict) -> list[Transaction]:
+    """Alpha activity lives on the same Binance account — reuse the
+    Binance history and keep only Alpha-listed assets."""
+    from backend.providers.exchanges.binance_alpha_provider import get_alpha_tokens
+
+    txs = await _binance_txs(creds)
+    async with RetryClient(timeout=15) as c:
+        alpha = set(await get_alpha_tokens(c))
+    if not alpha:
+        return []
+    return [t for t in txs if t.asset.upper() in alpha]
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
@@ -1341,6 +1354,8 @@ async def fetch_transactions(db_wallet: Wallet) -> TransactionResponse:
             }
             if tv == "binance":
                 txs = await _binance_txs(c)
+            elif tv == "binancealpha":
+                txs = await _binancealpha_txs(c)
             elif tv == "okx":
                 txs = await _okx_txs(c)
             elif tv == "bybit":

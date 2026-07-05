@@ -231,11 +231,20 @@ func main() {
 		})
 	}
 
+	// Binance Alpha token list — public, no auth. Feeds two consumers:
+	// dex-short pricing (DEXCompute below) and the binancealpha spot leg
+	// in SpotCompute.
+	alphaSvc := binancealpha.NewService(binancealpha.NewClient())
+	g.Go(func() error {
+		alphaSvc.Run(gctx)
+		return nil
+	})
+
 	// Spot arb compute — Python's spot_arbitrage_service. REST tickers
-	// from 9 spot venues + funding store join → spot_arbitrage.json
-	// every 2s.
+	// from 10 spot venues + Binance Alpha token cache + funding store
+	// join → spot_arbitrage.json every 2s.
 	// 1s → 500ms: spot/perp basis recomputed twice as often.
-	spotCompute := arb.NewSpotCompute(fundingStore, store, cfg.CacheDir, 500*time.Millisecond)
+	spotCompute := arb.NewSpotCompute(fundingStore, store, cfg.CacheDir, 500*time.Millisecond, alphaSvc)
 	g.Go(func() error {
 		return spotCompute.Run(gctx)
 	})
@@ -277,14 +286,6 @@ func main() {
 			return nil
 		})
 	}
-	// Binance Alpha token list — public, no auth. Primary dex-short
-	// price source (price + per-token liquidity in one payload); OKX
-	// covers the symbols Alpha doesn't list.
-	alphaSvc := binancealpha.NewService(binancealpha.NewClient())
-	g.Go(func() error {
-		alphaSvc.Run(gctx)
-		return nil
-	})
 	dexCompute := arb.NewDEXCompute(fundingStore, store, cfg.CacheDir, 10*time.Second, okxSvc, alphaSvc)
 	g.Go(func() error {
 		return dexCompute.Run(gctx)

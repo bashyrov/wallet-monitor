@@ -51,6 +51,8 @@ SPOT_FEES: dict[str, float] = {
     "bitget":   0.001,
     "bingx":    0.001,
     "upbit":    0.0025,
+    # Alpha trades ride Binance spot infrastructure — same taker fee.
+    "binancealpha": 0.001,
 }
 _DEFAULT_SPOT_FEE = 0.001
 
@@ -324,8 +326,20 @@ async def _fetch_upbit_spot() -> list[dict]:
     return out
 
 
+async def _fetch_binancealpha_spot() -> list[dict]:
+    from backend.providers.exchanges.binance_alpha_provider import get_alpha_tokens
+
+    tokens = await get_alpha_tokens(_http)
+    return [
+        {"symbol": s, "price": t["price"], "volume_usd": t["volume_usd"]}
+        for s, t in tokens.items()
+        if t["price"] > 0 and t["volume_usd"] > 0
+    ]
+
+
 SPOT_FETCHERS = {
     "binance": _fetch_binance_spot,
+    "binancealpha": _fetch_binancealpha_spot,
     "bybit":   _fetch_bybit_spot,
     "okx":     _fetch_okx_spot,
     "gate":    _fetch_gate_spot,

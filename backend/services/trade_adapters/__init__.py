@@ -10,6 +10,7 @@ Each adapter exposes the same async interface:
 Credentials dict is already decrypted before being passed in.
 """
 from .binance import BinanceAdapter
+from .binance_alpha import BinanceAlphaAdapter
 from .bybit import BybitAdapter
 from .okx import OKXAdapter
 from .gate import GateAdapter
@@ -43,11 +44,14 @@ TRADE_SUPPORTED: set[str] = {
     "htx",
     # Spot-only — the venue has no futures market at all
     "upbit",
+    # Spot-only — Alpha buys are Binance spot orders on the same account
+    "binancealpha",
 }
 
 ADAPTERS: dict[str, type] = {
     # CEX
     "binance":      BinanceAdapter,
+    "binancealpha": BinanceAlphaAdapter,
     "bybit":        BybitAdapter,
     "okx":          OKXAdapter,
     "gate":         GateAdapter,

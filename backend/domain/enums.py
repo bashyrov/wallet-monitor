@@ -4,6 +4,7 @@ from enum import Enum
 class ExchangeType(str, Enum):
 
     BINANCE = "binance"
+    BINANCEALPHA = "binancealpha"
     OKX = "okx"
     BYBIT = "bybit"
     GATE = "gate"

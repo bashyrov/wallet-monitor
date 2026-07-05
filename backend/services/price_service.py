@@ -151,6 +151,16 @@ WRAPPED_MAP: dict[str, str] = {
 }
 
 
+# Long-tail overlay (Binance Alpha token list, etc.). Consulted only
+# when the CMC/Gate cache misses a symbol, so a collision with a
+# top-100 ticker can never shadow the canonical price.
+_extra_prices: dict[str, float] = {}
+
+
+def merge_extra_prices(prices: dict[str, float]) -> None:
+    _extra_prices.update({k.upper(): v for k, v in prices.items() if v > 0})
+
+
 def get_price(symbol: str) -> float | None:
     """Return USD price for symbol, or None if unknown."""
     s = symbol.upper().replace(".E", "").replace("-PERP", "").replace("_PERP", "")
@@ -163,7 +173,10 @@ def get_price(symbol: str) -> float | None:
     underlying = WRAPPED_MAP.get(s)
     if underlying:
         return _prices.get(underlying)
-    return _prices.get(s)
+    p = _prices.get(s)
+    if p is None:
+        p = _extra_prices.get(s)
+    return p
 
 
 def get_usd_value(symbol: str, amount: str) -> float | None:
