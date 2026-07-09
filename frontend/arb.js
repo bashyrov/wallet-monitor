@@ -5701,12 +5701,41 @@ function tradeSetMargin(el){
 function tradeSetOtype(el){
   const leg = el.dataset.leg;
   const v = el.dataset.v;
+  // Preempt server-side rejection — same policy trade_service enforces
+  // (allow_tp_sl_orders=false → Free tier). Toast + refuse to update
+  // state so the chip visibly bounces back to Market/Limit.
+  const _me = (typeof Auth !== 'undefined' && Auth.getUser) ? Auth.getUser() : null;
+  const _tpSlBlocked = _me && _me.allow_tp_sl_orders === false;
+  if (_tpSlBlocked && (v === 'stop_market' || v === 'take_profit_market')) {
+    if (typeof toast === 'function') toast({
+      title: 'TP / SL requires a paid plan',
+      sub: 'Upgrade on /pricing to place stop-loss and take-profit orders.',
+      type: 'error', duration: 6000,
+    });
+    return;
+  }
   _trade[leg].orderType = v;
   el.closest('.trade-otype-row').querySelectorAll('.trade-dd-chip').forEach(c => c.classList.toggle('is-active', c === el));
   const priceRow = document.getElementById('trade-price-inp-row-' + leg);
   const priceLbl = document.getElementById('trade-price-lbl-' + leg);
   priceRow.style.display = v === 'market' ? 'none' : 'flex';
   if (priceLbl) priceLbl.textContent = v === 'limit' ? 'Limit Price' : 'Stop Price';
+}
+
+// Grey out the TP + Stop chips at boot for Free-tier users. Same info
+// as the toast — the chip still fires tradeSetOtype which rejects,
+// but a visibly disabled chip is more discoverable than a silent bounce.
+function _applyTpSlGate(){
+  const _me = (typeof Auth !== 'undefined' && Auth.getUser) ? Auth.getUser() : null;
+  if (!_me || _me.allow_tp_sl_orders !== false) return;
+  document.querySelectorAll('.trade-otype-row .trade-dd-chip').forEach(el => {
+    const v = el.getAttribute('data-v');
+    if (v === 'stop_market' || v === 'take_profit_market') {
+      el.style.opacity = '0.4';
+      el.style.cursor = 'not-allowed';
+      el.setAttribute('title', 'Upgrade to unlock TP / SL orders');
+    }
+  });
 }
 
 function tradeSetUnit(el){
@@ -5884,6 +5913,24 @@ async function tradeOpenArb(){
   _showLegErr('long', null); _showLegErr('short', null);
   if (L.qty <= 0 || S.qty <= 0) { _toast('Enter size on both legs'); return; }
   if (!L.walletId || !S.walletId) { _toast('Screener API keys missing on one of the exchanges'); return; }
+  // Preempt server spread-cap rejection — Free tier is capped at 10% and
+  // the server /trade/open-arb path will refuse anyway. Fire the toast
+  // client-side so the user sees an actionable "Upgrade" message instead
+  // of a raw exchange error via Order History.
+  const _me = (typeof Auth !== 'undefined' && Auth.getUser) ? Auth.getUser() : null;
+  const _cap = _me && typeof _me.max_spread_pct === 'number' ? _me.max_spread_pct : 100;
+  if (_cap < 100 && _row) {
+    const _intended = typeof _row.in_pct === 'number' ? _row.in_pct :
+                      typeof _row.basis_pct === 'number' ? _row.basis_pct : null;
+    if (_intended !== null && Math.abs(_intended) > _cap) {
+      if (typeof toast === 'function') toast({
+        title: `Entry spread ${_intended.toFixed(2)}% exceeds your ${_cap}% cap`,
+        sub: 'Upgrade on /pricing to trade high-basis pairs.',
+        type: 'error', duration: 8000,
+      });
+      return;
+    }
+  }
   // Market order on both legs — fire both without a price-confirmation prompt.
   _tradeInflight.arb = true;
   const btn = document.getElementById('trade-arb-btn');
@@ -6034,6 +6081,10 @@ async function _reloadTradeStatus(){
     const r = await Auth.apiFetch('/trade/status?symbol=' + SYM + '&long_ex=' + LONG + '&short_ex=' + SHORT);
     if (r.ok) _applyTradeStatus(await r.json());
   } catch {}
+  // Idempotent — reads Auth.getUser() (localStorage) which navbar refreshed
+  // on connectedCallback via /auth/me. Runs after both boot + every 5s
+  // trade-status poll so a plan upgrade propagates without a full reload.
+  try { _applyTpSlGate(); } catch (_) {}
 }
 
 async function tradeClose(wid, posId){

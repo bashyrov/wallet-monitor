@@ -61,6 +61,8 @@ class UserOut(BaseModel):
     portfolio_limit: Optional[int] = None
     exchange_keys_per_venue: Optional[int] = None
     trade_delay_ms: int = 0              # plan-enforced sleep before open/close orders (Free = 500)
+    max_spread_pct: float = 100.0        # entry-basis cap at open (Free = 10, Paid = 100)
+    allow_tp_sl_orders: bool = True      # False on Free — server refuses TP/SL types
     is_plan_expired: bool = False
     tg_username: Optional[str] = None
     tg_linked: bool = False          # True if tg_chat_id is set (user ran /start)

@@ -587,6 +587,8 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         out.portfolio_limit = None if lim.portfolio_unlimited else lim.portfolio_limit
         out.exchange_keys_per_venue = None if lim.keys_unlimited else lim.exchange_keys_per_venue
         out.trade_delay_ms = int(getattr(lim, "trade_delay_ms", 0) or 0)
+        out.max_spread_pct = float(getattr(lim, "max_spread_pct", 100.0) or 100.0)
+        out.allow_tp_sl_orders = bool(getattr(lim, "allow_tp_sl_orders", True))
         out.is_plan_expired = lim.is_expired
         out.wallet_limit = out.portfolio_limit
         # Mirror effective plan_slug into legacy `plan` string so the
